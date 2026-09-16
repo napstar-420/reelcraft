@@ -1,15 +1,52 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, eq, isNull } from 'drizzle-orm';
-import type { Ref } from '@reefcraft/shared';
+import { and, desc, eq, isNull } from 'drizzle-orm';
+import type { ArtifactKind, Ref } from '@reefcraft/shared';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
-import { artifact } from '../db/schema/index';
+import { artifact, runMemory } from '../db/schema/index';
+import type { StageDef } from '@reefcraft/shared';
+import { getPath } from '../common/path';
+
+export interface BindingScope {
+  runId: string;
+  prevStageKey?: string | undefined;
+  inputs: Record<string, unknown>;
+  /** phase 7 — carried through the interface now so callers don't churn later. */
+  itemIndex?: number | undefined;
+}
+
+export interface RefProvenance {
+  ref: Ref;
+  artifactId?: string;
+  memoryKey?: string;
+  memoryVersion?: number;
+  inputKey?: string;
+  assetId?: string;
+}
+
+export interface ResolvedBindings {
+  slots: Record<string, unknown>;
+  context: Record<string, unknown>;
+  provenance: Record<string, RefProvenance>;
+}
+
+export interface RefEnvelope {
+  /** The real kind of a `prev`/`memory`-sourced artifact, or the literal tag
+   * `'literal'` for a `const`/`input` ref that names no artifact at all —
+   * kept distinct from the real `'data'` ArtifactKind so a script check
+   * branching on `kind` can't mistake an arbitrary constant for a genuine
+   * schema-backed data artifact. */
+  kind: ArtifactKind | 'literal';
+  data: unknown;
+  probe?: unknown;
+}
 
 /**
- * Phase-1 minimal binding resolver. Supports `prev`, `input`, and `const`
- * (§6.1) — enough for a one-stage blueprint, since there is no earlier
- * stage to bind `prev` against and run inputs are the only other source of
- * data. `memory`, `role`, `item`, and `prevItem` are phases 4/7/8 and throw
- * here rather than silently resolving to nothing.
+ * §6.1 — binding resolver with slots and context. Handles `const`/`input`/
+ * `prev`/`memory` (real, phase 1/2). `asset`/`role`/`item`/`prevItem` throw a
+ * named "not implemented until phase N" error rather than silently
+ * resolving to nothing — a stage that references one of those today is a
+ * validation gap the compatibility walker (chunk 3) will eventually catch,
+ * not something the resolver should paper over.
  */
 @Injectable()
 export class BindingResolverService {
@@ -17,58 +54,189 @@ export class BindingResolverService {
 
   async resolve(
     ref: Ref,
-    ctx: { runId: string; prevStageKey?: string; inputs: Record<string, unknown> },
-  ): Promise<unknown> {
+    ctx: BindingScope,
+  ): Promise<{ value: unknown; provenance: RefProvenance }> {
     switch (ref.from) {
       case 'const':
-        return ref.value;
+        return { value: ref.value, provenance: { ref } };
 
       case 'input': {
-        const value = ctx.inputs[ref.inputKey];
-        return ref.path ? getPath(value, ref.path) : value;
+        let value = ctx.inputs[ref.inputKey];
+        if (ref.index !== undefined) {
+          value = Array.isArray(value) ? value[ref.index] : undefined;
+        }
+        if (ref.path) value = getPath(value, ref.path);
+        return { value, provenance: { ref, inputKey: ref.inputKey } };
       }
 
       case 'prev': {
-        if (!ctx.prevStageKey) {
-          throw new Error('BindingResolverService: {from: "prev"} on the first stage is invalid');
-        }
-        const [row] = await this.db
-          .select()
-          .from(artifact)
-          .where(
-            and(
-              eq(artifact.runId, ctx.runId),
-              eq(artifact.producerStageKey, ctx.prevStageKey),
-              isNull(artifact.itemIndex),
-              eq(artifact.stale, false),
-            ),
-          )
-          .limit(1);
-        if (!row) {
-          throw new Error(
-            `BindingResolverService: no active artifact for stage "${ctx.prevStageKey}"`,
-          );
-        }
-        return ref.path ? getPath(row.data, ref.path) : row.data;
+        const row = await this.fetchPrevArtifact(ctx);
+        const unwrapped = unwrapArtifactData(row.kind as ArtifactKind, row.data);
+        return {
+          value: ref.path ? getPath(unwrapped, ref.path) : unwrapped,
+          provenance: { ref, artifactId: row.id },
+        };
       }
 
-      case 'memory':
+      case 'memory': {
+        const row = await this.fetchMemoryRow(ref, ctx);
+        return {
+          value: ref.path ? getPath(row.data, ref.path) : row.data,
+          provenance: { ref, memoryKey: ref.key, memoryVersion: row.version },
+        };
+      }
+
+      case 'asset':
+        throw new Error(`BindingResolverService: {from: "asset"} is not implemented until phase 4`);
+
       case 'role':
+        throw new Error(`BindingResolverService: {from: "role"} is not implemented until phase 8`);
+
       case 'item':
       case 'prevItem':
-      case 'asset':
         throw new Error(
-          `BindingResolverService: {from: "${ref.from}"} is not implemented in phase 1`,
+          `BindingResolverService: {from: "${ref.from}"} is not implemented until phase 7`,
         );
     }
   }
+
+  /** Resolves every `slots`/`context` ref on a stage. Returns a value map
+   * plus a parallel provenance map (feeds `stage_attempt.resolved_inputs`) —
+   * `ExecCtx.slots`/`context` stay plain `Record<string, unknown>` so
+   * `ExecCtx` never has to unwrap a `{value, provenance}` envelope. */
+  async resolveAll(stage: StageDef, ctx: BindingScope): Promise<ResolvedBindings> {
+    const slots: Record<string, unknown> = {};
+    const context: Record<string, unknown> = {};
+    const provenance: Record<string, RefProvenance> = {};
+
+    for (const [key, ref] of Object.entries(stage.slots)) {
+      const resolved = await this.resolve(ref, ctx);
+      slots[key] = resolved.value;
+      provenance[`slots.${key}`] = resolved.provenance;
+    }
+    for (const [key, ref] of Object.entries(stage.context)) {
+      const resolved = await this.resolve(ref, ctx);
+      context[key] = resolved.value;
+      provenance[`context.${key}`] = resolved.provenance;
+    }
+    return { slots, context, provenance };
+  }
+
+  /** §9.2 — resolves `CheckDef.refs` (script checks) into `{kind, data,
+   * probe}` envelopes rather than plain values, so a script check can branch
+   * on the referenced artifact's kind. */
+  async resolveRefEnvelopes(
+    refs: Record<string, Ref>,
+    ctx: BindingScope,
+  ): Promise<{ refs: Record<string, RefEnvelope>; provenance: Record<string, RefProvenance> }> {
+    const envelopes: Record<string, RefEnvelope> = {};
+    const provenance: Record<string, RefProvenance> = {};
+    for (const [key, ref] of Object.entries(refs)) {
+      const resolved = await this.resolveEnvelope(ref, ctx);
+      envelopes[key] = resolved.envelope;
+      provenance[key] = resolved.provenance;
+    }
+    return { refs: envelopes, provenance };
+  }
+
+  private async resolveEnvelope(
+    ref: Ref,
+    ctx: BindingScope,
+  ): Promise<{ envelope: RefEnvelope; provenance: RefProvenance }> {
+    switch (ref.from) {
+      case 'prev': {
+        const row = await this.fetchPrevArtifact(ctx);
+        // Lenient on media kinds — unlike `unwrapArtifactData`, a check
+        // envelope inspects `kind`/`probe` directly and shouldn't throw just
+        // because `data` can't be fully unwrapped yet.
+        const data = unwrapText(row.kind as ArtifactKind, row.data);
+        return {
+          envelope: { kind: row.kind as ArtifactKind, data, probe: row.probe ?? undefined },
+          provenance: { ref, artifactId: row.id },
+        };
+      }
+      case 'memory': {
+        const row = await this.fetchMemoryRow(ref, ctx);
+        return {
+          envelope: { kind: row.kind as ArtifactKind, data: row.data },
+          provenance: { ref, memoryKey: ref.key, memoryVersion: row.version },
+        };
+      }
+      default: {
+        const resolved = await this.resolve(ref, ctx);
+        return {
+          envelope: { kind: 'literal', data: resolved.value },
+          provenance: resolved.provenance,
+        };
+      }
+    }
+  }
+
+  private async fetchPrevArtifact(ctx: BindingScope) {
+    if (!ctx.prevStageKey) {
+      throw new Error('BindingResolverService: {from: "prev"} on the first stage is invalid');
+    }
+    const [row] = await this.db
+      .select()
+      .from(artifact)
+      .where(
+        and(
+          eq(artifact.runId, ctx.runId),
+          eq(artifact.producerStageKey, ctx.prevStageKey),
+          isNull(artifact.itemIndex),
+          eq(artifact.stale, false),
+        ),
+      )
+      .limit(1);
+    if (!row) {
+      throw new Error(`BindingResolverService: no active artifact for stage "${ctx.prevStageKey}"`);
+    }
+    return row;
+  }
+
+  private async fetchMemoryRow(ref: Extract<Ref, { from: 'memory' }>, ctx: BindingScope) {
+    const [row] = await this.db
+      .select()
+      .from(runMemory)
+      .where(
+        and(
+          eq(runMemory.runId, ctx.runId),
+          eq(runMemory.memKey, ref.key),
+          eq(runMemory.tombstone, false),
+        ),
+      )
+      .orderBy(desc(runMemory.version))
+      .limit(1);
+    if (!row) {
+      throw new Error(
+        `BindingResolverService: no memory entry "${ref.key}" for run ${ctx.runId} ` +
+          `(indexed-group reads like "${ref.key}#0" are phase 7)`,
+      );
+    }
+    if (row.artifactId) {
+      throw new Error('BindingResolverService: memory reads of media artifacts are phase 5');
+    }
+    return row;
+  }
 }
 
-function getPath(value: unknown, path: string): unknown {
-  return path.split('.').reduce<unknown>((acc, key) => {
-    if (acc && typeof acc === 'object' && key in acc) {
-      return (acc as Record<string, unknown>)[key];
-    }
-    return undefined;
-  }, value);
+/** A text artifact stores its content wrapped as `{text: string}`; unwrap
+ * down to the plain string. Other kinds pass through unchanged. */
+function unwrapText(kind: ArtifactKind, data: unknown): unknown {
+  if (kind === 'text' && data && typeof data === 'object' && 'text' in data) {
+    return (data as { text: unknown }).text;
+  }
+  return data;
+}
+
+/** `{from: 'prev'}` template/slot binding unwraps a text artifact's
+ * `{text: string}` storage wrapper down to the plain string; media kinds
+ * aren't bindable this way until phase 5. */
+function unwrapArtifactData(kind: ArtifactKind, data: unknown): unknown {
+  if (kind.startsWith('media.')) {
+    throw new Error(
+      `BindingResolverService: {from: "prev"} on a media artifact ("${kind}") is phase 5`,
+    );
+  }
+  return unwrapText(kind, data);
 }

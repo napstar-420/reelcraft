@@ -1,0 +1,414 @@
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import type { StageDef } from '@reefcraft/shared';
+import { BindingResolverService } from '../../src/artifact/binding-resolver.service';
+import { ArtifactService } from '../../src/artifact/artifact.service';
+import { MemoryService } from '../../src/artifact/memory.service';
+import { ulid } from '../../src/common/ulid';
+import {
+  artifact,
+  blueprint,
+  blueprintVersion,
+  channel,
+  run,
+  runMemory,
+} from '../../src/db/schema/index';
+import { createTestDb, type TestDb } from '../support/test-db';
+
+function textStage(key: string, overrides: Partial<StageDef> = {}): StageDef {
+  return {
+    key,
+    label: key,
+    capability: 'llm.generate',
+    config: {},
+    slots: {},
+    context: {},
+    output: { kind: 'text' },
+    checks: [],
+    retryLimit: 0,
+    ...overrides,
+  };
+}
+
+/**
+ * DB-backed coverage for BindingResolverService (const/input/prev/memory)
+ * and the memory-write callback ArtifactService.finalize() runs inside its
+ * own transaction. Seeds rows directly via Drizzle rather than through the
+ * blueprint/run services — this suite is about the resolver/writer, not the
+ * services that create those rows.
+ */
+describe('binding resolver + memory writes (e2e)', () => {
+  let testDb: TestDb;
+  let bindings: BindingResolverService;
+  let artifacts: ArtifactService;
+  let memory: MemoryService;
+  let runId: string;
+
+  beforeAll(async () => {
+    testDb = await createTestDb();
+    const db = testDb.db;
+    bindings = new BindingResolverService(db);
+    artifacts = new ArtifactService(db);
+    memory = new MemoryService();
+
+    const channelId = ulid();
+    await db.insert(channel).values({ id: channelId, ownerId: 'local', name: 'Test Channel' });
+
+    const blueprintId = ulid();
+    await db.insert(blueprint).values({ id: blueprintId, channelId, name: 'Test Blueprint' });
+
+    const versionId = ulid();
+    await db.insert(blueprintVersion).values({
+      id: versionId,
+      blueprintId,
+      version: 1,
+      graph: [],
+      defaults: {},
+      budget: { runCapUsd: 10 },
+      validation: [],
+      runnable: true,
+    });
+
+    runId = ulid();
+    await db.insert(run).values({
+      id: runId,
+      channelId,
+      blueprintVersionId: versionId,
+      state: 'RUNNING',
+      inputs: { topic: 'coral reefs', tags: ['a', 'b', 'c'] },
+      resolvedConfig: {},
+      budgetCapUsd: '10.0000',
+    });
+
+    await db.insert(artifact).values({
+      id: ulid(),
+      runId,
+      producerStageKey: 'outline',
+      kind: 'text',
+      data: { text: 'a story about coral' },
+      stale: false,
+      reproLevel: 'exact',
+      costUsd: '0.0000',
+    });
+
+    await db.insert(runMemory).values({
+      id: ulid(),
+      runId,
+      memKey: 'outline',
+      version: 1,
+      writtenBy: 'outline',
+      kind: 'data',
+      data: { title: 'Coral Reefs 101', beats: ['intro', 'middle', 'end'] },
+    });
+
+    // A superseded (stale) artifact alongside the active one for the same
+    // producer stage — proves {from: 'prev'} picks the active row, not just
+    // "a" row.
+    await db.insert(artifact).values([
+      {
+        id: ulid(),
+        runId,
+        producerStageKey: 'staleCheck',
+        kind: 'text',
+        data: { text: 'OLD attempt' },
+        stale: true,
+        reproLevel: 'exact',
+        costUsd: '0.0000',
+      },
+      {
+        id: ulid(),
+        runId,
+        producerStageKey: 'staleCheck',
+        kind: 'text',
+        data: { text: 'NEW attempt' },
+        stale: false,
+        reproLevel: 'exact',
+        costUsd: '0.0000',
+      },
+    ]);
+
+    // A media-kind artifact — {from: 'prev'} on it must throw (phase 5),
+    // never silently unwrap or pass through raw media data.
+    await db.insert(artifact).values({
+      id: ulid(),
+      runId,
+      producerStageKey: 'mediaStage',
+      kind: 'media.image',
+      data: { url: 'blob://fake' },
+      stale: false,
+      reproLevel: 'exact',
+      costUsd: '0.0000',
+    });
+
+    // A tombstoned higher version alongside an older non-tombstoned one — the
+    // resolver must fall back to the latest non-tombstoned version, not the
+    // highest raw version.
+    await db.insert(runMemory).values([
+      {
+        id: ulid(),
+        runId,
+        memKey: 'tomb',
+        version: 1,
+        writtenBy: 'outline',
+        kind: 'data',
+        data: { v: 1 },
+        tombstone: false,
+      },
+      {
+        id: ulid(),
+        runId,
+        memKey: 'tomb',
+        version: 2,
+        writtenBy: 'outline',
+        kind: 'data',
+        data: { v: 2 },
+        tombstone: true,
+      },
+    ]);
+  });
+
+  afterAll(async () => {
+    await testDb.teardown();
+  });
+
+  it('resolves {from: "const"}', async () => {
+    const { value, provenance } = await bindings.resolve(
+      { from: 'const', value: 42 },
+      {
+        runId,
+        inputs: {},
+      },
+    );
+    expect(value).toBe(42);
+    expect(provenance.ref.from).toBe('const');
+  });
+
+  it('resolves {from: "input"} plain, with an index, and with a path', async () => {
+    const inputs = { topic: 'coral reefs', tags: ['a', 'b', 'c'], nested: { field: 'deep' } };
+    const plain = await bindings.resolve({ from: 'input', inputKey: 'topic' }, { runId, inputs });
+    expect(plain.value).toBe('coral reefs');
+
+    const indexed = await bindings.resolve(
+      { from: 'input', inputKey: 'tags', index: 1 },
+      { runId, inputs },
+    );
+    expect(indexed.value).toBe('b');
+
+    const pathed = await bindings.resolve(
+      { from: 'input', inputKey: 'nested', path: 'field' },
+      { runId, inputs },
+    );
+    expect(pathed.value).toBe('deep');
+  });
+
+  it('resolves {from: "prev"} and unwraps a text artifact down to a plain string', async () => {
+    const { value, provenance } = await bindings.resolve(
+      { from: 'prev' },
+      { runId, prevStageKey: 'outline', inputs: {} },
+    );
+    expect(value).toBe('a story about coral');
+    expect(provenance.artifactId).toBeDefined();
+  });
+
+  it('throws a clear error when {from: "prev"} has no preceding stage', async () => {
+    await expect(bindings.resolve({ from: 'prev' }, { runId, inputs: {} })).rejects.toThrow(
+      'on the first stage is invalid',
+    );
+  });
+
+  it('{from: "prev"} picks the active artifact, not a stale/superseded one', async () => {
+    const { value } = await bindings.resolve(
+      { from: 'prev' },
+      { runId, prevStageKey: 'staleCheck', inputs: {} },
+    );
+    expect(value).toBe('NEW attempt');
+  });
+
+  it('{from: "prev"} on a media-kind artifact throws (phase 5), never passes raw media data through', async () => {
+    await expect(
+      bindings.resolve({ from: 'prev' }, { runId, prevStageKey: 'mediaStage', inputs: {} }),
+    ).rejects.toThrow('phase 5');
+  });
+
+  it('resolves {from: "memory"} to the current (highest) version', async () => {
+    const { value, provenance } = await bindings.resolve(
+      { from: 'memory', key: 'outline', path: 'title' },
+      { runId, inputs: {} },
+    );
+    expect(value).toBe('Coral Reefs 101');
+    expect(provenance.memoryVersion).toBe(1);
+  });
+
+  it('{from: "memory"} skips a tombstoned version and falls back to the latest non-tombstoned one', async () => {
+    const { value, provenance } = await bindings.resolve(
+      { from: 'memory', key: 'tomb' },
+      { runId, inputs: {} },
+    );
+    expect(value).toEqual({ v: 1 });
+    expect(provenance.memoryVersion).toBe(1);
+  });
+
+  it('{from: "memory"} on a media-write (artifactId set) throws (phase 5)', async () => {
+    const [mediaArtifact] = await testDb.db.select().from(artifact).limit(1);
+    await testDb.db.insert(runMemory).values({
+      id: ulid(),
+      runId,
+      memKey: 'mediaMem',
+      version: 1,
+      writtenBy: 'outline',
+      kind: 'media.image',
+      artifactId: mediaArtifact?.id,
+    });
+
+    await expect(
+      bindings.resolve({ from: 'memory', key: 'mediaMem' }, { runId, inputs: {} }),
+    ).rejects.toThrow('phase 5');
+  });
+
+  it('throws naming phase 4/7/8 for asset/item/prevItem/role refs', async () => {
+    await expect(
+      bindings.resolve({ from: 'asset', assetId: 'x' }, { runId, inputs: {} }),
+    ).rejects.toThrow('phase 4');
+    await expect(bindings.resolve({ from: 'item' }, { runId, inputs: {} })).rejects.toThrow(
+      'phase 7',
+    );
+    await expect(bindings.resolve({ from: 'prevItem' }, { runId, inputs: {} })).rejects.toThrow(
+      'phase 7',
+    );
+    await expect(
+      bindings.resolve({ from: 'role', roleKey: 'host' }, { runId, inputs: {} }),
+    ).rejects.toThrow('phase 8');
+  });
+
+  it('resolveAll resolves every slot and context ref on a stage', async () => {
+    const stage = textStage('script', {
+      slots: {},
+      context: {
+        outline: { from: 'prev' },
+        topic: { from: 'input', inputKey: 'topic' },
+      },
+    });
+    const resolved = await bindings.resolveAll(stage, {
+      runId,
+      prevStageKey: 'outline',
+      inputs: { topic: 'coral reefs' },
+    });
+    expect(resolved.context.outline).toBe('a story about coral');
+    expect(resolved.context.topic).toBe('coral reefs');
+    expect(resolved.provenance['context.outline']?.artifactId).toBeDefined();
+  });
+
+  it('resolveRefEnvelopes returns {kind, data, probe} for a script check ref', async () => {
+    const { refs } = await bindings.resolveRefEnvelopes(
+      { outline: { from: 'memory', key: 'outline' } },
+      { runId, inputs: {} },
+    );
+    expect(refs.outline?.kind).toBe('data');
+    expect(refs.outline?.data).toEqual({
+      title: 'Coral Reefs 101',
+      beats: ['intro', 'middle', 'end'],
+    });
+  });
+
+  it('resolveRefEnvelopes tags a const/input ref "literal", distinct from the real "data" ArtifactKind', async () => {
+    const { refs } = await bindings.resolveRefEnvelopes(
+      { n: { from: 'const', value: 7 } },
+      { runId, inputs: {} },
+    );
+    expect(refs.n).toEqual({ kind: 'literal', data: 7 });
+  });
+
+  it("memory writes land inside ArtifactService.finalize()'s transaction and are append-only versioned", async () => {
+    const stage = textStage('recap', { writes: { recap: '$' } });
+    const stageExecutionId = ulid();
+
+    const firstArtifactId = await artifacts.recordAttemptArtifact({
+      runId,
+      producerStageKey: stage.key,
+      kind: 'text',
+      data: { text: 'first pass' },
+      reproLevel: 'exact',
+      costUsd: 0,
+    });
+    await artifacts.finalize({
+      runId,
+      stageExecutionId,
+      producerStageKey: stage.key,
+      newArtifactId: firstArtifactId,
+      applyWrites: memory.buildWriteCallback(stage, {
+        runId,
+        stageKey: stage.key,
+        kind: 'text',
+        data: { text: 'first pass' },
+      }),
+    });
+
+    const firstRead = await bindings.resolve(
+      { from: 'memory', key: 'recap' },
+      { runId, inputs: {} },
+    );
+    expect(firstRead.value).toEqual({ text: 'first pass' });
+    expect(firstRead.provenance.memoryVersion).toBe(1);
+
+    const secondArtifactId = await artifacts.recordAttemptArtifact({
+      runId,
+      producerStageKey: stage.key,
+      kind: 'text',
+      data: { text: 'second pass' },
+      reproLevel: 'exact',
+      costUsd: 0,
+    });
+    await artifacts.finalize({
+      runId,
+      stageExecutionId,
+      producerStageKey: stage.key,
+      newArtifactId: secondArtifactId,
+      applyWrites: memory.buildWriteCallback(stage, {
+        runId,
+        stageKey: stage.key,
+        kind: 'text',
+        data: { text: 'second pass' },
+      }),
+    });
+
+    const secondRead = await bindings.resolve(
+      { from: 'memory', key: 'recap' },
+      { runId, inputs: {} },
+    );
+    expect(secondRead.value).toEqual({ text: 'second pass' });
+    expect(secondRead.provenance.memoryVersion).toBe(2);
+  });
+
+  it('throws rather than silently writing undefined when a writes path does not resolve', async () => {
+    const stage = textStage('badWrite', { writes: { badKey: 'no.such.path' } });
+    const stageExecutionId = ulid();
+    const artifactId = await artifacts.recordAttemptArtifact({
+      runId,
+      producerStageKey: stage.key,
+      kind: 'text',
+      data: { text: 'irrelevant' },
+      reproLevel: 'exact',
+      costUsd: 0,
+    });
+
+    await expect(
+      artifacts.finalize({
+        runId,
+        stageExecutionId,
+        producerStageKey: stage.key,
+        newArtifactId: artifactId,
+        applyWrites: memory.buildWriteCallback(stage, {
+          runId,
+          stageKey: stage.key,
+          kind: 'text',
+          data: { text: 'irrelevant' },
+        }),
+      }),
+    ).rejects.toThrow('did not resolve');
+
+    // And no memory row was written for it — the throw happened before the
+    // insert, inside the same transaction as the (rolled-back) finalize.
+    await expect(
+      bindings.resolve({ from: 'memory', key: 'badKey' }, { runId, inputs: {} }),
+    ).rejects.toThrow('no memory entry');
+  });
+});

@@ -21,8 +21,8 @@ export function buildStageExecuteFunction(client: Inngest, runner: StageRunnerSe
     { event: 'stage/execute.requested' },
     async ({ event, step }) => {
       const data = event.data as StageExecuteEventData;
-      const stage = await step.run('load-stage-def', () =>
-        runner.loadStageDef(data.runId, data.stageKey),
+      const { stage, effective, prevStageKey } = await step.run('load-stage-context', () =>
+        runner.loadStageContext(data.runId, data.stageKey),
       );
 
       const maxAttempts = stage.retryLimit + 1;
@@ -38,7 +38,7 @@ export function buildStageExecuteFunction(client: Inngest, runner: StageRunnerSe
 
         try {
           const handle = await step.run(`submit-${data.stageKey}-${attemptNo}`, () =>
-            runner.reserveAndSubmit(stage, attemptCtx, {}),
+            runner.reserveAndSubmit(stage, attemptCtx, prevStageKey, effective),
           );
 
           let status = await step.run(`poll-${data.stageKey}-${attemptNo}-0`, () =>
@@ -58,7 +58,7 @@ export function buildStageExecuteFunction(client: Inngest, runner: StageRunnerSe
           }
 
           const { artifactId } = await step.run(`fetch-${data.stageKey}-${attemptNo}`, () =>
-            runner.fetchAndFinalize(stage, attemptCtx, handle),
+            runner.fetchAndFinalize(stage, attemptCtx, handle, prevStageKey, effective),
           );
 
           return { outcome: 'passed' as const, artifactId };
