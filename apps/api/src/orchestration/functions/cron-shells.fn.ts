@@ -15,13 +15,9 @@ export function buildCronShellFunctions(client: Inngest) {
     },
   );
 
-  const blobGc = client.createFunction(
-    { id: 'blob.gc' },
-    { cron: '0 * * * *' },
-    async () => {
-      // phase 5+: collect gc_eligible blobs past retention (§4.5)
-    },
-  );
+  const blobGc = client.createFunction({ id: 'blob.gc' }, { cron: '0 * * * *' }, async () => {
+    // phase 5+: collect gc_eligible blobs past retention (§4.5)
+  });
 
   const jobReaper = client.createFunction(
     { id: 'compute-job.reap' },

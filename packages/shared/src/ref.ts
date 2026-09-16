@@ -6,7 +6,11 @@ import { z } from 'zod';
  * — this is the v6 decision, not an omission.
  */
 export const Ref = z.discriminatedUnion('from', [
-  z.object({ from: z.literal('prev'), path: z.string().optional(), alignWith: z.literal('item').optional() }),
+  z.object({
+    from: z.literal('prev'),
+    path: z.string().optional(),
+    alignWith: z.literal('item').optional(),
+  }),
   z.object({ from: z.literal('memory'), key: z.string(), path: z.string().optional() }),
   z.object({
     from: z.literal('input'),

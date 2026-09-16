@@ -1,0 +1,20 @@
+node_modules
+dist
+build
+coverage
+*.tsbuildinfo
+
+# pnpm manages this file's formatting itself
+pnpm-lock.yaml
+
+# drizzle-kit-generated migration output — reformatting churns on every
+# `db:generate` and .sql isn't a format Prettier understands anyway
+apps/api/drizzle/**
+
+# runtime / local infra data
+docker/data/
+apps/api/.workspace/
+
+# authoritative spec source docs — not tooling-managed prose
+docs/ai-reel-engine-requirements.md
+docs/ai-video-engine-design-spec-v6.md

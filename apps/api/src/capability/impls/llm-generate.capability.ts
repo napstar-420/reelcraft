@@ -45,7 +45,11 @@ export class LlmGenerate implements CapabilityImpl<LlmGenerateConfig> {
   async submit(ctx: ExecCtx<LlmGenerateConfig>): Promise<JobHandle> {
     const adapter = this.providers.get(ctx.config.provider);
     return adapter.submit(
-      { modelId: ctx.config.modelId, params: ctx.config.params ?? {}, renderedPrompt: ctx.renderedPrompt },
+      {
+        modelId: ctx.config.modelId,
+        params: ctx.config.params ?? {},
+        renderedPrompt: ctx.renderedPrompt,
+      },
       ctx.idempotencyKey,
     );
   }

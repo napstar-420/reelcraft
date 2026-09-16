@@ -15,7 +15,10 @@ import { artifact } from '../db/schema/index';
 export class BindingResolverService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  async resolve(ref: Ref, ctx: { runId: string; prevStageKey?: string; inputs: Record<string, unknown> }): Promise<unknown> {
+  async resolve(
+    ref: Ref,
+    ctx: { runId: string; prevStageKey?: string; inputs: Record<string, unknown> },
+  ): Promise<unknown> {
     switch (ref.from) {
       case 'const':
         return ref.value;
@@ -42,7 +45,9 @@ export class BindingResolverService {
           )
           .limit(1);
         if (!row) {
-          throw new Error(`BindingResolverService: no active artifact for stage "${ctx.prevStageKey}"`);
+          throw new Error(
+            `BindingResolverService: no active artifact for stage "${ctx.prevStageKey}"`,
+          );
         }
         return ref.path ? getPath(row.data, ref.path) : row.data;
       }

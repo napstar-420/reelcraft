@@ -17,7 +17,11 @@ export class TemplateService {
   ) {}
 
   async instantiate(templateId: string, channelId: string, runCapUsd: number) {
-    const [tmpl] = await this.db.select().from(template).where(eq(template.id, templateId)).limit(1);
+    const [tmpl] = await this.db
+      .select()
+      .from(template)
+      .where(eq(template.id, templateId))
+      .limit(1);
     if (!tmpl) throw new Error(`Template ${templateId} not found`);
 
     const [latest] = await this.db
@@ -43,6 +47,9 @@ export class TemplateService {
   }
 
   async listBuiltin() {
-    return this.db.select().from(template).where(and(eq(template.source, 'builtin')));
+    return this.db
+      .select()
+      .from(template)
+      .where(and(eq(template.source, 'builtin')));
   }
 }

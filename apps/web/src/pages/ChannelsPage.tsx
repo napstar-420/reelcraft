@@ -24,11 +24,7 @@ export function ChannelsPage() {
           if (name.trim()) createChannel.mutate();
         }}
       >
-        <input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="Channel name"
-        />
+        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Channel name" />
         <button type="submit" disabled={createChannel.isPending}>
           Create
         </button>

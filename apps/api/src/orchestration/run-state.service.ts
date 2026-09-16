@@ -13,9 +13,10 @@ export class RunStateService {
   ) {}
 
   async transition(runId: string, state: RunState): Promise<void> {
-    const endedAt = state === 'COMPLETED' || state === 'FAILED' || state === 'CANCELLED'
-      ? new Date().toISOString()
-      : undefined;
+    const endedAt =
+      state === 'COMPLETED' || state === 'FAILED' || state === 'CANCELLED'
+        ? new Date().toISOString()
+        : undefined;
     await this.db
       .update(run)
       .set({ state, ...(endedAt ? { endedAt } : {}) })

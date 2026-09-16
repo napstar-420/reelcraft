@@ -9,7 +9,11 @@ import { Injectable } from '@nestjs/common';
  */
 @Injectable()
 export class MemoryService {
-  async applyWrites(_stageKey: string, _itemIndex: number | undefined, _artifactId: string): Promise<void> {
+  async applyWrites(
+    _stageKey: string,
+    _itemIndex: number | undefined,
+    _artifactId: string,
+  ): Promise<void> {
     // no-op in phase 1 — no StageDef in this phase declares `writes`.
   }
 }

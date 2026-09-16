@@ -47,10 +47,7 @@ export const ModelCapabilities = z.object({
   supportsVision: z.boolean().optional(),
   video: z
     .object({
-      durationsSec: z.union([
-        z.array(z.number()),
-        z.object({ min: z.number(), max: z.number() }),
-      ]),
+      durationsSec: z.union([z.array(z.number()), z.object({ min: z.number(), max: z.number() })]),
       aspectRatios: z.array(z.string()),
       maxResolution: z.string(),
       inputs: z.array(z.enum(['text', 'startFrame', 'endFrame', 'references'])),

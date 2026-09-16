@@ -12,6 +12,7 @@
     "typecheck": "tsc -b tsconfig.json",
     "lint": "eslint .",
     "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "test": "pnpm -r --filter @reefcraft/shared --filter @reefcraft/api --filter @reefcraft/web test",
     "test:e2e": "pnpm --filter @reefcraft/api test:e2e",
     "db:generate": "pnpm --filter @reefcraft/api db:generate",

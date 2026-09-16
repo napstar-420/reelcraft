@@ -4,8 +4,13 @@ export const objectKey = {
   rawResponse: (ownerId: string, channelId: string, runId: string, attemptId: string): string =>
     `${ownerId}/${channelId}/${runId}/raw/${attemptId}.json`,
 
-  media: (ownerId: string, channelId: string, runId: string, artifactId: string, ext: string): string =>
-    `${ownerId}/${channelId}/${runId}/media/${artifactId}.${ext}`,
+  media: (
+    ownerId: string,
+    channelId: string,
+    runId: string,
+    artifactId: string,
+    ext: string,
+  ): string => `${ownerId}/${channelId}/${runId}/media/${artifactId}.${ext}`,
 
   input: (ownerId: string, channelId: string, runId: string, blobId: string, ext: string): string =>
     `${ownerId}/${channelId}/${runId}/inputs/${blobId}.${ext}`,

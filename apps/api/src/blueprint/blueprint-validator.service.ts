@@ -13,13 +13,20 @@ export class BlueprintValidatorService {
     const issues: ValidationIssue[] = [];
 
     if (graph.length === 0) {
-      issues.push({ path: 'graph', message: 'a blueprint must declare at least one stage', severity: 'error' });
+      issues.push({
+        path: 'graph',
+        message: 'a blueprint must declare at least one stage',
+        severity: 'error',
+      });
       return issues;
     }
 
     const firstStage = graph[0];
     if (firstStage) {
-      for (const [name, ref] of [...Object.entries(firstStage.slots), ...Object.entries(firstStage.context)]) {
+      for (const [name, ref] of [
+        ...Object.entries(firstStage.slots),
+        ...Object.entries(firstStage.context),
+      ]) {
         if (ref.from === 'prev') {
           issues.push({
             path: `stages.${firstStage.key}.${name}`,
@@ -33,7 +40,11 @@ export class BlueprintValidatorService {
     const keys = new Set<string>();
     for (const stage of graph) {
       if (keys.has(stage.key)) {
-        issues.push({ path: `stages.${stage.key}`, message: `duplicate stage key "${stage.key}"`, severity: 'error' });
+        issues.push({
+          path: `stages.${stage.key}`,
+          message: `duplicate stage key "${stage.key}"`,
+          severity: 'error',
+        });
       }
       keys.add(stage.key);
     }
