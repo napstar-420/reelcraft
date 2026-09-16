@@ -48,7 +48,11 @@ export class OpenRouterAdapter implements ProviderAdapter {
     const models: ModelInfo[] = body.data.map((m) => ({
       modelId: m.id,
       label: m.name,
-      capabilities: { supportsSeed: false, supportsIdempotency: false, supportsStructuredOutput: false },
+      capabilities: {
+        supportsSeed: false,
+        supportsIdempotency: false,
+        supportsStructuredOutput: false,
+      },
     }));
     this.modelCache.set(models);
     return models;

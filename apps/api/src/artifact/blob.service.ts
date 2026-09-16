@@ -18,7 +18,12 @@ export class BlobService {
     attemptId: string;
     payload: unknown;
   }): Promise<string> {
-    const key = objectKey.rawResponse(params.ownerId, params.channelId, params.runId, params.attemptId);
+    const key = objectKey.rawResponse(
+      params.ownerId,
+      params.channelId,
+      params.runId,
+      params.attemptId,
+    );
     const body = Buffer.from(JSON.stringify(redactSecrets(params.payload)));
     await this.storage.put(key, body, { mime: 'application/json' });
     return key;

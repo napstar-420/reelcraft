@@ -27,7 +27,8 @@ export const api = {
 
   listCapabilities: () => request<CapabilityDto[]>('/capabilities'),
 
-  listBuiltinTemplates: () => request<Array<{ id: string; name: string; description: string }>>('/templates'),
+  listBuiltinTemplates: () =>
+    request<Array<{ id: string; name: string; description: string }>>('/templates'),
   instantiateTemplate: (templateId: string, channelId: string, runCapUsd: number) =>
     request<BlueprintVersionDto>(`/templates/${templateId}/instantiate`, {
       method: 'POST',

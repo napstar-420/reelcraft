@@ -37,7 +37,13 @@ export class TemplateSeedService implements OnApplicationBootstrap {
     const [existing] = await this.db
       .select()
       .from(template)
-      .where(and(eq(template.ownerId, 'local'), eq(template.kind, 'blueprint'), eq(template.name, 'Hello Stage')))
+      .where(
+        and(
+          eq(template.ownerId, 'local'),
+          eq(template.kind, 'blueprint'),
+          eq(template.name, 'Hello Stage'),
+        ),
+      )
       .limit(1);
 
     if (existing) return;

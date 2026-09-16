@@ -64,12 +64,19 @@ export class BlueprintService {
   }
 
   async getVersion(id: string) {
-    const [row] = await this.db.select().from(blueprintVersion).where(eq(blueprintVersion.id, id)).limit(1);
+    const [row] = await this.db
+      .select()
+      .from(blueprintVersion)
+      .where(eq(blueprintVersion.id, id))
+      .limit(1);
     if (!row) throw new Error(`BlueprintVersion ${id} not found`);
     return row;
   }
 
   async listVersions(blueprintId: string) {
-    return this.db.select().from(blueprintVersion).where(eq(blueprintVersion.blueprintId, blueprintId));
+    return this.db
+      .select()
+      .from(blueprintVersion)
+      .where(eq(blueprintVersion.blueprintId, blueprintId));
   }
 }

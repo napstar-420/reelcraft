@@ -15,5 +15,4 @@ describe('ConfigLayer', () => {
     expect(parsed.budget?.runCapUsd).toBeNull();
     expect(parsed.budget?.stageCapUsd).toBe(5);
   });
-
 });

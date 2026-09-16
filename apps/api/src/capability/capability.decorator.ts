@@ -7,4 +7,5 @@ export const CAPABILITY_KEY_METADATA = 'reefcraft:capability-key';
  * (modality, kind, configSchema, slots(), allowedOutputs()), so the
  * decorator and the interface cannot disagree.
  */
-export const Capability = (key: string): ClassDecorator => SetMetadata(CAPABILITY_KEY_METADATA, key);
+export const Capability = (key: string): ClassDecorator =>
+  SetMetadata(CAPABILITY_KEY_METADATA, key);

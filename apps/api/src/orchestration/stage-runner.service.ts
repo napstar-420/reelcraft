@@ -50,7 +50,8 @@ export class StageRunnerService {
     if (!row) throw new Error(`StageRunnerService: run ${runId} not found`);
     const graph = row.graph as StageDef[];
     const stage = graph.find((s) => s.key === stageKey);
-    if (!stage) throw new Error(`StageRunnerService: stage "${stageKey}" not in run ${runId}'s graph`);
+    if (!stage)
+      throw new Error(`StageRunnerService: stage "${stageKey}" not in run ${runId}'s graph`);
     return stage;
   }
 
@@ -218,7 +219,8 @@ export class StageRunnerService {
 function renderTemplate(template: string, values: Record<string, unknown>): string {
   return template.replace(/{{\s*([\w.[\]]+)\s*}}/g, (_match, path: string) => {
     const value = path.split('.').reduce<unknown>((acc, key) => {
-      if (acc && typeof acc === 'object' && key in acc) return (acc as Record<string, unknown>)[key];
+      if (acc && typeof acc === 'object' && key in acc)
+        return (acc as Record<string, unknown>)[key];
       return undefined;
     }, values);
     return value === undefined ? '' : String(value);

@@ -44,7 +44,9 @@ export function buildRunOrchestrateFunction(
       for (const execution of executions) {
         if (execution.state === 'passed') continue;
 
-        await step.run(`set-cursor-${execution.stageKey}`, () => runState.setCursor(runId, execution.stageKey));
+        await step.run(`set-cursor-${execution.stageKey}`, () =>
+          runState.setCursor(runId, execution.stageKey),
+        );
 
         const result = await step.invoke(`invoke-stage-${execution.stageKey}`, {
           function: stageExecuteFn,
