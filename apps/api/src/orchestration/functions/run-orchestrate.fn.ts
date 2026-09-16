@@ -10,6 +10,20 @@ export interface RunStartedEventData {
   runId: string;
 }
 
+/** §16.1 — sorts `stage_execution` rows into blueprint graph array order.
+ * Pure and exported so the ordering fix is directly unit-testable without
+ * needing an Inngest test driver: `stage_execution` carries no ordinal
+ * column of its own, so this is the one place that decides execution order. */
+export function orderStageExecutions<T extends { stageKey: string }>(
+  graph: Pick<StageDef, 'key'>[],
+  executions: T[],
+): T[] {
+  const order = new Map(graph.map((stage, index) => [stage.key, index]));
+  return [...executions].sort(
+    (a, b) => (order.get(a.stageKey) ?? 0) - (order.get(b.stageKey) ?? 0),
+  );
+}
+
 /**
  * §13.4/§13.5 — one Run at a time (`concurrency` keyed by runId), cancels on
  * `run/cancelled` for the same runId. Walks stage_execution rows created at
@@ -37,31 +51,17 @@ export function buildRunOrchestrateFunction(
       await step.run('mark-running', () => runState.transition(runId, 'RUNNING'));
 
       const executions = await step.run('load-stage-executions', async () => {
-        const [runRow] = await db
-          .select({ blueprintVersionId: run.blueprintVersionId })
+        const [row] = await db
+          .select({ graph: blueprintVersion.graph })
           .from(run)
+          .innerJoin(blueprintVersion, eq(run.blueprintVersionId, blueprintVersion.id))
           .where(eq(run.id, runId))
           .limit(1);
-        if (!runRow) throw new Error(`run.orchestrate: run ${runId} not found`);
+        if (!row) throw new Error(`run.orchestrate: run ${runId} not found`);
 
-        const [versionRow] = await db
-          .select({ graph: blueprintVersion.graph })
-          .from(blueprintVersion)
-          .where(eq(blueprintVersion.id, runRow.blueprintVersionId))
-          .limit(1);
-        if (!versionRow) {
-          throw new Error(
-            `run.orchestrate: blueprint version ${runRow.blueprintVersionId} not found`,
-          );
-        }
-
-        const graph = StageDef.array().parse(versionRow.graph);
-        const order = new Map(graph.map((stage, index) => [stage.key, index]));
-
+        const graph = StageDef.array().parse(row.graph);
         const rows = await db.select().from(stageExecution).where(eq(stageExecution.runId, runId));
-        return [...rows].sort(
-          (a, b) => (order.get(a.stageKey) ?? 0) - (order.get(b.stageKey) ?? 0),
-        );
+        return orderStageExecutions(graph, rows);
       });
 
       for (const execution of executions) {

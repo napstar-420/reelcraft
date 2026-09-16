@@ -175,6 +175,18 @@ start` only surfaced it as a runtime `Cannot find module`. If a build looks inco
   root-level `*.config.ts` files need an `allowDefaultProject` glob in `eslint.config.mjs`,
   which is protected by a `config-protection` hook this session couldn't get past — needs a
   maintainer to add it (or temporarily disable the hook).
+- **Never wrap a `@reefcraft/shared` zod schema in a freshly-imported `z.record(...)`/`z.union(...)`
+  inside `apps/api` test code.** Under Vite/vitest, `@reefcraft/shared`'s compiled `dist/` (its
+  own `require('zod')`) and a plain `import { z } from 'zod'` in `apps/api` source end up as
+  distinct module instances — `sharedSchema instanceof (apps/api's) z.ZodType` is `false` even
+  though `sharedSchema.constructor.name === 'ZodObject'`. `z.record(keySchema, valueSchema)`
+  relies on an internal `instanceof` check to tell its two-argument form apart from its
+  one-argument form; when it silently fails, `z.record` falls back to the one-argument
+  interpretation, so `z.record(z.string(), ConfigLayer)` quietly becomes "every value must be a
+  string" instead of "every value must satisfy `ConfigLayer`" — a confusing `"expected string,
+received object"` error with no hint of a module-identity problem underneath. Call `.parse()`
+  directly on the shared schema instead (see `ConfigResolverService`'s `parseConfigLayerMap`);
+  it never does a cross-module `instanceof` check.
 
 ## Follow-ups not done in this pass
 

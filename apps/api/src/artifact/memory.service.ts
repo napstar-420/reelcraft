@@ -1,15 +1,16 @@
 import { Injectable } from '@nestjs/common';
 import { and, desc, eq } from 'drizzle-orm';
-import type { StageDef } from '@reefcraft/shared';
+import type { ArtifactKind, StageDef } from '@reefcraft/shared';
 import type { Tx } from '../db/drizzle.provider';
 import { runMemory } from '../db/schema/index';
 import { ulid } from '../common/ulid';
+import { getPath } from '../common/path';
 
 export interface MemoryWriteSource {
   runId: string;
   stageKey: string;
   itemIndex?: number;
-  kind: string;
+  kind: ArtifactKind;
   /** The finalized artifact's `data` — the value `StageDef.writes` paths
    * resolve against. `'$'` means "the whole value". */
   data: unknown;
@@ -34,6 +35,16 @@ export class MemoryService {
       if (!stage.writes) return;
       for (const [memKey, path] of Object.entries(stage.writes)) {
         const value = path === '$' ? source.data : getPath(source.data, path);
+        // A `writes` path that doesn't resolve is a blueprint authoring bug
+        // (schema/path mismatch), not a legitimate "no value" — writing
+        // `undefined` here would silently persist a permanent, versioned
+        // memory row every later stage reads as if it were real data.
+        if (value === undefined) {
+          throw new Error(
+            `MemoryService: stage "${stage.key}" writes["${memKey}"] path "${path}" ` +
+              `did not resolve against the finalized artifact's data`,
+          );
+        }
         const version = await nextVersion(tx, source.runId, memKey);
         await tx.insert(runMemory).values({
           id: ulid(),
@@ -58,13 +69,4 @@ async function nextVersion(tx: Tx, runId: string, memKey: string): Promise<numbe
     .orderBy(desc(runMemory.version))
     .limit(1);
   return (row?.version ?? 0) + 1;
-}
-
-function getPath(value: unknown, path: string): unknown {
-  return path.split('.').reduce<unknown>((acc, key) => {
-    if (acc && typeof acc === 'object' && key in acc) {
-      return (acc as Record<string, unknown>)[key];
-    }
-    return undefined;
-  }, value);
 }

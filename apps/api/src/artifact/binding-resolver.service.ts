@@ -4,6 +4,7 @@ import type { ArtifactKind, Ref } from '@reefcraft/shared';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
 import { artifact, runMemory } from '../db/schema/index';
 import type { StageDef } from '@reefcraft/shared';
+import { getPath } from '../common/path';
 
 export interface BindingScope {
   runId: string;
@@ -29,7 +30,12 @@ export interface ResolvedBindings {
 }
 
 export interface RefEnvelope {
-  kind: ArtifactKind;
+  /** The real kind of a `prev`/`memory`-sourced artifact, or the literal tag
+   * `'literal'` for a `const`/`input` ref that names no artifact at all —
+   * kept distinct from the real `'data'` ArtifactKind so a script check
+   * branching on `kind` can't mistake an arbitrary constant for a genuine
+   * schema-backed data artifact. */
+  kind: ArtifactKind | 'literal';
   data: unknown;
   probe?: unknown;
 }
@@ -140,7 +146,10 @@ export class BindingResolverService {
     switch (ref.from) {
       case 'prev': {
         const row = await this.fetchPrevArtifact(ctx);
-        const data = envelopeData(row.kind as ArtifactKind, row.data);
+        // Lenient on media kinds — unlike `unwrapArtifactData`, a check
+        // envelope inspects `kind`/`probe` directly and shouldn't throw just
+        // because `data` can't be fully unwrapped yet.
+        const data = unwrapText(row.kind as ArtifactKind, row.data);
         return {
           envelope: { kind: row.kind as ArtifactKind, data, probe: row.probe ?? undefined },
           provenance: { ref, artifactId: row.id },
@@ -156,7 +165,7 @@ export class BindingResolverService {
       default: {
         const resolved = await this.resolve(ref, ctx);
         return {
-          envelope: { kind: 'data', data: resolved.value },
+          envelope: { kind: 'literal', data: resolved.value },
           provenance: resolved.provenance,
         };
       }
@@ -211,39 +220,23 @@ export class BindingResolverService {
   }
 }
 
-/** `{from: 'prev'}` template/slot binding unwraps a text artifact's
- * `{text: string}` storage wrapper down to the plain string; media kinds
- * aren't bindable this way until phase 5. */
-function unwrapArtifactData(kind: ArtifactKind, data: unknown): unknown {
-  if (kind === 'text') {
-    if (data && typeof data === 'object' && 'text' in data) {
-      return (data as { text: unknown }).text;
-    }
-    return data;
-  }
-  if (kind.startsWith('media.')) {
-    throw new Error(
-      `BindingResolverService: {from: "prev"} on a media artifact ("${kind}") is phase 5`,
-    );
-  }
-  return data;
-}
-
-/** Same text-unwrapping as above but lenient on media kinds — a check
- * envelope inspects `kind`/`probe` directly and shouldn't throw just because
- * `data` can't be fully unwrapped yet. */
-function envelopeData(kind: ArtifactKind, data: unknown): unknown {
+/** A text artifact stores its content wrapped as `{text: string}`; unwrap
+ * down to the plain string. Other kinds pass through unchanged. */
+function unwrapText(kind: ArtifactKind, data: unknown): unknown {
   if (kind === 'text' && data && typeof data === 'object' && 'text' in data) {
     return (data as { text: unknown }).text;
   }
   return data;
 }
 
-function getPath(value: unknown, path: string): unknown {
-  return path.split('.').reduce<unknown>((acc, key) => {
-    if (acc && typeof acc === 'object' && key in acc) {
-      return (acc as Record<string, unknown>)[key];
-    }
-    return undefined;
-  }, value);
+/** `{from: 'prev'}` template/slot binding unwraps a text artifact's
+ * `{text: string}` storage wrapper down to the plain string; media kinds
+ * aren't bindable this way until phase 5. */
+function unwrapArtifactData(kind: ArtifactKind, data: unknown): unknown {
+  if (kind.startsWith('media.')) {
+    throw new Error(
+      `BindingResolverService: {from: "prev"} on a media artifact ("${kind}") is phase 5`,
+    );
+  }
+  return unwrapText(kind, data);
 }

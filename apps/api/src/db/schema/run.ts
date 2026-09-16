@@ -16,7 +16,7 @@ export const run = pgTable('run', {
   state: text('state').notNull(), // §12.1 RunState
   inputs: jsonb('inputs').notNull().default({}),
   roleBindings: jsonb('role_bindings').notNull().default({}),
-  resolvedConfig: jsonb('resolved_config').notNull(), // flattened ConfigLayer at start
+  resolvedConfig: jsonb('resolved_config').notNull(), // Record<stageKey, ConfigLayer> at start (§5.3)
   overrides: jsonb('overrides').notNull().default({}), // sparse per-stage patch (§12.3)
   cursorStageKey: text('cursor_stage_key'),
   inngestRunId: text('inngest_run_id'),
