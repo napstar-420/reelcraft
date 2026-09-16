@@ -31,7 +31,11 @@ export class BlueprintService {
     dto: CreateBlueprintVersionDto,
     sourceTemplateId?: string,
   ) {
-    const issues = this.validator.validate(dto.graph);
+    const issues = this.validator.validate({
+      graph: dto.graph,
+      inputs: dto.inputs,
+      roles: dto.roles,
+    });
     const runnable = issues.every((i) => i.severity !== 'error');
 
     const [row] = await this.db

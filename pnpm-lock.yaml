@@ -53,6 +53,9 @@ importers:
       '@reefcraft/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      ajv:
+        specifier: ^8.17.1
+        version: 8.20.0
       dotenv:
         specifier: ^16.4.7
         version: 16.6.1

@@ -1,5 +1,12 @@
 import { Injectable } from '@nestjs/common';
-import type { CostEstimate, JobHandle, JobStatus, OutputKind, SlotDef } from '@reefcraft/shared';
+import type {
+  CostEstimate,
+  JobHandle,
+  JobStatus,
+  JsonSchema,
+  OutputKind,
+  SlotDef,
+} from '@reefcraft/shared';
 import { Capability } from '../capability.decorator';
 import type { CapabilityImpl, ExecCtx, ExecResult } from '../capability.interface';
 
@@ -10,6 +17,7 @@ import type { CapabilityImpl, ExecCtx, ExecResult } from '../capability.interfac
 export class PublishStub implements CapabilityImpl<Record<string, unknown>> {
   readonly modality = 'publish' as const;
   readonly kind = 'sync' as const;
+  readonly configSchema: JsonSchema = { type: 'object' };
 
   slots(): SlotDef[] {
     return [];

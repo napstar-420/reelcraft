@@ -21,6 +21,7 @@ import {
   ConfigResolverService,
   type EffectiveStageConfig,
 } from '../run-config/config-resolver.service';
+import { SchemaValidatorService } from '../json-schema/schema-validator.service';
 
 export interface StageAttemptContext {
   runId: string;
@@ -58,6 +59,7 @@ export class StageRunnerService {
     private readonly memory: MemoryService,
     private readonly ledger: LedgerService,
     private readonly configResolver: ConfigResolverService,
+    private readonly schemaValidator: SchemaValidatorService,
   ) {}
 
   async loadStageContext(runId: string, stageKey: string): Promise<StageContext> {
@@ -218,6 +220,9 @@ export class StageRunnerService {
       producerStageKey: stage.key,
       kind,
       data,
+      ...(stage.output.kind === 'data' && {
+        schemaHash: this.schemaValidator.hashOf(stage.output.schema),
+      }),
       reproLevel: result.repro.level,
       repro: result.repro,
       costUsd: result.costUsd,

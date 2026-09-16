@@ -15,6 +15,7 @@ export class CapabilityController {
       key,
       modality: impl.modality,
       kind: impl.kind,
+      configSchema: impl.configSchema,
     }));
   }
 

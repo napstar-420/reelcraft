@@ -5,7 +5,10 @@ import { DRIZZLE, type Db } from '../db/drizzle.provider';
 import { template, templateVersion } from '../db/schema/index';
 import { ulid } from '../common/ulid';
 
-const HELLO_STAGE_GRAPH: StageDef[] = [
+/** Exported so `blueprint-validator.test.ts` can assert this exact fixture
+ * validates clean — every e2e in chunks 4-5 boots `AppModule`, which seeds
+ * this on `onApplicationBootstrap`, so a regression here fails at boot. */
+export const HELLO_STAGE_GRAPH: StageDef[] = [
   {
     key: 'hello',
     label: 'Hello',

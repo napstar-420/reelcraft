@@ -8,26 +8,30 @@
  */
 const TEMPLATE_EXPR = /{{\s*([a-zA-Z_$][\w$]*(?:\.[a-zA-Z_$][\w$]*|\[\d+\])*)\s*}}/g;
 
-function pathSegments(path: string): string[] {
-  const segments: string[] = [];
+export type PathSegment = { kind: 'prop'; name: string } | { kind: 'index'; index: number };
+
+/** Parses a `{{ ... }}` path into typed segments — exported so
+ * `json-schema/schema-path.ts` can walk a schema with the same grammar this
+ * file uses to walk a runtime value, without a second copy of the regex. */
+export function parseTemplatePathSegments(path: string): PathSegment[] {
+  const segments: PathSegment[] = [];
   const segmentExpr = /([a-zA-Z_$][\w$]*)|\[(\d+)\]/g;
   let match: RegExpExecArray | null;
   while ((match = segmentExpr.exec(path))) {
-    const segment = match[1] ?? match[2];
-    if (segment !== undefined) segments.push(segment);
+    if (match[1] !== undefined) segments.push({ kind: 'prop', name: match[1] });
+    else if (match[2] !== undefined) segments.push({ kind: 'index', index: Number(match[2]) });
   }
   return segments;
 }
 
 function getByPath(value: unknown, path: string): unknown {
-  return pathSegments(path).reduce<unknown>((acc, segment) => {
+  return parseTemplatePathSegments(path).reduce<unknown>((acc, segment) => {
     if (acc === undefined || acc === null) return undefined;
-    if (Array.isArray(acc)) {
-      const index = Number(segment);
-      return Number.isInteger(index) ? acc[index] : undefined;
+    if (segment.kind === 'index') {
+      return Array.isArray(acc) ? acc[segment.index] : undefined;
     }
     if (typeof acc === 'object') {
-      return (acc as Record<string, unknown>)[segment];
+      return (acc as Record<string, unknown>)[segment.name];
     }
     return undefined;
   }, value);

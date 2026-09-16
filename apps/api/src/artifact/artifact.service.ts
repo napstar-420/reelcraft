@@ -12,6 +12,9 @@ export interface RecordAttemptArtifactInput {
   kind: string;
   data?: unknown;
   blobId?: string;
+  /** sha256 of the canonical output schema (§4.2) — only meaningful for
+   * `kind: 'data'`; null for the fixed kinds. */
+  schemaHash?: string;
   reproLevel: 'exact' | 'approximate' | 'none';
   repro?: unknown;
   costUsd: number;
@@ -40,6 +43,7 @@ export class ArtifactService {
       kind: input.kind,
       data: input.data,
       blobId: input.blobId,
+      schemaHash: input.schemaHash,
       stale: true,
       reproLevel: input.reproLevel,
       repro: input.repro,
