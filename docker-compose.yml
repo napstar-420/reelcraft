@@ -1,0 +1,65 @@
+name: reefcraft
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: reefcraft
+      POSTGRES_PASSWORD: reefcraft
+      POSTGRES_DB: reefcraft
+    ports:
+      - '5432:5432'
+    volumes:
+      - ./docker/data/postgres:/var/lib/postgresql/data
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U reefcraft -d reefcraft']
+      interval: 2s
+      timeout: 5s
+      retries: 20
+
+  minio:
+    image: quay.io/minio/minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: reefcraft-root
+      MINIO_ROOT_PASSWORD: reefcraft-root-secret
+    ports:
+      - '9000:9000'
+      - '9001:9001'
+    volumes:
+      - ./docker/data/minio:/data
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:9000/minio/health/live']
+      interval: 2s
+      timeout: 5s
+      retries: 20
+
+  minio-bootstrap:
+    image: quay.io/minio/mc
+    depends_on:
+      minio:
+        condition: service_healthy
+    volumes:
+      - ./docker/minio/bootstrap.sh:/bootstrap.sh:ro
+    entrypoint: ['/bin/sh', '/bootstrap.sh']
+
+  inngest:
+    image: inngest/inngest
+    command:
+      - 'inngest'
+      - 'start'
+      - '--postgres-uri'
+      - 'postgres://reefcraft:reefcraft@postgres:5432/inngest?sslmode=disable'
+      - '--sdk-url'
+      - 'http://host.docker.internal:3000/api/inngest'
+    environment:
+      INNGEST_EVENT_KEY: local-dev-event-key
+      INNGEST_SIGNING_KEY: 3d312b0d5874e57362ef7c25b40414030932ec530d1634cff07754d9402d6761
+    ports:
+      - '8288:8288'
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    depends_on:
+      postgres:
+        condition: service_healthy

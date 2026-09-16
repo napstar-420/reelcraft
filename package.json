@@ -1,0 +1,30 @@
+{
+  "name": "reefcraft",
+  "private": true,
+  "version": "0.0.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "packageManager": "pnpm@9.15.0",
+  "scripts": {
+    "dev": "pnpm --parallel --filter @reefcraft/api --filter @reefcraft/web dev",
+    "build": "pnpm -r build",
+    "typecheck": "tsc -b tsconfig.json",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "test": "pnpm -r --filter @reefcraft/shared --filter @reefcraft/api --filter @reefcraft/web test",
+    "test:e2e": "pnpm --filter @reefcraft/api test:e2e",
+    "db:generate": "pnpm --filter @reefcraft/api db:generate",
+    "db:migrate": "pnpm --filter @reefcraft/api db:migrate",
+    "db:studio": "pnpm --filter @reefcraft/api db:studio",
+    "smoke": "pnpm --filter @reefcraft/api smoke"
+  },
+  "devDependencies": {
+    "typescript-eslint": "^8.18.0",
+    "eslint": "^9.17.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-import": "^2.31.0",
+    "prettier": "^3.4.2",
+    "typescript": "^5.7.2"
+  }
+}

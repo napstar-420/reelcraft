@@ -1,0 +1,17 @@
+node_modules/
+dist/
+build/
+coverage/
+*.tsbuildinfo
+.DS_Store
+.env
+.env.local
+.env.*.local
+
+# IDE
+.idea/
+.vscode/
+
+# Runtime / local infra data
+docker/data/
+apps/api/.workspace/
