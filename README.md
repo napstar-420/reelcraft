@@ -160,7 +160,7 @@ start` only surfaced it as a runtime `Cannot find module`. If a build looks inco
   `unplugin-swc` with `module: { type: 'es6' }` — not `'commonjs'`, even though the app itself
   builds to CommonJS. Vitest runs every file through Vite's own ESM module graph regardless of
   the app's `tsc`/`nest build` output target, and vitest's own package is ESM-only.
-- **e2e tests isolate via a fresh Postgres *database* per suite, not a schema.** A schema-per-
+- **e2e tests isolate via a fresh Postgres _database_ per suite, not a schema.** A schema-per-
   suite approach (`search_path`) was tried first and silently produced empty tables:
   `drizzle-kit generate` hardcodes every FK's `REFERENCES` clause to `"public".<table>`
   (verified — all 25 FKs in `drizzle/0000_daffy_vision.sql`), so a table created in a non-public
@@ -171,7 +171,7 @@ start` only surfaced it as a runtime `Cannot find module`. If a build looks inco
   `apps/web/vite.config.ts` / `packages/shared/vitest.config.ts`) — they aren't included by any
   app's `tsconfig.json`, so `pnpm lint` fails to parse them (confirmed pre-existing on `main`,
   not introduced by this change). `apps/api/test/**` is fixed via a sibling `test/tsconfig.json`
-  (TS's project service auto-discovers the *nearest* `tsconfig.json` by name); the remaining
+  (TS's project service auto-discovers the _nearest_ `tsconfig.json` by name); the remaining
   root-level `*.config.ts` files need an `allowDefaultProject` glob in `eslint.config.mjs`,
   which is protected by a `config-protection` hook this session couldn't get past — needs a
   maintainer to add it (or temporarily disable the hook).

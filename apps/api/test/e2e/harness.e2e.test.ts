@@ -31,7 +31,11 @@ describe('test harness', () => {
   it('boots AppModule against the scoped schema and round-trips a row', async () => {
     const channels = testApp.app.get(ChannelService);
 
-    const created = await channels.create('local', { name: 'Harness Channel', theme: {}, defaults: {} });
+    const created = await channels.create('local', {
+      name: 'Harness Channel',
+      theme: {},
+      defaults: {},
+    });
     expect(created.name).toBe('Harness Channel');
 
     const fetched = await channels.get(created.id);
