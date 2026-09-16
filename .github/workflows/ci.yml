@@ -19,5 +19,11 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @reefcraft/shared build
       - run: pnpm typecheck
+      - run: pnpm --filter @reefcraft/api typecheck
       - run: pnpm lint
       - run: pnpm --filter @reefcraft/shared test
+      - run: pnpm --filter @reefcraft/api test
+      # apps/api's e2e suite needs a live Postgres — not yet wired up as a
+      # CI service (tracked in docs/build-progress.md phase 2); run
+      # `pnpm --filter @reefcraft/api test:e2e` locally against
+      # `docker compose up` in the meantime.
