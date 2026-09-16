@@ -1,5 +1,12 @@
 import { Injectable } from '@nestjs/common';
-import type { CostEstimate, JobHandle, JobStatus, OutputKind, SlotDef } from '@reefcraft/shared';
+import type {
+  CostEstimate,
+  JobHandle,
+  JobStatus,
+  JsonSchema,
+  OutputKind,
+  SlotDef,
+} from '@reefcraft/shared';
 import { Capability } from '../capability.decorator';
 import type { CapabilityImpl, ExecCtx, ExecResult } from '../capability.interface';
 import { ProviderRegistry } from '../../provider/provider.registry';
@@ -20,6 +27,9 @@ export interface LlmGenerateConfig {
 export class LlmGenerate implements CapabilityImpl<LlmGenerateConfig> {
   readonly modality = 'text' as const;
   readonly kind = 'sync' as const;
+  // Permissive by design: the provider/modelId pin lives on the resolved
+  // model layer (§5), not StageDef.config — see the interface doc comment.
+  readonly configSchema: JsonSchema = { type: 'object' };
 
   constructor(private readonly providers: ProviderRegistry) {}
 

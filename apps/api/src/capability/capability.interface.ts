@@ -1,4 +1,5 @@
 import type {
+  JsonSchema,
   ModelCapabilities,
   OutputKind,
   SlotDef,
@@ -39,6 +40,16 @@ export interface ExecResult<Out = unknown> {
 export interface CapabilityImpl<Cfg = Record<string, unknown>> {
   readonly modality: string;
   readonly kind: 'sync' | 'async';
+  /** §4.2/§16.2 — the restricted-dialect shape of `StageDef.config` this
+   * capability accepts, backing `GET /capabilities` (`CapabilityDto`,
+   * `packages/shared/src/dto/capability.dto.ts`) and save-time validation.
+   * Describes the AUTHORED `StageDef.config` shape, not the merged runtime
+   * `Cfg` this interface is generic over — e.g. `LlmGenerate`'s `provider`/
+   * `modelId` arrive from the resolved model pin layer
+   * (`ConfigResolverService`), not from `StageDef.config` itself; its
+   * `configSchema` must not require them. A capability with no config
+   * declares `{type: 'object'}`. */
+  readonly configSchema: JsonSchema;
   slots(cfg: Cfg): SlotDef[];
   allowedOutputs(cfg: Cfg): OutputKind[];
   validate?(cfg: Cfg, stage: StageDef, caps: ModelCapabilities): ValidationIssue[];
