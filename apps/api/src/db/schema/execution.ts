@@ -1,4 +1,13 @@
-import { boolean, integer, jsonb, numeric, pgTable, text, timestamptz, uniqueIndex } from './pg-helpers';
+import {
+  boolean,
+  integer,
+  jsonb,
+  numeric,
+  pgTable,
+  text,
+  timestamptz,
+  uniqueIndex,
+} from './pg-helpers';
 import { run } from './run';
 import { artifact } from './artifact';
 
@@ -39,7 +48,9 @@ export const stageItem = pgTable(
     outputArtifactId: text('output_artifact_id').references(() => artifact.id),
     costUsd: numeric('cost_usd', { precision: 12, scale: 4 }).notNull().default('0'),
   },
-  (t) => [uniqueIndex('stage_item_stage_execution_id_item_index_uq').on(t.stageExecutionId, t.itemIndex)],
+  (t) => [
+    uniqueIndex('stage_item_stage_execution_id_item_index_uq').on(t.stageExecutionId, t.itemIndex),
+  ],
 );
 
 /**

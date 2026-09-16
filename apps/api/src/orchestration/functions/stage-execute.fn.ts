@@ -21,7 +21,9 @@ export function buildStageExecuteFunction(client: Inngest, runner: StageRunnerSe
     { event: 'stage/execute.requested' },
     async ({ event, step }) => {
       const data = event.data as StageExecuteEventData;
-      const stage = await step.run('load-stage-def', () => runner.loadStageDef(data.runId, data.stageKey));
+      const stage = await step.run('load-stage-def', () =>
+        runner.loadStageDef(data.runId, data.stageKey),
+      );
 
       const maxAttempts = stage.retryLimit + 1;
       for (let attemptNo = 1; attemptNo <= maxAttempts; attemptNo++) {
@@ -66,7 +68,10 @@ export function buildStageExecuteFunction(client: Inngest, runner: StageRunnerSe
             await step.run(`record-failure-${data.stageKey}`, () =>
               runner.recordFailure(attemptCtx, err instanceof Error ? err.message : String(err)),
             );
-            return { outcome: 'failed' as const, reason: err instanceof Error ? err.message : String(err) };
+            return {
+              outcome: 'failed' as const,
+              reason: err instanceof Error ? err.message : String(err),
+            };
           }
         }
       }

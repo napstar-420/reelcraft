@@ -19,9 +19,7 @@ export const StageDef = z.object({
   key: z.string(),
   label: z.string(),
   capability: z.string(),
-  instructions: z
-    .object({ system: z.string().optional(), template: z.string() })
-    .optional(),
+  instructions: z.object({ system: z.string().optional(), template: z.string() }).optional(),
   config: z.record(z.string(), z.unknown()),
   slots: z.record(z.string(), Ref),
   context: z.record(z.string(), Ref),

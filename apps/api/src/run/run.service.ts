@@ -29,7 +29,8 @@ export class RunService {
       .where(eq(blueprintVersion.id, dto.blueprintVersionId))
       .limit(1);
     if (!version) throw new Error(`BlueprintVersion ${dto.blueprintVersionId} not found`);
-    if (!version.runnable) throw new Error(`BlueprintVersion ${dto.blueprintVersionId} failed validation`);
+    if (!version.runnable)
+      throw new Error(`BlueprintVersion ${dto.blueprintVersionId} failed validation`);
 
     const graph = version.graph as StageDef[];
     const runId = ulid();

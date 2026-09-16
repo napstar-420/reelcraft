@@ -11,7 +11,10 @@ export class ChannelController {
   @Post()
   // Pipe scoped to @Body() only — @UsePipes() at the method level would
   // also run this schema against @Owner()'s plain string value and fail.
-  create(@Owner() owner: string, @Body(new ZodValidationPipe(CreateChannelDto)) dto: CreateChannelDto) {
+  create(
+    @Owner() owner: string,
+    @Body(new ZodValidationPipe(CreateChannelDto)) dto: CreateChannelDto,
+  ) {
     return this.channels.create(owner, dto);
   }
 

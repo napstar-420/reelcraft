@@ -10,8 +10,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
-        with:
-          version: 9
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -21,6 +19,7 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm --filter @reefcraft/api typecheck
       - run: pnpm lint
+      - run: pnpm format:check
       - run: pnpm --filter @reefcraft/shared test
       - run: pnpm --filter @reefcraft/api test
       # apps/api's e2e suite needs a live Postgres — not yet wired up as a

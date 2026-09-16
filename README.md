@@ -11,13 +11,13 @@ Inngest (self-hosted, `inngest start`) · MinIO (S3-compatible blob storage) · 
 
 ## Processes & ports
 
-| Process | Port | Notes |
-|---|---|---|
-| API (NestJS) | `:3000` | REST + SSE, `/api/inngest` |
-| Web (Vite) | `:5173` | Proxies `/api` → `:3000` in dev |
-| Postgres | `:5432` | Two databases: `reefcraft` (engine) and `inngest` |
-| MinIO | `:9000` (API) / `:9001` (console) | |
-| Inngest | `:8288` | Runs via `inngest start`, **not** `inngest dev` — the dev server's state is ephemeral and would not survive a restart mid-video-job |
+| Process      | Port                              | Notes                                                                                                                               |
+| ------------ | --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| API (NestJS) | `:3000`                           | REST + SSE, `/api/inngest`                                                                                                          |
+| Web (Vite)   | `:5173`                           | Proxies `/api` → `:3000` in dev                                                                                                     |
+| Postgres     | `:5432`                           | Two databases: `reefcraft` (engine) and `inngest`                                                                                   |
+| MinIO        | `:9000` (API) / `:9001` (console) |                                                                                                                                     |
+| Inngest      | `:8288`                           | Runs via `inngest start`, **not** `inngest dev` — the dev server's state is ephemeral and would not survive a restart mid-video-job |
 
 ## Fresh clone setup
 
@@ -93,7 +93,7 @@ run against OpenRouter (needs a funded key).
   FK in the initial migration; `drizzle/0001_blueprint_current_version_fk.sql` adds it as a
   documented follow-up.
 - **`artifact_active_uq`** (§3.9): a partial unique index that cannot be `DEFERRABLE`. Every
-  artifact-superseding write must mark the old row stale *before* inserting the new one, in one
+  artifact-superseding write must mark the old row stale _before_ inserting the new one, in one
   transaction — see `ArtifactService.finalize()`.
 - **`forcePathStyle: true`** is mandatory for the MinIO `StorageAdapter` — the AWS SDK defaults
   to virtual-host addressing, which needs wildcard DNS local MinIO doesn't have.
@@ -134,7 +134,7 @@ run against OpenRouter (needs a funded key).
   `@nestjs/platform-express` — pnpm's strict `node_modules` isolation blocks requiring
   undeclared "phantom" dependencies, and `main.ts` imports `express` directly for its body-size
   middleware.
-- **`@UsePipes()` at the method level applies to *every* parameter, not just `@Body()`.**
+- **`@UsePipes()` at the method level applies to _every_ parameter, not just `@Body()`.**
   `ChannelController.create` and `BlueprintController.createVersion` originally applied
   `ZodValidationPipe(SomeDto)` via `@UsePipes()` alongside an `@Owner()`/`@Param()` argument —
   the pipe ran against that plain string too and failed validation. Fixed by scoping the pipe
@@ -148,7 +148,7 @@ run against OpenRouter (needs a funded key).
   editing `tsconfig.base.json` (the ESM→CommonJS switch), rebuilding without first deleting
   `*.tsbuildinfo` left several `apps/api/src/*` directories (`capability/`, `config/`,
   `provider/`, `storage/`, etc.) missing from `dist/` entirely, with no build error — `nest
-  start` only surfaced it as a runtime `Cannot find module`. If a build looks incomplete after
+start` only surfaced it as a runtime `Cannot find module`. If a build looks incomplete after
   a tsconfig change, `rm -rf dist *.tsbuildinfo` and rebuild clean before debugging further.
 - **`dotenv/config`'s bare import reads `.env` from `process.cwd()`, which pnpm sets to the
   package directory under `--filter`** — `pnpm db:migrate` (root) silently found no
