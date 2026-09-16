@@ -1,10 +1,44 @@
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
+import { ConfigService } from '@nestjs/config';
 import type { InputDef, RoleDef, StageDef } from '@reefcraft/shared';
 import type { CapabilityImpl } from '../capability/capability.interface';
 import type { CapabilityRegistry } from '../capability/capability.registry';
 import { SchemaValidatorService } from '../json-schema/schema-validator.service';
+import { ScriptSandboxService } from '../sandbox/script-sandbox.service';
+import type { Env } from '../config/env.schema';
+import { EngineConfig } from '../config/engine-config';
 import { HELLO_STAGE_GRAPH } from '../template/template-seed.service';
 import { BlueprintValidatorService } from './blueprint-validator.service';
+
+function fakeEngineConfig(): EngineConfig {
+  const env: Env = {
+    NODE_ENV: 'test',
+    API_PORT: 3000,
+    DATABASE_URL: 'postgres://x',
+    S3_ENDPOINT: 'http://x',
+    S3_REGION: 'us-east-1',
+    S3_BUCKET: 'x',
+    S3_ACCESS_KEY_ID: 'x',
+    S3_SECRET_ACCESS_KEY: 'x',
+    S3_FORCE_PATH_STYLE: true,
+    PRESIGN_TTL_SEC: 900,
+    INNGEST_BASE_URL: 'http://x',
+    INNGEST_EVENT_KEY: 'x',
+    INNGEST_SIGNING_KEY: 'x',
+    WORKSPACE_ROOT: './.workspace',
+    BLOB_RETENTION_DAYS: 30,
+    ITERATE_MAX_ITEMS: 50,
+    PRE_SUBMIT_TTL_SEC: 600,
+    FETCH_ALLOWANCE_SEC: 120,
+    QC_ERROR_RETRIES: 2,
+    INFRA_RETRIES: 2,
+    SANDBOX_MEMORY_MB: 32,
+    SANDBOX_TIMEOUT_MS: 100,
+  };
+  return new EngineConfig(new ConfigService<Env, true>(env));
+}
+
+const sandbox = new ScriptSandboxService(fakeEngineConfig());
 
 function stage(overrides: Partial<StageDef> & Pick<StageDef, 'key'>): StageDef {
   return {
@@ -58,7 +92,11 @@ function fakeRegistry(capabilities: Record<string, CapabilityImpl>): CapabilityR
 function makeValidator(
   capabilities: Record<string, CapabilityImpl> = { 'llm.generate': llmGenerate },
 ) {
-  return new BlueprintValidatorService(fakeRegistry(capabilities), new SchemaValidatorService());
+  return new BlueprintValidatorService(
+    fakeRegistry(capabilities),
+    new SchemaValidatorService(),
+    sandbox,
+  );
 }
 
 function hasError(
@@ -75,6 +113,10 @@ function hasWarning(
 }
 
 describe('BlueprintValidatorService', () => {
+  beforeAll(async () => {
+    await sandbox.ready();
+  });
+
   it('the seeded "Hello Stage" template validates with zero errors', () => {
     const validator = makeValidator();
     const issues = validator.validate({ graph: HELLO_STAGE_GRAPH, inputs: [], roles: [] });
@@ -380,5 +422,65 @@ describe('BlueprintValidatorService', () => {
     expect(
       validator.validate({ graph, inputs: [], roles: [] }).some((i) => i.severity === 'error'),
     ).toBe(true);
+  });
+
+  it('errors on an unknown builtin check key (§16.2)', () => {
+    const validator = makeValidator();
+    const graph = [
+      stage({ key: 'a', checks: [{ type: 'builtin', key: 'not_a_real_check', params: {} }] }),
+    ];
+    expect(
+      hasError(validator.validate({ graph, inputs: [], roles: [] }), 'stages.a.checks[0].key'),
+    ).toBe(true);
+  });
+
+  it("errors when a builtin check's params fail its schema (§16.2)", () => {
+    const validator = makeValidator();
+    const graph = [
+      // array_length requires `path`; omitting it should fail param validation.
+      stage({ key: 'a', checks: [{ type: 'builtin', key: 'array_length', params: {} }] }),
+    ];
+    expect(
+      hasError(validator.validate({ graph, inputs: [], roles: [] }), 'stages.a.checks[0].params'),
+    ).toBe(true);
+  });
+
+  it('passes a builtin check with valid params', () => {
+    const validator = makeValidator();
+    const graph = [
+      stage({
+        key: 'a',
+        checks: [{ type: 'builtin', key: 'non_empty', params: {} }],
+      }),
+    ];
+    expect(
+      hasError(validator.validate({ graph, inputs: [], roles: [] }), 'stages.a.checks[0]'),
+    ).toBe(false);
+  });
+
+  it('errors when a script check fails to compile in the sandbox (§16.2)', () => {
+    const validator = makeValidator();
+    const graph = [
+      stage({
+        key: 'a',
+        checks: [{ type: 'script', name: 'broken', code: 'this is not valid js {{{' }],
+      }),
+    ];
+    expect(
+      hasError(validator.validate({ graph, inputs: [], roles: [] }), 'stages.a.checks[0].code'),
+    ).toBe(true);
+  });
+
+  it('does not error on a script check that compiles cleanly', () => {
+    const validator = makeValidator();
+    const graph = [
+      stage({
+        key: 'a',
+        checks: [{ type: 'script', name: 'ok', code: 'return { pass: true };' }],
+      }),
+    ];
+    expect(
+      hasError(validator.validate({ graph, inputs: [], roles: [] }), 'stages.a.checks[0]'),
+    ).toBe(false);
   });
 });

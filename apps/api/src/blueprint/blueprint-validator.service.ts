@@ -6,6 +6,8 @@ import { SchemaValidatorService } from '../json-schema/schema-validator.service'
 import { isCompatible } from '../json-schema/compatibility';
 import { narrowSegments } from '../json-schema/schema-path';
 import type { SourceType } from '../json-schema/source-type';
+import { ScriptSandboxService } from '../sandbox/script-sandbox.service';
+import { BUILTIN_CHECKS } from '../check/builtins/index';
 import { parseTemplatePaths, parseTemplatePathSegments } from '../common/prompt-template';
 import {
   buildValidationContext,
@@ -24,6 +26,7 @@ export class BlueprintValidatorService {
   constructor(
     private readonly capabilities: CapabilityRegistry,
     private readonly schemaValidator: SchemaValidatorService,
+    private readonly sandbox: ScriptSandboxService,
   ) {}
 
   validate(input: BlueprintValidationInput): ValidationIssue[] {
@@ -249,14 +252,43 @@ export class BlueprintValidatorService {
     }
 
     for (const [index, check] of stage.checks.entries()) {
-      if (check.type !== 'script' || !check.refs) continue;
+      const checkBase = `${base}.checks[${index}]`;
+      if (check.type === 'builtin') {
+        const builtin = BUILTIN_CHECKS[check.key];
+        if (!builtin) {
+          issues.push({
+            path: `${checkBase}.key`,
+            message: `unknown builtin check "${check.key}"`,
+            severity: 'error',
+          });
+          continue;
+        }
+        const parsed = builtin.params.safeParse(check.params);
+        if (!parsed.success) {
+          for (const issue of parsed.error.issues) {
+            issues.push({
+              path: `${checkBase}.params${issue.path.length ? `.${issue.path.join('.')}` : ''}`,
+              message: issue.message,
+              severity: 'error',
+            });
+          }
+        }
+        continue;
+      }
+
+      // §16.2 — "script check fails to compile in the sandbox"
+      const compiled = this.sandbox.compiles(check.code);
+      if (!compiled.ok) {
+        issues.push({
+          path: `${checkBase}.code`,
+          message: `script check does not compile: ${compiled.message ?? 'unknown error'}`,
+          severity: 'error',
+        });
+      }
+
+      if (!check.refs) continue;
       for (const [refName, ref] of Object.entries(check.refs)) {
-        const result = resolveBoundType(
-          ref,
-          ctx,
-          stageIndex,
-          `${base}.checks[${index}].refs.${refName}`,
-        );
+        const result = resolveBoundType(ref, ctx, stageIndex, `${checkBase}.refs.${refName}`);
         if (result.issue) issues.push(result.issue);
       }
     }

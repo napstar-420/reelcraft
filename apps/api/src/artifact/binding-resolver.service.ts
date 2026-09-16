@@ -5,6 +5,7 @@ import { DRIZZLE, type Db } from '../db/drizzle.provider';
 import { artifact, runMemory } from '../db/schema/index';
 import type { StageDef } from '@reefcraft/shared';
 import { getPath } from '../common/path';
+import { unwrapText } from '../common/unwrap-text';
 
 export interface BindingScope {
   runId: string;
@@ -218,15 +219,6 @@ export class BindingResolverService {
     }
     return row;
   }
-}
-
-/** A text artifact stores its content wrapped as `{text: string}`; unwrap
- * down to the plain string. Other kinds pass through unchanged. */
-function unwrapText(kind: ArtifactKind, data: unknown): unknown {
-  if (kind === 'text' && data && typeof data === 'object' && 'text' in data) {
-    return (data as { text: unknown }).text;
-  }
-  return data;
 }
 
 /** `{from: 'prev'}` template/slot binding unwraps a text artifact's
