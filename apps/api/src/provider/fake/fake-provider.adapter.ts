@@ -14,6 +14,8 @@ interface FakeJobPayload {
   modelId: string;
   prompt?: string | undefined;
   failureMode?: string | undefined;
+  /** `params.fakeOutput`, captured at submit time — see `fetch()`. */
+  output?: unknown;
 }
 
 /**
@@ -22,7 +24,10 @@ interface FakeJobPayload {
  * have a free, deterministic, injectable-failure counterpart from day one.
  *
  * Failure modes are selected via a `fake-text-1:fail:<mode>` modelId suffix:
- * `timeout`, `malformed`, `transport`.
+ * `timeout`, `malformed`, `transport`, `schema` (valid JSON, wrong shape —
+ * distinct from `malformed`'s literally-unparseable text). A structured
+ * `data`-shaped success payload is selected via `params.fakeOutput` instead
+ * of a modelId suffix (see `fetch()`) — deterministic and caller-controlled.
  */
 @Injectable()
 export class FakeProviderAdapter implements ProviderAdapter {
@@ -96,6 +101,7 @@ export class FakeProviderAdapter implements ProviderAdapter {
       modelId: req.modelId,
       prompt: req.renderedPrompt,
       failureMode: this.parseFailureMode(req.modelId),
+      output: req.params.fakeOutput,
     });
     this.submittedKeys.set(idempotencyKey, handle);
     return handle;
@@ -126,6 +132,31 @@ export class FakeProviderAdapter implements ProviderAdapter {
         costUsd: 0.001,
         repro: { level: 'exact', seed: '42', providerVersion: job.modelId },
         rawResponse: { fake: true, malformed: true },
+      };
+    }
+    if (job.failureMode === 'schema') {
+      // Valid JSON, wrong shape — distinct from 'malformed' (literally
+      // unparseable text). Gives the implicit Ajv check (§4.2) something
+      // real to reject: a `SchemaViolation` with a real path, not a parse
+      // error.
+      return {
+        output: { unexpectedField: 'not what the schema asked for' },
+        costUsd: 0.001,
+        repro: { level: 'exact', seed: '42', providerVersion: job.modelId },
+        rawResponse: { fake: true, schemaViolation: true },
+      };
+    }
+    if (job.output !== undefined) {
+      // Deterministic caller-controlled output via `params.fakeOutput` —
+      // flows ProviderRequest.params -> ExecCtx.config -> here, so a
+      // blueprint pinning `model.params.fakeOutput` gets that exact value
+      // back. Lets a `data`-output stage (or a QC judge call) produce a
+      // real structured payload instead of always a string echo.
+      return {
+        output: job.output,
+        costUsd: 0.001,
+        repro: { level: 'exact', seed: '42', providerVersion: job.modelId },
+        rawResponse: { fake: true, modelId: job.modelId },
       };
     }
     return {

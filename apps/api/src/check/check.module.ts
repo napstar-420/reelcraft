@@ -1,22 +1,20 @@
-import { Injectable, Module } from '@nestjs/common';
-import type { CheckDef } from '@reefcraft/shared';
+import { Module } from '@nestjs/common';
+import { JsonSchemaModule } from '../json-schema/json-schema.module';
+import { SandboxModule } from '../sandbox/sandbox.module';
+import { CheckRunner } from './check-runner.service';
 
-export interface CheckResult {
-  pass: boolean;
-  message?: string;
-}
-
-/** §9 — empty builtin registry in phase 1. All checks are pure, synchronous,
- * and perform no I/O; the QuickJS sandbox for script checks arrives in
- * phase 2. */
-@Injectable()
-export class CheckRunner {
-  async run(_checks: CheckDef[], _artifact: unknown): Promise<CheckResult[]> {
-    return [];
-  }
-}
+export type {
+  CheckArtifact,
+  CheckOutcome,
+  CheckResult,
+  CheckRunInput,
+  BuiltinCheck,
+} from './check.types';
+export { CheckRunner } from './check-runner.service';
+export { BUILTIN_CHECKS } from './builtins/index';
 
 @Module({
+  imports: [JsonSchemaModule, SandboxModule],
   providers: [CheckRunner],
   exports: [CheckRunner],
 })

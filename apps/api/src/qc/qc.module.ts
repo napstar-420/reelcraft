@@ -1,21 +1,16 @@
-import { Injectable, Module } from '@nestjs/common';
-import type { QcDef } from '@reefcraft/shared';
+import { Module } from '@nestjs/common';
+import { ProviderModule } from '../provider/provider.module';
+import { QcRunner } from './qc-runner.service';
 
-export interface QcVerdict {
-  score: number;
-  critique: string;
-}
+export type { QcVerdict, QcOutcome } from './qc-runner.service';
+export { QcRunner } from './qc-runner.service';
+export type { QcEnvelope, QcEnvelopeSource } from './qc-envelope';
+export { buildQcEnvelope } from './qc-envelope';
 
-/** §2.7/§10 — throws if a stage declares qc; QC is out of scope until
- * phase 2. */
-@Injectable()
-export class QcRunner {
-  async run(_qc: QcDef, _artifact: unknown): Promise<QcVerdict> {
-    throw new Error('QcRunner: QC is not implemented until phase 2');
-  }
-}
-
+/** §10 — `ProviderModule` has no `DbModule` dependency, so `QcRunner` stays
+ * unit-testable against `FakeProviderAdapter` with no DB. */
 @Module({
+  imports: [ProviderModule],
   providers: [QcRunner],
   exports: [QcRunner],
 })

@@ -65,4 +65,12 @@ export class EngineConfig {
   get qcErrorRetries(): number {
     return this.config.get('QC_ERROR_RETRIES', { infer: true });
   }
+
+  get sandboxMemoryMb(): number {
+    return this.config.get('SANDBOX_MEMORY_MB', { infer: true });
+  }
+
+  get sandboxTimeoutMs(): number {
+    return this.config.get('SANDBOX_TIMEOUT_MS', { infer: true });
+  }
 }
