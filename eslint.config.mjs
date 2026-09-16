@@ -9,6 +9,7 @@ export default tseslint.config(
   },
   ...tseslint.configs.recommended,
   {
+    files: ['packages/shared/**/*.ts'],
     plugins: { import: importPlugin },
     rules: {
       // §1.1 — packages/shared imports nothing from apps/*, and performs no I/O.
@@ -49,7 +50,14 @@ export default tseslint.config(
     files: ['**/*.ts', '**/*.tsx'],
     languageOptions: {
       parserOptions: {
-        projectService: true,
+        projectService: {
+          // Standalone build-tool config files (drizzle/vite/vitest) aren't
+          // included by any app's own tsconfig.json — without this,
+          // typescript-eslint's project service can't find a tsconfig
+          // covering them and fails to parse them at all.
+          allowDefaultProject: ['*.config.ts', 'apps/*/*.config.ts', 'packages/*/*.config.ts'],
+        },
+        tsconfigRootDir: import.meta.dirname,
       },
     },
     rules: {
