@@ -2,7 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { ulid } from '../common/ulid';
 import { fromUsd } from '../common/money';
-import { DRIZZLE, type Db } from '../db/drizzle.provider';
+import { DRIZZLE, type Db, type Tx } from '../db/drizzle.provider';
 import { artifact, stageExecution } from '../db/schema/index';
 
 export interface RecordAttemptArtifactInput {
@@ -49,10 +49,14 @@ export class ArtifactService {
   }
 
   /**
-   * Marks the prior active artifact stale, flips the new one active, and
-   * repoints stage_execution.output_artifact_id — all inside one
-   * transaction, in that order. Never call outside a transaction; never
-   * reorder the two writes.
+   * Marks the prior active artifact stale, flips the new one active,
+   * repoints stage_execution.output_artifact_id, and (if `applyWrites` is
+   * given) runs the stage's Run Memory writes — all inside one transaction,
+   * in that order. §6.3 requires memory writes to land in the SAME
+   * transaction that finalizes a passing attempt; `applyWrites` is how
+   * `MemoryService` (which cannot import `ArtifactService` without a module
+   * cycle) gets a `tx` handle without owning the transaction boundary
+   * itself. Never call outside a transaction; never reorder the writes.
    */
   async finalize(params: {
     runId: string;
@@ -60,6 +64,7 @@ export class ArtifactService {
     producerStageKey: string;
     itemIndex?: number;
     newArtifactId: string;
+    applyWrites?: (tx: Tx) => Promise<void>;
   }): Promise<void> {
     await this.db.transaction(async (tx) => {
       await tx
@@ -85,6 +90,8 @@ export class ArtifactService {
           attemptCount: sql`${stageExecution.attemptCount} + 1`,
         })
         .where(eq(stageExecution.id, params.stageExecutionId));
+
+      if (params.applyWrites) await params.applyWrites(tx);
     });
   }
 }

@@ -1,25 +1,30 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { Inngest } from 'inngest';
 import { eq } from 'drizzle-orm';
-import type { CreateRunDto } from '@reefcraft/shared';
-import type { StageDef } from '@reefcraft/shared';
+import type { CreateRunDto, ConfigLayer } from '@reefcraft/shared';
+import { StageDef } from '@reefcraft/shared';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
-import { blueprintVersion, run, stageExecution } from '../db/schema/index';
+import { blueprintVersion, channel, run, stageExecution } from '../db/schema/index';
 import { ulid } from '../common/ulid';
 import { fromUsd } from '../common/money';
 import { INNGEST_CLIENT } from '../orchestration/inngest.client';
+import { EngineConfig } from '../config/engine-config';
+import { ConfigResolverService } from '../run-config/config-resolver.service';
+import { engineDefaults } from '../run-config/engine-defaults';
 
 /**
- * §12/§21 — run start snapshots a flattened resolved_config. Phase 1 has no
- * ConfigResolver yet (phase 2), so this snapshot is the blueprint version's
- * `defaults` as-is; the column is populated correctly from day one even
- * though the merge logic it will eventually hold does not exist yet.
+ * §5/§12/§21 — run start resolves and snapshots resolved_config, keyed per
+ * stage (matches `RunDetailDto.resolvedConfig`'s `Record<stageKey,
+ * ConfigLayer>` shape), by merging engine -> channel -> blueprint -> stage
+ * layers through `ConfigResolverService.resolveRunConfig` (§5.2).
  */
 @Injectable()
 export class RunService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     @Inject(INNGEST_CLIENT) private readonly inngest: Inngest,
+    private readonly engineConfig: EngineConfig,
+    private readonly configResolver: ConfigResolverService,
   ) {}
 
   async create(dto: CreateRunDto) {
@@ -32,8 +37,22 @@ export class RunService {
     if (!version.runnable)
       throw new Error(`BlueprintVersion ${dto.blueprintVersionId} failed validation`);
 
-    const graph = version.graph as StageDef[];
+    const [channelRow] = await this.db
+      .select({ defaults: channel.defaults })
+      .from(channel)
+      .where(eq(channel.id, dto.channelId))
+      .limit(1);
+    if (!channelRow) throw new Error(`Channel ${dto.channelId} not found`);
+
+    const graph = StageDef.array().parse(version.graph);
     const runId = ulid();
+
+    const resolvedConfig = this.configResolver.resolveRunConfig({
+      graph,
+      engine: engineDefaults(this.engineConfig),
+      channelDefaults: channelRow.defaults as ConfigLayer,
+      blueprintDefaults: version.defaults as ConfigLayer,
+    });
 
     await this.db.transaction(async (tx) => {
       await tx.insert(run).values({
@@ -43,7 +62,7 @@ export class RunService {
         state: 'CREATED',
         inputs: dto.inputs,
         roleBindings: dto.roleBindings,
-        resolvedConfig: version.defaults,
+        resolvedConfig,
         budgetCapUsd: fromUsd(dto.budgetCapUsd),
       });
 
