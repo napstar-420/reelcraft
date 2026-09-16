@@ -6,7 +6,7 @@ plan (via `/plan`) written just before it starts — this table is the index.
 | #   | Phase                  | Status      | Plan                                     | PR(s)            |
 | --- | ---------------------- | ----------- | ---------------------------------------- | ---------------- |
 | 1   | Skeleton               | done        | —                                        | (initial commit) |
-| 2   | Core loop              | in-progress | `.claude/plans/crispy-drifting-cocke.md` |                  |
+| 2   | Core loop              | in-progress | `.claude/plans/crispy-drifting-cocke.md` | #1, #4           |
 | 3   | Budget                 | pending     |                                          |                  |
 | 4   | Inputs & human-in-loop | pending     |                                          |                  |
 | 5   | Media                  | pending     |                                          |                  |
