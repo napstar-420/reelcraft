@@ -50,7 +50,8 @@ docker/     Postgres init script, MinIO bootstrap script
 pnpm dev              # run api + web
 pnpm typecheck        # tsc -b across the whole workspace
 pnpm lint             # eslint
-pnpm test             # unit tests (packages/shared; apps/api unit tests are a follow-up)
+pnpm test             # unit tests (packages/shared, apps/api)
+pnpm test:e2e         # apps/api e2e tests — needs `docker compose up` (real Postgres)
 pnpm db:generate      # drizzle-kit generate (after schema changes)
 pnpm db:migrate       # apply migrations
 pnpm db:studio        # drizzle studio
@@ -149,18 +150,44 @@ run against OpenRouter (needs a funded key).
   `provider/`, `storage/`, etc.) missing from `dist/` entirely, with no build error — `nest
 start` only surfaced it as a runtime `Cannot find module`. If a build looks incomplete after
   a tsconfig change, `rm -rf dist *.tsbuildinfo` and rebuild clean before debugging further.
+- **`dotenv/config`'s bare import reads `.env` from `process.cwd()`, which pnpm sets to the
+  package directory under `--filter`** — `pnpm db:migrate` (root) silently found no
+  `DATABASE_URL` because it looked for `apps/api/.env`, not the repo-root `.env` the fresh-clone
+  setup above actually creates. Fixed via `src/common/load-dotenv.ts`, which walks up to the
+  `pnpm-workspace.yaml`-marked repo root instead of trusting cwd; both `migrate.ts` and
+  `drizzle.config.ts` use it now.
+- **`apps/api` test harness (`vitest.config.ts` unit / `vitest.e2e.config.ts` e2e)** needs
+  `unplugin-swc` with `module: { type: 'es6' }` — not `'commonjs'`, even though the app itself
+  builds to CommonJS. Vitest runs every file through Vite's own ESM module graph regardless of
+  the app's `tsc`/`nest build` output target, and vitest's own package is ESM-only.
+- **e2e tests isolate via a fresh Postgres _database_ per suite, not a schema.** A schema-per-
+  suite approach (`search_path`) was tried first and silently produced empty tables:
+  `drizzle-kit generate` hardcodes every FK's `REFERENCES` clause to `"public".<table>`
+  (verified — all 25 FKs in `drizzle/0000_daffy_vision.sql`), so a table created in a non-public
+  schema still has its foreign keys point at `public`'s tables regardless of `search_path`. See
+  `test/support/test-db.ts`.
+- **`typescript-eslint`'s `projectService` can't parse standalone build-tool config files**
+  (`drizzle.config.ts`, `vitest.config.ts`, `vitest.e2e.config.ts`, and pre-existing
+  `apps/web/vite.config.ts` / `packages/shared/vitest.config.ts`) — they aren't included by any
+  app's `tsconfig.json`, so `pnpm lint` fails to parse them (confirmed pre-existing on `main`,
+  not introduced by this change). `apps/api/test/**` is fixed via a sibling `test/tsconfig.json`
+  (TS's project service auto-discovers the _nearest_ `tsconfig.json` by name); the remaining
+  root-level `*.config.ts` files need an `allowDefaultProject` glob in `eslint.config.mjs`,
+  which is protected by a `config-protection` hook this session couldn't get past — needs a
+  maintainer to add it (or temporarily disable the hook).
 
 ## Follow-ups not done in this pass
 
-- The one-stage blueprint was proven end to end **manually** (see above), but there is no
-  automated test for it yet. The plan calls for a `finalize()` ordering test, a
-  `CapabilityModule` standalone-boot test proving `DbModule` isolation, and an e2e run of the
-  one-stage blueprint via an inline fake Inngest step driver — none of that is written yet.
-- CI only runs typecheck/lint/unit tests for `packages/shared`; no e2e job yet (would need
-  Postgres/MinIO as GitHub Actions services, plus the inline step driver above so it doesn't
-  depend on a live Inngest process).
+- Phase 2 ("Core loop" — config/binding resolvers, checks, QC, semantic retry) is in progress;
+  see `docs/build-progress.md` and `.claude/plans/crispy-drifting-cocke.md`. This chunk only
+  adds the test harness (`test/support/test-db.ts`, `build-app.ts`) plus a harness proof-of-life
+  spec — the actual core-loop e2e test (three-stage text blueprint, cross-artifact script check)
+  lands with that phase's last chunk.
+- `pnpm --filter @reefcraft/api test:e2e` needs a live Postgres and isn't wired into CI yet
+  (tracked in `docs/build-progress.md`) — run it locally against `docker compose up`.
 - The durability check (kill/restart the API mid-run, confirm no second provider job is
   submitted) hasn't been run.
 - `eslint.config.mjs`'s shared-package import-boundary rule is scoped slightly too broadly
   (applies repo-wide rather than only under `packages/shared/**`) — harmless in practice since
-  no import specifier in this codebase literally contains `apps/`, but worth tightening.
+  no import specifier in this codebase literally contains `apps/`, but worth tightening. See
+  also the `allowDefaultProject` gap noted above — both need the same protected-config change.

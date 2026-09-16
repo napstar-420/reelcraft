@@ -81,6 +81,9 @@ importers:
         specifier: ^3.24.1
         version: 3.25.76
     devDependencies:
+      '@inngest/test':
+        specifier: ^0.1.9
+        version: 0.1.9(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(express@4.22.1)(typescript@5.9.3)(zod@3.25.76)
       '@nestjs/cli':
         specifier: ^10.4.9
         version: 10.4.9(@swc/core@1.16.2)(esbuild@0.19.12)
@@ -1151,6 +1154,9 @@ packages:
 
   '@inngest/ai@0.1.8':
     resolution: {integrity: sha512-DiZ6r3R5FiS0h2p4pzoUIHdjukEDZpDXuG9Z+4s1beOcUn0pBAEovBdlokFCzMLVECXfrkqWWxZEQvgiY6a2ew==}
+
+  '@inngest/test@0.1.9':
+    resolution: {integrity: sha512-yyDnXSZnkJYAi4BJU5YqDEnuFzeufgGcZkdGtQHyKEfHAsIvGBuBavP0AwKavj5XogmB1f5RavkagUAloD8k1w==}
 
   '@isaacs/cliui@8.0.2':
     resolution: {integrity: sha512-O8jcjabXaleOG9DQ0+ARXWZBTfnP4WNAqzuiJK7ll44AmxGKv/J2M4TPjxjY3znBCfvBXFzucm1twdyFybFqEA==}
@@ -5607,6 +5613,27 @@ snapshots:
   '@humanwhocodes/retry@0.4.3': {}
 
   '@inngest/ai@0.1.8': {}
+
+  '@inngest/test@0.1.9(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(express@4.22.1)(typescript@5.9.3)(zod@3.25.76)':
+    dependencies:
+      inngest: 3.54.2(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(express@4.22.1)(typescript@5.9.3)(zod@3.25.76)
+      tinyspy: 3.0.2
+      ulid: 2.4.0
+    transitivePeerDependencies:
+      - '@opentelemetry/core'
+      - '@sveltejs/kit'
+      - '@vercel/node'
+      - aws-lambda
+      - encoding
+      - express
+      - fastify
+      - h3
+      - hono
+      - koa
+      - next
+      - supports-color
+      - typescript
+      - zod
 
   '@isaacs/cliui@8.0.2':
     dependencies:
