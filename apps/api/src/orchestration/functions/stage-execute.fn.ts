@@ -1,5 +1,5 @@
 import type { Inngest } from 'inngest';
-import type { StageRunnerService } from '../stage-runner.service';
+import type { StageAttemptContext, StageRunnerService } from '../stage-runner.service';
 
 export interface StageExecuteEventData {
   runId: string;
@@ -7,13 +7,24 @@ export interface StageExecuteEventData {
   stageKey: string;
 }
 
+/** §13's backoff poll sequence, capped. */
+const POLL_BACKOFF_SEC = [5, 15, 30];
+
 /**
  * §13.1/§13.3 — one stage attempt loop. Steps return IDs only (§13.2 Rule
  * 1): `reserveAndSubmit` returns a JobHandle (small, serializable, not a
- * workspace path), `poll` returns status, `fetchAndFinalize` returns an
- * artifact id. Transport retry (Inngest's own `retries`) is separate from
- * the semantic retry loop below (§13.2 Rule 2) — the `for` loop over
- * attempts is what increments `attempt_no`, not Inngest's step retries.
+ * workspace path), `poll` returns status, `fetchAndFinalize` returns a
+ * discriminated outcome carrying only ids/results, never the artifact
+ * payload itself.
+ *
+ * Two counters are deliberately kept distinct: the local `iteration`
+ * (incremented every loop pass, used only to keep Inngest step ids unique)
+ * and the DB-derived `attemptCtx.attemptNo` (returned by
+ * `runner.beginAttempt`, used for every actual retry-accounting/
+ * continuation decision — §13.2 Rule 2, transport retry must never
+ * double-count a semantic attempt). Conflating the two would reintroduce
+ * exactly the "loop-local variable drives retry accounting" bug this chunk
+ * exists to fix.
  */
 export function buildStageExecuteFunction(client: Inngest, runner: StageRunnerService) {
   return client.createFunction(
@@ -25,45 +36,85 @@ export function buildStageExecuteFunction(client: Inngest, runner: StageRunnerSe
         runner.loadStageContext(data.runId, data.stageKey),
       );
 
-      const maxAttempts = stage.retryLimit + 1;
-      for (let attemptNo = 1; attemptNo <= maxAttempts; attemptNo++) {
-        const attemptCtx = await step.run(`begin-attempt-${attemptNo}`, () =>
+      let iteration = 0;
+      while (true) {
+        iteration += 1;
+        const attemptCtx: StageAttemptContext = await step.run(`begin-attempt-${iteration}`, () =>
           runner.beginAttempt({
             runId: data.runId,
             stageExecutionId: data.stageExecutionId,
             stageKey: data.stageKey,
-            attemptNo,
           }),
         );
+        const isLastAttempt = attemptCtx.attemptNo >= stage.retryLimit + 1;
 
         try {
-          const handle = await step.run(`submit-${data.stageKey}-${attemptNo}`, () =>
+          const handle = await step.run(`submit-${data.stageKey}-${iteration}`, () =>
             runner.reserveAndSubmit(stage, attemptCtx, prevStageKey, effective),
           );
 
-          let status = await step.run(`poll-${data.stageKey}-${attemptNo}-0`, () =>
+          let status = await step.run(`poll-${data.stageKey}-${iteration}-0`, () =>
             runner.pollOnce(stage, handle),
           );
           let pollCount = 0;
-          while (!status.done && pollCount < 30) {
+          let elapsedSec = 0;
+          while (!status.done && elapsedSec < effective.polling.maxWaitSec) {
+            const waitSec = POLL_BACKOFF_SEC[Math.min(pollCount, POLL_BACKOFF_SEC.length - 1)]!;
             pollCount += 1;
-            await step.sleep(`poll-wait-${data.stageKey}-${attemptNo}-${pollCount}`, '2s');
-            status = await step.run(`poll-${data.stageKey}-${attemptNo}-${pollCount}`, () =>
+            elapsedSec += waitSec;
+            await step.sleep(
+              `poll-wait-${data.stageKey}-${iteration}-${pollCount}`,
+              `${waitSec}s`,
+            );
+            status = await step.run(`poll-${data.stageKey}-${iteration}-${pollCount}`, () =>
               runner.pollOnce(stage, handle),
             );
           }
 
-          if (status.done && status.outcome === 'failed') {
+          if (!status.done) {
+            await step.run(`provider-timeout-${data.stageKey}-${iteration}`, () =>
+              runner.recordProviderTimeout(stage, attemptCtx, handle),
+            );
+            if (isLastAttempt) {
+              await step.run(`fail-stage-${data.stageKey}`, () =>
+                runner.failStageExecution(data.stageExecutionId, 'provider_timeout'),
+              );
+              return { outcome: 'failed' as const, reason: 'provider_timeout' };
+            }
+            continue;
+          }
+
+          if (status.outcome === 'failed') {
             throw new Error(status.reason);
           }
 
-          const { artifactId } = await step.run(`fetch-${data.stageKey}-${attemptNo}`, () =>
+          const fetched = await step.run(`fetch-${data.stageKey}-${iteration}`, () =>
             runner.fetchAndFinalize(stage, attemptCtx, handle, prevStageKey, effective),
           );
 
-          return { outcome: 'passed' as const, artifactId };
+          if (fetched.outcome === 'success') {
+            return { outcome: 'passed' as const, artifactId: fetched.artifactId };
+          }
+
+          if (fetched.outcome === 'qc_error') {
+            await step.run(`fail-stage-${data.stageKey}`, () =>
+              runner.failStageExecution(data.stageExecutionId, fetched.reason),
+            );
+            return { outcome: 'failed' as const, reason: fetched.reason };
+          }
+
+          // check_failed | qc_failed — semantic, consumes a retry.
+          if (isLastAttempt) {
+            const reason =
+              fetched.outcome === 'check_failed'
+                ? 'check_failed'
+                : `qc_failed: ${fetched.qcVerdict.critique}`;
+            await step.run(`fail-stage-${data.stageKey}`, () =>
+              runner.failStageExecution(data.stageExecutionId, reason),
+            );
+            return { outcome: 'failed' as const, reason };
+          }
         } catch (err) {
-          const isLastAttempt = attemptNo === maxAttempts;
           if (isLastAttempt) {
             await step.run(`record-failure-${data.stageKey}`, () =>
               runner.recordFailure(attemptCtx, err instanceof Error ? err.message : String(err)),
@@ -75,8 +126,6 @@ export function buildStageExecuteFunction(client: Inngest, runner: StageRunnerSe
           }
         }
       }
-
-      throw new Error('stage.execute: unreachable');
     },
   );
 }

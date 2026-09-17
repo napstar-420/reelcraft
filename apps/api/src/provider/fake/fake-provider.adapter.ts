@@ -16,6 +16,11 @@ interface FakeJobPayload {
   failureMode?: string | undefined;
   /** `params.fakeOutput`, captured at submit time — see `fetch()`. */
   output?: unknown;
+  /** Set once at `submit()` from `fail:<mode>:<N>`'s count. `undefined`
+   * preserves the original unbounded-failure behavior (every `fetch()`
+   * fails forever) for callers that don't pass a count. Only meaningful for
+   * `failureMode === 'transport'` today. */
+  failuresRemaining?: number | undefined;
 }
 
 /**
@@ -95,12 +100,14 @@ export class FakeProviderAdapter implements ProviderAdapter {
     }
     const externalId = randomUUID();
     const handle: JobHandle = { providerId: this.id, externalId };
+    const parsed = this.parseFailureMode(req.modelId);
     this.jobs.set(externalId, {
       submittedAt: Date.now(),
       idempotencyKey,
       modelId: req.modelId,
       prompt: req.renderedPrompt,
-      failureMode: this.parseFailureMode(req.modelId),
+      failureMode: parsed?.mode,
+      failuresRemaining: parsed?.count,
       output: req.params.fakeOutput,
     });
     this.submittedKeys.set(idempotencyKey, handle);
@@ -124,7 +131,13 @@ export class FakeProviderAdapter implements ProviderAdapter {
       throw new Error(`FakeProviderAdapter.fetch: unknown job ${handle.externalId}`);
     }
     if (job.failureMode === 'transport') {
-      throw new Error('fake transport error');
+      if (job.failuresRemaining === undefined || job.failuresRemaining > 0) {
+        if (job.failuresRemaining !== undefined) job.failuresRemaining -= 1;
+        throw new Error('fake transport error');
+      }
+      // Bounded failure exhausted — fall through to a normal success below,
+      // proving a bounded transport blip is absorbed by Inngest's own step
+      // retry without ever incrementing attempt_no (§13.2 Rule 2).
     }
     if (job.failureMode === 'malformed') {
       return {
@@ -176,8 +189,15 @@ export class FakeProviderAdapter implements ProviderAdapter {
     return this.jobs.size;
   }
 
-  private parseFailureMode(modelId: string): string | undefined {
-    const match = /^fake-.*:fail:(\w+)$/.exec(modelId);
-    return match?.[1];
+  /** `fake-text-1:fail:transport:2` fails the first two `fetch()` calls,
+   * then succeeds — an optional count suffix on top of the original
+   * unbounded `fake-text-1:fail:transport` form (count omitted = fail
+   * forever, unchanged for existing callers). */
+  private parseFailureMode(modelId: string): { mode: string; count?: number } | undefined {
+    const match = /^fake-.*:fail:(\w+)(?::(\d+))?$/.exec(modelId);
+    if (!match) return undefined;
+    const mode = match[1]!;
+    const count = match[2] !== undefined ? Number(match[2]) : undefined;
+    return count !== undefined ? { mode, count } : { mode };
   }
 }

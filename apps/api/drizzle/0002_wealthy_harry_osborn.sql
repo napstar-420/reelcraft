@@ -1,0 +1,2 @@
+DROP INDEX "stage_attempt_execution_item_attempt_uq";--> statement-breakpoint
+CREATE UNIQUE INDEX "stage_attempt_execution_item_attempt_uq" ON "stage_attempt" USING btree ("stage_execution_id",coalesce("stage_item_id", ''),"attempt_no");

@@ -100,18 +100,19 @@ describe('data-output artifact (e2e)', () => {
       runId: run.id,
       stageExecutionId: stageExecution.id,
       stageKey: 'outline',
-      attemptNo: 1,
     });
     const handle = await stageRunner.reserveAndSubmit(stage, attemptCtx, prevStageKey, effective);
     const status = await stageRunner.pollOnce(stage, handle);
     expect(status.done).toBe(true);
-    const { artifactId } = await stageRunner.fetchAndFinalize(
+    const fetched = await stageRunner.fetchAndFinalize(
       stage,
       attemptCtx,
       handle,
       prevStageKey,
       effective,
     );
+    if (fetched.outcome !== 'success') throw new Error(`expected success, got ${fetched.outcome}`);
+    const { artifactId } = fetched;
 
     const [row] = await testDb.db
       .select()
