@@ -5,8 +5,10 @@ import type { Inngest } from 'inngest';
 import { AppModule } from '../../src/app.module';
 import { DRIZZLE } from '../../src/db/drizzle.provider';
 import { INNGEST_CLIENT } from '../../src/orchestration/inngest.client';
+import { STORAGE_ADAPTER } from '../../src/storage/storage.adapter';
 import { buildInngestFunctions } from '../../src/orchestration/functions/index';
 import { applyTestEnvDefaults } from './env';
+import { MemoryStorageAdapter } from './memory-storage.adapter';
 import type { TestDb } from './test-db';
 
 export interface TestApp {
@@ -31,6 +33,15 @@ export async function buildTestApp(testDb: TestDb): Promise<TestApp> {
   const app = await Test.createTestingModule({ imports: [AppModule] })
     .overrideProvider(DRIZZLE)
     .useValue(testDb.db)
+    // `BlobService.writeRawResponse` (called unconditionally by
+    // `StageRunnerService.fetchAndFinalize`, on every attempt including
+    // failing ones) goes through the real `S3StorageAdapter` otherwise —
+    // another "works locally by accident" gap, since that only succeeds
+    // because docker-compose's MinIO happens to be running locally. CI has
+    // no MinIO service (only Postgres), so every e2e test that reaches
+    // `fetchAndFinalize` would otherwise fail with ECONNREFUSED.
+    .overrideProvider(STORAGE_ADAPTER)
+    .useValue(new MemoryStorageAdapter())
     .compile();
 
   await app.init();
