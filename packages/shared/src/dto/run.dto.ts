@@ -21,6 +21,38 @@ export const RaiseBudgetDto = z.object({
 });
 export type RaiseBudgetDto = z.infer<typeof RaiseBudgetDto>;
 
+/** §6.2/§21 — requests a presigned PUT for a not-yet-uploaded media input
+ * blob. Only `ext` is needed at this step; `mime`/`bytes`/`sha256` are only
+ * known once the actual upload completes, so they travel with
+ * `AttachInputDto` instead. */
+export const RequestInputUploadDto = z.object({
+  ext: z.string().min(1),
+});
+export type RequestInputUploadDto = z.infer<typeof RequestInputUploadDto>;
+
+export const RequestInputUploadResultDto = z.object({
+  blobId: z.string(),
+  objectKey: z.string(),
+  uploadUrl: z.string(),
+});
+export type RequestInputUploadResultDto = z.infer<typeof RequestInputUploadResultDto>;
+
+/** §21 — attaches one or more already-uploaded blobs (from
+ * `RequestInputUploadResultDto`) to a declared media input. Array length
+ * must match the input's declared cardinality. */
+export const AttachInputDto = z.object({
+  blobs: z
+    .array(
+      z.object({
+        blobId: z.string(),
+        objectKey: z.string(),
+        sha256: z.string(),
+      }),
+    )
+    .min(1),
+});
+export type AttachInputDto = z.infer<typeof AttachInputDto>;
+
 export const StageAttemptDto = z.object({
   id: z.string(),
   attemptNo: z.number(),

@@ -1,0 +1,1 @@
+ALTER TABLE "run" ADD COLUMN "asset_bindings" jsonb DEFAULT '{}'::jsonb NOT NULL;

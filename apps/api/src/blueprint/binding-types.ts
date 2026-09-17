@@ -74,8 +74,30 @@ export function sourceTypeOfRef(
       }
       return { type: { kind: 'unknown', reason: 'role bindings resolve at run time (phase 8)' } };
 
-    case 'asset':
-      return unresolved('{from: "asset"} is not implemented until phase 4', issuePath);
+    case 'asset': {
+      const found = ctx.assetsById.get(ref.assetId);
+      if (!found) return unresolved(`references unknown asset "${ref.assetId}"`, issuePath);
+      if (found.channelId !== ctx.blueprintChannelId) {
+        return unresolved(`asset "${ref.assetId}" belongs to a different channel`, issuePath);
+      }
+      // `asset.kind` (§3.3) is a broader vocabulary than `ArtifactKind` — it
+      // also covers `font`/`lut`, neither of which is a real artifact a
+      // capability slot/context/check could ever bind (they're consumed by
+      // timeline rendering, phase 6, not the Ref pipeline). Only the three
+      // media kinds are representable as a `SourceType` here.
+      if (
+        found.kind !== 'media.image' &&
+        found.kind !== 'media.video' &&
+        found.kind !== 'media.audio'
+      ) {
+        return unresolved(
+          `asset "${ref.assetId}" has kind "${found.kind}", which is not bindable via ` +
+            'slots/context/checks (fonts and LUTs are consumed by timeline rendering, phase 6)',
+          issuePath,
+        );
+      }
+      return { type: { kind: found.kind } };
+    }
 
     case 'item':
     case 'prevItem':

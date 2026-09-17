@@ -8,7 +8,7 @@ plan (via `/plan`) written just before it starts — this table is the index.
 | 1   | Skeleton               | done    | —                                        | (initial commit)       |
 | 2   | Core loop              | done    | `.claude/plans/crispy-drifting-cocke.md` | #1, #4, #5, #6, #7, #8 |
 | 3   | Budget                 | done    | `.claude/plans/phase-3-budget-*.md`      | #9, #10                |
-| 4   | Inputs & human-in-loop | pending |                                          |                        |
+| 4   | Inputs & human-in-loop | in-progress (chunk 1/7) | `.claude/plans/phase-4-inputs-hitl.md` | #11 (chunk 1, open) |
 | 5   | Media                  | pending |                                          |                        |
 | 6   | Assembly               | pending |                                          |                        |
 | 7   | Iteration              | pending |                                          |                        |

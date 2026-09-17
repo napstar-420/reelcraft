@@ -264,10 +264,7 @@ describe('binding resolver + memory writes (e2e)', () => {
     ).rejects.toThrow('phase 5');
   });
 
-  it('throws naming phase 4/7/8 for asset/item/prevItem/role refs', async () => {
-    await expect(
-      bindings.resolve({ from: 'asset', assetId: 'x' }, { runId, inputs: {} }),
-    ).rejects.toThrow('phase 4');
+  it('throws naming phase 7/8 for item/prevItem/role refs', async () => {
     await expect(bindings.resolve({ from: 'item' }, { runId, inputs: {} })).rejects.toThrow(
       'phase 7',
     );
@@ -277,6 +274,24 @@ describe('binding resolver + memory writes (e2e)', () => {
     await expect(
       bindings.resolve({ from: 'role', roleKey: 'host' }, { runId, inputs: {} }),
     ).rejects.toThrow('phase 8');
+  });
+
+  it('{from: "asset"} throws an engine-bug error when run.assetBindings has no entry', async () => {
+    await expect(
+      bindings.resolve({ from: 'asset', assetId: 'x' }, { runId, inputs: {} }),
+    ).rejects.toThrow('no asset binding');
+  });
+
+  it('{from: "asset"} resolves from the snapshotted run.assetBindings, never the live asset table', async () => {
+    const resolved = await bindings.resolve(
+      { from: 'asset', assetId: 'logo' },
+      { runId, inputs: {}, assetBindings: { logo: { blobId: 'blob-1', kind: 'media.image' } } },
+    );
+    expect(resolved.value).toEqual({ blobId: 'blob-1', kind: 'media.image' });
+    expect(resolved.provenance).toEqual({
+      ref: { from: 'asset', assetId: 'logo' },
+      assetId: 'logo',
+    });
   });
 
   it('resolveAll resolves every slot and context ref on a stage', async () => {
