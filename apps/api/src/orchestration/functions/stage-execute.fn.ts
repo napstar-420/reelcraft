@@ -112,15 +112,19 @@ export function buildStageExecuteFunction(client: Inngest, runner: StageRunnerSe
             return { outcome: 'failed' as const, reason };
           }
         } catch (err) {
+          const reason = err instanceof Error ? err.message : String(err);
           if (isLastAttempt) {
             await step.run(`record-failure-${data.stageKey}`, () =>
-              runner.recordFailure(attemptCtx, err instanceof Error ? err.message : String(err)),
+              runner.recordFailure(attemptCtx, reason),
             );
-            return {
-              outcome: 'failed' as const,
-              reason: err instanceof Error ? err.message : String(err),
-            };
+            return { outcome: 'failed' as const, reason };
           }
+          // Not the last attempt: mark THIS attempt's row so it doesn't sit
+          // at its provisional outcome forever, then loop to a fresh
+          // attempt — the stage_execution itself isn't failed yet.
+          await step.run(`record-attempt-error-${data.stageKey}-${iteration}`, () =>
+            runner.recordAttemptError(attemptCtx, reason),
+          );
         }
       }
     },
