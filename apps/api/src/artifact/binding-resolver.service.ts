@@ -11,6 +11,11 @@ export interface BindingScope {
   runId: string;
   prevStageKey?: string | undefined;
   inputs: Record<string, unknown>;
+  /** `run.assetBindings` — `Record<assetId, {blobId, kind}>`, snapshotted at
+   * `RunService.start()` (§6.2). Never re-read from the live `asset` table
+   * here, so a later channel-asset edit can't retroactively change a past
+   * run. */
+  assetBindings?: Record<string, { blobId: string; kind: string }> | undefined;
   /** phase 7 — carried through the interface now so callers don't churn later. */
   itemIndex?: number | undefined;
 }
@@ -43,11 +48,13 @@ export interface RefEnvelope {
 
 /**
  * §6.1 — binding resolver with slots and context. Handles `const`/`input`/
- * `prev`/`memory` (real, phase 1/2). `asset`/`role`/`item`/`prevItem` throw a
- * named "not implemented until phase N" error rather than silently
- * resolving to nothing — a stage that references one of those today is a
- * validation gap the compatibility walker (chunk 3) will eventually catch,
- * not something the resolver should paper over.
+ * `prev`/`memory` (phase 1/2) and `asset` (phase 4 chunk 1, real as of this
+ * chunk — reads only `run.assetBindings`, never the live `asset` table).
+ * `role`/`item`/`prevItem` still throw a named "not implemented until phase
+ * N" error rather than silently resolving to nothing — a stage that
+ * references one of those today is a validation gap the compatibility
+ * walker will eventually catch, not something the resolver should paper
+ * over.
  */
 @Injectable()
 export class BindingResolverService {
@@ -87,8 +94,24 @@ export class BindingResolverService {
         };
       }
 
-      case 'asset':
-        throw new Error(`BindingResolverService: {from: "asset"} is not implemented until phase 4`);
+      case 'asset': {
+        const binding = ctx.assetBindings?.[ref.assetId];
+        if (!binding) {
+          // A runnable blueprint version's asset refs are validated at save
+          // time (`blueprint.service.ts`'s `assetsById` plumbing) and
+          // snapshotted into `run.assetBindings` at `RunService.start()` —
+          // reaching here with nothing snapshotted is an engine bug, not a
+          // user error.
+          throw new Error(
+            `BindingResolverService: no asset binding for "${ref.assetId}" — expected ` +
+              'RunService.start() to have snapshotted it into run.assetBindings',
+          );
+        }
+        return {
+          value: { blobId: binding.blobId, kind: binding.kind },
+          provenance: { ref, assetId: ref.assetId },
+        };
+      }
 
       case 'role':
         throw new Error(`BindingResolverService: {from: "role"} is not implemented until phase 8`);

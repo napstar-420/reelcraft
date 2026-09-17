@@ -1,14 +1,21 @@
-import { Body, Controller, Get, Param, Post, Sse, UsePipes } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Put, Sse, UsePipes } from '@nestjs/common';
 import { map, type Observable } from 'rxjs';
-import { CreateRunDto, RaiseBudgetDto } from '@reefcraft/shared';
+import {
+  AttachInputDto,
+  CreateRunDto,
+  RaiseBudgetDto,
+  RequestInputUploadDto,
+} from '@reefcraft/shared';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { InProcessRunEvents, type RunEvent } from '../orchestration/run-events';
 import { RunService } from './run.service';
+import { RunInputService } from './run-input.service';
 
 @Controller('runs')
 export class RunController {
   constructor(
     private readonly runs: RunService,
+    private readonly runInputs: RunInputService,
     private readonly events: InProcessRunEvents,
   ) {}
 
@@ -26,6 +33,29 @@ export class RunController {
   @Get(':id')
   get(@Param('id') id: string) {
     return this.runs.get(id);
+  }
+
+  @Post(':id/start')
+  start(@Param('id') id: string) {
+    return this.runs.start(id);
+  }
+
+  @Post(':id/inputs/:key/upload')
+  requestInputUpload(
+    @Param('id') id: string,
+    @Param('key') key: string,
+    @Body(new ZodValidationPipe(RequestInputUploadDto)) dto: RequestInputUploadDto,
+  ) {
+    return this.runInputs.requestMediaUpload(id, key, dto.ext);
+  }
+
+  @Put(':id/inputs/:key')
+  attachInput(
+    @Param('id') id: string,
+    @Param('key') key: string,
+    @Body(new ZodValidationPipe(AttachInputDto)) dto: AttachInputDto,
+  ) {
+    return this.runInputs.attachMediaInput(id, key, dto.blobs);
   }
 
   @Post(':id/budget')

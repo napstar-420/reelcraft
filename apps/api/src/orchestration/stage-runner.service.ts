@@ -212,13 +212,31 @@ export class StageRunnerService {
     return row.inputs as Record<string, unknown>;
   }
 
+  /** §6.2 — `run.assetBindings`, snapshotted once at `RunService.start()`;
+   * fed into `BindingScope` so `{from:'asset'}` refs resolve without
+   * `BindingResolverService` ever touching the live `asset` table. */
+  private async loadAssetBindings(
+    runId: string,
+  ): Promise<Record<string, { blobId: string; kind: string }>> {
+    const [row] = await this.db
+      .select({ assetBindings: run.assetBindings })
+      .from(run)
+      .where(eq(run.id, runId))
+      .limit(1);
+    if (!row) throw new Error(`StageRunnerService: run ${runId} not found`);
+    return row.assetBindings as Record<string, { blobId: string; kind: string }>;
+  }
+
   private async resolveBindings(
     stage: StageDef,
     runId: string,
     prevStageKey: string | undefined,
   ): Promise<ResolvedBindings> {
-    const inputs = await this.loadRunInputs(runId);
-    return this.bindingResolver.resolveAll(stage, { runId, prevStageKey, inputs });
+    const [inputs, assetBindings] = await Promise.all([
+      this.loadRunInputs(runId),
+      this.loadAssetBindings(runId),
+    ]);
+    return this.bindingResolver.resolveAll(stage, { runId, prevStageKey, inputs, assetBindings });
   }
 
   /** §3.8.1's critique log — derived from prior `stage_attempt` rows'
@@ -480,6 +498,7 @@ export class StageRunnerService {
           runId: ctx.runId,
           prevStageKey,
           inputs: await this.loadRunInputs(ctx.runId),
+          assetBindings: await this.loadAssetBindings(ctx.runId),
         });
         resolvedRefs.push(resolved.refs);
       } else {

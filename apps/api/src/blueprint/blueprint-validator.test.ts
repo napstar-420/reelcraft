@@ -311,17 +311,54 @@ describe('BlueprintValidatorService', () => {
     ).toBe(true);
   });
 
-  it('errors naming the right phase for asset/item/prevItem refs', () => {
+  it('errors on {from: "asset"} naming an unknown asset', () => {
     const validator = makeValidator();
-    const assetIssues = validator.validate({
+    const issues = validator.validate({
       graph: [stage({ key: 'a', context: { x: { from: 'asset', assetId: 'x' } } })],
       inputs: [],
       roles: [],
     });
-    expect(assetIssues.some((i) => i.severity === 'error' && i.message.includes('phase 4'))).toBe(
-      true,
-    );
+    expect(hasError(issues, 'stages.a.context.x')).toBe(true);
+  });
 
+  it('errors on {from: "asset"} naming an asset from a different channel', () => {
+    const validator = makeValidator();
+    const issues = validator.validate({
+      graph: [stage({ key: 'a', context: { x: { from: 'asset', assetId: 'logo' } } })],
+      inputs: [],
+      roles: [],
+      assetsById: new Map([['logo', { kind: 'media.image', channelId: 'other-channel' }]]),
+      blueprintChannelId: 'this-channel',
+    });
+    expect(hasError(issues, 'stages.a.context.x')).toBe(true);
+  });
+
+  it('errors on {from: "asset"} naming a font/lut asset — not bindable via refs', () => {
+    const validator = makeValidator();
+    const issues = validator.validate({
+      graph: [stage({ key: 'a', context: { x: { from: 'asset', assetId: 'brand-font' } } })],
+      inputs: [],
+      roles: [],
+      assetsById: new Map([['brand-font', { kind: 'font', channelId: 'ch1' }]]),
+      blueprintChannelId: 'ch1',
+    });
+    expect(hasError(issues, 'stages.a.context.x')).toBe(true);
+  });
+
+  it('resolves {from: "asset"} against a same-channel media asset', () => {
+    const validator = makeValidator();
+    const issues = validator.validate({
+      graph: [stage({ key: 'a', context: { x: { from: 'asset', assetId: 'logo' } } })],
+      inputs: [],
+      roles: [],
+      assetsById: new Map([['logo', { kind: 'media.image', channelId: 'ch1' }]]),
+      blueprintChannelId: 'ch1',
+    });
+    expect(hasError(issues, 'stages.a.context.x')).toBe(false);
+  });
+
+  it('errors naming the right phase for item/prevItem refs', () => {
+    const validator = makeValidator();
     const itemIssues = validator.validate({
       graph: [stage({ key: 'a', context: { x: { from: 'item' } } })],
       inputs: [],

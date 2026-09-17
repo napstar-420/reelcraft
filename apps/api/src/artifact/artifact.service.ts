@@ -5,6 +5,8 @@ import { fromUsd } from '../common/money';
 import { DRIZZLE, type Db, type Tx } from '../db/drizzle.provider';
 import { artifact, stageExecution } from '../db/schema/index';
 
+type Executor = Db | Tx;
+
 export interface RecordAttemptArtifactInput {
   runId: string;
   producerStageKey: string;
@@ -18,6 +20,18 @@ export interface RecordAttemptArtifactInput {
   reproLevel: 'exact' | 'approximate' | 'none';
   repro?: unknown;
   costUsd: number;
+}
+
+export interface RecordInputArtifactInput {
+  runId: string;
+  /** The declared `InputDef.key` — stored as `producerStageKey:
+   * '$input:<key>'` (§6.2). */
+  key: string;
+  itemIndex?: number;
+  kind: string;
+  data?: unknown;
+  blobId?: string;
+  schemaHash?: string;
 }
 
 /**
@@ -48,6 +62,40 @@ export class ArtifactService {
       reproLevel: input.reproLevel,
       repro: input.repro,
       costUsd: fromUsd(input.costUsd),
+    });
+    return id;
+  }
+
+  /**
+   * §6.2 — every declared run input becomes an artifact of its own, keyed by
+   * the synthetic `producer_stage_key` `'$input:<key>'` so `{from:'prev'}`-
+   * shaped provenance tracking (invalidation, chunk 2) has a real artifact
+   * row to point at even though no stage produced it. Inserted directly with
+   * `stale: false` — unlike `recordAttemptArtifact`, there is no prior
+   * active row to supersede the first time an input is provided (a run's
+   * inputs can't exist before the run itself does), so `finalize()`'s
+   * stale-then-insert ordering doesn't apply here. Accepts an optional `tx`
+   * so callers that need this in the same transaction as other writes (e.g.
+   * `RunService.create()`) aren't forced into a second, separately-committed
+   * statement.
+   */
+  async recordInputArtifact(
+    input: RecordInputArtifactInput,
+    executor: Executor = this.db,
+  ): Promise<string> {
+    const id = ulid();
+    await executor.insert(artifact).values({
+      id,
+      runId: input.runId,
+      producerStageKey: `$input:${input.key}`,
+      itemIndex: input.itemIndex,
+      kind: input.kind,
+      data: input.data,
+      blobId: input.blobId,
+      schemaHash: input.schemaHash,
+      stale: false,
+      userAuthored: true,
+      reproLevel: 'exact',
     });
     return id;
   }

@@ -1,5 +1,12 @@
 import { Injectable } from '@nestjs/common';
-import type { InputDef, RoleDef, StageDef, ValidationIssue } from '@reefcraft/shared';
+import type {
+  EnabledWhen,
+  InputDef,
+  Ref,
+  RoleDef,
+  StageDef,
+  ValidationIssue,
+} from '@reefcraft/shared';
 import type { CapabilityImpl } from '../capability/capability.interface';
 import { CapabilityRegistry } from '../capability/capability.registry';
 import { SchemaValidatorService } from '../json-schema/schema-validator.service';
@@ -47,7 +54,7 @@ export class BlueprintValidatorService {
     this.checkRoleCount(roles, issues);
     this.checkInputSchemas(inputs, issues);
 
-    const ctx = buildValidationContext({ graph, inputs, roles });
+    const ctx = buildValidationContext(input);
     for (const stage of graph) {
       this.validateStage(stage, ctx, issues);
     }
@@ -173,6 +180,24 @@ export class BlueprintValidatorService {
       });
     }
 
+    // §16.3 — distinct from the generic "neither checks nor qc" warning
+    // above (which fires for every stage regardless of modality): a
+    // video-modality stage specifically has no QC path at all (§10.1's "human
+    // approval replaces it"), so `checks`/`approval` are the ONLY gates it
+    // can have — flag it more pointedly when it has neither.
+    if (impl?.modality === 'video' && stage.checks.length === 0 && !stage.approval) {
+      issues.push({
+        path: base,
+        message:
+          'video-modality stage declares neither checks nor approval — nothing gates a bad ' +
+          'render before it reaches the user (§10.1, §16.3)',
+        severity: 'warning',
+      });
+    }
+
+    this.checkEnabledWhenDeclaration(stage, ctx, issues);
+    this.checkApprovalOnReject(stage, stageIndex, ctx, issues);
+
     const boundTypes = new Map<string, SourceType>();
     // §3.8.1 — `priorCritique` is a reserved template key spliced in by the
     // engine (`StageRunnerService.reserveAndSubmit`), never a declared
@@ -221,6 +246,8 @@ export class BlueprintValidatorService {
         }
       }
     }
+
+    this.checkEnabledWhenConsistency(stage, stageIndex, ctx, impl, issues);
 
     if (stage.instructions?.template) {
       for (const templatePath of parseTemplatePaths(stage.instructions.template)) {
@@ -302,6 +329,146 @@ export class BlueprintValidatorService {
     }
   }
 
+  /** §16.2 — `enabledWhen.input` must name a declared `InputDef.key`; an
+   * undeclared one can never actually gate anything at run time. */
+  private checkEnabledWhenDeclaration(
+    stage: StageDef,
+    ctx: ValidationContext,
+    issues: ValidationIssue[],
+  ): void {
+    if (!stage.enabledWhen) return;
+    if (!ctx.inputByKey.has(stage.enabledWhen.input)) {
+      issues.push({
+        path: `stages.${stage.key}.enabledWhen.input`,
+        message: `references undeclared input "${stage.enabledWhen.input}"`,
+        severity: 'error',
+      });
+    }
+  }
+
+  /** §16.2/§16.3 — `approval.onReject.retryStageKey` must name this stage
+   * or an earlier one in the graph (retrying "forward" makes no sense); a
+   * `mode:'item'` approval needs `iterate` declared to have any item-level
+   * meaning; retrying a target with no `instructions.template` has nothing
+   * for a rejection note to influence, so that's a warning rather than an
+   * error (the retry still runs, it just can't act on the note). */
+  private checkApprovalOnReject(
+    stage: StageDef,
+    stageIndex: number,
+    ctx: ValidationContext,
+    issues: ValidationIssue[],
+  ): void {
+    const base = `stages.${stage.key}`;
+
+    if (stage.approval?.mode === 'item' && !stage.iterate) {
+      issues.push({
+        path: `${base}.approval.mode`,
+        message: 'approval.mode "item" requires the stage to declare iterate',
+        severity: 'error',
+      });
+    }
+
+    const onReject = stage.approval?.onReject;
+    if (!onReject) return;
+
+    const targetIndex = ctx.stageIndexByKey.get(onReject.retryStageKey);
+    if (targetIndex === undefined) {
+      issues.push({
+        path: `${base}.approval.onReject.retryStageKey`,
+        message: `references unknown stage "${onReject.retryStageKey}"`,
+        severity: 'error',
+      });
+      return;
+    }
+    if (targetIndex > stageIndex) {
+      issues.push({
+        path: `${base}.approval.onReject.retryStageKey`,
+        message:
+          `onReject target "${onReject.retryStageKey}" comes after this stage in the graph — ` +
+          'a rejection can only retry this stage or an earlier one',
+        severity: 'error',
+      });
+      return;
+    }
+
+    const targetStage = ctx.graph[targetIndex];
+    if (targetStage && !targetStage.instructions?.template) {
+      issues.push({
+        path: `${base}.approval.onReject.retryStageKey`,
+        message:
+          `target stage "${targetStage.key}" has no instructions template — a rejection ` +
+          'note has nothing to influence on retry',
+        severity: 'warning',
+      });
+    }
+  }
+
+  /** §16.2 — a required slot (or any context ref, which is always
+   * effectively required at run time — `resolveAll` never skips one)
+   * binding `{from:'prev'}` to a conditionally-enabled stage, or reading a
+   * memory key whose sole writer is conditionally enabled, must itself carry
+   * the SAME `enabledWhen` condition — otherwise this stage could run when
+   * the thing it depends on didn't, and the binding throws at run time
+   * instead of failing at save time. Only checked for the single-writer case
+   * (multiple writers already get their own orthogonal warning via
+   * `checkMemoryWrittenByMultiple`). */
+  private checkEnabledWhenConsistency(
+    stage: StageDef,
+    stageIndex: number,
+    ctx: ValidationContext,
+    impl: CapabilityImpl | undefined,
+    issues: ValidationIssue[],
+  ): void {
+    const base = `stages.${stage.key}`;
+    const requiredSlotNames = new Set(
+      (impl ? impl.slots(stage.config) : [])
+        .filter((slotDef) => slotDef.required)
+        .map((slotDef) => slotDef.name),
+    );
+
+    const entries: Array<{ path: string; ref: Ref }> = [];
+    for (const [name, ref] of Object.entries(stage.slots)) {
+      if (requiredSlotNames.has(name)) entries.push({ path: `${base}.slots.${name}`, ref });
+    }
+    for (const [name, ref] of Object.entries(stage.context)) {
+      entries.push({ path: `${base}.context.${name}`, ref });
+    }
+
+    for (const { path, ref } of entries) {
+      if (ref.from === 'prev') {
+        const prevStage = stageIndex > 0 ? ctx.graph[stageIndex - 1] : undefined;
+        if (prevStage?.enabledWhen && !sameEnabledWhen(stage.enabledWhen, prevStage.enabledWhen)) {
+          issues.push({
+            path,
+            message:
+              `binds {from:'prev'} to "${prevStage.key}", which is conditionally enabled — ` +
+              'this stage must carry the same enabledWhen condition or the binding may find no artifact',
+            severity: 'error',
+          });
+        }
+      } else if (ref.from === 'memory') {
+        const writers = ctx.memoryWriters.get(ref.key) ?? [];
+        if (writers.length === 1) {
+          const writerIndex = ctx.stageIndexByKey.get(writers[0]!.stageKey);
+          const writerStage = writerIndex === undefined ? undefined : ctx.graph[writerIndex];
+          if (
+            writerStage?.enabledWhen &&
+            !sameEnabledWhen(stage.enabledWhen, writerStage.enabledWhen)
+          ) {
+            issues.push({
+              path,
+              message:
+                `reads memory key "${ref.key}", written only by conditionally-enabled stage ` +
+                `"${writerStage.key}" — this stage must carry the same enabledWhen condition or ` +
+                'the read may find nothing',
+              severity: 'error',
+            });
+          }
+        }
+      }
+    }
+  }
+
   private checkMemoryWrittenByMultiple(ctx: ValidationContext, issues: ValidationIssue[]): void {
     for (const [memKey, writers] of ctx.memoryWriters) {
       if (writers.length > 1) {
@@ -334,4 +501,9 @@ export class BlueprintValidatorService {
       }
     }
   }
+}
+
+function sameEnabledWhen(a: EnabledWhen | undefined, b: EnabledWhen | undefined): boolean {
+  if (!a || !b) return false;
+  return a.input === b.input && a.equals === b.equals;
 }
