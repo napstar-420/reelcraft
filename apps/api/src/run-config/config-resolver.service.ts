@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
 import { ConfigLayer } from '@reefcraft/shared';
-import type { ModelPin, StageDef } from '@reefcraft/shared';
+import type { ModelPin, QcDef, StageDef } from '@reefcraft/shared';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
 import { run } from '../db/schema/index';
 import { mergeLayer, mergeLayers } from './layer-merge';
@@ -14,6 +14,12 @@ export interface EffectiveStageConfig {
   polling: { intervalSec: number; maxWaitSec: number };
   /** StageDef.config verbatim — the capability's own Cfg, not a ConfigLayer field. */
   capabilityConfig: Record<string, unknown>;
+  /** Present iff `stage.qc` is declared. `judge`/`threshold` are the only
+   * two `QcDef` fields the layer stack ever overrides (`ConfigLayer.qc`);
+   * `criteria`/`includeInputs`/`dimensions`/`media` are read directly off
+   * `StageDef.qc` at the call site — `run.overrides` never touches them.
+   * `qc.capUsd`/`qc_budget_exhausted` are out of scope (Phase 3 budget). */
+  qc?: { judge: ModelPin; threshold: number };
 }
 
 /**
@@ -64,6 +70,12 @@ export class ConfigResolverService {
     const layer = mergeLayer(base, override);
 
     const model = toModelPin(layer.model);
+    const qc = stage.qc
+      ? {
+          judge: resolveJudgeModel(stage.qc, layer.qc),
+          threshold: layer.qc?.threshold ?? stage.qc.threshold,
+        }
+      : undefined;
     return {
       layer,
       ...(model !== undefined && { model }),
@@ -73,6 +85,7 @@ export class ConfigResolverService {
         maxWaitSec: layer.polling?.maxWaitSec ?? 120,
       },
       capabilityConfig: stage.config,
+      ...(qc !== undefined && { qc }),
     };
   }
 }
@@ -98,6 +111,22 @@ function parseConfigLayerMap(raw: unknown, column: string): Record<string, Confi
     result[key] = ConfigLayer.parse(value);
   }
   return result;
+}
+
+/** `stage.qc.model` is always a full `ModelPin` (required by `QcDef`); the
+ * layer's `qc.model` override, if any, is merged over it via the existing
+ * `mergeLayer` (reusing its "switching modelId discards old params" rule
+ * for free) rather than hand-rolling a second merge. */
+function resolveJudgeModel(stageQc: QcDef, layerQc: ConfigLayer['qc']): ModelPin {
+  if (!layerQc?.model) return stageQc.model;
+  const merged = mergeLayer({ model: stageQc.model }, { model: layerQc.model });
+  const judge = toModelPin(merged.model);
+  if (!judge) {
+    throw new Error(
+      'ConfigResolverService: merged qc.model did not resolve to a full model pin (internal invariant violated — stage.qc.model is always complete)',
+    );
+  }
+  return judge;
 }
 
 function toModelPin(pin: ConfigLayer['model']): ModelPin | undefined {

@@ -174,6 +174,14 @@ export class BlueprintValidatorService {
     }
 
     const boundTypes = new Map<string, SourceType>();
+    // §3.8.1 — `priorCritique` is a reserved template key spliced in by the
+    // engine (`StageRunnerService.reserveAndSubmit`), never a declared
+    // slot/context ref — seed it so the walker doesn't reject
+    // `{{ priorCritique }}` as undeclared. A stage that happens to declare
+    // its own slot/context of the same name overrides this below (name
+    // collisions aren't flagged — a future validator follow-up, not a
+    // blocker here).
+    boundTypes.set('priorCritique', { kind: 'literal', value: '' });
     for (const [name, ref] of Object.entries(stage.slots)) {
       const result = resolveBoundType(ref, ctx, stageIndex, `${base}.slots.${name}`);
       if (result.issue) issues.push(result.issue);

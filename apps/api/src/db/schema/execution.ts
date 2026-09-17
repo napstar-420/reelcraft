@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import {
   boolean,
   integer,
@@ -58,6 +59,13 @@ export const stageItem = pgTable(
  * FAILED -> resume. The retry-limit check and the idempotency key both
  * depend on it; the unique constraint below is cheap insurance against a
  * reset path ever being introduced by accident.
+ *
+ * The index is keyed on `coalesce(stage_item_id, '')`, not the bare column
+ * — Postgres unique indexes treat `NULL <> NULL`, so a plain
+ * `(stage_execution_id, stage_item_id, attempt_no)` index (stage_item_id is
+ * NULL for every non-iterating stage, i.e. all of phase 2) would let
+ * multiple rows share the same `(execution, NULL, attempt_no)` silently.
+ * Same fix as `artifact.ts`'s `artifact_active_uq` for the same reason.
  */
 export const stageAttempt = pgTable(
   'stage_attempt',
@@ -88,7 +96,7 @@ export const stageAttempt = pgTable(
   (t) => [
     uniqueIndex('stage_attempt_execution_item_attempt_uq').on(
       t.stageExecutionId,
-      t.stageItemId,
+      sql`coalesce(${t.stageItemId}, '')`,
       t.attemptNo,
     ),
   ],
