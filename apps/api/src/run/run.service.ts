@@ -9,6 +9,7 @@ import { ulid } from '../common/ulid';
 import { fromUsd } from '../common/money';
 import { INNGEST_CLIENT } from '../orchestration/inngest.client';
 import { EngineConfig } from '../config/engine-config';
+import { CapabilityRegistry } from '../capability/capability.registry';
 import { ConfigResolverService } from '../run-config/config-resolver.service';
 import { engineDefaults } from '../run-config/engine-defaults';
 
@@ -25,6 +26,7 @@ export class RunService {
     @Inject(INNGEST_CLIENT) private readonly inngest: Inngest,
     private readonly engineConfig: EngineConfig,
     private readonly configResolver: ConfigResolverService,
+    private readonly capabilities: CapabilityRegistry,
   ) {}
 
   async create(dto: CreateRunDto) {
@@ -53,6 +55,7 @@ export class RunService {
       channelDefaults: channelRow.defaults as ConfigLayer,
       blueprintDefaults: version.defaults as ConfigLayer,
     });
+    this.assertTextStagesHaveMaxTokens(graph, resolvedConfig);
 
     await this.db.transaction(async (tx) => {
       await tx.insert(run).values({
@@ -79,6 +82,30 @@ export class RunService {
     await this.inngest.send({ name: 'run/started', data: { runId } });
 
     return this.get(runId);
+  }
+
+  /** §16.5 — the validator only warns (it can't see the channel layer where
+   * `max_tokens` usually lives, `blueprint-validator.service.ts`'s own
+   * comment on that warning). Once the full layer stack has resolved, an
+   * unbounded text reservation is a real bug, not a warning: `ceilingUsd`
+   * can't be honest without it (§16.5's "input is boundable but output is
+   * not unless max_tokens is set"). Thrown loudly here rather than
+   * discovered later as a budget-reservation failure with a confusing cause. */
+  private assertTextStagesHaveMaxTokens(
+    graph: StageDef[],
+    resolvedConfig: Record<string, ConfigLayer>,
+  ): void {
+    for (const stage of graph) {
+      const impl = this.capabilities.get(stage.capability);
+      if (impl.modality !== 'text') continue;
+      const maxTokens = resolvedConfig[stage.key]?.model?.params?.['max_tokens'];
+      if (typeof maxTokens !== 'number') {
+        throw new Error(
+          `RunService.create: stage "${stage.key}" is text-modality with no effective ` +
+            'model.params.max_tokens (§16.5) — cannot compute an honest cost ceiling',
+        );
+      }
+    }
   }
 
   async get(runId: string) {

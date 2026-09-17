@@ -20,7 +20,7 @@ function stage(key: string): StageDef {
     output: { kind: 'text' },
     checks: [],
     retryLimit: 0,
-    model: { provider: 'fake', modelId: 'fake-text-1', params: {} },
+    model: { provider: 'fake', modelId: 'fake-text-1', params: { max_tokens: 256 } },
   };
 }
 

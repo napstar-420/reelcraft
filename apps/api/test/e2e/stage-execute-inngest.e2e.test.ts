@@ -114,7 +114,7 @@ describe('stage.execute (real Inngest steps, e2e)', () => {
         output: { kind: 'text' },
         checks: [],
         retryLimit: 0,
-        model: { provider: 'fake', modelId: 'fake-text-1', params: {} },
+        model: { provider: 'fake', modelId: 'fake-text-1', params: { max_tokens: 256 } },
       },
     ];
     const { run } = await setupRun(graph);
@@ -147,11 +147,13 @@ describe('stage.execute (real Inngest steps, e2e)', () => {
     const artifactRows = await testDb.db.select().from(artifact).where(eq(artifact.runId, run.id));
     expect(artifactRows.filter((a) => a.stale === false)).toHaveLength(1);
 
+    // §11 — one settled attempt writes 3 stage_output rows: reservation,
+    // actual, release.
     const ledgerRows = await testDb.db
       .select()
       .from(ledgerEntry)
       .where(and(eq(ledgerEntry.runId, run.id), eq(ledgerEntry.category, 'stage_output')));
-    expect(ledgerRows).toHaveLength(1);
+    expect(ledgerRows).toHaveLength(3);
   });
 
   it('check_failed on attempt 1 retries and succeeds on attempt 2, via the real priorCritique splice', async () => {
@@ -173,7 +175,7 @@ describe('stage.execute (real Inngest steps, e2e)', () => {
           },
         ],
         retryLimit: 1,
-        model: { provider: 'fake', modelId: 'fake-text-1', params: {} },
+        model: { provider: 'fake', modelId: 'fake-text-1', params: { max_tokens: 256 } },
       },
     ];
     const { run } = await setupRun(graph);
@@ -223,7 +225,7 @@ describe('stage.execute (real Inngest steps, e2e)', () => {
           },
         ],
         retryLimit: 0,
-        model: { provider: 'fake', modelId: 'fake-text-1', params: {} },
+        model: { provider: 'fake', modelId: 'fake-text-1', params: { max_tokens: 256 } },
       },
     ];
     const { run } = await setupRun(graph);
@@ -258,7 +260,11 @@ describe('stage.execute (real Inngest steps, e2e)', () => {
         output: { kind: 'text' },
         checks: [],
         retryLimit: 1,
-        model: { provider: 'fake', modelId: 'fake-text-1:fail:timeout', params: {} },
+        model: {
+          provider: 'fake',
+          modelId: 'fake-text-1:fail:timeout',
+          params: { max_tokens: 256 },
+        },
       },
     ];
     // Shrinks the backoff loop (default maxWaitSec:120) so this test doesn't
@@ -315,7 +321,7 @@ describe('stage.execute (real Inngest steps, e2e)', () => {
           },
         },
         retryLimit: 0,
-        model: { provider: 'fake', modelId: 'fake-text-1', params: {} },
+        model: { provider: 'fake', modelId: 'fake-text-1', params: { max_tokens: 256 } },
       },
     ];
     const { run } = await setupRun(graph);
@@ -349,10 +355,14 @@ describe('stage.execute (real Inngest steps, e2e)', () => {
           criteria: 'be good',
           threshold: 70,
           includeInputs: false,
-          model: { provider: 'fake', modelId: 'fake-text-1:fail:transport', params: {} },
+          model: {
+            provider: 'fake',
+            modelId: 'fake-text-1:fail:transport',
+            params: { max_tokens: 256 },
+          },
         },
         retryLimit: 5,
-        model: { provider: 'fake', modelId: 'fake-text-1', params: {} },
+        model: { provider: 'fake', modelId: 'fake-text-1', params: { max_tokens: 256 } },
       },
     ];
     const { run } = await setupRun(graph);
@@ -391,7 +401,11 @@ describe('stage.execute (real Inngest steps, e2e)', () => {
         output: { kind: 'text' },
         checks: [],
         retryLimit: 1,
-        model: { provider: 'fake', modelId: 'fake-text-1:fail:poll_failed:1', params: {} },
+        model: {
+          provider: 'fake',
+          modelId: 'fake-text-1:fail:poll_failed:1',
+          params: { max_tokens: 256 },
+        },
       },
     ];
     const { run } = await setupRun(graph);
@@ -416,5 +430,18 @@ describe('stage.execute (real Inngest steps, e2e)', () => {
     const byAttempt = new Map(rows.map((r) => [r.attemptNo, r]));
     expect(byAttempt.get(1)?.outcome).toBe('provider_error');
     expect(byAttempt.get(2)?.outcome).toBe('success');
+
+    // §11.3 — attempt 1's poll-reported failure is a confirmed non-billing
+    // failure (`settleFailedPoll` -> `settleRelease`, called before the
+    // throw that lands in `recordAttemptError`): a release only, no actual.
+    // Attempt 2 settles normally via `settleSuccess`.
+    const ledgerRows = await testDb.db
+      .select()
+      .from(ledgerEntry)
+      .where(and(eq(ledgerEntry.runId, run.id), eq(ledgerEntry.category, 'stage_output')));
+    expect(ledgerRows).toHaveLength(5); // attempt 1: reservation+release; attempt 2: reservation+actual+release
+    expect(ledgerRows.filter((e) => e.kind === 'reservation')).toHaveLength(2);
+    expect(ledgerRows.filter((e) => e.kind === 'release')).toHaveLength(2);
+    expect(ledgerRows.filter((e) => e.kind === 'actual')).toHaveLength(1);
   });
 });

@@ -313,14 +313,19 @@ describe('phase 2 acceptance: three-stage blueprint, cross-artifact check (e2e)'
       tombstone: false,
     });
 
-    // Ledger: 4 stage_output entries (including the failed script attempt 1
-    // — cost is unconditional per §3.9.1), none for qc (no stage declares
-    // qc in this blueprint).
+    // Ledger: 4 settled attempts total (outline 1, script 2 including the
+    // failed attempt 1 — cost is unconditional per §3.9.1 — audit 1), each
+    // writing 3 stage_output rows under §11's reserve/settle model
+    // (reservation, actual, release) — 12 rows, none for qc (no stage
+    // declares qc in this blueprint).
     const stageOutputEntries = await testDb.db
       .select()
       .from(ledgerEntry)
       .where(and(eq(ledgerEntry.runId, createdRun.id), eq(ledgerEntry.category, 'stage_output')));
-    expect(stageOutputEntries).toHaveLength(4);
+    expect(stageOutputEntries).toHaveLength(12);
+    expect(stageOutputEntries.filter((e) => e.kind === 'reservation')).toHaveLength(4);
+    expect(stageOutputEntries.filter((e) => e.kind === 'actual')).toHaveLength(4);
+    expect(stageOutputEntries.filter((e) => e.kind === 'release')).toHaveLength(4);
     const qcEntries = await testDb.db
       .select()
       .from(ledgerEntry)

@@ -14,12 +14,18 @@ export interface EffectiveStageConfig {
   polling: { intervalSec: number; maxWaitSec: number };
   /** StageDef.config verbatim — the capability's own Cfg, not a ConfigLayer field. */
   capabilityConfig: Record<string, unknown>;
+  /** §11.2 — the effective per-stage reservation cap, read by
+   * `LedgerService.reserve()`. Absent means "no stage-level cap", i.e. only
+   * the run cap bounds this stage's reservations. */
+  budget?: { stageCapUsd?: number };
   /** Present iff `stage.qc` is declared. `judge`/`threshold` are the only
    * two `QcDef` fields the layer stack ever overrides (`ConfigLayer.qc`);
    * `criteria`/`includeInputs`/`dimensions`/`media` are read directly off
    * `StageDef.qc` at the call site — `run.overrides` never touches them.
-   * `qc.capUsd`/`qc_budget_exhausted` are out of scope (Phase 3 budget). */
-  qc?: { judge: ModelPin; threshold: number };
+   * `capUsd`, if present, gates QC via `LedgerService.qcSpentUsd()`
+   * (§10.4's `qc_budget_exhausted`), not a reservation — see
+   * `StageRunnerService.fetchAndFinalize`'s decision note. */
+  qc?: { judge: ModelPin; threshold: number; capUsd?: number };
 }
 
 /**
@@ -74,8 +80,11 @@ export class ConfigResolverService {
       ? {
           judge: resolveJudgeModel(stage.qc, layer.qc),
           threshold: layer.qc?.threshold ?? stage.qc.threshold,
+          ...(layer.qc?.capUsd !== undefined &&
+            layer.qc.capUsd !== null && { capUsd: layer.qc.capUsd }),
         }
       : undefined;
+    const stageCapUsd = layer.budget?.stageCapUsd;
     return {
       layer,
       ...(model !== undefined && { model }),
@@ -85,6 +94,7 @@ export class ConfigResolverService {
         maxWaitSec: layer.polling?.maxWaitSec ?? 120,
       },
       capabilityConfig: stage.config,
+      ...(stageCapUsd !== undefined && stageCapUsd !== null && { budget: { stageCapUsd } }),
       ...(qc !== undefined && { qc }),
     };
   }
