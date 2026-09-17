@@ -6,6 +6,8 @@ import { blueprintVersion, run, stageExecution } from '../../db/schema/index';
 import type { RunStateService } from '../run-state.service';
 import { buildStageExecuteFunction } from './stage-execute.fn';
 
+/** Shared shape for both triggers below — `run/resumed` (§12.4, sent by
+ * `RunService.resume()`) carries the identical `{runId}` payload. */
 export interface RunStartedEventData {
   runId: string;
 }
@@ -31,6 +33,15 @@ export function orderStageExecutions<T extends { stageKey: string }>(
  * execute strictly sequentially"), §16.1. `stage_execution` carries no
  * ordinal column, so the graph is loaded and the rows sorted in memory
  * rather than adding a migration for a run-start-time property.
+ *
+ * §12.4 — triggers on `run/resumed` as well as `run/started`: the existing
+ * unconditional `mark-running` step below is what actually flips a
+ * `PAUSED_BUDGET` run back to `RUNNING` on a resumed invocation, so no
+ * separate "un-pause" step is needed. The loop's existing
+ * `state === 'passed'` skip re-enters at whichever stage_execution isn't
+ * done yet — including the one that was `budget_blocked`, via a fresh
+ * `beginAttempt` inside `stage.execute` (a new attempt row, not a
+ * resumption of the old one).
  */
 export function buildRunOrchestrateFunction(
   client: Inngest,
@@ -44,7 +55,7 @@ export function buildRunOrchestrateFunction(
       concurrency: { limit: 1, key: 'event.data.runId' },
       cancelOn: [{ event: 'run/cancelled', match: 'data.runId' }],
     },
-    { event: 'run/started' },
+    [{ event: 'run/started' }, { event: 'run/resumed' }],
     async ({ event, step }) => {
       const { runId } = event.data as RunStartedEventData;
 
@@ -75,6 +86,14 @@ export function buildRunOrchestrateFunction(
           function: stageExecuteFn,
           data: { runId, stageExecutionId: execution.id, stageKey: execution.stageKey },
         });
+
+        if (result.outcome === 'budget_blocked') {
+          // §11.5 — never silently resumes, never silently dies. Cursor is
+          // deliberately left pointing at this stage (set just above) so a
+          // resumed invocation naturally re-enters here.
+          await step.run('mark-paused-budget', () => runState.transition(runId, 'PAUSED_BUDGET'));
+          return { state: 'PAUSED_BUDGET' as const };
+        }
 
         if (result.outcome === 'failed') {
           await step.run('mark-failed', () => runState.transition(runId, 'FAILED'));

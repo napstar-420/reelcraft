@@ -1,9 +1,10 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, lt, notExists, sql } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import { ulid } from '../common/ulid';
 import { fromUsd, toUsd } from '../common/money';
 import { DRIZZLE, type Db, type Tx } from '../db/drizzle.provider';
-import { ledgerEntry, run } from '../db/schema/index';
+import { ledgerEntry, run, stageAttempt } from '../db/schema/index';
 
 export type ReserveResult =
   | { ok: true; reservationId: string }
@@ -330,6 +331,97 @@ export class LedgerService {
         ),
       );
     return rows.reduce((total, row) => total + toUsd(row.amountUsd), 0);
+  }
+
+  /**
+   * §11.4 — `budget.sweep`'s algorithm. Reuses the exact per-reservation
+   * `settle*`-idempotency mechanism every settlement method already has
+   * (the class doc comment above) rather than re-implementing it here:
+   * this method's job is "find candidates and call the right `settle*`",
+   * not "be safe to call twice" — that safety already exists.
+   *
+   * Deliberately NOT scoped by `run.state`. A run sitting in
+   * `PAUSED_BUDGET` is exactly the kind most likely to need an orphaned
+   * reservation freed before a `raiseBudget()` + resume can actually
+   * succeed — an earlier crashed attempt (on any stage) can leave a
+   * reservation open that inflates `run.reservedUsd` and IS the real
+   * reason a later stage got blocked, and nothing but this sweep ever
+   * releases it. Scoping the sweep to `RUNNING` runs only would leave
+   * such a run permanently wedged even after an operator raises the cap.
+   *
+   * The `notExists` correlated subquery excludes already-settled
+   * reservations in SQL, not by post-fetch filtering: unlike
+   * `stageCommittedUsd`'s bounded per-run/per-stage result sets, a naive
+   * "every reservation past its expires_at" query grows unboundedly over
+   * the system's life (an expiry, once passed, stays passed forever) —
+   * filtering in-query keeps the cron's per-run cost bounded to
+   * genuinely-still-open reservations.
+   */
+  async sweepExpiredReservations(): Promise<{ swept: number }> {
+    const settlement = alias(ledgerEntry, 'settlement');
+    const nowIso = new Date().toISOString();
+
+    const expired = await this.db
+      .select({
+        reservationId: ledgerEntry.id,
+        runId: ledgerEntry.runId,
+        stageKey: ledgerEntry.stageKey,
+        stageAttemptId: ledgerEntry.stageAttemptId,
+        phase: stageAttempt.phase,
+      })
+      .from(ledgerEntry)
+      .innerJoin(stageAttempt, eq(stageAttempt.id, ledgerEntry.stageAttemptId))
+      .where(
+        and(
+          eq(ledgerEntry.kind, 'reservation'),
+          lt(ledgerEntry.expiresAt, nowIso),
+          notExists(
+            this.db
+              .select({ one: sql`1` })
+              .from(settlement)
+              .where(
+                and(
+                  eq(settlement.reservationId, ledgerEntry.id),
+                  inArray(settlement.kind, ['actual', 'release']),
+                ),
+              ),
+          ),
+        ),
+      );
+
+    let swept = 0;
+    for (const row of expired) {
+      if (!row.stageAttemptId) {
+        throw new Error(
+          `LedgerService.sweep: reservation ${row.reservationId} has no stage_attempt_id`,
+        );
+      }
+      const settleParams = {
+        runId: row.runId,
+        stageKey: row.stageKey,
+        stageAttemptId: row.stageAttemptId,
+        reservationId: row.reservationId,
+      };
+      // §11.4's table: created/reserved -> nothing reached a provider, a
+      // plain release; submitting/submitted -> a job may be billing, the
+      // same provisional-actual treatment `recordProviderTimeout` already
+      // uses.
+      if (row.phase === 'created' || row.phase === 'reserved') {
+        await this.settleRelease(settleParams);
+        await this.db
+          .update(stageAttempt)
+          .set({ outcome: 'infra_error', phase: 'settled' })
+          .where(eq(stageAttempt.id, row.stageAttemptId));
+      } else {
+        await this.settleProvisional(settleParams);
+        await this.db
+          .update(stageAttempt)
+          .set({ outcome: 'provider_timeout', phase: 'settled' })
+          .where(eq(stageAttempt.id, row.stageAttemptId));
+      }
+      swept += 1;
+    }
+    return { swept };
   }
 
   /** §10 — QC's own spend record, unchanged since phase 2: a plain

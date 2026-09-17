@@ -431,4 +431,164 @@ describe('LedgerService (e2e)', () => {
       await expect(ledger.raiseBudget({ runId, newCapUsd: 20 })).rejects.toThrow();
     });
   });
+
+  describe('sweepExpiredReservations', () => {
+    async function backdateExpiry(reservationId: string): Promise<void> {
+      await testDb.db
+        .update(ledgerEntry)
+        .set({ expiresAt: new Date(Date.now() - 60_000).toISOString() })
+        .where(eq(ledgerEntry.id, reservationId));
+    }
+
+    it('a created/reserved-phase expiry releases and marks the attempt infra_error', async () => {
+      const runId = await seedRun(10);
+      const stageAttemptId = await seedAttempt(runId, 'outline');
+      const reservationId = await reserveOrThrow({
+        runId,
+        stageAttemptId,
+        stageKey: 'outline',
+        ceilingUsd: 3,
+      });
+      await backdateExpiry(reservationId);
+
+      const result = await ledger.sweepExpiredReservations();
+
+      expect(result.swept).toBe(1);
+      const rows = await testDb.db
+        .select()
+        .from(ledgerEntry)
+        .where(eq(ledgerEntry.reservationId, reservationId));
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.kind).toBe('release');
+      const after = await runRow(runId);
+      expect(toUsd(after.reservedUsd)).toBe(0);
+      const [attemptRow] = await testDb.db
+        .select()
+        .from(stageAttempt)
+        .where(eq(stageAttempt.id, stageAttemptId));
+      expect(attemptRow?.outcome).toBe('infra_error');
+      expect(attemptRow?.phase).toBe('settled');
+    });
+
+    it('a submitting/submitted-phase expiry settles provisionally and marks the attempt provider_timeout', async () => {
+      const runId = await seedRun(10);
+      const stageAttemptId = await seedAttempt(runId, 'outline');
+      const reservationId = await reserveOrThrow({
+        runId,
+        stageAttemptId,
+        stageKey: 'outline',
+        ceilingUsd: 3,
+      });
+      await testDb.db
+        .update(stageAttempt)
+        .set({ phase: 'submitted' })
+        .where(eq(stageAttempt.id, stageAttemptId));
+      await backdateExpiry(reservationId);
+
+      const result = await ledger.sweepExpiredReservations();
+
+      expect(result.swept).toBe(1);
+      const rows = await testDb.db
+        .select()
+        .from(ledgerEntry)
+        .where(eq(ledgerEntry.reservationId, reservationId));
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.kind).toBe('actual');
+      expect(rows[0]?.confirmed).toBe(false);
+      const after = await runRow(runId);
+      expect(toUsd(after.reservedUsd)).toBe(0);
+      expect(toUsd(after.spentUsd)).toBe(3);
+      const [attemptRow] = await testDb.db
+        .select()
+        .from(stageAttempt)
+        .where(eq(stageAttempt.id, stageAttemptId));
+      expect(attemptRow?.outcome).toBe('provider_timeout');
+    });
+
+    it('running the sweep twice is a no-op the second time', async () => {
+      const runId = await seedRun(10);
+      const stageAttemptId = await seedAttempt(runId, 'outline');
+      const reservationId = await reserveOrThrow({
+        runId,
+        stageAttemptId,
+        stageKey: 'outline',
+        ceilingUsd: 3,
+      });
+      await backdateExpiry(reservationId);
+
+      const first = await ledger.sweepExpiredReservations();
+      const second = await ledger.sweepExpiredReservations();
+
+      expect(first.swept).toBe(1);
+      expect(second.swept).toBe(0);
+      const rows = await testDb.db
+        .select()
+        .from(ledgerEntry)
+        .where(eq(ledgerEntry.reservationId, reservationId));
+      expect(rows).toHaveLength(1); // not doubled
+    });
+
+    it('a reservation already settled via the live path before the sweep runs is left alone', async () => {
+      const runId = await seedRun(10);
+      const stageAttemptId = await seedAttempt(runId, 'outline');
+      const reservationId = await reserveOrThrow({
+        runId,
+        stageAttemptId,
+        stageKey: 'outline',
+        ceilingUsd: 3,
+      });
+      await backdateExpiry(reservationId);
+      // The live path settles first, exactly as a real in-flight
+      // stage.execute finishing normally would, right before the cron fires.
+      await ledger.settleSuccess({
+        runId,
+        stageKey: 'outline',
+        stageAttemptId,
+        reservationId,
+        actualUsd: 2,
+      });
+
+      const result = await ledger.sweepExpiredReservations();
+
+      expect(result.swept).toBe(0);
+      const after = await runRow(runId);
+      expect(toUsd(after.reservedUsd)).toBe(0);
+      expect(toUsd(after.spentUsd)).toBe(2); // only the real settlement's amount
+    });
+
+    it('sweeps a stale reservation belonging to a PAUSED_BUDGET run, freeing it for a subsequent raise+resume', async () => {
+      const runId = await seedRun(10);
+      await testDb.db.update(run).set({ state: 'PAUSED_BUDGET' }).where(eq(run.id, runId));
+      // An orphaned reservation on some OTHER stage of the same paused run —
+      // e.g. left behind by a crashed attempt, per recordAttemptError's
+      // documented no-op on the ledger.
+      const stageAttemptId = await seedAttempt(runId, 'expensive');
+      const reservationId = await reserveOrThrow({
+        runId,
+        stageAttemptId,
+        stageKey: 'expensive',
+        ceilingUsd: 9,
+      });
+      await backdateExpiry(reservationId);
+
+      const result = await ledger.sweepExpiredReservations();
+
+      expect(result.swept).toBe(1); // the sweep does NOT skip paused runs
+      const after = await runRow(runId);
+      expect(toUsd(after.reservedUsd)).toBe(0);
+      expect(after.state).toBe('PAUSED_BUDGET'); // sweeping doesn't itself change run state
+
+      // A raise now actually has room to work with.
+      await ledger.raiseBudget({ runId, newCapUsd: 20 });
+      const reserved = await ledger.reserve({
+        runId,
+        stageKey: 'expensive',
+        stageAttemptId: await seedAttempt(runId, 'expensive'),
+        category: 'stage_output',
+        ceilingUsd: 9,
+        preSubmitTtlSec: 600,
+      });
+      expect(reserved.ok).toBe(true);
+    });
+  });
 });

@@ -8,10 +8,12 @@ import { blueprintVersion, channel, run, stageExecution } from '../db/schema/ind
 import { ulid } from '../common/ulid';
 import { fromUsd } from '../common/money';
 import { INNGEST_CLIENT } from '../orchestration/inngest.client';
+import { RunStateService } from '../orchestration/run-state.service';
 import { EngineConfig } from '../config/engine-config';
 import { CapabilityRegistry } from '../capability/capability.registry';
 import { ConfigResolverService } from '../run-config/config-resolver.service';
 import { engineDefaults } from '../run-config/engine-defaults';
+import { LedgerService } from '../budget/ledger.service';
 
 /**
  * §5/§12/§21 — run start resolves and snapshots resolved_config, keyed per
@@ -27,6 +29,8 @@ export class RunService {
     private readonly engineConfig: EngineConfig,
     private readonly configResolver: ConfigResolverService,
     private readonly capabilities: CapabilityRegistry,
+    private readonly ledger: LedgerService,
+    private readonly runState: RunStateService,
   ) {}
 
   async create(dto: CreateRunDto) {
@@ -106,6 +110,28 @@ export class RunService {
         );
       }
     }
+  }
+
+  /** §12.4 — the one budget mutation allowed while `RUNNING`; also the only
+   * way to unblock a `PAUSED_BUDGET` run, since `raiseBudget` alone widens
+   * the cap but doesn't resume the orchestrator. */
+  async raiseBudget(runId: string, capUsd: number) {
+    await this.ledger.raiseBudget({ runId, newCapUsd: capUsd });
+    return this.get(runId);
+  }
+
+  /** §12.1/§12.4 — scoped deliberately to `PAUSED_BUDGET -> RUNNING` only.
+   * Resuming a `FAILED` run and patching `run.overrides` (the only recovery
+   * a `stage_cap_exceeded` block has) are both phase 4's full §12.4 action
+   * matrix, not this phase. */
+  async resume(runId: string) {
+    const current = await this.get(runId);
+    if (current.state !== 'PAUSED_BUDGET') {
+      throw new Error(`RunService.resume: run ${runId} is ${current.state}, not PAUSED_BUDGET`);
+    }
+    await this.runState.transition(runId, 'RUNNING');
+    await this.inngest.send({ name: 'run/resumed', data: { runId } });
+    return this.get(runId);
   }
 
   async get(runId: string) {

@@ -11,6 +11,16 @@ export const CreateRunDto = z.object({
 });
 export type CreateRunDto = z.infer<typeof CreateRunDto>;
 
+/** §12.4 — raising a budget is the one mutation allowed while RUNNING, and
+ * also unblocks a PAUSED_BUDGET run. No refinement beyond `number` here —
+ * `LedgerService.raiseBudget` already throws loudly on a non-increasing cap
+ * or a terminal run state; duplicating that rule in the DTO would just
+ * create a second source of truth for it. */
+export const RaiseBudgetDto = z.object({
+  capUsd: z.number(),
+});
+export type RaiseBudgetDto = z.infer<typeof RaiseBudgetDto>;
+
 export const StageAttemptDto = z.object({
   id: z.string(),
   attemptNo: z.number(),
