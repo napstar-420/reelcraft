@@ -71,7 +71,10 @@ export class ConfigResolverService {
 
     const model = toModelPin(layer.model);
     const qc = stage.qc
-      ? { judge: resolveJudgeModel(stage.qc, layer.qc), threshold: layer.qc?.threshold ?? stage.qc.threshold }
+      ? {
+          judge: resolveJudgeModel(stage.qc, layer.qc),
+          threshold: layer.qc?.threshold ?? stage.qc.threshold,
+        }
       : undefined;
     return {
       layer,

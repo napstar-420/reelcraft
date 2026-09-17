@@ -62,10 +62,7 @@ export function buildStageExecuteFunction(client: Inngest, runner: StageRunnerSe
             const waitSec = POLL_BACKOFF_SEC[Math.min(pollCount, POLL_BACKOFF_SEC.length - 1)]!;
             pollCount += 1;
             elapsedSec += waitSec;
-            await step.sleep(
-              `poll-wait-${data.stageKey}-${iteration}-${pollCount}`,
-              `${waitSec}s`,
-            );
+            await step.sleep(`poll-wait-${data.stageKey}-${iteration}-${pollCount}`, `${waitSec}s`);
             status = await step.run(`poll-${data.stageKey}-${iteration}-${pollCount}`, () =>
               runner.pollOnce(stage, handle),
             );

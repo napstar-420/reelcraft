@@ -72,7 +72,11 @@ describe('semantic retry loop (e2e)', () => {
         context: {},
         output: { kind: 'text' },
         checks: [
-          { type: 'builtin', key: 'regex_match', params: { pattern: 'Attempt 1 failed', path: 'text' } },
+          {
+            type: 'builtin',
+            key: 'regex_match',
+            params: { pattern: 'Attempt 1 failed', path: 'text' },
+          },
         ],
         retryLimit: 1,
         model: { provider: 'fake', modelId: 'fake-text-1', params: {} },
@@ -83,10 +87,7 @@ describe('semantic retry loop (e2e)', () => {
     const execution = run.stageExecutions.find((e) => e.stageKey === 'script');
     if (!execution) throw new Error('stage execution not found');
 
-    const { stage, effective, prevStageKey } = await stageRunner.loadStageContext(
-      run.id,
-      'script',
-    );
+    const { stage, effective, prevStageKey } = await stageRunner.loadStageContext(run.id, 'script');
 
     const ctx1 = await stageRunner.beginAttempt({
       runId: run.id,
@@ -96,7 +97,13 @@ describe('semantic retry loop (e2e)', () => {
     expect(ctx1.attemptNo).toBe(1);
     const handle1 = await stageRunner.reserveAndSubmit(stage, ctx1, prevStageKey, effective);
     await stageRunner.pollOnce(stage, handle1);
-    const result1 = await stageRunner.fetchAndFinalize(stage, ctx1, handle1, prevStageKey, effective);
+    const result1 = await stageRunner.fetchAndFinalize(
+      stage,
+      ctx1,
+      handle1,
+      prevStageKey,
+      effective,
+    );
     expect(result1.outcome).toBe('check_failed');
 
     const ctx2 = await stageRunner.beginAttempt({
@@ -107,13 +114,21 @@ describe('semantic retry loop (e2e)', () => {
     expect(ctx2.attemptNo).toBe(2);
     const handle2 = await stageRunner.reserveAndSubmit(stage, ctx2, prevStageKey, effective);
     await stageRunner.pollOnce(stage, handle2);
-    const result2 = await stageRunner.fetchAndFinalize(stage, ctx2, handle2, prevStageKey, effective);
+    const result2 = await stageRunner.fetchAndFinalize(
+      stage,
+      ctx2,
+      handle2,
+      prevStageKey,
+      effective,
+    );
     expect(result2.outcome).toBe('success');
 
     const rows = await testDb.db
       .select()
       .from(stageAttempt)
-      .where(and(eq(stageAttempt.stageExecutionId, execution.id), isNull(stageAttempt.stageItemId)));
+      .where(
+        and(eq(stageAttempt.stageExecutionId, execution.id), isNull(stageAttempt.stageItemId)),
+      );
     expect(rows).toHaveLength(2);
     const byAttempt = new Map(rows.map((r) => [r.attemptNo, r]));
     expect(byAttempt.get(1)?.outcome).toBe('check_failed');
@@ -163,10 +178,7 @@ describe('semantic retry loop (e2e)', () => {
     const execution = run.stageExecutions.find((e) => e.stageKey === 'judged');
     if (!execution) throw new Error('stage execution not found');
 
-    const { stage, effective, prevStageKey } = await stageRunner.loadStageContext(
-      run.id,
-      'judged',
-    );
+    const { stage, effective, prevStageKey } = await stageRunner.loadStageContext(run.id, 'judged');
     const ctx = await stageRunner.beginAttempt({
       runId: run.id,
       stageExecutionId: execution.id,
@@ -342,7 +354,9 @@ describe('semantic retry loop (e2e)', () => {
     const rows = await testDb.db
       .select()
       .from(stageAttempt)
-      .where(and(eq(stageAttempt.stageExecutionId, execution.id), isNull(stageAttempt.stageItemId)));
+      .where(
+        and(eq(stageAttempt.stageExecutionId, execution.id), isNull(stageAttempt.stageItemId)),
+      );
     expect(rows).toHaveLength(1);
   });
 
@@ -391,7 +405,9 @@ describe('semantic retry loop (e2e)', () => {
     const rows = await testDb.db
       .select()
       .from(stageAttempt)
-      .where(and(eq(stageAttempt.stageExecutionId, execution.id), isNull(stageAttempt.stageItemId)));
+      .where(
+        and(eq(stageAttempt.stageExecutionId, execution.id), isNull(stageAttempt.stageItemId)),
+      );
     expect(rows).toHaveLength(1);
     expect(rows[0]?.attemptNo).toBe(1);
     expect(rows[0]?.outcome).toBe('success');
