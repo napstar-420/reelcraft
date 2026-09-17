@@ -73,4 +73,27 @@ describe('ConfigResolverService.resolveRunConfig (pure)', () => {
     });
     expect(result).toEqual({});
   });
+
+  it('a stage-authored budget cap survives the full engine -> channel -> blueprint -> stage fold', () => {
+    const graph = [stage({ key: 'outline', budget: { stageCapUsd: 5, qcCapUsd: 1 } })];
+    const result = resolver.resolveRunConfig({
+      graph,
+      engine: {},
+      channelDefaults: {},
+      blueprintDefaults: {},
+    });
+    expect(result.outline?.budget).toEqual({ stageCapUsd: 5 });
+    expect(result.outline?.qc).toEqual({ capUsd: 1 });
+  });
+
+  it('a blueprint-layer stageCapUsd is overridden by the stage-authored one, same precedence as retryLimit', () => {
+    const graph = [stage({ key: 'outline', budget: { stageCapUsd: 2 } })];
+    const result = resolver.resolveRunConfig({
+      graph,
+      engine: {},
+      channelDefaults: {},
+      blueprintDefaults: { budget: { stageCapUsd: 100 } },
+    });
+    expect(result.outline?.budget).toEqual({ stageCapUsd: 2 });
+  });
 });

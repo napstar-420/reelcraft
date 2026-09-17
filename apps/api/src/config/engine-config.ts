@@ -73,4 +73,16 @@ export class EngineConfig {
   get sandboxTimeoutMs(): number {
     return this.config.get('SANDBOX_TIMEOUT_MS', { infer: true });
   }
+
+  /** §11.4 — pre-submit reservation TTL: how long a reservation may sit
+   * before `submit()` without being swept as an orphan. */
+  get preSubmitTtlSec(): number {
+    return this.config.get('PRE_SUBMIT_TTL_SEC', { infer: true });
+  }
+
+  /** §11.4 — added on top of `polling.maxWaitSec` at submit time, so the
+   * sweep never races a legitimately-still-polling job. */
+  get fetchAllowanceSec(): number {
+    return this.config.get('FETCH_ALLOWANCE_SEC', { infer: true });
+  }
 }

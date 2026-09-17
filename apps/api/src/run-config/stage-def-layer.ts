@@ -11,5 +11,16 @@ export function stageDefLayer(stage: StageDef): ConfigLayer {
   return {
     ...(stage.model !== undefined && { model: stage.model }),
     retryLimit: stage.retryLimit,
+    // §11.2 — `StageDef.budget.qcCapUsd` (author-facing) maps to
+    // `ConfigLayer.qc.capUsd` (override-facing), the same shape QC's
+    // `judge`/`threshold` already use. Per §5.2 ordering the stage's own
+    // authored cap wins over channel/blueprint defaults but stays
+    // overridable by `run.overrides[stageKey]`, exactly like `retryLimit`.
+    ...(stage.budget?.stageCapUsd !== undefined && {
+      budget: { stageCapUsd: stage.budget.stageCapUsd },
+    }),
+    ...(stage.budget?.qcCapUsd !== undefined && {
+      qc: { capUsd: stage.budget.qcCapUsd },
+    }),
   };
 }

@@ -1,8 +1,9 @@
 import { createHash } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
-import { and, asc, eq, isNull, lt, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
 import type { JobHandle, JobStatus, QcDef } from '@reefcraft/shared';
 import { StageDef } from '@reefcraft/shared';
+import { CONSUMES_SEMANTIC_ATTEMPT } from './attempt-outcome';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
 import { run, blueprintVersion, stageAttempt, stageExecution, channel } from '../db/schema/index';
 import { ulid } from '../common/ulid';
@@ -53,7 +54,16 @@ export type FetchAndFinalizeResult =
   | { outcome: 'success'; artifactId: string }
   | { outcome: 'check_failed'; checkResults: CheckResult[] }
   | { outcome: 'qc_failed'; checkResults: CheckResult[]; qcVerdict: QcVerdict }
-  | { outcome: 'qc_error'; reason: string };
+  | { outcome: 'qc_error'; reason: string }
+  | { outcome: 'qc_budget_exhausted'; checkResults: CheckResult[] };
+
+/** §11 — `reserveAndSubmit`'s outcome: either a reservation was made and
+ * the job submitted, or the reserve step itself rejected the attempt
+ * before any provider was ever contacted (§11.4's `created` phase — the
+ * attempt row never advances to `reserved`/`submitting`). */
+export type SubmitOutcome =
+  | { outcome: 'submitted'; handle: JobHandle }
+  | { outcome: 'budget_blocked'; reason: 'run_cap_exceeded' | 'stage_cap_exceeded' };
 
 function isUniqueViolation(err: unknown): boolean {
   return typeof err === 'object' && err !== null && (err as { code?: unknown }).code === '23505';
@@ -163,6 +173,29 @@ export class StageRunnerService {
     }
   }
 
+  /** §3.8.1/§11 — replaces a raw `attemptNo` comparison as the source of
+   * "semantic attempts used so far". `budget_blocked` breaks the old
+   * invariant that `attemptNo` itself equals that count (every prior
+   * looping outcome was in `CONSUMES_SEMANTIC_ATTEMPT`; `budget_blocked`
+   * must also loop, after a resume, without consuming a retry). Called
+   * BEFORE the current attempt runs, so it reflects attempts used prior to
+   * this one — the same semantics `stage-execute.fn.ts`'s prior
+   * `attemptNo >= retryLimit + 1` check had for every outcome that isn't
+   * `budget_blocked`. */
+  async countSemanticAttemptsUsed(stageExecutionId: string): Promise<number> {
+    const [row] = await this.db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(stageAttempt)
+      .where(
+        and(
+          eq(stageAttempt.stageExecutionId, stageExecutionId),
+          isNull(stageAttempt.stageItemId),
+          inArray(stageAttempt.outcome, [...CONSUMES_SEMANTIC_ATTEMPT]),
+        ),
+      );
+    return row?.count ?? 0;
+  }
+
   private idempotencyKey(ctx: StageAttemptContext, itemIndex?: number): string {
     return createHash('sha256')
       .update(`${ctx.stageExecutionId}:${ctx.attemptNo}:${itemIndex ?? 0}`)
@@ -250,12 +283,25 @@ export class StageRunnerService {
     };
   }
 
+  /**
+   * §11.1/§11.4 — estimates cost, reserves against run/stage caps, then
+   * submits. Phase transitions are each their own committed write (not
+   * bundled into one update at the end): a crash between any two of them
+   * leaves `stage_attempt.phase` at an accurate checkpoint for
+   * `budget.sweep` (phase-3 chunk 3) to classify correctly. `stage.execute`
+   * runs with `retries: 0`, so this whole method is NOT replayed by
+   * Inngest on a mid-method crash the way a `retries > 0` step's callback
+   * would be — but `reserve()` itself is still idempotent per its own
+   * doc comment, since a *different* kind of replay (a resumed run
+   * re-entering this stage after `budget_blocked`) does call this again
+   * for a fresh attempt, not the same one.
+   */
   async reserveAndSubmit(
     stage: StageDef,
     ctx: StageAttemptContext,
     prevStageKey: string | undefined,
     effective: EffectiveStageConfig,
-  ): Promise<JobHandle> {
+  ): Promise<SubmitOutcome> {
     const capability = this.capabilities.get(stage.capability);
     const bindings = await this.resolveBindings(stage, ctx.runId, prevStageKey);
     const priorCritique = await this.loadCritiqueLog(ctx.stageExecutionId, ctx.attemptNo);
@@ -265,7 +311,42 @@ export class StageRunnerService {
       : undefined;
     const execCtx = this.buildExecCtx(ctx, effective, bindings, renderedPrompt);
 
+    const costEstimate = await capability.estimateCost(execCtx);
+    const reserved = await this.ledger.reserve({
+      runId: ctx.runId,
+      stageKey: stage.key,
+      stageAttemptId: ctx.stageAttemptId,
+      category: 'stage_output',
+      ceilingUsd: costEstimate.ceilingUsd,
+      stageCapUsd: effective.budget?.stageCapUsd,
+      preSubmitTtlSec: this.engineConfig.preSubmitTtlSec,
+    });
+
+    if (!reserved.ok) {
+      // Phase stays 'created' — per §11.4's table, nothing reached a
+      // provider, so there is nothing for the sweep to release either.
+      await this.db
+        .update(stageAttempt)
+        .set({ outcome: 'budget_blocked' })
+        .where(eq(stageAttempt.id, ctx.stageAttemptId));
+      return { outcome: 'budget_blocked', reason: reserved.reason };
+    }
+
+    await this.db
+      .update(stageAttempt)
+      .set({ phase: 'reserved' })
+      .where(eq(stageAttempt.id, ctx.stageAttemptId));
+    await this.db
+      .update(stageAttempt)
+      .set({ phase: 'submitting' })
+      .where(eq(stageAttempt.id, ctx.stageAttemptId));
+
     const handle = await capability.submit(execCtx);
+
+    await this.ledger.markSubmitted(
+      reserved.reservationId,
+      effective.polling.maxWaitSec + this.engineConfig.fetchAllowanceSec,
+    );
 
     await this.db
       .update(stageAttempt)
@@ -278,7 +359,7 @@ export class StageRunnerService {
       })
       .where(eq(stageAttempt.id, ctx.stageAttemptId));
 
-    return handle;
+    return { outcome: 'submitted', handle };
   }
 
   async pollOnce(stage: StageDef, handle: JobHandle): Promise<JobStatus> {
@@ -298,10 +379,36 @@ export class StageRunnerService {
   ): Promise<void> {
     const capability = this.capabilities.get(stage.capability);
     await capability.cancel?.(handle);
+    // §11.3 — the engine stopped polling without definitive information: a
+    // provisional actual at the full ceiling, not a release. Closes a gap
+    // phase 2 left open (the reservation would otherwise sit until
+    // budget.sweep found it, phase-3 chunk 3, even though the engine
+    // already knows enough to settle now.
+    const reservationId = await this.ledger.reservationIdFor(ctx.stageAttemptId);
+    await this.ledger.settleProvisional({
+      runId: ctx.runId,
+      stageKey: ctx.stageKey,
+      stageAttemptId: ctx.stageAttemptId,
+      reservationId,
+    });
     await this.db
       .update(stageAttempt)
       .set({ outcome: 'provider_timeout', phase: 'settled' })
       .where(eq(stageAttempt.id, ctx.stageAttemptId));
+  }
+
+  /** §11.3 — a provider-reported job failure before any billed work: a
+   * confirmed non-billing failure, released rather than booked as spend.
+   * Called from stage-execute.fn.ts right before the throw that hands the
+   * outcome off to the surrounding retry/failure handling. */
+  async settleFailedPoll(ctx: StageAttemptContext): Promise<void> {
+    const reservationId = await this.ledger.reservationIdFor(ctx.stageAttemptId);
+    await this.ledger.settleRelease({
+      runId: ctx.runId,
+      stageKey: ctx.stageKey,
+      stageAttemptId: ctx.stageAttemptId,
+      reservationId,
+    });
   }
 
   async fetchAndFinalize(
@@ -349,12 +456,15 @@ export class StageRunnerService {
 
     // The provider call cost money and the artifact is born stale (§3.9.1)
     // regardless of what checks/QC decide below — both are unconditional.
-    await this.ledger.recordActual({
+    // §11.3 — settles the reservation `reserveAndSubmit` made, at the true
+    // cost rather than the ceiling.
+    const reservationId = await this.ledger.reservationIdFor(ctx.stageAttemptId);
+    await this.ledger.settleSuccess({
       runId: ctx.runId,
       stageKey: stage.key,
       stageAttemptId: ctx.stageAttemptId,
-      category: 'stage_output',
-      amountUsd: result.costUsd,
+      reservationId,
+      actualUsd: result.costUsd,
     });
 
     await this.db
@@ -392,6 +502,23 @@ export class StageRunnerService {
     }
 
     if (stage.qc && effective.qc) {
+      // §10.4 — "qc.capUsd is spent and an artifact cannot be judged...
+      // does not spend past the cap": a cumulative-spend check against
+      // confirmed qc-category ledger entries, not a reservation — see the
+      // Decision note in the phase-3 plan for why QC's synchronous,
+      // non-reserved execution model doesn't get the reserve/settle
+      // treatment stage output does.
+      if (effective.qc.capUsd !== undefined) {
+        const qcSpent = await this.ledger.qcSpentUsd(ctx.runId, stage.key);
+        if (qcSpent >= effective.qc.capUsd) {
+          await this.db
+            .update(stageAttempt)
+            .set({ outcome: 'qc_budget_exhausted', checkResults })
+            .where(eq(stageAttempt.id, ctx.stageAttemptId));
+          return { outcome: 'qc_budget_exhausted', checkResults };
+        }
+      }
+
       const qcOutcome = await this.runQcWithRetries(
         stage.qc,
         effective.qc,

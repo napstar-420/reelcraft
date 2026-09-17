@@ -12,7 +12,8 @@ const POLL_BACKOFF_SEC = [5, 15, 30];
 
 /**
  * §13.1/§13.3 — one stage attempt loop. Steps return IDs only (§13.2 Rule
- * 1): `reserveAndSubmit` returns a JobHandle (small, serializable, not a
+ * 1): `reserveAndSubmit` returns a small discriminated `SubmitOutcome`
+ * (a JobHandle on success, or a `budget_blocked` reason — never a
  * workspace path), `poll` returns status, `fetchAndFinalize` returns a
  * discriminated outcome carrying only ids/results, never the artifact
  * payload itself.
@@ -46,12 +47,31 @@ export function buildStageExecuteFunction(client: Inngest, runner: StageRunnerSe
             stageKey: data.stageKey,
           }),
         );
-        const isLastAttempt = attemptCtx.attemptNo >= stage.retryLimit + 1;
+        // §11 — DB-derived, not `attemptCtx.attemptNo` itself: a
+        // `budget_blocked` attempt loops (after a resume) without
+        // consuming a semantic retry, which breaks the old invariant that
+        // `attemptNo` equalled "semantic attempts used". `countSemanticAttemptsUsed`
+        // counts only attempts STRICTLY BEFORE this one (this attempt's own
+        // just-inserted row is still at its provisional `'success'`
+        // placeholder, so it never counts itself) — the `+1` below accounts
+        // for the current attempt itself becoming a semantic use if it
+        // fails, matching the old `attemptNo >= retryLimit + 1` semantics
+        // for every case where `attemptNo` and semantic-attempts-used
+        // coincide (i.e. no `budget_blocked` attempt has occurred yet).
+        const semanticAttemptsUsed = await step.run(`count-semantic-attempts-${iteration}`, () =>
+          runner.countSemanticAttemptsUsed(data.stageExecutionId),
+        );
+        const isLastAttempt = semanticAttemptsUsed + 1 >= stage.retryLimit + 1;
 
         try {
-          const handle = await step.run(`submit-${data.stageKey}-${iteration}`, () =>
+          const submission = await step.run(`submit-${data.stageKey}-${iteration}`, () =>
             runner.reserveAndSubmit(stage, attemptCtx, prevStageKey, effective),
           );
+
+          if (submission.outcome === 'budget_blocked') {
+            return { outcome: 'budget_blocked' as const, reason: submission.reason };
+          }
+          const handle = submission.handle;
 
           let status = await step.run(`poll-${data.stageKey}-${iteration}-0`, () =>
             runner.pollOnce(stage, handle),
@@ -82,6 +102,10 @@ export function buildStageExecuteFunction(client: Inngest, runner: StageRunnerSe
           }
 
           if (status.outcome === 'failed') {
+            // §11.3 — a confirmed non-billing failure: release, not spend.
+            await step.run(`settle-failed-poll-${data.stageKey}-${iteration}`, () =>
+              runner.settleFailedPoll(attemptCtx),
+            );
             throw new Error(status.reason);
           }
 
@@ -98,6 +122,13 @@ export function buildStageExecuteFunction(client: Inngest, runner: StageRunnerSe
               runner.failStageExecution(data.stageExecutionId, fetched.reason),
             );
             return { outcome: 'failed' as const, reason: fetched.reason };
+          }
+
+          if (fetched.outcome === 'qc_budget_exhausted') {
+            await step.run(`fail-stage-${data.stageKey}`, () =>
+              runner.failStageExecution(data.stageExecutionId, 'qc_budget_exhausted'),
+            );
+            return { outcome: 'failed' as const, reason: 'qc_budget_exhausted' };
           }
 
           // check_failed | qc_failed — semantic, consumes a retry.

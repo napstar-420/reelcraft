@@ -101,7 +101,16 @@ describe('data-output artifact (e2e)', () => {
       stageExecutionId: stageExecution.id,
       stageKey: 'outline',
     });
-    const handle = await stageRunner.reserveAndSubmit(stage, attemptCtx, prevStageKey, effective);
+    const submission = await stageRunner.reserveAndSubmit(
+      stage,
+      attemptCtx,
+      prevStageKey,
+      effective,
+    );
+    if (submission.outcome !== 'submitted') {
+      throw new Error(`expected reserveAndSubmit to submit, got "${submission.outcome}"`);
+    }
+    const handle = submission.handle;
     const status = await stageRunner.pollOnce(stage, handle);
     expect(status.done).toBe(true);
     const fetched = await stageRunner.fetchAndFinalize(

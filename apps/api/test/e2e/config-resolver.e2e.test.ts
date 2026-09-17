@@ -128,4 +128,67 @@ describe('ConfigResolverService.effectiveStageConfig (e2e)', () => {
       'missing "modelId"',
     );
   });
+
+  it('resolves budget.stageCapUsd from resolved_config, phase-3 §11.2', async () => {
+    const runId = await seedRun({ outline: { budget: { stageCapUsd: 5 } } });
+
+    const effective = await resolver.effectiveStageConfig(runId, 'outline', textStage());
+
+    expect(effective.budget).toEqual({ stageCapUsd: 5 });
+  });
+
+  it('a run override widens/narrows the effective stageCapUsd, same precedence as retryLimit', async () => {
+    const runId = await seedRun(
+      { outline: { budget: { stageCapUsd: 5 } } },
+      { outline: { budget: { stageCapUsd: 1 } } },
+    );
+
+    const effective = await resolver.effectiveStageConfig(runId, 'outline', textStage());
+
+    expect(effective.budget).toEqual({ stageCapUsd: 1 });
+  });
+
+  it('omits budget entirely when no layer set a stageCapUsd', async () => {
+    const runId = await seedRun({ outline: {} });
+
+    const effective = await resolver.effectiveStageConfig(runId, 'outline', textStage());
+
+    expect(effective.budget).toBeUndefined();
+  });
+
+  it('resolves qc.capUsd alongside judge/threshold when stage.qc is declared', async () => {
+    const runId = await seedRun({ outline: { qc: { capUsd: 2 } } });
+    const judged = textStage({
+      qc: {
+        criteria: 'be good',
+        threshold: 70,
+        includeInputs: false,
+        model: { provider: 'fake', modelId: 'fake-judge-1', params: {} },
+      },
+    });
+
+    const effective = await resolver.effectiveStageConfig(runId, 'outline', judged);
+
+    expect(effective.qc).toEqual({
+      judge: { provider: 'fake', modelId: 'fake-judge-1', params: {} },
+      threshold: 70,
+      capUsd: 2,
+    });
+  });
+
+  it('omits qc.capUsd when no layer sets one, even though stage.qc is declared', async () => {
+    const runId = await seedRun({ outline: {} });
+    const judged = textStage({
+      qc: {
+        criteria: 'be good',
+        threshold: 70,
+        includeInputs: false,
+        model: { provider: 'fake', modelId: 'fake-judge-1', params: {} },
+      },
+    });
+
+    const effective = await resolver.effectiveStageConfig(runId, 'outline', judged);
+
+    expect(effective.qc?.capUsd).toBeUndefined();
+  });
 });
