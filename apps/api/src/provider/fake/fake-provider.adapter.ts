@@ -21,6 +21,16 @@ interface FakeJobPayload {
    * fails forever) for callers that don't pass a count. Only meaningful for
    * `failureMode === 'transport'` today. */
   failuresRemaining?: number | undefined;
+  /** §11/phase 3 — `params.fakeCostUsd`, captured at submit time since
+   * `fetch(handle)` (the interface, `provider-adapter.interface.ts`) takes
+   * only the handle, unlike `estimate()` which sees `req.params` directly.
+   * `undefined` preserves the original hardcoded `0.001` for every existing
+   * caller that doesn't pass it. */
+  costUsd?: number | undefined;
+  /** §24 "slow, costly fake" — `slow:<N>` modelId suffix's remaining poll
+   * count, decremented each `poll()` call. `undefined`/`0` means "not slow",
+   * same as every other knob here defaulting to off. */
+  pollsRemaining?: number | undefined;
 }
 
 /**
@@ -35,6 +45,13 @@ interface FakeJobPayload {
  * A structured
  * `data`-shaped success payload is selected via `params.fakeOutput` instead
  * of a modelId suffix (see `fetch()`) — deterministic and caller-controlled.
+ *
+ * §24/phase 3 — the "slow, costly fake": `fake-text-1:slow:<N>` (its own
+ * modelId suffix, independent of `fail:`) reports not-done for the first
+ * `N` polls before succeeding; `params.fakeCeilingUsd`/`fakeExpectedUsd`
+ * override `estimate()`'s token heuristic; `params.fakeCostUsd` overrides
+ * `fetch()`'s hardcoded settled cost. Lets a test drive a real reservation
+ * to a deterministic cap-hit and a real multi-cycle poll/backoff loop.
  */
 @Injectable()
 export class FakeProviderAdapter implements ProviderAdapter {
@@ -98,6 +115,18 @@ export class FakeProviderAdapter implements ProviderAdapter {
   }
 
   async estimate(req: ProviderRequest): Promise<CostEstimate> {
+    // §11/phase 3 — `params.fakeCeilingUsd` overrides the token heuristic
+    // entirely, letting a test drive `LedgerService.reserve()` to a
+    // deterministic run/stage-cap outcome instead of a computed guess.
+    const fakeCeilingUsd = req.params.fakeCeilingUsd as number | undefined;
+    if (fakeCeilingUsd !== undefined) {
+      const fakeExpectedUsd = req.params.fakeExpectedUsd as number | undefined;
+      return {
+        expectedUsd: fakeExpectedUsd ?? fakeCeilingUsd,
+        ceilingUsd: fakeCeilingUsd,
+        basis: 'configured_ceiling',
+      };
+    }
     const tokens = (req.renderedPrompt ?? '').length / 4;
     const expectedUsd = Math.max(0.001, tokens * 0.000_002);
     return { expectedUsd, ceilingUsd: expectedUsd * 3, basis: 'token_estimate' };
@@ -119,6 +148,8 @@ export class FakeProviderAdapter implements ProviderAdapter {
       failureMode: parsed?.mode,
       failuresRemaining: parsed?.count,
       output: req.params.fakeOutput,
+      costUsd: req.params.fakeCostUsd as number | undefined,
+      pollsRemaining: this.parseSlow(req.modelId),
     });
     this.submittedKeys.set(idempotencyKey, handle);
     return handle;
@@ -130,6 +161,13 @@ export class FakeProviderAdapter implements ProviderAdapter {
       return { done: true, outcome: 'failed', reason: 'unknown job', retryable: false };
     }
     if (job.failureMode === 'timeout') {
+      return { done: false, phase: 'running' };
+    }
+    // §24 "slow, costly fake" — distinct from `timeout` (which never
+    // completes): proves a reservation survives multiple real poll/backoff
+    // cycles and settles normally once `pollsRemaining` runs out.
+    if (job.pollsRemaining !== undefined && job.pollsRemaining > 0) {
+      job.pollsRemaining -= 1;
       return { done: false, phase: 'running' };
     }
     if (job.failureMode === 'poll_failed' && this.shouldFailPoll(job.modelId)) {
@@ -155,7 +193,7 @@ export class FakeProviderAdapter implements ProviderAdapter {
     if (job.failureMode === 'malformed') {
       return {
         output: '{not valid json',
-        costUsd: 0.001,
+        costUsd: job.costUsd ?? 0.001,
         repro: { level: 'exact', seed: '42', providerVersion: job.modelId },
         rawResponse: { fake: true, malformed: true },
       };
@@ -167,7 +205,7 @@ export class FakeProviderAdapter implements ProviderAdapter {
       // error.
       return {
         output: { unexpectedField: 'not what the schema asked for' },
-        costUsd: 0.001,
+        costUsd: job.costUsd ?? 0.001,
         repro: { level: 'exact', seed: '42', providerVersion: job.modelId },
         rawResponse: { fake: true, schemaViolation: true },
       };
@@ -177,17 +215,19 @@ export class FakeProviderAdapter implements ProviderAdapter {
       // flows ProviderRequest.params -> ExecCtx.config -> here, so a
       // blueprint pinning `model.params.fakeOutput` gets that exact value
       // back. Lets a `data`-output stage (or a QC judge call) produce a
-      // real structured payload instead of always a string echo.
+      // real structured payload instead of always a string echo. Combines
+      // freely with `fakeCostUsd` — a structured payload with a real,
+      // non-trivial settled cost.
       return {
         output: job.output,
-        costUsd: 0.001,
+        costUsd: job.costUsd ?? 0.001,
         repro: { level: 'exact', seed: '42', providerVersion: job.modelId },
         rawResponse: { fake: true, modelId: job.modelId },
       };
     }
     return {
       output: job.prompt ? `[fake completion for] ${job.prompt}` : '[fake completion]',
-      costUsd: 0.001,
+      costUsd: job.costUsd ?? 0.001,
       repro: { level: 'exact', seed: '42', providerVersion: job.modelId },
       rawResponse: { fake: true, modelId: job.modelId, prompt: job.prompt },
     };
@@ -200,6 +240,15 @@ export class FakeProviderAdapter implements ProviderAdapter {
   /** Test/debug helper — number of distinct jobs actually submitted. */
   submittedJobCount(): number {
     return this.jobs.size;
+  }
+
+  /** `fake-text-1:slow:2` reports `{done:false}` for the first two `poll()`
+   * calls, then succeeds normally on the third — independent of and
+   * combinable with the `fail:`/`fakeOutput`/`fakeCostUsd` knobs (own regex,
+   * never matches a `fail:` suffix). */
+  private parseSlow(modelId: string): number | undefined {
+    const match = /^fake-.*:slow:(\d+)$/.exec(modelId);
+    return match ? Number(match[1]) : undefined;
   }
 
   /** `fake-text-1:fail:transport:2` fails the first two `fetch()` calls,

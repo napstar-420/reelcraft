@@ -4,8 +4,10 @@ import { DRIZZLE, type Db } from '../../db/drizzle.provider';
 import { StageRunnerService } from '../stage-runner.service';
 import { RunStateService } from '../run-state.service';
 import { INNGEST_CLIENT } from '../inngest.client';
+import { LedgerService } from '../../budget/ledger.service';
 import { buildStageExecuteFunction } from './stage-execute.fn';
 import { buildRunOrchestrateFunction } from './run-orchestrate.fn';
+import { buildBudgetSweepFunction } from './budget-sweep.fn';
 import { buildCronShellFunctions } from './cron-shells.fn';
 
 /**
@@ -18,10 +20,12 @@ export function buildInngestFunctions(app: INestApplicationContext) {
   const db = app.get<Db>(DRIZZLE);
   const runner = app.get(StageRunnerService);
   const runState = app.get(RunStateService);
+  const ledger = app.get(LedgerService);
 
   const stageExecute = buildStageExecuteFunction(client, runner);
   const runOrchestrate = buildRunOrchestrateFunction(client, db, runState, stageExecute);
+  const budgetSweep = buildBudgetSweepFunction(client, ledger);
   const cronShells = buildCronShellFunctions(client);
 
-  return [runOrchestrate, stageExecute, ...cronShells];
+  return [runOrchestrate, stageExecute, budgetSweep, ...cronShells];
 }

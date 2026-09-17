@@ -93,10 +93,11 @@ describe('run.orchestrate (real Inngest steps, mocked stage.execute, e2e)', () =
   async function orchestrate(
     runId: string,
     steps: NonNullable<InngestTestEngineNs.Options['steps']>,
+    eventName: 'run/started' | 'run/resumed' = 'run/started',
   ) {
     const engine = new InngestTestEngine({
       function: runOrchestrateFn,
-      events: [{ name: 'run/started', data: { runId } }],
+      events: [{ name: eventName, data: { runId } }],
       steps,
     });
     return engine.execute();
@@ -190,5 +191,82 @@ describe('run.orchestrate (real Inngest steps, mocked stage.execute, e2e)', () =
 
     expect(error).toBeUndefined();
     expect(result).toEqual({ state: 'COMPLETED' });
+  });
+
+  it('a budget_blocked result pauses the run, preserving the cursor, without failing it', async () => {
+    const graph = [stage('one'), stage('two')];
+    const createdRun = await setupRun(graph);
+    const secondStageHandler = vi.fn(() => ({ outcome: 'passed', artifactId: 'a-two' }));
+
+    const { result, error } = await orchestrate(createdRun.id, [
+      {
+        id: 'invoke-stage-one',
+        handler: () => ({ outcome: 'budget_blocked', reason: 'run_cap_exceeded' }),
+      },
+      { id: 'invoke-stage-two', handler: secondStageHandler },
+    ]);
+
+    expect(error).toBeUndefined();
+    expect(result).toEqual({ state: 'PAUSED_BUDGET' });
+    expect(secondStageHandler).not.toHaveBeenCalled();
+
+    const [row] = await testDb.db.select().from(run).where(eq(run.id, createdRun.id));
+    expect(row?.state).toBe('PAUSED_BUDGET');
+    expect(row?.cursorStageKey).toBe('one'); // preserved — a resume re-enters here
+    expect(row?.endedAt).toBeNull(); // a pause, not a terminal state
+  });
+
+  it('run/resumed re-enters at the still-pending stage without re-invoking an already-passed one', async () => {
+    // Proves the function BODY correctly handles a resumed invocation.
+    // It does not and cannot prove real Inngest platform dispatch of a
+    // live `run/resumed` event to this function — `InngestTestEngine`
+    // builds its execution directly from the supplied `events`, bypassing
+    // trigger matching entirely (verified against the installed
+    // `@inngest/test` source). See the next test for the closest available
+    // check on the registration itself.
+    const graph = [stage('outline'), stage('script')];
+    const createdRun = await setupRun(graph);
+    const outlineExecution = createdRun.stageExecutions.find((e) => e.stageKey === 'outline');
+    if (!outlineExecution) throw new Error('stage execution not found');
+    await testDb.db
+      .update(stageExecution)
+      .set({ state: 'passed' })
+      .where(eq(stageExecution.id, outlineExecution.id));
+    await testDb.db
+      .update(run)
+      .set({ state: 'PAUSED_BUDGET', cursorStageKey: 'script' })
+      .where(eq(run.id, createdRun.id));
+
+    const { result, error } = await orchestrate(
+      createdRun.id,
+      [
+        {
+          id: 'invoke-stage-outline',
+          handler: () => {
+            throw new Error('regression: an already-passed stage was re-invoked');
+          },
+        },
+        {
+          id: 'invoke-stage-script',
+          handler: () => ({ outcome: 'passed', artifactId: 'a-script' }),
+        },
+      ],
+      'run/resumed',
+    );
+
+    expect(error).toBeUndefined();
+    expect(result).toEqual({ state: 'COMPLETED' });
+
+    const [row] = await testDb.db.select().from(run).where(eq(run.id, createdRun.id));
+    expect(row?.state).toBe('COMPLETED'); // mark-running's unconditional write un-paused it
+  });
+
+  it('registers both run/started and run/resumed as triggers — a structural check InngestTestEngine cannot provide', () => {
+    // `InngestTestEngine` never reads a function's own trigger config (see
+    // the note above) — this is a plain, server-free assertion against the
+    // actual registration payload `sanitizeTriggers` produces, cheap
+    // insurance against an accidental revert to a single trigger.
+    const triggers = (runOrchestrateFn as unknown as { opts: { triggers: unknown } }).opts.triggers;
+    expect(triggers).toEqual([{ event: 'run/started' }, { event: 'run/resumed' }]);
   });
 });
