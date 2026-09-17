@@ -30,7 +30,9 @@ interface FakeJobPayload {
  *
  * Failure modes are selected via a `fake-text-1:fail:<mode>` modelId suffix:
  * `timeout`, `malformed`, `transport`, `schema` (valid JSON, wrong shape —
- * distinct from `malformed`'s literally-unparseable text). A structured
+ * distinct from `malformed`'s literally-unparseable text), `poll_failed`
+ * (`poll()` itself reports a failed job, as opposed to `fetch()` throwing).
+ * A structured
  * `data`-shaped success payload is selected via `params.fakeOutput` instead
  * of a modelId suffix (see `fetch()`) — deterministic and caller-controlled.
  */
@@ -43,6 +45,14 @@ export class FakeProviderAdapter implements ProviderAdapter {
    * observable in tests as "one job per key". */
   private readonly submittedKeys = new Map<string, JobHandle>();
   private readonly jobs = new Map<string, FakeJobPayload>();
+  /** Keyed by the exact `fail:poll_failed:<N>` modelId string. Unlike
+   * `transport`'s per-job `failuresRemaining` (bounded across repeated
+   * calls on the SAME job/handle — an Inngest step retry re-running one
+   * step), `poll_failed` is meant to be bounded across separate
+   * semantic-retry ATTEMPTS, each of which submits a brand new job under a
+   * fresh idempotency key — so this counter lives on the adapter instance,
+   * not on a `FakeJobPayload`, and survives across jobs. */
+  private readonly pollFailedRemaining = new Map<string, number>();
 
   async listModels(): Promise<ModelInfo[]> {
     return [
@@ -122,6 +132,9 @@ export class FakeProviderAdapter implements ProviderAdapter {
     if (job.failureMode === 'timeout') {
       return { done: false, phase: 'running' };
     }
+    if (job.failureMode === 'poll_failed' && this.shouldFailPoll(job.modelId)) {
+      return { done: true, outcome: 'failed', reason: 'fake poll failure', retryable: true };
+    }
     return { done: true, outcome: 'succeeded' };
   }
 
@@ -199,5 +212,17 @@ export class FakeProviderAdapter implements ProviderAdapter {
     const mode = match[1]!;
     const count = match[2] !== undefined ? Number(match[2]) : undefined;
     return count !== undefined ? { mode, count } : { mode };
+  }
+
+  /** `undefined` count (`fail:poll_failed` with no suffix) fails forever,
+   * matching every other unbounded failure mode's convention. */
+  private shouldFailPoll(modelId: string): boolean {
+    const parsed = this.parseFailureMode(modelId);
+    if (parsed?.mode !== 'poll_failed') return false;
+    if (parsed.count === undefined) return true;
+    const remaining = this.pollFailedRemaining.get(modelId) ?? parsed.count;
+    if (remaining <= 0) return false;
+    this.pollFailedRemaining.set(modelId, remaining - 1);
+    return true;
   }
 }

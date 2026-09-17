@@ -7,6 +7,20 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: reefcraft
+          POSTGRES_PASSWORD: reefcraft
+          POSTGRES_DB: reefcraft
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U reefcraft -d reefcraft"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 20
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -22,7 +36,6 @@ jobs:
       - run: pnpm format:check
       - run: pnpm --filter @reefcraft/shared test
       - run: pnpm --filter @reefcraft/api test
-      # apps/api's e2e suite needs a live Postgres — not yet wired up as a
-      # CI service (tracked in docs/build-progress.md phase 2); run
-      # `pnpm --filter @reefcraft/api test:e2e` locally against
-      # `docker compose up` in the meantime.
+      - run: pnpm --filter @reefcraft/api test:e2e
+        env:
+          TEST_DATABASE_URL: postgres://reefcraft:reefcraft@localhost:5432/reefcraft

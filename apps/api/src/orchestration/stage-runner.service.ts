@@ -505,14 +505,26 @@ export class StageRunnerService {
       .where(eq(stageExecution.id, stageExecutionId));
   }
 
-  /** For thrown exceptions (transport errors, unexpected throws) — writes
-   * both halves: the terminal attempt row AND the stage_execution failure,
-   * since nothing else has recorded either yet at that point. */
-  async recordFailure(ctx: StageAttemptContext, reason: string): Promise<void> {
+  /** For a thrown exception (transport error, unexpected throw) on an
+   * attempt that ISN'T the last one — the run loops to a fresh attempt, so
+   * only this attempt's own row needs marking, not the stage_execution
+   * (mirrors `check_failed`/`qc_failed`'s "record this attempt, decide
+   * whether to continue at the caller" split). Leaving this attempt's row
+   * at its provisional `outcome:'success'` placeholder forever — as an
+   * earlier version of the caller's loop did on this exact path — would
+   * corrupt the audit trail: a thrown-and-retried attempt would read back
+   * as having succeeded. */
+  async recordAttemptError(ctx: StageAttemptContext, reason: string): Promise<void> {
     await this.db
       .update(stageAttempt)
       .set({ outcome: 'provider_error', phase: 'settled', reviewNote: reason })
       .where(eq(stageAttempt.id, ctx.stageAttemptId));
+  }
+
+  /** For a thrown exception on the LAST attempt — writes both halves: the
+   * terminal attempt row AND the stage_execution failure. */
+  async recordFailure(ctx: StageAttemptContext, reason: string): Promise<void> {
+    await this.recordAttemptError(ctx, reason);
     await this.failStageExecution(ctx.stageExecutionId, reason);
   }
 }
