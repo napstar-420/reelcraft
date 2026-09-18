@@ -11,11 +11,10 @@ import { RunService } from '../../src/run/run.service';
 import { buildTestApp, type TestApp } from '../support/build-app';
 import { createTestDb, type TestDb } from '../support/test-db';
 
-function stage(overrides: Partial<StageDef> & Pick<StageDef, 'key'>): StageDef {
+function stage({ key, ...overrides }: Partial<StageDef> & Pick<StageDef, 'key'>): StageDef {
   return {
-    ...overrides,
-    key: overrides.key,
-    label: overrides.key,
+    key,
+    label: key,
     capability: 'llm.generate',
     config: {},
     slots: {},
@@ -24,6 +23,7 @@ function stage(overrides: Partial<StageDef> & Pick<StageDef, 'key'>): StageDef {
     checks: [],
     retryLimit: 0,
     model: { provider: 'fake', modelId: 'fake-text-1', params: { max_tokens: 64 } },
+    ...overrides,
   };
 }
 
