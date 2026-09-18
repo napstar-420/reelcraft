@@ -233,8 +233,13 @@ export class FakeProviderAdapter implements ProviderAdapter {
     };
   }
 
-  async cancel(handle: JobHandle): Promise<void> {
+  async cancel(handle: JobHandle) {
+    const job = this.jobs.get(handle.externalId);
+    if (job?.failureMode === 'cancel_unknown') {
+      return { confirmed: false, reason: 'fake provider could not confirm cancellation' };
+    }
     this.jobs.delete(handle.externalId);
+    return { confirmed: true, billed: false };
   }
 
   /** Test/debug helper — number of distinct jobs actually submitted. */

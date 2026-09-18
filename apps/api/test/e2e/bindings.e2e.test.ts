@@ -140,8 +140,7 @@ describe('binding resolver + memory writes (e2e)', () => {
     });
 
     // A tombstoned higher version alongside an older non-tombstoned one — the
-    // resolver must fall back to the latest non-tombstoned version, not the
-    // highest raw version.
+    // tombstone must hide the key completely, never resurrect version 1.
     await db.insert(runMemory).values([
       {
         id: ulid(),
@@ -238,13 +237,10 @@ describe('binding resolver + memory writes (e2e)', () => {
     expect(provenance.memoryVersion).toBe(1);
   });
 
-  it('{from: "memory"} skips a tombstoned version and falls back to the latest non-tombstoned one', async () => {
-    const { value, provenance } = await bindings.resolve(
-      { from: 'memory', key: 'tomb' },
-      { runId, inputs: {} },
-    );
-    expect(value).toEqual({ v: 1 });
-    expect(provenance.memoryVersion).toBe(1);
+  it('{from: "memory"} treats a latest tombstone as absent and never resurrects an older value', async () => {
+    await expect(
+      bindings.resolve({ from: 'memory', key: 'tomb' }, { runId, inputs: {} }),
+    ).rejects.toThrow('no memory entry');
   });
 
   it('{from: "memory"} on a media-write (artifactId set) throws (phase 5)', async () => {
@@ -391,6 +387,41 @@ describe('binding resolver + memory writes (e2e)', () => {
     );
     expect(secondRead.value).toEqual({ text: 'second pass' });
     expect(secondRead.provenance.memoryVersion).toBe(2);
+  });
+
+  it('lists only latest visible memory while retaining the complete append-only history', async () => {
+    const current = await memory.listCurrent(testDb.db, runId);
+    expect(current.some((row) => row.memKey === 'outline' && row.version === 1)).toBe(true);
+    expect(current.some((row) => row.memKey === 'tomb')).toBe(false);
+
+    const history = await memory.listHistory(testDb.db, runId);
+    expect(history.filter((row) => row.memKey === 'tomb')).toEqual([
+      expect.objectContaining({ version: 2, tombstone: true }),
+      expect.objectContaining({ version: 1, tombstone: false, data: { v: 1 } }),
+    ]);
+  });
+
+  it('appends tombstones transactionally only for current values written by invalidated writers', async () => {
+    await testDb.db.transaction(async (tx) => {
+      await memory.appendTombstones(tx, runId, [{ stageKey: 'outline' }]);
+    });
+
+    const current = await memory.listCurrent(testDb.db, runId);
+    expect(current.some((row) => row.memKey === 'outline')).toBe(false);
+
+    const history = await memory.listHistory(testDb.db, runId);
+    expect(history.filter((row) => row.memKey === 'outline')).toEqual([
+      expect.objectContaining({ version: 2, tombstone: true, writtenBy: 'outline' }),
+      expect.objectContaining({ version: 1, tombstone: false }),
+    ]);
+
+    // Reapplying the same invalidation is idempotent: a top tombstone is not
+    // itself a current value eligible for another tombstone.
+    await testDb.db.transaction(async (tx) => {
+      await memory.appendTombstones(tx, runId, [{ stageKey: 'outline' }]);
+    });
+    const repeatedHistory = await memory.listHistory(testDb.db, runId);
+    expect(repeatedHistory.filter((row) => row.memKey === 'outline')).toHaveLength(2);
   });
 
   it('throws rather than silently writing undefined when a writes path does not resolve', async () => {

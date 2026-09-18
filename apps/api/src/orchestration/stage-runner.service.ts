@@ -29,6 +29,7 @@ import { CheckRunner } from '../check/check-runner.service';
 import type { CheckArtifact, CheckResult } from '../check/check.types';
 import { QcRunner, type QcOutcome, type QcVerdict } from '../qc/qc-runner.service';
 import { buildQcEnvelope } from '../qc/qc-envelope';
+import { HumanWaitService } from '../run/human-wait.service';
 
 export interface StageAttemptContext {
   runId: string;
@@ -52,6 +53,8 @@ export interface StageContext {
  * generating stage can fix). */
 export type FetchAndFinalizeResult =
   | { outcome: 'success'; artifactId: string }
+  | { outcome: 'approval_required'; artifactId: string }
+  | { outcome: 'run_not_running' }
   | { outcome: 'check_failed'; checkResults: CheckResult[] }
   | { outcome: 'qc_failed'; checkResults: CheckResult[]; qcVerdict: QcVerdict }
   | { outcome: 'qc_error'; reason: string }
@@ -63,7 +66,8 @@ export type FetchAndFinalizeResult =
  * attempt row never advances to `reserved`/`submitting`). */
 export type SubmitOutcome =
   | { outcome: 'submitted'; handle: JobHandle }
-  | { outcome: 'budget_blocked'; reason: 'run_cap_exceeded' | 'stage_cap_exceeded' };
+  | { outcome: 'budget_blocked'; reason: 'run_cap_exceeded' | 'stage_cap_exceeded' }
+  | { outcome: 'run_not_running' };
 
 function isUniqueViolation(err: unknown): boolean {
   return typeof err === 'object' && err !== null && (err as { code?: unknown }).code === '23505';
@@ -95,7 +99,20 @@ export class StageRunnerService {
     private readonly checks: CheckRunner,
     private readonly qc: QcRunner,
     private readonly engineConfig: EngineConfig,
+    private readonly humanWaits: HumanWaitService,
   ) {}
+
+  /** Parks an orchestrator-only human.input stage without creating an
+   * engine attempt, reservation, or provider job. */
+  async awaitHumanInput(runId: string, stageExecutionId: string): Promise<void> {
+    await this.db.transaction(async (tx) => {
+      await tx
+        .update(stageExecution)
+        .set({ state: 'awaiting_input', startedAt: new Date().toISOString() })
+        .where(eq(stageExecution.id, stageExecutionId));
+      await this.humanWaits.open(tx, { runId, stageExecutionId, kind: 'input' });
+    });
+  }
 
   async loadStageContext(runId: string, stageKey: string): Promise<StageContext> {
     const [row] = await this.db
@@ -183,6 +200,12 @@ export class StageRunnerService {
    * `attemptNo >= retryLimit + 1` check had for every outcome that isn't
    * `budget_blocked`. */
   async countSemanticAttemptsUsed(stageExecutionId: string): Promise<number> {
+    const [execution] = await this.db
+      .select({ runId: stageExecution.runId, stageKey: stageExecution.stageKey })
+      .from(stageExecution)
+      .where(eq(stageExecution.id, stageExecutionId))
+      .limit(1);
+    if (!execution) throw new Error(`Stage execution ${stageExecutionId} not found`);
     const [row] = await this.db
       .select({ count: sql<number>`count(*)::int` })
       .from(stageAttempt)
@@ -193,7 +216,18 @@ export class StageRunnerService {
           inArray(stageAttempt.outcome, [...CONSUMES_SEMANTIC_ATTEMPT]),
         ),
       );
-    return row?.count ?? 0;
+    const [routed] = await this.db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(stageAttempt)
+      .innerJoin(stageExecution, eq(stageAttempt.stageExecutionId, stageExecution.id))
+      .where(
+        and(
+          eq(stageExecution.runId, execution.runId),
+          eq(stageAttempt.outcome, 'rejected'),
+          eq(stageAttempt.critiqueTargetStageKey, execution.stageKey),
+        ),
+      );
+    return (row?.count ?? 0) + (routed?.count ?? 0);
   }
 
   private idempotencyKey(ctx: StageAttemptContext, itemIndex?: number): string {
@@ -244,6 +278,12 @@ export class StageRunnerService {
    * rejection notes (`reviewNote`, §10.5) are deliberately left out here — a
    * future `rejected`-outcome branch slots in without restructuring this. */
   async loadCritiqueLog(stageExecutionId: string, beforeAttemptNo: number): Promise<string> {
+    const [execution] = await this.db
+      .select({ runId: stageExecution.runId, stageKey: stageExecution.stageKey })
+      .from(stageExecution)
+      .where(eq(stageExecution.id, stageExecutionId))
+      .limit(1);
+    if (!execution) throw new Error(`Stage execution ${stageExecutionId} not found`);
     const rows = await this.db
       .select({
         attemptNo: stageAttempt.attemptNo,
@@ -274,6 +314,21 @@ export class StageRunnerService {
         const verdict = row.qcVerdict as QcVerdict | null;
         lines.push(`Attempt ${row.attemptNo} failed QC: ${verdict?.critique ?? ''}`);
       }
+    }
+    const routed = await this.db
+      .select({ reviewNote: stageAttempt.reviewNote })
+      .from(stageAttempt)
+      .innerJoin(stageExecution, eq(stageAttempt.stageExecutionId, stageExecution.id))
+      .where(
+        and(
+          eq(stageExecution.runId, execution.runId),
+          eq(stageAttempt.outcome, 'rejected'),
+          eq(stageAttempt.critiqueTargetStageKey, execution.stageKey),
+        ),
+      )
+      .orderBy(asc(stageAttempt.createdAt));
+    for (const rejection of routed) {
+      lines.push(`Human rejection: ${rejection.reviewNote ?? 'No note provided'}`);
     }
     return lines.join('\n');
   }
@@ -345,8 +400,9 @@ export class StageRunnerService {
       // provider, so there is nothing for the sweep to release either.
       await this.db
         .update(stageAttempt)
-        .set({ outcome: 'budget_blocked' })
+        .set({ outcome: reserved.reason === 'run_not_running' ? 'cancelled' : 'budget_blocked' })
         .where(eq(stageAttempt.id, ctx.stageAttemptId));
+      if (reserved.reason === 'run_not_running') return { outcome: 'run_not_running' };
       return { outcome: 'budget_blocked', reason: reserved.reason };
     }
 
@@ -492,7 +548,8 @@ export class StageRunnerService {
 
     const checkArtifact: CheckArtifact = { kind, data };
     const resolvedRefs: Array<Record<string, RefEnvelope>> = [];
-    for (const check of stage.checks) {
+    const checkProvenance: ResolvedBindings['provenance'] = {};
+    for (const [checkIndex, check] of stage.checks.entries()) {
       if (check.type === 'script' && check.refs) {
         const resolved = await this.bindingResolver.resolveRefEnvelopes(check.refs, {
           runId: ctx.runId,
@@ -501,10 +558,18 @@ export class StageRunnerService {
           assetBindings: await this.loadAssetBindings(ctx.runId),
         });
         resolvedRefs.push(resolved.refs);
+        for (const [name, provenance] of Object.entries(resolved.provenance)) {
+          checkProvenance[`checks.${checkIndex}.refs.${name}`] = provenance;
+        }
       } else {
         resolvedRefs.push({});
       }
     }
+    await this.db
+      .update(stageAttempt)
+      .set({ resolvedInputs: { ...bindings.provenance, ...checkProvenance } })
+      .where(eq(stageAttempt.id, ctx.stageAttemptId));
+
     const checkResults = await this.checks.run({
       checks: stage.checks,
       artifact: checkArtifact,
@@ -576,30 +641,68 @@ export class StageRunnerService {
         .where(eq(stageAttempt.id, ctx.stageAttemptId));
     }
 
-    await this.artifacts.finalize({
-      runId: ctx.runId,
-      stageExecutionId: ctx.stageExecutionId,
-      producerStageKey: stage.key,
-      newArtifactId: artifactId,
-      applyWrites: this.memory.buildWriteCallback(stage, {
-        runId: ctx.runId,
-        stageKey: stage.key,
-        kind,
-        data,
-      }),
+    return this.db.transaction(async (tx) => {
+      const [lockedRun] = await tx
+        .select({ state: run.state })
+        .from(run)
+        .where(eq(run.id, ctx.runId))
+        .for('update');
+      if (!lockedRun || lockedRun.state !== 'RUNNING') {
+        await tx
+          .update(stageAttempt)
+          .set({ outcome: 'cancelled', phase: 'settled', checkResults })
+          .where(eq(stageAttempt.id, ctx.stageAttemptId));
+        return { outcome: 'run_not_running' as const };
+      }
+
+      if (stage.approval) {
+        if (stage.approval.mode !== 'stage') {
+          throw new Error('Item approval is not available until iteration support');
+        }
+        await tx
+          .update(stageAttempt)
+          .set({ outcome: 'awaiting_approval', phase: 'awaiting_approval', checkResults })
+          .where(eq(stageAttempt.id, ctx.stageAttemptId));
+        await tx
+          .update(stageExecution)
+          .set({ state: 'awaiting_approval' })
+          .where(eq(stageExecution.id, ctx.stageExecutionId));
+        await this.humanWaits.open(tx, {
+          runId: ctx.runId,
+          stageExecutionId: ctx.stageExecutionId,
+          kind: 'approval',
+        });
+        return { outcome: 'approval_required' as const, artifactId };
+      }
+
+      await this.artifacts.finalize(
+        {
+          runId: ctx.runId,
+          stageExecutionId: ctx.stageExecutionId,
+          producerStageKey: stage.key,
+          newArtifactId: artifactId,
+          applyWrites: this.memory.buildWriteCallback(stage, {
+            runId: ctx.runId,
+            stageKey: stage.key,
+            kind,
+            data,
+          }),
+        },
+        tx,
+      );
+
+      await tx
+        .update(stageAttempt)
+        .set({ outcome: 'success', checkResults })
+        .where(eq(stageAttempt.id, ctx.stageAttemptId));
+
+      await tx
+        .update(stageExecution)
+        .set({ state: 'passed', endedAt: new Date().toISOString() })
+        .where(eq(stageExecution.id, ctx.stageExecutionId));
+
+      return { outcome: 'success' as const, artifactId };
     });
-
-    await this.db
-      .update(stageAttempt)
-      .set({ outcome: 'success', checkResults })
-      .where(eq(stageAttempt.id, ctx.stageAttemptId));
-
-    await this.db
-      .update(stageExecution)
-      .set({ state: 'passed', endedAt: new Date().toISOString() })
-      .where(eq(stageExecution.id, ctx.stageExecutionId));
-
-    return { outcome: 'success', artifactId };
   }
 
   /** §10.4 — retried up to `qcErrorRetries` times on `status:'error'` (the

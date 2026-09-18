@@ -5,11 +5,16 @@ import type { Db } from '../../db/drizzle.provider';
 import { blueprintVersion, run, stageExecution } from '../../db/schema/index';
 import type { RunStateService } from '../run-state.service';
 import { buildStageExecuteFunction } from './stage-execute.fn';
+import type { RunWakeupClaimService, RunWakeupEventData } from '../../run/run-wakeup-claim.service';
 
 /** Shared shape for both triggers below — `run/resumed` (§12.4, sent by
  * `RunService.resume()`) carries the identical `{runId}` payload. */
 export interface RunStartedEventData {
   runId: string;
+  wakeupId?: string;
+  action?: RunWakeupEventData['action'];
+  sourceState?: RunWakeupEventData['sourceState'];
+  expectedRevision?: number;
 }
 
 /** §16.1 — sorts `stage_execution` rows into blueprint graph array order.
@@ -48,6 +53,7 @@ export function buildRunOrchestrateFunction(
   db: Db,
   runState: RunStateService,
   stageExecuteFn: ReturnType<typeof buildStageExecuteFunction>,
+  wakeupClaim?: RunWakeupClaimService,
 ) {
   return client.createFunction(
     {
@@ -57,9 +63,25 @@ export function buildRunOrchestrateFunction(
     },
     [{ event: 'run/started' }, { event: 'run/resumed' }],
     async ({ event, step }) => {
-      const { runId } = event.data as RunStartedEventData;
+      const data = event.data as RunStartedEventData;
+      const { runId } = data;
 
-      await step.run('mark-running', () => runState.transition(runId, 'RUNNING'));
+      if (
+        data.wakeupId &&
+        data.action &&
+        data.sourceState &&
+        data.expectedRevision !== undefined &&
+        wakeupClaim
+      ) {
+        const claim = await step.run('claim-wakeup', () =>
+          wakeupClaim.claim(data as RunWakeupEventData),
+        );
+        if (!claim.claimed) return { ignored: true as const, reason: claim.reason };
+      } else {
+        // Backward compatibility for already-enqueued events from before the
+        // durable wakeup envelope was introduced.
+        await step.run('mark-running', () => runState.transition(runId, 'RUNNING'));
+      }
 
       const executions = await step.run('load-stage-executions', async () => {
         const [row] = await db
@@ -93,6 +115,22 @@ export function buildRunOrchestrateFunction(
           // resumed invocation naturally re-enters here.
           await step.run('mark-paused-budget', () => runState.transition(runId, 'PAUSED_BUDGET'));
           return { state: 'PAUSED_BUDGET' as const };
+        }
+
+        if (result.outcome === 'run_not_running') {
+          return { state: 'CANCELLED' as const };
+        }
+
+        if (result.outcome === 'approval_required') {
+          await step.run('mark-paused-approval', () =>
+            runState.transition(runId, 'PAUSED_APPROVAL'),
+          );
+          return { state: 'PAUSED_APPROVAL' as const };
+        }
+
+        if (result.outcome === 'input_required') {
+          await step.run('mark-paused-input', () => runState.transition(runId, 'PAUSED_INPUT'));
+          return { state: 'PAUSED_INPUT' as const };
         }
 
         if (result.outcome === 'failed') {

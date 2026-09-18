@@ -558,7 +558,6 @@ describe('LedgerService (e2e)', () => {
 
     it('sweeps a stale reservation belonging to a PAUSED_BUDGET run, freeing it for a subsequent raise+resume', async () => {
       const runId = await seedRun(10);
-      await testDb.db.update(run).set({ state: 'PAUSED_BUDGET' }).where(eq(run.id, runId));
       // An orphaned reservation on some OTHER stage of the same paused run —
       // e.g. left behind by a crashed attempt, per recordAttemptError's
       // documented no-op on the ledger.
@@ -569,6 +568,7 @@ describe('LedgerService (e2e)', () => {
         stageKey: 'expensive',
         ceilingUsd: 9,
       });
+      await testDb.db.update(run).set({ state: 'PAUSED_BUDGET' }).where(eq(run.id, runId));
       await backdateExpiry(reservationId);
 
       const result = await ledger.sweepExpiredReservations();
@@ -580,6 +580,7 @@ describe('LedgerService (e2e)', () => {
 
       // A raise now actually has room to work with.
       await ledger.raiseBudget({ runId, newCapUsd: 20 });
+      await testDb.db.update(run).set({ state: 'RUNNING' }).where(eq(run.id, runId));
       const reserved = await ledger.reserve({
         runId,
         stageKey: 'expensive',

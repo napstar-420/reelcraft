@@ -53,6 +53,20 @@ export const AttachInputDto = z.object({
 });
 export type AttachInputDto = z.infer<typeof AttachInputDto>;
 
+/** CREATED media attachment plus Phase 4 replacement payloads share the
+ * same route. A replacement confirmation repeats the exact value/blob list
+ * and adds the signed preview token. */
+export const PutRunInputDto = z.union([
+  AttachInputDto.extend({ previewToken: z.string().min(1).optional() }),
+  z
+    .object({ value: z.unknown(), previewToken: z.string().min(1).optional() })
+    .refine((value) => Object.prototype.hasOwnProperty.call(value, 'value'), {
+      path: ['value'],
+      message: 'value is required',
+    }),
+]);
+export type PutRunInputDto = z.infer<typeof PutRunInputDto>;
+
 export const StageAttemptDto = z.object({
   id: z.string(),
   attemptNo: z.number(),

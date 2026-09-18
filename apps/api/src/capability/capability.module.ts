@@ -6,6 +6,7 @@ import { CapabilityRegistry } from './capability.registry';
 import { CapabilityController } from './capability.controller';
 import { LlmGenerate } from './impls/llm-generate.capability';
 import { PublishStub } from './impls/publish-stub.capability';
+import { HumanInputCapability } from './impls/human-input.capability';
 
 /**
  * §1.3 — may inject ProviderModule and StorageModule. Must NOT be able to
@@ -15,7 +16,7 @@ import { PublishStub } from './impls/publish-stub.capability';
  */
 @Module({
   imports: [DiscoveryModule, ProviderModule, StorageModule],
-  providers: [CapabilityRegistry, LlmGenerate, PublishStub],
+  providers: [CapabilityRegistry, LlmGenerate, HumanInputCapability, PublishStub],
   controllers: [CapabilityController],
   exports: [CapabilityRegistry],
 })

@@ -8,7 +8,13 @@ import { BlueprintService } from '../../src/blueprint/blueprint.service';
 import { RunService } from '../../src/run/run.service';
 import type { StageExecuteEventData } from '../../src/orchestration/functions/stage-execute.fn';
 import { toUsd } from '../../src/common/money';
-import { ledgerEntry, run, stageAttempt, stageExecution } from '../../src/db/schema/index';
+import {
+  ledgerEntry,
+  run,
+  runWakeup,
+  stageAttempt,
+  stageExecution,
+} from '../../src/db/schema/index';
 import { buildTestApp, type TestApp } from '../support/build-app';
 import { createTestDb, type TestDb } from '../support/test-db';
 
@@ -191,14 +197,31 @@ describe('phase 3 acceptance: reserve, cap-hit, PAUSED_BUDGET, raise, resume, se
     await runs.resume(createdRun.id);
 
     const [resumedRow] = await testDb.db.select().from(run).where(eq(run.id, createdRun.id));
-    expect(resumedRow?.state).toBe('RUNNING');
+    expect(resumedRow?.state).toBe('PAUSED_BUDGET');
+    const [resumeWakeup] = await testDb.db
+      .select()
+      .from(runWakeup)
+      .where(eq(runWakeup.runId, createdRun.id))
+      .limit(1);
+    if (!resumeWakeup) throw new Error('resume wakeup missing');
 
     // 3. run/resumed — cheap must never be re-invoked (already passed);
     // expensive's real reserve() now succeeds under the raised cap, its
     // slow:2 knob drives two real backoff cycles, and it settles.
     const secondRun = await new InngestTestEngine({
       function: runOrchestrateFn,
-      events: [{ name: 'run/resumed', data: { runId: createdRun.id } }],
+      events: [
+        {
+          name: 'run/resumed',
+          data: {
+            runId: createdRun.id,
+            wakeupId: resumeWakeup.id,
+            action: resumeWakeup.action,
+            sourceState: resumeWakeup.sourceState,
+            expectedRevision: resumeWakeup.expectedRevision,
+          },
+        },
+      ],
       steps: [
         {
           id: 'invoke-stage-cheap',

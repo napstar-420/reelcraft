@@ -3,6 +3,8 @@ export * from './character';
 export * from './asset';
 export * from './blueprint';
 export * from './run';
+export * from './run-wakeup';
+export * from './human-wait';
 export * from './execution';
 export * from './artifact';
 export * from './blob';

@@ -2,7 +2,8 @@
 
 A general-purpose AI video/reel generation engine. See `docs/ai-reel-engine-requirements.md`
 and `docs/ai-video-engine-design-spec-v6.md` for the full requirements and design spec — this
-repo implements Build Order Phase 1 ("Skeleton") from design spec §24.
+the implementation currently covers Build Order Phases 1–3 and the Phase 4
+inputs/human-in-the-loop control plane from design spec §24.
 
 ## Stack
 
@@ -57,7 +58,29 @@ pnpm db:migrate       # apply migrations
 pnpm db:studio        # drizzle studio
 ```
 
-## What's implemented (Phase 1 — Skeleton)
+## Phase 4 run-control workflow
+
+Runs are created in `CREATED`, inputs/assets are attached, and
+`POST /runs/:id/start` commits a revision-bound `run/started` wakeup. Operator
+mutations use a durable Postgres outbox, so a temporary Inngest delivery failure
+does not lose a committed action. Useful endpoints include:
+
+- `GET /runs/:id/memory` and `GET /runs/:id/invalidation-preview?stageKey=...`
+- `POST /runs/:id/stages/:key/retry`, followed by `/retry/confirm`
+- `PATCH /runs/:id/overrides`
+- `POST /runs/:id/stages/:key/artifact` for previewed text/data edits
+- `POST /runs/:id/stages/:key/approve` for approval or routed rejection
+- `POST /runs/:id/stages/:key/input` for a parked `human.input` stage
+- `POST /runs/:id/resume` for `PAUSED_BUDGET` or `FAILED`
+- `POST /runs/:id/cancel`
+
+Previewed mutations repeat the exact proposed payload with the returned signed
+token. Tokens are bound to the run revision, action, payload digest, expiry, and
+invalidation fingerprint; a competing mutation makes an older preview fail
+closed. Approval and human-input waits do not expire. The hourly reminder sweep
+records durable 24h/48h reminder events without changing run state.
+
+## What's implemented
 
 - `packages/shared`: every type from the design spec's Appendix A as Zod schemas, with unit
   tests covering the fiddly parsers (`ConfigLayer` nullish semantics, `Ref` discrimination,
@@ -190,11 +213,10 @@ received object"` error with no hint of a module-identity problem underneath. Ca
 
 ## Follow-ups not done in this pass
 
-- Phase 2 ("Core loop" — config/binding resolvers, checks, QC, semantic retry) is in progress;
-  see `docs/build-progress.md` and `.claude/plans/crispy-drifting-cocke.md`. This chunk only
-  adds the test harness (`test/support/test-db.ts`, `build-app.ts`) plus a harness proof-of-life
-  spec — the actual core-loop e2e test (three-stage text blueprint, cross-artifact script check)
-  lands with that phase's last chunk.
+- Phase 4 chunk 7 still needs the destructive restart/durability exercise and
+  the full multi-client race matrix before the phase is marked done. The
+  focused Postgres/Inngest suites cover invalidation, durable wakeup claims,
+  approval, human input, cancellation, and the Phase 1–3 regression paths.
 - `pnpm --filter @reefcraft/api test:e2e` needs a live Postgres and isn't wired into CI yet
   (tracked in `docs/build-progress.md`) — run it locally against `docker compose up`.
 - The durability check (kill/restart the API mid-run, confirm no second provider job is

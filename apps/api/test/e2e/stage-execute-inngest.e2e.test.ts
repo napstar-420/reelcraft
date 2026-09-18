@@ -7,7 +7,13 @@ import { ChannelService } from '../../src/channel/channel.service';
 import { BlueprintService } from '../../src/blueprint/blueprint.service';
 import { RunService } from '../../src/run/run.service';
 import type { StageExecuteEventData } from '../../src/orchestration/functions/stage-execute.fn';
-import { stageAttempt, stageExecution, ledgerEntry, artifact } from '../../src/db/schema/index';
+import {
+  stageAttempt,
+  stageExecution,
+  ledgerEntry,
+  artifact,
+  run as runTable,
+} from '../../src/db/schema/index';
 import { buildTestApp, type TestApp } from '../support/build-app';
 import { createTestDb, type TestDb } from '../support/test-db';
 
@@ -86,6 +92,7 @@ describe('stage.execute (real Inngest steps, e2e)', () => {
       roleBindings: {},
       budgetCapUsd: 10,
     });
+    await testDb.db.update(runTable).set({ state: 'RUNNING' }).where(eq(runTable.id, run.id));
     return { run };
   }
 

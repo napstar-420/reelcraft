@@ -20,6 +20,7 @@ export interface RecordAttemptArtifactInput {
   reproLevel: 'exact' | 'approximate' | 'none';
   repro?: unknown;
   costUsd: number;
+  userAuthored?: boolean;
 }
 
 export interface RecordInputArtifactInput {
@@ -47,9 +48,12 @@ export interface RecordInputArtifactInput {
 export class ArtifactService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  async recordAttemptArtifact(input: RecordAttemptArtifactInput): Promise<string> {
+  async recordAttemptArtifact(
+    input: RecordAttemptArtifactInput,
+    executor: Executor = this.db,
+  ): Promise<string> {
     const id = ulid();
-    await this.db.insert(artifact).values({
+    await executor.insert(artifact).values({
       id,
       runId: input.runId,
       producerStageKey: input.producerStageKey,
@@ -59,6 +63,7 @@ export class ArtifactService {
       blobId: input.blobId,
       schemaHash: input.schemaHash,
       stale: true,
+      userAuthored: input.userAuthored ?? false,
       reproLevel: input.reproLevel,
       repro: input.repro,
       costUsd: fromUsd(input.costUsd),
@@ -110,15 +115,18 @@ export class ArtifactService {
    * cycle) gets a `tx` handle without owning the transaction boundary
    * itself. Never call outside a transaction; never reorder the writes.
    */
-  async finalize(params: {
-    runId: string;
-    stageExecutionId: string;
-    producerStageKey: string;
-    itemIndex?: number;
-    newArtifactId: string;
-    applyWrites?: (tx: Tx) => Promise<void>;
-  }): Promise<void> {
-    await this.db.transaction(async (tx) => {
+  async finalize(
+    params: {
+      runId: string;
+      stageExecutionId: string;
+      producerStageKey: string;
+      itemIndex?: number;
+      newArtifactId: string;
+      applyWrites?: (tx: Tx) => Promise<void>;
+    },
+    executor?: Tx,
+  ): Promise<void> {
+    const apply = async (tx: Tx) => {
       await tx
         .update(artifact)
         .set({ stale: true })
@@ -144,6 +152,11 @@ export class ArtifactService {
         .where(eq(stageExecution.id, params.stageExecutionId));
 
       if (params.applyWrites) await params.applyWrites(tx);
-    });
+    };
+    if (executor) {
+      await apply(executor);
+    } else {
+      await this.db.transaction(apply);
+    }
   }
 }

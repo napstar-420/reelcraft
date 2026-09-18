@@ -293,6 +293,18 @@ describe('phase 2 acceptance: three-stage blueprint, cross-artifact check (e2e)'
     expect(scriptArtifacts.filter((a) => a.stale === false)).toHaveLength(1);
     expect(scriptArtifacts.filter((a) => a.stale === true)).toHaveLength(1);
 
+    expect(auditAttempts[0]?.resolvedInputs).toMatchObject({
+      'checks.0.refs.script': {
+        ref: { from: 'prev' },
+        artifactId: scriptArtifacts.find((a) => a.stale === false)?.id,
+      },
+      'checks.0.refs.outline': {
+        ref: { from: 'memory', key: 'outlineTitle' },
+        memoryKey: 'outlineTitle',
+        memoryVersion: 1,
+      },
+    });
+
     const auditArtifact = artifactRows.find(
       (a) => a.producerStageKey === 'audit' && a.stale === false,
     );

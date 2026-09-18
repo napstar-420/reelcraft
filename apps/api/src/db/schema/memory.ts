@@ -11,8 +11,8 @@ import {
 import { run } from './run';
 import { artifact } from './artifact';
 
-/** §3.11 — append-only for audit; the current value of a key is its
- * highest non-tombstoned version. */
+/** §3.11 — append-only for audit; the highest version is authoritative,
+ * and a tombstone there makes the key absent without deleting history. */
 export const runMemory = pgTable(
   'run_memory',
   {
@@ -34,5 +34,6 @@ export const runMemory = pgTable(
   (t) => [
     uniqueIndex('run_memory_run_id_mem_key_version_uq').on(t.runId, t.memKey, t.version),
     index('run_memory_current').on(t.runId, t.memKey, t.version.desc()),
+    index('run_memory_writer_idx').on(t.runId, t.writtenBy, t.writtenItem),
   ],
 );

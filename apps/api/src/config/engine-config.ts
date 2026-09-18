@@ -74,6 +74,23 @@ export class EngineConfig {
     return this.config.get('SANDBOX_TIMEOUT_MS', { infer: true });
   }
 
+  /** Secret used to authenticate stateless invalidation preview tokens.
+   * Tests get an isolated fallback so unit fixtures do not need production
+   * credentials; every other environment is rejected by `validateEnv` when
+   * the secret is absent. */
+  get previewTokenSecret(): string {
+    const secret = this.config.get('PREVIEW_TOKEN_SECRET', { infer: true });
+    if (secret !== undefined) return secret;
+    if (this.config.get('NODE_ENV', { infer: true }) === 'test') {
+      return 'reefcraft-test-only-preview-token-secret';
+    }
+    throw new Error('PREVIEW_TOKEN_SECRET is required outside tests');
+  }
+
+  get previewTokenTtlSec(): number {
+    return this.config.get('PREVIEW_TOKEN_TTL_SEC', { infer: true });
+  }
+
   /** §11.4 — pre-submit reservation TTL: how long a reservation may sit
    * before `submit()` without being swept as an orphan. */
   get preSubmitTtlSec(): number {

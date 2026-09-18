@@ -1,14 +1,19 @@
-import { Inject, Injectable } from '@nestjs/common';
-import type { Inngest } from 'inngest';
-import { and, eq, inArray, isNull } from 'drizzle-orm';
+import { ConflictException, Inject, Injectable, Logger } from '@nestjs/common';
+import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
 import type { CreateRunDto, ConfigLayer } from '@reefcraft/shared';
 import { InputDef, StageDef } from '@reefcraft/shared';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
-import { asset, blob, blueprintVersion, channel, run, stageExecution } from '../db/schema/index';
+import {
+  asset,
+  blob,
+  blueprintVersion,
+  channel,
+  run,
+  stageAttempt,
+  stageExecution,
+} from '../db/schema/index';
 import { ulid } from '../common/ulid';
 import { fromUsd } from '../common/money';
-import { INNGEST_CLIENT } from '../orchestration/inngest.client';
-import { RunStateService } from '../orchestration/run-state.service';
 import { EngineConfig } from '../config/engine-config';
 import { CapabilityRegistry } from '../capability/capability.registry';
 import { ConfigResolverService } from '../run-config/config-resolver.service';
@@ -16,6 +21,8 @@ import { engineDefaults } from '../run-config/engine-defaults';
 import { LedgerService } from '../budget/ledger.service';
 import { collectAssetIds } from '../blueprint/collect-asset-refs';
 import { RunInputService } from './run-input.service';
+import { RunMutationService } from './run-mutation.service';
+import { RunWakeupDispatcher } from './run-wakeup-dispatcher.service';
 
 /**
  * §5/§12/§21 — run start resolves and snapshots resolved_config, keyed per
@@ -25,15 +32,17 @@ import { RunInputService } from './run-input.service';
  */
 @Injectable()
 export class RunService {
+  private readonly logger = new Logger(RunService.name);
+
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    @Inject(INNGEST_CLIENT) private readonly inngest: Inngest,
     private readonly engineConfig: EngineConfig,
     private readonly configResolver: ConfigResolverService,
     private readonly capabilities: CapabilityRegistry,
     private readonly ledger: LedgerService,
-    private readonly runState: RunStateService,
     private readonly runInputs: RunInputService,
+    private readonly runMutation: RunMutationService,
+    private readonly wakeupDispatcher: RunWakeupDispatcher,
   ) {}
 
   /** §6.2/§21 — inserts the run in `CREATED` without sending `run/started`.
@@ -121,9 +130,17 @@ export class RunService {
     await this.runInputs.assertInputsSatisfied(runId, inputDefs);
 
     const assetBindings = await this.resolveAssetBindings(graph, current.channelId);
-    await this.db.update(run).set({ assetBindings }).where(eq(run.id, runId));
+    const mutation = await this.runMutation.withLockedRun(
+      runId,
+      'start',
+      ['CREATED'],
+      async (tx) => {
+        await tx.update(run).set({ assetBindings }).where(eq(run.id, runId));
+      },
+      'run/started',
+    );
 
-    await this.inngest.send({ name: 'run/started', data: { runId } });
+    await this.dispatchBestEffort(mutation.wakeupId);
 
     return this.get(runId);
   }
@@ -200,18 +217,47 @@ export class RunService {
     return this.get(runId);
   }
 
-  /** §12.1/§12.4 — scoped deliberately to `PAUSED_BUDGET -> RUNNING` only.
-   * Resuming a `FAILED` run and patching `run.overrides` (the only recovery
-   * a `stage_cap_exceeded` block has) are both phase 4's full §12.4 action
-   * matrix, not this phase. */
+  /** §12.4 — both budget pauses and failed runs are explicit recovery
+   * points. The durable wakeup claim performs the actual transition only if
+   * the persisted source state and revision are still current. */
   async resume(runId: string) {
     const current = await this.get(runId);
-    if (current.state !== 'PAUSED_BUDGET') {
-      throw new Error(`RunService.resume: run ${runId} is ${current.state}, not PAUSED_BUDGET`);
+    if (current.state === 'PAUSED_BUDGET' || current.state === 'FAILED') {
+      const cursor = current.cursorStageKey
+        ? current.stageExecutions.find((execution) => execution.stageKey === current.cursorStageKey)
+        : undefined;
+      if (
+        !cursor ||
+        ['passed', 'skipped', 'awaiting_approval', 'awaiting_input'].includes(cursor.state)
+      ) {
+        throw new ConflictException(
+          `Run ${runId} has no resumable cursor execution in state ${current.state}`,
+        );
+      }
     }
-    await this.runState.transition(runId, 'RUNNING');
-    await this.inngest.send({ name: 'run/resumed', data: { runId } });
+    const mutation = await this.runMutation.withLockedRun(
+      runId,
+      'resume',
+      ['PAUSED_BUDGET', 'FAILED'],
+      async () => undefined,
+      'run/resumed',
+    );
+    await this.dispatchBestEffort(mutation.wakeupId);
     return this.get(runId);
+  }
+
+  private async dispatchBestEffort(wakeupId: string): Promise<void> {
+    try {
+      await this.wakeupDispatcher.dispatch(wakeupId);
+    } catch (error) {
+      // The committed outbox row is the source of truth. The periodic
+      // dispatcher will retry this delivery, so the HTTP mutation succeeds.
+      this.logger?.warn(
+        `Run wakeup ${wakeupId} was committed but could not be dispatched immediately: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
   }
 
   async get(runId: string) {
@@ -226,5 +272,27 @@ export class RunService {
 
   async list() {
     return this.db.select().from(run);
+  }
+
+  async listStageAttempts(runId: string, stageKey: string) {
+    return this.db
+      .select({
+        id: stageAttempt.id,
+        attemptNo: stageAttempt.attemptNo,
+        outcome: stageAttempt.outcome,
+        phase: stageAttempt.phase,
+        actor: stageAttempt.actor,
+        artifactId: stageAttempt.artifactId,
+        reviewNote: stageAttempt.reviewNote,
+        critiqueTargetStageKey: stageAttempt.critiqueTargetStageKey,
+        checkResults: stageAttempt.checkResults,
+        qcVerdict: stageAttempt.qcVerdict,
+        costUsd: stageAttempt.costUsd,
+        createdAt: stageAttempt.createdAt,
+      })
+      .from(stageAttempt)
+      .innerJoin(stageExecution, eq(stageAttempt.stageExecutionId, stageExecution.id))
+      .where(and(eq(stageExecution.runId, runId), eq(stageExecution.stageKey, stageKey)))
+      .orderBy(asc(stageAttempt.attemptNo));
   }
 }

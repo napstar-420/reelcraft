@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import type { Inngest } from 'inngest';
 import type { StageDef } from '@reefcraft/shared';
 import { ChannelService } from '../../src/channel/channel.service';
@@ -8,7 +8,7 @@ import { RunService } from '../../src/run/run.service';
 import { RunController } from '../../src/run/run.controller';
 import { INNGEST_CLIENT } from '../../src/orchestration/inngest.client';
 import { toUsd } from '../../src/common/money';
-import { run } from '../../src/db/schema/index';
+import { run, stageExecution } from '../../src/db/schema/index';
 import { buildTestApp, type TestApp } from '../support/build-app';
 import { createTestDb, type TestDb } from '../support/test-db';
 
@@ -212,7 +212,7 @@ describe('RunController raiseBudget & resume (e2e)', () => {
     await expect(controller.raiseBudget(runId, { capUsd: 25 })).rejects.toThrow();
   });
 
-  it.each(['CREATED', 'RUNNING', 'COMPLETED', 'FAILED'])(
+  it.each(['CREATED', 'RUNNING', 'COMPLETED'])(
     'resume rejects a %s run, naming the actual state',
     async (state) => {
       const controller = testApp.app.get(RunController);
@@ -225,18 +225,39 @@ describe('RunController raiseBudget & resume (e2e)', () => {
     },
   );
 
-  it('resume transitions a PAUSED_BUDGET run to RUNNING and sends run/resumed', async () => {
+  it('resume leaves a PAUSED_BUDGET run parked and sends a revision-bound run/resumed', async () => {
     const controller = testApp.app.get(RunController);
     const runId = await createRun();
-    await testDb.db.update(run).set({ state: 'PAUSED_BUDGET' }).where(eq(run.id, runId));
+    await testDb.db
+      .update(run)
+      .set({ state: 'PAUSED_BUDGET', cursorStageKey: 'outline' })
+      .where(eq(run.id, runId));
     const inngestClient = testApp.app.get<Inngest>(INNGEST_CLIENT);
     vi.mocked(inngestClient.send).mockClear();
 
     const updated = await controller.resume(runId);
 
-    expect(updated.state).toBe('RUNNING');
+    expect(updated.state).toBe('PAUSED_BUDGET');
     expect(inngestClient.send).toHaveBeenCalledWith(
-      expect.objectContaining({ name: 'run/resumed', data: { runId } }),
+      expect.objectContaining({
+        name: 'run/resumed',
+        data: expect.objectContaining({ runId, action: 'resume', sourceState: 'PAUSED_BUDGET' }),
+      }),
     );
+  });
+
+  it('accepts FAILED as an explicit generic recovery point', async () => {
+    const controller = testApp.app.get(RunController);
+    const runId = await createRun();
+    await testDb.db
+      .update(run)
+      .set({ state: 'FAILED', cursorStageKey: 'outline' })
+      .where(eq(run.id, runId));
+    await testDb.db
+      .update(stageExecution)
+      .set({ state: 'failed' })
+      .where(and(eq(stageExecution.runId, runId), eq(stageExecution.stageKey, 'outline')));
+
+    await expect(controller.resume(runId)).resolves.toMatchObject({ state: 'FAILED' });
   });
 });

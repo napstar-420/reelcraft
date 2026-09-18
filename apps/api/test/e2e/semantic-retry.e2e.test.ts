@@ -86,6 +86,7 @@ describe('semantic retry loop (e2e)', () => {
       roleBindings: {},
       budgetCapUsd,
     });
+    await testDb.db.update(runTable).set({ state: 'RUNNING' }).where(eq(runTable.id, run.id));
     return { run };
   }
 

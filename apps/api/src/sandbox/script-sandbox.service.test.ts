@@ -28,6 +28,7 @@ function fakeEngineConfig(overrides: Partial<Env> = {}): EngineConfig {
     INFRA_RETRIES: 2,
     SANDBOX_MEMORY_MB: 32,
     SANDBOX_TIMEOUT_MS: 100,
+    PREVIEW_TOKEN_TTL_SEC: 600,
     ...overrides,
   };
   return new EngineConfig(new ConfigService<Env, true>(env));
