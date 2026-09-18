@@ -6,7 +6,7 @@ import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { ulid } from '../../src/common/ulid';
 import { loadRootEnv } from '../../src/common/load-dotenv';
-import { run, stageAttempt, stageExecution } from '../../src/db/schema/index';
+import { stageAttempt, stageExecution } from '../../src/db/schema/index';
 
 loadRootEnv();
 // This harness never issues a preview token, but AppModule validates the
