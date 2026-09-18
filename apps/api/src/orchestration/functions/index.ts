@@ -9,6 +9,11 @@ import { buildStageExecuteFunction } from './stage-execute.fn';
 import { buildRunOrchestrateFunction } from './run-orchestrate.fn';
 import { buildBudgetSweepFunction } from './budget-sweep.fn';
 import { buildCronShellFunctions } from './cron-shells.fn';
+import { RunWakeupClaimService } from '../../run/run-wakeup-claim.service';
+import { RunWakeupDispatcher } from '../../run/run-wakeup-dispatcher.service';
+import { buildRunWakeupDispatchFunction } from './run-wakeup-dispatch.fn';
+import { HumanReminderService } from '../../run/human-reminder.service';
+import { buildHumanReminderSweepFunction } from './human-reminder-sweep.fn';
 
 /**
  * §13.1 — resolves services from the container and closes Inngest functions
@@ -21,11 +26,29 @@ export function buildInngestFunctions(app: INestApplicationContext) {
   const runner = app.get(StageRunnerService);
   const runState = app.get(RunStateService);
   const ledger = app.get(LedgerService);
+  const wakeupClaim = app.get(RunWakeupClaimService);
+  const wakeupDispatcher = app.get(RunWakeupDispatcher);
+  const reminders = app.get(HumanReminderService);
 
   const stageExecute = buildStageExecuteFunction(client, runner);
-  const runOrchestrate = buildRunOrchestrateFunction(client, db, runState, stageExecute);
+  const runOrchestrate = buildRunOrchestrateFunction(
+    client,
+    db,
+    runState,
+    stageExecute,
+    wakeupClaim,
+  );
+  const runWakeupDispatch = buildRunWakeupDispatchFunction(client, wakeupDispatcher);
+  const humanReminderSweep = buildHumanReminderSweepFunction(client, reminders);
   const budgetSweep = buildBudgetSweepFunction(client, ledger);
   const cronShells = buildCronShellFunctions(client);
 
-  return [runOrchestrate, stageExecute, budgetSweep, ...cronShells];
+  return [
+    runOrchestrate,
+    stageExecute,
+    runWakeupDispatch,
+    humanReminderSweep,
+    budgetSweep,
+    ...cronShells,
+  ];
 }

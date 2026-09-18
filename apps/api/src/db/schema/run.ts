@@ -1,4 +1,4 @@
-import { jsonb, numeric, pgTable, text, timestamptz } from './pg-helpers';
+import { bigint, jsonb, numeric, pgTable, text, timestamptz } from './pg-helpers';
 import { channel } from './channel';
 import { blueprintVersion } from './blueprint';
 
@@ -14,6 +14,11 @@ export const run = pgTable('run', {
     .notNull()
     .references(() => blueprintVersion.id),
   state: text('state').notNull(), // §12.1 RunState
+  /** Monotonic optimistic precondition for every operator mutation and
+   * orchestration wakeup. Kept as bigint in Postgres while Drizzle exposes a
+   * number: a run cannot practically approach Number.MAX_SAFE_INTEGER
+   * mutations. */
+  revision: bigint('revision', { mode: 'number' }).notNull().default(0),
   inputs: jsonb('inputs').notNull().default({}),
   roleBindings: jsonb('role_bindings').notNull().default({}),
   resolvedConfig: jsonb('resolved_config').notNull(), // Record<stageKey, ConfigLayer> at start (§5.3)

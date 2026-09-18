@@ -34,6 +34,7 @@ function fakeEngineConfig(): EngineConfig {
     INFRA_RETRIES: 2,
     SANDBOX_MEMORY_MB: 32,
     SANDBOX_TIMEOUT_MS: 100,
+    PREVIEW_TOKEN_TTL_SEC: 600,
   };
   return new EngineConfig(new ConfigService<Env, true>(env));
 }
@@ -227,6 +228,41 @@ describe('BlueprintValidatorService', () => {
     expect(hasError(validator.validate({ graph, inputs: [], roles: [] }), 'stages.a.qc')).toBe(
       true,
     );
+  });
+
+  it('errors when qc is declared on a human.input stage', () => {
+    const validator = makeValidator({
+      'human.input': {
+        ...llmGenerate,
+        modality: 'human',
+        configSchema: { type: 'object' },
+        slots: () => [],
+        allowedOutputs: () => ['text', 'data'],
+      },
+    });
+    const graph = [
+      stage({
+        key: 'choose_theme',
+        capability: 'human.input',
+        qc: {
+          criteria: 'x',
+          threshold: 50,
+          model: { provider: 'fake', modelId: 'fake-judge-1', params: {} },
+          includeInputs: false,
+        },
+      }),
+    ];
+
+    const issues = validator.validate({ graph, inputs: [], roles: [] });
+
+    expect(
+      issues.some(
+        (issue) =>
+          issue.severity === 'error' &&
+          issue.path === 'stages.choose_theme.qc' &&
+          issue.message.includes('human.input'),
+      ),
+    ).toBe(true);
   });
 
   it('errors on a required slot left unbound', () => {

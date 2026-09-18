@@ -4,7 +4,7 @@ import { ChannelService } from '../../src/channel/channel.service';
 import { BlueprintService } from '../../src/blueprint/blueprint.service';
 import { RunService } from '../../src/run/run.service';
 import { StageRunnerService } from '../../src/orchestration/stage-runner.service';
-import { artifact } from '../../src/db/schema/index';
+import { artifact, run as runTable } from '../../src/db/schema/index';
 import { eq } from 'drizzle-orm';
 import { buildTestApp, type TestApp } from '../support/build-app';
 import { createTestDb, type TestDb } from '../support/test-db';
@@ -88,6 +88,7 @@ describe('data-output artifact (e2e)', () => {
       roleBindings: {},
       budgetCapUsd: 10,
     });
+    await testDb.db.update(runTable).set({ state: 'RUNNING' }).where(eq(runTable.id, run.id));
 
     const stageExecution = run.stageExecutions.find((e) => e.stageKey === 'outline');
     if (!stageExecution) throw new Error('stage execution not found');

@@ -8,7 +8,7 @@ import { ledgerEntry, run, stageAttempt } from '../db/schema/index';
 
 export type ReserveResult =
   | { ok: true; reservationId: string }
-  | { ok: false; reason: 'run_cap_exceeded' | 'stage_cap_exceeded' };
+  | { ok: false; reason: 'run_cap_exceeded' | 'stage_cap_exceeded' | 'run_not_running' };
 
 type ReservationCategory = 'stage_output';
 
@@ -61,6 +61,10 @@ export class LedgerService {
   }): Promise<ReserveResult> {
     return this.db.transaction(async (tx) => {
       const runRow = await this.lockRunRow(tx, params.runId);
+
+      if (runRow.state !== 'RUNNING') {
+        return { ok: false, reason: 'run_not_running' };
+      }
 
       const runAvailable =
         toUsd(runRow.budgetCapUsd) - toUsd(runRow.reservedUsd) - toUsd(runRow.spentUsd);

@@ -20,6 +20,12 @@ export interface ProviderResult {
   rawResponse: unknown;
 }
 
+export interface CancelResult {
+  confirmed: boolean;
+  billed?: boolean;
+  reason?: string;
+}
+
 /**
  * §8 — all external providers accessed through one uniform adapter
  * implementing the async job lifecycle: estimate -> submit -> poll -> fetch
@@ -33,5 +39,5 @@ export interface ProviderAdapter {
   submit(req: ProviderRequest, idempotencyKey: string): Promise<JobHandle>;
   poll(handle: JobHandle): Promise<JobStatus>;
   fetch(handle: JobHandle): Promise<ProviderResult>;
-  cancel(handle: JobHandle): Promise<void>;
+  cancel(handle: JobHandle): Promise<CancelResult>;
 }

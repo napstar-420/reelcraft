@@ -81,6 +81,7 @@ describe('budget.sweep (real Inngest function, e2e)', () => {
     });
     const execution = createdRun.stageExecutions.find((e) => e.stageKey === 'outline');
     if (!execution) throw new Error('stage execution not found');
+    await testDb.db.update(run).set({ state: 'RUNNING' }).where(eq(run.id, createdRun.id));
 
     const stageAttemptId = ulid();
     await testDb.db.insert(stageAttempt).values({

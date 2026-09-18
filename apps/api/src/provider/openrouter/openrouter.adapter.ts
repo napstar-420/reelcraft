@@ -121,7 +121,8 @@ export class OpenRouterAdapter implements ProviderAdapter {
     };
   }
 
-  async cancel(handle: JobHandle): Promise<void> {
+  async cancel(handle: JobHandle) {
     this.jobs.delete(handle.externalId);
+    return { confirmed: true, billed: false };
   }
 }

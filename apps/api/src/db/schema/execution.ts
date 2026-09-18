@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import {
   boolean,
+  index,
   integer,
   jsonb,
   numeric,
@@ -88,6 +89,7 @@ export const stageAttempt = pgTable(
     checkResults: jsonb('check_results'),
     qcVerdict: jsonb('qc_verdict'),
     reviewNote: text('review_note'), // human rejection note (§10.5)
+    critiqueTargetStageKey: text('critique_target_stage_key'),
     costUsd: numeric('cost_usd', { precision: 12, scale: 4 }).notNull().default('0'),
     actor: text('actor').notNull().default('engine'), // 'engine' | 'user'
     durationMs: integer('duration_ms'),
@@ -99,5 +101,7 @@ export const stageAttempt = pgTable(
       sql`coalesce(${t.stageItemId}, '')`,
       t.attemptNo,
     ),
+    index('stage_attempt_artifact_id_idx').on(t.artifactId),
+    index('stage_attempt_critique_target_outcome_idx').on(t.critiqueTargetStageKey, t.outcome),
   ],
 );

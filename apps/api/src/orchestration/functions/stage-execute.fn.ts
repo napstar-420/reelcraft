@@ -37,6 +37,13 @@ export function buildStageExecuteFunction(client: Inngest, runner: StageRunnerSe
         runner.loadStageContext(data.runId, data.stageKey),
       );
 
+      if (stage.capability === 'human.input') {
+        await step.run(`await-human-input-${data.stageKey}`, () =>
+          runner.awaitHumanInput(data.runId, data.stageExecutionId),
+        );
+        return { outcome: 'input_required' as const };
+      }
+
       let iteration = 0;
       while (true) {
         iteration += 1;
@@ -61,7 +68,7 @@ export function buildStageExecuteFunction(client: Inngest, runner: StageRunnerSe
         const semanticAttemptsUsed = await step.run(`count-semantic-attempts-${iteration}`, () =>
           runner.countSemanticAttemptsUsed(data.stageExecutionId),
         );
-        const isLastAttempt = semanticAttemptsUsed + 1 >= stage.retryLimit + 1;
+        const isLastAttempt = semanticAttemptsUsed + 1 >= effective.retryLimit + 1;
 
         try {
           const submission = await step.run(`submit-${data.stageKey}-${iteration}`, () =>
@@ -70,6 +77,9 @@ export function buildStageExecuteFunction(client: Inngest, runner: StageRunnerSe
 
           if (submission.outcome === 'budget_blocked') {
             return { outcome: 'budget_blocked' as const, reason: submission.reason };
+          }
+          if (submission.outcome === 'run_not_running') {
+            return { outcome: 'run_not_running' as const };
           }
           const handle = submission.handle;
 
@@ -115,6 +125,17 @@ export function buildStageExecuteFunction(client: Inngest, runner: StageRunnerSe
 
           if (fetched.outcome === 'success') {
             return { outcome: 'passed' as const, artifactId: fetched.artifactId };
+          }
+
+          if (fetched.outcome === 'approval_required') {
+            return {
+              outcome: 'approval_required' as const,
+              artifactId: fetched.artifactId,
+            };
+          }
+
+          if (fetched.outcome === 'run_not_running') {
+            return { outcome: 'run_not_running' as const };
           }
 
           if (fetched.outcome === 'qc_error') {

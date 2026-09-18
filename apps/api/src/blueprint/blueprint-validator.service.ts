@@ -172,6 +172,14 @@ export class BlueprintValidatorService {
       });
     }
 
+    if (stage.qc && stage.capability === 'human.input') {
+      issues.push({
+        path: `${base}.qc`,
+        message: 'qc is not allowed on human.input — user submissions run checks only',
+        severity: 'error',
+      });
+    }
+
     if (stage.checks.length === 0 && !stage.qc) {
       issues.push({
         path: base,

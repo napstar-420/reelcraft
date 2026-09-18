@@ -222,16 +222,10 @@ export class BindingResolverService {
     const [row] = await this.db
       .select()
       .from(runMemory)
-      .where(
-        and(
-          eq(runMemory.runId, ctx.runId),
-          eq(runMemory.memKey, ref.key),
-          eq(runMemory.tombstone, false),
-        ),
-      )
+      .where(and(eq(runMemory.runId, ctx.runId), eq(runMemory.memKey, ref.key)))
       .orderBy(desc(runMemory.version))
       .limit(1);
-    if (!row) {
+    if (!row || row.tombstone) {
       throw new Error(
         `BindingResolverService: no memory entry "${ref.key}" for run ${ctx.runId} ` +
           `(indexed-group reads like "${ref.key}#0" are phase 7)`,

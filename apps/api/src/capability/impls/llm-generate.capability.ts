@@ -79,8 +79,8 @@ export class LlmGenerate implements CapabilityImpl<LlmGenerateConfig> {
     };
   }
 
-  async cancel(handle: JobHandle): Promise<void> {
+  async cancel(handle: JobHandle) {
     const adapter = this.providers.get(handle.providerId);
-    await adapter.cancel(handle);
+    return adapter.cancel(handle);
   }
 }

@@ -11,6 +11,7 @@ import { inngestClientProvider } from './inngest.client';
 import { StageRunnerService } from './stage-runner.service';
 import { RunStateService } from './run-state.service';
 import { InProcessRunEvents } from './run-events';
+import { HumanWaitService } from '../run/human-wait.service';
 
 @Module({
   imports: [
@@ -23,7 +24,19 @@ import { InProcessRunEvents } from './run-events';
     CheckModule,
     QcModule,
   ],
-  providers: [inngestClientProvider, StageRunnerService, RunStateService, InProcessRunEvents],
-  exports: [inngestClientProvider, StageRunnerService, RunStateService, InProcessRunEvents],
+  providers: [
+    inngestClientProvider,
+    StageRunnerService,
+    RunStateService,
+    InProcessRunEvents,
+    HumanWaitService,
+  ],
+  exports: [
+    inngestClientProvider,
+    StageRunnerService,
+    RunStateService,
+    InProcessRunEvents,
+    HumanWaitService,
+  ],
 })
 export class OrchestrationModule {}

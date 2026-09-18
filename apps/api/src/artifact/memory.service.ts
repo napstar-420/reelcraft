@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq } from 'drizzle-orm';
 import type { ArtifactKind, StageDef } from '@reefcraft/shared';
-import type { Tx } from '../db/drizzle.provider';
+import type { Db, Tx } from '../db/drizzle.provider';
 import { runMemory } from '../db/schema/index';
 import { ulid } from '../common/ulid';
 import { getPath } from '../common/path';
@@ -16,14 +16,102 @@ export interface MemoryWriteSource {
   data: unknown;
 }
 
+export interface InvalidatedMemoryWriter {
+  stageKey: string;
+  itemIndex?: number;
+}
+
+type MemoryExecutor = Db | Tx;
+type MemoryRow = typeof runMemory.$inferSelect;
+
 /**
- * §3.11/§6.3 — append-only: the current value of a key is its highest
- * non-tombstoned version. No tombstones/invalidation (phase 4) and no
- * indexed-group (`key#i`) writes (phase 7) yet — every write today targets
- * the bare `memKey` named in `StageDef.writes`.
+ * §3.11/§6.3 — append-only: the highest version determines the current
+ * state. A highest-version tombstone makes the key absent; older values stay
+ * available only through history. Indexed-group (`key#i`) writes remain phase
+ * 7 — every value write today targets the bare `memKey` in `StageDef.writes`.
  */
 @Injectable()
 export class MemoryService {
+  /**
+   * Returns the latest visible row per key. Visibility is determined only
+   * after selecting the highest version: when that row is a tombstone the
+   * key is absent, even if an older value row still exists in history.
+   */
+  async listCurrent(executor: MemoryExecutor, runId: string): Promise<MemoryRow[]> {
+    const latest = await this.listLatest(executor, runId);
+    return latest.filter((row) => !row.tombstone);
+  }
+
+  /** Complete append-only history, grouped deterministically by key. */
+  async listHistory(executor: MemoryExecutor, runId: string): Promise<MemoryRow[]> {
+    return executor
+      .select()
+      .from(runMemory)
+      .where(eq(runMemory.runId, runId))
+      .orderBy(asc(runMemory.memKey), desc(runMemory.version));
+  }
+
+  /**
+   * Appends one tombstone for each current value written by an invalidated
+   * stage/item. Callers supply their transaction so artifact staleness,
+   * execution state, and memory invalidation can commit atomically.
+   * Reapplying an invalidation is idempotent because a latest tombstone is
+   * never itself eligible for another tombstone.
+   */
+  async appendTombstones(
+    tx: Tx,
+    runId: string,
+    invalidatedWriters: readonly InvalidatedMemoryWriter[],
+  ): Promise<number> {
+    if (invalidatedWriters.length === 0) return 0;
+
+    const current = (await this.listLatest(tx, runId)).filter((row) => !row.tombstone);
+    let appended = 0;
+    for (const row of current) {
+      const invalidated = invalidatedWriters.some(
+        (writer) =>
+          writer.stageKey === row.writtenBy &&
+          (writer.itemIndex === undefined
+            ? row.writtenItem === null
+            : row.writtenItem === writer.itemIndex),
+      );
+      if (!invalidated) continue;
+
+      // The run lock makes this uncontended in sanctioned call paths. The
+      // savepoint/re-read loop is defensive: an accidental caller outside
+      // that boundary still cannot resurrect or overwrite a version.
+      for (let retry = 0; retry < 3; retry += 1) {
+        const [latest] = await tx
+          .select()
+          .from(runMemory)
+          .where(and(eq(runMemory.runId, runId), eq(runMemory.memKey, row.memKey)))
+          .orderBy(desc(runMemory.version))
+          .limit(1);
+        if (!latest || latest.tombstone) break;
+        try {
+          await tx.transaction((savepoint) =>
+            savepoint.insert(runMemory).values({
+              id: ulid(),
+              runId,
+              memKey: latest.memKey,
+              version: latest.version + 1,
+              writtenBy: latest.writtenBy,
+              writtenItem: latest.writtenItem,
+              kind: latest.kind,
+              schemaHash: latest.schemaHash,
+              tombstone: true,
+            }),
+          );
+          appended += 1;
+          break;
+        } catch (error) {
+          if (!isUniqueViolation(error) || retry === 2) throw error;
+        }
+      }
+    }
+    return appended;
+  }
+
   /**
    * Returns a callback to pass as `ArtifactService.finalize()`'s
    * `applyWrites` — it must run inside that same transaction (§6.3), so it
@@ -59,6 +147,24 @@ export class MemoryService {
       }
     };
   }
+
+  private async listLatest(executor: MemoryExecutor, runId: string): Promise<MemoryRow[]> {
+    const history = await this.listHistory(executor, runId);
+    const seen = new Set<string>();
+    const latest: MemoryRow[] = [];
+    for (const row of history) {
+      if (seen.has(row.memKey)) continue;
+      seen.add(row.memKey);
+      latest.push(row);
+    }
+    return latest;
+  }
+}
+
+function isUniqueViolation(error: unknown): boolean {
+  return (
+    typeof error === 'object' && error !== null && (error as { code?: unknown }).code === '23505'
+  );
 }
 
 async function nextVersion(tx: Tx, runId: string, memKey: string): Promise<number> {

@@ -1,0 +1,2 @@
+CREATE INDEX "stage_attempt_artifact_id_idx" ON "stage_attempt" USING btree ("artifact_id");--> statement-breakpoint
+CREATE INDEX "run_memory_writer_idx" ON "run_memory" USING btree ("run_id","written_by","written_item");

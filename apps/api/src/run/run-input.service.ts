@@ -1,6 +1,6 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { ConflictException, Inject, Injectable, Logger } from '@nestjs/common';
 import { and, eq } from 'drizzle-orm';
-import { InputDef } from '@reefcraft/shared';
+import { InputDef, StageDef, type PutRunInputDto } from '@reefcraft/shared';
 import { DRIZZLE, type Db, type Tx } from '../db/drizzle.provider';
 import { artifact, blob, blueprintVersion, channel, run } from '../db/schema/index';
 import { ulid } from '../common/ulid';
@@ -9,6 +9,10 @@ import { objectKey } from '../storage/object-key';
 import { EngineConfig } from '../config/engine-config';
 import { SchemaValidatorService } from '../json-schema/schema-validator.service';
 import { ArtifactService } from '../artifact/artifact.service';
+import { InvalidationService } from './invalidation.service';
+import { PreviewTokenService } from './preview-token.service';
+import { RunMutationService } from './run-mutation.service';
+import { RunWakeupDispatcher } from './run-wakeup-dispatcher.service';
 
 export interface MediaUploadDescriptor {
   blobId: string;
@@ -32,13 +36,145 @@ export interface AttachMediaBlob {
  */
 @Injectable()
 export class RunInputService {
+  private readonly logger = new Logger(RunInputService.name);
+
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     @Inject(STORAGE_ADAPTER) private readonly storage: StorageAdapter,
     private readonly engineConfig: EngineConfig,
     private readonly schemaValidator: SchemaValidatorService,
     private readonly artifacts: ArtifactService,
+    private readonly invalidation: InvalidationService,
+    private readonly tokens: PreviewTokenService,
+    private readonly mutation: RunMutationService,
+    private readonly dispatcher: RunWakeupDispatcher,
   ) {}
+
+  async putInput(runId: string, inputKey: string, dto: PutRunInputDto) {
+    const context = await this.loadReplacementContext(runId, inputKey);
+    if (context.run.state === 'CREATED') {
+      if (!('blobs' in dto)) {
+        throw new ConflictException('Text and data inputs are supplied when the run is created');
+      }
+      return this.attachMediaInput(runId, inputKey, dto.blobs);
+    }
+
+    const proposedPayload = 'blobs' in dto ? { blobs: dto.blobs } : { value: dto.value };
+    await this.validateReplacement(context.def, proposedPayload);
+    const preview = await this.invalidation.preview({ runId, seed: { inputKeys: [inputKey] } });
+    if (!dto.previewToken) {
+      const issued = this.tokens.issue({
+        action: 'replace_input',
+        runId,
+        runRevision: context.run.revision,
+        proposedPayload,
+        preview: { fingerprint: preview.fingerprint },
+      });
+      return {
+        previewToken: issued.token,
+        expiresAt: issued.expiresAt,
+        affectedStageKeys: preview.closure.affectedStageKeys,
+        spentUsd: preview.totals.spentUsd,
+        estimatedRerunUsd: preview.totals.estimatedRerunUsd,
+      };
+    }
+
+    const claims = this.tokens.verify<{ fingerprint: string }>(dto.previewToken, {
+      action: 'replace_input',
+      runId,
+      runRevision: context.run.revision,
+      proposedPayload,
+    });
+    if (claims.preview.fingerprint !== preview.fingerprint) {
+      throw new ConflictException('The input preview changed; request a new preview');
+    }
+    // Media objects are mutable outside Postgres; confirm they still exist
+    // immediately before the locked replacement transaction.
+    const mediaStats =
+      'blobs' in dto
+        ? await Promise.all(dto.blobs.map((item) => this.storage.stat(item.objectKey)))
+        : [];
+    const targetStageKey =
+      preview.closure.affectedStageKeys[0] ?? context.graph[0]?.key ?? context.run.cursorStageKey;
+    if (!targetStageKey) throw new ConflictException('The run has no stage to resume');
+
+    const result = await this.mutation.withLockedRun(
+      runId,
+      'replace_input',
+      ['PAUSED_BUDGET', 'PAUSED_APPROVAL', 'PAUSED_INPUT', 'FAILED', 'COMPLETED'],
+      async (tx, lockedRun) => {
+        if (lockedRun.revision !== claims.runRevision) {
+          throw new ConflictException('The run changed; request a new preview');
+        }
+        await this.invalidation.apply(tx, {
+          runId,
+          closure: preview.closure,
+          targetStageKey,
+        });
+
+        if ('blobs' in dto) {
+          const many =
+            context.def.accepts.kind !== 'text' &&
+            context.def.accepts.kind !== 'data' &&
+            context.def.accepts.cardinality === 'many';
+          for (const [index, item] of dto.blobs.entries()) {
+            const stat = mediaStats[index]!;
+            await tx.insert(blob).values({
+              id: item.blobId,
+              ownerId: context.ownerId,
+              scope: 'input',
+              runId,
+              bucket: this.engineConfig.s3.bucket,
+              objectKey: item.objectKey,
+              mime: stat.mime,
+              bytes: stat.bytes,
+              sha256: item.sha256,
+              etag: stat.etag,
+            });
+            await this.artifacts.recordInputArtifact(
+              {
+                runId,
+                key: inputKey,
+                kind: context.def.accepts.kind,
+                blobId: item.blobId,
+                ...(many ? { itemIndex: index } : {}),
+              },
+              tx,
+            );
+          }
+        } else {
+          const currentInputs = lockedRun.inputs as Record<string, unknown>;
+          await tx
+            .update(run)
+            .set({ inputs: { ...currentInputs, [inputKey]: dto.value } })
+            .where(eq(run.id, runId));
+          await this.artifacts.recordInputArtifact(
+            {
+              runId,
+              key: inputKey,
+              kind: context.def.accepts.kind,
+              data: context.def.accepts.kind === 'text' ? { text: dto.value } : dto.value,
+              ...(context.def.accepts.kind === 'data'
+                ? { schemaHash: this.schemaValidator.hashOf(context.def.accepts.schema) }
+                : {}),
+            },
+            tx,
+          );
+        }
+      },
+      'run/resumed',
+    );
+    try {
+      await this.dispatcher.dispatch(result.wakeupId);
+    } catch (error) {
+      this.logger.warn(
+        `Run wakeup ${result.wakeupId} will be retried: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+    return { accepted: true, revision: result.revision };
+  }
 
   /** Called inside `RunService.create()`'s transaction — builds `$input:<key>`
    * artifacts for every declared text/data input already present in
@@ -148,27 +284,48 @@ export class RunInputService {
 
     const kind = def.accepts.kind;
     const many = def.accepts.cardinality === 'many';
-    for (const [index, item] of blobs.entries()) {
-      const stat = await this.storage.stat(item.objectKey);
-      await this.db.insert(blob).values({
-        id: item.blobId,
-        ownerId,
-        scope: 'input',
-        runId,
-        bucket: this.engineConfig.s3.bucket,
-        objectKey: item.objectKey,
-        mime: stat.mime,
-        bytes: stat.bytes,
-        sha256: item.sha256,
-        etag: stat.etag,
-      });
-      await this.artifacts.recordInputArtifact({
-        runId,
-        key: inputKey,
-        kind,
-        blobId: item.blobId,
-        ...(many && { itemIndex: index }),
-      });
+    const stats = await Promise.all(blobs.map((item) => this.storage.stat(item.objectKey)));
+    const mutation = await this.mutation.withLockedRun(
+      runId,
+      'attach',
+      ['CREATED'],
+      async (tx) => {
+        for (const [index, item] of blobs.entries()) {
+          const stat = stats[index]!;
+          await tx.insert(blob).values({
+            id: item.blobId,
+            ownerId,
+            scope: 'input',
+            runId,
+            bucket: this.engineConfig.s3.bucket,
+            objectKey: item.objectKey,
+            mime: stat.mime,
+            bytes: stat.bytes,
+            sha256: item.sha256,
+            etag: stat.etag,
+          });
+          await this.artifacts.recordInputArtifact(
+            {
+              runId,
+              key: inputKey,
+              kind,
+              blobId: item.blobId,
+              ...(many && { itemIndex: index }),
+            },
+            tx,
+          );
+        }
+      },
+      'run/input-attached',
+    );
+    try {
+      await this.dispatcher.dispatch(mutation.wakeupId);
+    } catch (error) {
+      this.logger.warn(
+        `Input attachment ${mutation.wakeupId} will be retried: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
     }
   }
 
@@ -201,6 +358,54 @@ export class RunInputService {
         );
       }
     }
+  }
+
+  private async validateReplacement(
+    def: InputDef,
+    payload: { value?: unknown; blobs?: AttachMediaBlob[] },
+  ): Promise<void> {
+    if (def.accepts.kind === 'text') {
+      if (!('value' in payload) || typeof payload.value !== 'string') {
+        throw new ConflictException(`Input "${def.key}" requires a text value`);
+      }
+      return;
+    }
+    if (def.accepts.kind === 'data') {
+      if (!('value' in payload)) throw new ConflictException(`Input "${def.key}" requires data`);
+      const violations = this.schemaValidator.validate(def.accepts.schema, payload.value);
+      if (violations.length > 0) {
+        throw new ConflictException({ code: 'schema_invalid', violations });
+      }
+      return;
+    }
+    if (!payload.blobs) throw new ConflictException(`Input "${def.key}" requires uploaded blobs`);
+    if (def.accepts.cardinality === 'one' && payload.blobs.length !== 1) {
+      throw new ConflictException(`Input "${def.key}" requires exactly one blob`);
+    }
+    if (payload.blobs.length === 0)
+      throw new ConflictException(`Input "${def.key}" requires blobs`);
+    await Promise.all(payload.blobs.map((item) => this.storage.stat(item.objectKey)));
+  }
+
+  private async loadReplacementContext(runId: string, inputKey: string) {
+    const [row] = await this.db
+      .select({
+        run,
+        ownerId: channel.ownerId,
+        inputDefs: blueprintVersion.inputs,
+        graph: blueprintVersion.graph,
+      })
+      .from(run)
+      .innerJoin(channel, eq(run.channelId, channel.id))
+      .innerJoin(blueprintVersion, eq(run.blueprintVersionId, blueprintVersion.id))
+      .where(eq(run.id, runId))
+      .limit(1);
+    if (!row) throw new ConflictException(`Run ${runId} not found`);
+    const def = InputDef.array()
+      .parse(row.inputDefs)
+      .find((candidate) => candidate.key === inputKey);
+    if (!def) throw new ConflictException(`No declared input "${inputKey}"`);
+    return { run: row.run, ownerId: row.ownerId, def, graph: StageDef.array().parse(row.graph) };
   }
 
   private requireMediaInputDef(inputDefs: InputDef[], key: string): InputDef {

@@ -34,6 +34,12 @@ export interface ExecResult<Out = unknown> {
   rawResponseRef?: string;
 }
 
+export interface CancelResult {
+  confirmed: boolean;
+  billed?: boolean;
+  reason?: string;
+}
+
 /** §7.2 — the estimate/submit/poll/fetch/cancel split exists so the
  * orchestrator can place step boundaries correctly (§13.3). Never collapse
  * into a single execute(): a transport retry would submit a second paid job. */
@@ -58,5 +64,5 @@ export interface CapabilityImpl<Cfg = Record<string, unknown>> {
   submit(ctx: ExecCtx<Cfg>): Promise<JobHandle>;
   poll(handle: JobHandle): Promise<JobStatus>;
   fetch(handle: JobHandle, ctx: ExecCtx<Cfg>): Promise<ExecResult>;
-  cancel?(handle: JobHandle): Promise<void>;
+  cancel?(handle: JobHandle): Promise<CancelResult>;
 }
