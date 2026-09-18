@@ -107,8 +107,14 @@ no mocks): `docker compose up` → `pnpm db:migrate` → API boot → `POST /cha
 verified: `pnpm typecheck`, `pnpm lint`, `pnpm test` (`packages/shared`), `nest build`,
 `vite build`.
 
-**Not yet verified:** the durability check (killing/restarting the API mid-run), and a real
-run against OpenRouter (needs a funded key).
+**Not yet verified:** a real run against OpenRouter (needs a funded key), and Inngest resumption
+of an in-flight provider poll after an API restart.
+
+**Phase 4 restart acceptance:** with Docker Postgres/MinIO/Inngest running and migrations applied,
+run `pnpm --filter @reefcraft/api acceptance:phase4-restart`. It compiles the API, starts a slow fake-provider run,
+and stops/restarts the API process. It allows for Inngest's durable exponential callback retry
+window, then verifies completion without a second provider submission. This is intentionally
+local-only; CI covers deterministic HTTP action and race tests with Postgres alone.
 
 ## Known gotchas (see design spec for full context)
 
@@ -219,8 +225,6 @@ received object"` error with no hint of a module-identity problem underneath. Ca
   approval, human input, cancellation, and the Phase 1–3 regression paths.
 - `pnpm --filter @reefcraft/api test:e2e` needs a live Postgres and isn't wired into CI yet
   (tracked in `docs/build-progress.md`) — run it locally against `docker compose up`.
-- The durability check (kill/restart the API mid-run, confirm no second provider job is
-  submitted) hasn't been run.
 - `eslint.config.mjs`'s shared-package import-boundary rule is scoped slightly too broadly
   (applies repo-wide rather than only under `packages/shared/**`) — harmless in practice since
   no import specifier in this codebase literally contains `apps/`, but worth tightening. See

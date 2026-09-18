@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { ConflictException, Injectable } from '@nestjs/common';
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
 import { EngineConfig } from '../config/engine-config';
@@ -25,12 +25,14 @@ const claimsSchema = z
 export type PreviewTokenErrorCode =
   'malformed' | 'invalid-signature' | 'expired' | 'binding-mismatch';
 
-export class PreviewTokenError extends Error {
+/** A confirmation token is a compare-and-swap precondition, so invalid or
+ * stale tokens are a client-visible conflict rather than an internal error. */
+export class PreviewTokenError extends ConflictException {
   constructor(
     readonly code: PreviewTokenErrorCode,
     message: string,
   ) {
-    super(message);
+    super({ code, message });
     this.name = 'PreviewTokenError';
   }
 }

@@ -138,9 +138,8 @@ export class FakeProviderAdapter implements ProviderAdapter {
       return existing;
     }
     const externalId = randomUUID();
-    const handle: JobHandle = { providerId: this.id, externalId };
     const parsed = this.parseFailureMode(req.modelId);
-    this.jobs.set(externalId, {
+    const payload: FakeJobPayload = {
       submittedAt: Date.now(),
       idempotencyKey,
       modelId: req.modelId,
@@ -150,13 +149,19 @@ export class FakeProviderAdapter implements ProviderAdapter {
       output: req.params.fakeOutput,
       costUsd: req.params.fakeCostUsd as number | undefined,
       pollsRemaining: this.parseSlow(req.modelId),
-    });
+    };
+    // The fake is used by the local restart acceptance harness. Persist the
+    // provider's opaque job snapshot in the existing handle payload so a new
+    // API process can poll/fetch a job submitted by the old one, just as it
+    // would for a real external provider.
+    const handle: JobHandle = { providerId: this.id, externalId, payload };
+    this.jobs.set(externalId, payload);
     this.submittedKeys.set(idempotencyKey, handle);
     return handle;
   }
 
   async poll(handle: JobHandle): Promise<JobStatus> {
-    const job = this.jobs.get(handle.externalId);
+    const job = this.jobFor(handle);
     if (!job) {
       return { done: true, outcome: 'failed', reason: 'unknown job', retryable: false };
     }
@@ -177,7 +182,7 @@ export class FakeProviderAdapter implements ProviderAdapter {
   }
 
   async fetch(handle: JobHandle): Promise<ProviderResult> {
-    const job = this.jobs.get(handle.externalId);
+    const job = this.jobFor(handle);
     if (!job) {
       throw new Error(`FakeProviderAdapter.fetch: unknown job ${handle.externalId}`);
     }
@@ -234,7 +239,7 @@ export class FakeProviderAdapter implements ProviderAdapter {
   }
 
   async cancel(handle: JobHandle) {
-    const job = this.jobs.get(handle.externalId);
+    const job = this.jobFor(handle);
     if (job?.failureMode === 'cancel_unknown') {
       return { confirmed: false, reason: 'fake provider could not confirm cancellation' };
     }
@@ -254,6 +259,21 @@ export class FakeProviderAdapter implements ProviderAdapter {
   private parseSlow(modelId: string): number | undefined {
     const match = /^fake-.*:slow:(\d+)$/.exec(modelId);
     return match ? Number(match[1]) : undefined;
+  }
+
+  private jobFor(handle: JobHandle): FakeJobPayload | undefined {
+    const inMemory = this.jobs.get(handle.externalId);
+    if (inMemory) return inMemory;
+    const payload = handle.payload;
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return undefined;
+    const candidate = payload as Partial<FakeJobPayload>;
+    if (typeof candidate.modelId !== 'string' || typeof candidate.idempotencyKey !== 'string')
+      return undefined;
+    // Keep the reconstructed job locally so subsequent polls retain their
+    // slow-provider countdown within the restarted process.
+    const restored = candidate as FakeJobPayload;
+    this.jobs.set(handle.externalId, restored);
+    return restored;
   }
 
   /** `fake-text-1:fail:transport:2` fails the first two `fetch()` calls,

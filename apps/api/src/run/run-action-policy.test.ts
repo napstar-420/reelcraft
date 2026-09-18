@@ -1,6 +1,7 @@
 import { ConflictException } from '@nestjs/common';
 import { describe, expect, it } from 'vitest';
 import { RunActionPolicy } from './run-action-policy';
+import { RUN_ACTION_ALLOWED_STATES } from './run-action-policy';
 
 describe('RunActionPolicy', () => {
   const policy = new RunActionPolicy();
@@ -31,5 +32,25 @@ describe('RunActionPolicy', () => {
   it('allows a caller to narrow, but never widen, an action policy', () => {
     expect(policy.isAllowed('FAILED', 'resume', ['PAUSED_BUDGET'])).toBe(false);
     expect(policy.isAllowed('CREATED', 'resume', ['CREATED'])).toBe(false);
+  });
+
+  it('matches every state in the published Phase 4 action matrix', () => {
+    const states = [
+      'CREATED',
+      'RUNNING',
+      'PAUSED_BUDGET',
+      'PAUSED_APPROVAL',
+      'PAUSED_INPUT',
+      'FAILED',
+      'COMPLETED',
+      'CANCELLED',
+    ] as const;
+    for (const [action, allowedStates] of Object.entries(RUN_ACTION_ALLOWED_STATES)) {
+      for (const state of states) {
+        expect(policy.isAllowed(state, action as keyof typeof RUN_ACTION_ALLOWED_STATES)).toBe(
+          (allowedStates as readonly string[]).includes(state),
+        );
+      }
+    }
   });
 });

@@ -29,7 +29,11 @@ const POLL_BACKOFF_SEC = [5, 15, 30];
  */
 export function buildStageExecuteFunction(client: Inngest, runner: StageRunnerService) {
   return client.createFunction(
-    { id: 'stage.execute', retries: 0 },
+    // A server restart can interrupt Inngest while it is invoking this
+    // endpoint. Retrying replays memoized steps and reuses the persisted
+    // provider handle, so it resumes poll/fetch without submitting a second
+    // provider job. `0` strands a submitted attempt after a callback EOF.
+    { id: 'stage.execute', retries: 3 },
     { event: 'stage/execute.requested' },
     async ({ event, step }) => {
       const data = event.data as StageExecuteEventData;
