@@ -45,12 +45,20 @@ export const ModelCapabilities = z.object({
   supportsIdempotency: z.boolean(),
   supportsStructuredOutput: z.boolean().optional(),
   supportsVision: z.boolean().optional(),
+  image: z
+    .object({
+      formats: z.array(z.string()).optional(),
+      resolutions: z.array(z.string()).optional(),
+      maxReferences: z.number().optional(),
+    })
+    .optional(),
   video: z
     .object({
       durationsSec: z.union([z.array(z.number()), z.object({ min: z.number(), max: z.number() })]),
       aspectRatios: z.array(z.string()),
       maxResolution: z.string(),
       inputs: z.array(z.enum(['text', 'startFrame', 'endFrame', 'references'])),
+      hasAudio: z.boolean().optional(),
     })
     .optional(),
 });

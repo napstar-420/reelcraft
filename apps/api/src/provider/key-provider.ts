@@ -14,9 +14,11 @@ export const KEY_PROVIDER = Symbol('KEY_PROVIDER');
 @Injectable()
 export class EnvKeyProvider implements KeyProvider {
   async get(providerId: string): Promise<string | undefined> {
-    if (providerId === 'openrouter') {
-      return process.env.OPENROUTER_API_KEY;
-    }
-    return undefined;
+    return ({
+      openrouter: process.env.OPENROUTER_API_KEY,
+      fal: process.env.FAL_KEY,
+      elevenlabs: process.env.ELEVENLABS_API_KEY,
+      deepgram: process.env.DEEPGRAM_API_KEY,
+    } as Record<string, string | undefined>)[providerId];
   }
 }

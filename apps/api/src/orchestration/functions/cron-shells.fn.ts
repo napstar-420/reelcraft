@@ -1,4 +1,5 @@
 import type { Inngest } from 'inngest';
+import { BlobService } from '../../artifact/blob.service';
 
 /**
  * §4.5/§4.4 — no-op shells so the topology (§13.4) is visible from phase 1.
@@ -7,9 +8,9 @@ import type { Inngest } from 'inngest';
  * Phase 5+'s blob GC and phase 6's compute-job reaper fill the remaining
  * two once their subsystems exist.
  */
-export function buildCronShellFunctions(client: Inngest) {
+export function buildCronShellFunctions(client: Inngest, blobs?: BlobService) {
   const blobGc = client.createFunction({ id: 'blob.gc' }, { cron: '0 * * * *' }, async () => {
-    // phase 5+: collect gc_eligible blobs past retention (§4.5)
+    if (blobs) await blobs.collectEligible();
   });
 
   const jobReaper = client.createFunction(

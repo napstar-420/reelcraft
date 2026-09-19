@@ -17,6 +17,7 @@ import {
 } from '../artifact/binding-resolver.service';
 import { ArtifactService } from '../artifact/artifact.service';
 import { BlobService } from '../artifact/blob.service';
+import { MediaArtifactService } from '../artifact/media-artifact.service';
 import { MemoryService } from '../artifact/memory.service';
 import { LedgerService } from '../budget/ledger.service';
 import {
@@ -92,6 +93,7 @@ export class StageRunnerService {
     private readonly bindingResolver: BindingResolverService,
     private readonly artifacts: ArtifactService,
     private readonly blobs: BlobService,
+    private readonly mediaArtifacts: MediaArtifactService,
     private readonly memory: MemoryService,
     private readonly ledger: LedgerService,
     private readonly configResolver: ConfigResolverService,
@@ -513,13 +515,22 @@ export class StageRunnerService {
       payload: result,
     });
 
-    const kind = stage.output.kind === 'data' ? 'data' : 'text';
-    const data = kind === 'text' ? { text: result.output } : result.output;
+    const mediaOutput = stage.output.kind.startsWith('media.')
+      ? (result.output as import('@reefcraft/shared').MediaSource)
+      : undefined;
+    const persistedMedia = mediaOutput
+      ? await this.mediaArtifacts.persist({
+          ownerId: channelRow?.ownerId ?? 'local', channelId: runRow.channelId, runId: ctx.runId, source: mediaOutput,
+        })
+      : undefined;
+    const kind = stage.output.kind === 'data' ? 'data' : stage.output.kind === 'text' ? 'text' : stage.output.kind;
+    const data = kind === 'text' ? { text: result.output } : kind === 'data' ? result.output : undefined;
     const artifactId = await this.artifacts.recordAttemptArtifact({
       runId: ctx.runId,
       producerStageKey: stage.key,
       kind,
       data,
+      ...(persistedMedia && { blobId: persistedMedia.blobId, probe: persistedMedia.probe }),
       ...(stage.output.kind === 'data' && {
         schemaHash: this.schemaValidator.hashOf(stage.output.schema),
       }),
@@ -546,7 +557,7 @@ export class StageRunnerService {
       .set({ phase: 'settled', artifactId, rawResponseRef, costUsd: fromUsd(result.costUsd) })
       .where(eq(stageAttempt.id, ctx.stageAttemptId));
 
-    const checkArtifact: CheckArtifact = { kind, data };
+    const checkArtifact: CheckArtifact = { kind, data, ...(persistedMedia && { probe: persistedMedia.probe }) };
     const resolvedRefs: Array<Record<string, RefEnvelope>> = [];
     const checkProvenance: ResolvedBindings['provenance'] = {};
     for (const [checkIndex, check] of stage.checks.entries()) {

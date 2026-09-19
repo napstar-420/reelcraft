@@ -14,6 +14,7 @@ export interface RecordAttemptArtifactInput {
   kind: string;
   data?: unknown;
   blobId?: string;
+  probe?: unknown;
   /** sha256 of the canonical output schema (§4.2) — only meaningful for
    * `kind: 'data'`; null for the fixed kinds. */
   schemaHash?: string;
@@ -61,6 +62,7 @@ export class ArtifactService {
       kind: input.kind,
       data: input.data,
       blobId: input.blobId,
+      probe: input.probe,
       schemaHash: input.schemaHash,
       stale: true,
       userAuthored: input.userAuthored ?? false,
