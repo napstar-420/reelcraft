@@ -79,6 +79,9 @@ export class BindingResolverService {
 
       case 'prev': {
         const row = await this.fetchPrevArtifact(ctx);
+        if ((row.kind as ArtifactKind).startsWith('media.')) {
+          return { value: mediaDescriptor(row), provenance: { ref, artifactId: row.id } };
+        }
         const unwrapped = unwrapArtifactData(row.kind as ArtifactKind, row.data);
         return {
           value: ref.path ? getPath(unwrapped, ref.path) : unwrapped,
@@ -88,6 +91,26 @@ export class BindingResolverService {
 
       case 'memory': {
         const row = await this.fetchMemoryRow(ref, ctx);
+        if (row.artifactId) {
+          const [media] = await this.db
+            .select()
+            .from(artifact)
+            .where(eq(artifact.id, row.artifactId))
+            .limit(1);
+          if (!media || media.stale || !media.blobId)
+            throw new Error(
+              `BindingResolverService: memory media "${ref.key}" is stale or unavailable`,
+            );
+          return {
+            value: mediaDescriptor(media),
+            provenance: {
+              ref,
+              memoryKey: ref.key,
+              memoryVersion: row.version,
+              artifactId: media.id,
+            },
+          };
+        }
         return {
           value: ref.path ? getPath(row.data, ref.path) : row.data,
           provenance: { ref, memoryKey: ref.key, memoryVersion: row.version },
@@ -231,9 +254,6 @@ export class BindingResolverService {
           `(indexed-group reads like "${ref.key}#0" are phase 7)`,
       );
     }
-    if (row.artifactId) {
-      throw new Error('BindingResolverService: memory reads of media artifacts are phase 5');
-    }
     return row;
   }
 }
@@ -242,10 +262,9 @@ export class BindingResolverService {
  * `{text: string}` storage wrapper down to the plain string; media kinds
  * aren't bindable this way until phase 5. */
 function unwrapArtifactData(kind: ArtifactKind, data: unknown): unknown {
-  if (kind.startsWith('media.')) {
-    throw new Error(
-      `BindingResolverService: {from: "prev"} on a media artifact ("${kind}") is phase 5`,
-    );
-  }
   return unwrapText(kind, data);
+}
+
+function mediaDescriptor(row: typeof artifact.$inferSelect) {
+  return { artifactId: row.id, blobId: row.blobId, kind: row.kind, probe: row.probe };
 }

@@ -13,6 +13,8 @@ import { InvalidationService } from './invalidation.service';
 import { PreviewTokenService } from './preview-token.service';
 import { RunMutationService } from './run-mutation.service';
 import { RunWakeupDispatcher } from './run-wakeup-dispatcher.service';
+import { WorkspaceService } from '../storage/workspace.service';
+import { MediaProbeService } from '../artifact/media-probe.service';
 
 export interface MediaUploadDescriptor {
   blobId: string;
@@ -48,6 +50,8 @@ export class RunInputService {
     private readonly tokens: PreviewTokenService,
     private readonly mutation: RunMutationService,
     private readonly dispatcher: RunWakeupDispatcher,
+    private readonly workspaces: WorkspaceService,
+    private readonly probes: MediaProbeService,
   ) {}
 
   async putInput(runId: string, inputKey: string, dto: PutRunInputDto) {
@@ -285,6 +289,13 @@ export class RunInputService {
     const kind = def.accepts.kind;
     const many = def.accepts.cardinality === 'many';
     const stats = await Promise.all(blobs.map((item) => this.storage.stat(item.objectKey)));
+    const probes = await Promise.all(
+      blobs.map((item) =>
+        this.workspaces.withWorkspace(runId, async (workspace) =>
+          this.probes.probe(await workspace.pull(item.objectKey)),
+        ),
+      ),
+    );
     const mutation = await this.mutation.withLockedRun(
       runId,
       'attach',
@@ -303,6 +314,7 @@ export class RunInputService {
             bytes: stat.bytes,
             sha256: item.sha256,
             etag: stat.etag,
+            probe: probes[index],
           });
           await this.artifacts.recordInputArtifact(
             {
@@ -310,6 +322,7 @@ export class RunInputService {
               key: inputKey,
               kind,
               blobId: item.blobId,
+              probe: probes[index],
               ...(many && { itemIndex: index }),
             },
             tx,

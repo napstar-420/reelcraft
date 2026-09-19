@@ -10,6 +10,7 @@ import { buildInngestFunctions } from '../../src/orchestration/functions/index';
 import { applyTestEnvDefaults } from './env';
 import { MemoryStorageAdapter } from './memory-storage.adapter';
 import type { TestDb } from './test-db';
+import { MediaProbeService } from '../../src/artifact/media-probe.service';
 
 export interface TestApp {
   app: INestApplicationContext;
@@ -27,10 +28,13 @@ export interface TestApp {
  * override since Nest overrides by token across the whole container, not
  * per importing module.
  */
-export async function buildTestApp(testDb: TestDb): Promise<TestApp> {
+export async function buildTestApp(
+  testDb: TestDb,
+  options?: { mediaProbe?: Pick<MediaProbeService, 'probe' | 'hasAudio'> },
+): Promise<TestApp> {
   applyTestEnvDefaults();
 
-  const app = await Test.createTestingModule({ imports: [AppModule] })
+  const builder = Test.createTestingModule({ imports: [AppModule] })
     .overrideProvider(DRIZZLE)
     .useValue(testDb.db)
     // `BlobService.writeRawResponse` (called unconditionally by
@@ -41,8 +45,12 @@ export async function buildTestApp(testDb: TestDb): Promise<TestApp> {
     // no MinIO service (only Postgres), so every e2e test that reaches
     // `fetchAndFinalize` would otherwise fail with ECONNREFUSED.
     .overrideProvider(STORAGE_ADAPTER)
-    .useValue(new MemoryStorageAdapter())
-    .compile();
+    .useValue(new MemoryStorageAdapter());
+  // E2E storage fixtures deliberately use tiny arbitrary buffers; keep the
+  // engine-level suites independent of a host FFmpeg installation. Dedicated
+  // media-output coverage passes an explicit deterministic probe.
+  builder.overrideProvider(MediaProbeService).useValue(options?.mediaProbe ?? testMediaProbe());
+  const app = await builder.compile();
 
   await app.init();
 
@@ -66,6 +74,26 @@ export async function buildTestApp(testDb: TestDb): Promise<TestApp> {
     functions,
     async close() {
       await app.close();
+    },
+  };
+}
+
+function testMediaProbe(): Pick<MediaProbeService, 'probe' | 'hasAudio'> {
+  return {
+    async probe(file: string) {
+      const audio = /\.(mp3|wav|m4a|aac)$/i.test(file);
+      return {
+        container: audio ? 'wav' : 'png_pipe',
+        durationSec: audio ? 1 : 0,
+        streams: [
+          audio
+            ? { type: 'audio' as const, codec: 'pcm_s16le', sampleRate: 8000 }
+            : { type: 'video' as const, codec: 'png', width: 1, height: 1, fps: 1 },
+        ],
+      };
+    },
+    hasAudio(probe) {
+      return probe.streams.some((stream) => stream.type === 'audio');
     },
   };
 }

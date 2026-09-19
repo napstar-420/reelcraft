@@ -14,6 +14,7 @@ export interface MemoryWriteSource {
   /** The finalized artifact's `data` — the value `StageDef.writes` paths
    * resolve against. `'$'` means "the whole value". */
   data: unknown;
+  artifactId?: string;
 }
 
 export interface InvalidatedMemoryWriter {
@@ -123,6 +124,11 @@ export class MemoryService {
       if (!stage.writes) return;
       for (const [memKey, path] of Object.entries(stage.writes)) {
         const value = path === '$' ? source.data : getPath(source.data, path);
+        if (source.kind.startsWith('media.') && path !== '$') {
+          throw new Error(
+            `MemoryService: media write "${memKey}" must use the whole artifact path "$"`,
+          );
+        }
         // A `writes` path that doesn't resolve is a blueprint authoring bug
         // (schema/path mismatch), not a legitimate "no value" — writing
         // `undefined` here would silently persist a permanent, versioned
@@ -142,7 +148,9 @@ export class MemoryService {
           writtenBy: stage.key,
           writtenItem: source.itemIndex,
           kind: source.kind,
-          data: value,
+          ...(source.kind.startsWith('media.')
+            ? { artifactId: source.artifactId }
+            : { data: value }),
         });
       }
     };

@@ -23,6 +23,11 @@ export const EnvSchema = z
     INNGEST_SIGNING_KEY: z.string(),
 
     OPENROUTER_API_KEY: z.string().optional(),
+    FAL_KEY: z.string().optional(),
+    ELEVENLABS_API_KEY: z.string().optional(),
+    DEEPGRAM_API_KEY: z.string().optional(),
+    PUBLIC_API_BASE_URL: z.string().url().optional(),
+    DEEPGRAM_CALLBACK_SECRET: z.string().min(32).optional(),
 
     WORKSPACE_ROOT: z.string().default('./.workspace'),
     BLOB_RETENTION_DAYS: z.coerce.number().default(30),

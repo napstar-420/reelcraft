@@ -11,3 +11,4 @@ export * from './blob';
 export * from './memory';
 export * from './ledger';
 export * from './template';
+export * from './provider-job';

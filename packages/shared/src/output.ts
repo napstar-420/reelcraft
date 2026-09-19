@@ -5,6 +5,9 @@ export const MediaConstraints = z.object({
   durationSec: z.object({ min: z.number().optional(), max: z.number().optional() }).optional(),
   aspectRatio: z.string().optional(),
   minWidth: z.number().optional(),
+  /** Video/audio policy. Omitted is intentionally resolved by video.generate
+   * to `required`; other media capabilities ignore it. */
+  audio: z.enum(['required', 'optional', 'forbidden']).optional(),
 });
 export type MediaConstraints = z.infer<typeof MediaConstraints>;
 

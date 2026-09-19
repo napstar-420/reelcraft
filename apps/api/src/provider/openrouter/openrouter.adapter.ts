@@ -21,7 +21,7 @@ interface OpenRouterJob {
 @Injectable()
 export class OpenRouterAdapter implements ProviderAdapter {
   readonly id = 'openrouter';
-  readonly modalities = ['text'];
+  readonly modalities = ['text', 'image'];
 
   private readonly jobs = new Map<string, OpenRouterJob>();
 
@@ -59,6 +59,10 @@ export class OpenRouterAdapter implements ProviderAdapter {
   }
 
   async estimate(req: ProviderRequest): Promise<CostEstimate> {
+    if (req.params.__mediaKind === 'media.image') {
+      const expectedUsd = Number(req.params.priceUsd ?? 0.04);
+      return { expectedUsd, ceilingUsd: expectedUsd, basis: 'configured_ceiling' };
+    }
     // §16.5 — max_tokens is required in effective params for an honest
     // ceiling; without it there is no real reservation to make.
     const maxTokens = req.params.max_tokens;
@@ -92,6 +96,7 @@ export class OpenRouterAdapter implements ProviderAdapter {
     if (!apiKey) {
       throw new Error('OpenRouterAdapter.fetch: no API key configured');
     }
+    if (job.req.params.__mediaKind === 'media.image') return this.fetchImage(job.req, apiKey);
     const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
@@ -118,6 +123,40 @@ export class OpenRouterAdapter implements ProviderAdapter {
       costUsd: totalTokens * 0.000_002,
       repro: { level: 'approximate', providerVersion: job.req.modelId },
       rawResponse: body,
+    };
+  }
+
+  private async fetchImage(req: ProviderRequest, apiKey: string): Promise<ProviderResult> {
+    const params = { ...req.params };
+    delete params.__mediaKind;
+    delete params.slots;
+    const response = await fetch('https://openrouter.ai/api/v1/images/generations', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: req.modelId, prompt: req.renderedPrompt ?? '', ...params }),
+    });
+    if (!response.ok)
+      throw new Error(`OpenRouter image: ${response.status} ${response.statusText}`);
+    const body = (await response.json()) as {
+      data?: Array<{ b64_json?: string; url?: string }>;
+      usage?: { total_cost?: number };
+    };
+    const image = body.data?.[0];
+    if (!image?.b64_json && !image?.url)
+      throw new Error('OpenRouter image: missing generated image');
+    return {
+      output: {
+        kind: 'media.image',
+        ...(image.b64_json ? { base64: image.b64_json } : { sourceUrl: image.url! }),
+        mime: 'image/png',
+        filename: 'image.png',
+      },
+      costUsd: body.usage?.total_cost ?? Number(req.params.priceUsd ?? 0.04),
+      repro: { level: 'none', providerVersion: req.modelId },
+      rawResponse: {
+        data: image.url ? [{ url: image.url }] : [{ b64_json: '[stored]' }],
+        usage: body.usage,
+      },
     };
   }
 
