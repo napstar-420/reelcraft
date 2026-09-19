@@ -587,6 +587,15 @@ export class StageRunnerService {
       resolvedRefs,
       ...(stage.output.kind === 'data' && { outputSchema: stage.output.schema }),
     });
+    // Video is audio-bearing by default. A stage must explicitly request
+    // `forbidden` or `optional` to accept a silent provider result.
+    if (stage.output.kind === 'media.video' && persistedMedia) {
+      const audioPolicy = stage.output.constraints?.audio ?? 'required';
+      const hasAudio = persistedMedia.probe.streams.some((stream) => stream.type === 'audio');
+      if ((audioPolicy === 'required' && !hasAudio) || (audioPolicy === 'forbidden' && hasAudio)) {
+        checkResults.push({ name: 'audio_constraint', kind: 'builtin', pass: false, fault: 'artifact', message: `video audio is ${hasAudio ? 'present' : 'absent'} but output requires ${audioPolicy}` });
+      }
+    }
 
     if (!checkResults.every((r) => r.pass)) {
       await this.db
@@ -697,6 +706,7 @@ export class StageRunnerService {
             stageKey: stage.key,
             kind,
             data,
+            artifactId,
           }),
         },
         tx,

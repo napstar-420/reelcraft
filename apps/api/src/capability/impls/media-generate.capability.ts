@@ -15,10 +15,10 @@ abstract class ProviderMediaCapability implements CapabilityImpl<MediaConfig> {
   slots(_cfg: MediaConfig): SlotDef[] { return []; }
   allowedOutputs(_cfg: MediaConfig): OutputKind[] { return [this.outputKind]; }
   async estimateCost(ctx: ExecCtx<MediaConfig>): Promise<CostEstimate> {
-    return this.providers.get(ctx.config.provider).estimate({ modelId: ctx.config.modelId, params: { ...ctx.config.params, slots: ctx.slots }, renderedPrompt: ctx.renderedPrompt });
+    return this.providers.get(ctx.config.provider).estimate({ modelId: ctx.config.modelId, params: { ...ctx.config.params, slots: ctx.slots, __mediaKind: this.outputKind }, renderedPrompt: ctx.renderedPrompt });
   }
   async submit(ctx: ExecCtx<MediaConfig>): Promise<JobHandle> {
-    return this.providers.get(ctx.config.provider).submit({ modelId: ctx.config.modelId, params: { ...ctx.config.params, slots: ctx.slots }, renderedPrompt: ctx.renderedPrompt }, ctx.idempotencyKey);
+    return this.providers.get(ctx.config.provider).submit({ modelId: ctx.config.modelId, params: { ...ctx.config.params, slots: ctx.slots, __mediaKind: this.outputKind }, renderedPrompt: ctx.renderedPrompt }, ctx.idempotencyKey);
   }
   async poll(handle: JobHandle): Promise<JobStatus> { return this.providers.get(handle.providerId).poll(handle); }
   async fetch(handle: JobHandle, _ctx: ExecCtx<MediaConfig>): Promise<ExecResult<MediaSource>> {
