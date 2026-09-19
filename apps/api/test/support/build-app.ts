@@ -10,6 +10,7 @@ import { buildInngestFunctions } from '../../src/orchestration/functions/index';
 import { applyTestEnvDefaults } from './env';
 import { MemoryStorageAdapter } from './memory-storage.adapter';
 import type { TestDb } from './test-db';
+import { MediaProbeService } from '../../src/artifact/media-probe.service';
 
 export interface TestApp {
   app: INestApplicationContext;
@@ -27,10 +28,13 @@ export interface TestApp {
  * override since Nest overrides by token across the whole container, not
  * per importing module.
  */
-export async function buildTestApp(testDb: TestDb): Promise<TestApp> {
+export async function buildTestApp(
+  testDb: TestDb,
+  options?: { mediaProbe?: Pick<MediaProbeService, 'probe' | 'hasAudio'> },
+): Promise<TestApp> {
   applyTestEnvDefaults();
 
-  const app = await Test.createTestingModule({ imports: [AppModule] })
+  const builder = Test.createTestingModule({ imports: [AppModule] })
     .overrideProvider(DRIZZLE)
     .useValue(testDb.db)
     // `BlobService.writeRawResponse` (called unconditionally by
@@ -41,8 +45,9 @@ export async function buildTestApp(testDb: TestDb): Promise<TestApp> {
     // no MinIO service (only Postgres), so every e2e test that reaches
     // `fetchAndFinalize` would otherwise fail with ECONNREFUSED.
     .overrideProvider(STORAGE_ADAPTER)
-    .useValue(new MemoryStorageAdapter())
-    .compile();
+    .useValue(new MemoryStorageAdapter());
+  if (options?.mediaProbe) builder.overrideProvider(MediaProbeService).useValue(options.mediaProbe);
+  const app = await builder.compile();
 
   await app.init();
 

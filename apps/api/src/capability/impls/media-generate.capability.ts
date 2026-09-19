@@ -32,6 +32,7 @@ abstract class ProviderMediaCapability implements CapabilityImpl<MediaConfig> {
 @Injectable()
 export class ImageGenerateCapability extends ProviderMediaCapability {
   readonly modality = 'image'; readonly outputKind = 'media.image' as const;
+  constructor(providers: ProviderRegistry) { super(providers); }
   slots(): SlotDef[] { return [{ name: 'references', accepts: ['media.image'], required: false, cardinality: 'many' }]; }
 }
 
@@ -39,6 +40,7 @@ export class ImageGenerateCapability extends ProviderMediaCapability {
 @Injectable()
 export class VideoGenerateCapability extends ProviderMediaCapability {
   readonly modality = 'video'; readonly outputKind = 'media.video' as const;
+  constructor(providers: ProviderRegistry) { super(providers); }
   slots(): SlotDef[] { return [
     { name: 'startFrame', accepts: ['media.image'], required: false, cardinality: 'one' },
     { name: 'endFrame', accepts: ['media.image'], required: false, cardinality: 'one' },
@@ -50,6 +52,7 @@ export class VideoGenerateCapability extends ProviderMediaCapability {
 @Injectable()
 export class AudioSpeechCapability extends ProviderMediaCapability {
   readonly modality = 'audio'; readonly outputKind = 'media.audio' as const;
+  constructor(providers: ProviderRegistry) { super(providers); }
   slots(): SlotDef[] { return [{ name: 'text', accepts: ['text'], required: true, cardinality: 'one' }]; }
 }
 
@@ -57,6 +60,7 @@ export class AudioSpeechCapability extends ProviderMediaCapability {
 @Injectable()
 export class MediaAnalyzeCapability extends ProviderMediaCapability {
   readonly modality = 'media'; readonly outputKind = 'data' as const;
+  constructor(providers: ProviderRegistry) { super(providers); }
   slots(): SlotDef[] { return [{ name: 'source', accepts: ['media.audio', 'media.video'], required: true, cardinality: 'one' }]; }
   async estimateCost(ctx: ExecCtx<MediaConfig>): Promise<CostEstimate> {
     if (ctx.config.operation === 'probe') return { expectedUsd: 0, ceilingUsd: 0, basis: 'configured_ceiling' };

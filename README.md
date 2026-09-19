@@ -70,6 +70,16 @@ environment key. Video defaults to requiring an audio stream unless its output
 constraint explicitly selects `optional` or `forbidden`. Real-provider calls
 should be run locally with explicit funded keys; the normal test suite is free.
 
+Targeted fake-media runner coverage requires Docker Postgres and can be run with:
+
+```bash
+pnpm --filter @reefcraft/api exec vitest run -c vitest.e2e.config.ts test/e2e/media-output.e2e.test.ts
+```
+
+It uses deterministic fixtures and a test probe so CI does not require FFmpeg.
+Before enabling real media, verify the host dependency directly with
+`ffprobe -v error -show_format -show_streams path/to/media-file`.
+
 ## Phase 4 run-control workflow
 
 Runs are created in `CREATED`, inputs/assets are attached, and

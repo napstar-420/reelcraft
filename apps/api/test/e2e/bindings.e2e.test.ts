@@ -126,8 +126,7 @@ describe('binding resolver + memory writes (e2e)', () => {
       },
     ]);
 
-    // A media-kind artifact — {from: 'prev'} on it must throw (phase 5),
-    // never silently unwrap or pass through raw media data.
+    // Media resolves to a compact descriptor, never raw provider data.
     await db.insert(artifact).values({
       id: ulid(),
       runId,
@@ -222,10 +221,9 @@ describe('binding resolver + memory writes (e2e)', () => {
     expect(value).toBe('NEW attempt');
   });
 
-  it('{from: "prev"} on a media-kind artifact throws (phase 5), never passes raw media data through', async () => {
-    await expect(
-      bindings.resolve({ from: 'prev' }, { runId, prevStageKey: 'mediaStage', inputs: {} }),
-    ).rejects.toThrow('phase 5');
+  it('{from: "prev"} on a media-kind artifact returns a compact descriptor, never raw media data', async () => {
+    const { value } = await bindings.resolve({ from: 'prev' }, { runId, prevStageKey: 'mediaStage', inputs: {} });
+    expect(value).toMatchObject({ kind: 'media.image', artifactId: expect.any(String) });
   });
 
   it('resolves {from: "memory"} to the current (highest) version', async () => {
@@ -243,7 +241,7 @@ describe('binding resolver + memory writes (e2e)', () => {
     ).rejects.toThrow('no memory entry');
   });
 
-  it('{from: "memory"} on a media-write (artifactId set) throws (phase 5)', async () => {
+  it('{from: "memory"} fails closed when its media artifact is stale or unavailable', async () => {
     const [mediaArtifact] = await testDb.db.select().from(artifact).limit(1);
     await testDb.db.insert(runMemory).values({
       id: ulid(),
@@ -257,7 +255,7 @@ describe('binding resolver + memory writes (e2e)', () => {
 
     await expect(
       bindings.resolve({ from: 'memory', key: 'mediaMem' }, { runId, inputs: {} }),
-    ).rejects.toThrow('phase 5');
+    ).rejects.toThrow('stale or unavailable');
   });
 
   it('throws naming phase 7/8 for item/prevItem/role refs', async () => {
