@@ -1,8 +1,12 @@
 import { randomUUID } from 'node:crypto';
+import { createReadStream, createWriteStream } from 'node:fs';
 import { mkdir, rm } from 'node:fs/promises';
 import path from 'node:path';
+import { pipeline } from 'node:stream/promises';
 import { Injectable } from '@nestjs/common';
 import { EngineConfig } from '../config/engine-config';
+import { Inject } from '@nestjs/common';
+import { STORAGE_ADAPTER, type StorageAdapter } from './storage.adapter';
 
 export interface Workspace {
   dir: string;
@@ -17,7 +21,10 @@ export interface Workspace {
  */
 @Injectable()
 export class WorkspaceService {
-  constructor(private readonly config: EngineConfig) {}
+  constructor(
+    private readonly config: EngineConfig,
+    @Inject(STORAGE_ADAPTER) private readonly storage: StorageAdapter,
+  ) {}
 
   async withWorkspace<T>(runId: string, fn: (ws: Workspace) => Promise<T>): Promise<T> {
     const dir = path.join(this.config.workspaceRoot, 'ephemeral', runId, randomUUID());
@@ -25,11 +32,13 @@ export class WorkspaceService {
     try {
       const ws: Workspace = {
         dir,
-        pull: () => {
-          throw new Error('WorkspaceService.pull: not implemented in phase 1');
+        pull: async (key: string) => {
+          const filename = path.join(dir, path.basename(key));
+          await pipeline(await this.storage.getStream(key), createWriteStream(filename));
+          return filename;
         },
-        push: () => {
-          throw new Error('WorkspaceService.push: not implemented in phase 1');
+        push: async (p: string, key: string, mime: string) => {
+          await this.storage.put(key, createReadStream(p), { mime });
         },
       };
       return await fn(ws);

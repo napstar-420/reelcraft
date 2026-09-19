@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { bigint, boolean, check, index, pgTable, text, timestamptz } from './pg-helpers';
+import { bigint, boolean, check, index, jsonb, pgTable, text, timestamptz } from './pg-helpers';
 import { run } from './run';
 import { character } from './character';
 
@@ -21,6 +21,7 @@ export const blob = pgTable(
     bytes: bigint('bytes', { mode: 'number' }).notNull(),
     sha256: text('sha256').notNull(),
     etag: text('etag'), // multipart ETags are not MD5
+    probe: jsonb('probe'), // normalized ffprobe metadata for uploaded media
     gcEligible: boolean('gc_eligible').notNull().default(false),
     // MUST be set whenever gc_eligible flips true (§15.5)
     gcEligibleAt: timestamptz('gc_eligible_at'),

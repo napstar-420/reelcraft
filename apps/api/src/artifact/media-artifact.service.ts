@@ -49,6 +49,7 @@ export class MediaArtifactService {
         await this.db.insert(blob).values({
           id: blobId, ownerId: input.ownerId, scope: 'run', runId: input.runId, bucket: '', objectKey: key,
           mime, bytes: put.bytes, etag: put.etag, sha256: createHash('sha256').update(bytes).digest('hex'),
+          probe,
         });
       } catch (error) {
         await this.storage.delete([key]);

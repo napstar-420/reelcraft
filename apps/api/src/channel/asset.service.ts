@@ -7,6 +7,8 @@ import { ulid } from '../common/ulid';
 import { STORAGE_ADAPTER, type StorageAdapter } from '../storage/storage.adapter';
 import { objectKey } from '../storage/object-key';
 import { EngineConfig } from '../config/engine-config';
+import { WorkspaceService } from '../storage/workspace.service';
+import { MediaProbeService } from '../artifact/media-probe.service';
 
 /**
  * §3.3 — reusable channel material with a lifetime longer than a run.
@@ -21,6 +23,8 @@ export class AssetService {
     @Inject(DRIZZLE) private readonly db: Db,
     @Inject(STORAGE_ADAPTER) private readonly storage: StorageAdapter,
     private readonly engineConfig: EngineConfig,
+    private readonly workspaces: WorkspaceService,
+    private readonly probes: MediaProbeService,
   ) {}
 
   async requestUpload(
@@ -37,6 +41,9 @@ export class AssetService {
   async create(channelId: string, dto: CreateAssetDto) {
     const ownerId = await this.requireChannelOwner(channelId);
     const stat = await this.storage.stat(dto.objectKey);
+    const probe = dto.kind.startsWith('media.')
+      ? await this.workspaces.withWorkspace(dto.blobId, async (workspace) => this.probes.probe(await workspace.pull(dto.objectKey)))
+      : undefined;
 
     await this.db.insert(blob).values({
       id: dto.blobId,
@@ -48,6 +55,7 @@ export class AssetService {
       bytes: stat.bytes,
       sha256: dto.sha256,
       etag: stat.etag,
+      probe,
     });
 
     const id = ulid();

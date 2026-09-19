@@ -33,6 +33,7 @@ export interface RecordInputArtifactInput {
   kind: string;
   data?: unknown;
   blobId?: string;
+  probe?: unknown;
   schemaHash?: string;
 }
 
@@ -99,6 +100,7 @@ export class ArtifactService {
       kind: input.kind,
       data: input.data,
       blobId: input.blobId,
+      probe: input.probe,
       schemaHash: input.schemaHash,
       stale: false,
       userAuthored: true,
