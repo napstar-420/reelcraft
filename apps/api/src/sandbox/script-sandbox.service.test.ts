@@ -20,6 +20,8 @@ function fakeEngineConfig(overrides: Partial<Env> = {}): EngineConfig {
     INNGEST_EVENT_KEY: 'x',
     INNGEST_SIGNING_KEY: 'x',
     WORKSPACE_ROOT: './.workspace',
+    COMPUTE_MIN_FREE_BYTES: 0,
+    COMPUTE_JOB_RETENTION_SEC: 86_400,
     BLOB_RETENTION_DAYS: 30,
     ITERATE_MAX_ITEMS: 50,
     PRE_SUBMIT_TTL_SEC: 600,

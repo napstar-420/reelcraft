@@ -2,7 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { and, desc, eq, isNull } from 'drizzle-orm';
 import type { ArtifactKind, Ref } from '@reefcraft/shared';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
-import { artifact, runMemory } from '../db/schema/index';
+import { artifact, blob, runMemory } from '../db/schema/index';
 import type { StageDef } from '@reefcraft/shared';
 import { getPath } from '../common/path';
 import { unwrapText } from '../common/unwrap-text';
@@ -23,6 +23,7 @@ export interface BindingScope {
 export interface RefProvenance {
   ref: Ref;
   artifactId?: string;
+  artifactIds?: string[];
   memoryKey?: string;
   memoryVersion?: number;
   inputKey?: string;
@@ -69,6 +70,46 @@ export class BindingResolverService {
         return { value: ref.value, provenance: { ref } };
 
       case 'input': {
+        const mediaRows = await this.db
+          .select()
+          .from(artifact)
+          .where(
+            and(
+              eq(artifact.runId, ctx.runId),
+              eq(artifact.producerStageKey, `$input:${ref.inputKey}`),
+              eq(artifact.stale, false),
+            ),
+          )
+          .orderBy(artifact.itemIndex);
+        if (mediaRows.length > 0 && mediaRows[0]!.kind.startsWith('media.')) {
+          const selected =
+            ref.index === undefined
+              ? mediaRows
+              : mediaRows.filter((row) => row.itemIndex === ref.index);
+          if (selected.length === 0) {
+            throw new Error(
+              `BindingResolverService: media input "${ref.inputKey}" has no item ${ref.index}`,
+            );
+          }
+          const manifests = await Promise.all(
+            selected.map((row, index) =>
+              this.mediaManifest(
+                row,
+                `input:${ref.inputKey}${mediaRows.length > 1 ? `#${row.itemIndex ?? index}` : ''}`,
+              ),
+            ),
+          );
+          return {
+            value: ref.index !== undefined || manifests.length === 1 ? manifests[0] : manifests,
+            provenance: {
+              ref,
+              inputKey: ref.inputKey,
+              ...(selected.length === 1
+                ? { artifactId: selected[0]!.id }
+                : { artifactIds: selected.map((row) => row.id) }),
+            },
+          };
+        }
         let value = ctx.inputs[ref.inputKey];
         if (ref.index !== undefined) {
           value = Array.isArray(value) ? value[ref.index] : undefined;
@@ -80,7 +121,16 @@ export class BindingResolverService {
       case 'prev': {
         const row = await this.fetchPrevArtifact(ctx);
         if ((row.kind as ArtifactKind).startsWith('media.')) {
-          return { value: mediaDescriptor(row), provenance: { ref, artifactId: row.id } };
+          return {
+            value: await this.mediaManifest(row, 'prev'),
+            provenance: { ref, artifactId: row.id },
+          };
+        }
+        if (row.kind === 'file.subtitles') {
+          return {
+            value: await this.blobManifest(row, 'prev'),
+            provenance: { ref, artifactId: row.id },
+          };
         }
         const unwrapped = unwrapArtifactData(row.kind as ArtifactKind, row.data);
         return {
@@ -102,7 +152,9 @@ export class BindingResolverService {
               `BindingResolverService: memory media "${ref.key}" is stale or unavailable`,
             );
           return {
-            value: mediaDescriptor(media),
+            value: media.kind.startsWith('media.')
+              ? await this.mediaManifest(media, `memory:${ref.key}`)
+              : await this.blobManifest(media, `memory:${ref.key}`),
             provenance: {
               ref,
               memoryKey: ref.key,
@@ -130,8 +182,29 @@ export class BindingResolverService {
               'RunService.start() to have snapshotted it into run.assetBindings',
           );
         }
+        const [blobRow] = await this.db
+          .select({ objectKey: blob.objectKey, probe: blob.probe })
+          .from(blob)
+          .where(eq(blob.id, binding.blobId))
+          .limit(1);
+        if (!blobRow) {
+          return {
+            value: { blobId: binding.blobId, kind: binding.kind },
+            provenance: { ref, assetId: ref.assetId },
+          };
+        }
         return {
-          value: { blobId: binding.blobId, kind: binding.kind },
+          value: {
+            handle: `asset:${ref.assetId}`,
+            blobId: binding.blobId,
+            kind: binding.kind,
+            ...(blobRow?.objectKey && { sourceKey: blobRow.objectKey }),
+            ...(blobRow?.probe != null && { probe: blobRow.probe }),
+            hasAudio:
+              (blobRow?.probe as { streams?: Array<{ type?: string }> } | null)?.streams?.some(
+                (stream) => stream.type === 'audio',
+              ) ?? false,
+          },
           provenance: { ref, assetId: ref.assetId },
         };
       }
@@ -256,6 +329,33 @@ export class BindingResolverService {
     }
     return row;
   }
+
+  private async mediaManifest(row: typeof artifact.$inferSelect, handle: string) {
+    const [blobRow] = row.blobId
+      ? await this.db
+          .select({ objectKey: blob.objectKey })
+          .from(blob)
+          .where(eq(blob.id, row.blobId))
+          .limit(1)
+      : [undefined];
+    return mediaManifest(row, handle, blobRow?.objectKey);
+  }
+
+  private async blobManifest(row: typeof artifact.$inferSelect, handle: string) {
+    const [blobRow] = row.blobId
+      ? await this.db
+          .select({ objectKey: blob.objectKey })
+          .from(blob)
+          .where(eq(blob.id, row.blobId))
+          .limit(1)
+      : [undefined];
+    return {
+      handle,
+      kind: row.kind,
+      ...(row.data && typeof row.data === 'object' ? row.data : {}),
+      ...(blobRow?.objectKey && { sourceKey: blobRow.objectKey }),
+    };
+  }
 }
 
 /** `{from: 'prev'}` template/slot binding unwraps a text artifact's
@@ -265,6 +365,24 @@ function unwrapArtifactData(kind: ArtifactKind, data: unknown): unknown {
   return unwrapText(kind, data);
 }
 
-function mediaDescriptor(row: typeof artifact.$inferSelect) {
-  return { artifactId: row.id, blobId: row.blobId, kind: row.kind, probe: row.probe };
+function mediaManifest(
+  row: typeof artifact.$inferSelect,
+  handle: string,
+  sourceKey: string | undefined,
+) {
+  const probe = row.probe as {
+    durationSec?: number;
+    streams?: Array<{ type?: string; width?: number; height?: number }>;
+  } | null;
+  const video = probe?.streams?.find((stream) => stream.type === 'video');
+  return {
+    handle,
+    artifactId: row.id,
+    kind: row.kind,
+    ...(sourceKey && { sourceKey }),
+    ...(video?.width !== undefined && { width: video.width }),
+    ...(video?.height !== undefined && { height: video.height }),
+    ...(probe?.durationSec !== undefined && { durationSec: probe.durationSec }),
+    hasAudio: probe?.streams?.some((stream) => stream.type === 'audio') ?? false,
+  };
 }

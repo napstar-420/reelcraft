@@ -25,6 +25,10 @@ export interface ExecCtx<Cfg> {
   renderedPrompt?: string | undefined;
   idempotencyKey: string;
   logger: { log: (msg: string) => void; error: (msg: string, err?: unknown) => void };
+  resources?: Record<
+    string,
+    { handle: string; kind: string; sourceKey?: string; probe?: unknown; data?: unknown }
+  >;
 }
 
 export interface ExecResult<Out = unknown> {
@@ -46,6 +50,7 @@ export interface CancelResult {
 export interface CapabilityImpl<Cfg = Record<string, unknown>> {
   readonly modality: string;
   readonly kind: 'sync' | 'async';
+  readonly interaction?: { kind: 'form' | 'timeline_editor' };
   /** §4.2/§16.2 — the restricted-dialect shape of `StageDef.config` this
    * capability accepts, backing `GET /capabilities` (`CapabilityDto`,
    * `packages/shared/src/dto/capability.dto.ts`) and save-time validation.
@@ -65,4 +70,5 @@ export interface CapabilityImpl<Cfg = Record<string, unknown>> {
   poll(handle: JobHandle): Promise<JobStatus>;
   fetch(handle: JobHandle, ctx: ExecCtx<Cfg>): Promise<ExecResult>;
   cancel?(handle: JobHandle): Promise<CancelResult>;
+  cleanup?(handle: JobHandle): Promise<void>;
 }

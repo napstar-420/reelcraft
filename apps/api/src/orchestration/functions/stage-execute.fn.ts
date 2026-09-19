@@ -41,9 +41,14 @@ export function buildStageExecuteFunction(client: Inngest, runner: StageRunnerSe
         runner.loadStageContext(data.runId, data.stageKey),
       );
 
-      if (stage.capability === 'human.input') {
+      const humanInteraction = runner.interactionFor(stage.capability);
+      if (humanInteraction) {
         await step.run(`await-human-input-${data.stageKey}`, () =>
-          runner.awaitHumanInput(data.runId, data.stageExecutionId),
+          runner.awaitHumanInput(
+            data.runId,
+            data.stageExecutionId,
+            humanInteraction === 'timeline_editor' ? 'timeline_edit' : 'input',
+          ),
         );
         return { outcome: 'input_required' as const };
       }
@@ -73,6 +78,9 @@ export function buildStageExecuteFunction(client: Inngest, runner: StageRunnerSe
           runner.countSemanticAttemptsUsed(data.stageExecutionId),
         );
         const isLastAttempt = semanticAttemptsUsed + 1 >= effective.retryLimit + 1;
+        const infraAttemptsUsed = await step.run(`count-infra-attempts-${iteration}`, () =>
+          runner.countInfraAttemptsUsed(data.stageExecutionId),
+        );
 
         try {
           const submission = await step.run(`submit-${data.stageKey}-${iteration}`, () =>
@@ -120,6 +128,18 @@ export function buildStageExecuteFunction(client: Inngest, runner: StageRunnerSe
             await step.run(`settle-failed-poll-${data.stageKey}-${iteration}`, () =>
               runner.settleFailedPoll(attemptCtx),
             );
+            if (status.failureClass === 'infrastructure') {
+              await step.run(`record-infra-error-${data.stageKey}-${iteration}`, () =>
+                runner.recordInfraError(attemptCtx, status.reason),
+              );
+              if (infraAttemptsUsed + 1 >= runner.infraAttemptLimit()) {
+                await step.run(`fail-stage-infra-${data.stageKey}`, () =>
+                  runner.failStageExecution(data.stageExecutionId, status.reason),
+                );
+                return { outcome: 'failed' as const, reason: status.reason };
+              }
+              continue;
+            }
             throw new Error(status.reason);
           }
 

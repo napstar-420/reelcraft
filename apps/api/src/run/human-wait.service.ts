@@ -14,7 +14,7 @@ export class HumanWaitService {
       runId: string;
       stageExecutionId: string;
       stageItemId?: string;
-      kind: 'approval' | 'input';
+      kind: 'approval' | 'input' | 'timeline_edit';
     },
   ): Promise<void> {
     await tx

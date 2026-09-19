@@ -56,6 +56,18 @@ export class EngineConfig {
     return this.config.get('WORKSPACE_ROOT', { infer: true });
   }
 
+  get computeMinFreeBytes(): number {
+    return this.config.get('COMPUTE_MIN_FREE_BYTES', { infer: true });
+  }
+
+  get computeJobRetentionSec(): number {
+    return this.config.get('COMPUTE_JOB_RETENTION_SEC', { infer: true });
+  }
+
+  get remotionBrowserExecutable(): string | undefined {
+    return this.config.get('REMOTION_BROWSER_EXECUTABLE', { infer: true });
+  }
+
   get blobRetentionDays(): number {
     return this.config.get('BLOB_RETENTION_DAYS', { infer: true });
   }

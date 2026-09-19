@@ -1,0 +1,20 @@
+{
+  "name": "@reefcraft/timeline-composition",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "main": "./src/index.tsx",
+  "types": "./src/index.tsx",
+  "dependencies": {
+    "@reefcraft/shared": "workspace:*",
+    "@remotion/media": "4.0.526",
+    "react": "^18.3.1",
+    "remotion": "4.0.526"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.18",
+    "typescript": "^5.7.2"
+  }
+}

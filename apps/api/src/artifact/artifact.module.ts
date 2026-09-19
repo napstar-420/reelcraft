@@ -8,6 +8,9 @@ import { MemoryService } from './memory.service';
 import { MediaProbeService } from './media-probe.service';
 import { MediaArtifactService } from './media-artifact.service';
 import { BlobController } from './blob.controller';
+import { TimelineHandleService } from './timeline-handle.service';
+import { TimelineResourceResolverService } from './timeline-resource-resolver.service';
+import { FileArtifactService } from './file-artifact.service';
 
 @Module({
   imports: [DbModule, StorageModule],
@@ -18,6 +21,9 @@ import { BlobController } from './blob.controller';
     MemoryService,
     MediaProbeService,
     MediaArtifactService,
+    TimelineHandleService,
+    TimelineResourceResolverService,
+    FileArtifactService,
   ],
   controllers: [BlobController],
   exports: [
@@ -27,6 +33,9 @@ import { BlobController } from './blob.controller';
     MemoryService,
     MediaProbeService,
     MediaArtifactService,
+    TimelineHandleService,
+    TimelineResourceResolverService,
+    FileArtifactService,
   ],
 })
 export class ArtifactModule {}

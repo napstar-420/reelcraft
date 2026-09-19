@@ -40,7 +40,7 @@ export class LlmGenerate implements CapabilityImpl<LlmGenerateConfig> {
   }
 
   allowedOutputs(_cfg: LlmGenerateConfig): OutputKind[] {
-    return ['text', 'data'];
+    return ['text', 'data', 'timeline'];
   }
 
   async estimateCost(ctx: ExecCtx<LlmGenerateConfig>): Promise<CostEstimate> {

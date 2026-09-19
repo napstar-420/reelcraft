@@ -46,7 +46,10 @@ export class MediaArtifactService {
     const mime = input.source.mime ?? this.defaultMime(input.source.kind);
     return this.workspaces.withWorkspace(input.runId, async (workspace) => {
       const file = path.join(workspace.dir, `source.${extensionFor(mime, input.source.filename)}`);
-      if (input.source.base64) {
+      if (input.source.localPath) {
+        const sourceBytes = await readFile(input.source.localPath);
+        await writeFile(file, sourceBytes);
+      } else if (input.source.base64) {
         await writeFile(file, Buffer.from(input.source.base64, 'base64'));
       } else if (input.source.sourceUrl) {
         const response = await fetch(input.source.sourceUrl);
@@ -54,7 +57,7 @@ export class MediaArtifactService {
           throw new Error(`Media download failed: ${response.status}`);
         await writeFile(file, Buffer.from(await response.arrayBuffer()));
       } else {
-        throw new Error('Media result has neither base64 nor sourceUrl');
+        throw new Error('Media result has neither localPath, base64 nor sourceUrl');
       }
       const bytes = await readFile(file);
       const probe = await this.probes.probe(file);

@@ -15,6 +15,7 @@ import { buildRunWakeupDispatchFunction } from './run-wakeup-dispatch.fn';
 import { HumanReminderService } from '../../run/human-reminder.service';
 import { BlobService } from '../../artifact/blob.service';
 import { buildHumanReminderSweepFunction } from './human-reminder-sweep.fn';
+import { ComputeJobService } from '../../storage/compute-job.service';
 
 /**
  * §13.1 — resolves services from the container and closes Inngest functions
@@ -31,6 +32,7 @@ export function buildInngestFunctions(app: INestApplicationContext) {
   const wakeupDispatcher = app.get(RunWakeupDispatcher);
   const reminders = app.get(HumanReminderService);
   const blobs = app.get(BlobService);
+  const computeJobs = app.get(ComputeJobService);
 
   const stageExecute = buildStageExecuteFunction(client, runner);
   const runOrchestrate = buildRunOrchestrateFunction(
@@ -43,7 +45,7 @@ export function buildInngestFunctions(app: INestApplicationContext) {
   const runWakeupDispatch = buildRunWakeupDispatchFunction(client, wakeupDispatcher);
   const humanReminderSweep = buildHumanReminderSweepFunction(client, reminders);
   const budgetSweep = buildBudgetSweepFunction(client, ledger);
-  const cronShells = buildCronShellFunctions(client, blobs);
+  const cronShells = buildCronShellFunctions(client, blobs, computeJobs);
 
   return [
     runOrchestrate,

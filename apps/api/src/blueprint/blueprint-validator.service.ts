@@ -143,6 +143,14 @@ export class BlueprintValidatorService {
           severity: 'error',
         });
       }
+      if (impl.validate) {
+        issues.push(
+          ...impl.validate(stage.config, stage, {
+            supportsSeed: false,
+            supportsIdempotency: false,
+          }),
+        );
+      }
     }
 
     if (stage.output.kind === 'data') {
