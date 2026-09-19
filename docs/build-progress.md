@@ -9,7 +9,7 @@ plan (via `/plan`) written just before it starts — this table is the index.
 | 2   | Core loop              | done              | `.claude/plans/crispy-drifting-cocke.md` | #1, #4, #5, #6, #7, #8 |
 | 3   | Budget                 | done              | `.claude/plans/phase-3-budget-*.md`      | #9, #10                |
 | 4   | Inputs & human-in-loop | done (chunks 1–7) | `.claude/plans/phase-4-inputs-hitl.md`   | #11, #12, #13          |
-| 5   | Media                  | pending           |                                          |                        |
+| 5   | Media                  | done              | —                                        | #14                    |
 | 6   | Assembly               | pending           |                                          |                        |
 | 7   | Iteration              | pending           |                                          |                        |
 | 8   | Characters             | pending           |                                          |                        |
