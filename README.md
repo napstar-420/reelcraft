@@ -3,7 +3,8 @@
 A general-purpose AI video/reel generation engine. See `docs/ai-reel-engine-requirements.md`
 and `docs/ai-video-engine-design-spec-v6.md` for the full requirements and design spec — this
 the implementation currently covers Build Order Phases 1–3 and the Phase 4
-inputs/human-in-the-loop control plane from design spec §24.
+inputs/human-in-the-loop control plane plus the Phase 5 media storage and
+provider foundation from design spec §24.
 
 ## Stack
 
@@ -57,6 +58,17 @@ pnpm db:generate      # drizzle-kit generate (after schema changes)
 pnpm db:migrate       # apply migrations
 pnpm db:studio        # drizzle studio
 ```
+
+## Phase 5 media prerequisites
+
+Install FFmpeg so `ffprobe` is on the API process `PATH`. Media runs store a
+normalized probe, stream generated output to MinIO, and expose live objects at
+`GET /api/blobs/:id` through short-lived redirects; collected objects return
+`410`. Real provider pins are optional: OpenRouter image generation, ElevenLabs
+speech, and fal's `fal-ai/kling-video/v3/standard` video queue use the matching
+environment key. Video defaults to requiring an audio stream unless its output
+constraint explicitly selects `optional` or `forbidden`. Real-provider calls
+should be run locally with explicit funded keys; the normal test suite is free.
 
 ## Phase 4 run-control workflow
 
