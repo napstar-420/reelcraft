@@ -38,6 +38,10 @@ export class EngineConfig {
     return this.config.get('PRESIGN_TTL_SEC', { infer: true });
   }
 
+  get publicApiBaseUrl(): string {
+    return this.config.get('PUBLIC_API_BASE_URL', { infer: true }) ?? `http://localhost:${this.apiPort}`;
+  }
+
   get inngest(): { baseUrl: string; eventKey: string; signingKey: string } {
     return {
       baseUrl: this.config.get('INNGEST_BASE_URL', { infer: true }),

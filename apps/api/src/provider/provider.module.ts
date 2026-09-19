@@ -6,8 +6,14 @@ import { OpenRouterAdapter } from './openrouter/openrouter.adapter';
 import { ModelCacheService } from './openrouter/model-cache.service';
 import { ElevenLabsAdapter } from './elevenlabs/elevenlabs.adapter';
 import { FalAdapter } from './fal/fal.adapter';
+import { DeepgramAdapter } from './deepgram/deepgram.adapter';
+import { DeepgramInboxService } from './deepgram/deepgram-inbox.service';
+import { DeepgramController } from './deepgram/deepgram.controller';
+import { DbModule } from '../db/db.module';
+import { StorageModule } from '../storage/storage.module';
 
 @Module({
+  imports: [DbModule, StorageModule],
   providers: [
     { provide: KEY_PROVIDER, useClass: EnvKeyProvider },
     ProviderRegistry,
@@ -16,8 +22,11 @@ import { FalAdapter } from './fal/fal.adapter';
     ModelCacheService,
     ElevenLabsAdapter,
     FalAdapter,
+    DeepgramAdapter,
+    DeepgramInboxService,
   ],
-  exports: [ProviderRegistry, FakeProviderAdapter, OpenRouterAdapter, ElevenLabsAdapter, FalAdapter],
+  controllers: [DeepgramController],
+  exports: [ProviderRegistry, FakeProviderAdapter, OpenRouterAdapter, ElevenLabsAdapter, FalAdapter, DeepgramAdapter],
 })
 export class ProviderModule implements OnModuleInit {
   constructor(
@@ -26,6 +35,7 @@ export class ProviderModule implements OnModuleInit {
     private readonly openrouter: OpenRouterAdapter,
     private readonly elevenlabs: ElevenLabsAdapter,
     private readonly fal: FalAdapter,
+    private readonly deepgram: DeepgramAdapter,
   ) {}
 
   onModuleInit(): void {
@@ -33,5 +43,6 @@ export class ProviderModule implements OnModuleInit {
     this.registry.register(this.openrouter);
     this.registry.register(this.elevenlabs);
     this.registry.register(this.fal);
+    this.registry.register(this.deepgram);
   }
 }

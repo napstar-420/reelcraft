@@ -21,7 +21,7 @@ abstract class ProviderMediaCapability implements CapabilityImpl<MediaConfig> {
     return this.providers.get(ctx.config.provider).submit({ modelId: ctx.config.modelId, params: { ...ctx.config.params, slots: ctx.slots, __mediaKind: this.outputKind }, renderedPrompt: ctx.renderedPrompt }, ctx.idempotencyKey);
   }
   async poll(handle: JobHandle): Promise<JobStatus> { return this.providers.get(handle.providerId).poll(handle); }
-  async fetch(handle: JobHandle, _ctx: ExecCtx<MediaConfig>): Promise<ExecResult<MediaSource>> {
+  async fetch(handle: JobHandle, _ctx: ExecCtx<MediaConfig>): Promise<ExecResult<unknown>> {
     const result = await this.providers.get(handle.providerId).fetch(handle);
     return { output: result.output as MediaSource, costUsd: result.costUsd, repro: result.repro };
   }
@@ -58,4 +58,20 @@ export class AudioSpeechCapability extends ProviderMediaCapability {
 export class MediaAnalyzeCapability extends ProviderMediaCapability {
   readonly modality = 'media'; readonly outputKind = 'data' as const;
   slots(): SlotDef[] { return [{ name: 'source', accepts: ['media.audio', 'media.video'], required: true, cardinality: 'one' }]; }
+  async estimateCost(ctx: ExecCtx<MediaConfig>): Promise<CostEstimate> {
+    if (ctx.config.operation === 'probe') return { expectedUsd: 0, ceilingUsd: 0, basis: 'configured_ceiling' };
+    return super.estimateCost(ctx);
+  }
+  async submit(ctx: ExecCtx<MediaConfig>): Promise<JobHandle> {
+    if (ctx.config.operation === 'probe') return { providerId: 'media-local', externalId: ctx.idempotencyKey, payload: { probe: (ctx.slots.source as { probe?: unknown } | undefined)?.probe } };
+    return super.submit(ctx);
+  }
+  async poll(handle: JobHandle): Promise<JobStatus> {
+    if (handle.providerId === 'media-local') return { done: true, outcome: 'succeeded' };
+    return super.poll(handle);
+  }
+  async fetch(handle: JobHandle, ctx: ExecCtx<MediaConfig>): Promise<ExecResult<unknown>> {
+    if (handle.providerId === 'media-local') return { output: (handle.payload as { probe: unknown }).probe, costUsd: 0, repro: { level: 'exact' } };
+    return super.fetch(handle, ctx);
+  }
 }
