@@ -39,7 +39,9 @@ export class EngineConfig {
   }
 
   get publicApiBaseUrl(): string {
-    return this.config.get('PUBLIC_API_BASE_URL', { infer: true }) ?? `http://localhost:${this.apiPort}`;
+    return (
+      this.config.get('PUBLIC_API_BASE_URL', { infer: true }) ?? `http://localhost:${this.apiPort}`
+    );
   }
 
   get inngest(): { baseUrl: string; eventKey: string; signingKey: string } {

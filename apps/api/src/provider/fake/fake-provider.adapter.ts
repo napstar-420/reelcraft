@@ -112,12 +112,18 @@ export class FakeProviderAdapter implements ProviderAdapter {
         },
       },
       {
-        modelId: 'fake-image-1', label: 'Fake Image 1', capabilities: {
-          supportsSeed: true, supportsIdempotency: true, image: { formats: ['png'], resolutions: ['1x1'] },
+        modelId: 'fake-image-1',
+        label: 'Fake Image 1',
+        capabilities: {
+          supportsSeed: true,
+          supportsIdempotency: true,
+          image: { formats: ['png'], resolutions: ['1x1'] },
         },
       },
       {
-        modelId: 'fake-audio-1', label: 'Fake Audio 1', capabilities: { supportsSeed: true, supportsIdempotency: true },
+        modelId: 'fake-audio-1',
+        label: 'Fake Audio 1',
+        capabilities: { supportsSeed: true, supportsIdempotency: true },
       },
     ];
   }
@@ -240,14 +246,29 @@ export class FakeProviderAdapter implements ProviderAdapter {
     }
     if (job.modelId.startsWith('fake-image-')) {
       return {
-        output: { kind: 'media.image', mime: 'image/png', filename: 'fixture.png', base64: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL8WQAAAABJRU5ErkJggg==' },
-        costUsd: job.costUsd ?? 0, repro: { level: 'exact', seed: '42', providerVersion: job.modelId }, rawResponse: { fake: true, fixture: 'png' },
+        output: {
+          kind: 'media.image',
+          mime: 'image/png',
+          filename: 'fixture.png',
+          base64:
+            'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL8WQAAAABJRU5ErkJggg==',
+        },
+        costUsd: job.costUsd ?? 0,
+        repro: { level: 'exact', seed: '42', providerVersion: job.modelId },
+        rawResponse: { fake: true, fixture: 'png' },
       };
     }
     if (job.modelId.startsWith('fake-audio-')) {
       return {
-        output: { kind: 'media.audio', mime: 'audio/wav', filename: 'fixture.wav', base64: 'UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=' },
-        costUsd: job.costUsd ?? 0, repro: { level: 'exact', seed: '42', providerVersion: job.modelId }, rawResponse: { fake: true, fixture: 'wav' },
+        output: {
+          kind: 'media.audio',
+          mime: 'audio/wav',
+          filename: 'fixture.wav',
+          base64: 'UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=',
+        },
+        costUsd: job.costUsd ?? 0,
+        repro: { level: 'exact', seed: '42', providerVersion: job.modelId },
+        rawResponse: { fake: true, fixture: 'wav' },
       };
     }
     return {

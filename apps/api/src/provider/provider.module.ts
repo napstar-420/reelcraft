@@ -26,7 +26,14 @@ import { StorageModule } from '../storage/storage.module';
     DeepgramInboxService,
   ],
   controllers: [DeepgramController],
-  exports: [ProviderRegistry, FakeProviderAdapter, OpenRouterAdapter, ElevenLabsAdapter, FalAdapter, DeepgramAdapter],
+  exports: [
+    ProviderRegistry,
+    FakeProviderAdapter,
+    OpenRouterAdapter,
+    ElevenLabsAdapter,
+    FalAdapter,
+    DeepgramAdapter,
+  ],
 })
 export class ProviderModule implements OnModuleInit {
   constructor(

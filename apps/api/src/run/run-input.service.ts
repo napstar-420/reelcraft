@@ -290,7 +290,11 @@ export class RunInputService {
     const many = def.accepts.cardinality === 'many';
     const stats = await Promise.all(blobs.map((item) => this.storage.stat(item.objectKey)));
     const probes = await Promise.all(
-      blobs.map((item) => this.workspaces.withWorkspace(runId, async (workspace) => this.probes.probe(await workspace.pull(item.objectKey)))),
+      blobs.map((item) =>
+        this.workspaces.withWorkspace(runId, async (workspace) =>
+          this.probes.probe(await workspace.pull(item.objectKey)),
+        ),
+      ),
     );
     const mutation = await this.mutation.withLockedRun(
       runId,

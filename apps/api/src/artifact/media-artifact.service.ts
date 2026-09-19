@@ -14,7 +14,17 @@ import { MediaProbeService } from './media-probe.service';
 
 const extensionFor = (mime: string, fallback: string | undefined) => {
   if (fallback?.includes('.')) return fallback.split('.').pop()!;
-  return ({ 'image/png': 'png', 'image/jpeg': 'jpg', 'audio/mpeg': 'mp3', 'audio/wav': 'wav', 'video/mp4': 'mp4' } as Record<string, string>)[mime] ?? 'bin';
+  return (
+    (
+      {
+        'image/png': 'png',
+        'image/jpeg': 'jpg',
+        'audio/mpeg': 'mp3',
+        'audio/wav': 'wav',
+        'video/mp4': 'mp4',
+      } as Record<string, string>
+    )[mime] ?? 'bin'
+  );
 };
 
 @Injectable()
@@ -26,7 +36,12 @@ export class MediaArtifactService {
     private readonly probes: MediaProbeService,
   ) {}
 
-  async persist(input: { ownerId: string; channelId: string; runId: string; source: MediaSource }): Promise<{ blobId: string; probe: Probe }> {
+  async persist(input: {
+    ownerId: string;
+    channelId: string;
+    runId: string;
+    source: MediaSource;
+  }): Promise<{ blobId: string; probe: Probe }> {
     const blobId = ulid();
     const mime = input.source.mime ?? this.defaultMime(input.source.kind);
     return this.workspaces.withWorkspace(input.runId, async (workspace) => {
@@ -35,7 +50,8 @@ export class MediaArtifactService {
         await writeFile(file, Buffer.from(input.source.base64, 'base64'));
       } else if (input.source.sourceUrl) {
         const response = await fetch(input.source.sourceUrl);
-        if (!response.ok || !response.body) throw new Error(`Media download failed: ${response.status}`);
+        if (!response.ok || !response.body)
+          throw new Error(`Media download failed: ${response.status}`);
         await writeFile(file, Buffer.from(await response.arrayBuffer()));
       } else {
         throw new Error('Media result has neither base64 nor sourceUrl');
@@ -43,12 +59,26 @@ export class MediaArtifactService {
       const bytes = await readFile(file);
       const probe = await this.probes.probe(file);
       this.validateKind(input.source.kind, probe);
-      const key = objectKey.media(input.ownerId, input.channelId, input.runId, blobId, extensionFor(mime, input.source.filename));
+      const key = objectKey.media(
+        input.ownerId,
+        input.channelId,
+        input.runId,
+        blobId,
+        extensionFor(mime, input.source.filename),
+      );
       const put = await this.storage.put(key, createReadStream(file), { mime });
       try {
         await this.db.insert(blob).values({
-          id: blobId, ownerId: input.ownerId, scope: 'run', runId: input.runId, bucket: '', objectKey: key,
-          mime, bytes: put.bytes, etag: put.etag, sha256: createHash('sha256').update(bytes).digest('hex'),
+          id: blobId,
+          ownerId: input.ownerId,
+          scope: 'run',
+          runId: input.runId,
+          bucket: '',
+          objectKey: key,
+          mime,
+          bytes: put.bytes,
+          etag: put.etag,
+          sha256: createHash('sha256').update(bytes).digest('hex'),
           probe,
         });
       } catch (error) {
@@ -60,7 +90,11 @@ export class MediaArtifactService {
   }
 
   private defaultMime(kind: MediaSource['kind']) {
-    return kind === 'media.image' ? 'image/png' : kind === 'media.audio' ? 'audio/mpeg' : 'video/mp4';
+    return kind === 'media.image'
+      ? 'image/png'
+      : kind === 'media.audio'
+        ? 'audio/mpeg'
+        : 'video/mp4';
   }
   private validateKind(kind: MediaSource['kind'], probe: Probe) {
     const needs = kind === 'media.image' ? 'video' : kind === 'media.audio' ? 'audio' : 'video';

@@ -44,7 +44,12 @@ export const TimingMap = z.object({
   durationSec: z.number(),
   sentences: z.array(z.object({ text: z.string(), startSec: z.number(), endSec: z.number() })),
   words: z.array(
-    z.object({ text: z.string(), startSec: z.number(), endSec: z.number(), confidence: z.number().optional() }),
+    z.object({
+      text: z.string(),
+      startSec: z.number(),
+      endSec: z.number(),
+      confidence: z.number().optional(),
+    }),
   ),
 });
 export type TimingMap = z.infer<typeof TimingMap>;

@@ -11,8 +11,22 @@ import { BlobController } from './blob.controller';
 
 @Module({
   imports: [DbModule, StorageModule],
-  providers: [ArtifactService, BlobService, BindingResolverService, MemoryService, MediaProbeService, MediaArtifactService],
+  providers: [
+    ArtifactService,
+    BlobService,
+    BindingResolverService,
+    MemoryService,
+    MediaProbeService,
+    MediaArtifactService,
+  ],
   controllers: [BlobController],
-  exports: [ArtifactService, BlobService, BindingResolverService, MemoryService, MediaProbeService, MediaArtifactService],
+  exports: [
+    ArtifactService,
+    BlobService,
+    BindingResolverService,
+    MemoryService,
+    MediaProbeService,
+    MediaArtifactService,
+  ],
 })
 export class ArtifactModule {}

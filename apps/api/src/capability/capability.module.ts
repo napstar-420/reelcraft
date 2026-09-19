@@ -7,7 +7,12 @@ import { CapabilityController } from './capability.controller';
 import { LlmGenerate } from './impls/llm-generate.capability';
 import { PublishStub } from './impls/publish-stub.capability';
 import { HumanInputCapability } from './impls/human-input.capability';
-import { ImageGenerateCapability, VideoGenerateCapability, AudioSpeechCapability, MediaAnalyzeCapability } from './impls/media-generate.capability';
+import {
+  ImageGenerateCapability,
+  VideoGenerateCapability,
+  AudioSpeechCapability,
+  MediaAnalyzeCapability,
+} from './impls/media-generate.capability';
 
 /**
  * §1.3 — may inject ProviderModule and StorageModule. Must NOT be able to
@@ -17,7 +22,16 @@ import { ImageGenerateCapability, VideoGenerateCapability, AudioSpeechCapability
  */
 @Module({
   imports: [DiscoveryModule, ProviderModule, StorageModule],
-  providers: [CapabilityRegistry, LlmGenerate, HumanInputCapability, PublishStub, ImageGenerateCapability, VideoGenerateCapability, AudioSpeechCapability, MediaAnalyzeCapability],
+  providers: [
+    CapabilityRegistry,
+    LlmGenerate,
+    HumanInputCapability,
+    PublishStub,
+    ImageGenerateCapability,
+    VideoGenerateCapability,
+    AudioSpeechCapability,
+    MediaAnalyzeCapability,
+  ],
   controllers: [CapabilityController],
   exports: [CapabilityRegistry],
 })

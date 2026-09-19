@@ -222,7 +222,10 @@ describe('binding resolver + memory writes (e2e)', () => {
   });
 
   it('{from: "prev"} on a media-kind artifact returns a compact descriptor, never raw media data', async () => {
-    const { value } = await bindings.resolve({ from: 'prev' }, { runId, prevStageKey: 'mediaStage', inputs: {} });
+    const { value } = await bindings.resolve(
+      { from: 'prev' },
+      { runId, prevStageKey: 'mediaStage', inputs: {} },
+    );
     expect(value).toMatchObject({ kind: 'media.image', artifactId: expect.any(String) });
   });
 

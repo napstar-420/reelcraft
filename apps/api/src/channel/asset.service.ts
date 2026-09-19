@@ -42,7 +42,9 @@ export class AssetService {
     const ownerId = await this.requireChannelOwner(channelId);
     const stat = await this.storage.stat(dto.objectKey);
     const probe = dto.kind.startsWith('media.')
-      ? await this.workspaces.withWorkspace(dto.blobId, async (workspace) => this.probes.probe(await workspace.pull(dto.objectKey)))
+      ? await this.workspaces.withWorkspace(dto.blobId, async (workspace) =>
+          this.probes.probe(await workspace.pull(dto.objectKey)),
+        )
       : undefined;
 
     await this.db.insert(blob).values({

@@ -19,21 +19,50 @@ export class BlobService {
     private readonly config: EngineConfig,
   ) {}
 
-  async readUrl(ownerId: string, blobId: string): Promise<{ status: 'live'; url: string } | { status: 'gone'; blob: { id: string; mime: string; bytes: number } } | undefined> {
-    const [row] = await this.db.select().from(blob).where(and(eq(blob.id, blobId), eq(blob.ownerId, ownerId))).limit(1);
+  async readUrl(
+    ownerId: string,
+    blobId: string,
+  ): Promise<
+    | { status: 'live'; url: string }
+    | { status: 'gone'; blob: { id: string; mime: string; bytes: number } }
+    | undefined
+  > {
+    const [row] = await this.db
+      .select()
+      .from(blob)
+      .where(and(eq(blob.id, blobId), eq(blob.ownerId, ownerId)))
+      .limit(1);
     if (!row) return undefined;
-    if (row.deletedAt) return { status: 'gone', blob: { id: row.id, mime: row.mime, bytes: row.bytes } };
-    return { status: 'live', url: await this.storage.presignGet(row.objectKey, this.config.presignTtlSec) };
+    if (row.deletedAt)
+      return { status: 'gone', blob: { id: row.id, mime: row.mime, bytes: row.bytes } };
+    return {
+      status: 'live',
+      url: await this.storage.presignGet(row.objectKey, this.config.presignTtlSec),
+    };
   }
 
   /** Bounded/idempotent retention sweep. Deleting an already-removed object
    * is accepted by compatible S3 stores; the DB stamp is the durable truth. */
   async collectEligible(limit = 100): Promise<number> {
     const cutoff = new Date(Date.now() - this.config.blobRetentionDays * 86_400_000).toISOString();
-    const rows = await this.db.select().from(blob).where(and(eq(blob.scope, 'run'), eq(blob.gcEligible, true), isNull(blob.deletedAt), or(isNull(blob.gcEligibleAt), lte(blob.gcEligibleAt, cutoff)))).limit(limit);
+    const rows = await this.db
+      .select()
+      .from(blob)
+      .where(
+        and(
+          eq(blob.scope, 'run'),
+          eq(blob.gcEligible, true),
+          isNull(blob.deletedAt),
+          or(isNull(blob.gcEligibleAt), lte(blob.gcEligibleAt, cutoff)),
+        ),
+      )
+      .limit(limit);
     for (const row of rows) {
       await this.storage.delete([row.objectKey]);
-      await this.db.update(blob).set({ deletedAt: new Date().toISOString() }).where(and(eq(blob.id, row.id), isNull(blob.deletedAt)));
+      await this.db
+        .update(blob)
+        .set({ deletedAt: new Date().toISOString() })
+        .where(and(eq(blob.id, row.id), isNull(blob.deletedAt)));
     }
     return rows.length;
   }

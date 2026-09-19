@@ -92,9 +92,24 @@ export class BindingResolverService {
       case 'memory': {
         const row = await this.fetchMemoryRow(ref, ctx);
         if (row.artifactId) {
-          const [media] = await this.db.select().from(artifact).where(eq(artifact.id, row.artifactId)).limit(1);
-          if (!media || media.stale || !media.blobId) throw new Error(`BindingResolverService: memory media "${ref.key}" is stale or unavailable`);
-          return { value: mediaDescriptor(media), provenance: { ref, memoryKey: ref.key, memoryVersion: row.version, artifactId: media.id } };
+          const [media] = await this.db
+            .select()
+            .from(artifact)
+            .where(eq(artifact.id, row.artifactId))
+            .limit(1);
+          if (!media || media.stale || !media.blobId)
+            throw new Error(
+              `BindingResolverService: memory media "${ref.key}" is stale or unavailable`,
+            );
+          return {
+            value: mediaDescriptor(media),
+            provenance: {
+              ref,
+              memoryKey: ref.key,
+              memoryVersion: row.version,
+              artifactId: media.id,
+            },
+          };
         }
         return {
           value: ref.path ? getPath(row.data, ref.path) : row.data,

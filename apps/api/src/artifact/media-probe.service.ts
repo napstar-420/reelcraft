@@ -13,9 +13,13 @@ export class MediaProbeService {
     let stdout: string;
     try {
       ({ stdout } = await execFileAsync('ffprobe', [
-        '-v', 'error', '-show_entries',
+        '-v',
+        'error',
+        '-show_entries',
         'format=format_name,duration:stream=codec_type,codec_name,width,height,r_frame_rate,sample_rate',
-        '-of', 'json', file,
+        '-of',
+        'json',
+        file,
       ]));
     } catch (error) {
       throw new Error(`MediaProbeService: ffprobe rejected media (${String(error)})`);
@@ -30,15 +34,18 @@ export class MediaProbeService {
     const streams = (parsed.streams ?? []).flatMap((stream) => {
       if (stream.codec_type !== 'video' && stream.codec_type !== 'audio') return [];
       const rate = typeof stream.r_frame_rate === 'string' ? stream.r_frame_rate.split('/') : [];
-      const fps = rate.length === 2 && Number(rate[1]) ? Number(rate[0]) / Number(rate[1]) : undefined;
-      return [{
-        type: stream.codec_type,
-        codec: String(stream.codec_name ?? 'unknown'),
-        ...(stream.width !== undefined && { width: Number(stream.width) }),
-        ...(stream.height !== undefined && { height: Number(stream.height) }),
-        ...(fps !== undefined && Number.isFinite(fps) && { fps }),
-        ...(stream.sample_rate !== undefined && { sampleRate: Number(stream.sample_rate) }),
-      }] as Probe['streams'];
+      const fps =
+        rate.length === 2 && Number(rate[1]) ? Number(rate[0]) / Number(rate[1]) : undefined;
+      return [
+        {
+          type: stream.codec_type,
+          codec: String(stream.codec_name ?? 'unknown'),
+          ...(stream.width !== undefined && { width: Number(stream.width) }),
+          ...(stream.height !== undefined && { height: Number(stream.height) }),
+          ...(fps !== undefined && Number.isFinite(fps) && { fps }),
+          ...(stream.sample_rate !== undefined && { sampleRate: Number(stream.sample_rate) }),
+        },
+      ] as Probe['streams'];
     });
     if (!streams.length) throw new Error('MediaProbeService: media has no audio or video streams');
     return { container: parsed.format.format_name, durationSec, streams };

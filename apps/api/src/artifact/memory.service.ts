@@ -125,7 +125,9 @@ export class MemoryService {
       for (const [memKey, path] of Object.entries(stage.writes)) {
         const value = path === '$' ? source.data : getPath(source.data, path);
         if (source.kind.startsWith('media.') && path !== '$') {
-          throw new Error(`MemoryService: media write "${memKey}" must use the whole artifact path "$"`);
+          throw new Error(
+            `MemoryService: media write "${memKey}" must use the whole artifact path "$"`,
+          );
         }
         // A `writes` path that doesn't resolve is a blueprint authoring bug
         // (schema/path mismatch), not a legitimate "no value" — writing
@@ -146,7 +148,9 @@ export class MemoryService {
           writtenBy: stage.key,
           writtenItem: source.itemIndex,
           kind: source.kind,
-          ...(source.kind.startsWith('media.') ? { artifactId: source.artifactId } : { data: value }),
+          ...(source.kind.startsWith('media.')
+            ? { artifactId: source.artifactId }
+            : { data: value }),
         });
       }
     };

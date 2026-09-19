@@ -83,10 +83,17 @@ function testMediaProbe(): Pick<MediaProbeService, 'probe' | 'hasAudio'> {
     async probe(file: string) {
       const audio = /\.(mp3|wav|m4a|aac)$/i.test(file);
       return {
-        container: audio ? 'wav' : 'png_pipe', durationSec: audio ? 1 : 0,
-        streams: [audio ? { type: 'audio' as const, codec: 'pcm_s16le', sampleRate: 8000 } : { type: 'video' as const, codec: 'png', width: 1, height: 1, fps: 1 }],
+        container: audio ? 'wav' : 'png_pipe',
+        durationSec: audio ? 1 : 0,
+        streams: [
+          audio
+            ? { type: 'audio' as const, codec: 'pcm_s16le', sampleRate: 8000 }
+            : { type: 'video' as const, codec: 'png', width: 1, height: 1, fps: 1 },
+        ],
       };
     },
-    hasAudio(probe) { return probe.streams.some((stream) => stream.type === 'audio'); },
+    hasAudio(probe) {
+      return probe.streams.some((stream) => stream.type === 'audio');
+    },
   };
 }

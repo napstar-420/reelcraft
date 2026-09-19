@@ -131,14 +131,33 @@ export class OpenRouterAdapter implements ProviderAdapter {
     delete params.__mediaKind;
     delete params.slots;
     const response = await fetch('https://openrouter.ai/api/v1/images/generations', {
-      method: 'POST', headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ model: req.modelId, prompt: req.renderedPrompt ?? '', ...params }),
     });
-    if (!response.ok) throw new Error(`OpenRouter image: ${response.status} ${response.statusText}`);
-    const body = await response.json() as { data?: Array<{ b64_json?: string; url?: string }>; usage?: { total_cost?: number } };
+    if (!response.ok)
+      throw new Error(`OpenRouter image: ${response.status} ${response.statusText}`);
+    const body = (await response.json()) as {
+      data?: Array<{ b64_json?: string; url?: string }>;
+      usage?: { total_cost?: number };
+    };
     const image = body.data?.[0];
-    if (!image?.b64_json && !image?.url) throw new Error('OpenRouter image: missing generated image');
-    return { output: { kind: 'media.image', ...(image.b64_json ? { base64: image.b64_json } : { sourceUrl: image.url! }), mime: 'image/png', filename: 'image.png' }, costUsd: body.usage?.total_cost ?? Number(req.params.priceUsd ?? 0.04), repro: { level: 'none', providerVersion: req.modelId }, rawResponse: { data: image.url ? [{ url: image.url }] : [{ b64_json: '[stored]' }], usage: body.usage } };
+    if (!image?.b64_json && !image?.url)
+      throw new Error('OpenRouter image: missing generated image');
+    return {
+      output: {
+        kind: 'media.image',
+        ...(image.b64_json ? { base64: image.b64_json } : { sourceUrl: image.url! }),
+        mime: 'image/png',
+        filename: 'image.png',
+      },
+      costUsd: body.usage?.total_cost ?? Number(req.params.priceUsd ?? 0.04),
+      repro: { level: 'none', providerVersion: req.modelId },
+      rawResponse: {
+        data: image.url ? [{ url: image.url }] : [{ b64_json: '[stored]' }],
+        usage: body.usage,
+      },
+    };
   }
 
   async cancel(handle: JobHandle) {

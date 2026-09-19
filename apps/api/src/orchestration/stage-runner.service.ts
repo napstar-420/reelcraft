@@ -520,11 +520,20 @@ export class StageRunnerService {
       : undefined;
     const persistedMedia = mediaOutput
       ? await this.mediaArtifacts.persist({
-          ownerId: channelRow?.ownerId ?? 'local', channelId: runRow.channelId, runId: ctx.runId, source: mediaOutput,
+          ownerId: channelRow?.ownerId ?? 'local',
+          channelId: runRow.channelId,
+          runId: ctx.runId,
+          source: mediaOutput,
         })
       : undefined;
-    const kind = stage.output.kind === 'data' ? 'data' : stage.output.kind === 'text' ? 'text' : stage.output.kind;
-    const data = kind === 'text' ? { text: result.output } : kind === 'data' ? result.output : undefined;
+    const kind =
+      stage.output.kind === 'data'
+        ? 'data'
+        : stage.output.kind === 'text'
+          ? 'text'
+          : stage.output.kind;
+    const data =
+      kind === 'text' ? { text: result.output } : kind === 'data' ? result.output : undefined;
     const artifactId = await this.artifacts.recordAttemptArtifact({
       runId: ctx.runId,
       producerStageKey: stage.key,
@@ -557,7 +566,11 @@ export class StageRunnerService {
       .set({ phase: 'settled', artifactId, rawResponseRef, costUsd: fromUsd(result.costUsd) })
       .where(eq(stageAttempt.id, ctx.stageAttemptId));
 
-    const checkArtifact: CheckArtifact = { kind, data, ...(persistedMedia && { probe: persistedMedia.probe }) };
+    const checkArtifact: CheckArtifact = {
+      kind,
+      data,
+      ...(persistedMedia && { probe: persistedMedia.probe }),
+    };
     const resolvedRefs: Array<Record<string, RefEnvelope>> = [];
     const checkProvenance: ResolvedBindings['provenance'] = {};
     for (const [checkIndex, check] of stage.checks.entries()) {
@@ -593,7 +606,13 @@ export class StageRunnerService {
       const audioPolicy = stage.output.constraints?.audio ?? 'required';
       const hasAudio = persistedMedia.probe.streams.some((stream) => stream.type === 'audio');
       if ((audioPolicy === 'required' && !hasAudio) || (audioPolicy === 'forbidden' && hasAudio)) {
-        checkResults.push({ name: 'audio_constraint', kind: 'builtin', pass: false, fault: 'artifact', message: `video audio is ${hasAudio ? 'present' : 'absent'} but output requires ${audioPolicy}` });
+        checkResults.push({
+          name: 'audio_constraint',
+          kind: 'builtin',
+          pass: false,
+          fault: 'artifact',
+          message: `video audio is ${hasAudio ? 'present' : 'absent'} but output requires ${audioPolicy}`,
+        });
       }
     }
 
