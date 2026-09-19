@@ -46,7 +46,10 @@ export async function buildTestApp(
     // `fetchAndFinalize` would otherwise fail with ECONNREFUSED.
     .overrideProvider(STORAGE_ADAPTER)
     .useValue(new MemoryStorageAdapter());
-  if (options?.mediaProbe) builder.overrideProvider(MediaProbeService).useValue(options.mediaProbe);
+  // E2E storage fixtures deliberately use tiny arbitrary buffers; keep the
+  // engine-level suites independent of a host FFmpeg installation. Dedicated
+  // media-output coverage passes an explicit deterministic probe.
+  builder.overrideProvider(MediaProbeService).useValue(options?.mediaProbe ?? testMediaProbe());
   const app = await builder.compile();
 
   await app.init();
@@ -72,5 +75,18 @@ export async function buildTestApp(
     async close() {
       await app.close();
     },
+  };
+}
+
+function testMediaProbe(): Pick<MediaProbeService, 'probe' | 'hasAudio'> {
+  return {
+    async probe(file: string) {
+      const audio = /\.(mp3|wav|m4a|aac)$/i.test(file);
+      return {
+        container: audio ? 'wav' : 'png_pipe', durationSec: audio ? 1 : 0,
+        streams: [audio ? { type: 'audio' as const, codec: 'pcm_s16le', sampleRate: 8000 } : { type: 'video' as const, codec: 'png', width: 1, height: 1, fps: 1 }],
+      };
+    },
+    hasAudio(probe) { return probe.streams.some((stream) => stream.type === 'audio'); },
   };
 }
