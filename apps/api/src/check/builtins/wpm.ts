@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { Probe } from '@reefcraft/shared';
+import { Probe, type JsonSchema } from '@reefcraft/shared';
 import type { BuiltinCheck } from '../check.types';
 import { getPath } from '../../common/path';
 
@@ -9,12 +9,24 @@ const Params = z.object({
   max: z.number().optional(),
 });
 
+const paramsSchema: JsonSchema = {
+  type: 'object',
+  properties: {
+    path: { type: 'string' },
+    min: { type: 'number' },
+    max: { type: 'number' },
+  },
+};
+
 /** Reading-speed check — words per minute of a text artifact against its
  * paired media artifact's probed duration (§9.3). No I/O: `probe` is
  * already a plain object on the `CheckArtifact` by the time a check runs. */
 export const wpm: BuiltinCheck<z.infer<typeof Params>> = {
   key: 'wpm',
   params: Params,
+  paramsSchema,
+  description:
+    "Computes a text artifact's words-per-minute against its paired media artifact's probed duration and checks it against a min/max range.",
   run(params, artifact) {
     const probe = Probe.safeParse(artifact.probe);
     if (!probe.success || probe.data.durationSec <= 0) {

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { JsonSchema } from '@reefcraft/shared';
 import type { BuiltinCheck } from '../check.types';
 import { getPath } from '../../common/path';
 
@@ -15,9 +16,21 @@ const Params = z.object({
   path: z.string().optional(),
 });
 
+const paramsSchema: JsonSchema = {
+  type: 'object',
+  properties: {
+    pattern: { type: 'string', maxLength: MAX_PATTERN_LENGTH },
+    flags: { type: 'string', maxLength: 5 },
+    path: { type: 'string' },
+  },
+  required: ['pattern'],
+};
+
 export const regexMatch: BuiltinCheck<z.infer<typeof Params>> = {
   key: 'regex_match',
   params: Params,
+  paramsSchema,
+  description: 'Checks a string value matches a regex pattern.',
   run(params, artifact) {
     const value = params.path ? getPath(artifact.data, params.path) : artifact.data;
     if (typeof value !== 'string') {

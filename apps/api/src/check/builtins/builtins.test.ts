@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { SchemaValidatorService } from '../../json-schema/schema-validator.service';
 import type { CheckArtifact } from '../check.types';
 import { BUILTIN_CHECKS } from './index';
 
@@ -28,6 +29,35 @@ describe('BUILTIN_CHECKS registry', () => {
       expect(check.key).toBe(key);
     }
   });
+});
+
+describe('paramsSchema stays in sync with params (drift guard)', () => {
+  const schemas = new SchemaValidatorService();
+
+  /** One fixture per builtin, valid against both its `params: ZodType` and
+   * its hand-kept `paramsSchema: JsonSchema` — neither is derived from the
+   * other, so this is the only thing that catches the two drifting apart. */
+  const FIXTURES: Record<string, unknown> = {
+    word_count: { path: 'title', min: 1, max: 100 },
+    wpm: { min: 100, max: 200 },
+    duration_range: { min: 1, max: 60 },
+    regex_match: { pattern: 'hello' },
+    regex_absent: { pattern: 'goodbye' },
+    numeric_range: { path: 'score', min: 0, max: 10 },
+    array_length: { path: 'beats', min: 1 },
+    media_format: { container: 'mp4', codec: 'h264' },
+    non_empty: { path: 'title' },
+  };
+
+  it.each(Object.entries(BUILTIN_CHECKS))(
+    '%s: fixture validates against both schemas',
+    (key, check) => {
+      const fixture = FIXTURES[key];
+      expect(fixture, `no fixture registered for "${key}"`).toBeDefined();
+      expect(check.params.safeParse(fixture).success).toBe(true);
+      expect(schemas.validate(check.paramsSchema, fixture)).toEqual([]);
+    },
+  );
 });
 
 describe('word_count', () => {

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { JsonSchema } from '@reefcraft/shared';
 import type { BuiltinCheck } from '../check.types';
 import { getPath } from '../../common/path';
 
@@ -8,9 +9,21 @@ const Params = z.object({
   max: z.number().optional(),
 });
 
+const paramsSchema: JsonSchema = {
+  type: 'object',
+  properties: {
+    path: { type: 'string' },
+    min: { type: 'number' },
+    max: { type: 'number' },
+  },
+  required: ['path'],
+};
+
 export const arrayLength: BuiltinCheck<z.infer<typeof Params>> = {
   key: 'array_length',
   params: Params,
+  paramsSchema,
+  description: 'Checks an array at a JSON path has a length within a min/max range.',
   run(params, artifact) {
     const value = getPath(artifact.data, params.path);
     if (!Array.isArray(value)) {
