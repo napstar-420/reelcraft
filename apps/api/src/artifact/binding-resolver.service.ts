@@ -6,7 +6,11 @@ import { artifact, blob, runMemory } from '../db/schema/index';
 import type { StageDef } from '@reefcraft/shared';
 import { getPath } from '../common/path';
 import { unwrapText } from '../common/unwrap-text';
+import { DerivedFrameService } from './derived-frame.service';
 import { MemoryService } from './memory.service';
+
+type ArtifactRow = typeof artifact.$inferSelect;
+type PrevRef = Extract<Ref, { from: 'prev' }>;
 
 type MemoryRow = typeof runMemory.$inferSelect;
 
@@ -21,6 +25,15 @@ export interface BindingScope {
   assetBindings?: Record<string, { blobId: string; kind: string }> | undefined;
   /** phase 7 — carried through the interface now so callers don't churn later. */
   itemIndex?: number | undefined;
+  /** phase 7 — the CURRENTLY executing stage's own key, distinct from
+   * `prevStageKey`. `{from:'prevItem'}` needs this: it reads THIS stage's
+   * own prior item, not the previous stage's output. */
+  stageKey?: string | undefined;
+  /** phase 7 — the resolved `stage.iterate.over` array, populated once by
+   * `resolveAll()` for the duration of a single call so `{from:'item'}`
+   * doesn't re-resolve it per slot/context ref. Never set by callers
+   * directly. */
+  iterateOverValue?: unknown[] | undefined;
 }
 
 export interface RefProvenance {
@@ -56,19 +69,20 @@ export interface RefEnvelope {
 
 /**
  * §6.1 — binding resolver with slots and context. Handles `const`/`input`/
- * `prev`/`memory` (phase 1/2) and `asset` (phase 4 chunk 1, real as of this
- * chunk — reads only `run.assetBindings`, never the live `asset` table).
- * `role`/`item`/`prevItem` still throw a named "not implemented until phase
- * N" error rather than silently resolving to nothing — a stage that
- * references one of those today is a validation gap the compatibility
- * walker will eventually catch, not something the resolver should paper
- * over.
+ * `prev`/`memory` (phase 1/2), `asset` (phase 4 chunk 1), and — as of phase 7
+ * chunk 3 — `item`/`prevItem`/`prev` with `alignWith:'item'`, including the
+ * ffmpeg-backed `lastFrame`/`firstFrame` derived-frame shortcut
+ * (`DerivedFrameService`). `role` still throws a named "not implemented
+ * until phase 8" error rather than silently resolving to nothing — a stage
+ * that references it today is a validation gap the compatibility walker
+ * will eventually catch, not something the resolver should paper over.
  */
 @Injectable()
 export class BindingResolverService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly memory: MemoryService,
+    private readonly derivedFrames: DerivedFrameService,
   ) {}
 
   async resolve(
@@ -129,24 +143,9 @@ export class BindingResolverService {
       }
 
       case 'prev': {
-        const row = await this.fetchPrevArtifact(ctx);
-        if ((row.kind as ArtifactKind).startsWith('media.')) {
-          return {
-            value: await this.mediaManifest(row, 'prev'),
-            provenance: { ref, artifactId: row.id },
-          };
-        }
-        if (row.kind === 'file.subtitles') {
-          return {
-            value: await this.blobManifest(row, 'prev'),
-            provenance: { ref, artifactId: row.id },
-          };
-        }
-        const unwrapped = unwrapArtifactData(row.kind as ArtifactKind, row.data);
-        return {
-          value: ref.path ? getPath(unwrapped, ref.path) : unwrapped,
-          provenance: { ref, artifactId: row.id },
-        };
+        const row = await this.fetchPrevArtifact(ctx, ref);
+        const value = await this.valueForArtifactRow(row, ref.path, 'prev');
+        return { value, provenance: { ref, artifactId: row.id } };
       }
 
       case 'memory': {
@@ -259,11 +258,45 @@ export class BindingResolverService {
       case 'role':
         throw new Error(`BindingResolverService: {from: "role"} is not implemented until phase 8`);
 
-      case 'item':
-      case 'prevItem':
-        throw new Error(
-          `BindingResolverService: {from: "${ref.from}"} is not implemented until phase 7`,
-        );
+      case 'item': {
+        if (ctx.itemIndex === undefined) {
+          throw new Error(
+            'BindingResolverService: {from: "item"} outside an iterating attempt (ctx.itemIndex is undefined)',
+          );
+        }
+        if (!ctx.iterateOverValue) {
+          throw new Error(
+            'BindingResolverService: {from: "item"} resolved without iterateOverValue in scope ' +
+              '— resolveAll() must resolve stage.iterate.over first',
+          );
+        }
+        const element = ctx.iterateOverValue[ctx.itemIndex];
+        const value = ref.path ? getPath(element, ref.path) : element;
+        return { value, provenance: { ref } };
+      }
+
+      case 'prevItem': {
+        if (ctx.itemIndex === undefined) {
+          throw new Error(
+            'BindingResolverService: {from: "prevItem"} outside an iterating attempt (ctx.itemIndex is undefined)',
+          );
+        }
+        if (!ctx.stageKey) {
+          throw new Error(
+            'BindingResolverService: {from: "prevItem"} requires ctx.stageKey (the currently executing stage)',
+          );
+        }
+        if (ctx.itemIndex === 0) {
+          return { value: undefined, provenance: { ref } };
+        }
+        const row = await this.fetchItemArtifact(ctx.runId, ctx.stageKey, ctx.itemIndex - 1);
+        if (ref.path === 'lastFrame' || ref.path === 'firstFrame') {
+          const frame = await this.derivedFrames.extract(row, ref.path);
+          return { value: frame, provenance: { ref, artifactId: row.id } };
+        }
+        const value = await this.valueForArtifactRow(row, ref.path, 'prevItem');
+        return { value, provenance: { ref, artifactId: row.id } };
+      }
     }
   }
 
@@ -272,17 +305,28 @@ export class BindingResolverService {
    * `ExecCtx.slots`/`context` stay plain `Record<string, unknown>` so
    * `ExecCtx` never has to unwrap a `{value, provenance}` envelope. */
   async resolveAll(stage: StageDef, ctx: BindingScope): Promise<ResolvedBindings> {
+    let scope = ctx;
+    if (stage.iterate) {
+      const { value } = await this.resolve(stage.iterate.over, ctx);
+      if (!Array.isArray(value)) {
+        throw new Error(
+          `BindingResolverService: stage "${stage.key}" iterate.over did not resolve to an array`,
+        );
+      }
+      scope = { ...ctx, iterateOverValue: value };
+    }
+
     const slots: Record<string, unknown> = {};
     const context: Record<string, unknown> = {};
     const provenance: Record<string, RefProvenance> = {};
 
     for (const [key, ref] of Object.entries(stage.slots)) {
-      const resolved = await this.resolve(ref, ctx);
+      const resolved = await this.resolve(ref, scope);
       slots[key] = resolved.value;
       provenance[`slots.${key}`] = resolved.provenance;
     }
     for (const [key, ref] of Object.entries(stage.context)) {
-      const resolved = await this.resolve(ref, ctx);
+      const resolved = await this.resolve(ref, scope);
       context[key] = resolved.value;
       provenance[`context.${key}`] = resolved.provenance;
     }
@@ -312,10 +356,48 @@ export class BindingResolverService {
   ): Promise<{ envelope: RefEnvelope; provenance: RefProvenance }> {
     switch (ref.from) {
       case 'prev': {
-        const row = await this.fetchPrevArtifact(ctx);
+        const row = await this.fetchPrevArtifact(ctx, ref);
         // Lenient on media kinds — unlike `unwrapArtifactData`, a check
         // envelope inspects `kind`/`probe` directly and shouldn't throw just
         // because `data` can't be fully unwrapped yet.
+        const data = unwrapText(row.kind as ArtifactKind, row.data);
+        return {
+          envelope: { kind: row.kind as ArtifactKind, data, probe: row.probe ?? undefined },
+          provenance: { ref, artifactId: row.id },
+        };
+      }
+      case 'item': {
+        // Same value {from:'item'} itself would produce — an iterate.over
+        // element is a `data` array element, not a real ArtifactKind, so it
+        // gets the same 'literal' container tag a const/input ref would.
+        const resolved = await this.resolve(ref, ctx);
+        return {
+          envelope: { kind: 'literal', data: resolved.value },
+          provenance: resolved.provenance,
+        };
+      }
+      case 'prevItem': {
+        if (ctx.itemIndex === undefined) {
+          throw new Error(
+            'BindingResolverService: {from: "prevItem"} outside an iterating attempt (ctx.itemIndex is undefined)',
+          );
+        }
+        if (!ctx.stageKey) {
+          throw new Error(
+            'BindingResolverService: {from: "prevItem"} requires ctx.stageKey (the currently executing stage)',
+          );
+        }
+        if (ctx.itemIndex === 0) {
+          return { envelope: { kind: 'literal', data: undefined }, provenance: { ref } };
+        }
+        const row = await this.fetchItemArtifact(ctx.runId, ctx.stageKey, ctx.itemIndex - 1);
+        if (ref.path === 'lastFrame' || ref.path === 'firstFrame') {
+          const frame = await this.derivedFrames.extract(row, ref.path);
+          return {
+            envelope: { kind: 'media.image', data: frame },
+            provenance: { ref, artifactId: row.id },
+          };
+        }
         const data = unwrapText(row.kind as ArtifactKind, row.data);
         return {
           envelope: { kind: row.kind as ArtifactKind, data, probe: row.probe ?? undefined },
@@ -356,9 +438,19 @@ export class BindingResolverService {
     }
   }
 
-  private async fetchPrevArtifact(ctx: BindingScope) {
+  /** §6.1 / §14.3 — the default (no `alignWith`) query shape is unchanged
+   * from before phase 7: `isNull(artifact.itemIndex)`, same error message.
+   * Only `ref?.alignWith === 'item'` diverges, fetching the previous
+   * (iterating) stage's item `ctx.itemIndex` artifact instead. */
+  private async fetchPrevArtifact(ctx: BindingScope, ref?: PrevRef): Promise<ArtifactRow> {
     if (!ctx.prevStageKey) {
       throw new Error('BindingResolverService: {from: "prev"} on the first stage is invalid');
+    }
+    const alignWithItem = ref?.alignWith === 'item';
+    if (alignWithItem && ctx.itemIndex === undefined) {
+      throw new Error(
+        'BindingResolverService: {from: "prev", alignWith: "item"} outside an iterating attempt',
+      );
     }
     const [row] = await this.db
       .select()
@@ -367,15 +459,66 @@ export class BindingResolverService {
         and(
           eq(artifact.runId, ctx.runId),
           eq(artifact.producerStageKey, ctx.prevStageKey),
-          isNull(artifact.itemIndex),
+          alignWithItem ? eq(artifact.itemIndex, ctx.itemIndex!) : isNull(artifact.itemIndex),
           eq(artifact.stale, false),
         ),
       )
       .limit(1);
     if (!row) {
-      throw new Error(`BindingResolverService: no active artifact for stage "${ctx.prevStageKey}"`);
+      throw new Error(
+        alignWithItem
+          ? `BindingResolverService: no active artifact for stage "${ctx.prevStageKey}" item ${ctx.itemIndex} (alignWith:'item')`
+          : `BindingResolverService: no active artifact for stage "${ctx.prevStageKey}"`,
+      );
     }
     return row;
+  }
+
+  /** §14.4 — same shape as `fetchPrevArtifact`, but keyed on `stageKey` (the
+   * CURRENT stage, not the previous one) — this is what `{from:'prevItem'}`
+   * reads: this stage's own item `itemIndex`, not the previous stage's
+   * output. */
+  private async fetchItemArtifact(
+    runId: string,
+    stageKey: string,
+    itemIndex: number,
+  ): Promise<ArtifactRow> {
+    const [row] = await this.db
+      .select()
+      .from(artifact)
+      .where(
+        and(
+          eq(artifact.runId, runId),
+          eq(artifact.producerStageKey, stageKey),
+          eq(artifact.itemIndex, itemIndex),
+          eq(artifact.stale, false),
+        ),
+      )
+      .limit(1);
+    if (!row) {
+      throw new Error(
+        `BindingResolverService: no active artifact for stage "${stageKey}" item ${itemIndex}`,
+      );
+    }
+    return row;
+  }
+
+  /** Shared by `{from:'prev'}` and `{from:'prevItem'}` (outside the
+   * derived-frame shortcut) — dispatches on the artifact row's own `kind`,
+   * exactly as `{from:'prev'}` always has. */
+  private async valueForArtifactRow(
+    row: ArtifactRow,
+    path: string | undefined,
+    handle: string,
+  ): Promise<unknown> {
+    if ((row.kind as ArtifactKind).startsWith('media.')) {
+      return this.mediaManifest(row, handle);
+    }
+    if (row.kind === 'file.subtitles') {
+      return this.blobManifest(row, handle);
+    }
+    const unwrapped = unwrapArtifactData(row.kind as ArtifactKind, row.data);
+    return path ? getPath(unwrapped, path) : unwrapped;
   }
 
   /** §6.3/§14 — an exact `memKey` match (covers plain non-iterating writes

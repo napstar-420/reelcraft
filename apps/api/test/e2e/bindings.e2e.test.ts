@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { StageDef } from '@reefcraft/shared';
 import { BindingResolverService } from '../../src/artifact/binding-resolver.service';
+import type { DerivedFrameService } from '../../src/artifact/derived-frame.service';
 import { ArtifactService } from '../../src/artifact/artifact.service';
 import { MemoryService } from '../../src/artifact/memory.service';
 import { ulid } from '../../src/common/ulid';
@@ -13,6 +14,24 @@ import {
   runMemory,
 } from '../../src/db/schema/index';
 import { createTestDb, type TestDb } from '../support/test-db';
+
+/** Test double for `DerivedFrameService` — `{from:'prevItem', path:'lastFrame'
+ * |'firstFrame'}` must call into it with the right (artifact row, which)
+ * pair; a real extraction needs real ffmpeg + a real video file, which is
+ * covered by `DerivedFrameService`'s own unit tests and Chunk 7's dedicated
+ * acceptance script, not this DB-backed resolver suite. */
+class FakeDerivedFrameService {
+  calls: Array<{ artifactId: string; which: 'firstFrame' | 'lastFrame' }> = [];
+  async extract(row: { id: string }, which: 'firstFrame' | 'lastFrame') {
+    this.calls.push({ artifactId: row.id, which });
+    return {
+      handle: `prevItem:${which}`,
+      kind: 'media.image' as const,
+      sourceKey: `fake/${row.id}/${which}.png`,
+      hasAudio: false,
+    };
+  }
+}
 
 function textStage(key: string, overrides: Partial<StageDef> = {}): StageDef {
   return {
@@ -42,12 +61,18 @@ describe('binding resolver + memory writes (e2e)', () => {
   let artifacts: ArtifactService;
   let memory: MemoryService;
   let runId: string;
+  let fakeDerivedFrames: FakeDerivedFrameService;
 
   beforeAll(async () => {
     testDb = await createTestDb();
     const db = testDb.db;
     memory = new MemoryService();
-    bindings = new BindingResolverService(db, memory);
+    fakeDerivedFrames = new FakeDerivedFrameService();
+    bindings = new BindingResolverService(
+      db,
+      memory,
+      fakeDerivedFrames as unknown as DerivedFrameService,
+    );
     artifacts = new ArtifactService(db);
 
     const channelId = ulid();
@@ -261,13 +286,7 @@ describe('binding resolver + memory writes (e2e)', () => {
     ).rejects.toThrow('stale or unavailable');
   });
 
-  it('throws naming phase 7/8 for item/prevItem/role refs', async () => {
-    await expect(bindings.resolve({ from: 'item' }, { runId, inputs: {} })).rejects.toThrow(
-      'phase 7',
-    );
-    await expect(bindings.resolve({ from: 'prevItem' }, { runId, inputs: {} })).rejects.toThrow(
-      'phase 7',
-    );
+  it('throws naming phase 8 for a role ref', async () => {
     await expect(
       bindings.resolve({ from: 'role', roleKey: 'host' }, { runId, inputs: {} }),
     ).rejects.toThrow('phase 8');
@@ -601,5 +620,186 @@ describe('binding resolver + memory writes (e2e)', () => {
     await expect(
       bindings.resolve({ from: 'memory', key: 'badKey' }, { runId, inputs: {} }),
     ).rejects.toThrow('no memory entry');
+  });
+
+  describe('phase 7 chunk 3 — item, prevItem, prev+alignWith, derived frames', () => {
+    it('{from: "item"} indexes ctx.iterateOverValue at ctx.itemIndex', async () => {
+      const { value, provenance } = await bindings.resolve(
+        { from: 'item' },
+        { runId, inputs: {}, itemIndex: 1, iterateOverValue: ['a', 'b', 'c'] },
+      );
+      expect(value).toBe('b');
+      expect(provenance.ref).toEqual({ from: 'item' });
+    });
+
+    it('{from: "item"} narrows via .path', async () => {
+      const { value } = await bindings.resolve(
+        { from: 'item', path: 'title' },
+        { runId, inputs: {}, itemIndex: 0, iterateOverValue: [{ title: 'shot zero' }] },
+      );
+      expect(value).toBe('shot zero');
+    });
+
+    it('{from: "item"} throws a clear error outside an iterating attempt (no itemIndex)', async () => {
+      await expect(
+        bindings.resolve({ from: 'item' }, { runId, inputs: {}, iterateOverValue: ['a'] }),
+      ).rejects.toThrow('outside an iterating attempt');
+    });
+
+    it('resolveAll resolves stage.iterate.over once and exposes it to {from:"item"} context refs', async () => {
+      const stage = textStage('iterCtx', {
+        context: { current: { from: 'item', path: 'v' } },
+        iterate: {
+          over: { from: 'const', value: [{ v: 'x' }, { v: 'y' }, { v: 'z' }] },
+          itemAlias: 'x',
+          itemRetryLimit: 0,
+        },
+      });
+      const resolved = await bindings.resolveAll(stage, { runId, inputs: {}, itemIndex: 2 });
+      expect(resolved.context.current).toBe('z');
+    });
+
+    it('resolveAll throws when iterate.over does not resolve to an array', async () => {
+      const stage = textStage('iterBad', {
+        iterate: {
+          over: { from: 'const', value: 'not-an-array' },
+          itemAlias: 'x',
+          itemRetryLimit: 0,
+        },
+      });
+      await expect(bindings.resolveAll(stage, { runId, inputs: {}, itemIndex: 0 })).rejects.toThrow(
+        'did not resolve to an array',
+      );
+    });
+
+    it('{from: "prevItem"} returns undefined for item 0', async () => {
+      const { value, provenance } = await bindings.resolve(
+        { from: 'prevItem' },
+        { runId, inputs: {}, itemIndex: 0, stageKey: 'anyIteratingStage' },
+      );
+      expect(value).toBeUndefined();
+      expect(provenance.ref).toEqual({ from: 'prevItem' });
+    });
+
+    it('{from: "prevItem"} throws a clear error outside an iterating attempt (no itemIndex)', async () => {
+      await expect(
+        bindings.resolve({ from: 'prevItem' }, { runId, inputs: {}, stageKey: 'x' }),
+      ).rejects.toThrow('outside an iterating attempt');
+    });
+
+    it('{from: "prevItem"} returns a real value from item i-1\'s own artifact for item >= 1', async () => {
+      await testDb.db.insert(artifact).values([
+        {
+          id: ulid(),
+          runId,
+          producerStageKey: 'itemsStage',
+          itemIndex: 0,
+          kind: 'text',
+          data: { text: 'item zero' },
+          stale: false,
+          reproLevel: 'exact',
+          costUsd: '0.0000',
+        },
+        {
+          id: ulid(),
+          runId,
+          producerStageKey: 'itemsStage',
+          itemIndex: 1,
+          kind: 'text',
+          data: { text: 'item one' },
+          stale: false,
+          reproLevel: 'exact',
+          costUsd: '0.0000',
+        },
+      ]);
+
+      const { value, provenance } = await bindings.resolve(
+        { from: 'prevItem' },
+        { runId, inputs: {}, itemIndex: 1, stageKey: 'itemsStage' },
+      );
+      expect(value).toBe('item zero');
+      expect(provenance.artifactId).toBeDefined();
+    });
+
+    it('{from: "prevItem", path: "lastFrame"} calls DerivedFrameService.extract with item i-1\'s artifact', async () => {
+      const frameArtifactId = ulid();
+      await testDb.db.insert(artifact).values({
+        id: frameArtifactId,
+        runId,
+        producerStageKey: 'framesStage',
+        itemIndex: 0,
+        kind: 'media.video',
+        data: null,
+        stale: false,
+        reproLevel: 'exact',
+        costUsd: '0.0000',
+      });
+
+      const before = fakeDerivedFrames.calls.length;
+      const { value, provenance } = await bindings.resolve(
+        { from: 'prevItem', path: 'lastFrame' },
+        { runId, inputs: {}, itemIndex: 1, stageKey: 'framesStage' },
+      );
+      expect(fakeDerivedFrames.calls.slice(before)).toEqual([
+        { artifactId: frameArtifactId, which: 'lastFrame' },
+      ]);
+      expect(value).toMatchObject({ kind: 'media.image', sourceKey: expect.any(String) });
+      expect(provenance.artifactId).toBe(frameArtifactId);
+    });
+
+    it('{from: "prev", alignWith: "item"} resolves the aligned previous stage\'s item i artifact', async () => {
+      await testDb.db.insert(artifact).values([
+        {
+          id: ulid(),
+          runId,
+          producerStageKey: 'alignedPrev',
+          itemIndex: 0,
+          kind: 'text',
+          data: { text: 'aligned zero' },
+          stale: false,
+          reproLevel: 'exact',
+          costUsd: '0.0000',
+        },
+        {
+          id: ulid(),
+          runId,
+          producerStageKey: 'alignedPrev',
+          itemIndex: 1,
+          kind: 'text',
+          data: { text: 'aligned one' },
+          stale: false,
+          reproLevel: 'exact',
+          costUsd: '0.0000',
+        },
+      ]);
+
+      const { value } = await bindings.resolve(
+        { from: 'prev', alignWith: 'item' },
+        { runId, inputs: {}, prevStageKey: 'alignedPrev', itemIndex: 1 },
+      );
+      expect(value).toBe('aligned one');
+    });
+
+    it('{from: "prev", alignWith: "item"} throws a clear (not generic) error when no such item artifact exists', async () => {
+      await expect(
+        bindings.resolve(
+          { from: 'prev', alignWith: 'item' },
+          { runId, inputs: {}, prevStageKey: 'alignedPrev', itemIndex: 5 },
+        ),
+      ).rejects.toThrow(/item 5.*alignWith/);
+    });
+
+    it('{from: "prev"} (no alignWith) is byte-for-byte unchanged: still targets the non-item active artifact', async () => {
+      // "staleCheck" (seeded in beforeAll) never had an itemIndex — proves an
+      // ordinary {from:'prev'} still resolves via isNull(itemIndex), even
+      // when ctx.itemIndex happens to be set (an aligned sibling ref on the
+      // same stage, say) — alignWith is what switches the query, not the
+      // mere presence of ctx.itemIndex.
+      const { value } = await bindings.resolve(
+        { from: 'prev' },
+        { runId, inputs: {}, prevStageKey: 'staleCheck', itemIndex: 3 },
+      );
+      expect(value).toBe('NEW attempt');
+    });
   });
 });

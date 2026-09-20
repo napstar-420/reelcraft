@@ -42,6 +42,10 @@ export interface StageAttemptContext {
   stageKey: string;
   attemptNo: number;
   stageAttemptId: string;
+  /** phase 7 — set only by the (not-yet-built, chunk 4) per-item caller;
+   * every existing non-iterating call site leaves this undefined, so
+   * `BindingResolverService`/`ExecCtx` see exactly today's behavior. */
+  itemIndex?: number | undefined;
 }
 
 export interface StageContext {
@@ -301,12 +305,20 @@ export class StageRunnerService {
     stage: StageDef,
     runId: string,
     prevStageKey: string | undefined,
+    itemIndex?: number,
   ): Promise<ResolvedBindings> {
     const [inputs, assetBindings] = await Promise.all([
       this.loadRunInputs(runId),
       this.loadAssetBindings(runId),
     ]);
-    return this.bindingResolver.resolveAll(stage, { runId, prevStageKey, inputs, assetBindings });
+    return this.bindingResolver.resolveAll(stage, {
+      runId,
+      prevStageKey,
+      inputs,
+      assetBindings,
+      stageKey: stage.key,
+      itemIndex,
+    });
   }
 
   /** §3.8.1's critique log — derived from prior `stage_attempt` rows'
@@ -380,6 +392,7 @@ export class StageRunnerService {
       runId: ctx.runId,
       stageKey: ctx.stageKey,
       attemptNo: ctx.attemptNo,
+      itemIndex: ctx.itemIndex,
       // §7.2 TODO: this should be a ProviderClient scoped to the effective
       // model pin, not raw config on ctx.config — carried over from phase 1
       // as a deliberate shortcut; changing it is a capability-contract
@@ -414,7 +427,7 @@ export class StageRunnerService {
     effective: EffectiveStageConfig,
   ): Promise<SubmitOutcome> {
     const capability = this.capabilities.get(stage.capability);
-    const bindings = await this.resolveBindings(stage, ctx.runId, prevStageKey);
+    const bindings = await this.resolveBindings(stage, ctx.runId, prevStageKey, ctx.itemIndex);
     const priorCritique = await this.loadCritiqueLog(ctx.stageExecutionId, ctx.attemptNo);
     const templateScope = { ...bindings.slots, ...bindings.context, priorCritique };
     const renderedPrompt = stage.instructions?.template
@@ -542,7 +555,7 @@ export class StageRunnerService {
     effective: EffectiveStageConfig,
   ): Promise<FetchAndFinalizeResult> {
     const capability = this.capabilities.get(stage.capability);
-    const bindings = await this.resolveBindings(stage, ctx.runId, prevStageKey);
+    const bindings = await this.resolveBindings(stage, ctx.runId, prevStageKey, ctx.itemIndex);
     const resources =
       stage.capability === 'timeline.render' && bindings.slots.timeline
         ? await this.timelineResources.resolve(ctx.runId, bindings.slots.timeline)
@@ -665,6 +678,8 @@ export class StageRunnerService {
           prevStageKey,
           inputs: await this.loadRunInputs(ctx.runId),
           assetBindings: await this.loadAssetBindings(ctx.runId),
+          stageKey: stage.key,
+          itemIndex: ctx.itemIndex,
         });
         resolvedRefs.push(resolved.refs);
         for (const [name, provenance] of Object.entries(resolved.provenance)) {
