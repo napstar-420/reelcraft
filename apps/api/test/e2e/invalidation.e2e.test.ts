@@ -295,6 +295,18 @@ describe('InvalidationService (e2e)', () => {
       affectedStageKeys: ['source', 'dependent'],
       affectedExecutionIds: [ids.sourceExecution, ids.dependentExecution],
       affectedArtifactIds: [ids.sourceArtifact, ids.dependentArtifact],
+      affectedItems: [
+        {
+          stageKey: 'source',
+          stageExecutionId: ids.sourceExecution,
+          artifactId: ids.sourceArtifact,
+        },
+        {
+          stageKey: 'dependent',
+          stageExecutionId: ids.dependentExecution,
+          artifactId: ids.dependentArtifact,
+        },
+      ],
     });
     expect(stagePreview.costs).toEqual([
       {
@@ -321,6 +333,13 @@ describe('InvalidationService (e2e)', () => {
       affectedStageKeys: ['inputReader'],
       affectedExecutionIds: [ids.inputReaderExecution],
       affectedArtifactIds: [ids.inputReaderArtifact, ids.inputArtifact],
+      affectedItems: [
+        {
+          stageKey: 'inputReader',
+          stageExecutionId: ids.inputReaderExecution,
+          artifactId: ids.inputReaderArtifact,
+        },
+      ],
     });
     expect(inputPreview.totals).toEqual({ spentUsd: 0.2, estimatedRerunUsd: 0.4 });
   });

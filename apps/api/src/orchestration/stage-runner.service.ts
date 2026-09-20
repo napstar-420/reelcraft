@@ -889,6 +889,7 @@ export class StageRunnerService {
           applyWrites: this.memory.buildWriteCallback(stage, {
             runId: ctx.runId,
             stageKey: stage.key,
+            ...(ctx.itemIndex !== undefined ? { itemIndex: ctx.itemIndex } : {}),
             kind,
             data,
             artifactId,

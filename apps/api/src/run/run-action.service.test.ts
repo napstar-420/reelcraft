@@ -15,6 +15,14 @@ function setup() {
         affectedStageKeys: ['draft', 'render'],
         affectedExecutionIds: ['execution-draft', 'execution-render'],
         affectedArtifactIds: ['artifact-draft', 'artifact-render'],
+        affectedItems: [
+          { stageKey: 'draft', stageExecutionId: 'execution-draft', artifactId: 'artifact-draft' },
+          {
+            stageKey: 'render',
+            stageExecutionId: 'execution-render',
+            artifactId: 'artifact-render',
+          },
+        ],
       },
       costs: [
         {

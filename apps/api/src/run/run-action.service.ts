@@ -177,18 +177,40 @@ export class RunActionService {
   }
 
   private toApiPreview(preview: InvalidationPreview, previewToken: string, expiresAt: string) {
+    // phase 7 chunk 5 — `affectedArtifactIds`/`costs` can now hold more than
+    // one entry per stage (an iterating stage with several invalid items),
+    // so they're no longer safe to zip against `affectedStageKeys` by
+    // array index. Group them by stageKey instead; `affectedStageKeys` and
+    // `affectedExecutionIds` themselves stay 1:1 (one entry per affected
+    // stage), so that zip is still valid.
+    const artifactIdsByStage = new Map<string, string[]>();
+    for (const item of preview.closure.affectedItems) {
+      if (!item.artifactId) continue;
+      const list = artifactIdsByStage.get(item.stageKey);
+      if (list) list.push(item.artifactId);
+      else artifactIdsByStage.set(item.stageKey, [item.artifactId]);
+    }
+
     return {
       previewToken,
       expiresAt,
       affected: preview.closure.affectedStageKeys.map((stageKey, index) => {
-        const artifactId = preview.closure.affectedArtifactIds[index];
-        const cost = preview.costs.find((entry) => entry.stageKey === stageKey);
+        const artifactId = artifactIdsByStage.get(stageKey)?.[0];
+        const cost = preview.costs
+          .filter((entry) => entry.stageKey === stageKey)
+          .reduce(
+            (sum, entry) => ({
+              spentUsd: sum.spentUsd + entry.spentUsd,
+              estimatedRerunUsd: sum.estimatedRerunUsd + entry.estimatedRerunUsd,
+            }),
+            { spentUsd: 0, estimatedRerunUsd: 0 },
+          );
         return {
           stageKey,
           stageExecutionId: preview.closure.affectedExecutionIds[index]!,
           ...(artifactId ? { artifactId } : {}),
-          spentUsd: cost?.spentUsd ?? 0,
-          estimatedRerunUsd: cost?.estimatedRerunUsd ?? 0,
+          spentUsd: cost.spentUsd,
+          estimatedRerunUsd: cost.estimatedRerunUsd,
         };
       }),
       spentUsd: preview.totals.spentUsd,
