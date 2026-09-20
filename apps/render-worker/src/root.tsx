@@ -1,3 +1,4 @@
-import { registerTimelineRoot } from '@reefcraft/timeline-composition';
+import { TimelineRoot } from '@reefcraft/timeline-composition';
+import { registerRoot } from 'remotion';
 
-registerTimelineRoot();
+registerRoot(TimelineRoot);
