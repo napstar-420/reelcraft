@@ -213,6 +213,13 @@ export class BlueprintValidatorService {
 
     this.checkEnabledWhenDeclaration(stage, ctx, issues);
     this.checkApprovalOnReject(stage, stageIndex, ctx, issues);
+    this.checkIterate(stage, stageIndex, ctx, issues);
+
+    const requiredSlotNames = new Set(
+      (impl ? impl.slots(stage.config) : [])
+        .filter((slotDef) => slotDef.required)
+        .map((slotDef) => slotDef.name),
+    );
 
     const boundTypes = new Map<string, SourceType>();
     // §3.8.1 — `priorCritique` is a reserved template key spliced in by the
@@ -224,14 +231,36 @@ export class BlueprintValidatorService {
     // blocker here).
     boundTypes.set('priorCritique', { kind: 'literal', value: '' });
     for (const [name, ref] of Object.entries(stage.slots)) {
-      const result = resolveBoundType(ref, ctx, stageIndex, `${base}.slots.${name}`);
+      const path = `${base}.slots.${name}`;
+      const result = resolveBoundType(ref, ctx, stageIndex, path);
       if (result.issue) issues.push(result.issue);
       boundTypes.set(name, result.type);
+      this.checkIterateRefKinds(
+        ref,
+        path,
+        { prevItemRequired: requiredSlotNames.has(name) },
+        stage,
+        stageIndex,
+        ctx,
+        issues,
+      );
     }
     for (const [name, ref] of Object.entries(stage.context)) {
-      const result = resolveBoundType(ref, ctx, stageIndex, `${base}.context.${name}`);
+      const path = `${base}.context.${name}`;
+      const result = resolveBoundType(ref, ctx, stageIndex, path);
       if (result.issue) issues.push(result.issue);
       boundTypes.set(name, result.type);
+      // Context bindings are always effectively required (§14's "always
+      // required" reading of context — resolveAll never skips one).
+      this.checkIterateRefKinds(
+        ref,
+        path,
+        { prevItemRequired: true },
+        stage,
+        stageIndex,
+        ctx,
+        issues,
+      );
     }
 
     if (impl) {
@@ -257,6 +286,25 @@ export class BlueprintValidatorService {
           issues.push({
             path: `${base}.slots.${slotDef.name}`,
             message: `incompatible source: ${verdict.reason}`,
+            severity: 'error',
+          });
+        }
+
+        // §16.2 — cardinality vs. an iterate-derived producer's real arity.
+        // Scoped to memory-group/iterate-derived refs only (Locked Decision
+        // 2) — pre-existing many-cardinality inputs are untouched.
+        const arity = iterateProducedArity(ref, ctx);
+        if (arity === 'many' && slotDef.cardinality === 'one') {
+          issues.push({
+            path: `${base}.slots.${slotDef.name}`,
+            message: "cardinality:'one' slot bound to an iterating producer",
+            severity: 'error',
+          });
+        }
+        if (arity === 'scalar-iterate' && slotDef.cardinality === 'many') {
+          issues.push({
+            path: `${base}.slots.${slotDef.name}`,
+            message: "cardinality:'many' slot bound to a scalar source",
             severity: 'error',
           });
         }
@@ -339,8 +387,19 @@ export class BlueprintValidatorService {
 
       if (!check.refs) continue;
       for (const [refName, ref] of Object.entries(check.refs)) {
-        const result = resolveBoundType(ref, ctx, stageIndex, `${checkBase}.refs.${refName}`);
+        const path = `${checkBase}.refs.${refName}`;
+        const result = resolveBoundType(ref, ctx, stageIndex, path);
         if (result.issue) issues.push(result.issue);
+        // Check refs are always effectively required, like context bindings.
+        this.checkIterateRefKinds(
+          ref,
+          path,
+          { prevItemRequired: true },
+          stage,
+          stageIndex,
+          ctx,
+          issues,
+        );
       }
     }
   }
@@ -485,6 +544,164 @@ export class BlueprintValidatorService {
     }
   }
 
+  /** §14.3/§16.2 — `iterate.over` must narrow to an array schema. A bare
+   * memory-key read whose sole writer iterates and produces non-`data`
+   * (media) output is flagged with a distinct message rather than the
+   * generic array-narrowing error — many-cardinality media iterate sources
+   * are a deliberate phase-7 scope boundary (Locked Decision 2), not an
+   * authoring mistake, and should read as one. */
+  private checkIterate(
+    stage: StageDef,
+    stageIndex: number,
+    ctx: ValidationContext,
+    issues: ValidationIssue[],
+  ): void {
+    if (!stage.iterate) return;
+    const path = `stages.${stage.key}.iterate.over`;
+    const overRef = stage.iterate.over;
+
+    if (overRef.from === 'memory') {
+      const writer = ctx.memoryWriters.get(overRef.key)?.[0];
+      const writerIndex = writer ? ctx.stageIndexByKey.get(writer.stageKey) : undefined;
+      const writerStage = writerIndex === undefined ? undefined : ctx.graph[writerIndex];
+      if (writerStage?.iterate && writerStage.output.kind !== 'data') {
+        issues.push({
+          path,
+          message: 'iterate.over a many-cardinality media source is not yet supported',
+          severity: 'error',
+        });
+        return;
+      }
+    }
+
+    const overResult = resolveBoundType(overRef, ctx, stageIndex, path);
+    if (overResult.issue) {
+      issues.push(overResult.issue);
+      return;
+    }
+    // §14.3's canonicalization table treats `{from:'const'}` as a legal
+    // (if unalignable) iterate.over — a const value has no schema, so its
+    // "array schema" narrowing is a static fact about the literal itself.
+    if (overResult.type.kind === 'literal') {
+      if (!Array.isArray(overResult.type.value)) {
+        issues.push({
+          path,
+          message: 'iterate.over does not narrow to an array schema',
+          severity: 'error',
+        });
+      }
+      return;
+    }
+    if (overResult.type.kind !== 'data' || overResult.type.schema.type !== 'array') {
+      issues.push({
+        path,
+        message: 'iterate.over does not narrow to an array schema',
+        severity: 'error',
+      });
+    }
+  }
+
+  /** §14.3/§14.4 — the three iterate-specific checks that apply uniformly
+   * wherever a `Ref` is bound: a slot, a context entry, or a check ref. */
+  private checkIterateRefKinds(
+    ref: Ref,
+    path: string,
+    opts: { prevItemRequired: boolean },
+    stage: StageDef,
+    stageIndex: number,
+    ctx: ValidationContext,
+    issues: ValidationIssue[],
+  ): void {
+    // §14.4, strict reading (Resolved Decision 2) — no config-level fallback
+    // escape hatch. A required binding to prevItem is always an error; the
+    // capability itself must declare the slot optional and default it.
+    if (ref.from === 'prevItem' && opts.prevItemRequired) {
+      issues.push({
+        path,
+        message:
+          '{from:"prevItem"} bound to a required slot/context/check ref is always an error — ' +
+          'declare the slot optional and have the capability supply its own default for item 0',
+        severity: 'error',
+      });
+    }
+
+    if (ref.from === 'prev' && ref.alignWith === 'item') {
+      this.checkAlignWith(stage, stageIndex, ctx, path, issues);
+    } else if (ref.from === 'prev' && !ref.alignWith) {
+      // Locked Decision 4 — no `stage_execution`/`artifact` row is ever
+      // written with `item_index IS NULL` for an iterating producer, so this
+      // binding can never resolve at run time. Catch it at save time.
+      const prevStage = stageIndex > 0 ? ctx.graph[stageIndex - 1] : undefined;
+      if (prevStage?.iterate) {
+        issues.push({
+          path,
+          message:
+            "{from:'prev'} cannot bind an iterating stage's output — use {alignWith:'item'} " +
+            '(if this stage also iterates) or Run Memory',
+          severity: 'error',
+        });
+      }
+    }
+  }
+
+  /** §14.3 — `alignWith:'item'` requires both this stage and the previous
+   * one to iterate, and their `iterate.over` Refs to canonicalize to the
+   * same `(producerStageKey, path)` tuple. Comparing Refs directly does not
+   * work: two stages' `{from:'prev'}` name different producers. */
+  private checkAlignWith(
+    stage: StageDef,
+    stageIndex: number,
+    ctx: ValidationContext,
+    path: string,
+    issues: ValidationIssue[],
+  ): void {
+    if (!stage.iterate) {
+      issues.push({
+        path,
+        message: "alignWith:'item' requires this stage to declare iterate",
+        severity: 'error',
+      });
+      return;
+    }
+    const prevStage = stageIndex > 0 ? ctx.graph[stageIndex - 1] : undefined;
+    if (!prevStage?.iterate) {
+      issues.push({
+        path,
+        message: "alignWith:'item' requires the previous stage to also declare iterate",
+        severity: 'error',
+      });
+      return;
+    }
+
+    const own = canonicalizeIterateOver(stage.iterate.over, stageIndex, ctx);
+    const prev = canonicalizeIterateOver(prevStage.iterate.over, stageIndex - 1, ctx);
+    if ('error' in own) {
+      issues.push({
+        path: `stages.${stage.key}.iterate.over`,
+        message: own.error,
+        severity: 'error',
+      });
+      return;
+    }
+    if ('error' in prev) {
+      issues.push({
+        path: `stages.${prevStage.key}.iterate.over`,
+        message: prev.error,
+        severity: 'error',
+      });
+      return;
+    }
+    if (own.producerKey !== prev.producerKey || own.path !== prev.path) {
+      issues.push({
+        path: `stages.${stage.key}.iterate.over`,
+        message:
+          `iterate.over does not align with "${prevStage.key}"'s iterate.over — ` +
+          "alignWith:'item' requires both to name the same array",
+        severity: 'error',
+      });
+    }
+  }
+
   private checkMemoryWrittenByMultiple(ctx: ValidationContext, issues: ValidationIssue[]): void {
     for (const [memKey, writers] of ctx.memoryWriters) {
       if (writers.length > 1) {
@@ -522,4 +739,50 @@ export class BlueprintValidatorService {
 function sameEnabledWhen(a: EnabledWhen | undefined, b: EnabledWhen | undefined): boolean {
   if (!a || !b) return false;
   return a.input === b.input && a.equals === b.equals;
+}
+
+/** §14.3's canonicalization table — the tuple two `iterate.over` Refs must
+ * agree on for `alignWith:'item'` to be valid between them. */
+function canonicalizeIterateOver(
+  ref: Ref,
+  ownerIndex: number,
+  ctx: ValidationContext,
+): { producerKey: string; path: string } | { error: string } {
+  switch (ref.from) {
+    case 'prev': {
+      const prevStage = ownerIndex > 0 ? ctx.graph[ownerIndex - 1] : undefined;
+      if (!prevStage) return { error: 'no preceding stage' };
+      return { producerKey: prevStage.key, path: ref.path ?? '$' };
+    }
+    case 'memory': {
+      const writer = ctx.memoryWriters.get(ref.key)?.[0];
+      if (!writer) return { error: `memory key "${ref.key}" has no writer` };
+      return { producerKey: writer.stageKey, path: writer.path + (ref.path ?? '') };
+    }
+    case 'input':
+      return { producerKey: `$input:${ref.inputKey}`, path: ref.path ?? '$' };
+    default:
+      return {
+        error: `{from:'${ref.from}'} is not permitted as an iterate.over for an aligned pair`,
+      };
+  }
+}
+
+/** §16.2 — the real arity an iterate-derived Ref produces, for the
+ * cardinality check. `undefined` for every other ref kind: pre-existing
+ * many-cardinality *inputs* are out of scope for this rule (Locked Decision
+ * 2), so this deliberately doesn't classify them either way. */
+function iterateProducedArity(
+  ref: Ref,
+  ctx: ValidationContext,
+): 'many' | 'scalar-iterate' | undefined {
+  if (ref.from === 'item' || ref.from === 'prevItem') return 'scalar-iterate';
+  if (ref.from === 'prev' && ref.alignWith === 'item') return 'scalar-iterate';
+  if (ref.from === 'memory' && !/#\d+$/.test(ref.key)) {
+    const writer = ctx.memoryWriters.get(ref.key)?.[0];
+    const writerIndex = writer ? ctx.stageIndexByKey.get(writer.stageKey) : undefined;
+    const writerStage = writerIndex === undefined ? undefined : ctx.graph[writerIndex];
+    if (writerStage?.iterate) return 'many';
+  }
+  return undefined;
 }

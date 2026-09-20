@@ -28,10 +28,12 @@ export const StageDef = z.object({
   iterate: z
     .object({
       over: Ref,
+      /** Reserved for a future phase — not implemented; the engine and validator never read it (§14). */
       groupKey: z.string().optional(),
       itemAlias: z.string(),
       alignWith: z.literal('item').optional(),
       itemRetryLimit: z.number(),
+      maxItems: z.number().optional(),
     })
     .optional(),
   checks: z.array(CheckDef),

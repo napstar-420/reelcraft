@@ -82,6 +82,22 @@ const withRequiredSlot: CapabilityImpl = {
   slots: () => [{ name: 'topic', accepts: ['text'], required: true, cardinality: 'one' }],
 };
 
+const withOptionalSlot: CapabilityImpl = {
+  ...llmGenerate,
+  slots: () => [{ name: 'topic', accepts: ['text'], required: false, cardinality: 'one' }],
+};
+
+const withManySlot: CapabilityImpl = {
+  ...llmGenerate,
+  slots: () => [{ name: 'items', accepts: ['text'], required: false, cardinality: 'many' }],
+};
+
+const videoGen: CapabilityImpl = {
+  ...llmGenerate,
+  modality: 'video',
+  allowedOutputs: () => ['media.video'],
+};
+
 function fakeRegistry(capabilities: Record<string, CapabilityImpl>): CapabilityRegistry {
   return {
     get: (key: string) => {
@@ -395,16 +411,21 @@ describe('BlueprintValidatorService', () => {
     expect(hasError(issues, 'stages.a.context.x')).toBe(false);
   });
 
-  it('errors naming the right phase for item/prevItem refs', () => {
+  it('errors on {from:"item"}/{from:"prevItem"} used on a non-iterating stage', () => {
     const validator = makeValidator();
     const itemIssues = validator.validate({
       graph: [stage({ key: 'a', context: { x: { from: 'item' } } })],
       inputs: [],
       roles: [],
     });
-    expect(itemIssues.some((i) => i.severity === 'error' && i.message.includes('phase 7'))).toBe(
-      true,
-    );
+    expect(hasError(itemIssues, 'stages.a.context.x')).toBe(true);
+
+    const prevItemIssues = validator.validate({
+      graph: [stage({ key: 'a', context: { x: { from: 'prevItem' } } })],
+      inputs: [],
+      roles: [],
+    });
+    expect(hasError(prevItemIssues, 'stages.a.context.x')).toBe(true);
   });
 
   it('validates a template path against the bound context schema', () => {
@@ -557,5 +578,302 @@ describe('BlueprintValidatorService', () => {
     expect(
       hasError(validator.validate({ graph, inputs: [], roles: [] }), 'stages.a.checks[0]'),
     ).toBe(false);
+  });
+});
+
+describe('BlueprintValidatorService — iterate (Phase 7, §14/§16.2)', () => {
+  beforeAll(async () => {
+    await sandbox.ready();
+  });
+
+  const listInput: InputDef = {
+    key: 'list',
+    label: 'List',
+    required: true,
+    accepts: { kind: 'data', schema: { type: 'array', items: { type: 'string' } } },
+  };
+  const otherListInput: InputDef = {
+    key: 'otherList',
+    label: 'Other list',
+    required: true,
+    accepts: { kind: 'data', schema: { type: 'array', items: { type: 'string' } } },
+  };
+
+  it('a broll-shaped iterating stage passes with zero errors', () => {
+    const validator = makeValidator();
+    const graph = [
+      stage({
+        key: 'shots',
+        output: {
+          kind: 'data',
+          schema: {
+            type: 'array',
+            items: { type: 'object', properties: { text: { type: 'string' } } },
+          },
+        },
+        writes: { shots: '$' },
+      }),
+      stage({
+        key: 'broll',
+        iterate: {
+          over: { from: 'memory', key: 'shots' },
+          itemAlias: 'shot',
+          itemRetryLimit: 1,
+        },
+        context: { shot: { from: 'item' } },
+      }),
+    ];
+    const issues = validator.validate({ graph, inputs: [], roles: [] });
+    expect(issues.filter((i) => i.severity === 'error')).toEqual([]);
+  });
+
+  it('errors when iterate.over does not narrow to an array schema', () => {
+    const validator = makeValidator();
+    const graph = [
+      stage({ key: 'txt', output: { kind: 'text' }, writes: { msg: '$' } }),
+      stage({
+        key: 'b',
+        iterate: { over: { from: 'memory', key: 'msg' }, itemAlias: 'x', itemRetryLimit: 1 },
+      }),
+    ];
+    expect(
+      hasError(validator.validate({ graph, inputs: [], roles: [] }), 'stages.b.iterate.over'),
+    ).toBe(true);
+  });
+
+  it('a const array iterate.over is valid (unalignable, but not an array-narrowing error)', () => {
+    const validator = makeValidator();
+    const graph = [
+      stage({
+        key: 'b',
+        iterate: { over: { from: 'const', value: ['a', 'b'] }, itemAlias: 'x', itemRetryLimit: 1 },
+      }),
+    ];
+    expect(
+      hasError(validator.validate({ graph, inputs: [], roles: [] }), 'stages.b.iterate.over'),
+    ).toBe(false);
+  });
+
+  it('errors when iterate.over is a const that is not actually an array', () => {
+    const validator = makeValidator();
+    const graph = [
+      stage({
+        key: 'b',
+        iterate: {
+          over: { from: 'const', value: 'not-an-array' },
+          itemAlias: 'x',
+          itemRetryLimit: 1,
+        },
+      }),
+    ];
+    expect(
+      hasError(validator.validate({ graph, inputs: [], roles: [] }), 'stages.b.iterate.over'),
+    ).toBe(true);
+  });
+
+  it('errors with a distinct message for a many-cardinality media iterate.over source', () => {
+    const validator = makeValidator({ 'llm.generate': llmGenerate, 'video.generate': videoGen });
+    const graph = [
+      stage({
+        key: 'clip',
+        capability: 'video.generate',
+        output: { kind: 'media.video' },
+        iterate: { over: { from: 'input', inputKey: 'list' }, itemAlias: 'i', itemRetryLimit: 1 },
+        writes: { clips: '$' },
+      }),
+      stage({
+        key: 'timeline',
+        iterate: { over: { from: 'memory', key: 'clips' }, itemAlias: 'c', itemRetryLimit: 1 },
+      }),
+    ];
+    const issues = validator.validate({ graph, inputs: [listInput], roles: [] });
+    expect(
+      issues.some(
+        (i) =>
+          i.severity === 'error' &&
+          i.path === 'stages.timeline.iterate.over' &&
+          i.message.includes('not yet supported'),
+      ),
+    ).toBe(true);
+  });
+
+  it('errors when a required slot binds {from:"prevItem"} — no config fallback escape hatch', () => {
+    const validator = makeValidator({ 'llm.generate': withRequiredSlot });
+    const graph = [
+      stage({
+        key: 'a',
+        iterate: { over: { from: 'input', inputKey: 'list' }, itemAlias: 'x', itemRetryLimit: 1 },
+        slots: { topic: { from: 'prevItem' } },
+      }),
+    ];
+    expect(
+      hasError(
+        validator.validate({ graph, inputs: [listInput], roles: [] }),
+        'stages.a.slots.topic',
+      ),
+    ).toBe(true);
+  });
+
+  it('does not error when an optional slot binds {from:"prevItem"}', () => {
+    const validator = makeValidator({ 'llm.generate': withOptionalSlot });
+    const graph = [
+      stage({
+        key: 'a',
+        iterate: { over: { from: 'input', inputKey: 'list' }, itemAlias: 'x', itemRetryLimit: 1 },
+        slots: { topic: { from: 'prevItem' } },
+      }),
+    ];
+    expect(
+      hasError(
+        validator.validate({ graph, inputs: [listInput], roles: [] }),
+        'stages.a.slots.topic',
+      ),
+    ).toBe(false);
+  });
+
+  it('errors when a context binding binds {from:"prevItem"} (context is always required)', () => {
+    const validator = makeValidator();
+    const graph = [
+      stage({
+        key: 'a',
+        iterate: { over: { from: 'input', inputKey: 'list' }, itemAlias: 'x', itemRetryLimit: 1 },
+        context: { note: { from: 'prevItem' } },
+      }),
+    ];
+    expect(
+      hasError(
+        validator.validate({ graph, inputs: [listInput], roles: [] }),
+        'stages.a.context.note',
+      ),
+    ).toBe(true);
+  });
+
+  it('errors when alignWith:"item" is used on a non-iterating consumer', () => {
+    const validator = makeValidator();
+    const graph = [
+      stage({
+        key: 'p',
+        iterate: { over: { from: 'input', inputKey: 'list' }, itemAlias: 'x', itemRetryLimit: 1 },
+      }),
+      stage({ key: 'a', context: { prevOut: { from: 'prev', alignWith: 'item' } } }),
+    ];
+    expect(
+      hasError(
+        validator.validate({ graph, inputs: [listInput], roles: [] }),
+        'stages.a.context.prevOut',
+      ),
+    ).toBe(true);
+  });
+
+  it('errors when alignWith:"item" is used but the previous stage does not iterate', () => {
+    const validator = makeValidator();
+    const graph = [
+      stage({ key: 'p' }),
+      stage({
+        key: 'a',
+        iterate: { over: { from: 'input', inputKey: 'list' }, itemAlias: 'x', itemRetryLimit: 1 },
+        context: { prevOut: { from: 'prev', alignWith: 'item' } },
+      }),
+    ];
+    expect(
+      hasError(
+        validator.validate({ graph, inputs: [listInput], roles: [] }),
+        'stages.a.context.prevOut',
+      ),
+    ).toBe(true);
+  });
+
+  it('errors when two aligned iterating stages have mismatched iterate.over Refs', () => {
+    const validator = makeValidator();
+    const graph = [
+      stage({
+        key: 'p',
+        iterate: { over: { from: 'input', inputKey: 'list' }, itemAlias: 'x', itemRetryLimit: 1 },
+      }),
+      stage({
+        key: 'a',
+        iterate: {
+          over: { from: 'input', inputKey: 'otherList' },
+          itemAlias: 'y',
+          itemRetryLimit: 1,
+        },
+        context: { prevOut: { from: 'prev', alignWith: 'item' } },
+      }),
+    ];
+    expect(
+      hasError(
+        validator.validate({ graph, inputs: [listInput, otherListInput], roles: [] }),
+        'stages.a.iterate.over',
+      ),
+    ).toBe(true);
+  });
+
+  it('passes when two aligned iterating stages share the same iterate.over Ref', () => {
+    const validator = makeValidator();
+    const graph = [
+      stage({
+        key: 'p',
+        iterate: { over: { from: 'input', inputKey: 'list' }, itemAlias: 'x', itemRetryLimit: 1 },
+      }),
+      stage({
+        key: 'a',
+        iterate: { over: { from: 'input', inputKey: 'list' }, itemAlias: 'y', itemRetryLimit: 1 },
+        context: { prevOut: { from: 'prev', alignWith: 'item' } },
+      }),
+    ];
+    const issues = validator.validate({ graph, inputs: [listInput], roles: [] });
+    expect(issues.filter((i) => i.severity === 'error')).toEqual([]);
+  });
+
+  it('errors when {from:"prev"} (no alignWith) targets an iterating stage', () => {
+    const validator = makeValidator();
+    const graph = [
+      stage({
+        key: 'p',
+        iterate: { over: { from: 'input', inputKey: 'list' }, itemAlias: 'x', itemRetryLimit: 1 },
+      }),
+      stage({ key: 'a', context: { x: { from: 'prev' } } }),
+    ];
+    expect(
+      hasError(validator.validate({ graph, inputs: [listInput], roles: [] }), 'stages.a.context.x'),
+    ).toBe(true);
+  });
+
+  it('errors when a cardinality:"one" slot binds a memory group written by an iterating stage', () => {
+    const validator = makeValidator({ 'llm.generate': withRequiredSlot });
+    const graph = [
+      stage({
+        key: 'p',
+        iterate: { over: { from: 'input', inputKey: 'list' }, itemAlias: 'x', itemRetryLimit: 1 },
+        writes: { snippets: '$' },
+      }),
+      stage({ key: 'a', slots: { topic: { from: 'memory', key: 'snippets' } } }),
+    ];
+    expect(
+      hasError(
+        validator.validate({ graph, inputs: [listInput], roles: [] }),
+        'stages.a.slots.topic',
+      ),
+    ).toBe(true);
+  });
+
+  it('errors when a cardinality:"many" slot binds {from:"item"}', () => {
+    const validator = makeValidator({ 'llm.generate': withManySlot });
+    const graph = [
+      stage({
+        key: 'a',
+        iterate: { over: { from: 'input', inputKey: 'list' }, itemAlias: 'x', itemRetryLimit: 1 },
+        slots: { items: { from: 'item' } },
+      }),
+    ];
+    const issues = validator.validate({ graph, inputs: [listInput], roles: [] });
+    expect(
+      issues.some(
+        (i) =>
+          i.severity === 'error' &&
+          i.path === 'stages.a.slots.items' &&
+          i.message.includes("cardinality:'many'"),
+      ),
+    ).toBe(true);
   });
 });

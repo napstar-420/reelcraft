@@ -22,5 +22,14 @@ export function stageDefLayer(stage: StageDef): ConfigLayer {
     ...(stage.budget?.qcCapUsd !== undefined && {
       qc: { capUsd: stage.budget.qcCapUsd },
     }),
+    // §14 — mirrors `retryLimit` above: an iterating stage's own
+    // `itemRetryLimit`/`maxItems` always override the engine/channel/
+    // blueprint defaults, but stay overridable by `run.overrides[stageKey]`.
+    ...(stage.iterate !== undefined && {
+      iterate: {
+        itemRetryLimit: stage.iterate.itemRetryLimit,
+        ...(stage.iterate.maxItems !== undefined && { maxItems: stage.iterate.maxItems }),
+      },
+    }),
   };
 }

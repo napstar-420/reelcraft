@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { StageDef } from '@reefcraft/shared';
 import { ConfigResolverService } from '../../src/run-config/config-resolver.service';
+import type { EngineConfig } from '../../src/config/engine-config';
 import { ulid } from '../../src/common/ulid';
 import { blueprint, blueprintVersion, channel, run } from '../../src/db/schema/index';
 import { createTestDb, type TestDb } from '../support/test-db';
@@ -34,7 +35,7 @@ describe('ConfigResolverService.effectiveStageConfig (e2e)', () => {
   beforeAll(async () => {
     testDb = await createTestDb();
     const db = testDb.db;
-    resolver = new ConfigResolverService(db);
+    resolver = new ConfigResolverService(db, { iterateMaxItems: 50 } as EngineConfig);
 
     channelId = ulid();
     await db.insert(channel).values({ id: channelId, ownerId: 'local', name: 'Test Channel' });

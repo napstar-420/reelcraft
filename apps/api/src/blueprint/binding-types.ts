@@ -99,9 +99,33 @@ export function sourceTypeOfRef(
       return { type: { kind: found.kind } };
     }
 
-    case 'item':
-    case 'prevItem':
-      return unresolved(`{from: "${ref.from}"} is not implemented until phase 7`, issuePath);
+    case 'item': {
+      const stage = ctx.graph[stageIndex];
+      if (!stage?.iterate) {
+        return unresolved('{from:"item"} on a non-iterating stage', issuePath);
+      }
+      const overType = sourceTypeOfRef(stage.iterate.over, ctx, stageIndex, issuePath);
+      if (overType.issue) return overType;
+      if (
+        overType.type.kind !== 'data' ||
+        overType.type.schema.type !== 'array' ||
+        !overType.type.schema.items
+      ) {
+        return unresolved(
+          'iterate.over does not narrow to an array schema',
+          `stages.${stage.key}.iterate.over`,
+        );
+      }
+      return { type: { kind: 'data', schema: overType.type.schema.items } };
+    }
+
+    case 'prevItem': {
+      const stage = ctx.graph[stageIndex];
+      if (!stage?.iterate) {
+        return unresolved('{from:"prevItem"} on a non-iterating stage', issuePath);
+      }
+      return { type: sourceTypeOfOutput(stage.output) };
+    }
   }
 }
 

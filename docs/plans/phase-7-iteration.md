@@ -15,7 +15,7 @@ retried, checked, QC'd (if permitted), and budgeted, with completed items never
 regenerated or recharged on resume. `{from:'item'}`, `{from:'prevItem'}`, and
 `{from:'prev', alignWith:'item'}` resolve for real, including the ffmpeg-backed
 `lastFrame`/`firstFrame` derived-frame shortcut. Retrying one item invalidates
-only its true dependents — later items of the *same* stage only when that stage
+only its true dependents — later items of the _same_ stage only when that stage
 itself reads `prevItem`, and aligned downstream items pointwise, never the whole
 downstream stage. Item-mode approval (`approval.mode: 'item'`) gates each clip
 before the next is generated from its last frame.
@@ -69,31 +69,31 @@ These are made here, not reopened per-chunk:
 
 Confirmed by direct reading, not assumed:
 
-| Area | State |
-|---|---|
-| `stage_item` table | Exists in full (`execution.ts:40-56`): id, stageExecutionId, itemIndex, state, attemptCount, outputArtifactId, costUsd, unique `(stageExecutionId, itemIndex)`. **No migration needed** for the base table. |
-| `stage_attempt.stageItemId` | Already nullable FK with the `coalesce(...,'')` unique index built for exactly this phase (`execution.ts:64-70`). |
-| `stageExecution.isIterating`/`itemCount` | Already present, unused. |
-| `artifact.itemIndex`/`artifact.derived` | Already present (`artifact.ts:33,40`), unused by any writer. |
-| `run_memory.writtenItem` | Already present, already correctly consulted by `MemoryService.appendTombstones` for item-scoped tombstoning. **Not** yet used to suffix the `memKey` actually written (Chunk 2 gap). |
-| `humanWait.stageItemId` | Already present, unused. |
-| `ArtifactService.finalize()` | Already accepts `itemIndex` and stales/activates per-`(runId, producerStageKey, itemIndex)` correctly. Still unconditionally repoints `stage_execution.outputArtifactId`/`attemptCount` regardless of itemIndex — wrong for an item finalize (Chunk 3). |
-| `ExecCtx.itemIndex` | Already on the interface (`capability.interface.ts:21`), never populated by `buildExecCtx`. |
-| `BindingScope.itemIndex` | Already on the interface, never populated by any caller. |
-| `ConfigLayer.iterate.{itemRetryLimit,maxItems}` | Already in the zod schema (`config-layer.ts:37-42`) and **not** yet projected from `StageDef.iterate` by `stage-def-layer.ts`, and **not** yet read by `ConfigResolverService.effectiveStageConfig`. |
-| `EngineConfig.iterateMaxItems` | Already implemented, reads `ITERATE_MAX_ITEMS` (the engine-wide default-50 floor). |
-| `StageDef.iterate` | Missing `maxItems` in the zod schema (`stage-def.ts:28-36`) despite `ConfigLayer` already anticipating it. |
-| `Ref` (`item`/`prevItem`/`prev+alignWith`) | Fully typed (`ref.ts`). |
-| `BindingResolverService` | Throws a named "not implemented until phase 7" error for `item`/`prevItem`. `resolveEnvelope` has no branch for them either. |
-| `validation-context`/`binding-types.ts` | Same explicit "not implemented until phase 7" stub for the validator's `sourceTypeOfRef`. |
-| `BlueprintValidatorService` | Already enforces `approval.mode:'item'` requires `stage.iterate` (`blueprint-validator.service.ts:379-385`) — a phase-4-era forward guard. Nothing else iterate-specific exists yet. |
-| `stage-runner.service.ts` / `stage-execute.fn.ts` | Single non-item attempt loop only. Every query that scopes to "this stage's own attempts" filters `isNull(stageAttempt.stageItemId)` — deliberately, per its own comments, so it does not need to change shape, only gain item-scoped siblings. |
-| `LedgerService` | Reservations are keyed by `stageAttemptId`, and `stageCommittedUsd` sums by `(runId, stageKey, category)` across every attempt of that stage. **Both already generalize to per-item attempts with zero code changes** — an item's attempt is just another `stage_attempt` row against the same `stageKey`. |
-| `invalidation-closure.ts` | Pure, stage-keyed only. No item dimension at all — the single biggest structural change in this phase. |
-| `video.generate` capability | Already declares an optional `startFrame` slot accepting `media.image` (`media-generate.capability.ts:89`) — exactly what `{from:'prevItem', path:'lastFrame'}` needs to bind into. No capability change required. |
-| `FakeProviderAdapter` | Has no video-fixture branch in `fetch()` (only image/audio fixtures). `params.fakeOutput` still works for video by supplying a `MediaSource` with `localPath` directly — used for the acceptance test (Chunk 7). |
+| Area                                              | State                                                                                                                                                                                                                                                                                                      |
+| ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `stage_item` table                                | Exists in full (`execution.ts:40-56`): id, stageExecutionId, itemIndex, state, attemptCount, outputArtifactId, costUsd, unique `(stageExecutionId, itemIndex)`. **No migration needed** for the base table.                                                                                                |
+| `stage_attempt.stageItemId`                       | Already nullable FK with the `coalesce(...,'')` unique index built for exactly this phase (`execution.ts:64-70`).                                                                                                                                                                                          |
+| `stageExecution.isIterating`/`itemCount`          | Already present, unused.                                                                                                                                                                                                                                                                                   |
+| `artifact.itemIndex`/`artifact.derived`           | Already present (`artifact.ts:33,40`), unused by any writer.                                                                                                                                                                                                                                               |
+| `run_memory.writtenItem`                          | Already present, already correctly consulted by `MemoryService.appendTombstones` for item-scoped tombstoning. **Not** yet used to suffix the `memKey` actually written (Chunk 2 gap).                                                                                                                      |
+| `humanWait.stageItemId`                           | Already present, unused.                                                                                                                                                                                                                                                                                   |
+| `ArtifactService.finalize()`                      | Already accepts `itemIndex` and stales/activates per-`(runId, producerStageKey, itemIndex)` correctly. Still unconditionally repoints `stage_execution.outputArtifactId`/`attemptCount` regardless of itemIndex — wrong for an item finalize (Chunk 3).                                                    |
+| `ExecCtx.itemIndex`                               | Already on the interface (`capability.interface.ts:21`), never populated by `buildExecCtx`.                                                                                                                                                                                                                |
+| `BindingScope.itemIndex`                          | Already on the interface, never populated by any caller.                                                                                                                                                                                                                                                   |
+| `ConfigLayer.iterate.{itemRetryLimit,maxItems}`   | Already in the zod schema (`config-layer.ts:37-42`) and **not** yet projected from `StageDef.iterate` by `stage-def-layer.ts`, and **not** yet read by `ConfigResolverService.effectiveStageConfig`.                                                                                                       |
+| `EngineConfig.iterateMaxItems`                    | Already implemented, reads `ITERATE_MAX_ITEMS` (the engine-wide default-50 floor).                                                                                                                                                                                                                         |
+| `StageDef.iterate`                                | Missing `maxItems` in the zod schema (`stage-def.ts:28-36`) despite `ConfigLayer` already anticipating it.                                                                                                                                                                                                 |
+| `Ref` (`item`/`prevItem`/`prev+alignWith`)        | Fully typed (`ref.ts`).                                                                                                                                                                                                                                                                                    |
+| `BindingResolverService`                          | Throws a named "not implemented until phase 7" error for `item`/`prevItem`. `resolveEnvelope` has no branch for them either.                                                                                                                                                                               |
+| `validation-context`/`binding-types.ts`           | Same explicit "not implemented until phase 7" stub for the validator's `sourceTypeOfRef`.                                                                                                                                                                                                                  |
+| `BlueprintValidatorService`                       | Already enforces `approval.mode:'item'` requires `stage.iterate` (`blueprint-validator.service.ts:379-385`) — a phase-4-era forward guard. Nothing else iterate-specific exists yet.                                                                                                                       |
+| `stage-runner.service.ts` / `stage-execute.fn.ts` | Single non-item attempt loop only. Every query that scopes to "this stage's own attempts" filters `isNull(stageAttempt.stageItemId)` — deliberately, per its own comments, so it does not need to change shape, only gain item-scoped siblings.                                                            |
+| `LedgerService`                                   | Reservations are keyed by `stageAttemptId`, and `stageCommittedUsd` sums by `(runId, stageKey, category)` across every attempt of that stage. **Both already generalize to per-item attempts with zero code changes** — an item's attempt is just another `stage_attempt` row against the same `stageKey`. |
+| `invalidation-closure.ts`                         | Pure, stage-keyed only. No item dimension at all — the single biggest structural change in this phase.                                                                                                                                                                                                     |
+| `video.generate` capability                       | Already declares an optional `startFrame` slot accepting `media.image` (`media-generate.capability.ts:89`) — exactly what `{from:'prevItem', path:'lastFrame'}` needs to bind into. No capability change required.                                                                                         |
+| `FakeProviderAdapter`                             | Has no video-fixture branch in `fetch()` (only image/audio fixtures). `params.fakeOutput` still works for video by supplying a `MediaSource` with `localPath` directly — used for the acceptance test (Chunk 7).                                                                                           |
 
-This means the phase is almost entirely *logic*, not schema: the only new
+This means the phase is almost entirely _logic_, not schema: the only new
 migration needed is one additive column (below). Everything else phase 4/6
 already forward-built.
 
@@ -160,7 +160,8 @@ surface to implement against, and so the validator can reject malformed
    const iterate = stage.iterate
      ? {
          itemRetryLimit: layer.iterate?.itemRetryLimit ?? stage.iterate.itemRetryLimit,
-         maxItems: layer.iterate?.maxItems ?? stage.iterate.maxItems ?? this.engineConfig.iterateMaxItems,
+         maxItems:
+           layer.iterate?.maxItems ?? stage.iterate.maxItems ?? this.engineConfig.iterateMaxItems,
        }
      : undefined;
    ```
@@ -180,128 +181,157 @@ surface to implement against, and so the validator can reject malformed
    plus `binding-types.ts`**:
 
    a. **`sourceTypeOfRef` (`binding-types.ts`)** — replace the `case 'item':
-      case 'prevItem':` stub:
-      ```ts
-      case 'item': {
-        const stage = ctx.graph[stageIndex];
-        if (!stage?.iterate) return unresolved('{from:"item"} on a non-iterating stage', issuePath);
-        const overType = sourceTypeOfRef(stage.iterate.over, ctx, stageIndex, issuePath);
-        if (overType.issue) return overType;
-        if (overType.type.kind !== 'data' || overType.type.schema.type !== 'array' || !overType.type.schema.items) {
-          return unresolved('iterate.over does not narrow to an array schema', `stages.${stage.key}.iterate.over`);
-        }
-        return { type: { kind: 'data', schema: overType.type.schema.items } };
-      }
-      case 'prevItem': {
-        const stage = ctx.graph[stageIndex];
-        if (!stage?.iterate) return unresolved('{from:"prevItem"} on a non-iterating stage', issuePath);
-        return { type: sourceTypeOfOutput(stage.output) };
-      }
-      ```
-      Note `sourceTypeOfOutput` must be exported (it's currently a private
-      helper in `binding-types.ts` — no change needed, it's in the same file).
+case 'prevItem':` stub:
+
+   ```ts
+   case 'item': {
+     const stage = ctx.graph[stageIndex];
+     if (!stage?.iterate) return unresolved('{from:"item"} on a non-iterating stage', issuePath);
+     const overType = sourceTypeOfRef(stage.iterate.over, ctx, stageIndex, issuePath);
+     if (overType.issue) return overType;
+     if (overType.type.kind !== 'data' || overType.type.schema.type !== 'array' || !overType.type.schema.items) {
+       return unresolved('iterate.over does not narrow to an array schema', `stages.${stage.key}.iterate.over`);
+     }
+     return { type: { kind: 'data', schema: overType.type.schema.items } };
+   }
+   case 'prevItem': {
+     const stage = ctx.graph[stageIndex];
+     if (!stage?.iterate) return unresolved('{from:"prevItem"} on a non-iterating stage', issuePath);
+     return { type: sourceTypeOfOutput(stage.output) };
+   }
+   ```
+
+   Note `sourceTypeOfOutput` must be exported (it's currently a private
+   helper in `binding-types.ts` — no change needed, it's in the same file).
 
    b. **`iterate.over` array-narrowing check** — new `checkIterate(stage, ctx,
-      stageIndex, issues)` method, called from `validateStage`:
-      ```ts
-      if (!stage.iterate) return;
-      const overResult = resolveBoundType(stage.iterate.over, ctx, stageIndex, `${base}.iterate.over`);
-      if (!overResult.issue &&
-          (overResult.type.kind !== 'data' || overResult.type.schema.type !== 'array')) {
-        issues.push({ path: `${base}.iterate.over`, message: 'iterate.over does not narrow to an array schema', severity: 'error' });
-      }
-      ```
+stageIndex, issues)` method, called from `validateStage`:
+
+   ```ts
+   if (!stage.iterate) return;
+   const overResult = resolveBoundType(stage.iterate.over, ctx, stageIndex, `${base}.iterate.over`);
+   if (
+     !overResult.issue &&
+     (overResult.type.kind !== 'data' || overResult.type.schema.type !== 'array')
+   ) {
+     issues.push({
+       path: `${base}.iterate.over`,
+       message: 'iterate.over does not narrow to an array schema',
+       severity: 'error',
+     });
+   }
+   ```
 
    c. **`prevItem` required rule (§14.4, strict reading — Resolved Decision 2)**
-      — for every slot/context binding and every check `refs` entry with
-      `ref.from === 'prevItem'`: error unconditionally if the SLOT is
-      `required: true` (context/check refs are always effectively required,
-      so `prevItem` there is always an error). There is no config-level
-      escape hatch — `stage.config` is never consulted by this rule. A
-      capability that needs to tolerate item 0's `undefined` must declare the
-      slot `required: false` and supply its own default, exactly as
-      `video.generate`'s `startFrame` already does. Concretely:
-      ```ts
-      // slot required:true bound to {from:'prevItem'} -> always an error
-      // context/check ref bound to {from:'prevItem'} -> always an error
-      // slot required:false bound to {from:'prevItem'} -> fine, no rule fires
-      ```
+   — for every slot/context binding and every check `refs` entry with
+   `ref.from === 'prevItem'`: error unconditionally if the SLOT is
+   `required: true` (context/check refs are always effectively required,
+   so `prevItem` there is always an error). There is no config-level
+   escape hatch — `stage.config` is never consulted by this rule. A
+   capability that needs to tolerate item 0's `undefined` must declare the
+   slot `required: false` and supply its own default, exactly as
+   `video.generate`'s `startFrame` already does. Concretely:
+
+   ```ts
+   // slot required:true bound to {from:'prevItem'} -> always an error
+   // context/check ref bound to {from:'prevItem'} -> always an error
+   // slot required:false bound to {from:'prevItem'} -> fine, no rule fires
+   ```
 
    d. **`alignWith:'item'` validity + canonicalization equality (§14.3)** —
-      new `checkAlignWith(stage, ctx, stageIndex, issues)`:
-      - Any ref with `alignWith: 'item'` (only `{from:'prev'}` carries this
-        field) requires `stage.iterate` to be declared AND the previous stage
-        to declare `iterate` too — error otherwise (both directions).
-      - When `stage.iterate` is declared and the previous stage also iterates,
-        canonicalize both `iterate.over` Refs per the §14.3 table and require
-        equality:
-        ```ts
-        type Canonical = { producerKey: string; path: string };
-        function canonicalize(ref: Ref, ctx: ValidationContext, stageIndex: number): Canonical | { error: string } {
-          switch (ref.from) {
-            case 'prev': {
-              const prevStage = ctx.graph[stageIndex - 1];
-              if (!prevStage) return { error: 'no preceding stage' };
-              return { producerKey: prevStage.key, path: ref.path ?? '$' };
-            }
-            case 'memory': {
-              const writer = ctx.memoryWriters.get(ref.key)?.[0];
-              if (!writer) return { error: `memory key "${ref.key}" has no writer` };
-              return { producerKey: writer.stageKey, path: writer.path + (ref.path ?? '') };
-            }
-            case 'input':
-              return { producerKey: `$input:${ref.inputKey}`, path: ref.path ?? '$' };
-            default:
-              return { error: `${ref.from} is not permitted as an iterate.over for an aligned pair` };
-          }
-        }
-        ```
-        Compare `canonicalize(stage.iterate.over, ...)` against
-        `canonicalize(prevStage.iterate.over, ...)` for every stage whose OWN
-        `iterate.over` uses `alignWith`-relevant plumbing — actually the
-        canonicalization applies to the two stages' `iterate.over` Refs
-        directly (not to the individual `alignWith` binding), per the spec
-        table. Emit an error at `${base}.iterate.over` when they differ.
-      - `{from:'const'}` as `iterate.over` on a stage that also has a
-        downstream `alignWith:'item'` consumer: flag as an error at the
-        *consumer's* path (the const-sourced stage itself isn't wrong to
-        iterate over a const array; it's just never a legal alignment target).
+   new `checkAlignWith(stage, ctx, stageIndex, issues)`:
+   - Any ref with `alignWith: 'item'` (only `{from:'prev'}` carries this
+     field) requires `stage.iterate` to be declared AND the previous stage
+     to declare `iterate` too — error otherwise (both directions).
+   - When `stage.iterate` is declared and the previous stage also iterates,
+     canonicalize both `iterate.over` Refs per the §14.3 table and require
+     equality:
+     ```ts
+     type Canonical = { producerKey: string; path: string };
+     function canonicalize(
+       ref: Ref,
+       ctx: ValidationContext,
+       stageIndex: number,
+     ): Canonical | { error: string } {
+       switch (ref.from) {
+         case 'prev': {
+           const prevStage = ctx.graph[stageIndex - 1];
+           if (!prevStage) return { error: 'no preceding stage' };
+           return { producerKey: prevStage.key, path: ref.path ?? '$' };
+         }
+         case 'memory': {
+           const writer = ctx.memoryWriters.get(ref.key)?.[0];
+           if (!writer) return { error: `memory key "${ref.key}" has no writer` };
+           return { producerKey: writer.stageKey, path: writer.path + (ref.path ?? '') };
+         }
+         case 'input':
+           return { producerKey: `$input:${ref.inputKey}`, path: ref.path ?? '$' };
+         default:
+           return { error: `${ref.from} is not permitted as an iterate.over for an aligned pair` };
+       }
+     }
+     ```
+     Compare `canonicalize(stage.iterate.over, ...)` against
+     `canonicalize(prevStage.iterate.over, ...)` for every stage whose OWN
+     `iterate.over` uses `alignWith`-relevant plumbing — actually the
+     canonicalization applies to the two stages' `iterate.over` Refs
+     directly (not to the individual `alignWith` binding), per the spec
+     table. Emit an error at `${base}.iterate.over` when they differ.
+   - `{from:'const'}` as `iterate.over` on a stage that also has a
+     downstream `alignWith:'item'` consumer: flag as an error at the
+     _consumer's_ path (the const-sourced stage itself isn't wrong to
+     iterate over a const array; it's just never a legal alignment target).
 
    e. **`{from:'prev'}` (no `alignWith`) targeting an iterating previous
-      stage** — new check alongside the existing `checkFirstStagePrev`:
-      ```ts
-      if (ref.from === 'prev' && !ref.alignWith) {
-        const prevStage = stageIndex > 0 ? ctx.graph[stageIndex - 1] : undefined;
-        if (prevStage?.iterate) {
-          issues.push({ path, message: `{from:'prev'} cannot bind an iterating stage's output — use {alignWith:'item'} (if this stage also iterates) or Run Memory`, severity: 'error' });
-        }
-      }
-      ```
+   stage** — new check alongside the existing `checkFirstStagePrev`:
+
+   ```ts
+   if (ref.from === 'prev' && !ref.alignWith) {
+     const prevStage = stageIndex > 0 ? ctx.graph[stageIndex - 1] : undefined;
+     if (prevStage?.iterate) {
+       issues.push({
+         path,
+         message: `{from:'prev'} cannot bind an iterating stage's output — use {alignWith:'item'} (if this stage also iterates) or Run Memory`,
+         severity: 'error',
+       });
+     }
+   }
+   ```
 
    f. **`cardinality` vs. iterating producer (§16.2)** — extend the existing
-      slot-compatibility loop in `validateStage`. Alongside the existing
-      `isCompatible` call, add:
-      ```ts
-      const producerArity = arityOf(ref, ctx, stageIndex); // 'scalar' | 'many' | undefined (unresolved)
-      if (producerArity === 'many' && slotDef.cardinality === 'one') {
-        issues.push({ path, message: `cardinality:'one' slot bound to an iterating producer`, severity: 'error' });
-      }
-      if (producerArity === 'scalar' && slotDef.cardinality === 'many') {
-        issues.push({ path, message: `cardinality:'many' slot bound to a scalar source`, severity: 'error' });
-      }
-      ```
-      `arityOf`: `'many'` for `{from:'memory', key}` where `key` (bare, no
-      `#i` suffix) is written by an iterating stage; `'scalar'` for
-      `{from:'memory', key: '...#N'}`, `{from:'item'}`, `{from:'prevItem'}`,
-      `{from:'prev', alignWith:'item'}`, and every other existing ref kind.
-      Scoped to memory/iterate-derived arity only, per Locked Decision 2 —
-      pre-existing many-cardinality *inputs* are out of scope for this rule.
-      When `stage.iterate.over` itself resolves to a `many`-cardinality media
-      source (out of scope for this phase — Locked Decision 2), emit a
-      distinct message — `iterate.over a many-cardinality media source is not
-      yet supported` — rather than letting the generic array-narrowing/
-      cardinality error fire, so this reads as a deliberate phase boundary and
-      not an authoring mistake (Resolved Decision 5).
+   slot-compatibility loop in `validateStage`. Alongside the existing
+   `isCompatible` call, add:
+
+   ```ts
+   const producerArity = arityOf(ref, ctx, stageIndex); // 'scalar' | 'many' | undefined (unresolved)
+   if (producerArity === 'many' && slotDef.cardinality === 'one') {
+     issues.push({
+       path,
+       message: `cardinality:'one' slot bound to an iterating producer`,
+       severity: 'error',
+     });
+   }
+   if (producerArity === 'scalar' && slotDef.cardinality === 'many') {
+     issues.push({
+       path,
+       message: `cardinality:'many' slot bound to a scalar source`,
+       severity: 'error',
+     });
+   }
+   ```
+
+   `arityOf`: `'many'` for `{from:'memory', key}` where `key` (bare, no
+   `#i` suffix) is written by an iterating stage; `'scalar'` for
+   `{from:'memory', key: '...#N'}`, `{from:'item'}`, `{from:'prevItem'}`,
+   `{from:'prev', alignWith:'item'}`, and every other existing ref kind.
+   Scoped to memory/iterate-derived arity only, per Locked Decision 2 —
+   pre-existing many-cardinality _inputs_ are out of scope for this rule.
+   When `stage.iterate.over` itself resolves to a `many`-cardinality media
+   source (out of scope for this phase — Locked Decision 2), emit a
+   distinct message — `iterate.over a many-cardinality media source is not
+yet supported` — rather than letting the generic array-narrowing/
+   cardinality error fire, so this reads as a deliberate phase boundary and
+   not an authoring mistake (Resolved Decision 5).
 
 ### Primary files
 
@@ -362,7 +392,7 @@ per-index memory versions to exist at all).
 3. **`apps/api/src/artifact/binding-resolver.service.ts` — `fetchMemoryRow` /
    the `case 'memory':` branch in `resolve()`**: change resolution order to:
    - Try an exact `memKey` match first (covers plain non-iterating writes
-     *and* an explicit `key#i` read — no schema change needed, `ref.key` is
+     _and_ an explicit `key#i` read — no schema change needed, `ref.key` is
      already a free-form string).
    - If no exact match, try `listGroupCurrent(..., ref.key)`. If that returns
      rows, build the ordered array: for `data`/`text` kinds, `row.data`
@@ -380,7 +410,7 @@ per-index memory versions to exist at all).
    - If truly nothing matches either form, keep today's error (message
      already anticipates the `#0` suffix form).
 4. **`resolveEnvelope`** — the group-read case wraps as `{kind:'literal',
-   data: <array>}` for a `data`-sourced group (matches how a `const` array
+data: <array>}` for a `data`-sourced group (matches how a `const` array
    would be treated by a script check); media-sourced groups keep their real
    kind by reusing the same manifest array as `resolve()`'s value with
    `kind: 'literal'` at the envelope level too (a script check inspecting an
@@ -462,14 +492,14 @@ for other ffmpeg-adjacent work).
    ```
 5. **New `fetchItemArtifact(runId, stageKey, itemIndex)`** — same shape as
    `fetchPrevArtifact` but keyed on `producerStageKey = stageKey` (the
-   *current* stage, not the previous one) and `itemIndex = itemIndex`.
+   _current_ stage, not the previous one) and `itemIndex = itemIndex`.
 6. **`resolveAll()`** — before resolving slots/context, when `stage.iterate`
    is declared, resolve `stage.iterate.over` once via the existing `resolve()`
    path, assert `Array.isArray(result.value)` (defensive — the validator
    already enforces this at save time), and set `ctx.iterateOverValue =
-   result.value` for the rest of the call. Also assert `N === (stage.iterate
-   effective).maxItems` bound isn't exceeded here — no, that check belongs to
-   the orchestrator (Chunk 4), which needs the count *before* creating
+result.value` for the rest of the call. Also assert `N === (stage.iterate
+effective).maxItems` bound isn't exceeded here — no, that check belongs to
+   the orchestrator (Chunk 4), which needs the count _before_ creating
    `stage_item` rows, not buried inside per-attempt binding resolution.
 7. **New `DerivedFrameService`** (`apps/api/src/artifact/derived-frame.service.ts`):
    ```ts
@@ -547,7 +577,7 @@ for other ffmpeg-adjacent work).
 - Binding-resolver unit tests: `{from:'item'}` indexes correctly, including
   `.path` narrowing; `{from:'prevItem'}` returns `undefined` for item 0 and a
   real value for item ≥1; `{from:'prev', alignWith:'item'}` resolves the
-  aligned previous stage's item *i* artifact, throws when no such item
+  aligned previous stage's item _i_ artifact, throws when no such item
   artifact exists (misaligned counts — should never happen post-Chunk-4's
   runtime assertion, but must fail loudly, not silently, if it does).
 - A real-ffmpeg acceptance path is deferred to Chunk 7's dedicated script
@@ -605,7 +635,7 @@ Two designs were considered:
    `countSemanticAttemptsUsed`, `countInfraAttemptsUsed`, `loadCritiqueLog`)
    gains an item-scoped counterpart (or an optional `stageItemId` parameter
    that switches the predicate from `isNull(...)` to `eq(...,
-   stageItemId)`). Prefer parameterizing the existing methods over
+stageItemId)`). Prefer parameterizing the existing methods over
    duplicating them — the SQL shape is identical modulo that one predicate.
    `idempotencyKey(ctx, itemIndex)` already accepts `itemIndex`; start
    actually passing it from the item-body caller.
@@ -619,19 +649,22 @@ Two designs were considered:
 3. **`ArtifactService.finalize()`** — new optional `stageItemId` param.
    When present:
    ```ts
-   await tx.update(stageItem).set({
-     state: 'passed',
-     outputArtifactId: params.newArtifactId,
-     attemptCount: sql`${stageItem.attemptCount} + 1`,
-     costUsd: params.costUsd, // new param, threaded from fetchAndFinalize's result.costUsd
-   }).where(eq(stageItem.id, params.stageItemId));
+   await tx
+     .update(stageItem)
+     .set({
+       state: 'passed',
+       outputArtifactId: params.newArtifactId,
+       attemptCount: sql`${stageItem.attemptCount} + 1`,
+       costUsd: params.costUsd, // new param, threaded from fetchAndFinalize's result.costUsd
+     })
+     .where(eq(stageItem.id, params.stageItemId));
    ```
    and **skip** the `stageExecution.outputArtifactId`/`attemptCount` update
    entirely for this path (Locked Decision 6 handles the stage-level pointer
    separately, once, after the whole loop finishes).
 4. **New `apps/api/src/orchestration/functions/stage-execute-item.fn.ts`** —
    `buildStageExecuteItemFunction(client, runner)`, `createFunction({id:
-   'stage.execute.item', retries: 3}, ...)` with **no event trigger** (invoked
+'stage.execute.item', retries: 3}, ...)` with **no event trigger** (invoked
    only via `step.invoke`, same registration pattern as any other
    `createFunction` — Inngest allows a function to be invocable without a
    standalone subscribed event as long as it's registered and referenced by
@@ -681,11 +714,11 @@ Two designs were considered:
      `{ itemCount: N }` only — never the array contents, keeping the step
      return small per §13.2 Rule 1.
    - `ensureStageItems(stageExecutionId, itemCount)` — `INSERT ... ON CONFLICT
-     DO NOTHING` for `itemIndex` 0..N-1, all `state: 'pending'`; also sets
+DO NOTHING` for `itemIndex` 0..N-1, all `state: 'pending'`; also sets
      `stageExecution.isIterating = true, itemCount` once.
    - `itemState(stageExecutionId, itemIndex)` — trivial single-row read.
    - `finishIteratingStage(stageExecutionId)` — sets `stage_execution.state =
-     'passed'`, `endedAt`, and `outputArtifactId` = the last item's
+'passed'`, `endedAt`, and `outputArtifactId` = the last item's
      `outputArtifactId` (Locked Decision 6).
 7. **`orchestration/functions/index.ts`** — register `stageExecuteItemFn`
    alongside `stageExecuteFn`, and pass it into `buildStageExecuteFunction`'s
@@ -737,14 +770,14 @@ breaking any of its four existing stage-level test cases.
 The current model is one node per `stageKey`. It needs to become one node per
 `(stageKey, itemIndex | null)`, where `null` means "this stage's own
 non-item-scoped read/write" (covers non-iterating stages unchanged, and an
-iterating stage's *own* `iterate.over` resolution, which is scoped to the
+iterating stage's _own_ `iterate.over` resolution, which is scoped to the
 whole stage, not one item).
 
 ```ts
 export interface ActiveExecutionRead {
   stageKey: string;
   stageExecutionId: string;
-  itemIndex?: number;              // NEW — undefined for non-iterating stages
+  itemIndex?: number; // NEW — undefined for non-iterating stages
   artifactId?: string;
   /** NEW — true iff this stage's declared bindings (any slot/context/check
    * ref) include a {from:'prevItem'} anywhere. Computed by the caller from
@@ -764,16 +797,16 @@ Algorithm changes in `computeInvalidationClosure`:
    A whole-stage retry seed continues to mean "every item of that stage is
    invalid" (Locked by spec: "Retrying a whole iterating stage invalidates
    all its items").
-2. **Same-stage propagation**: when item *i* of stage S is invalid and
-   `bindsPrevItem` is true for S, items *i+1..N-1* of S are added to the
+2. **Same-stage propagation**: when item _i_ of stage S is invalid and
+   `bindsPrevItem` is true for S, items _i+1..N-1_ of S are added to the
    invalid set (a simple index-range add, computed directly — no graph walk
    needed since it's the same stage). When `bindsPrevItem` is false, only item
-   *i* is added — nothing else of S.
+   _i_ is added — nothing else of S.
 3. **Cross-stage propagation, `{from:'prev'}` with `alignWith:'item'`**: for a
    downstream stage F that reads `{from:'prev', alignWith:'item'}` from S
    (recorded in F's `resolved_inputs` — the `RefProvenance.ref` there already
-   carries `alignWith:'item'`), only **F's own item *i*** goes invalid when
-   S's item *i* is invalid — never all of F. This requires each `slots.*`/
+   carries `alignWith:'item'`), only **F's own item _i_** goes invalid when
+   S's item _i_ is invalid — never all of F. This requires each `slots.*`/
    `context.*` provenance entry the caller loads to retain enough of the
    original `Ref` to detect `alignWith` (already true — `RefProvenance.ref`
    is the full `Ref`).
@@ -783,7 +816,7 @@ Algorithm changes in `computeInvalidationClosure`:
    recorded reading was written by an invalid `(stageKey, itemIndex)` pair —
    this is the natural generalization of the existing single-`memoryVersion`
    check to the new `memoryVersions` array field from Chunk 2. A stage reading
-   an *explicit* `key#i` single index is invalidated only if that exact
+   an _explicit_ `key#i` single index is invalidated only if that exact
    `(writer stageKey, itemIndex)` pair is invalid.
 5. **The existing four stage-level tests must still pass unmodified** —
    achieved by treating "no `itemIndex`" uniformly as its own singleton
@@ -803,7 +836,9 @@ for (const stageKey of graphOrder) {
     if (invalid.has(key)) continue;
     const dependsOnInvalid = Object.values(node.provenance).some((read) => {
       if (read.ref.from === 'prev' && read.ref.alignWith === 'item') {
-        return invalid.has(keyOf({ stageKey: prevStageKeyOf(stageKey), itemIndex: node.itemIndex }));
+        return invalid.has(
+          keyOf({ stageKey: prevStageKeyOf(stageKey), itemIndex: node.itemIndex }),
+        );
       }
       if (read.artifactId && artifactOwnerIsInvalid(read.artifactId)) return true;
       if (read.memoryVersions) {
@@ -818,7 +853,8 @@ for (const stageKey of graphOrder) {
     if (dependsOnInvalid) {
       invalid.add(key);
       if (node.itemIndex !== undefined && node.bindsPrevItem) {
-        for (const later of nodesForStage) if (later.itemIndex! > node.itemIndex) invalid.add(keyOf(later));
+        for (const later of nodesForStage)
+          if (later.itemIndex! > node.itemIndex) invalid.add(keyOf(later));
       } else if (node.itemIndex === undefined && isIteratingStage(stageKey)) {
         for (const later of nodesForStage) invalid.add(keyOf(later)); // whole-stage retry/dependency invalidates every item
       }
@@ -829,6 +865,7 @@ for (const stageKey of graphOrder) {
 
 `InvalidationService.preview`/`apply` (the DB-facing caller) must be updated
 to:
+
 - load `stage_attempt` rows **per item** (join `stage_item`, not just
   `stage_execution`) when a stage iterates, building one `ActiveExecutionRead`
   per item using that item's own active attempt's `resolved_inputs`;
@@ -860,12 +897,12 @@ to:
   only `memory:script`).
 - Item-independence case: retrying item 2 of a stage that does **not** bind
   `prevItem` leaves items 3–5 of the same stage untouched.
-- `alignWith:'item'` pointwise case: item *i* of an aligned downstream stage
+- `alignWith:'item'` pointwise case: item _i_ of an aligned downstream stage
   goes invalid; other items of that downstream stage do not.
 - `InvalidationService` integration test (extend
   `apps/api/test/e2e/phase4-actions.e2e.test.ts`'s style or add a new e2e
   file): full `apply()` over a real DB produces item-scoped `stage_item.state
-  = 'stale'` and correctly indexed memory tombstones.
+= 'stale'` and correctly indexed memory tombstones.
 
 ---
 
@@ -892,7 +929,7 @@ approve/reject act on that one item.
    - `pendingAttempt` gains an item-scoped variant filtering `eq(stageAttempt.stageItemId, stageItemId)` instead of `isNull(...)`.
    - On approve: `ArtifactService.finalize(..., stageItemId)` (Chunk 4's new
      param) instead of the stage-level finalize; update `stage_item.state =
-     'passed'` (via finalize's new branch) instead of `stage_execution`;
+'passed'` (via finalize's new branch) instead of `stage_execution`;
      `stage_execution` itself is left `'running'` — it only flips to
      `'passed'` once the outer loop's `finishIteratingStage` runs after
      the resumed `run.orchestrate` re-invokes `stage.execute`, whose outer
@@ -910,12 +947,12 @@ approve/reject act on that one item.
      rejecting an item (new item-scoped variants mirroring Chunk 4's
      `StageRunnerService` changes).
    - The invalidation seed becomes `{ items: [{ stageKey: targetStageKey,
-     itemIndex }] }` (Chunk 5's new seed shape) instead of `{ stageKeys:
-     [targetStageKey] }`.
+itemIndex }] }` (Chunk 5's new seed shape) instead of `{ stageKeys:
+[targetStageKey] }`.
    - `exhausted` check uses `effective.iterate!.itemRetryLimit`, not
      `effective.retryLimit`.
 4. **API surface** (`run.controller.ts` / DTOs) — `POST
-   /runs/:id/stages/:stageKey/approve` and `/reject` gain an optional
+/runs/:id/stages/:stageKey/approve` and `/reject` gain an optional
    `itemIndex` in the request body, defaulting to "the run's current pending
    item" when omitted (resolved server-side from the open `stage_item` in
    `'awaiting_approval'` for that execution — there is at most one, so
@@ -937,7 +974,7 @@ approve/reject act on that one item.
   `stageItemId`) without touching item 1 (which hasn't run yet, so nothing to
   invalidate there); a routed rejection (`onReject.retryStageKey` pointing at
   an earlier planning stage) correctly seeds invalidation with `{items:
-  [...]}` and leaves sibling items' artifacts alone per Chunk 5's rules.
+[...]}` and leaves sibling items' artifacts alone per Chunk 5's rules.
 - Confirms the §25.1 worked-example claim directly: "Stage-mode approval
   would surface it after five clips were paid for" — a test asserts that with
   `mode: 'item'`, at most one item's cost is ever at risk before a pause.
@@ -961,13 +998,13 @@ Two test artifacts, split the same way Phase 6 splits `phase6-render.ts`
 1. **`apps/api/test/e2e/phase7-broll.e2e.test.ts`** (CI-safe, Postgres, no
    real ffmpeg): builds the exact §25.1 shape —
    `script → vo → timing → shots(data,array) → broll(video.generate, iterate
-   over memory:shots, startFrame from prevItem.lastFrame) → music →
-   timeline(memory:broll manifests) → draft → final`, using `fake` models
+over memory:shots, startFrame from prevItem.lastFrame) → music →
+timeline(memory:broll manifests) → draft → final`, using `fake` models
    throughout. Because a **real** derived-frame extraction needs a real video
    file, this suite injects a test double for `DerivedFrameService` (or
    configures `broll`'s `video.generate` fake output such that
    `prevItem.lastFrame` extraction is exercised against a tiny real MP4 — see
-   below) — the point of this suite is the *orchestration and invalidation*
+   below) — the point of this suite is the _orchestration and invalidation_
    correctness, not ffmpeg itself.
    - `shots` memory value is authored as an array of objects, one of which
      carries `{ ..., forceFail: true }` for index 3. `broll`'s checks include
@@ -983,7 +1020,7 @@ Two test artifacts, split the same way Phase 6 splits `phase6-render.ts`
      asserts the loop restarts at item 3 without regenerating or recharging
      items 0–2 (assert `stage_attempt` row counts for items 0–2 are unchanged
      before/after resume, and ledger totals for those items are unchanged).
-   - Retries `broll` item 2 (a *different* run, or after the above completes)
+   - Retries `broll` item 2 (a _different_ run, or after the above completes)
      and asserts items 3–5 go stale (since `broll` binds `prevItem`),
      `timeline`/`draft`/`final` go stale (read `memory:broll`), and `music`
      does **not** (reads only `memory:script`) — directly encoding §25.4's
@@ -992,7 +1029,7 @@ Two test artifacts, split the same way Phase 6 splits `phase6-render.ts`
 2. **`apps/api/test/acceptance/phase7-broll-frames.ts`** (local-only, ffmpeg
    required, excluded from CI, registered as
    `"acceptance:phase7-broll": "tsx test/acceptance/phase7-broll-frames.ts"`
-   in `apps/api/package.json`, following `phase6-render`'s convention): 
+   in `apps/api/package.json`, following `phase6-render`'s convention):
    - generates a short real MP4 fixture via `ffmpeg -f lavfi color=...` (same
      idiom as `phase6-render.ts`);
    - configures a 3-item `video.generate` iterate stage whose fake provider
@@ -1064,15 +1101,15 @@ plumbing.
 
 ## Main risks and resolutions
 
-| Risk | Resolution |
-|---|---|
-| Inngest step-count blowup for large `maxItems` | Per-item `step.invoke` isolates step history per item (Chunk 4's Decision) |
-| Memory group read resurrects a stale index after partial re-run | Reuses the existing tombstone-then-append ordering (§6.3/§15.5), already correctly item-aware in `appendTombstones` |
-| Item-level invalidation over- or under-fires | Closure keyed by `(stageKey, itemIndex)` with `bindsPrevItem` computed from the StageDef, not inferred from provenance (item 0 never resolves a value for `prevItem`, so provenance-only inference would silently under-invalidate) |
-| Derived-frame extraction races two readers | Row lock on the source artifact during extract-and-cache (Chunk 3) |
-| `{from:'prev'}` silently resolves to nothing for an iterating producer | New save-time validator error (Locked Decision 4) instead of a run-time "no active artifact" throw |
-| Item-mode approval reuses stage-mode's finalize path incorrectly | `ArtifactService.finalize()` branches explicitly on `stageItemId` presence; item path never touches `stage_execution.outputArtifactId` |
-| `iterate.maxItems` unbounded spend | Enforced before any `stage_item` row exists or any budget is reserved (`resolveIterateCount`, Chunk 4) |
+| Risk                                                                   | Resolution                                                                                                                                                                                                                          |
+| ---------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Inngest step-count blowup for large `maxItems`                         | Per-item `step.invoke` isolates step history per item (Chunk 4's Decision)                                                                                                                                                          |
+| Memory group read resurrects a stale index after partial re-run        | Reuses the existing tombstone-then-append ordering (§6.3/§15.5), already correctly item-aware in `appendTombstones`                                                                                                                 |
+| Item-level invalidation over- or under-fires                           | Closure keyed by `(stageKey, itemIndex)` with `bindsPrevItem` computed from the StageDef, not inferred from provenance (item 0 never resolves a value for `prevItem`, so provenance-only inference would silently under-invalidate) |
+| Derived-frame extraction races two readers                             | Row lock on the source artifact during extract-and-cache (Chunk 3)                                                                                                                                                                  |
+| `{from:'prev'}` silently resolves to nothing for an iterating producer | New save-time validator error (Locked Decision 4) instead of a run-time "no active artifact" throw                                                                                                                                  |
+| Item-mode approval reuses stage-mode's finalize path incorrectly       | `ArtifactService.finalize()` branches explicitly on `stageItemId` presence; item path never touches `stage_execution.outputArtifactId`                                                                                              |
+| `iterate.maxItems` unbounded spend                                     | Enforced before any `stage_item` row exists or any budget is reserved (`resolveIterateCount`, Chunk 4)                                                                                                                              |
 
 ## Definition of Phase 7 done
 
@@ -1126,4 +1163,4 @@ before implementation started; all six are folded into the chunks above.
    convenience default with no spec text backing the specific choice.
    **Resolved: set it**, for admin/debug views that list `stage_execution`
    rows; the sanctioned consumption paths (Run Memory, `{from:'prev',
-   alignWith:'item'}`) are unaffected either way (Chunk 4).
+alignWith:'item'}`) are unaffected either way (Chunk 4).
