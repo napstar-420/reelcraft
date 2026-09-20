@@ -693,4 +693,99 @@ describe('phase 7 chunk 7 — broll acceptance scenario (e2e)', () => {
     const [runAfter] = await testDb.db.select().from(run).where(eq(run.id, created.id));
     expect(runAfter?.cursorStageKey).toBe('broll');
   });
+
+  it('retrying the array producer (shots) cascades into every broll item and its downstream memory-group reader, not just broll-to-broll retries (§15.2 regression)', async () => {
+    const graph = [
+      scriptStage(),
+      shotsStage(shots(6)),
+      brollStage(0),
+      musicStage(),
+      timelineStage(),
+    ];
+    const created = await createRun(graph);
+    const runner = testApp.app.get(StageRunnerService);
+    const invalidation = testApp.app.get(InvalidationService);
+
+    const scriptExec = execOf(created, 'script');
+    const shotsExec = execOf(created, 'shots');
+    const brollExec = execOf(created, 'broll');
+    const musicExec = execOf(created, 'music');
+    const timelineExec = execOf(created, 'timeline');
+
+    await passStage(runner, created.id, scriptExec.id, 'script');
+    await passStage(runner, created.id, shotsExec.id, 'shots');
+
+    const { stage, effective, prevStageKey } = await runner.loadStageContext(created.id, 'broll');
+    const resolved = await runner.resolveIterateCount(
+      created.id,
+      brollExec.id,
+      stage,
+      effective,
+      prevStageKey,
+    );
+    if (!resolved.ok) throw new Error(`unexpected resolveIterateCount: ${resolved.reason}`);
+    await runner.ensureStageItems(brollExec.id, resolved.itemCount);
+    const brollOutcome = await driveIteratingLoop(
+      runner,
+      created.id,
+      brollExec.id,
+      stage,
+      effective,
+      prevStageKey,
+      resolved.itemCount,
+    );
+    expect(brollOutcome.outcome).toBe('passed');
+
+    await passStage(runner, created.id, musicExec.id, 'music');
+    await passStage(runner, created.id, timelineExec.id, 'timeline');
+
+    // --- Retry `shots` itself, via the same seed shape
+    // `RunActionService.confirmStageRetry` actually uses in production
+    // (`seed: { stageKeys: [stageKey] }`) — proving the fix through a real
+    // retry entry point's shape, not a hand-picked one.
+    const preview = await invalidation.preview({
+      runId: created.id,
+      seed: { stageKeys: ['shots'] },
+    });
+
+    // Before the fix, `broll`'s own `iterate.over` dependency on
+    // `memory:shots` was never recorded in any item's `resolved_inputs`, so
+    // this closure incorrectly stopped at `shots` alone. Every `broll` item
+    // independently reads the SAME (memoryKey:'shots', memoryVersion)
+    // exact-match pair via its own `iterate.over` resolution, so all six
+    // go invalid — not via the group-read path (that's the OTHER test's
+    // job), but via the plain exact-version-match path.
+    expect(preview.closure.affectedStageKeys).toEqual(['shots', 'broll', 'timeline']);
+    expect(preview.closure.affectedStageKeys).not.toContain('music');
+    expect(preview.closure.affectedStageKeys).not.toContain('script');
+
+    const brollAffectedIndices = preview.closure.affectedItems
+      .filter((item) => item.stageKey === 'broll')
+      .map((item) => item.itemIndex)
+      .sort((a, b) => (a ?? -1) - (b ?? -1));
+    expect(brollAffectedIndices).toEqual([0, 1, 2, 3, 4, 5]);
+
+    await testDb.db.transaction((tx) =>
+      invalidation.apply(tx, {
+        runId: created.id,
+        closure: preview.closure,
+        targetStageKey: 'shots',
+      }),
+    );
+
+    const itemsAfter = await selectItems(brollExec.id);
+    expect(itemsAfter.map((row) => row.state)).toEqual(Array(6).fill('stale'));
+
+    const [musicRow] = await testDb.db
+      .select()
+      .from(stageExecution)
+      .where(eq(stageExecution.id, musicExec.id));
+    expect(musicRow?.state).toBe('passed'); // unaffected — reads only memory:script
+
+    const [timelineRow] = await testDb.db
+      .select()
+      .from(stageExecution)
+      .where(eq(stageExecution.id, timelineExec.id));
+    expect(timelineRow?.state).toBe('stale');
+  });
 });

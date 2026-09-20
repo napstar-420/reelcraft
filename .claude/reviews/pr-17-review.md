@@ -3,7 +3,35 @@
 **Reviewed**: 2026-09-20
 **Author**: napstar-420 (Zohaib Khan)
 **Branch**: `codex/phase7-iteration` → `main`
-**Decision**: REQUEST CHANGES
+**Decision**: REQUEST CHANGES (original) → **RESOLVED**, see below
+
+## Resolution
+
+The HIGH finding is fixed. `BindingResolverService.resolveAll()` now folds
+`stage.iterate.over`'s own resolved `RefProvenance` into the returned
+`provenance` map under a reserved `'iterate.over'` key (fix designed by the
+`ecc:architect` agent after re-verifying every claim in the original finding
+against current code — `resolveIterateCount` was confirmed unable to host
+this data, since it runs once per stage before any `stage_attempt` row
+exists; `resolveAll` is the only call site whose output is actually
+persisted into `resolved_inputs`, and it already runs once per item per
+attempt). `computeInvalidationClosure` needed no changes — it already
+iterates every provenance entry regardless of key name.
+
+A new regression test,
+`apps/api/test/e2e/phase7-broll.e2e.test.ts`'s `"retrying the array producer
+(shots) cascades into every broll item and its downstream memory-group
+reader..."`, drives the exact scenario the original review found untested —
+retrying `shots` (the array producer) via the same seed shape
+`RunActionService.confirmStageRetry` uses in production
+(`{stageKeys:['shots']}`) — and was confirmed to fail without the fix
+(`affectedStageKeys` stopped at `['shots']`) and pass with it
+(`['shots','broll','timeline']`, covering all 6 `broll` items) before being
+committed.
+
+The two MEDIUM and two LOW findings were not addressed in this pass — they
+are lower-severity, and one (MEDIUM #3) is an already-documented, deliberate
+scope boundary. They remain open for a future pass if desired.
 
 ## Summary
 
@@ -21,9 +49,9 @@ None found.
 
 `resolveAll()` resolves `stage.iterate.over` via `const { value } = await this.resolve(stage.iterate.over, ctx)` — the `provenance` half of the result (which for `{from:'memory'}`/`{from:'prev'}` carries the real `memoryVersion`/`artifactId`) is discarded and never added to the `provenance` map that becomes `stage_attempt.resolved_inputs`. `resolveIterateCount` (the stage-level count resolution in `stage-runner.service.ts`) does the same. Separately, `resolve()`'s `case 'item':` returns `provenance: { ref }` with no `artifactId`/`memoryVersion` either, so even a slot/context bound to `{from:'item'}` carries no traceable link back to the array's source.
 
-*Failure scenario:* blueprint `script → shots (writes memory:shots) → broll (iterate over memory:shots) → timeline`. Retrying/regenerating `shots` produces a new artifact and a new `memory:shots` version, applied via `InvalidationService.apply()`. Because nothing in any of `broll`'s per-item `resolved_inputs` references `shots`'s artifact id or memory version, `computeInvalidationClosure`'s forward pass never marks any `broll` item invalid — `broll` and everything downstream stay `'passed'`, silently built from a superseded array. The PR's own acceptance test (`phase7-broll.e2e.test.ts`) never exercises "retry the array producer, does the iterating consumer go invalid" — it only tests retrying individual `broll` items, not `shots` itself — so CI does not currently catch this.
+_Failure scenario:_ blueprint `script → shots (writes memory:shots) → broll (iterate over memory:shots) → timeline`. Retrying/regenerating `shots` produces a new artifact and a new `memory:shots` version, applied via `InvalidationService.apply()`. Because nothing in any of `broll`'s per-item `resolved_inputs` references `shots`'s artifact id or memory version, `computeInvalidationClosure`'s forward pass never marks any `broll` item invalid — `broll` and everything downstream stay `'passed'`, silently built from a superseded array. The PR's own acceptance test (`phase7-broll.e2e.test.ts`) never exercises "retry the array producer, does the iterating consumer go invalid" — it only tests retrying individual `broll` items, not `shots` itself — so CI does not currently catch this.
 
-*Suggested direction:* have `resolveAll`/`resolveIterateCount` fold `iterate.over`'s own provenance into the returned/recorded provenance map (e.g. under a reserved key like `"iterate.over"`), and give `{from:'item'}`'s resolved provenance the underlying array-source's `memoryVersion`/`artifactId` so a per-item read of the array is traceable too.
+_Suggested direction:_ have `resolveAll`/`resolveIterateCount` fold `iterate.over`'s own provenance into the returned/recorded provenance map (e.g. under a reserved key like `"iterate.over"`), and give `{from:'item'}`'s resolved provenance the underlying array-source's `memoryVersion`/`artifactId` so a per-item read of the array is traceable too.
 
 ### MEDIUM
 
@@ -55,16 +83,16 @@ Correct in practice (a single-frame PNG has no audio) but asserted unconditional
 
 ## Validation Results
 
-| Check | Result |
-|---|---|
-| Shared package build | Pass |
-| Type check | Pass |
-| Lint | Pass (1 pre-existing unrelated warning) |
-| Format check | Pass |
-| Unit tests | Pass (248/248) |
-| E2E tests | Pass (140/140) |
-| Real-ffmpeg acceptance script | Pass |
-| CI (GitHub Actions) | Pass (both check runs green) |
+| Check                         | Result                                  |
+| ----------------------------- | --------------------------------------- |
+| Shared package build          | Pass                                    |
+| Type check                    | Pass                                    |
+| Lint                          | Pass (1 pre-existing unrelated warning) |
+| Format check                  | Pass                                    |
+| Unit tests                    | Pass (248/248)                          |
+| E2E tests                     | Pass (140/140)                          |
+| Real-ffmpeg acceptance script | Pass                                    |
+| CI (GitHub Actions)           | Pass (both check runs green)            |
 
 ## Files Reviewed
 

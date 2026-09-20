@@ -14,6 +14,44 @@ Updated as each chunk lands; not part of the shipped plan doc.
 - [x] Chunk 7 — Acceptance scenario, docs, hardening (commit 3b4e520)
 - [x] Full monorepo typecheck/lint/test green
 - [x] PR opened against `main` (#17: https://github.com/napstar-420/reelcraft/pull/17)
+- [x] Code review posted on #17 (`.claude/reviews/pr-17-review.md`) — 1 HIGH, 2 MEDIUM, 2 LOW found
+- [x] HIGH finding fixed (`iterate.over` provenance never recorded for invalidation) — see note below
+
+## Post-review fix: `iterate.over` invalidation provenance
+
+`BindingResolverService.resolveAll()` discarded the `provenance` half of
+resolving `stage.iterate.over`, so an iterating stage's dependency on
+whatever produced its iterated array was never recorded in
+`stage_attempt.resolved_inputs`. Retrying/regenerating the array's producer
+(e.g. `shots`, feeding `broll`'s `iterate: {over: {from:'memory', key:
+'shots'}}`) therefore never cascaded invalidation into the iterating stage —
+exactly the staleness bug item-level invalidation exists to prevent, and
+untested by the Chunk 7 acceptance suite (which only ever retried `broll`'s
+own items, never `shots` itself).
+
+Fix (designed by `ecc:architect`, verified against current code before
+implementing): `resolveAll()` now records `stage.iterate.over`'s resolved
+`RefProvenance` under a reserved `'iterate.over'` key in the same provenance
+map used for `slots.*`/`context.*`. `computeInvalidationClosure` needed no
+change — it iterates every provenance entry by value, not by key name, so a
+new key is transparently picked up. `resolveIterateCount` (the once-per-stage
+count resolution, run before any `stage_item`/`stage_attempt` row exists)
+was confirmed structurally unable to host this data and was correctly left
+unchanged — `resolveAll` is the only call site whose output is actually
+persisted, and it already runs once per item per attempt, which is the
+granularity the invalidation closure's per-item nodes need.
+
+New regression test in `phase7-broll.e2e.test.ts` retries `shots` via the
+same seed shape `RunActionService.confirmStageRetry` uses in production
+(`{stageKeys:['shots']}`) and asserts the closure now reaches `broll` (all 6
+items, via the exact-memory-version-match path, not the group-read path
+the existing "retry one broll item" test already covers) and `timeline`,
+while leaving `music` untouched. Confirmed the test fails without the fix
+(`affectedStageKeys` stops at `['shots']`) and passes with it, before
+committing — not just "test passes," genuinely verified it catches the bug.
+
+Full monorepo suite re-verified green after the fix: typecheck, 248 unit +
+141 e2e tests (140 + the 1 new regression test), lint, format.
 
 ## Notes / deviations from plan
 

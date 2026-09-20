@@ -313,19 +313,25 @@ export class BindingResolverService {
    * `ExecCtx` never has to unwrap a `{value, provenance}` envelope. */
   async resolveAll(stage: StageDef, ctx: BindingScope): Promise<ResolvedBindings> {
     let scope = ctx;
+    const provenance: Record<string, RefProvenance> = {};
     if (stage.iterate) {
-      const { value } = await this.resolve(stage.iterate.over, ctx);
+      const { value, provenance: iterateProvenance } = await this.resolve(stage.iterate.over, ctx);
       if (!Array.isArray(value)) {
         throw new Error(
           `BindingResolverService: stage "${stage.key}" iterate.over did not resolve to an array`,
         );
       }
       scope = { ...ctx, iterateOverValue: value };
+      // §15.2 — an iterating stage depends on whatever produced the array it
+      // iterates over, even when no slot/context/check ref independently
+      // reads it (e.g. every binding goes through {from:'item'}, which
+      // carries no provenance of its own). Without this entry, retrying the
+      // array's producer never cascades into this stage's invalidation.
+      provenance['iterate.over'] = iterateProvenance;
     }
 
     const slots: Record<string, unknown> = {};
     const context: Record<string, unknown> = {};
-    const provenance: Record<string, RefProvenance> = {};
 
     for (const [key, ref] of Object.entries(stage.slots)) {
       const resolved = await this.resolve(ref, scope);
