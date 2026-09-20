@@ -203,7 +203,7 @@ test/e2e/check-test.e2e.test.ts` (the same config `pnpm test:e2e` uses) —
   `assertTextStagesHaveMaxTokens()`. It is a pure function: for each stage,
   looks up `capabilities.get(stage.capability).modality`; if the modality is
   in `{text: 'fake-text-1', image: 'fake-image-1', video: 'fake-video-1',
-  audio: 'fake-audio-1'}` it replaces that stage's `ConfigLayer.model`
+audio: 'fake-audio-1'}` it replaces that stage's `ConfigLayer.model`
   wholesale (`params: {max_tokens: 256}` for text, `{}` otherwise); any other
   modality (`human`/`publish`/`compute`, and `media.analyze`'s `probe` path)
   is left completely untouched. Independently, any stage with a truthy
@@ -221,14 +221,14 @@ test/e2e/check-test.e2e.test.ts` (the same config `pnpm test:e2e` uses) —
   explicit instruction); `dryRun: options?.dryRun ?? false` is set on the
   inserted `run` row alongside the (possibly overridden) `resolvedConfig`.
 - `RunService.startDryRun(blueprintId, version)` resolves `(blueprintId,
-  version)` to `{channelId, blueprintVersionId}` via two lookups (`blueprint`
+version)` to `{channelId, blueprintVersionId}` via two lookups (`blueprint`
   by id, `blueprintVersion` by `(blueprintId, version)` pair — `create()`
   only takes a `blueprintVersionId`, so this pairing can't be done inside
   `create()` itself), throws `Error` with a `"...not found"` message for
   either miss, then calls `create({..., budgetCapUsd: 1}, {dryRun: true})`
   followed by `start()` verbatim. It deliberately does NOT re-check
   `runnable` itself — `create()` already throws `"BlueprintVersion <id>
-  failed validation"` for a non-runnable version once handed that version's
+failed validation"` for a non-runnable version once handed that version's
   id, so re-checking would just duplicate that message under a different
   wording.
 - Confirmed via `RunMutationService.withLockedRun` that `start()` does NOT
@@ -257,7 +257,7 @@ test/e2e/check-test.e2e.test.ts` (the same config `pnpm test:e2e` uses) —
   `StageRunnerService` directly) covers: (1) a two-stage graph — a text stage
   authored with no `model.params.max_tokens` plus an `image.generate` stage
   authored with a real-provider-shaped pin (`{provider:'openai', modelId:
-  'some-real-model'}`) — driven to completion via `startDryRun()`, asserting
+'some-real-model'}`) — driven to completion via `startDryRun()`, asserting
   the run's final `state` is `'COMPLETED'` (the exact `RunState` terminal-
   success literal, confirmed from `packages/shared/src/primitives.ts`),
   `run.dryRun === true` in the DB, and every `stage_attempt.job_handle.providerId`
@@ -276,4 +276,4 @@ test/e2e/check-test.e2e.test.ts` (the same config `pnpm test:e2e` uses) —
   **30 files / 173 tests, 100% passed** — confirming `RunService.create()`'s
   hot-path change didn't regress any other suite; `pnpm lint` clean (one
   pre-existing unrelated warning in `media-output.e2e.test.ts`); `pnpm
-  format:check` clean after one `prettier --write` pass on the new test file.
+format:check` clean after one `prettier --write` pass on the new test file.
