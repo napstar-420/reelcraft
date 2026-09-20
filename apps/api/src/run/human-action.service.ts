@@ -13,6 +13,7 @@ import { MemoryService } from '../artifact/memory.service';
 import { CheckRunner } from '../check/check-runner.service';
 import type { CheckArtifact, CheckResult } from '../check/check.types';
 import { ulid } from '../common/ulid';
+import { toUsd } from '../common/money';
 import { DRIZZLE, type Db, type Tx } from '../db/drizzle.provider';
 import {
   artifact,
@@ -21,11 +22,13 @@ import {
   run,
   stageAttempt,
   stageExecution,
+  stageItem,
 } from '../db/schema/index';
 import { SchemaValidatorService } from '../json-schema/schema-validator.service';
 import { ConfigResolverService } from '../run-config/config-resolver.service';
 import { CONSUMES_SEMANTIC_ATTEMPT } from '../orchestration/attempt-outcome';
 import { InvalidationService } from './invalidation.service';
+import type { InvalidationSeed } from './invalidation-closure';
 import { HumanWaitService } from './human-wait.service';
 import { PreviewTokenService } from './preview-token.service';
 import { RunMutationService } from './run-mutation.service';
@@ -52,12 +55,12 @@ export class HumanActionService {
     private readonly timelineChecks: TimelineCheckService,
   ) {}
 
-  async approve(runId: string, stageKey: string) {
+  async approve(runId: string, stageKey: string, itemIndex?: number) {
     const result = await this.mutation.withLockedRun(
       runId,
       'approve',
       ['PAUSED_APPROVAL'],
-      (tx, lockedRun) => this.approveInTransaction(tx, runId, stageKey, lockedRun),
+      (tx, lockedRun) => this.approveInTransaction(tx, runId, stageKey, lockedRun, itemIndex),
       'run/resumed',
     );
     await this.dispatchBestEffort(result.wakeupId);
@@ -69,6 +72,7 @@ export class HumanActionService {
     runId: string,
     stageKey: string,
     lockedRun: typeof run.$inferSelect,
+    itemIndex?: number,
   ): Promise<void> {
     if (lockedRun.cursorStageKey !== stageKey) {
       throw new ConflictException(
@@ -76,6 +80,13 @@ export class HumanActionService {
       );
     }
     const { stage, execution } = await this.loadStageAndExecution(tx, lockedRun, stageKey);
+
+    if (stage.approval?.mode === 'item') {
+      const item = await this.resolveOpenItem(tx, execution.id, itemIndex);
+      await this.approveItemInTransaction(tx, runId, stageKey, stage, execution.id, item);
+      return;
+    }
+
     const pending = await this.pendingAttempt(tx, execution.id);
     if (!pending?.artifactId || pending.phase !== 'awaiting_approval') {
       throw new ConflictException('No pending approval candidate exists');
@@ -114,8 +125,106 @@ export class HumanActionService {
     await this.waits.resolve(tx, execution.id);
   }
 
-  async reject(runId: string, stageKey: string, note: string | undefined, previewToken?: string) {
+  /** phase 7 chunk 6 — the item-mode analogue of `approveInTransaction`'s
+   * stage-mode body above: same shape (finalize, settle the attempt,
+   * resolve the wait), but scoped to one `stage_item` and deliberately
+   * NOT touching `stage_execution` — Locked Decision 5/6, mirroring
+   * `StageRunnerService.fetchAndFinalize`'s own item finalize branch. */
+  private async approveItemInTransaction(
+    tx: Tx,
+    runId: string,
+    stageKey: string,
+    stage: StageDef,
+    stageExecutionId: string,
+    item: typeof stageItem.$inferSelect,
+  ): Promise<void> {
+    const pending = await this.pendingAttempt(tx, stageExecutionId, item.id);
+    if (!pending?.artifactId || pending.phase !== 'awaiting_approval') {
+      throw new ConflictException('No pending approval candidate exists');
+    }
+    const [candidate] = await tx
+      .select()
+      .from(artifact)
+      .where(eq(artifact.id, pending.artifactId))
+      .limit(1);
+    if (!candidate || !candidate.stale) throw new ConflictException('Approval candidate is stale');
+    await this.requireOpenWait(tx, stageExecutionId, 'approval', item.id);
+
+    await this.artifacts.finalize(
+      {
+        runId,
+        stageExecutionId,
+        producerStageKey: stageKey,
+        itemIndex: item.itemIndex,
+        stageItemId: item.id,
+        newArtifactId: candidate.id,
+        costUsd: toUsd(pending.costUsd),
+        applyWrites: this.memory.buildWriteCallback(stage, {
+          runId,
+          stageKey,
+          itemIndex: item.itemIndex,
+          kind: candidate.kind as never,
+          data: candidate.data,
+        }),
+      },
+      tx,
+    );
+    await tx
+      .update(stageAttempt)
+      .set({ outcome: 'success', phase: 'settled' })
+      .where(eq(stageAttempt.id, pending.id));
+    await this.waits.resolve(tx, stageExecutionId);
+  }
+
+  /** phase 7 chunk 6 — resolves "the item currently awaiting approval" for
+   * an item-mode stage's execution. Iteration is strictly sequential, so at
+   * most one `stage_item` is ever `awaiting_approval` per execution at a
+   * time; a caller-supplied `itemIndex` is a race-safety confirmation
+   * against that open item, not something trusted blindly. */
+  private async resolveOpenItem(
+    executor: Db | Tx,
+    stageExecutionId: string,
+    itemIndex: number | undefined,
+  ): Promise<typeof stageItem.$inferSelect> {
+    const [openItem] = await executor
+      .select()
+      .from(stageItem)
+      .where(
+        and(
+          eq(stageItem.stageExecutionId, stageExecutionId),
+          eq(stageItem.state, 'awaiting_approval'),
+        ),
+      )
+      .limit(1);
+    if (!openItem) throw new ConflictException('No item is awaiting approval for this stage');
+    if (itemIndex !== undefined && openItem.itemIndex !== itemIndex) {
+      throw new ConflictException(
+        `Item ${itemIndex} is not the one awaiting approval (currently item ${openItem.itemIndex})`,
+      );
+    }
+    return openItem;
+  }
+
+  async reject(
+    runId: string,
+    stageKey: string,
+    note: string | undefined,
+    previewToken?: string,
+    itemIndex?: number,
+  ) {
     const context = await this.loadRunContext(runId, stageKey);
+    const isItemMode = context.stage.approval?.mode === 'item';
+    // phase 7 chunk 6 — Locked Decision 9: a rejected item, with no
+    // `onReject.retryStageKey`, retries that same item by default — the
+    // item-mode analogue of stage-mode's existing "retry myself" default.
+    // Resolved from the DB (the item currently `awaiting_approval`), not
+    // trusted blindly from the caller — `itemIndex`, when given, is only a
+    // race-safety confirmation against that open item.
+    const rejectedItem = isItemMode
+      ? await this.resolveOpenItem(this.db, context.execution.id, itemIndex)
+      : undefined;
+    const resolvedItemIndex = rejectedItem?.itemIndex;
+
     const targetStageKey = context.stage.approval?.onReject?.retryStageKey ?? stageKey;
     const targetStage = context.graph.find((stage) => stage.key === targetStageKey);
     if (!targetStage) throw new ConflictException(`Retry target ${targetStageKey} not found`);
@@ -130,13 +239,74 @@ export class HumanActionService {
       targetStageKey,
       targetStage,
     );
-    const retryDebits = await this.retryDebits(runId, targetExecution.id, targetStageKey);
-    const exhausted = retryDebits + 1 >= effective.retryLimit + 1;
-    const payload = { stageKey, ...(note !== undefined ? { note } : {}) };
-    const preview = await this.invalidation.preview({
+
+    // Item-scoping only applies when the rejected stage is itself item-mode
+    // AND the retry target also iterates — a routed rejection into a
+    // non-iterating earlier stage (or one that doesn't iterate) stays
+    // whole-stage, matching the plan's explicit resolution for this case.
+    const targetItemIndex =
+      resolvedItemIndex !== undefined && targetStage.iterate ? resolvedItemIndex : undefined;
+    const targetStageItem =
+      targetItemIndex !== undefined
+        ? (
+            await this.db
+              .select()
+              .from(stageItem)
+              .where(
+                and(
+                  eq(stageItem.stageExecutionId, targetExecution.id),
+                  eq(stageItem.itemIndex, targetItemIndex),
+                ),
+              )
+              .limit(1)
+          )[0]
+        : undefined;
+    if (targetItemIndex !== undefined && !targetStageItem) {
+      throw new ConflictException(
+        `Retry target item ${targetItemIndex} of ${targetStageKey} not found`,
+      );
+    }
+
+    const retryDebits = await this.retryDebits(
       runId,
-      seed: { stageKeys: [targetStageKey], forcedStageKeys: [stageKey] },
-    });
+      targetExecution.id,
+      targetStageKey,
+      targetStageItem?.id,
+    );
+    // phase 7 chunk 6 — an iterating target's own itemRetryLimit gates
+    // exhaustion, not the stage's (non-iterating) retryLimit.
+    const exhausted = targetStage.iterate
+      ? retryDebits + 1 >= effective.iterate!.itemRetryLimit + 1
+      : retryDebits + 1 >= effective.retryLimit + 1;
+    const payload = {
+      stageKey,
+      ...(note !== undefined ? { note } : {}),
+      ...(resolvedItemIndex !== undefined ? { itemIndex: resolvedItemIndex } : {}),
+    };
+
+    const seed: InvalidationSeed = !isItemMode
+      ? { stageKeys: [targetStageKey], forcedStageKeys: [stageKey] }
+      : (() => {
+          const items: Array<{ stageKey: string; itemIndex: number }> = [];
+          const stageKeys: string[] = [];
+          if (targetItemIndex !== undefined) {
+            items.push({ stageKey: targetStageKey, itemIndex: targetItemIndex });
+          } else {
+            stageKeys.push(targetStageKey);
+          }
+          // Always force the rejected item itself invalid, regardless of
+          // whether the retry target's dependency chain structurally
+          // reaches it — the item-mode analogue of stage-mode's
+          // `forcedStageKeys:[stageKey]` above. `markInvalid` dedupes by
+          // key, so this is a no-op when it's the same node as above.
+          items.push({ stageKey, itemIndex: resolvedItemIndex! });
+          return {
+            ...(items.length > 0 ? { items } : {}),
+            ...(stageKeys.length > 0 ? { stageKeys } : {}),
+          };
+        })();
+
+    const preview = await this.invalidation.preview({ runId, seed });
     if (!previewToken) {
       const issued = this.tokens.issue({
         action: 'reject',
@@ -176,7 +346,10 @@ export class HumanActionService {
           throw new ConflictException('The approval changed; request a new preview');
         }
         const { execution } = await this.loadStageAndExecution(tx, lockedRun, stageKey);
-        const pending = await this.pendingAttempt(tx, execution.id);
+        const pendingItem = isItemMode
+          ? await this.resolveOpenItem(tx, execution.id, resolvedItemIndex)
+          : undefined;
+        const pending = await this.pendingAttempt(tx, execution.id, pendingItem?.id);
         if (!pending) throw new ConflictException('No pending approval candidate exists');
         await tx
           .update(stageAttempt)
@@ -193,14 +366,28 @@ export class HumanActionService {
           targetStageKey,
         });
         if (exhausted) {
-          await tx
-            .update(stageExecution)
-            .set({
-              state: 'failed',
-              failure: { reason: 'approval_rejection_retry_exhausted' },
-              endedAt: new Date().toISOString(),
-            })
-            .where(eq(stageExecution.id, targetExecution.id));
+          if (targetStageItem) {
+            // phase 7 chunk 6 — item-mode exhaustion fails only the
+            // target's own item, mirroring §14.1's "no continue-and-isolate":
+            // the item still fails the run (below), but sibling items of
+            // the same iterating stage are left completely alone.
+            await tx
+              .update(stageItem)
+              .set({
+                state: 'failed',
+                failure: { reason: 'approval_rejection_retry_exhausted' },
+              })
+              .where(eq(stageItem.id, targetStageItem.id));
+          } else {
+            await tx
+              .update(stageExecution)
+              .set({
+                state: 'failed',
+                failure: { reason: 'approval_rejection_retry_exhausted' },
+                endedAt: new Date().toISOString(),
+              })
+              .where(eq(stageExecution.id, targetExecution.id));
+          }
           await tx
             .update(run)
             .set({
@@ -535,11 +722,20 @@ export class HumanActionService {
     return { stage, execution };
   }
 
-  private async pendingAttempt(tx: Tx, executionId: string) {
+  /** phase 7 chunk 6 — `stageItemId` scopes the lookup to one item's own
+   * attempts instead of the stage-level (`stageItemId IS NULL`) ones. */
+  private async pendingAttempt(tx: Tx, executionId: string, stageItemId?: string) {
     const [row] = await tx
       .select()
       .from(stageAttempt)
-      .where(and(eq(stageAttempt.stageExecutionId, executionId), isNull(stageAttempt.stageItemId)))
+      .where(
+        and(
+          eq(stageAttempt.stageExecutionId, executionId),
+          stageItemId
+            ? eq(stageAttempt.stageItemId, stageItemId)
+            : isNull(stageAttempt.stageItemId),
+        ),
+      )
       .orderBy(desc(stageAttempt.attemptNo))
       .limit(1);
     return row;
@@ -549,6 +745,7 @@ export class HumanActionService {
     tx: Tx,
     executionId: string,
     kind: 'approval' | 'input' | 'timeline_edit',
+    stageItemId?: string,
   ) {
     const [wait] = await tx
       .select({ id: humanWait.id })
@@ -558,6 +755,7 @@ export class HumanActionService {
           eq(humanWait.stageExecutionId, executionId),
           eq(humanWait.kind, kind),
           isNull(humanWait.resolvedAt),
+          stageItemId ? eq(humanWait.stageItemId, stageItemId) : isNull(humanWait.stageItemId),
         ),
       )
       .limit(1);
@@ -572,13 +770,27 @@ export class HumanActionService {
     return (row?.max ?? 0) + 1;
   }
 
-  private async retryDebits(runId: string, executionId: string, stageKey: string) {
+  /** phase 7 chunk 6 — `stageItemId` scopes the "own" count to one item's
+   * attempts. The "routed" (cross-stage critique) count deliberately stays
+   * stage-wide regardless: `critiqueTargetStageKey` names a stage, not an
+   * item — there is no item dimension anywhere else in the schema for a
+   * routed rejection to carry, so introducing one here would be inventing
+   * semantics nothing else in the phase has. */
+  private async retryDebits(
+    runId: string,
+    executionId: string,
+    stageKey: string,
+    stageItemId?: string,
+  ) {
     const [own] = await this.db
       .select({ count: sql<number>`count(*)::int` })
       .from(stageAttempt)
       .where(
         and(
           eq(stageAttempt.stageExecutionId, executionId),
+          stageItemId
+            ? eq(stageAttempt.stageItemId, stageItemId)
+            : isNull(stageAttempt.stageItemId),
           inArray(stageAttempt.outcome, [...CONSUMES_SEMANTIC_ATTEMPT]),
         ),
       );

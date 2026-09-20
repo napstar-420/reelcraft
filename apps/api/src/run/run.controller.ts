@@ -150,12 +150,9 @@ export class RunController {
     @Param('key') key: string,
     @Body(new ZodValidationPipe(ApprovalActionDto)) dto: ApprovalActionDto,
   ) {
-    if (dto.itemIndex !== undefined) {
-      throw new BadRequestException('Item approval is not available until iteration support');
-    }
     return dto.action === 'approve'
-      ? this.humanActions.approve(id, key)
-      : this.humanActions.reject(id, key, dto.note, dto.previewToken);
+      ? this.humanActions.approve(id, key, dto.itemIndex)
+      : this.humanActions.reject(id, key, dto.note, dto.previewToken, dto.itemIndex);
   }
 
   @Post(':id/stages/:key/input')

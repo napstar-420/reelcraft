@@ -27,6 +27,6 @@ describe('HumanActionService', () => {
     );
     expect(
       (service as never as { approveInTransaction: ReturnType<typeof vi.fn> }).approveInTransaction,
-    ).toHaveBeenCalledWith(tx, 'run-1', 'review', expect.any(Object));
+    ).toHaveBeenCalledWith(tx, 'run-1', 'review', expect.any(Object), undefined);
   });
 });

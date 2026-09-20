@@ -855,25 +855,48 @@ export class StageRunnerService {
       }
 
       if (stage.approval) {
-        if (stage.approval.mode !== 'stage') {
-          // TODO(phase 7 chunk 6): item-mode approval wires this branch to
-          // write `stage_item.state = 'awaiting_approval'` (with
-          // `humanWaits.open(..., stageItemId)`) instead of throwing.
-          throw new Error('Item approval is not available until iteration support');
-        }
         await tx
           .update(stageAttempt)
           .set({ outcome: 'awaiting_approval', phase: 'awaiting_approval', checkResults })
           .where(eq(stageAttempt.id, ctx.stageAttemptId));
-        await tx
-          .update(stageExecution)
-          .set({ state: 'awaiting_approval' })
-          .where(eq(stageExecution.id, ctx.stageExecutionId));
-        await this.humanWaits.open(tx, {
-          runId: ctx.runId,
-          stageExecutionId: ctx.stageExecutionId,
-          kind: 'approval',
-        });
+
+        if (stage.approval.mode === 'stage') {
+          await tx
+            .update(stageExecution)
+            .set({ state: 'awaiting_approval' })
+            .where(eq(stageExecution.id, ctx.stageExecutionId));
+          await this.humanWaits.open(tx, {
+            runId: ctx.runId,
+            stageExecutionId: ctx.stageExecutionId,
+            kind: 'approval',
+          });
+        } else {
+          // phase 7 chunk 6 — item-mode approval: the pause is scoped to
+          // this ONE item. `stage_execution` is deliberately left alone
+          // (still 'running') — the outer per-item loop only flips it to
+          // 'passed' once every item has, via `finishIteratingStage`
+          // (Locked Decision 5/6), so it must not read `awaiting_approval`
+          // while sibling items may still be pending or already passed.
+          // `stage.execute.item`'s caller always runs this attempt with an
+          // item-scoped `stageItemId` (the blueprint validator already
+          // requires `approval.mode:'item'` to imply `stage.iterate`), so
+          // this is a defensive assertion, not a real branch in practice.
+          if (!ctx.stageItemId) {
+            throw new Error(
+              'StageRunnerService: item-mode approval requires an item-scoped attempt (stageItemId missing)',
+            );
+          }
+          await tx
+            .update(stageItem)
+            .set({ state: 'awaiting_approval' })
+            .where(eq(stageItem.id, ctx.stageItemId));
+          await this.humanWaits.open(tx, {
+            runId: ctx.runId,
+            stageExecutionId: ctx.stageExecutionId,
+            stageItemId: ctx.stageItemId,
+            kind: 'approval',
+          });
+        }
         return { outcome: 'approval_required' as const, artifactId };
       }
 
