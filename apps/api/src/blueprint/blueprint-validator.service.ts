@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import type {
+  CheckDef,
   EnabledWhen,
   InputDef,
   Ref,
@@ -172,6 +173,48 @@ export class BlueprintValidatorService {
       issues.push(...this.schemaValidator.checkDialect(input.accepts.schema, path));
       issues.push(...this.schemaValidator.checkCompilable(input.accepts.schema, path));
     }
+  }
+
+  /** §16.2 / Chunk 4 — the context-free half of per-check validation (unknown
+   * builtin key, bad params, script-compiles). Public so `TemplateService`
+   * can validate a `check`-kind template body with no graph/ctx of its own;
+   * the ref-resolution half stays inline in `validateStage`, since it needs
+   * `ctx`/`stageIndex`. */
+  validateCheckDef(check: CheckDef, checkBase: string): ValidationIssue[] {
+    const issues: ValidationIssue[] = [];
+    if (check.type === 'builtin') {
+      const builtin = BUILTIN_CHECKS[check.key];
+      if (!builtin) {
+        issues.push({
+          path: `${checkBase}.key`,
+          message: `unknown builtin check "${check.key}"`,
+          severity: 'error',
+        });
+        return issues;
+      }
+      const parsed = builtin.params.safeParse(check.params);
+      if (!parsed.success) {
+        for (const issue of parsed.error.issues) {
+          issues.push({
+            path: `${checkBase}.params${issue.path.length ? `.${issue.path.join('.')}` : ''}`,
+            message: issue.message,
+            severity: 'error',
+          });
+        }
+      }
+      return issues;
+    }
+
+    // §16.2 — "script check fails to compile in the sandbox"
+    const compiled = this.sandbox.compiles(check.code);
+    if (!compiled.ok) {
+      issues.push({
+        path: `${checkBase}.code`,
+        message: `script check does not compile: ${compiled.message ?? 'unknown error'}`,
+        severity: 'error',
+      });
+    }
+    return issues;
   }
 
   private validateStage(stage: StageDef, ctx: ValidationContext, issues: ValidationIssue[]): void {
@@ -412,38 +455,8 @@ export class BlueprintValidatorService {
 
     for (const [index, check] of stage.checks.entries()) {
       const checkBase = `${base}.checks[${index}]`;
-      if (check.type === 'builtin') {
-        const builtin = BUILTIN_CHECKS[check.key];
-        if (!builtin) {
-          issues.push({
-            path: `${checkBase}.key`,
-            message: `unknown builtin check "${check.key}"`,
-            severity: 'error',
-          });
-          continue;
-        }
-        const parsed = builtin.params.safeParse(check.params);
-        if (!parsed.success) {
-          for (const issue of parsed.error.issues) {
-            issues.push({
-              path: `${checkBase}.params${issue.path.length ? `.${issue.path.join('.')}` : ''}`,
-              message: issue.message,
-              severity: 'error',
-            });
-          }
-        }
-        continue;
-      }
-
-      // §16.2 — "script check fails to compile in the sandbox"
-      const compiled = this.sandbox.compiles(check.code);
-      if (!compiled.ok) {
-        issues.push({
-          path: `${checkBase}.code`,
-          message: `script check does not compile: ${compiled.message ?? 'unknown error'}`,
-          severity: 'error',
-        });
-      }
+      issues.push(...this.validateCheckDef(check, checkBase));
+      if (check.type === 'builtin') continue;
 
       if (!check.refs) continue;
       for (const [refName, ref] of Object.entries(check.refs)) {

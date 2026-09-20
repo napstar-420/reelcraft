@@ -8,7 +8,7 @@ Branch: `codex/phase9-editor-templates`
 - [x] Chunk 1 — Capability resolve + check-types plumbing
 - [x] Chunk 2 — `POST /checks/test`
 - [x] Chunk 3 — `POST /blueprints/:id/validate`
-- [ ] Chunk 4 — Template library completion
+- [x] Chunk 4 — Template library completion
 - [ ] Chunk 5 — Dry-run execution
 - [ ] Chunk 6 — Frontend: capability config form + schema editor panel
 - [ ] Chunk 7 — Frontend: check tester, template library, dry-run trigger
@@ -107,3 +107,80 @@ test/e2e/check-test.e2e.test.ts` (the same config `pnpm test:e2e` uses) —
   `createVersion` compute byte-identical `issues`/`runnable` for both a
   valid and an invalid graph, and that `validateOnly` never changes the
   `blueprint_version` row count.
+
+### Chunk 4
+
+- Implemented directly (no subagent) given the well-scoped, mostly-wiring
+  nature of the chunk.
+- `BlueprintValidatorService.validateStage()`'s per-check loop was split
+  exactly as the task spec described: the context-free half (unknown
+  builtin key / bad params / script-compiles) is now a public
+  `validateCheckDef(check, checkBase): ValidationIssue[]`; the ref-resolution
+  half (which needs `ctx`/`stageIndex`) stays inline in `validateStage`,
+  calling `validateCheckDef` for its part. All 54 pre-existing
+  `blueprint-validator.test.ts` tests pass unmodified after the refactor;
+  added 5 new tests directly against `validateCheckDef` in isolation
+  (unknown key, bad params, non-compiling script, passing builtin, passing
+  script — none touching a graph/ctx).
+- `TemplateModule` gained `JsonSchemaModule` + `CapabilityModule` as direct
+  imports (confirmed non-circular per the task brief) so `TemplateService`
+  can inject `SchemaValidatorService`/`CapabilityRegistry` directly, rather
+  than reaching through `BlueprintModule` (which doesn't export those two).
+  `BlueprintValidatorService` is now also injected into `TemplateService` —
+  available for free since `BlueprintModule` already exports it and
+  `TemplateModule` already imported `BlueprintModule`.
+- Error-surfacing convention chosen after checking `capability.controller.ts`
+  (`resolve` throws `BadRequestException(violations)`) and
+  `channel/character.service.ts` (`BadRequestException` thrown directly from
+  the service layer) and `run.service.ts` (`ConflictException` thrown
+  directly from the service layer for "already exists"/state-conflict
+  cases): `TemplateService.save()` throws `ConflictException` for a
+  `(ownerId, kind, name)` collision (checked via a `SELECT` first, mirroring
+  `BlueprintService.ensureBlueprint`'s existence-check pattern — never a
+  caught unique-constraint error) and `BadRequestException(issues)` for a
+  per-kind validation failure, both directly from the service, not the
+  controller — consistent with the majority pattern found across the
+  codebase's services.
+- `TemplateService.instantiate()`'s final signature:
+  `instantiate(templateId: string, channelId?: string, runCapUsd?: number)`.
+  For `kind: 'blueprint'` it behaves exactly as before (verified by a
+  regression test asserting the seeded "Hello Stage" template's instantiated
+  graph/runnable/validation/requires match phase-1 behavior) and now throws
+  `BadRequestException` if `channelId`/`runCapUsd` are omitted. For
+  `kind: 'schema' | 'check' | 'stage'` it returns `{ body, requires }`
+  straight from the latest `template_version` row with zero DB writes,
+  ignoring `channelId`/`runCapUsd` entirely.
+- `TemplateService.save()` returns `{ templateId, ...versionRow }` (the
+  inserted `template_version` row, plus the generated `templateId`) rather
+  than a bespoke shape — gives the caller the version id, `version` number,
+  `body`, and derived `requires` in one response with no invented wrapper.
+- `TemplateService.list(ownerId)` attaches each returned template's latest
+  version's `requires` via a second query (`templateVersion` rows for the
+  matched template ids, ordered `version DESC`, keeping only the first
+  occurrence per `templateId` in JS) rather than a SQL `DISTINCT ON`/window
+  function — simpler and adequate at this scale, matching the codebase's
+  existing "load then reduce in JS" style used elsewhere (e.g.
+  `BlueprintService.loadAssetsById`).
+- `requires.capabilities` is always server-derived, never trusted from the
+  client, for `blueprint` (`[...new Set(stage.capability for each stage)]`)
+  and `stage` (`[stageDef.capability]`) kinds, per Locked Decision 6;
+  `dto.requires?.inputs` is passed through unchanged (nothing to derive it
+  from). `schema`/`check` kinds take `dto.requires` as-is (defaulting to
+  `{capabilities: [], inputs: []}`), since neither has a `capability` field
+  to derive from.
+- `packages/shared/src/dto/template.dto.ts`'s `SaveTemplateDto` uses four
+  independent `z.object({...})` branches (each spreading a shared
+  `TemplateMetaFields` object) rather than `.extend()` on a common base —
+  `.extend()` on a plain object produces a `ZodObject` that still
+  type-checked fine with `z.discriminatedUnion` in practice here, but the
+  four-independent-objects form was chosen anyway for clarity once each
+  branch's `body` type differs structurally per kind.
+- New `apps/api/test/e2e/template-library.e2e.test.ts` (11 tests, `buildTestApp`/
+  `createTestDb` pattern) covers: round-trip save → list → instantiate for
+  all 4 kinds; per-kind save-validation rejection with zero rows written for
+  each kind; `list()` returning builtins + only the caller's own user
+  templates (not another owner's); name-collision rejection; and the
+  seeded "Hello Stage" blueprint-kind regression check. Full e2e suite
+  (29 files / 170 tests) and full unit suite (42 files / 276 tests) both
+  pass after this chunk, confirming no regressions from the `TemplateModule`
+  DI graph change.

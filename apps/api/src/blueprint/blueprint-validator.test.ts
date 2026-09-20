@@ -647,6 +647,58 @@ describe('BlueprintValidatorService', () => {
   });
 });
 
+/** Chunk 4 — `validateCheckDef` is the extracted, context-free half of the
+ * per-check validation above (no graph/ctx needed), reused directly by
+ * `TemplateService.save()` for `check`-kind templates. */
+describe('BlueprintValidatorService.validateCheckDef', () => {
+  it('errors on an unknown builtin check key', () => {
+    const validator = makeValidator();
+    const issues = validator.validateCheckDef(
+      { type: 'builtin', key: 'not_a_real_check', params: {} },
+      'body',
+    );
+    expect(issues.some((i) => i.severity === 'error' && i.path === 'body.key')).toBe(true);
+  });
+
+  it("errors when a builtin check's params fail its schema", () => {
+    const validator = makeValidator();
+    const issues = validator.validateCheckDef(
+      { type: 'builtin', key: 'array_length', params: {} },
+      'body',
+    );
+    expect(issues.some((i) => i.severity === 'error' && i.path.startsWith('body.params'))).toBe(
+      true,
+    );
+  });
+
+  it('errors when a script check fails to compile', () => {
+    const validator = makeValidator();
+    const issues = validator.validateCheckDef(
+      { type: 'script', name: 'broken', code: 'this is not valid js {{{' },
+      'body',
+    );
+    expect(issues.some((i) => i.severity === 'error' && i.path === 'body.code')).toBe(true);
+  });
+
+  it('passes a valid builtin check with no ref/ctx needed', () => {
+    const validator = makeValidator();
+    const issues = validator.validateCheckDef(
+      { type: 'builtin', key: 'non_empty', params: {} },
+      'body',
+    );
+    expect(issues).toEqual([]);
+  });
+
+  it('passes a script check that compiles cleanly, with no ref/ctx needed', () => {
+    const validator = makeValidator();
+    const issues = validator.validateCheckDef(
+      { type: 'script', name: 'ok', code: 'return { pass: true };' },
+      'body',
+    );
+    expect(issues).toEqual([]);
+  });
+});
+
 describe('BlueprintValidatorService — iterate (Phase 7, §14/§16.2)', () => {
   beforeAll(async () => {
     await sandbox.ready();
