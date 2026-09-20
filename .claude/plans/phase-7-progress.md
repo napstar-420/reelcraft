@@ -16,6 +16,7 @@ Updated as each chunk lands; not part of the shipped plan doc.
 - [x] PR opened against `main` (#17: https://github.com/napstar-420/reelcraft/pull/17)
 - [x] Code review posted on #17 (`.claude/reviews/pr-17-review.md`) — 1 HIGH, 2 MEDIUM, 2 LOW found
 - [x] HIGH finding fixed (`iterate.over` provenance never recorded for invalidation) — see note below
+- [x] MEDIUM findings #2 and #3 fixed (`ensureStageItems` self-consistency guard; item-scoped stage retry preview/confirm) — see note below
 
 ## Post-review fix: `iterate.over` invalidation provenance
 
@@ -52,6 +53,90 @@ committing — not just "test passes," genuinely verified it catches the bug.
 
 Full monorepo suite re-verified green after the fix: typecheck, 248 unit +
 141 e2e tests (140 + the 1 new regression test), lint, format.
+
+## Post-review fix: MEDIUM #2 (`ensureStageItems` guard) and MEDIUM #3 (item-scoped retry)
+
+Two MEDIUM findings from the same review, fixed together (design produced by
+`ecc:architect`, each claim re-verified against current code before
+implementing).
+
+**#2 — `ensureStageItems` self-consistency guard**
+(`apps/api/src/orchestration/stage-runner.service.ts`,
+`apps/api/src/run/invalidation.service.ts`). After the HIGH fix landed,
+retrying an iterating stage's own `iterate.over` source invalidates every
+item of the consuming stage at once (each item's `resolved_inputs`
+independently depends on the same now-stale provenance) — `apply()`'s
+whole-stage-invalid branch fires and stales every `stage_item`, but never
+resets `stage_execution.item_count`. If the array's re-resolved length also
+changed, `ensureStageItems`'s next call would have silently overwritten
+`item_count` with no guard against a stale/mismatched trailing row.
+`ensureStageItems` now reads the execution's current `item_count` before
+writing a new one; if it differs and any existing `stage_item` row isn't
+already `'stale'`, it throws `StageRunnerService.ensureStageItems: ...`
+naming the offending item's index/state rather than corrupting the rows.
+It deliberately never deletes trailing rows on a shrink —
+`stage_attempt.stage_item_id` has no cascade, confirmed by reading
+`db/schema/execution.ts`, so deleting a `stage_item` with real attempts
+would risk an FK violation or destroy spend/audit history. Left-behind
+orphan rows are handled by the second half of the fix:
+`InvalidationService.preview()` now filters `itemIndex >= execution.itemCount`
+out of the per-item nodes it builds, so an orphaned trailing row from a
+prior, larger count can never resurface in a preview/closure.
+
+New tests: three in `phase7-iteration.e2e.test.ts` (shrink with every item
+already `'stale'` succeeds and leaves trailing rows untouched; a mismatched
+count with a non-`'stale'` item throws the named error; a grow-after-shrink
+round-trip doesn't throw or duplicate rows) and one in
+`invalidation-items.e2e.test.ts` (a preview never includes an item at or
+beyond the execution's current `itemCount`).
+
+**#3 — item-scoped stage retry preview/confirm**
+(`apps/api/src/run/run-action.service.ts`, `apps/api/src/run/run.controller.ts`,
+`packages/shared/src/dto/run-action.dto.ts`). `previewInvalidation` used to
+accept `itemIndex` over HTTP but unconditionally reject it with
+`ConflictException` — `InvalidationSeed.items` was fully implemented and
+already exercised by approve/reject, but there was no HTTP-reachable way to
+preview/confirm a single-item retry outside that flow. Fixed by mirroring
+`HumanActionService.reject()`'s existing item-scoping approach exactly:
+`itemIndex` now threads through `previewInvalidation`/`previewStageRetry`/
+`confirmStageRetry` and a new private `resolveRetrySeed(runId, stageKey,
+itemIndex?)` helper that builds `{stageKeys:[stageKey]}` when `itemIndex` is
+omitted (today's unchanged behavior), throws when `itemIndex` is given for a
+stage that doesn't declare `iterate`, throws `'not found'` for a
+nonexistent item index, throws for an item still `'pending'`/`'running'`/
+`'awaiting_approval'` (confirmed against the schema's own documented
+`stage_item.state` enum in `db/schema/execution.ts` rather than assumed),
+and otherwise returns `{items:[{stageKey, itemIndex}]}`. The preview-token
+`payload` now conditionally includes `itemIndex`
+(`{stageKey, ...(itemIndex !== undefined ? {itemIndex} : {})}`), so
+`PreviewTokenService`'s digest-based `proposedPayload` verification makes a
+token issued for one `itemIndex` genuinely un-redeemable for a different one
+or for no `itemIndex` — confirmed by reverting the fix and re-running the
+new cross-itemIndex e2e test, which failed on the old code (a wrong/omitted
+`itemIndex` was silently accepted and the whole stage retried) and passes
+with the fix.
+
+`ConfirmRunActionDto` gained an optional `itemIndex: z.number().int()
+.nonnegative().optional()`, matching `ApprovalActionDto`'s existing field
+exactly. The controller's `?itemIndex=` query-param parsing (previously only
+on the invalidation-preview endpoint) is now shared via a private
+`parseItemIndexQuery` helper, used by both the preview and retry-preview
+endpoints; the confirm endpoint threads `dto.itemIndex` through.
+
+New tests: a DTO case in `packages/shared/src/dto/run-action.dto.test.ts`;
+7 unit tests in `apps/api/src/run/run-action.service.test.ts` exercising
+`resolveRetrySeed` directly (item-scoped seed for a retryable item, the
+unscoped default, each throw case, and the 3 non-retryable states); and a
+new `apps/api/test/e2e/stage-retry-item.e2e.test.ts` (5 tests, no Inngest,
+same style as `item-approval.e2e.test.ts`) covering the happy path (only
+the targeted item goes stale and can be re-run; siblings untouched) and,
+as the concrete regression test for the security-relevant property, the
+cross-itemIndex token-rejection case described above, plus
+`previewStageRetry`'s three validation throws.
+
+Full monorepo suite re-verified green after both fixes: typecheck, 255 unit
+(248 + 7) + 150 e2e (141 + 9) tests, lint (same one pre-existing unrelated
+warning), format.
 
 ## Notes / deviations from plan
 

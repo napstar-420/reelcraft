@@ -33,6 +33,41 @@ The two MEDIUM and two LOW findings were not addressed in this pass — they
 are lower-severity, and one (MEDIUM #3) is an already-documented, deliberate
 scope boundary. They remain open for a future pass if desired.
 
+### MEDIUM findings #2 and #3 — also fixed
+
+Both MEDIUM findings are now fixed (design produced by `ecc:architect`, each
+claim re-verified against current code before implementing; see
+`.claude/plans/phase-7-progress.md`'s own post-review note for the full
+write-up).
+
+**#2** (`ensureStageItems` self-consistency guard):
+`StageRunnerService.ensureStageItems` now reads the execution's current
+`item_count` before writing a new one; if it differs and any existing
+`stage_item` row isn't already `'stale'`, it throws a named error instead of
+silently overwriting `item_count`. It deliberately never deletes trailing
+rows on a shrink (`stage_attempt.stage_item_id` has no cascade, confirmed
+against `db/schema/execution.ts`), so `InvalidationService.preview()` was
+also fixed to filter `itemIndex >= execution.itemCount` out of its per-item
+nodes — the actual fix for "an orphaned row from an old, larger count should
+never resurface." Four new tests (three in `phase7-iteration.e2e.test.ts`,
+one in `invalidation-items.e2e.test.ts`).
+
+**#3** (item-scoped stage retry preview/confirm): `previewInvalidation`,
+`previewStageRetry`, and `confirmStageRetry` now accept an optional
+`itemIndex`, mirroring `HumanActionService.reject()`'s existing item-scoping
+approach — server-side resolution/validation via a new private
+`resolveRetrySeed` helper, and a preview-token `payload` that conditionally
+includes `itemIndex` so a token issued for one item is genuinely
+un-redeemable for a different one (confirmed by reverting the fix and
+re-running the new cross-itemIndex e2e test, which failed on the old code
+and passes with the fix — not a trivial pass). `ConfirmRunActionDto` gained
+a matching optional `itemIndex` field. New tests: a DTO case, 7 unit tests
+for `resolveRetrySeed`, and a new 5-test e2e file,
+`stage-retry-item.e2e.test.ts`.
+
+Full monorepo suite re-verified green after both fixes: typecheck, 255 unit
+tests plus 150 e2e tests, lint, format.
+
 ## Summary
 
 A well-structured, thoroughly-tested implementation of the phase (248 unit + 140 e2e tests, a real-ffmpeg acceptance script, all green in CI). The per-item orchestration design, the derived-frame row-lock/cache pattern, and the item-mode approval transaction boundaries are all sound. However, one HIGH-severity gap undermines the phase's core promise: an iterating stage's dependency on its own `iterate.over` source is never recorded in `resolved_inputs`, so invalidating/retrying the stage that produces the iterated array does not cascade to the stage that iterates over it — the exact class of staleness bug item-level invalidation exists to prevent. This should be fixed (or explicitly scoped out with a tracked follow-up and a validator/runtime guard) before merge.
