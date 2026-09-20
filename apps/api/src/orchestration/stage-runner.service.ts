@@ -1160,8 +1160,52 @@ export class StageRunnerService {
   /** Bulk-creates `stage_item` rows 0..itemCount-1 as `'pending'`
    * (`ON CONFLICT DO NOTHING` — idempotent against a replayed step) and
    * marks the stage_execution as iterating. Called once per stage
-   * execution, before the outer loop invokes any item. */
+   * execution, before the outer loop invokes any item.
+   *
+   * MEDIUM finding #2 (PR #17 review) — a self-consistency guard against
+   * re-entering with a DIFFERENT `itemCount` than a prior call recorded.
+   * This can legitimately happen once the HIGH-finding fix lands: retrying
+   * an iterating stage's own `iterate.over` source (§15.2) invalidates
+   * every one of this stage's items at once, and if the array's resolved
+   * length also changed, the next `resolveIterateCount`/`ensureStageItems`
+   * pass would otherwise silently overwrite `itemCount` and leave stale or
+   * mismatched trailing `stage_item` rows with no guard. The invariant:
+   * an `itemCount` change is only safe when every existing `stage_item` row
+   * has already been marked `'stale'` by `InvalidationService.apply()` —
+   * anything else means a count changed WITHOUT going through invalidation
+   * first, which this method refuses rather than corrupting the rows.
+   * Deliberately does not delete/reconcile trailing rows on a shrink —
+   * `stage_attempt.stage_item_id` has no cascade, so deleting a `stage_item`
+   * with real attempts would either violate that FK or silently destroy
+   * spend/audit history; `ON CONFLICT DO NOTHING` leaving them in place is
+   * the safe choice. */
   async ensureStageItems(stageExecutionId: string, itemCount: number): Promise<void> {
+    const [execution] = await this.db
+      .select({ itemCount: stageExecution.itemCount })
+      .from(stageExecution)
+      .where(eq(stageExecution.id, stageExecutionId))
+      .limit(1);
+    if (!execution) {
+      throw new Error(
+        `StageRunnerService.ensureStageItems: stage execution ${stageExecutionId} not found`,
+      );
+    }
+    if (execution.itemCount !== null && execution.itemCount !== itemCount) {
+      const existingItems = await this.db
+        .select({ itemIndex: stageItem.itemIndex, state: stageItem.state })
+        .from(stageItem)
+        .where(eq(stageItem.stageExecutionId, stageExecutionId));
+      const notStale = existingItems.find((item) => item.state !== 'stale');
+      if (notStale) {
+        throw new Error(
+          `StageRunnerService.ensureStageItems: stage execution ${stageExecutionId} item count ` +
+            `changed from ${execution.itemCount} to ${itemCount}, but item ${notStale.itemIndex} ` +
+            `is '${notStale.state}' (expected 'stale') — an item count change must go through ` +
+            `InvalidationService.apply() first`,
+        );
+      }
+    }
+
     await this.db
       .update(stageExecution)
       .set({ isIterating: true, itemCount })

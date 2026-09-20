@@ -459,4 +459,109 @@ describe('phase 7 chunk 4 — iterating stage per-item loop (e2e)', () => {
     const keys = new Set(rows.map((row) => row.idempotencyKey));
     expect(keys.size).toBe(2); // item 0's attempt-1 key != item 1's attempt-1 key
   });
+
+  // MEDIUM finding #2 (PR #17 review) — `ensureStageItems`'s self-consistency
+  // guard against re-entering with a different `itemCount` than a prior call
+  // recorded, without every existing `stage_item` row already being
+  // `'stale'` (the state `InvalidationService.apply()` leaves them in after
+  // retrying the array's own `iterate.over` source, per the HIGH-finding fix
+  // in commit 076ce79). These tests exercise `ensureStageItems` directly,
+  // marking rows `'stale'` by hand (mirroring what `apply()` would do)
+  // rather than driving a full invalidation round-trip — the point here is
+  // the guard's own logic, already covered end to end by
+  // `invalidation-items.e2e.test.ts`.
+  describe('ensureStageItems self-consistency guard (§15.2 MEDIUM #2)', () => {
+    async function markAllItemsStale(executionId: string) {
+      await testDb.db
+        .update(stageItem)
+        .set({ state: 'stale' })
+        .where(eq(stageItem.stageExecutionId, executionId));
+    }
+
+    it('allows an itemCount change when every existing item is already stale, without deleting orphaned rows', async () => {
+      const graph = [shotsStage(['a', 'b', 'c', 'd']), brollStage(0)];
+      const created = await createRun(graph, { forceFail: '__none__' });
+      const runner = testApp.app.get(StageRunnerService);
+      const shotsExecution = created.stageExecutions.find((e) => e.stageKey === 'shots')!;
+      const brollExecution = created.stageExecutions.find((e) => e.stageKey === 'broll')!;
+      await passShotsStage(runner, created.id, shotsExecution.id);
+
+      await runner.ensureStageItems(brollExecution.id, 4);
+      await markAllItemsStale(brollExecution.id);
+
+      // The array shrank to 2 on re-resolution (e.g. the producer's retried
+      // output is a shorter array) — every existing item is 'stale', so the
+      // guard must let this through.
+      await expect(runner.ensureStageItems(brollExecution.id, 2)).resolves.toBeUndefined();
+
+      const [execAfterShrink] = await testDb.db
+        .select()
+        .from(stageExecution)
+        .where(eq(stageExecution.id, brollExecution.id));
+      expect(execAfterShrink?.itemCount).toBe(2);
+
+      // Trailing rows (index 2, 3) are left in the DB untouched — never
+      // deleted (no cascade from stage_attempt.stage_item_id).
+      const itemsAfterShrink = await testDb.db
+        .select()
+        .from(stageItem)
+        .where(eq(stageItem.stageExecutionId, brollExecution.id))
+        .orderBy(stageItem.itemIndex);
+      expect(itemsAfterShrink.map((row) => row.itemIndex)).toEqual([0, 1, 2, 3]);
+      expect(itemsAfterShrink.every((row) => row.state === 'stale')).toBe(true);
+    });
+
+    it('throws a named error when the item count changes but an existing item is not already stale', async () => {
+      const graph = [shotsStage(['a', 'b']), brollStage(0)];
+      const created = await createRun(graph, { forceFail: '__none__' });
+      const runner = testApp.app.get(StageRunnerService);
+      const shotsExecution = created.stageExecutions.find((e) => e.stageKey === 'shots')!;
+      const brollExecution = created.stageExecutions.find((e) => e.stageKey === 'broll')!;
+      await passShotsStage(runner, created.id, shotsExecution.id);
+
+      await runner.ensureStageItems(brollExecution.id, 2);
+      // Items 0 and 1 stay 'pending' — never run, never invalidated.
+
+      await expect(runner.ensureStageItems(brollExecution.id, 3)).rejects.toThrow(
+        /StageRunnerService\.ensureStageItems:.*item count changed.*InvalidationService\.apply\(\)/s,
+      );
+
+      // The rejected call must not have overwritten itemCount.
+      const [execAfterThrow] = await testDb.db
+        .select()
+        .from(stageExecution)
+        .where(eq(stageExecution.id, brollExecution.id));
+      expect(execAfterThrow?.itemCount).toBe(2);
+    });
+
+    it('a grow-after-shrink round trip does not throw or duplicate rows once every item is stale each time', async () => {
+      const graph = [shotsStage(['a', 'b', 'c', 'd']), brollStage(0)];
+      const created = await createRun(graph, { forceFail: '__none__' });
+      const runner = testApp.app.get(StageRunnerService);
+      const shotsExecution = created.stageExecutions.find((e) => e.stageKey === 'shots')!;
+      const brollExecution = created.stageExecutions.find((e) => e.stageKey === 'broll')!;
+      await passShotsStage(runner, created.id, shotsExecution.id);
+
+      await runner.ensureStageItems(brollExecution.id, 4);
+      await markAllItemsStale(brollExecution.id);
+      await runner.ensureStageItems(brollExecution.id, 2); // shrink
+      await markAllItemsStale(brollExecution.id);
+      await runner.ensureStageItems(brollExecution.id, 4); // grow back
+
+      const items = await testDb.db
+        .select()
+        .from(stageItem)
+        .where(eq(stageItem.stageExecutionId, brollExecution.id))
+        .orderBy(stageItem.itemIndex);
+      // ON CONFLICT DO NOTHING correctly no-ops on the pre-existing rows —
+      // no duplicates for indices 0-3.
+      expect(items.map((row) => row.itemIndex)).toEqual([0, 1, 2, 3]);
+
+      const [execFinal] = await testDb.db
+        .select()
+        .from(stageExecution)
+        .where(eq(stageExecution.id, brollExecution.id));
+      expect(execFinal?.itemCount).toBe(4);
+    });
+  });
 });

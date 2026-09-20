@@ -149,8 +149,15 @@ export class InvalidationService {
     // exactly as before phase 7.
     const activeExecutionReads: ActiveExecutionRead[] = [];
     for (const execution of executions) {
+      // MEDIUM finding #2 (PR #17 review) — a `stage_item` row whose index
+      // is at or beyond the execution's CURRENT `itemCount` is an orphan
+      // from a prior, larger resolved count (e.g. an `iterate.over` retry
+      // that shrank the array — see `ensureStageItems`'s own guard). Such a
+      // row is intentionally left in the DB rather than deleted (no cascade
+      // from `stage_attempt.stage_item_id`), so it must never resurface in
+      // a preview/closure — it belongs to no live item.
       const stageItemsForExecution = (itemsByExecution.get(execution.id) ?? [])
-        .slice()
+        .filter((item) => execution.itemCount === null || item.itemIndex < execution.itemCount)
         .sort((a, b) => a.itemIndex - b.itemIndex);
       if (stageItemsForExecution.length > 0) {
         const stage = stageByKey.get(execution.stageKey);

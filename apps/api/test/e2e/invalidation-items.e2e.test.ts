@@ -301,4 +301,69 @@ describe('phase 7 chunk 5 — item-level invalidation (e2e)', () => {
     expect(item1State.state).not.toBe('passed');
     expect(item1State.state).toBe('stale');
   });
+
+  // MEDIUM finding #2 (PR #17 review) — `preview()` must never resurface a
+  // `stage_item` row whose index sits at or beyond the execution's CURRENT
+  // `itemCount`. `ensureStageItems`'s own guard (stage-runner.service.ts)
+  // deliberately never deletes trailing rows left behind by a shrink, so
+  // they can genuinely be orphans sitting in the DB — this is the actual
+  // fix for "orphaned rows from an old, larger count should never resurface".
+  it("never includes a stage_item at or beyond the execution's current itemCount in a preview", async () => {
+    const graph = [shotsStage(['ok0', 'ok1', 'ok2', 'ok3']), brollStage()];
+    const created = await createRun(graph);
+    const runner = testApp.app.get(StageRunnerService);
+    const invalidation = testApp.app.get(InvalidationService);
+    const shotsExecution = created.stageExecutions.find((e) => e.stageKey === 'shots')!;
+    const brollExecution = created.stageExecutions.find((e) => e.stageKey === 'broll')!;
+
+    await passShotsStage(runner, created.id, shotsExecution.id);
+    const { stage, effective, prevStageKey } = await runner.loadStageContext(created.id, 'broll');
+    const resolved = await runner.resolveIterateCount(
+      created.id,
+      brollExecution.id,
+      stage,
+      effective,
+      prevStageKey,
+    );
+    if (!resolved.ok) throw new Error(`unexpected resolveIterateCount: ${resolved.reason}`);
+    await runner.ensureStageItems(brollExecution.id, resolved.itemCount);
+
+    const pendingItems = await testDb.db
+      .select()
+      .from(stageItem)
+      .where(eq(stageItem.stageExecutionId, brollExecution.id))
+      .orderBy(stageItem.itemIndex);
+    for (const item of pendingItems) {
+      await passItem(
+        runner,
+        created.id,
+        brollExecution.id,
+        stage,
+        effective,
+        prevStageKey,
+        item.itemIndex,
+        item.id,
+      );
+    }
+    await runner.finishIteratingStage(brollExecution.id);
+
+    // Simulate the orphan scenario directly: the execution's itemCount
+    // shrinks to 2 (as a real re-resolution would set it), but items 2 and
+    // 3 are still sitting in the DB — `ensureStageItems` never deletes
+    // trailing rows on a shrink.
+    await testDb.db
+      .update(stageExecution)
+      .set({ itemCount: 2 })
+      .where(eq(stageExecution.id, brollExecution.id));
+
+    const preview = await invalidation.preview({
+      runId: created.id,
+      seed: { stageKeys: ['broll'] },
+    });
+    const brollIndices = preview.closure.affectedItems
+      .filter((item) => item.stageKey === 'broll')
+      .map((item) => item.itemIndex)
+      .sort((a, b) => (a ?? -1) - (b ?? -1));
+    expect(brollIndices).toEqual([0, 1]);
+  });
 });
