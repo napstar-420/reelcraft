@@ -11,7 +11,7 @@ Branch: `codex/phase9-editor-templates`
 - [x] Chunk 4 — Template library completion
 - [x] Chunk 5 — Dry-run execution
 - [x] Chunk 6 — Frontend: capability config form + schema editor panel
-- [ ] Chunk 7 — Frontend: check tester, template library, dry-run trigger
+- [x] Chunk 7 — Frontend: check tester, template library, dry-run trigger
 
 ## Notes / deviations from plan
 
@@ -333,3 +333,84 @@ build` clean (pre-existing >500kB chunk-size warning on
   pre-existing unrelated warning in `media-output.e2e.test.ts`); `pnpm
 format:check` failed once on the 3 touched files, fixed with a targeted
   `prettier --write` on exactly those 3 files, then clean.
+
+### Chunk 7
+
+- Implemented directly (no subagent) — frontend-only, all facts pre-verified
+  in the task brief.
+- `apps/web/src/api/client.ts`: renamed `listBuiltinTemplates` →
+  `listTemplates`, widened its return type to `TemplateListItem[]`
+  (`id`/`ownerId`/`source`/`kind`/`name`/`description`/`tags`/`archived`/
+  `requires`), matching `template.service.ts#list()`'s actual row shape
+  read directly from source. Widened `instantiateTemplate`'s signature to
+  `(templateId, channelId?, runCapUsd?)` returning a new
+  `InstantiateTemplateResult` union — `BlueprintVersionDto & {requires}` for
+  `kind: 'blueprint'` (confirmed `BlueprintService.createVersion()`'s
+  return value, via `getVersion()`, matches `BlueprintVersionDto` exactly)
+  or `{body, requires}` for the other three kinds. Added
+  `listTemplateVersions`, `listCheckTypes` (typed as a local
+  `CheckTypeDto` union — one builtin shape, one fixed `script` entry —
+  matching `check.controller.ts#listCheckTypes()` exactly, no shared DTO
+  exists for it), `testCheck` (typed against a local `CheckResultDto`
+  matching `check.types.ts`'s internal `CheckResult` shape), and
+  `startDryRun` (`POST /blueprints/:id/versions/:v/dry-run`, confirmed via
+  `blueprint.controller.ts` — not a `/templates` or `/runs` route).
+- `BlueprintsPage.tsx`'s one call site updated for the rename; its
+  `instantiateAndRun` mutation now narrows `InstantiateTemplateResult` with
+  an `'id' in version` check before using `version.id`/passing it to
+  `startRun`, since the type is now a union and only the blueprint-kind
+  branch has an `id`. Left the rest of that page (which still assumes every
+  listed template can be instantiated-and-run) unchanged — its title and
+  behavior stay scoped to the phase-1 "Hello Stage" blueprint-kind
+  acceptance path per the original task brief; a real multi-kind picker
+  UI is `TemplateLibraryPanel`'s job, not a rewrite of this page.
+- New `apps/web/src/components/CheckTesterPage.tsx` — a `type` select
+  (`builtin`/`script`) with a conditional sub-form: builtin gets a `<select>`
+  populated from `GET /check-types`'s builtin entries plus a params
+  `<textarea>` (JSON-parsed on submit, mirroring `SchemaEditor`'s
+  parse-on-submit discipline); script gets a `name` input + `code`
+  textarea, no `refs` UI (explicitly out of scope per the task brief — a
+  script check needing `refs` can still be tested via a direct API call).
+  Plain `artifactId` text input (no picker — no "list artifacts" endpoint
+  exists anywhere in the API, confirmed by reading the full controller
+  surface). Renders the returned `CheckResult`'s `pass`/`kind`/`name`/
+  `message`/`fault`/`details`.
+- New `apps/web/src/components/TemplateLibraryPanel.tsx` — lists
+  `api.listTemplates()`, rendering `kind`/`source`/`name`/`description`/
+  `requires.capabilities` per row. Each row has a "View versions" toggle
+  (lazy `useQuery` via `enabled: showVersions`) and an instantiate form:
+  `channelId` text + `runCapUsd` number inputs only when
+  `template.kind === 'blueprint'`, just a button otherwise. Renders the
+  instantiate result by narrowing on `'id' in result` — blueprint kind
+  shows `id`/`blueprintId`/`version` (meant to be copied into
+  `DryRunTrigger` below); the other three kinds show `body` (`<pre>`
+  JSON dump) and `requires`. Deliberately has no "save a new template"
+  form — `SchemaEditor` (Chunk 6) already covers that flow for `schema`
+  kind end-to-end, and the task brief explicitly scoped the other 3 kinds'
+  save UI out of this chunk.
+- New `apps/web/src/components/DryRunTrigger.tsx` — plain `blueprintId`
+  text + `version` number inputs (no picker — no "list blueprints"
+  endpoint exists either), a "Dry run" button calling
+  `api.startDryRun(blueprintId, version)`, and on success
+  `useNavigate()` to `/runs/${run.id}` exactly like
+  `BlueprintsPage.tsx`'s existing `instantiateAndRun.onSuccess`, so
+  `RunPage`'s existing SSE/polling view takes over with no new
+  run-watching UI. On error, renders `error.message` — a 404
+  blueprint/version-not-found is the realistic failure mode, handled by
+  the same generic error display every other panel already uses.
+- All three wired into `apps/web/src/pages/EditorPage.tsx` alongside
+  Chunk 6's `CapabilityConfigForm`/`SchemaEditor`, in the order check
+  tester → template library → dry-run trigger. No `App.tsx` changes needed
+  — `/editor` was already routed in Chunk 6.
+- No new dependencies, no schema-form generator, no UI kit, no new backend
+  endpoints — plain JSX throughout, matching Chunk 6's `useQuery`/
+  `useMutation`/textarea-parse-on-submit conventions exactly. This is the
+  last chunk of Phase 9 — all 7 boxes are now checked.
+- Verification: `pnpm --filter @reefcraft/shared build` clean; `pnpm
+--filter @reefcraft/web typecheck` clean; `pnpm --filter @reefcraft/web
+build` clean (same pre-existing >500kB chunk-size warning on
+  `TimelineEditorPage`, unrelated to this chunk); `pnpm lint` clean (same
+  one pre-existing unrelated warning in `media-output.e2e.test.ts`); `pnpm
+format:check` failed once on the 3 new component files (line-wrap only),
+  fixed with a targeted `prettier --write` on exactly those 3 files, then
+  clean.

@@ -3,6 +3,9 @@ import { useQuery } from '@tanstack/react-query';
 import { api } from '../api/client';
 import { CapabilityConfigForm } from '../components/CapabilityConfigForm';
 import { SchemaEditor } from '../components/SchemaEditor';
+import { CheckTesterPage } from '../components/CheckTesterPage';
+import { TemplateLibraryPanel } from '../components/TemplateLibraryPanel';
+import { DryRunTrigger } from '../components/DryRunTrigger';
 
 /** Shared home for Phase 9's editor panels — Chunk 6 adds the capability
  * config form and schema editor; Chunk 7 extends this same page with the
@@ -29,6 +32,12 @@ export function EditorPage() {
       {selectedKey && <CapabilityConfigForm capabilityKey={selectedKey} />}
 
       <SchemaEditor />
+
+      <CheckTesterPage />
+
+      <TemplateLibraryPanel />
+
+      <DryRunTrigger />
     </section>
   );
 }
