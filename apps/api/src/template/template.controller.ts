@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Param, Post } from '@nestjs/common';
-import { SaveTemplateDto } from '@reefcraft/shared';
+import { InstantiateTemplateDto, SaveTemplateDto } from '@reefcraft/shared';
 import { Owner } from '../common/owner.decorator';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { TemplateService } from './template.service';
@@ -27,7 +27,10 @@ export class TemplateController {
   }
 
   @Post(':id/instantiate')
-  instantiate(@Param('id') id: string, @Body() body: { channelId?: string; runCapUsd?: number }) {
-    return this.templates.instantiate(id, body.channelId, body.runCapUsd);
+  instantiate(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(InstantiateTemplateDto)) dto: InstantiateTemplateDto,
+  ) {
+    return this.templates.instantiate(id, dto.channelId, dto.runCapUsd);
   }
 }

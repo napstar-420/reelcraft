@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { CapabilityController } from './capability.controller';
 import type { CapabilityRegistry } from './capability.registry';
 import type { ProviderRegistry } from '../provider/provider.registry';
@@ -95,5 +95,21 @@ describe('CapabilityController.resolve', () => {
     expect(() =>
       controller.resolve('test.capability', { config: { count: 'not-a-number' } }),
     ).toThrow(BadRequestException);
+  });
+
+  it("returns a clean NotFoundException for an unknown capability key, not the registry's raw Error", () => {
+    const controller = new CapabilityController(
+      registryOf(
+        'image.generate',
+        new ImageGenerateCapability(noProviders) as unknown as CapabilityImpl,
+      ),
+      noProviders,
+      noStyles,
+      schemas,
+    );
+
+    expect(() => controller.resolve('not.a.real.capability', { config: {} })).toThrow(
+      NotFoundException,
+    );
   });
 });

@@ -1,4 +1,10 @@
-import { BadRequestException, ConflictException, Inject, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { and, desc, eq, inArray, or } from 'drizzle-orm';
 import type { SaveTemplateDto, StageDef, ValidationIssue } from '@reefcraft/shared';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
@@ -15,6 +21,10 @@ interface TemplateRequires {
 }
 
 const EMPTY_REQUIRES: TemplateRequires = { capabilities: [], inputs: [] };
+
+function isUniqueViolation(err: unknown): boolean {
+  return typeof err === 'object' && err !== null && (err as { code?: unknown }).code === '23505';
+}
 
 /** §20 — instantiation copies, never references: the template body is
  * inlined into a new blueprint_version, recording source_template_id for
@@ -41,7 +51,7 @@ export class TemplateService {
       .from(template)
       .where(eq(template.id, templateId))
       .limit(1);
-    if (!tmpl) throw new Error(`Template ${templateId} not found`);
+    if (!tmpl) throw new NotFoundException(`Template ${templateId} not found`);
 
     const [latest] = await this.db
       .select()
@@ -49,7 +59,7 @@ export class TemplateService {
       .where(eq(templateVersion.templateId, templateId))
       .orderBy(desc(templateVersion.version))
       .limit(1);
-    if (!latest) throw new Error(`Template ${templateId} has no versions`);
+    if (!latest) throw new NotFoundException(`Template ${templateId} has no versions`);
 
     if (tmpl.kind !== 'blueprint') {
       return { body: latest.body, requires: latest.requires };
@@ -155,24 +165,37 @@ export class TemplateService {
 
     const templateId = ulid();
     const versionId = ulid();
-    await this.db.transaction(async (tx) => {
-      await tx.insert(template).values({
-        id: templateId,
-        ownerId,
-        source: 'user',
-        kind: dto.kind,
-        name: dto.name,
-        description: dto.description,
-        tags: dto.tags,
+    try {
+      await this.db.transaction(async (tx) => {
+        await tx.insert(template).values({
+          id: templateId,
+          ownerId,
+          source: 'user',
+          kind: dto.kind,
+          name: dto.name,
+          description: dto.description,
+          tags: dto.tags,
+        });
+        await tx.insert(templateVersion).values({
+          id: versionId,
+          templateId,
+          version: 1,
+          body: dto.body,
+          requires,
+        });
       });
-      await tx.insert(templateVersion).values({
-        id: versionId,
-        templateId,
-        version: 1,
-        body: dto.body,
-        requires,
-      });
-    });
+    } catch (err) {
+      // The SELECT above can't be atomic with this INSERT — a concurrent
+      // save of the same (ownerId, kind, name) can race past it, so the DB's
+      // own unique index is the real guard; translate its violation to the
+      // same ConflictException the pre-check gives the common case.
+      if (isUniqueViolation(err)) {
+        throw new ConflictException(
+          `Template "${dto.name}" of kind "${dto.kind}" already exists for this owner`,
+        );
+      }
+      throw err;
+    }
 
     const [created] = await this.db
       .select()

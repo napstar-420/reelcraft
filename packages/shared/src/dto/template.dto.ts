@@ -14,7 +14,7 @@ const TemplateRequires = z.object({
 });
 
 const TemplateMetaFields = {
-  name: z.string(),
+  name: z.string().min(1),
   description: z.string().default(''),
   tags: z.array(z.string()).default([]),
   requires: TemplateRequires.optional(),
@@ -32,3 +32,13 @@ export const SaveTemplateDto = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('stage'), body: StageDef, ...TemplateMetaFields }),
 ]);
 export type SaveTemplateDto = z.infer<typeof SaveTemplateDto>;
+
+/** Backs `POST /templates/:id/instantiate` — only `kind: 'blueprint'`
+ * templates need `channelId`/`runCapUsd` (§20); the other three kinds
+ * ignore both server-side. Both stay optional here so a non-blueprint-kind
+ * instantiate can still POST an empty body. */
+export const InstantiateTemplateDto = z.object({
+  channelId: z.string().min(1).optional(),
+  runCapUsd: z.number().positive().optional(),
+});
+export type InstantiateTemplateDto = z.infer<typeof InstantiateTemplateDto>;

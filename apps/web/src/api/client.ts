@@ -134,9 +134,10 @@ export const api = {
       body: JSON.stringify({ check, artifactId }),
     }),
 
-  startDryRun: (blueprintId: string, version: number) =>
+  startDryRun: (blueprintId: string, version: number, budgetCapUsd?: number) =>
     request<RunDetailDto>(`/blueprints/${blueprintId}/versions/${version}/dry-run`, {
       method: 'POST',
+      body: JSON.stringify(budgetCapUsd !== undefined ? { budgetCapUsd } : {}),
     }),
 
   listRuns: () => request<RunDetailDto[]>('/runs'),

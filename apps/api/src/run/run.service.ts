@@ -1,4 +1,4 @@
-import { ConflictException, Inject, Injectable, Logger } from '@nestjs/common';
+import { ConflictException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
 import type { CreateRunDto, ConfigLayer, ReferenceImage, Ref, RoleDef } from '@reefcraft/shared';
 import { InputDef, RoleDef as RoleDefSchema, StageDef } from '@reefcraft/shared';
@@ -361,13 +361,13 @@ export class RunService {
    * path. `startDryRun` just resolves `(blueprintId, version)` to the
    * `channelId`/`blueprintVersionId` pair `create()` needs, then reuses
    * `create()`/`start()` verbatim with `{dryRun: true}`. */
-  async startDryRun(blueprintId: string, version: number) {
+  async startDryRun(blueprintId: string, version: number, budgetCapUsd = 1) {
     const [blueprintRow] = await this.db
       .select({ channelId: blueprint.channelId })
       .from(blueprint)
       .where(eq(blueprint.id, blueprintId))
       .limit(1);
-    if (!blueprintRow) throw new Error(`Blueprint ${blueprintId} not found`);
+    if (!blueprintRow) throw new NotFoundException(`Blueprint ${blueprintId} not found`);
 
     const [versionRow] = await this.db
       .select({ id: blueprintVersion.id })
@@ -376,7 +376,9 @@ export class RunService {
         and(eq(blueprintVersion.blueprintId, blueprintId), eq(blueprintVersion.version, version)),
       )
       .limit(1);
-    if (!versionRow) throw new Error(`Blueprint ${blueprintId} version ${version} not found`);
+    if (!versionRow) {
+      throw new NotFoundException(`Blueprint ${blueprintId} version ${version} not found`);
+    }
 
     const created = await this.create(
       {
@@ -384,7 +386,7 @@ export class RunService {
         blueprintVersionId: versionRow.id,
         inputs: {},
         roleBindings: {},
-        budgetCapUsd: 1,
+        budgetCapUsd,
       },
       { dryRun: true },
     );

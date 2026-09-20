@@ -13,9 +13,10 @@ export function DryRunTrigger() {
   const navigate = useNavigate();
   const [blueprintId, setBlueprintId] = useState('');
   const [version, setVersion] = useState(1);
+  const [budgetCapUsd, setBudgetCapUsd] = useState(1);
 
   const dryRun = useMutation({
-    mutationFn: () => api.startDryRun(blueprintId, version),
+    mutationFn: () => api.startDryRun(blueprintId, version, budgetCapUsd),
     onSuccess: (run) => navigate(`/runs/${run.id}`),
   });
 
@@ -29,6 +30,14 @@ export function DryRunTrigger() {
       <label>
         Version
         <input type="number" value={version} onChange={(e) => setVersion(Number(e.target.value))} />
+      </label>
+      <label>
+        Budget cap (USD)
+        <input
+          type="number"
+          value={budgetCapUsd}
+          onChange={(e) => setBudgetCapUsd(Number(e.target.value))}
+        />
       </label>
       <div>
         <button onClick={() => dryRun.mutate()} disabled={dryRun.isPending || !blueprintId}>

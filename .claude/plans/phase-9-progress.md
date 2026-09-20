@@ -414,3 +414,32 @@ build` clean (same pre-existing >500kB chunk-size warning on
 format:check` failed once on the 3 new component files (line-wrap only),
   fixed with a targeted `prettier --write` on exactly those 3 files, then
   clean.
+
+### Post-review fixes (PR #19 code review)
+
+All 6 findings (2 MEDIUM, 4 LOW) from `.claude/reviews/pr-19-review.md`
+fixed before merge, per the user's explicit request:
+
+- `CapabilityController.resolve()` now catches an unknown-capability-key
+  throw and returns `NotFoundException` instead of an opaque 500 —
+  regression test added.
+- `POST /templates/:id/instantiate` now validates its body via a new
+  `InstantiateTemplateDto`, closing the one endpoint in this phase left
+  without Zod validation.
+- `RunService.startDryRun()` and `TemplateService.instantiate()`'s "not
+  found" throws switched from plain `Error` to `NotFoundException`,
+  matching `ArtifactService.getById()`'s Chunk 2 convention.
+- `startDryRun()`'s hardcoded `budgetCapUsd: 1` is now an optional,
+  caller-configurable parameter (still defaulting to `1`), backed by a new
+  `StartDryRunDto` and threaded through `DryRunTrigger`'s UI.
+- `TemplateService.save()`'s check-then-insert race is now closed with a
+  `try/catch` around the transaction, converting a Postgres unique
+  violation (`23505`) to the same `ConflictException` the pre-check gives
+  — mirrors the existing `isUniqueViolation` pattern already used in
+  `ledger.service.ts`/`stage-runner.service.ts`.
+- `SaveTemplateDto.name` gained `.min(1)`.
+
+New unit tests: `packages/shared/src/dto/template.dto.test.ts`,
+`run.dto.test.ts` (8 tests), plus one new case in
+`capability.controller.test.ts`. Re-verified: 277/277 api unit tests,
+27/27 shared unit tests, 173/173 e2e tests, both builds/lint/format clean.

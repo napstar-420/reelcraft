@@ -3,7 +3,7 @@
 **Reviewed**: 2026-09-21
 **Author**: napstar-420
 **Branch**: `codex/phase9-editor-templates` → `main`
-**Decision**: APPROVE with comments
+**Decision**: APPROVE with comments (all findings fixed below before merge)
 
 ## Summary
 
@@ -35,21 +35,35 @@ None.
 
 6. **`SaveTemplateDto.name` has no minimum length** (`packages/shared/src/dto/template.dto.ts:17`). An empty-string template name currently passes Zod validation and can be saved (the DB's `NOT NULL` constraint doesn't reject an empty string).
 
+## Resolution
+
+All 6 findings fixed before merge, at the user's request ("Let's fix all before merging"):
+
+1. **Fixed** — `CapabilityController.resolve()` now catches the registry's throw and returns a clean `NotFoundException`. Regression test added in `capability.controller.test.ts`.
+2. **Fixed** — `POST /templates/:id/instantiate` now validates its body via a new `InstantiateTemplateDto` (`packages/shared/src/dto/template.dto.ts`), wired through `ZodValidationPipe`. Unit tests added in `template.dto.test.ts`.
+3. **Fixed** — `RunService.startDryRun()` and `TemplateService.instantiate()`'s "not found" throws now use `NotFoundException`, matching `ArtifactService.getById()`'s convention.
+4. **Fixed** — `startDryRun()` now takes an optional `budgetCapUsd` parameter (default `1`, unchanged behavior when omitted), backed by a new `StartDryRunDto` on `POST /blueprints/:id/versions/:v/dry-run`. Threaded through the frontend `DryRunTrigger` component and `api.startDryRun` client function with a new "Budget cap (USD)" field. Unit tests added in `run.dto.test.ts`.
+5. **Fixed** — `TemplateService.save()`'s transaction is now wrapped in a `try/catch` that converts a Postgres unique-violation (`23505`) into the same `ConflictException` the pre-check gives the common case, mirroring the existing `isUniqueViolation` pattern already used in `ledger.service.ts`/`stage-runner.service.ts`. Not unit-tested directly (mocking Drizzle's full chainable query builder plus `.transaction()` for this one branch was judged not worth the fragility it would add, and no other use of this codebase's `isUniqueViolation` pattern is unit-tested either) — covered indirectly by the existing e2e name-collision test continuing to pass through the new try/catch.
+6. **Fixed** — `SaveTemplateDto.name` now has `.min(1)`. Unit test added in `template.dto.test.ts`.
+
+Re-verified after fixes: 277/277 unit tests (api), 27/27 unit tests (shared, +8 new), 173/173 e2e tests, both builds clean, lint clean, format clean.
+
 ## Validation Results
 
-| Check | Result |
-| --- | --- |
-| Type check (`shared`/`api`/`web`) | Pass |
-| Lint | Pass (1 pre-existing unrelated warning in `apps/api/test/e2e/media-output.e2e.test.ts`) |
-| Unit tests | Pass — 276/276 |
-| E2E tests | Pass — 173/173 (full regression, including `dry-run.e2e.test.ts` driving a real dry run through the actual Inngest functions to completion) |
-| Build (`api`/`web`) | Pass |
-| Format | Pass |
-| Manual browser verification | Pass — capability resolve, schema template save, check-test 404 handling, blueprint template instantiate, and a live dry run all exercised end to end against real dev servers |
+| Check                             | Result                                                                                                                                                                         |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Type check (`shared`/`api`/`web`) | Pass                                                                                                                                                                           |
+| Lint                              | Pass (1 pre-existing unrelated warning in `apps/api/test/e2e/media-output.e2e.test.ts`)                                                                                        |
+| Unit tests                        | Pass — 276/276                                                                                                                                                                 |
+| E2E tests                         | Pass — 173/173 (full regression, including `dry-run.e2e.test.ts` driving a real dry run through the actual Inngest functions to completion)                                    |
+| Build (`api`/`web`)               | Pass                                                                                                                                                                           |
+| Format                            | Pass                                                                                                                                                                           |
+| Manual browser verification       | Pass — capability resolve, schema template save, check-test 404 handling, blueprint template instantiate, and a live dry run all exercised end to end against real dev servers |
 
 ## Files Reviewed
 
 **Added**
+
 - `apps/api/src/check/check-test.service.ts`, `check.controller.ts`, `check.controller.test.ts`
 - `apps/api/src/db/schema/run.ts` (column addition) + `apps/api/drizzle/0011_bitter_iron_patriot.sql` + `meta/0011_snapshot.json` + `meta/_journal.json`
 - `apps/api/test/e2e/blueprint-validate.e2e.test.ts`, `check-test.e2e.test.ts`, `dry-run.e2e.test.ts`, `template-library.e2e.test.ts`
@@ -59,6 +73,7 @@ None.
 - `.claude/launch.json`, `.claude/plans/phase-9-progress.md`, `docs/plans/phase-9-editor-templates.md`
 
 **Modified**
+
 - `apps/api/src/artifact/artifact.service.ts` (`getById`)
 - `apps/api/src/blueprint/blueprint-validator.service.ts` (`validateCheckDef` extraction), `blueprint-validator.test.ts`, `blueprint.controller.ts`, `blueprint.module.ts`, `blueprint.service.ts` (`computeValidation`/`validateOnly`)
 - `apps/api/src/capability/capability.controller.ts`, `capability.controller.test.ts`, `capability.module.ts`

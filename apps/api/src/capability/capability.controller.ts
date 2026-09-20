@@ -1,4 +1,12 @@
-import { BadRequestException, Body, Controller, Get, Param, Post } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  NotFoundException,
+  Param,
+  Post,
+} from '@nestjs/common';
 import { ResolveCapabilityRequestDto } from '@reefcraft/shared';
 import { CapabilityRegistry } from './capability.registry';
 import { ProviderRegistry } from '../provider/provider.registry';
@@ -41,7 +49,12 @@ export class CapabilityController {
     @Param('key') key: string,
     @Body(new ZodValidationPipe(ResolveCapabilityRequestDto)) dto: ResolveCapabilityRequestDto,
   ) {
-    const impl = this.capabilities.get(key);
+    let impl: ReturnType<CapabilityRegistry['get']>;
+    try {
+      impl = this.capabilities.get(key);
+    } catch {
+      throw new NotFoundException(`Unknown capability "${key}"`);
+    }
     const violations = this.schemas.validate(impl.configSchema, dto.config);
     if (violations.length) {
       throw new BadRequestException(violations);
