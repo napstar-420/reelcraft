@@ -28,8 +28,9 @@ type MemoryRow = typeof runMemory.$inferSelect;
 /**
  * §3.11/§6.3 — append-only: the highest version determines the current
  * state. A highest-version tombstone makes the key absent; older values stay
- * available only through history. Indexed-group (`key#i`) writes remain phase
- * 7 — every value write today targets the bare `memKey` in `StageDef.writes`.
+ * available only through history. An iterating stage's `StageDef.writes`
+ * target an indexed group (`key#i`) rather than the bare `memKey` (§14);
+ * `listGroupCurrent` aggregates a group back into an ordered array.
  */
 @Injectable()
 export class MemoryService {
@@ -139,11 +140,17 @@ export class MemoryService {
               `did not resolve against the finalized artifact's data`,
           );
         }
-        const version = await nextVersion(tx, source.runId, memKey);
+        // §14/§6.3 — an iterating stage's write targets an indexed slot of
+        // the group (`key#i`), not the bare key; `writtenItem` still records
+        // the bare index (unchanged) so `appendTombstones` keeps matching on
+        // it regardless of which key column actually got the row.
+        const writtenKey =
+          source.itemIndex === undefined ? memKey : `${memKey}#${source.itemIndex}`;
+        const version = await nextVersion(tx, source.runId, writtenKey);
         await tx.insert(runMemory).values({
           id: ulid(),
           runId: source.runId,
-          memKey,
+          memKey: writtenKey,
           version,
           writtenBy: stage.key,
           writtenItem: source.itemIndex,
@@ -154,6 +161,40 @@ export class MemoryService {
         });
       }
     };
+  }
+
+  /**
+   * §6.3/§14 — every current (non-tombstoned) row of an indexed group
+   * `baseKey#0…baseKey#N-1`, ordered by the numeric suffix. Used by
+   * `{from:'memory', key}` (bare) to aggregate an iterating stage's writes
+   * into the ordered array the binding resolver returns. A read that
+   * resolves to zero rows (every index tombstoned, or the key was never
+   * written) throws — per §6.3, "a read resolving to nothing but tombstones
+   * is a runtime error," not an empty array.
+   */
+  async listGroupCurrent(
+    executor: MemoryExecutor,
+    runId: string,
+    baseKey: string,
+  ): Promise<MemoryRow[]> {
+    const current = await this.listCurrent(executor, runId);
+    const prefix = `${baseKey}#`;
+    const indexed = current
+      .map((row) => {
+        if (!row.memKey.startsWith(prefix)) return undefined;
+        const suffix = row.memKey.slice(prefix.length);
+        if (!/^\d+$/.test(suffix)) return undefined;
+        return { row, index: Number(suffix) };
+      })
+      .filter((entry): entry is { row: MemoryRow; index: number } => entry !== undefined)
+      .sort((a, b) => a.index - b.index);
+    if (indexed.length === 0) {
+      throw new Error(
+        `MemoryService: memory group "${baseKey}" resolved to zero current rows ` +
+          '(never written, or every index tombstoned)',
+      );
+    }
+    return indexed.map((entry) => entry.row);
   }
 
   private async listLatest(executor: MemoryExecutor, runId: string): Promise<MemoryRow[]> {

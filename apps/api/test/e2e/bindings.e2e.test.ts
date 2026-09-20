@@ -46,9 +46,9 @@ describe('binding resolver + memory writes (e2e)', () => {
   beforeAll(async () => {
     testDb = await createTestDb();
     const db = testDb.db;
-    bindings = new BindingResolverService(db);
-    artifacts = new ArtifactService(db);
     memory = new MemoryService();
+    bindings = new BindingResolverService(db, memory);
+    artifacts = new ArtifactService(db);
 
     const channelId = ulid();
     await db.insert(channel).values({ id: channelId, ownerId: 'local', name: 'Test Channel' });
@@ -423,6 +423,150 @@ describe('binding resolver + memory writes (e2e)', () => {
     });
     const repeatedHistory = await memory.listHistory(testDb.db, runId);
     expect(repeatedHistory.filter((row) => row.memKey === 'outline')).toHaveLength(2);
+  });
+
+  it('an iterating stage write lands at key#i, and a bare-key read aggregates the group in order', async () => {
+    const stage = textStage('shots', { writes: { shots: '$' } });
+    for (const i of [0, 1, 2]) {
+      const artifactId = await artifacts.recordAttemptArtifact({
+        runId,
+        producerStageKey: stage.key,
+        itemIndex: i,
+        kind: 'text',
+        data: { text: `shot ${i}` },
+        reproLevel: 'exact',
+        costUsd: 0,
+      });
+      await artifacts.finalize({
+        runId,
+        stageExecutionId: ulid(),
+        producerStageKey: stage.key,
+        itemIndex: i,
+        newArtifactId: artifactId,
+        applyWrites: memory.buildWriteCallback(stage, {
+          runId,
+          stageKey: stage.key,
+          itemIndex: i,
+          kind: 'text',
+          data: { text: `shot ${i}` },
+        }),
+      });
+    }
+
+    // An explicit indexed read keeps today's single-value shape unchanged.
+    const explicit = await bindings.resolve(
+      { from: 'memory', key: 'shots#1' },
+      { runId, inputs: {} },
+    );
+    expect(explicit.value).toEqual({ text: 'shot 1' });
+    expect(explicit.provenance.memoryVersion).toBe(1);
+    expect(explicit.provenance.memoryVersions).toBeUndefined();
+
+    // A bare-key read aggregates the group into an ordered array.
+    const group = await bindings.resolve({ from: 'memory', key: 'shots' }, { runId, inputs: {} });
+    expect(group.value).toEqual([{ text: 'shot 0' }, { text: 'shot 1' }, { text: 'shot 2' }]);
+    expect(group.provenance.memoryVersion).toBeUndefined();
+    expect(group.provenance.memoryVersions).toEqual([
+      { itemIndex: 0, version: 1 },
+      { itemIndex: 1, version: 1 },
+      { itemIndex: 2, version: 1 },
+    ]);
+
+    const envelopes = await bindings.resolveRefEnvelopes(
+      { x: { from: 'memory', key: 'shots' } },
+      { runId, inputs: {} },
+    );
+    expect(envelopes.refs.x).toEqual({
+      kind: 'literal',
+      data: [{ text: 'shot 0' }, { text: 'shot 1' }, { text: 'shot 2' }],
+    });
+    expect(envelopes.provenance.x?.memoryVersions).toHaveLength(3);
+  });
+
+  it('a group read after a partial re-run reflects the tombstoned set, not the original count (§6.3 orphan scenario)', async () => {
+    await testDb.db.transaction(async (tx) => {
+      await memory.appendTombstones(tx, runId, [{ stageKey: 'shots', itemIndex: 2 }]);
+    });
+
+    await expect(
+      bindings.resolve({ from: 'memory', key: 'shots#2' }, { runId, inputs: {} }),
+    ).rejects.toThrow('no memory entry');
+
+    // The group read now reflects only the surviving two indices — an
+    // orphaned entry from the old count never resurfaces.
+    const group = await bindings.resolve({ from: 'memory', key: 'shots' }, { runId, inputs: {} });
+    expect(group.value).toEqual([{ text: 'shot 0' }, { text: 'shot 1' }]);
+
+    // Re-running item 2 appends a new version at the same index rather than
+    // resurrecting the tombstoned one.
+    const stage = textStage('shots', { writes: { shots: '$' } });
+    const artifactId = await artifacts.recordAttemptArtifact({
+      runId,
+      producerStageKey: stage.key,
+      itemIndex: 2,
+      kind: 'text',
+      data: { text: 'shot 2 retried' },
+      reproLevel: 'exact',
+      costUsd: 0,
+    });
+    await artifacts.finalize({
+      runId,
+      stageExecutionId: ulid(),
+      producerStageKey: stage.key,
+      itemIndex: 2,
+      newArtifactId: artifactId,
+      applyWrites: memory.buildWriteCallback(stage, {
+        runId,
+        stageKey: stage.key,
+        itemIndex: 2,
+        kind: 'text',
+        data: { text: 'shot 2 retried' },
+      }),
+    });
+    const rebuilt = await bindings.resolve({ from: 'memory', key: 'shots' }, { runId, inputs: {} });
+    expect(rebuilt.value).toEqual([
+      { text: 'shot 0' },
+      { text: 'shot 1' },
+      { text: 'shot 2 retried' },
+    ]);
+  });
+
+  it('a group read where every indexed entry is tombstoned throws, not an empty array', async () => {
+    const stage = textStage('allGone', { writes: { allGone: '$' } });
+    for (const i of [0, 1]) {
+      const artifactId = await artifacts.recordAttemptArtifact({
+        runId,
+        producerStageKey: stage.key,
+        itemIndex: i,
+        kind: 'text',
+        data: { text: `x${i}` },
+        reproLevel: 'exact',
+        costUsd: 0,
+      });
+      await artifacts.finalize({
+        runId,
+        stageExecutionId: ulid(),
+        producerStageKey: stage.key,
+        itemIndex: i,
+        newArtifactId: artifactId,
+        applyWrites: memory.buildWriteCallback(stage, {
+          runId,
+          stageKey: stage.key,
+          itemIndex: i,
+          kind: 'text',
+          data: { text: `x${i}` },
+        }),
+      });
+    }
+    await testDb.db.transaction(async (tx) => {
+      await memory.appendTombstones(tx, runId, [
+        { stageKey: 'allGone', itemIndex: 0 },
+        { stageKey: 'allGone', itemIndex: 1 },
+      ]);
+    });
+    await expect(
+      bindings.resolve({ from: 'memory', key: 'allGone' }, { runId, inputs: {} }),
+    ).rejects.toThrow('no memory entry');
   });
 
   it('throws rather than silently writing undefined when a writes path does not resolve', async () => {
