@@ -116,3 +116,160 @@ describe('computeInvalidationClosure', () => {
     expect(result.affectedStageKeys).toEqual(['prompt', 'approval-gate']);
   });
 });
+
+// phase 7 chunk 5 — item-level invalidation (§15.2).
+function itemExecution(
+  stageKey: string,
+  itemIndex: number,
+  artifactId: string,
+  options: { bindsPrevItem?: boolean; provenance?: ActiveExecutionRead['provenance'] } = {},
+): ActiveExecutionRead {
+  return {
+    stageKey,
+    stageExecutionId: `exec-${stageKey}`,
+    itemIndex,
+    artifactId,
+    bindsPrevItem: options.bindsPrevItem ?? false,
+    provenance: options.provenance ?? {},
+  };
+}
+
+function brollItems(
+  count: number,
+  bindsPrevItem: boolean,
+): { executions: ActiveExecutionRead[]; artifactIds: string[] } {
+  const artifactIds = Array.from({ length: count }, (_, i) => `artifact-broll-${i}`);
+  const executions = artifactIds.map((artifactId, i) =>
+    itemExecution('broll', i, artifactId, {
+      bindsPrevItem,
+      provenance:
+        bindsPrevItem && i > 0
+          ? {
+              'slots.startFrame': {
+                ref: { from: 'prevItem', path: 'lastFrame' },
+                artifactId: artifactIds[i - 1]!,
+              },
+            }
+          : {},
+    }),
+  );
+  return { executions, artifactIds };
+}
+
+describe('computeInvalidationClosure — item-level (phase 7 chunk 5)', () => {
+  it('leaves later items of a non-prevItem-binding stage untouched', () => {
+    const { executions } = brollItems(6, false);
+
+    const result = computeInvalidationClosure({
+      graphOrder: ['broll'],
+      executions,
+      seed: { items: [{ stageKey: 'broll', itemIndex: 2 }] },
+      memoryVersionWriters: [],
+    });
+
+    expect(result.affectedItems).toEqual([
+      {
+        stageKey: 'broll',
+        stageExecutionId: 'exec-broll',
+        itemIndex: 2,
+        artifactId: 'artifact-broll-2',
+      },
+    ]);
+    expect(result.affectedStageKeys).toEqual(['broll']);
+  });
+
+  it('cascades to every later item of a stage that binds prevItem', () => {
+    const { executions } = brollItems(6, true);
+
+    const result = computeInvalidationClosure({
+      graphOrder: ['broll'],
+      executions,
+      seed: { items: [{ stageKey: 'broll', itemIndex: 2 }] },
+      memoryVersionWriters: [],
+    });
+
+    expect(result.affectedItems.map((item) => item.itemIndex)).toEqual([2, 3, 4, 5]);
+  });
+
+  it('invalidates only the aligned downstream item, pointwise, for alignWith:item', () => {
+    const { executions: brollExecutions } = brollItems(3, false);
+    const clipfxExecutions = [0, 1, 2].map((i) =>
+      itemExecution('clipfx', i, `artifact-clipfx-${i}`, {
+        provenance: {
+          'slots.clip': {
+            ref: { from: 'prev', alignWith: 'item' },
+            artifactId: `artifact-broll-${i}`,
+          },
+        },
+      }),
+    );
+
+    const result = computeInvalidationClosure({
+      graphOrder: ['broll', 'clipfx'],
+      executions: [...brollExecutions, ...clipfxExecutions],
+      seed: { items: [{ stageKey: 'broll', itemIndex: 1 }] },
+      memoryVersionWriters: [],
+    });
+
+    const clipfxAffected = result.affectedItems.filter((item) => item.stageKey === 'clipfx');
+    expect(clipfxAffected).toEqual([
+      {
+        stageKey: 'clipfx',
+        stageExecutionId: 'exec-clipfx',
+        itemIndex: 1,
+        artifactId: 'artifact-clipfx-1',
+      },
+    ]);
+  });
+
+  it('invalidates a bare group-key reader as a whole when any indexed write is invalid, but not an unrelated reader', () => {
+    const { executions: brollExecutions } = brollItems(3, false);
+    const timelineExecution = execution('timeline', 'artifact-timeline', {
+      'slots.broll': {
+        ref: { from: 'memory', key: 'broll' },
+        memoryKey: 'broll',
+        memoryVersions: [
+          { itemIndex: 0, version: 1 },
+          { itemIndex: 1, version: 1 },
+          { itemIndex: 2, version: 1 },
+        ],
+      },
+    });
+    const musicExecution = execution('music', 'artifact-music', {
+      'slots.script': {
+        ref: { from: 'memory', key: 'script' },
+        memoryKey: 'script',
+        memoryVersion: 1,
+      },
+    });
+    const scriptExecution = execution('script', 'artifact-script');
+
+    const result = computeInvalidationClosure({
+      graphOrder: ['script', 'broll', 'music', 'timeline'],
+      executions: [scriptExecution, ...brollExecutions, musicExecution, timelineExecution],
+      seed: { items: [{ stageKey: 'broll', itemIndex: 1 }] },
+      memoryVersionWriters: [
+        { memoryKey: 'broll#0', memoryVersion: 1, stageKey: 'broll', itemIndex: 0 },
+        { memoryKey: 'broll#1', memoryVersion: 1, stageKey: 'broll', itemIndex: 1 },
+        { memoryKey: 'broll#2', memoryVersion: 1, stageKey: 'broll', itemIndex: 2 },
+        { memoryKey: 'script', memoryVersion: 1, stageKey: 'script' },
+      ],
+    });
+
+    expect(result.affectedStageKeys).toContain('timeline');
+    expect(result.affectedStageKeys).not.toContain('music');
+  });
+
+  it('invalidates every item when a whole iterating stage is retried', () => {
+    const { executions } = brollItems(4, false);
+
+    const result = computeInvalidationClosure({
+      graphOrder: ['broll'],
+      executions,
+      seed: { stageKeys: ['broll'] },
+      memoryVersionWriters: [],
+    });
+
+    expect(result.affectedItems.map((item) => item.itemIndex)).toEqual([0, 1, 2, 3]);
+  });
+});

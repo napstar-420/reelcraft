@@ -20,4 +20,10 @@ export const objectKey = {
 
   characterRef: (ownerId: string, characterId: string, blobId: string): string =>
     `${ownerId}/characters/${characterId}/refs/${blobId}.png`,
+
+  /** §14.4 — ffmpeg-extracted `firstFrame`/`lastFrame` PNGs, cached on the
+   * source artifact's `derived` column and stored as their own `blob` row
+   * (`scope: 'run'`) so they're collected by the normal run-scoped GC sweep. */
+  derivedFrame: (ownerId: string, channelId: string, runId: string, blobId: string): string =>
+    `${ownerId}/${channelId}/${runId}/derived/${blobId}.png`,
 };

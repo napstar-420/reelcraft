@@ -99,9 +99,33 @@ export function sourceTypeOfRef(
       return { type: { kind: found.kind } };
     }
 
-    case 'item':
-    case 'prevItem':
-      return unresolved(`{from: "${ref.from}"} is not implemented until phase 7`, issuePath);
+    case 'item': {
+      const stage = ctx.graph[stageIndex];
+      if (!stage?.iterate) {
+        return unresolved('{from:"item"} on a non-iterating stage', issuePath);
+      }
+      const overType = sourceTypeOfRef(stage.iterate.over, ctx, stageIndex, issuePath);
+      if (overType.issue) return overType;
+      if (
+        overType.type.kind !== 'data' ||
+        overType.type.schema.type !== 'array' ||
+        !overType.type.schema.items
+      ) {
+        return unresolved(
+          'iterate.over does not narrow to an array schema',
+          `stages.${stage.key}.iterate.over`,
+        );
+      }
+      return { type: { kind: 'data', schema: overType.type.schema.items } };
+    }
+
+    case 'prevItem': {
+      const stage = ctx.graph[stageIndex];
+      if (!stage?.iterate) {
+        return unresolved('{from:"prevItem"} on a non-iterating stage', issuePath);
+      }
+      return { type: sourceTypeOfOutput(stage.output) };
+    }
   }
 }
 
@@ -118,6 +142,20 @@ export function resolveBoundType(
   if (base.issue) return base;
   const path = 'path' in ref ? ref.path : undefined;
   if (!path) return base;
+
+  // §14.4 — `{from:'prevItem', path:'lastFrame'|'firstFrame'}` is the
+  // ffmpeg-backed derived-frame shortcut (`DerivedFrameService`, resolved at
+  // run time by `binding-resolver.service.ts`'s own `case 'prevItem'`), not
+  // an ordinary JSON-schema path into the stage's own output type. It always
+  // yields a real `media.image` regardless of what the iterating stage
+  // itself outputs — typically `media.video`, which correctly has no other
+  // fields to path into. Without this, the design spec's own canonical
+  // `broll` shape (`video.generate` iterating with `startFrame` bound to
+  // `prevItem.lastFrame`) would fail validation with "a media.video
+  // artifact has no fields to path into".
+  if (ref.from === 'prevItem' && (path === 'lastFrame' || path === 'firstFrame')) {
+    return { type: { kind: 'media.image' } };
+  }
 
   const narrowed = narrowRefPath(base.type, path);
   if (narrowed.ok) return { type: narrowed.type };

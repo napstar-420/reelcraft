@@ -1,8 +1,10 @@
 import { createHash } from 'node:crypto';
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { and, eq, inArray, sql } from 'drizzle-orm';
-import { StageDef } from '@reefcraft/shared';
+import type { Ref, StageDef } from '@reefcraft/shared';
+import { StageDef as StageDefSchema } from '@reefcraft/shared';
 import { MemoryService } from '../artifact/memory.service';
+import type { RefProvenance } from '../artifact/binding-resolver.service';
 import { DRIZZLE, type Db, type Tx } from '../db/drizzle.provider';
 import {
   artifact,
@@ -13,10 +15,12 @@ import {
   runMemory,
   stageAttempt,
   stageExecution,
+  stageItem,
 } from '../db/schema/index';
 import { canonicalJson } from '../json-schema/schema-hash';
 import {
   computeInvalidationClosure,
+  type ActiveExecutionRead,
   type InvalidationClosure,
   type InvalidationSeed,
 } from './invalidation-closure';
@@ -24,6 +28,9 @@ import {
 export interface InvalidationCost {
   artifactId: string;
   stageKey: string;
+  /** phase 7 chunk 5 — set when the cost row belongs to one item of an
+   * iterating stage rather than the stage as a whole. */
+  itemIndex?: number;
   spentUsd: number;
   estimatedRerunUsd: number;
 }
@@ -34,6 +41,28 @@ export interface InvalidationPreview {
   totals: { spentUsd: number; estimatedRerunUsd: number };
   fingerprint: string;
 }
+
+/** phase 7 chunk 5 — true iff `stage`'s OWN declared bindings (any slot,
+ * context, or script-check ref) include a `{from:'prevItem'}` anywhere.
+ * Deliberately computed from the `StageDef`, not from any attempt's
+ * recorded `resolved_inputs`: an item-0 attempt never actually resolves a
+ * value for `prevItem` (no artifactId is ever recorded for it), so
+ * provenance-only inference would silently under-invalidate item 0's
+ * dependents whenever item 0 is the only item that has run so far. */
+function stageBindsPrevItem(stage: StageDef): boolean {
+  const isPrevItem = (ref: Ref): boolean => ref.from === 'prevItem';
+  if (Object.values(stage.slots).some(isPrevItem)) return true;
+  if (Object.values(stage.context).some(isPrevItem)) return true;
+  for (const check of stage.checks) {
+    if (check.type === 'script' && check.refs && Object.values(check.refs).some(isPrevItem)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+type StageAttemptRow = typeof stageAttempt.$inferSelect;
+type StageItemRow = typeof stageItem.$inferSelect;
 
 /** Loads the observed dependency graph recorded on attempts and applies the
  * resulting closure. All state-changing methods accept the caller's locked
@@ -54,34 +83,107 @@ export class InvalidationService {
       .limit(1);
     if (!runRow) throw new NotFoundException(`Run ${params.runId} not found`);
 
-    const graphOrder = StageDef.array()
-      .parse(runRow.graph)
-      .map((stage) => stage.key);
+    const graph = StageDefSchema.array().parse(runRow.graph);
+    const graphOrder = graph.map((stage) => stage.key);
+    const stageByKey = new Map(graph.map((stage) => [stage.key, stage]));
+
     const executions = await this.db
       .select()
       .from(stageExecution)
       .where(eq(stageExecution.runId, params.runId));
     const executionIds = executions.map((row) => row.id);
-    const attempts =
+    const [attempts, items] = await Promise.all([
       executionIds.length === 0
-        ? []
-        : await this.db
+        ? Promise.resolve<StageAttemptRow[]>([])
+        : this.db
             .select()
             .from(stageAttempt)
-            .where(inArray(stageAttempt.stageExecutionId, executionIds));
+            .where(inArray(stageAttempt.stageExecutionId, executionIds)),
+      executionIds.length === 0
+        ? Promise.resolve<StageItemRow[]>([])
+        : this.db.select().from(stageItem).where(inArray(stageItem.stageExecutionId, executionIds)),
+    ]);
 
-    const activeAttemptByExecution = new Map<string, (typeof attempts)[number]>();
+    const itemsByExecution = new Map<string, StageItemRow[]>();
+    for (const item of items) {
+      const list = itemsByExecution.get(item.stageExecutionId);
+      if (list) list.push(item);
+      else itemsByExecution.set(item.stageExecutionId, [item]);
+    }
+
+    const nonItemAttempts = attempts.filter((attempt) => attempt.stageItemId === null);
+    const itemAttempts = attempts.filter((attempt) => attempt.stageItemId !== null);
+
+    const activeAttemptByExecution = new Map<string, StageAttemptRow>();
     for (const execution of executions) {
-      const candidates = attempts.filter((attempt) => attempt.stageExecutionId === execution.id);
+      const candidates = nonItemAttempts.filter(
+        (attempt) => attempt.stageExecutionId === execution.id,
+      );
       const active = execution.outputArtifactId
         ? candidates.find((attempt) => attempt.artifactId === execution.outputArtifactId)
         : undefined;
-      const latest = candidates.reduce<(typeof attempts)[number] | undefined>(
+      const latest = candidates.reduce<StageAttemptRow | undefined>(
         (current, attempt) =>
           !current || attempt.attemptNo > current.attemptNo ? attempt : current,
         undefined,
       );
       if (active ?? latest) activeAttemptByExecution.set(execution.id, (active ?? latest)!);
+    }
+
+    const activeAttemptByItem = new Map<string, StageAttemptRow>();
+    for (const item of items) {
+      const candidates = itemAttempts.filter((attempt) => attempt.stageItemId === item.id);
+      const active = item.outputArtifactId
+        ? candidates.find((attempt) => attempt.artifactId === item.outputArtifactId)
+        : undefined;
+      const latest = candidates.reduce<StageAttemptRow | undefined>(
+        (current, attempt) =>
+          !current || attempt.attemptNo > current.attemptNo ? attempt : current,
+        undefined,
+      );
+      if (active ?? latest) activeAttemptByItem.set(item.id, (active ?? latest)!);
+    }
+
+    // phase 7 chunk 5 — one node per item for an iterating stage (that has
+    // any `stage_item` rows at all), otherwise the single stage-level node
+    // exactly as before phase 7.
+    const activeExecutionReads: ActiveExecutionRead[] = [];
+    for (const execution of executions) {
+      // MEDIUM finding #2 (PR #17 review) — a `stage_item` row whose index
+      // is at or beyond the execution's CURRENT `itemCount` is an orphan
+      // from a prior, larger resolved count (e.g. an `iterate.over` retry
+      // that shrank the array — see `ensureStageItems`'s own guard). Such a
+      // row is intentionally left in the DB rather than deleted (no cascade
+      // from `stage_attempt.stage_item_id`), so it must never resurface in
+      // a preview/closure — it belongs to no live item.
+      const stageItemsForExecution = (itemsByExecution.get(execution.id) ?? [])
+        .filter((item) => execution.itemCount === null || item.itemIndex < execution.itemCount)
+        .sort((a, b) => a.itemIndex - b.itemIndex);
+      if (stageItemsForExecution.length > 0) {
+        const stage = stageByKey.get(execution.stageKey);
+        const bindsPrevItem = stage ? stageBindsPrevItem(stage) : false;
+        for (const item of stageItemsForExecution) {
+          const attempt = activeAttemptByItem.get(item.id);
+          activeExecutionReads.push({
+            stageKey: execution.stageKey,
+            stageExecutionId: execution.id,
+            itemIndex: item.itemIndex,
+            ...(item.outputArtifactId ? { artifactId: item.outputArtifactId } : {}),
+            bindsPrevItem,
+            provenance: (attempt?.resolvedInputs ?? {}) as Record<string, RefProvenance>,
+          });
+        }
+      } else {
+        activeExecutionReads.push({
+          stageKey: execution.stageKey,
+          stageExecutionId: execution.id,
+          ...(execution.outputArtifactId ? { artifactId: execution.outputArtifactId } : {}),
+          provenance: (activeAttemptByExecution.get(execution.id)?.resolvedInputs ?? {}) as Record<
+            string,
+            RefProvenance
+          >,
+        });
+      }
     }
 
     const memoryRows = await this.db
@@ -100,15 +202,7 @@ export class InvalidationService {
 
     const closure = computeInvalidationClosure({
       graphOrder,
-      executions: executions.map((execution) => ({
-        stageKey: execution.stageKey,
-        stageExecutionId: execution.id,
-        ...(execution.outputArtifactId ? { artifactId: execution.outputArtifactId } : {}),
-        provenance: (activeAttemptByExecution.get(execution.id)?.resolvedInputs ?? {}) as Record<
-          string,
-          never
-        >,
-      })),
+      executions: activeExecutionReads,
       seed: {
         ...params.seed,
         artifactIds: [...(params.seed.artifactIds ?? []), ...seededInputArtifactIds],
@@ -158,17 +252,20 @@ export class InvalidationService {
       );
     }
 
-    const costs = closure.affectedStageKeys.flatMap((stageKey) => {
-      const execution = executions.find((row) => row.stageKey === stageKey);
-      const row = affectedArtifacts.find(
-        (candidate) => candidate.id === execution?.outputArtifactId,
-      );
+    // phase 7 chunk 5 — one cost row per invalid ITEM (not per stage): an
+    // iterating stage's affected items each spent and may re-spend their
+    // own money, so summing per stage would misreport a partially
+    // invalidated iterating stage's true exposure.
+    const costs: InvalidationCost[] = closure.affectedItems.flatMap((item) => {
+      if (!item.artifactId) return [];
+      const row = affectedArtifacts.find((candidate) => candidate.id === item.artifactId);
       if (!row) return [];
       const attempt = activeAttemptByArtifact.get(row.id);
       return [
         {
           artifactId: row.id,
-          stageKey,
+          stageKey: item.stageKey,
+          ...(item.itemIndex !== undefined ? { itemIndex: item.itemIndex } : {}),
           spentUsd: Number(row.costUsd),
           estimatedRerunUsd: attempt ? (reservedByAttempt.get(attempt.id) ?? 0) : 0,
         },
@@ -210,25 +307,89 @@ export class InvalidationService {
       }
     }
 
-    for (const stageKey of params.closure.affectedStageKeys) {
-      await tx
-        .update(stageExecution)
-        .set({
-          state: 'stale',
-          outputArtifactId: null,
-          failure: null,
-          endedAt: null,
-          ...(stageKey === params.targetStageKey
-            ? { generation: sql`${stageExecution.generation} + 1` }
-            : {}),
+    // phase 7 chunk 5 — item-scoped stale marking: a stage with SOME but
+    // not all items invalid must not have its `stage_execution.state` set
+    // to 'stale' (that would incorrectly imply every item needs rerunning,
+    // discarding sibling items' completed work) — only the specific
+    // invalid `stage_item` rows are staled, and the outer per-item loop in
+    // `stage.execute` (Chunk 4) re-checks each item's own state on every
+    // invocation regardless of the stage_execution's own state.
+    if (params.closure.affectedExecutionIds.length > 0) {
+      const itemsByExecution = new Map<string, number[]>();
+      for (const item of params.closure.affectedItems) {
+        if (item.itemIndex === undefined) continue;
+        const list = itemsByExecution.get(item.stageExecutionId);
+        if (list) list.push(item.itemIndex);
+        else itemsByExecution.set(item.stageExecutionId, [item.itemIndex]);
+      }
+
+      const executionRows = await tx
+        .select({
+          id: stageExecution.id,
+          stageKey: stageExecution.stageKey,
+          isIterating: stageExecution.isIterating,
+          itemCount: stageExecution.itemCount,
         })
-        .where(and(eq(stageExecution.runId, params.runId), eq(stageExecution.stageKey, stageKey)));
+        .from(stageExecution)
+        .where(inArray(stageExecution.id, params.closure.affectedExecutionIds));
+
+      for (const row of executionRows) {
+        const invalidItemIndexes = itemsByExecution.get(row.id) ?? [];
+        const isWholeStageInvalid =
+          !row.isIterating ||
+          invalidItemIndexes.length === 0 ||
+          (row.itemCount !== null && invalidItemIndexes.length >= row.itemCount);
+
+        if (isWholeStageInvalid) {
+          await tx
+            .update(stageExecution)
+            .set({
+              state: 'stale',
+              outputArtifactId: null,
+              failure: null,
+              endedAt: null,
+              ...(row.stageKey === params.targetStageKey
+                ? { generation: sql`${stageExecution.generation} + 1` }
+                : {}),
+            })
+            .where(eq(stageExecution.id, row.id));
+          if (row.isIterating) {
+            await tx
+              .update(stageItem)
+              .set({ state: 'stale', outputArtifactId: null, failure: null })
+              .where(eq(stageItem.stageExecutionId, row.id));
+          }
+        } else {
+          await tx
+            .update(stageItem)
+            .set({ state: 'stale', outputArtifactId: null, failure: null })
+            .where(
+              and(
+                eq(stageItem.stageExecutionId, row.id),
+                inArray(stageItem.itemIndex, invalidItemIndexes),
+              ),
+            );
+          // The stage_execution row itself is left exactly as it is
+          // (typically 'passed') — some items remain valid — but the
+          // target stage's generation still ticks for UI labelling
+          // (§15.3), matching the whole-stage branch's own bump.
+          if (row.stageKey === params.targetStageKey) {
+            await tx
+              .update(stageExecution)
+              .set({ generation: sql`${stageExecution.generation} + 1` })
+              .where(eq(stageExecution.id, row.id));
+          }
+        }
+      }
     }
 
     await this.memory.appendTombstones(
       tx,
       params.runId,
-      params.closure.affectedStageKeys.map((stageKey) => ({ stageKey })),
+      params.closure.affectedItems.map((item) => ({
+        stageKey: item.stageKey,
+        ...(item.itemIndex !== undefined ? { itemIndex: item.itemIndex } : {}),
+      })),
     );
     await tx
       .update(run)

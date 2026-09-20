@@ -14,7 +14,8 @@
     "db:studio": "drizzle-kit studio",
     "smoke": "tsx test/smoke.ts",
     "acceptance:phase4-restart": "tsc -b tsconfig.build.json --force && tsx test/acceptance/phase4-restart.ts",
-    "acceptance:phase6-render": "pnpm --filter @reefcraft/render-worker build && tsx test/acceptance/phase6-render.ts"
+    "acceptance:phase6-render": "pnpm --filter @reefcraft/render-worker build && tsx test/acceptance/phase6-render.ts",
+    "acceptance:phase7-broll": "bash test/acceptance/run-phase7-broll.sh"
   },
   "dependencies": {
     "@reefcraft/shared": "workspace:*",

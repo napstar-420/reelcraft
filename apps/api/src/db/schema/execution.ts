@@ -49,6 +49,7 @@ export const stageItem = pgTable(
     attemptCount: integer('attempt_count').notNull().default(0),
     outputArtifactId: text('output_artifact_id').references(() => artifact.id),
     costUsd: numeric('cost_usd', { precision: 12, scale: 4 }).notNull().default('0'),
+    failure: jsonb('failure'), // mirrors stage_execution.failure (§14)
   },
   (t) => [
     uniqueIndex('stage_item_stage_execution_id_item_index_uq').on(t.stageExecutionId, t.itemIndex),

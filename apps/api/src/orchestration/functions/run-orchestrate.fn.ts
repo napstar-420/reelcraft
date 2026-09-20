@@ -1,8 +1,8 @@
 import type { Inngest } from 'inngest';
-import { eq } from 'drizzle-orm';
+import { and, eq, inArray, ne } from 'drizzle-orm';
 import { StageDef } from '@reefcraft/shared';
 import type { Db } from '../../db/drizzle.provider';
-import { blueprintVersion, run, stageExecution } from '../../db/schema/index';
+import { blueprintVersion, run, stageExecution, stageItem } from '../../db/schema/index';
 import type { RunStateService } from '../run-state.service';
 import { buildStageExecuteFunction } from './stage-execute.fn';
 import type { RunWakeupClaimService, RunWakeupEventData } from '../../run/run-wakeup-claim.service';
@@ -42,11 +42,22 @@ export function orderStageExecutions<T extends { stageKey: string }>(
  * §12.4 — triggers on `run/resumed` as well as `run/started`: the existing
  * unconditional `mark-running` step below is what actually flips a
  * `PAUSED_BUDGET` run back to `RUNNING` on a resumed invocation, so no
- * separate "un-pause" step is needed. The loop's existing
- * `state === 'passed'` skip re-enters at whichever stage_execution isn't
- * done yet — including the one that was `budget_blocked`, via a fresh
- * `beginAttempt` inside `stage.execute` (a new attempt row, not a
- * resumption of the old one).
+ * separate "un-pause" step is needed. The loop's `state === 'passed'` skip
+ * re-enters at whichever stage_execution isn't done yet — including the one
+ * that was `budget_blocked`, via a fresh `beginAttempt` inside
+ * `stage.execute` (a new attempt row, not a resumption of the old one).
+ *
+ * phase 7 chunk 5 — item-level invalidation can leave an iterating stage's
+ * `stage_execution.state` at `'passed'` while only some of its `stage_item`
+ * rows are `'stale'` (retrying one item never regresses the whole stage —
+ * see `InvalidationService.apply()`). The bare `state === 'passed'` skip
+ * would otherwise never re-`step.invoke` that stage again, stranding the
+ * stale items forever, so the skip also checks `needsItemWork` (computed in
+ * `load-stage-executions` from `stage_item` rows still not `'passed'`).
+ * `stage.execute`'s own outer per-item loop (Chunk 4) already re-checks
+ * each item's state and only re-invokes `stage.execute.item` for the ones
+ * that aren't `'passed'`, so no other change is needed once this function
+ * actually re-enters the stage.
  */
 export function buildRunOrchestrateFunction(
   client: Inngest,
@@ -94,11 +105,38 @@ export function buildRunOrchestrateFunction(
 
         const graph = StageDef.array().parse(row.graph);
         const rows = await db.select().from(stageExecution).where(eq(stageExecution.runId, runId));
-        return orderStageExecutions(graph, rows);
+
+        // phase 7 chunk 5 — item-level invalidation can leave a
+        // `stage_execution.state = 'passed'` row with some of its own
+        // `stage_item` rows staled (only SOME items were invalidated, not
+        // the whole stage — see `InvalidationService.apply()`). The bare
+        // `state === 'passed'` skip below predates iteration and would
+        // otherwise never re-enter that stage, silently stranding the
+        // stale items forever. Load which iterating executions still have
+        // non-passed items so the skip below can account for it.
+        const iteratingIds = rows.filter((r) => r.isIterating).map((r) => r.id);
+        const nonPassedItems =
+          iteratingIds.length === 0
+            ? []
+            : await db
+                .select({ stageExecutionId: stageItem.stageExecutionId })
+                .from(stageItem)
+                .where(
+                  and(
+                    inArray(stageItem.stageExecutionId, iteratingIds),
+                    ne(stageItem.state, 'passed'),
+                  ),
+                );
+        const executionIdsNeedingItemWork = new Set(nonPassedItems.map((r) => r.stageExecutionId));
+
+        return orderStageExecutions(graph, rows).map((r) => ({
+          ...r,
+          needsItemWork: executionIdsNeedingItemWork.has(r.id),
+        }));
       });
 
       for (const execution of executions) {
-        if (execution.state === 'passed') continue;
+        if (execution.state === 'passed' && !execution.needsItemWork) continue;
 
         await step.run(`set-cursor-${execution.stageKey}`, () =>
           runState.setCursor(runId, execution.stageKey),

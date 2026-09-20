@@ -1,11 +1,18 @@
 import { createHash } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 import { and, asc, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
-import type { JobHandle, JobStatus, QcDef } from '@reefcraft/shared';
+import type { JobHandle, JobStatus, QcDef, Ref } from '@reefcraft/shared';
 import { StageDef } from '@reefcraft/shared';
 import { CONSUMES_SEMANTIC_ATTEMPT } from './attempt-outcome';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
-import { run, blueprintVersion, stageAttempt, stageExecution, channel } from '../db/schema/index';
+import {
+  run,
+  blueprintVersion,
+  stageAttempt,
+  stageExecution,
+  stageItem,
+  channel,
+} from '../db/schema/index';
 import { ulid } from '../common/ulid';
 import { fromUsd } from '../common/money';
 import { renderPrompt } from '../common/prompt-template';
@@ -42,6 +49,17 @@ export interface StageAttemptContext {
   stageKey: string;
   attemptNo: number;
   stageAttemptId: string;
+  /** phase 7 chunk 4 — set by `stage.execute.item`'s per-item body; every
+   * non-iterating call site leaves this undefined, so
+   * `BindingResolverService`/`ExecCtx` see exactly today's behavior. */
+  itemIndex?: number | undefined;
+  /** phase 7 chunk 4 — the `stage_item` row this attempt belongs to, set
+   * together with `itemIndex`. Threads through to every attempt-scoped
+   * query (`beginAttempt`'s own predicate, `countSemanticAttemptsUsed`,
+   * `countInfraAttemptsUsed`, `loadCritiqueLog`, `failStageExecution` via
+   * `recordFailure`) so an item's attempts never mix with the stage's own
+   * (non-item) attempts or another item's. */
+  stageItemId?: string | undefined;
 }
 
 export interface StageContext {
@@ -170,16 +188,27 @@ export class StageRunnerService {
     runId: string;
     stageExecutionId: string;
     stageKey: string;
+    itemIndex?: number | undefined;
+    stageItemId?: string | undefined;
   }): Promise<StageAttemptContext> {
+    const scopePredicate = ctx.stageItemId
+      ? eq(stageAttempt.stageItemId, ctx.stageItemId)
+      : isNull(stageAttempt.stageItemId);
+
+    // phase 7 chunk 4 — an item's first attempt (and every retry of it)
+    // marks the stage_item 'running'. Idempotent to repeat on a replayed
+    // step or a resumed retry of a previously-'failed' item.
+    if (ctx.stageItemId) {
+      await this.db
+        .update(stageItem)
+        .set({ state: 'running' })
+        .where(eq(stageItem.id, ctx.stageItemId));
+    }
+
     const [row] = await this.db
       .select({ maxAttempt: sql<number>`coalesce(max(${stageAttempt.attemptNo}), 0)` })
       .from(stageAttempt)
-      .where(
-        and(
-          eq(stageAttempt.stageExecutionId, ctx.stageExecutionId),
-          isNull(stageAttempt.stageItemId),
-        ),
-      );
+      .where(and(eq(stageAttempt.stageExecutionId, ctx.stageExecutionId), scopePredicate));
     const attemptNo = (row?.maxAttempt ?? 0) + 1;
     const stageAttemptId = ulid();
 
@@ -187,6 +216,7 @@ export class StageRunnerService {
       await this.db.insert(stageAttempt).values({
         id: stageAttemptId,
         stageExecutionId: ctx.stageExecutionId,
+        stageItemId: ctx.stageItemId,
         attemptNo,
         outcome: 'success', // provisional; overwritten by fetchAndFinalize/recordFailure/etc.
         resolvedInputs: {},
@@ -202,7 +232,7 @@ export class StageRunnerService {
         .where(
           and(
             eq(stageAttempt.stageExecutionId, ctx.stageExecutionId),
-            isNull(stageAttempt.stageItemId),
+            scopePredicate,
             eq(stageAttempt.attemptNo, attemptNo),
           ),
         )
@@ -221,7 +251,10 @@ export class StageRunnerService {
    * this one — the same semantics `stage-execute.fn.ts`'s prior
    * `attemptNo >= retryLimit + 1` check had for every outcome that isn't
    * `budget_blocked`. */
-  async countSemanticAttemptsUsed(stageExecutionId: string): Promise<number> {
+  async countSemanticAttemptsUsed(stageExecutionId: string, stageItemId?: string): Promise<number> {
+    const scopePredicate = stageItemId
+      ? eq(stageAttempt.stageItemId, stageItemId)
+      : isNull(stageAttempt.stageItemId);
     const [execution] = await this.db
       .select({ runId: stageExecution.runId, stageKey: stageExecution.stageKey })
       .from(stageExecution)
@@ -234,7 +267,7 @@ export class StageRunnerService {
       .where(
         and(
           eq(stageAttempt.stageExecutionId, stageExecutionId),
-          isNull(stageAttempt.stageItemId),
+          scopePredicate,
           inArray(stageAttempt.outcome, [...CONSUMES_SEMANTIC_ATTEMPT]),
         ),
       );
@@ -252,14 +285,17 @@ export class StageRunnerService {
     return (row?.count ?? 0) + (routed?.count ?? 0);
   }
 
-  async countInfraAttemptsUsed(stageExecutionId: string): Promise<number> {
+  async countInfraAttemptsUsed(stageExecutionId: string, stageItemId?: string): Promise<number> {
+    const scopePredicate = stageItemId
+      ? eq(stageAttempt.stageItemId, stageItemId)
+      : isNull(stageAttempt.stageItemId);
     const [row] = await this.db
       .select({ count: sql<number>`count(*)::int` })
       .from(stageAttempt)
       .where(
         and(
           eq(stageAttempt.stageExecutionId, stageExecutionId),
-          isNull(stageAttempt.stageItemId),
+          scopePredicate,
           eq(stageAttempt.outcome, 'infra_error'),
         ),
       );
@@ -301,19 +337,34 @@ export class StageRunnerService {
     stage: StageDef,
     runId: string,
     prevStageKey: string | undefined,
+    itemIndex?: number,
   ): Promise<ResolvedBindings> {
     const [inputs, assetBindings] = await Promise.all([
       this.loadRunInputs(runId),
       this.loadAssetBindings(runId),
     ]);
-    return this.bindingResolver.resolveAll(stage, { runId, prevStageKey, inputs, assetBindings });
+    return this.bindingResolver.resolveAll(stage, {
+      runId,
+      prevStageKey,
+      inputs,
+      assetBindings,
+      stageKey: stage.key,
+      itemIndex,
+    });
   }
 
   /** §3.8.1's critique log — derived from prior `stage_attempt` rows'
    * existing `checkResults`/`qcVerdict` columns, no new table/column. Human
    * rejection notes (`reviewNote`, §10.5) are deliberately left out here — a
    * future `rejected`-outcome branch slots in without restructuring this. */
-  async loadCritiqueLog(stageExecutionId: string, beforeAttemptNo: number): Promise<string> {
+  async loadCritiqueLog(
+    stageExecutionId: string,
+    beforeAttemptNo: number,
+    stageItemId?: string,
+  ): Promise<string> {
+    const scopePredicate = stageItemId
+      ? eq(stageAttempt.stageItemId, stageItemId)
+      : isNull(stageAttempt.stageItemId);
     const [execution] = await this.db
       .select({ runId: stageExecution.runId, stageKey: stageExecution.stageKey })
       .from(stageExecution)
@@ -331,7 +382,7 @@ export class StageRunnerService {
       .where(
         and(
           eq(stageAttempt.stageExecutionId, stageExecutionId),
-          isNull(stageAttempt.stageItemId),
+          scopePredicate,
           lt(stageAttempt.attemptNo, beforeAttemptNo),
         ),
       )
@@ -380,6 +431,7 @@ export class StageRunnerService {
       runId: ctx.runId,
       stageKey: ctx.stageKey,
       attemptNo: ctx.attemptNo,
+      itemIndex: ctx.itemIndex,
       // §7.2 TODO: this should be a ProviderClient scoped to the effective
       // model pin, not raw config on ctx.config — carried over from phase 1
       // as a deliberate shortcut; changing it is a capability-contract
@@ -388,7 +440,7 @@ export class StageRunnerService {
       slots: bindings.slots,
       context: bindings.context,
       renderedPrompt,
-      idempotencyKey: this.idempotencyKey(ctx),
+      idempotencyKey: this.idempotencyKey(ctx, ctx.itemIndex),
       logger: { log: () => {}, error: () => {} },
       ...(resources && { resources }),
     };
@@ -414,8 +466,12 @@ export class StageRunnerService {
     effective: EffectiveStageConfig,
   ): Promise<SubmitOutcome> {
     const capability = this.capabilities.get(stage.capability);
-    const bindings = await this.resolveBindings(stage, ctx.runId, prevStageKey);
-    const priorCritique = await this.loadCritiqueLog(ctx.stageExecutionId, ctx.attemptNo);
+    const bindings = await this.resolveBindings(stage, ctx.runId, prevStageKey, ctx.itemIndex);
+    const priorCritique = await this.loadCritiqueLog(
+      ctx.stageExecutionId,
+      ctx.attemptNo,
+      ctx.stageItemId,
+    );
     const templateScope = { ...bindings.slots, ...bindings.context, priorCritique };
     const renderedPrompt = stage.instructions?.template
       ? renderPrompt(stage.instructions.template, templateScope)
@@ -542,7 +598,7 @@ export class StageRunnerService {
     effective: EffectiveStageConfig,
   ): Promise<FetchAndFinalizeResult> {
     const capability = this.capabilities.get(stage.capability);
-    const bindings = await this.resolveBindings(stage, ctx.runId, prevStageKey);
+    const bindings = await this.resolveBindings(stage, ctx.runId, prevStageKey, ctx.itemIndex);
     const resources =
       stage.capability === 'timeline.render' && bindings.slots.timeline
         ? await this.timelineResources.resolve(ctx.runId, bindings.slots.timeline)
@@ -618,6 +674,7 @@ export class StageRunnerService {
     const artifactId = await this.artifacts.recordAttemptArtifact({
       runId: ctx.runId,
       producerStageKey: stage.key,
+      itemIndex: ctx.itemIndex,
       kind,
       data,
       ...(persistedMedia && { blobId: persistedMedia.blobId, probe: persistedMedia.probe }),
@@ -665,6 +722,9 @@ export class StageRunnerService {
           prevStageKey,
           inputs: await this.loadRunInputs(ctx.runId),
           assetBindings: await this.loadAssetBindings(ctx.runId),
+          stageKey: stage.key,
+          itemIndex: ctx.itemIndex,
+          iterateOverValue: bindings.iterateOverValue,
         });
         resolvedRefs.push(resolved.refs);
         for (const [name, provenance] of Object.entries(resolved.provenance)) {
@@ -795,22 +855,48 @@ export class StageRunnerService {
       }
 
       if (stage.approval) {
-        if (stage.approval.mode !== 'stage') {
-          throw new Error('Item approval is not available until iteration support');
-        }
         await tx
           .update(stageAttempt)
           .set({ outcome: 'awaiting_approval', phase: 'awaiting_approval', checkResults })
           .where(eq(stageAttempt.id, ctx.stageAttemptId));
-        await tx
-          .update(stageExecution)
-          .set({ state: 'awaiting_approval' })
-          .where(eq(stageExecution.id, ctx.stageExecutionId));
-        await this.humanWaits.open(tx, {
-          runId: ctx.runId,
-          stageExecutionId: ctx.stageExecutionId,
-          kind: 'approval',
-        });
+
+        if (stage.approval.mode === 'stage') {
+          await tx
+            .update(stageExecution)
+            .set({ state: 'awaiting_approval' })
+            .where(eq(stageExecution.id, ctx.stageExecutionId));
+          await this.humanWaits.open(tx, {
+            runId: ctx.runId,
+            stageExecutionId: ctx.stageExecutionId,
+            kind: 'approval',
+          });
+        } else {
+          // phase 7 chunk 6 — item-mode approval: the pause is scoped to
+          // this ONE item. `stage_execution` is deliberately left alone
+          // (still 'running') — the outer per-item loop only flips it to
+          // 'passed' once every item has, via `finishIteratingStage`
+          // (Locked Decision 5/6), so it must not read `awaiting_approval`
+          // while sibling items may still be pending or already passed.
+          // `stage.execute.item`'s caller always runs this attempt with an
+          // item-scoped `stageItemId` (the blueprint validator already
+          // requires `approval.mode:'item'` to imply `stage.iterate`), so
+          // this is a defensive assertion, not a real branch in practice.
+          if (!ctx.stageItemId) {
+            throw new Error(
+              'StageRunnerService: item-mode approval requires an item-scoped attempt (stageItemId missing)',
+            );
+          }
+          await tx
+            .update(stageItem)
+            .set({ state: 'awaiting_approval' })
+            .where(eq(stageItem.id, ctx.stageItemId));
+          await this.humanWaits.open(tx, {
+            runId: ctx.runId,
+            stageExecutionId: ctx.stageExecutionId,
+            stageItemId: ctx.stageItemId,
+            kind: 'approval',
+          });
+        }
         return { outcome: 'approval_required' as const, artifactId };
       }
 
@@ -819,10 +905,14 @@ export class StageRunnerService {
           runId: ctx.runId,
           stageExecutionId: ctx.stageExecutionId,
           producerStageKey: stage.key,
+          itemIndex: ctx.itemIndex,
           newArtifactId: artifactId,
+          stageItemId: ctx.stageItemId,
+          costUsd: result.costUsd,
           applyWrites: this.memory.buildWriteCallback(stage, {
             runId: ctx.runId,
             stageKey: stage.key,
+            ...(ctx.itemIndex !== undefined ? { itemIndex: ctx.itemIndex } : {}),
             kind,
             data,
             artifactId,
@@ -836,10 +926,16 @@ export class StageRunnerService {
         .set({ outcome: 'success', checkResults })
         .where(eq(stageAttempt.id, ctx.stageAttemptId));
 
-      await tx
-        .update(stageExecution)
-        .set({ state: 'passed', endedAt: new Date().toISOString() })
-        .where(eq(stageExecution.id, ctx.stageExecutionId));
+      // phase 7 chunk 4 — an item finalize leaves stage_execution alone
+      // (Locked Decision 5/6): the stage as a whole only turns 'passed'
+      // once `finishIteratingStage` runs after every item has, which also
+      // sets the last item's artifact as `stage_execution.outputArtifactId`.
+      if (!ctx.stageItemId) {
+        await tx
+          .update(stageExecution)
+          .set({ state: 'passed', endedAt: new Date().toISOString() })
+          .where(eq(stageExecution.id, ctx.stageExecutionId));
+      }
 
       return { outcome: 'success' as const, artifactId };
     });
@@ -887,7 +983,24 @@ export class StageRunnerService {
    * check/QC failure paths — those already wrote their own terminal
    * `stage_attempt` row (in `fetchAndFinalize`) and don't need
    * `recordFailure`'s attempt-row-writing half. */
-  async failStageExecution(stageExecutionId: string, reason: string): Promise<void> {
+  /** phase 7 chunk 4 — when `stageItemId` is given, the failure is this
+   * item's alone: `stage_item` goes `'failed'`, `stage_execution` is left
+   * untouched (another item earlier in the sequence may already be
+   * 'passed', and the stage as a whole never reaches a terminal state via
+   * this path — `stage.execute`'s outer loop returns `{outcome:'failed'}`
+   * directly to `run.orchestrate` without a further stage_execution write). */
+  async failStageExecution(
+    stageExecutionId: string,
+    reason: string,
+    stageItemId?: string,
+  ): Promise<void> {
+    if (stageItemId) {
+      await this.db
+        .update(stageItem)
+        .set({ state: 'failed', failure: { reason } })
+        .where(eq(stageItem.id, stageItemId));
+      return;
+    }
     await this.db
       .update(stageExecution)
       .set({ state: 'failed', failure: { reason }, endedAt: new Date().toISOString() })
@@ -914,6 +1027,268 @@ export class StageRunnerService {
    * terminal attempt row AND the stage_execution failure. */
   async recordFailure(ctx: StageAttemptContext, reason: string): Promise<void> {
     await this.recordAttemptError(ctx, reason);
-    await this.failStageExecution(ctx.stageExecutionId, reason);
+    await this.failStageExecution(ctx.stageExecutionId, reason, ctx.stageItemId);
+  }
+
+  // ---------------------------------------------------------------------
+  // phase 7 chunk 4 — the per-item outer loop's own methods, called by
+  // `stage-execute.fn.ts` (never by the per-item attempt loop itself).
+  // ---------------------------------------------------------------------
+
+  /** §14.3/§14's runtime item-count resolution: resolves `stage.iterate.over`
+   * (no `itemIndex` in scope — this precedes any item's own attempt),
+   * asserts the array-narrowing the validator already checked at save time
+   * still holds, enforces `maxItems`, and — when this stage's `iterate.over`
+   * canonicalizes to the same producer as an aligned previous iterating
+   * stage — asserts the resolved count still matches that stage's own
+   * `itemCount`. Returns a discriminated result rather than throwing for
+   * every one of these conditions, so the caller can fail the stage
+   * cleanly instead of leaving it to a retried/thrown step. */
+  async resolveIterateCount(
+    runId: string,
+    stageExecutionId: string,
+    stage: StageDef,
+    effective: EffectiveStageConfig,
+    prevStageKey: string | undefined,
+  ): Promise<{ ok: true; itemCount: number } | { ok: false; reason: string }> {
+    const iterate = stage.iterate;
+    if (!iterate) {
+      throw new Error(
+        `StageRunnerService.resolveIterateCount: stage "${stage.key}" does not declare iterate`,
+      );
+    }
+    const [inputs, assetBindings] = await Promise.all([
+      this.loadRunInputs(runId),
+      this.loadAssetBindings(runId),
+    ]);
+    const { value } = await this.bindingResolver.resolve(iterate.over, {
+      runId,
+      prevStageKey,
+      inputs,
+      assetBindings,
+      stageKey: stage.key,
+    });
+    if (!Array.isArray(value)) {
+      // Defensive — the validator already requires `iterate.over` to
+      // narrow to an array schema at save time (Chunk 1).
+      return { ok: false, reason: 'iterate_over_not_array' };
+    }
+    const itemCount = value.length;
+    const maxItems = effective.iterate?.maxItems ?? this.engineConfig.iterateMaxItems;
+    if (itemCount > maxItems) {
+      return { ok: false, reason: 'iterate_max_items_exceeded' };
+    }
+
+    if (prevStageKey) {
+      const graph = await this.loadGraph(runId);
+      const stageIndex = graph.findIndex((s) => s.key === stage.key);
+      const prevStage = stageIndex > 0 ? graph[stageIndex - 1] : undefined;
+      if (
+        prevStage?.iterate &&
+        this.sameIterateProducer(iterate.over, prevStage.iterate.over, graph, stageIndex)
+      ) {
+        const [prevExecution] = await this.db
+          .select({ itemCount: stageExecution.itemCount })
+          .from(stageExecution)
+          .where(and(eq(stageExecution.runId, runId), eq(stageExecution.stageKey, prevStageKey)))
+          .limit(1);
+        if (
+          prevExecution?.itemCount !== undefined &&
+          prevExecution.itemCount !== null &&
+          itemCount !== prevExecution.itemCount
+        ) {
+          return { ok: false, reason: 'iterate_item_count_mismatch' };
+        }
+      }
+    }
+
+    return { ok: true, itemCount };
+  }
+
+  private async loadGraph(runId: string): Promise<StageDef[]> {
+    const [row] = await this.db
+      .select({ graph: blueprintVersion.graph })
+      .from(run)
+      .innerJoin(blueprintVersion, eq(run.blueprintVersionId, blueprintVersion.id))
+      .where(eq(run.id, runId))
+      .limit(1);
+    if (!row) throw new Error(`StageRunnerService: run ${runId} not found`);
+    return StageDef.array().parse(row.graph);
+  }
+
+  /** §14.3's canonicalization, applied at run time with the concrete graph
+   * in hand (the validator's own version runs at save time over a
+   * `ValidationContext`; this mirrors its semantics for `prev`/`memory`/
+   * `input` refs without needing that context). Two refs canonicalize to
+   * the same producer when they resolve to the same `(producerKey, path)`
+   * pair — each ref is canonicalized relative to the stage that actually
+   * declares it (`refA` at `stageIndexOfA`, `refB` at `stageIndexOfA - 1`,
+   * i.e. the previous stage's own index). Any other ref kind (or a missing
+   * preceding stage) is "not comparable" — never treated as aligned. */
+  private sameIterateProducer(
+    refA: Ref,
+    refB: Ref,
+    graph: StageDef[],
+    stageIndexOfA: number,
+  ): boolean {
+    const a = this.canonicalizeIterateOver(refA, graph, stageIndexOfA);
+    const b = this.canonicalizeIterateOver(refB, graph, stageIndexOfA - 1);
+    if (!a || !b) return false;
+    return a.producerKey === b.producerKey && a.path === b.path;
+  }
+
+  private canonicalizeIterateOver(
+    ref: Ref,
+    graph: StageDef[],
+    stageIndex: number,
+  ): { producerKey: string; path: string } | undefined {
+    switch (ref.from) {
+      case 'prev': {
+        const prev = stageIndex > 0 ? graph[stageIndex - 1] : undefined;
+        if (!prev) return undefined;
+        return { producerKey: prev.key, path: ref.path ?? '$' };
+      }
+      case 'memory':
+        return { producerKey: `memory:${ref.key}`, path: ref.path ?? '$' };
+      case 'input':
+        return { producerKey: `$input:${ref.inputKey}`, path: ref.path ?? '$' };
+      default:
+        return undefined;
+    }
+  }
+
+  /** Bulk-creates `stage_item` rows 0..itemCount-1 as `'pending'`
+   * (`ON CONFLICT DO NOTHING` — idempotent against a replayed step) and
+   * marks the stage_execution as iterating. Called once per stage
+   * execution, before the outer loop invokes any item.
+   *
+   * MEDIUM finding #2 (PR #17 review) — a self-consistency guard against
+   * re-entering with a DIFFERENT `itemCount` than a prior call recorded.
+   * This can legitimately happen once the HIGH-finding fix lands: retrying
+   * an iterating stage's own `iterate.over` source (§15.2) invalidates
+   * every one of this stage's items at once, and if the array's resolved
+   * length also changed, the next `resolveIterateCount`/`ensureStageItems`
+   * pass would otherwise silently overwrite `itemCount` and leave stale or
+   * mismatched trailing `stage_item` rows with no guard. The invariant:
+   * an `itemCount` change is only safe when every existing `stage_item` row
+   * has already been marked `'stale'` by `InvalidationService.apply()` —
+   * anything else means a count changed WITHOUT going through invalidation
+   * first, which this method refuses rather than corrupting the rows.
+   * Deliberately does not delete/reconcile trailing rows on a shrink —
+   * `stage_attempt.stage_item_id` has no cascade, so deleting a `stage_item`
+   * with real attempts would either violate that FK or silently destroy
+   * spend/audit history; `ON CONFLICT DO NOTHING` leaving them in place is
+   * the safe choice. */
+  async ensureStageItems(stageExecutionId: string, itemCount: number): Promise<void> {
+    const [execution] = await this.db
+      .select({ itemCount: stageExecution.itemCount })
+      .from(stageExecution)
+      .where(eq(stageExecution.id, stageExecutionId))
+      .limit(1);
+    if (!execution) {
+      throw new Error(
+        `StageRunnerService.ensureStageItems: stage execution ${stageExecutionId} not found`,
+      );
+    }
+    if (execution.itemCount !== null && execution.itemCount !== itemCount) {
+      const existingItems = await this.db
+        .select({ itemIndex: stageItem.itemIndex, state: stageItem.state })
+        .from(stageItem)
+        .where(eq(stageItem.stageExecutionId, stageExecutionId));
+      const notStale = existingItems.find((item) => item.state !== 'stale');
+      if (notStale) {
+        throw new Error(
+          `StageRunnerService.ensureStageItems: stage execution ${stageExecutionId} item count ` +
+            `changed from ${execution.itemCount} to ${itemCount}, but item ${notStale.itemIndex} ` +
+            `is '${notStale.state}' (expected 'stale') — an item count change must go through ` +
+            `InvalidationService.apply() first`,
+        );
+      }
+    }
+
+    await this.db
+      .update(stageExecution)
+      .set({ isIterating: true, itemCount })
+      .where(eq(stageExecution.id, stageExecutionId));
+    if (itemCount === 0) return;
+    await this.db
+      .insert(stageItem)
+      .values(
+        Array.from({ length: itemCount }, (_, itemIndex) => ({
+          id: ulid(),
+          stageExecutionId,
+          itemIndex,
+          state: 'pending' as const,
+        })),
+      )
+      .onConflictDoNothing();
+  }
+
+  /** §14.5's partial resume, expressed the same way `run.orchestrate`
+   * already skips a passed `stage_execution`: a cheap read the outer loop
+   * uses to decide whether to `step.invoke` this item at all. */
+  async itemState(
+    stageExecutionId: string,
+    itemIndex: number,
+  ): Promise<{ id: string; state: string }> {
+    const [row] = await this.db
+      .select({ id: stageItem.id, state: stageItem.state })
+      .from(stageItem)
+      .where(
+        and(eq(stageItem.stageExecutionId, stageExecutionId), eq(stageItem.itemIndex, itemIndex)),
+      )
+      .limit(1);
+    if (!row) {
+      throw new Error(
+        `StageRunnerService: stage_item not found for execution ${stageExecutionId} index ${itemIndex}`,
+      );
+    }
+    return row;
+  }
+
+  /** Locked Decision 6 — once every item has passed, the stage_execution
+   * itself turns 'passed' and its `outputArtifactId` becomes a convenience
+   * pointer at the LAST item's artifact (not a sanctioned read path —
+   * Run Memory and `{from:'prev', alignWith:'item'}` are). */
+  async finishIteratingStage(stageExecutionId: string): Promise<{ artifactId: string }> {
+    const [execution] = await this.db
+      .select({ itemCount: stageExecution.itemCount })
+      .from(stageExecution)
+      .where(eq(stageExecution.id, stageExecutionId))
+      .limit(1);
+    if (!execution || execution.itemCount === null || execution.itemCount === undefined) {
+      throw new Error(
+        `StageRunnerService.finishIteratingStage: stage execution ${stageExecutionId} has no itemCount`,
+      );
+    }
+    if (execution.itemCount === 0) {
+      throw new Error(
+        `StageRunnerService.finishIteratingStage: stage execution ${stageExecutionId} has zero items`,
+      );
+    }
+    const [lastItem] = await this.db
+      .select({ outputArtifactId: stageItem.outputArtifactId })
+      .from(stageItem)
+      .where(
+        and(
+          eq(stageItem.stageExecutionId, stageExecutionId),
+          eq(stageItem.itemIndex, execution.itemCount - 1),
+        ),
+      )
+      .limit(1);
+    if (!lastItem?.outputArtifactId) {
+      throw new Error(
+        `StageRunnerService.finishIteratingStage: last item of ${stageExecutionId} has no outputArtifactId`,
+      );
+    }
+    await this.db
+      .update(stageExecution)
+      .set({
+        state: 'passed',
+        endedAt: new Date().toISOString(),
+        outputArtifactId: lastItem.outputArtifactId,
+      })
+      .where(eq(stageExecution.id, stageExecutionId));
+    return { artifactId: lastItem.outputArtifactId };
   }
 }

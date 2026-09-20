@@ -3,6 +3,7 @@ import { ConfigLayer } from '../config-layer';
 
 export const ConfirmRunActionDto = z.object({
   previewToken: z.string().min(1),
+  itemIndex: z.number().int().nonnegative().optional(),
 });
 export type ConfirmRunActionDto = z.infer<typeof ConfirmRunActionDto>;
 

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ConfigLayer, StageDef } from '@reefcraft/shared';
 import type { Db } from '../db/drizzle.provider';
+import type { EngineConfig } from '../config/engine-config';
 import { ConfigResolverService } from './config-resolver.service';
 
 function stage(overrides: Partial<StageDef> & Pick<StageDef, 'key'>): StageDef {
@@ -17,8 +18,8 @@ function stage(overrides: Partial<StageDef> & Pick<StageDef, 'key'>): StageDef {
   };
 }
 
-/** `resolveRunConfig` never touches `this.db` — a stub is enough. */
-const resolver = new ConfigResolverService({} as Db);
+/** `resolveRunConfig` never touches `this.db`/`this.engineConfig` — stubs are enough. */
+const resolver = new ConfigResolverService({} as Db, {} as EngineConfig);
 
 describe('ConfigResolverService.resolveRunConfig (pure)', () => {
   it('layers engine -> channel -> blueprint -> stage per stage key', () => {

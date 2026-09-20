@@ -6,6 +6,7 @@ import { RunStateService } from '../run-state.service';
 import { INNGEST_CLIENT } from '../inngest.client';
 import { LedgerService } from '../../budget/ledger.service';
 import { buildStageExecuteFunction } from './stage-execute.fn';
+import { buildStageExecuteItemFunction } from './stage-execute-item.fn';
 import { buildRunOrchestrateFunction } from './run-orchestrate.fn';
 import { buildBudgetSweepFunction } from './budget-sweep.fn';
 import { buildCronShellFunctions } from './cron-shells.fn';
@@ -34,7 +35,8 @@ export function buildInngestFunctions(app: INestApplicationContext) {
   const blobs = app.get(BlobService);
   const computeJobs = app.get(ComputeJobService);
 
-  const stageExecute = buildStageExecuteFunction(client, runner);
+  const stageExecuteItem = buildStageExecuteItemFunction(client, runner);
+  const stageExecute = buildStageExecuteFunction(client, runner, stageExecuteItem);
   const runOrchestrate = buildRunOrchestrateFunction(
     client,
     db,
@@ -50,6 +52,7 @@ export function buildInngestFunctions(app: INestApplicationContext) {
   return [
     runOrchestrate,
     stageExecute,
+    stageExecuteItem,
     runWakeupDispatch,
     humanReminderSweep,
     budgetSweep,

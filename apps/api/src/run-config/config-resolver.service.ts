@@ -4,6 +4,7 @@ import { ConfigLayer } from '@reefcraft/shared';
 import type { ModelPin, QcDef, StageDef } from '@reefcraft/shared';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
 import { run } from '../db/schema/index';
+import { EngineConfig } from '../config/engine-config';
 import { mergeLayer, mergeLayers } from './layer-merge';
 import { stageDefLayer } from './stage-def-layer';
 
@@ -26,6 +27,10 @@ export interface EffectiveStageConfig {
    * (§10.4's `qc_budget_exhausted`), not a reservation — see
    * `StageRunnerService.fetchAndFinalize`'s decision note. */
   qc?: { judge: ModelPin; threshold: number; capUsd?: number };
+  /** Present iff `stage.iterate` is declared (§14). `maxItems` always
+   * resolves to a concrete number: the engine-wide `ITERATE_MAX_ITEMS`
+   * default backs it up if no layer ever set one. */
+  iterate?: { itemRetryLimit: number; maxItems: number };
 }
 
 /**
@@ -37,7 +42,10 @@ export interface EffectiveStageConfig {
  */
 @Injectable()
 export class ConfigResolverService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly engineConfig: EngineConfig,
+  ) {}
 
   resolveRunConfig(args: {
     graph: StageDef[];
@@ -85,6 +93,13 @@ export class ConfigResolverService {
         }
       : undefined;
     const stageCapUsd = layer.budget?.stageCapUsd;
+    const iterate = stage.iterate
+      ? {
+          itemRetryLimit: layer.iterate?.itemRetryLimit ?? stage.iterate.itemRetryLimit,
+          maxItems:
+            layer.iterate?.maxItems ?? stage.iterate.maxItems ?? this.engineConfig.iterateMaxItems,
+        }
+      : undefined;
     return {
       layer,
       ...(model !== undefined && { model }),
@@ -96,6 +111,7 @@ export class ConfigResolverService {
       capabilityConfig: stage.config,
       ...(stageCapUsd !== undefined && stageCapUsd !== null && { budget: { stageCapUsd } }),
       ...(qc !== undefined && { qc }),
+      ...(iterate !== undefined && { iterate }),
     };
   }
 }
