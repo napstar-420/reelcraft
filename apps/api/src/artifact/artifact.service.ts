@@ -1,11 +1,21 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { and, eq, isNull, sql } from 'drizzle-orm';
+import type { ArtifactKind } from '@reefcraft/shared';
 import { ulid } from '../common/ulid';
 import { fromUsd } from '../common/money';
 import { DRIZZLE, type Db, type Tx } from '../db/drizzle.provider';
 import { artifact, stageExecution, stageItem } from '../db/schema/index';
 
 type Executor = Db | Tx;
+
+export interface ArtifactRecord {
+  kind: ArtifactKind;
+  data: unknown;
+  probe: unknown;
+  runId: string;
+  producerStageKey: string;
+  itemIndex?: number | undefined;
+}
 
 export interface RecordAttemptArtifactInput {
   runId: string;
@@ -49,6 +59,23 @@ export interface RecordInputArtifactInput {
 @Injectable()
 export class ArtifactService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+
+  /** Chunk 2 (§editor) — loads a single artifact row for `POST
+   * checks/test`. There is no "collected" concept on `artifact` itself
+   * (only `blob` rows are subject to GC/retention), so this is a plain
+   * existence check. */
+  async getById(artifactId: string): Promise<ArtifactRecord> {
+    const [row] = await this.db.select().from(artifact).where(eq(artifact.id, artifactId)).limit(1);
+    if (!row) throw new NotFoundException(`Artifact ${artifactId} not found`);
+    return {
+      kind: row.kind as ArtifactKind,
+      data: row.data,
+      probe: row.probe,
+      runId: row.runId,
+      producerStageKey: row.producerStageKey,
+      itemIndex: row.itemIndex ?? undefined,
+    };
+  }
 
   async recordAttemptArtifact(
     input: RecordAttemptArtifactInput,

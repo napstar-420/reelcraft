@@ -1,12 +1,22 @@
 import { z } from 'zod';
-import { Probe } from '@reefcraft/shared';
+import { Probe, type JsonSchema } from '@reefcraft/shared';
 import type { BuiltinCheck } from '../check.types';
 
 const Params = z.object({ container: z.string().optional(), codec: z.string().optional() });
 
+const paramsSchema: JsonSchema = {
+  type: 'object',
+  properties: {
+    container: { type: 'string' },
+    codec: { type: 'string' },
+  },
+};
+
 export const mediaFormat: BuiltinCheck<z.infer<typeof Params>> = {
   key: 'media_format',
   params: Params,
+  paramsSchema,
+  description: "Checks a media artifact's probed container and/or codec against expected values.",
   run(params, artifact) {
     const probe = Probe.safeParse(artifact.probe);
     if (!probe.success) {

@@ -45,6 +45,12 @@ export interface BuiltinCheck<P = unknown> {
    * gotchas): this parses plain `unknown` (`CheckDef.params`), it never
    * builds a new combinator around an imported schema. */
   readonly params: ZodType<P>;
+  /** Hand-kept parallel to `params` (no `zod-to-json-schema` dependency) so
+   * `GET /check-types` can describe a builtin's params shape without
+   * exposing zod internals. The two are not compiler-linked — see
+   * `builtins.test.ts`'s drift-guard fixtures. */
+  readonly paramsSchema: JsonSchema;
+  readonly description: string;
   /** Pure, synchronous, no I/O (§9.1). Must not throw for artifact-shaped
    * problems (e.g. a missing `probe`) — return `{pass: false, message}`. */
   run(params: P, artifact: CheckArtifact): CheckOutcome;

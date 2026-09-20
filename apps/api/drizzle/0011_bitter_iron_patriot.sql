@@ -1,0 +1,1 @@
+ALTER TABLE "run" ADD COLUMN "dry_run" boolean DEFAULT false NOT NULL;

@@ -8,6 +8,7 @@ import { BlueprintValidatorService } from './blueprint-validator.service';
 import { BlueprintController } from './blueprint.controller';
 import { RunConfigModule } from '../run-config/run-config.module';
 import { ProviderModule } from '../provider/provider.module';
+import { RunModule } from '../run/run.module';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { ProviderModule } from '../provider/provider.module';
     SandboxModule,
     RunConfigModule,
     ProviderModule,
+    RunModule,
   ],
   providers: [BlueprintService, BlueprintValidatorService],
   controllers: [BlueprintController],

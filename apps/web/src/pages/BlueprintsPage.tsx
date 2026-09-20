@@ -7,12 +7,15 @@ import { api } from '../api/client';
 export function BlueprintsPage() {
   const { channelId } = useParams<{ channelId: string }>();
   const navigate = useNavigate();
-  const templates = useQuery({ queryKey: ['templates'], queryFn: api.listBuiltinTemplates });
+  const templates = useQuery({ queryKey: ['templates'], queryFn: api.listTemplates });
 
   const instantiateAndRun = useMutation({
     mutationFn: async (templateId: string) => {
       if (!channelId) throw new Error('missing channelId');
       const version = await api.instantiateTemplate(templateId, channelId, 5);
+      if (!('id' in version)) {
+        throw new Error('template is not a blueprint-kind template');
+      }
       return api.startRun({ channelId, blueprintVersionId: version.id, budgetCapUsd: 5 });
     },
     onSuccess: (run) => navigate(`/runs/${run.id}`),

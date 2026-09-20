@@ -4,9 +4,79 @@ import type {
   BlueprintVersionDto,
   RunDetailDto,
   CapabilityDto,
+  ResolveCapabilityResponseDto,
+  SaveTemplateDto,
   SaveTimelineDraftDto,
   TimelineEditorSessionDto,
+  CheckDef,
+  JsonSchema,
 } from '@reefcraft/shared';
+
+/** `template.service.ts#list()`'s row shape: every builtin plus the
+ * caller's own `source: 'user'` templates, each with its latest version's
+ * `requires`. */
+export type TemplateListItem = {
+  id: string;
+  ownerId: string;
+  source: 'builtin' | 'user';
+  kind: string;
+  name: string;
+  description: string;
+  tags: string[];
+  archived: boolean;
+  requires: { capabilities: string[]; inputs: unknown[] };
+};
+
+export type TemplateVersionDto = {
+  id: string;
+  templateId: string;
+  version: number;
+  body: unknown;
+  requires: { capabilities: string[]; inputs: unknown[] };
+  createdAt: string;
+};
+
+/** `template.service.ts#instantiate()` branches on the template's own
+ * `kind` (loaded server-side): `blueprint` creates a real blueprint version
+ * and returns it plus `requires`; the other three kinds return the inlined
+ * `body` with no DB write. */
+export type InstantiateTemplateResult =
+  | (BlueprintVersionDto & { requires: { capabilities: string[]; inputs: unknown[] } })
+  | { body: unknown; requires: { capabilities: string[]; inputs: unknown[] } };
+
+/** `check.controller.ts#listCheckTypes()`'s row shape — no shared DTO
+ * exists for this response. */
+export type CheckTypeDto =
+  | { key: string; kind: 'builtin'; paramsSchema?: JsonSchema; description: string }
+  | { key: 'script'; kind: 'script'; description: string };
+
+/** `check.types.ts`'s `CheckResult` — internal to `apps/api`, not exported
+ * from `@reefcraft/shared`. */
+export type CheckResultDto = {
+  name: string;
+  kind: 'schema' | 'builtin' | 'script';
+  pass: boolean;
+  message?: string;
+  details?: unknown;
+  fault?: 'artifact' | 'authoring';
+};
+
+/** Thrown by `request()` on any non-2xx response. `issues` carries the
+ * parsed JSON error body when there is one — Nest wraps an array thrown
+ * via `BadRequestException(arr)` as `{message: arr, ...}`, so `issues` is
+ * that array when present, else the raw parsed body. A strict superset of
+ * the old plain-`Error` behavior: existing callers reading `.message`
+ * still see the same string. */
+export class ApiError extends Error {
+  status: number;
+  issues?: unknown;
+  constructor(message: string, status: number, issues?: unknown) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.issues = issues;
+  }
+}
 
 /** Typed against @reefcraft/shared DTOs — the payoff for the shared
  * package: the same shapes the API validates requests against are what
@@ -17,7 +87,18 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     headers: { 'Content-Type': 'application/json', ...init?.headers },
   });
   if (!res.ok) {
-    throw new Error(`${init?.method ?? 'GET'} ${path} failed: ${res.status}`);
+    let issues: unknown;
+    try {
+      const body = await res.json();
+      issues = Array.isArray(body?.message) ? body.message : body;
+    } catch {
+      // Non-JSON or empty error body — issues stays undefined.
+    }
+    throw new ApiError(
+      `${init?.method ?? 'GET'} ${path} failed: ${res.status}`,
+      res.status,
+      issues,
+    );
   }
   return res.json() as Promise<T>;
 }
@@ -28,13 +109,35 @@ export const api = {
     request<ChannelDto>('/channels', { method: 'POST', body: JSON.stringify(dto) }),
 
   listCapabilities: () => request<CapabilityDto[]>('/capabilities'),
+  resolveCapability: (key: string, config: Record<string, unknown>) =>
+    request<ResolveCapabilityResponseDto>(`/capabilities/${key}/resolve`, {
+      method: 'POST',
+      body: JSON.stringify({ config }),
+    }),
 
-  listBuiltinTemplates: () =>
-    request<Array<{ id: string; name: string; description: string }>>('/templates'),
-  instantiateTemplate: (templateId: string, channelId: string, runCapUsd: number) =>
-    request<BlueprintVersionDto>(`/templates/${templateId}/instantiate`, {
+  saveTemplate: (dto: SaveTemplateDto) =>
+    request<unknown>('/templates', { method: 'POST', body: JSON.stringify(dto) }),
+
+  listTemplates: () => request<TemplateListItem[]>('/templates'),
+  listTemplateVersions: (templateId: string) =>
+    request<TemplateVersionDto[]>(`/templates/${templateId}/versions`),
+  instantiateTemplate: (templateId: string, channelId?: string, runCapUsd?: number) =>
+    request<InstantiateTemplateResult>(`/templates/${templateId}/instantiate`, {
       method: 'POST',
       body: JSON.stringify({ channelId, runCapUsd }),
+    }),
+
+  listCheckTypes: () => request<CheckTypeDto[]>('/check-types'),
+  testCheck: (check: CheckDef, artifactId: string) =>
+    request<CheckResultDto>('/checks/test', {
+      method: 'POST',
+      body: JSON.stringify({ check, artifactId }),
+    }),
+
+  startDryRun: (blueprintId: string, version: number, budgetCapUsd?: number) =>
+    request<RunDetailDto>(`/blueprints/${blueprintId}/versions/${version}/dry-run`, {
+      method: 'POST',
+      body: JSON.stringify(budgetCapUsd !== undefined ? { budgetCapUsd } : {}),
     }),
 
   listRuns: () => request<RunDetailDto[]>('/runs'),

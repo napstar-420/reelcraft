@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { DiscoveryModule } from '@nestjs/core';
 import { ProviderModule } from '../provider/provider.module';
 import { StorageModule } from '../storage/storage.module';
+import { JsonSchemaModule } from '../json-schema/json-schema.module';
 import { CapabilityRegistry } from './capability.registry';
 import { CapabilityController } from './capability.controller';
 import { LlmGenerate } from './impls/llm-generate.capability';
@@ -25,7 +26,7 @@ import {
  * makes this omission real DI enforcement rather than a convention.
  */
 @Module({
-  imports: [DiscoveryModule, ProviderModule, StorageModule],
+  imports: [DiscoveryModule, ProviderModule, StorageModule, JsonSchemaModule],
   providers: [
     CapabilityRegistry,
     LlmGenerate,

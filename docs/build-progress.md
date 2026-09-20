@@ -13,7 +13,8 @@ plan (via `/plan`) written just before it starts — this table is the index.
 | 6   | Assembly               | done              | `docs/plans/phase-6-assembly.md`         | #16                    |
 | 7   | Iteration              | done              | `docs/plans/phase-7-iteration.md`        | #17                    |
 | 8   | Characters             | done              | `docs/plans/phase-8-characters.md`       | #18                    |
-| 9   | Editor & templates     | pending           |                                          |                        |
+| 9   | Editor & templates     | done              | `docs/plans/phase-9-editor-templates.md` | current branch         |
+| 9.5 | Visual graph canvas    | pending           |                                          |                        |
 
 ## Phase scope (one-liners, from design spec §24)
 
@@ -36,6 +37,12 @@ plan (via `/plan`) written just before it starts — this table is the index.
   run snapshots. LoRA is deliberately deferred.
 - **9 Editor & templates**: capability-resolved forms, schema editor,
   script-check tester, template library, dry-run.
+- **9.5 Visual graph canvas** (not in the original design spec — split out of
+  Phase 9 by explicit product decision): a drag/drop stage-graph editor
+  (nodes, edges, reordering) built on top of Phase 9's APIs
+  (`/capabilities/:key/resolve`, `/blueprints/:id/validate`, the template
+  library, dry-run). Phase 9 deliberately kept the blueprint graph itself
+  JSON-authored; this phase is where a real canvas replaces that.
 
 Update this table's Status/Plan/PR columns as work lands; keep it in sync
 with the actual state of `main`, not aspirational.

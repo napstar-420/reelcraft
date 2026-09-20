@@ -1,12 +1,22 @@
 import { z } from 'zod';
-import { Probe } from '@reefcraft/shared';
+import { Probe, type JsonSchema } from '@reefcraft/shared';
 import type { BuiltinCheck } from '../check.types';
 
 const Params = z.object({ min: z.number().optional(), max: z.number().optional() });
 
+const paramsSchema: JsonSchema = {
+  type: 'object',
+  properties: {
+    min: { type: 'number' },
+    max: { type: 'number' },
+  },
+};
+
 export const durationRange: BuiltinCheck<z.infer<typeof Params>> = {
   key: 'duration_range',
   params: Params,
+  paramsSchema,
+  description: "Checks a media artifact's probed duration (seconds) against a min/max range.",
   run(params, artifact) {
     const probe = Probe.safeParse(artifact.probe);
     if (!probe.success) {

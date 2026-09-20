@@ -21,6 +21,16 @@ export const RaiseBudgetDto = z.object({
 });
 export type RaiseBudgetDto = z.infer<typeof RaiseBudgetDto>;
 
+/** Backs `POST /blueprints/:id/versions/:v/dry-run`. `budgetCapUsd` defaults
+ * to a small fixed cap (the fake provider's per-call cost is near-zero, so
+ * this only matters for a graph with many stages/iterations) but stays
+ * caller-adjustable rather than hardcoded, so a larger dry run isn't at risk
+ * of pausing on budget before it finishes. */
+export const StartDryRunDto = z.object({
+  budgetCapUsd: z.number().positive().default(1),
+});
+export type StartDryRunDto = z.infer<typeof StartDryRunDto>;
+
 /** §6.2/§21 — requests a presigned PUT for a not-yet-uploaded media input
  * blob. Only `ext` is needed at this step; `mime`/`bytes`/`sha256` are only
  * known once the actual upload completes, so they travel with
