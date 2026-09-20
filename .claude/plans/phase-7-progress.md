@@ -9,7 +9,7 @@ Updated as each chunk lands; not part of the shipped plan doc.
 - [x] Chunk 2 — Run Memory indexed groups (commit db96a30)
 - [x] Chunk 3 — Binding resolver: item, prevItem, prev+alignWith, derived frames (commit 4159723)
 - [x] Chunk 4 — Orchestration: the per-item loop (commit d20c8fd)
-- [ ] Chunk 5 — Item-level invalidation
+- [x] Chunk 5 — Item-level invalidation (commit b1f86a8)
 - [ ] Chunk 6 — Item-mode approval
 - [ ] Chunk 7 — Acceptance scenario, docs, hardening
 - [ ] Full monorepo typecheck/lint/test green
@@ -89,7 +89,7 @@ Updated as each chunk lands; not part of the shipped plan doc.
 - Chunk 4: `StageRunnerService.beginAttempt`/`countSemanticAttemptsUsed`/
   `countInfraAttemptsUsed`/`loadCritiqueLog` gained an optional
   `stageItemId` parameter that switches their `isNull(stageAttempt.
-  stageItemId)` predicate to `eq(..., stageItemId)`, per the plan's stated
+stageItemId)` predicate to `eq(..., stageItemId)`, per the plan's stated
   preference over duplicating each method.
 - Chunk 4: found and fixed two pre-existing gaps left inert by Chunk 3's
   own notes: (1) `buildExecCtx` never actually passed `ctx.itemIndex` into
@@ -97,7 +97,7 @@ Updated as each chunk lands; not part of the shipped plan doc.
   have collided on `itemIndex ?? 0`; (2) `fetchAndFinalize`'s call to
   `ArtifactService.recordAttemptArtifact` never passed `itemIndex` at all,
   so every item's artifact would have been written with `item_index IS
-  NULL` — the second item to finalize would hit the
+NULL` — the second item to finalize would hit the
   `artifact_active_uq` unique constraint. Both are now wired through
   `ctx.itemIndex`.
 - Chunk 4: `ResolvedBindings` gained an optional `iterateOverValue` field
@@ -130,3 +130,65 @@ Updated as each chunk lands; not part of the shipped plan doc.
   separate suite in the same file drives `stage.execute.item`'s own
   attempt loop with zero step mocking, so the real per-item step chain
   (submit/poll/fetch/check/finalize) is still exercised end to end.
+- Chunk 5: node-keying/type design — `computeInvalidationClosure` moved
+  from one node per `stageKey` to one node per `(stageKey, itemIndex |
+undefined)`. A non-iterating stage keeps exactly one node (`itemIndex`
+  undefined) so the graph degenerates to byte-identical prior behavior
+  when nothing iterates — all 4 pre-existing tests pass with zero
+  assertion changes. `InvalidationClosure.affectedStageKeys` /
+  `affectedExecutionIds` deliberately KEPT their exact prior "one entry
+  per affected stage" semantics (needed because `run-action.service.ts`'s
+  `toApiPreview` zips them together by array index) rather than growing
+  to one-entry-per-item as the plan's own sketch suggested;
+  `affectedArtifactIds` did grow to the union of every invalid node's own
+  artifact (a `stage_execution` can now map to several artifacts across
+  its items), and a new `affectedItems: AffectedItem[]` field carries the
+  item-precise `(stageKey, itemIndex, artifactId)` triples `apply()`
+  actually needs. `InvalidationSeed.items?: Array<{stageKey, itemIndex}>`
+  is added and the algorithm fully supports it, but per the task's scope
+  boundary none of the 5 existing callers (`run-input.service.ts`,
+  `human-action.service.ts`, `run.controller.ts`, `artifact-edit.service.ts`,
+  `run-action.service.ts`) were changed to produce it — that's Chunk 6's
+  job.
+- Chunk 5: `{from:'prev', alignWith:'item'}`'s pointwise invalidation
+  needed no special-case code at all — it falls out of the existing
+  artifactId-based dependency check for free, since an aligned read's
+  recorded provenance already carries the specific upstream item's own
+  artifactId (not the stage's convenience pointer), so seeding that one
+  item's artifact into `affectedArtifacts` naturally only trips the
+  aligned downstream item that actually read it.
+- Chunk 5: found and fixed two pre-existing integration gaps while wiring
+  the DB-facing side, both required for the new e2e test to pass at all:
+  (1) `run-orchestrate.fn.ts`'s per-stage resume skip (`state === 'passed'
+-> continue`) predates iteration and doesn't know a `stage_execution`
+  can stay `'passed'` while some of its own `stage_item` rows are
+  `'stale'` (item-level invalidation's whole point) — it now also loads
+  which iterating executions still have non-`'passed'` items and folds
+  that into the skip condition; `stage.execute`'s own outer per-item loop
+  (Chunk 4) already re-checks each item's state once re-entered, so
+  nothing else needed to change. (2) `StageRunnerService.fetchAndFinalize`
+  never threaded `ctx.itemIndex` into `MemoryService.buildWriteCallback`,
+  so ANY iterating stage declaring `writes` was silently writing every
+  item to the same bare (non-suffixed) memory key instead of `key#i` —
+  Chunk 2's indexed-group writes were never actually reachable end to end
+  before this fix. Fixed by threading `ctx.itemIndex` through.
+- Chunk 5: `run-action.service.ts`'s `toApiPreview` zipped
+  `affectedStageKeys[i]`/`affectedArtifactIds[i]`/`costs.find(stageKey)`
+  by array index/first-match, which silently mis-attributes data once a
+  single stage can own multiple artifacts/cost rows (an iterating stage
+  with several invalid items). Fixed to group `affectedItems`/`costs` by
+  `stageKey` instead (summing per-stage cost) — a minimal, scoped fix
+  forced by the type change, not new behavior; `affectedStageKeys`/
+  `affectedExecutionIds` are still zipped together since that pairing's
+  semantics didn't change.
+- Chunk 5: new pure tests in `invalidation-closure.test.ts` (item-
+  independence, same-stage cascade, `alignWith:'item'` pointwise, memory
+  group read with a "no false positive on an unrelated key" check,
+  whole-stage seed) directly encode the propagation rules; a new
+  `apps/api/test/e2e/invalidation-items.e2e.test.ts` drives a real 4-item
+  iterating stage to completion through `StageRunnerService` (no Inngest,
+  matching Chunk 4's own e2e style) and exercises `InvalidationService`
+  end to end: retrying item 1 stales only `stage_item` index 1 (not its
+  siblings), tombstones only `broll#1`'s memory row, leaves `stage_execution
+.state` at `'passed'`, and confirms `itemState()` would no longer skip
+  that item on a re-entered `stage.execute`.
