@@ -11,8 +11,8 @@ Updated as each chunk lands; not part of the shipped plan doc.
 - [x] Chunk 4 — Orchestration: the per-item loop (commit d20c8fd)
 - [x] Chunk 5 — Item-level invalidation (commit b1f86a8)
 - [x] Chunk 6 — Item-mode approval (commit 40f0373)
-- [ ] Chunk 7 — Acceptance scenario, docs, hardening
-- [ ] Full monorepo typecheck/lint/test green
+- [x] Chunk 7 — Acceptance scenario, docs, hardening (commit 3b4e520)
+- [x] Full monorepo typecheck/lint/test green
 - [ ] PR opened against `main`
 
 ## Notes / deviations from plan
@@ -281,3 +281,109 @@ undefined)`. A non-iterating stage keeps exactly one node (`itemIndex`
   (`phase4-actions.e2e.test.ts`, `human-action.service.test.ts`'s existing
   test body) passes with zero behavioral changes — verified by running the
   full suite, not just the new file.
+- Chunk 7: found and fixed two real, previously-unexercised gaps while
+  building the §25.1 `broll` acceptance scenario for real (a `video.generate`
+  stage iterating `memory:shots`, binding `startFrame` from
+  `{from:'prevItem', path:'lastFrame'}`) — precisely what the chunk exists to
+  catch: (1) `binding-types.ts`'s `resolveBoundType` narrowed
+  `{from:'prevItem', path:'lastFrame'|'firstFrame'}` as an ordinary
+  JSON-schema path into the iterating stage's own output type, so the
+  validator rejected the spec's own canonical shape ("a media.video artifact
+  has no fields to path into") — the derived-frame shortcut always yields a
+  `media.image` regardless of the stage's real output kind, and the validator
+  never special-cased it. Fixed by short-circuiting to `{kind:'media.image'}`
+  for that exact ref/path combination before generic path-narrowing runs.
+  (2) `MemoryService.buildWriteCallback`'s "did the write path resolve"
+  guard ran before the media-vs-data branch, so ANY media-kind stage with a
+  `writes` entry threw `"...did not resolve against the finalized artifact's
+  data"` — `source.data` is legitimately always `undefined` for a media
+  artifact (its payload lives in `artifactId`/blob), which the guard didn't
+  know. Fixed by skipping the "value resolved" check entirely for media
+  writes (they never had a `value` to check in the first place). Both are
+  narrowly scoped, non-schema fixes; full unit/e2e suites re-verified green
+  after each.
+- Chunk 7: `apps/api/test/e2e/phase7-broll.e2e.test.ts` builds
+  `script -> shots -> broll -> music -> timeline` (dropping `vo`/`timing`/
+  `draft`/`final` from §25.1's full 9-stage example — they add no new
+  binding/invalidation coverage beyond what this file and Chunks 1-6's own
+  suites already exercise) with `broll` using the REAL `video.generate`
+  capability (not a stand-in `llm.generate`, unlike Chunks 4-6's own
+  precedent) so `{from:'prevItem', path:'lastFrame'}` really exercises
+  `DerivedFrameService`, with a `TestableDerivedFrameService` subclass (same
+  pattern as `derived-frame.e2e.test.ts`) swapped in via a new
+  `buildTestApp(testDb, {derivedFrame})` option so the suite stays CI-safe
+  (no real ffmpeg). Two tests: the §25.4 failure trace (item 3 of 6 forces a
+  check failure via `{..., forceFail:true}` baked into the `shots` array and
+  a script check reading `{from:'item'}`, exhausts `itemRetryLimit:1`, items
+  0-2 stay `passed` with untouched artifacts/ledger entries, items 4-5 never
+  start, the run is driven to `FAILED`/`cursorStageKey:'broll'` by hand since
+  this suite has no Inngest orchestrator, then a `run.inputs`-driven kill
+  switch "fixes" the check and a resume restarts exactly at item 3 without
+  regenerating or recharging items 0-2); and the §25.4 invalidation trace
+  (retrying `broll` item 2 via `InvalidationService.preview`/`.apply`
+  directly — the same real, tested mechanism `RunActionService
+.confirmStageRetry` itself calls, though its own HTTP-facing
+  `previewInvalidation`/`confirmStageRetry` still don't accept an `itemIndex`
+  end to end, a pre-existing gap this chunk didn't need to close — invalidates
+  items 2-5 of `broll` and `timeline` (reads `memory:broll`), and explicitly
+  does NOT invalidate `music` (reads only `memory:script`), matching §25.4
+  verbatim).
+- Chunk 7: the "fix and resume" step for the failure trace does not edit the
+  `shots` artifact's `forceFail:true` data directly (that would invalidate
+  `shots` itself and cascade well beyond what §25.4's own trace touches) —
+  it adds a second check ref, `{from:'input', inputKey:'disableForceFailCheck'}`,
+  and flips `run.inputs` via a raw DB update, mirroring exactly how
+  `phase7-iteration.e2e.test.ts`'s own Chunk 4 precedent "fixes and resumes"
+  its forced failure. The spec's own prose ("patches the stage config via
+  `PATCH /runs/:id/overrides`") describes a real HTTP flow this test doesn't
+  drive — the point of this suite is engine correctness (partial resume,
+  invalidation), not exercising that unrelated endpoint.
+- Chunk 7: `apps/api/test/acceptance/phase7-broll-frames.ts` (the real-ffmpeg
+  local acceptance script) could NOT be run via plain `tsx`, unlike
+  `phase6-render.ts`'s convention — it drives `StageRunnerService`/
+  `DerivedFrameService` through real NestJS constructor-type DI, which needs
+  `emitDecoratorMetadata`; `tsx` transforms via esbuild, which silently drops
+  that emission (confirmed empirically: an `EngineConfig` instance built
+  under `tsx` had an `undefined` `ConfigService`, with no error — Nest just
+  treated the constructor as taking zero parameters). This is exactly why
+  `vitest.config.ts` already swaps in `unplugin-swc` instead of esbuild's
+  default transform for the very same reason. Resolved by adding a
+  dedicated `apps/api/tsconfig.acceptance.json` (real `tsc`, real
+  decorator-metadata emission) and a new `test/acceptance/run-phase7-broll.sh`
+  that compiles to a throwaway `dist-acceptance/` (cleaned up via `trap` on
+  every exit, since it isn't covered by the repo's eslint `ignores` and
+  editing `eslint.config.mjs` is gated), symlinks the compiled tree's
+  relative `../../drizzle` lookup back to the real migrations folder, and
+  runs the result with plain `node`, preloading env via a small
+  `test/acceptance/preload-env.cjs` `--require` hook (needed because
+  `AppModule`'s `ConfigModule.forRoot({validate})` runs the instant that
+  module is imported, before any of the script's own top-level code could
+  otherwise set `DATABASE_URL`/`NODE_ENV`). `package.json`'s
+  `acceptance:phase7-broll` now points at that shell script instead of a
+  bare `tsx` invocation. Manually re-run: `pnpm --filter @reefcraft/api
+acceptance:phase7-broll` passed, real `ffmpeg` extraction confirmed (2
+  invocations logged, second resolution of the same derived frame proven
+  cached via a call-count spy on a `CountingDerivedFrameService` subclass
+  that still calls the real `runFfmpeg` via `super`).
+- Chunk 7: the acceptance script's width/height assertion on the derived
+  frame's probe is conditional, not unconditional as the plan's sketch
+  implied — real `ffprobe` on a lone single-frame PNG (no `-frames:v 1`
+  duration concept) returns no `format.duration` field at all, so
+  `MediaProbeService.probe()` throws and `DerivedFrameService`'s own,
+  pre-existing try/catch degrades gracefully to a probe-less blob (its doc
+  comment already anticipated this, just described it as rarer than it
+  turned out to be — it's the standard behavior for any still-image
+  extraction, not a "some builds" edge case). The script still hard-asserts
+  a non-empty `sourceKey`/real blob row (proving the extraction and
+  persistence happened for real) and only checks width/height when a probe
+  actually got stored, logging the graceful-degradation case otherwise
+  rather than treating it as a failure.
+- Chunk 7: item-mode approval (`approval.mode:'item'`) is deliberately not
+  layered onto the acceptance scenario's `broll` stage — `item-approval.e2e
+.test.ts` (Chunk 6) already covers it end to end in isolation, and combining
+  it here would add complexity without new coverage per the task's own
+  explicit escape hatch for this decision.
+- Chunk 7: `docs/build-progress.md`'s Phase 7 row flips to `done` with a
+  `(pending PR)` placeholder in the PR column — the real PR number isn't
+  known yet, and the "PR opened against main" checkbox above stays
+  unchecked; both are the next, separate step.
