@@ -1,4 +1,4 @@
-import { bigint, jsonb, numeric, pgTable, text, timestamptz } from './pg-helpers';
+import { bigint, boolean, jsonb, numeric, pgTable, text, timestamptz } from './pg-helpers';
 import { channel } from './channel';
 import { blueprintVersion } from './blueprint';
 
@@ -29,6 +29,10 @@ export const run = pgTable('run', {
   // table) so editing/replacing a channel asset can't retroactively change a
   // past run (§3.7's role_bindings/asset-ref guarantee, extended here).
   assetBindings: jsonb('asset_bindings').notNull().default({}),
+  // Chunk 5 — a real run row driven through the unchanged async pipeline,
+  // tagged so it's filterable out of "real work" run listings (locked
+  // product decision #1).
+  dryRun: boolean('dry_run').notNull().default(false),
   cursorStageKey: text('cursor_stage_key'),
   inngestRunId: text('inngest_run_id'),
   budgetCapUsd: numeric('budget_cap_usd', { precision: 12, scale: 4 }).notNull(),

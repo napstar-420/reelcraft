@@ -1,11 +1,15 @@
-import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseIntPipe, Post } from '@nestjs/common';
 import { CreateBlueprintVersionDto } from '@reefcraft/shared';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { BlueprintService } from './blueprint.service';
+import { RunService } from '../run/run.service';
 
 @Controller('blueprints')
 export class BlueprintController {
-  constructor(private readonly blueprints: BlueprintService) {}
+  constructor(
+    private readonly blueprints: BlueprintService,
+    private readonly runs: RunService,
+  ) {}
 
   @Post(':id/versions')
   createVersion(
@@ -26,5 +30,12 @@ export class BlueprintController {
     @Body(new ZodValidationPipe(CreateBlueprintVersionDto)) dto: CreateBlueprintVersionDto,
   ) {
     return this.blueprints.validateOnly(id, dto);
+  }
+
+  /** Chunk 5 — dry-run execution (locked product decision #1): drives a
+   * real, fake-provider-forced run through the unchanged async pipeline. */
+  @Post(':id/versions/:v/dry-run')
+  dryRun(@Param('id') id: string, @Param('v', ParseIntPipe) version: number) {
+    return this.runs.startDryRun(id, version);
   }
 }

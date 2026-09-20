@@ -9,7 +9,7 @@ Branch: `codex/phase9-editor-templates`
 - [x] Chunk 2 — `POST /checks/test`
 - [x] Chunk 3 — `POST /blueprints/:id/validate`
 - [x] Chunk 4 — Template library completion
-- [ ] Chunk 5 — Dry-run execution
+- [x] Chunk 5 — Dry-run execution
 - [ ] Chunk 6 — Frontend: capability config form + schema editor panel
 - [ ] Chunk 7 — Frontend: check tester, template library, dry-run trigger
 
@@ -184,3 +184,96 @@ test/e2e/check-test.e2e.test.ts` (the same config `pnpm test:e2e` uses) —
   (29 files / 170 tests) and full unit suite (42 files / 276 tests) both
   pass after this chunk, confirming no regressions from the `TemplateModule`
   DI graph change.
+
+### Chunk 5
+
+- Implemented directly (no subagent) — the design was fully locked in the
+  task brief, so this was execution against a known plan rather than
+  open-ended design work.
+- Migration `apps/api/drizzle/0011_bitter_iron_patriot.sql` (drizzle-kit's
+  auto-generated slug, left as generated) contains exactly one statement —
+  `ALTER TABLE "run" ADD COLUMN "dry_run" boolean DEFAULT false NOT NULL;`
+  — confirming no snapshot drift. Applied cleanly against the local dev DB
+  (`pnpm db:migrate`) and picked up automatically by every e2e suite's
+  per-test database (`createTestDb()` runs the full migration folder).
+- The fake-provider override landed as a private `RunService.applyDryRunOverride(graph, resolvedConfig)`
+  method (no new DI wiring — `RunService` already injects `CapabilityRegistry`
+  for `assertTextStagesHaveMaxTokens`), called from `create()` only when
+  `options?.dryRun` is set, strictly between `resolveRunConfig()` and
+  `assertTextStagesHaveMaxTokens()`. It is a pure function: for each stage,
+  looks up `capabilities.get(stage.capability).modality`; if the modality is
+  in `{text: 'fake-text-1', image: 'fake-image-1', video: 'fake-video-1',
+  audio: 'fake-audio-1'}` it replaces that stage's `ConfigLayer.model`
+  wholesale (`params: {max_tokens: 256}` for text, `{}` otherwise); any other
+  modality (`human`/`publish`/`compute`, and `media.analyze`'s `probe` path)
+  is left completely untouched. Independently, any stage with a truthy
+  `stage.qc` gets `ConfigLayer.qc.model` forced to
+  `{provider:'fake', modelId:'fake-judge-1', params:{}}` while preserving any
+  existing `qc.threshold`/`qc.capUsd` in the layer. `fake-judge-1` is not
+  registered in `FakeProviderAdapter.listModels()` — confirmed safe by
+  grepping existing tests (`config-resolver.e2e.test.ts`,
+  `qc-runner.service.test.ts`, `blueprint-validator.test.ts`) which already
+  use that exact modelId freely, since only `RunService.assertReferenceLimits`
+  (role-consuming stages) ever calls `listModels()` to check a model's
+  declared capabilities, never the QC judge path.
+- `RunService.create(dto, options?: {dryRun?: boolean})` — the extra
+  parameter is not part of `CreateRunDto` (kept DTO-free per the task's
+  explicit instruction); `dryRun: options?.dryRun ?? false` is set on the
+  inserted `run` row alongside the (possibly overridden) `resolvedConfig`.
+- `RunService.startDryRun(blueprintId, version)` resolves `(blueprintId,
+  version)` to `{channelId, blueprintVersionId}` via two lookups (`blueprint`
+  by id, `blueprintVersion` by `(blueprintId, version)` pair — `create()`
+  only takes a `blueprintVersionId`, so this pairing can't be done inside
+  `create()` itself), throws `Error` with a `"...not found"` message for
+  either miss, then calls `create({..., budgetCapUsd: 1}, {dryRun: true})`
+  followed by `start()` verbatim. It deliberately does NOT re-check
+  `runnable` itself — `create()` already throws `"BlueprintVersion <id>
+  failed validation"` for a non-runnable version once handed that version's
+  id, so re-checking would just duplicate that message under a different
+  wording.
+- Confirmed via `RunMutationService.withLockedRun` that `start()` does NOT
+  flip `run.state` to `RUNNING` synchronously — only `run.orchestrate`'s
+  `mark-running` step does, once the `run/started` event is actually
+  processed. So `startDryRun()`'s return value (and the e2e test's first
+  assertion) has `state: 'CREATED'`, not `'RUNNING'` — a detail easy to get
+  wrong by analogy with a naive read of `start()`'s name.
+- `RunService.list(includeDryRuns = false)` branches into two separate
+  `.select().from(run)` calls (with/without `.where(eq(run.dryRun, false))`)
+  rather than `.where(includeDryRuns ? undefined : eq(...))` — avoids
+  fighting drizzle-orm 2.1's builder types for a conditional bare `.where()`.
+  `RunController`'s `GET /runs` parses `?includeDryRuns=true` via
+  `includeDryRuns === 'true'` (any other value, including absent, means
+  `false`), consistent with this controller's existing `parseItemIndexQuery`-
+  style manual query parsing.
+- `BlueprintModule` now imports `RunModule` (confirmed non-circular by
+  grep — nothing in `RunModule`'s transitive import graph references
+  `BlueprintModule`); `BlueprintController` gets `RunService` injected
+  alongside `BlueprintService` for the new `POST :id/versions/:v/dry-run`
+  (`:v` parsed via Nest's built-in `ParseIntPipe`), which just calls
+  `this.runs.startDryRun(id, version)`.
+- New `apps/api/test/e2e/dry-run.e2e.test.ts` (3 tests, `phase2-acceptance.e2e.test.ts`'s
+  nested-`InngestTestEngine` pattern — real `run.orchestrate` + `stage.execute`
+  functions, `invoke-stage-*` mocked to run a real inner engine, never calling
+  `StageRunnerService` directly) covers: (1) a two-stage graph — a text stage
+  authored with no `model.params.max_tokens` plus an `image.generate` stage
+  authored with a real-provider-shaped pin (`{provider:'openai', modelId:
+  'some-real-model'}`) — driven to completion via `startDryRun()`, asserting
+  the run's final `state` is `'COMPLETED'` (the exact `RunState` terminal-
+  success literal, confirmed from `packages/shared/src/primitives.ts`),
+  `run.dryRun === true` in the DB, and every `stage_attempt.job_handle.providerId`
+  is `'fake'` (the field `FakeProviderAdapter.submit()` stamps on every
+  `JobHandle`, already read elsewhere by `run-cancellation.service.ts`); (2)
+  `list()`/`list(true)` exclude/include that dry run; (3) `startDryRun` on a
+  nonexistent blueprint id or a nonexistent version number both throw with a
+  `/not found/`-matching message; (4) the identical graph run for real via
+  `create()`/no dry-run option throws `/max_tokens/`, proving the override
+  never leaks into real-run validation and `assertTextStagesHaveMaxTokens`
+  itself was never touched.
+- Full verification: `pnpm --filter @reefcraft/shared build` clean;
+  `pnpm --filter @reefcraft/api typecheck` clean; targeted unit suite
+  (`src/run src/run-config`) 17 files / 73 tests passed; the new e2e file
+  alone 3/3 passed; full e2e regression (`vitest.e2e.config.ts`, no filter)
+  **30 files / 173 tests, 100% passed** — confirming `RunService.create()`'s
+  hot-path change didn't regress any other suite; `pnpm lint` clean (one
+  pre-existing unrelated warning in `media-output.e2e.test.ts`); `pnpm
+  format:check` clean after one `prettier --write` pass on the new test file.

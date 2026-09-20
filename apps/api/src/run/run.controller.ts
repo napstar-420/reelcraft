@@ -57,8 +57,8 @@ export class RunController {
   }
 
   @Get()
-  list() {
-    return this.runs.list();
+  list(@Query('includeDryRuns') includeDryRuns?: string) {
+    return this.runs.list(includeDryRuns === 'true');
   }
 
   @Get(':id')

@@ -6,6 +6,7 @@ import { DRIZZLE, type Db } from '../db/drizzle.provider';
 import {
   asset,
   blob,
+  blueprint,
   blueprintVersion,
   channel,
   character,
@@ -54,7 +55,7 @@ export class RunService {
    * they can only be uploaded/attached after `create()` and before `start()`.
    * Text/data inputs already present in `dto.inputs` are recorded as
    * `$input:<key>` artifacts inline, in the same transaction. */
-  async create(dto: CreateRunDto) {
+  async create(dto: CreateRunDto, options?: { dryRun?: boolean }) {
     const [version] = await this.db
       .select()
       .from(blueprintVersion)
@@ -75,12 +76,15 @@ export class RunService {
     const inputDefs = InputDef.array().parse(version.inputs);
     const runId = ulid();
 
-    const resolvedConfig = this.configResolver.resolveRunConfig({
+    let resolvedConfig = this.configResolver.resolveRunConfig({
       graph,
       engine: engineDefaults(this.engineConfig),
       channelDefaults: channelRow.defaults as ConfigLayer,
       blueprintDefaults: version.defaults as ConfigLayer,
     });
+    if (options?.dryRun) {
+      resolvedConfig = this.applyDryRunOverride(graph, resolvedConfig);
+    }
     this.assertTextStagesHaveMaxTokens(graph, resolvedConfig);
 
     await this.db.transaction(async (tx) => {
@@ -92,6 +96,7 @@ export class RunService {
         inputs: dto.inputs,
         roleBindings: dto.roleBindings,
         resolvedConfig,
+        dryRun: options?.dryRun ?? false,
         budgetCapUsd: fromUsd(dto.budgetCapUsd),
       });
 
@@ -351,6 +356,81 @@ export class RunService {
     }
   }
 
+  /** Chunk 5 — a dry run is a real `run` row driven through the unchanged
+   * async pipeline (locked product decision #1), not a bespoke synchronous
+   * path. `startDryRun` just resolves `(blueprintId, version)` to the
+   * `channelId`/`blueprintVersionId` pair `create()` needs, then reuses
+   * `create()`/`start()` verbatim with `{dryRun: true}`. */
+  async startDryRun(blueprintId: string, version: number) {
+    const [blueprintRow] = await this.db
+      .select({ channelId: blueprint.channelId })
+      .from(blueprint)
+      .where(eq(blueprint.id, blueprintId))
+      .limit(1);
+    if (!blueprintRow) throw new Error(`Blueprint ${blueprintId} not found`);
+
+    const [versionRow] = await this.db
+      .select({ id: blueprintVersion.id })
+      .from(blueprintVersion)
+      .where(
+        and(eq(blueprintVersion.blueprintId, blueprintId), eq(blueprintVersion.version, version)),
+      )
+      .limit(1);
+    if (!versionRow) throw new Error(`Blueprint ${blueprintId} version ${version} not found`);
+
+    const created = await this.create(
+      {
+        channelId: blueprintRow.channelId,
+        blueprintVersionId: versionRow.id,
+        inputs: {},
+        roleBindings: {},
+        budgetCapUsd: 1,
+      },
+      { dryRun: true },
+    );
+    return this.start(created.id);
+  }
+
+  /** Chunk 5 — forces every stage's model pin to the fake provider
+   * regardless of what the graph authors (locked product decision #1), plus
+   * `qc.model` on any stage declaring `stage.qc`, so a QC judge call never
+   * reaches a real provider either. A modality with no fake model (`human`/
+   * `publish`/`compute`, and `media.analyze`'s `probe` path, which never
+   * consumes a model pin at all) is left completely untouched. `text`'s
+   * injected `max_tokens: 256` is what makes `assertTextStagesHaveMaxTokens`
+   * pass for a dry run without that assertion itself needing to change. */
+  private applyDryRunOverride(
+    graph: StageDef[],
+    resolvedConfig: Record<string, ConfigLayer>,
+  ): Record<string, ConfigLayer> {
+    const fakeModelByModality: Record<string, string> = {
+      text: 'fake-text-1',
+      image: 'fake-image-1',
+      video: 'fake-video-1',
+      audio: 'fake-audio-1',
+    };
+    const overridden: Record<string, ConfigLayer> = {};
+    for (const stage of graph) {
+      const layer = resolvedConfig[stage.key] ?? {};
+      const modality = this.capabilities.get(stage.capability).modality;
+      const fakeModelId = fakeModelByModality[modality];
+      overridden[stage.key] = {
+        ...layer,
+        ...(fakeModelId !== undefined && {
+          model: {
+            provider: 'fake',
+            modelId: fakeModelId,
+            params: modality === 'text' ? { max_tokens: 256 } : {},
+          },
+        }),
+        ...(stage.qc && {
+          qc: { ...layer.qc, model: { provider: 'fake', modelId: 'fake-judge-1', params: {} } },
+        }),
+      };
+    }
+    return overridden;
+  }
+
   /** §12.4 — the one budget mutation allowed while `RUNNING`; also the only
    * way to unblock a `PAUSED_BUDGET` run, since `raiseBudget` alone widens
    * the cap but doesn't resume the orchestrator. */
@@ -430,8 +510,12 @@ export class RunService {
     };
   }
 
-  async list() {
-    return this.db.select().from(run);
+  /** §21/Chunk 5 — dry runs write real ledger rows (locked product decision
+   * #1's accepted consequence), so the default listing excludes them; an
+   * explicit `includeDryRuns` opts back in. */
+  async list(includeDryRuns = false) {
+    if (includeDryRuns) return this.db.select().from(run);
+    return this.db.select().from(run).where(eq(run.dryRun, false));
   }
 
   async listStageAttempts(runId: string, stageKey: string) {
