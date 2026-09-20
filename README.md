@@ -80,6 +80,23 @@ The command builds the render worker, creates an input clip, renders a timeline,
 and verifies the resulting MP4 with `ffprobe`. It is intentionally not part of
 CI because it requires system media and browser dependencies.
 
+## Phase 7 iteration prerequisites
+
+Install FFmpeg (`ffmpeg` and `ffprobe`). Iteration adds the `iterate` stage
+shape — sequential per-item execution with the `prevItem` carry and its
+ffmpeg-backed `lastFrame`/`firstFrame` derived-frame shortcut.
+
+Run the local-only broll derived-frame acceptance with:
+
+```bash
+pnpm --filter @reefcraft/api acceptance:phase7-broll
+```
+
+The command builds a synthetic video fixture, drives a 3-item `video.generate`
+iterating stage, and verifies `{from:'prevItem', path:'lastFrame'}` really
+extracts and caches a frame via `ffmpeg`. It is intentionally not part of CI
+because it requires a system `ffmpeg` binary.
+
 ## Phase 5 media prerequisites
 
 Install FFmpeg so `ffprobe` is on the API process `PATH`. Media runs store a

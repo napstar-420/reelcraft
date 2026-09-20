@@ -123,18 +123,24 @@ export class MemoryService {
   buildWriteCallback(stage: StageDef, source: MemoryWriteSource): (tx: Tx) => Promise<void> {
     return async (tx: Tx): Promise<void> => {
       if (!stage.writes) return;
+      const isMedia = source.kind.startsWith('media.');
       for (const [memKey, path] of Object.entries(stage.writes)) {
-        const value = path === '$' ? source.data : getPath(source.data, path);
-        if (source.kind.startsWith('media.') && path !== '$') {
+        if (isMedia && path !== '$') {
           throw new Error(
             `MemoryService: media write "${memKey}" must use the whole artifact path "$"`,
           );
         }
+        // A media artifact's payload lives in the blob/artifact row, never
+        // in `source.data` (which `StageRunnerService.fetchAndFinalize`
+        // deliberately leaves `undefined` for every media kind) — so there
+        // is no `value` to resolve or validate against `source.data` at
+        // all for a media write; only the non-media path below needs one.
+        const value = isMedia ? undefined : path === '$' ? source.data : getPath(source.data, path);
         // A `writes` path that doesn't resolve is a blueprint authoring bug
         // (schema/path mismatch), not a legitimate "no value" — writing
         // `undefined` here would silently persist a permanent, versioned
         // memory row every later stage reads as if it were real data.
-        if (value === undefined) {
+        if (!isMedia && value === undefined) {
           throw new Error(
             `MemoryService: stage "${stage.key}" writes["${memKey}"] path "${path}" ` +
               `did not resolve against the finalized artifact's data`,
@@ -155,9 +161,7 @@ export class MemoryService {
           writtenBy: stage.key,
           writtenItem: source.itemIndex,
           kind: source.kind,
-          ...(source.kind.startsWith('media.')
-            ? { artifactId: source.artifactId }
-            : { data: value }),
+          ...(isMedia ? { artifactId: source.artifactId } : { data: value }),
         });
       }
     };

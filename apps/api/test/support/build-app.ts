@@ -11,6 +11,7 @@ import { applyTestEnvDefaults } from './env';
 import { MemoryStorageAdapter } from './memory-storage.adapter';
 import type { TestDb } from './test-db';
 import { MediaProbeService } from '../../src/artifact/media-probe.service';
+import { DerivedFrameService } from '../../src/artifact/derived-frame.service';
 
 export interface TestApp {
   app: INestApplicationContext;
@@ -30,7 +31,22 @@ export interface TestApp {
  */
 export async function buildTestApp(
   testDb: TestDb,
-  options?: { mediaProbe?: Pick<MediaProbeService, 'probe' | 'hasAudio'> },
+  options?: {
+    mediaProbe?: Pick<MediaProbeService, 'probe' | 'hasAudio'>;
+    /** Phase 7 chunk 7 — a suite exercising `{from:'prevItem', path:'lastFrame'}`
+     * against a real `video.generate` stage needs a source artifact real
+     * enough for `MediaArtifactService.persist` (satisfied by the default
+     * fake `mediaProbe` above), but `DerivedFrameService.extract()` shells
+     * out to a real `ffmpeg` binary on that same fake source — never CI-safe.
+     * Passing a `DerivedFrameService` subclass here (overriding its
+     * `protected runFfmpeg()`, same pattern as `derived-frame.e2e.test.ts`)
+     * lets a suite exercise the real cache/lock/provenance plumbing without
+     * a host ffmpeg install. Omit it (as every other suite does) to keep the
+     * real service — e.g. the ffmpeg-dependent acceptance script. */
+    derivedFrame?: new (
+      ...args: ConstructorParameters<typeof DerivedFrameService>
+    ) => DerivedFrameService;
+  },
 ): Promise<TestApp> {
   applyTestEnvDefaults();
 
@@ -50,6 +66,9 @@ export async function buildTestApp(
   // engine-level suites independent of a host FFmpeg installation. Dedicated
   // media-output coverage passes an explicit deterministic probe.
   builder.overrideProvider(MediaProbeService).useValue(options?.mediaProbe ?? testMediaProbe());
+  if (options?.derivedFrame) {
+    builder.overrideProvider(DerivedFrameService).useClass(options.derivedFrame);
+  }
   const app = await builder.compile();
 
   await app.init();

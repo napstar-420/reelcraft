@@ -1164,3 +1164,49 @@ before implementation started; all six are folded into the chunks above.
    **Resolved: set it**, for admin/debug views that list `stage_execution`
    rows; the sanctioned consumption paths (Run Memory, `{from:'prev',
 alignWith:'item'}`) are unaffected either way (Chunk 4).
+
+## Implementation notes (Chunk 7)
+
+Driving the design spec's own §25.1 `broll` shape end to end — the exact point
+of the acceptance chunk — surfaced two real gaps neither the type-level work
+(Chunk 1) nor the binding-resolver work (Chunk 3) had exercised together
+before: the blueprint validator narrowed `{from:'prevItem', path:'lastFrame'
+|'firstFrame'}` as an ordinary JSON-schema path into the iterating stage's own
+output type, rejecting the spec's canonical `video.generate` shape outright
+("a media.video artifact has no fields to path into") since the derived-frame
+shortcut always yields a `media.image` regardless of what the stage itself
+outputs; and `MemoryService.buildWriteCallback` rejected any media-kind
+`writes` entry, because its "did the path resolve" guard ran before the
+media-vs-data branch that explains why `source.data` is legitimately
+`undefined` for a media artifact (its payload lives in `artifactId`/blob, not
+`data`). Both are fixed in `binding-types.ts` and `memory.service.ts`
+respectively; full details and the exact failure messages are in
+`.claude/plans/phase-7-progress.md`'s Chunk 7 notes.
+
+The `acceptance:phase7-broll` script cannot run under `tsx` (the `phase6-render`
+convention) because it drives `StageRunnerService`/`DerivedFrameService`
+through real NestJS DI, which needs `emitDecoratorMetadata` — a real `tsc`
+concern that esbuild-based tools (`tsx`, and vitest's default transform, which
+is why `vitest.config.ts` swaps in `unplugin-swc`) silently don't support, so
+constructor-injected classes end up empty instead of failing loudly. The
+script's `package.json` entry therefore compiles it for real via
+`tsconfig.acceptance.json` (`tsc`) and runs the output with plain `node`,
+preloading env through `test/acceptance/preload-env.cjs` (a `--require` hook,
+since `AppModule`'s `ConfigModule.forRoot({validate})` runs at import time,
+before the script's own top-level code otherwise could).
+
+## Local broll acceptance
+
+Install FFmpeg, then install workspace dependencies and run:
+
+```sh
+pnpm install
+pnpm --filter @reefcraft/api acceptance:phase7-broll
+```
+
+The command builds a tiny synthetic video fixture, drives a 3-item
+`video.generate` iterating stage through `StageRunnerService` directly (no
+Inngest), and confirms `{from:'prevItem', path:'lastFrame'}` really extracts a
+frame via `ffmpeg`, really caches it on the source artifact, and skips a
+second `ffmpeg` call on a repeat resolution. Excluded from CI because it needs
+a real `ffmpeg` binary.

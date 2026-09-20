@@ -143,6 +143,20 @@ export function resolveBoundType(
   const path = 'path' in ref ? ref.path : undefined;
   if (!path) return base;
 
+  // §14.4 — `{from:'prevItem', path:'lastFrame'|'firstFrame'}` is the
+  // ffmpeg-backed derived-frame shortcut (`DerivedFrameService`, resolved at
+  // run time by `binding-resolver.service.ts`'s own `case 'prevItem'`), not
+  // an ordinary JSON-schema path into the stage's own output type. It always
+  // yields a real `media.image` regardless of what the iterating stage
+  // itself outputs — typically `media.video`, which correctly has no other
+  // fields to path into. Without this, the design spec's own canonical
+  // `broll` shape (`video.generate` iterating with `startFrame` bound to
+  // `prevItem.lastFrame`) would fail validation with "a media.video
+  // artifact has no fields to path into".
+  if (ref.from === 'prevItem' && (path === 'lastFrame' || path === 'firstFrame')) {
+    return { type: { kind: 'media.image' } };
+  }
+
   const narrowed = narrowRefPath(base.type, path);
   if (narrowed.ok) return { type: narrowed.type };
   return {
