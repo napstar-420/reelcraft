@@ -83,10 +83,10 @@ CapabilityImpl`), mirroring the exact cast `capability.registry.ts` already
   typed fake config wins, rather than patching `EngineConfig`/
   `ScriptSandboxService` (out of scope for this chunk).
 - The task's suggested verification command (`vitest run src/artifact
-  src/check test/e2e/check-test.e2e.test.ts`, no `-c` flag) silently drops
+src/check test/e2e/check-test.e2e.test.ts`, no `-c` flag) silently drops
   the e2e file: the default `vitest.config.ts`'s `include` is
   `src/**/*.test.ts` only, so a `test/e2e/...` path passed on the CLI
   matches nothing and is skipped without error, not a failure. Ran the e2e
   file separately with `vitest run -c vitest.e2e.config.ts
-  test/e2e/check-test.e2e.test.ts` (the same config `pnpm test:e2e` uses) —
+test/e2e/check-test.e2e.test.ts` (the same config `pnpm test:e2e` uses) —
   both runs passed.
