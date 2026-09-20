@@ -13,7 +13,7 @@ plan (via `/plan`) written just before it starts — this table is the index.
 | 6   | Assembly               | done              | `docs/plans/phase-6-assembly.md`         | #16                    |
 | 7   | Iteration              | done              | `docs/plans/phase-7-iteration.md`        | #17                    |
 | 8   | Characters             | done              | `docs/plans/phase-8-characters.md`       | #18                    |
-| 9   | Editor & templates     | pending           |                                          |                        |
+| 9   | Editor & templates     | planned           | `docs/plans/phase-9-editor-templates.md` |                        |
 
 ## Phase scope (one-liners, from design spec §24)
 
