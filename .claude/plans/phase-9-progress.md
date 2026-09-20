@@ -10,7 +10,7 @@ Branch: `codex/phase9-editor-templates`
 - [x] Chunk 3 — `POST /blueprints/:id/validate`
 - [x] Chunk 4 — Template library completion
 - [x] Chunk 5 — Dry-run execution
-- [ ] Chunk 6 — Frontend: capability config form + schema editor panel
+- [x] Chunk 6 — Frontend: capability config form + schema editor panel
 - [ ] Chunk 7 — Frontend: check tester, template library, dry-run trigger
 
 ## Notes / deviations from plan
@@ -277,3 +277,59 @@ failed validation"` for a non-runnable version once handed that version's
   hot-path change didn't regress any other suite; `pnpm lint` clean (one
   pre-existing unrelated warning in `media-output.e2e.test.ts`); `pnpm
 format:check` clean after one `prettier --write` pass on the new test file.
+
+### Chunk 6
+
+- Implemented directly (no subagent) — frontend-only, small well-scoped
+  chunk with fully confirmed facts up front.
+- Confirmed no standalone schema-validate endpoint exists; per the task
+  brief's scoping, `SchemaEditor` authors one `JsonSchema` and saves it as a
+  `kind: 'schema'` template via `POST /templates`, surfacing whatever
+  `ValidationIssue[]` the server returns, rather than attempting to call
+  `POST /blueprints/:id/validate` (which needs a full graph and an existing
+  blueprint id neither panel has).
+- `request<T>()` in `apps/web/src/api/client.ts` now always throws a new
+  exported `ApiError extends Error` (adds `status`/`issues`) instead of a
+  plain `Error`, so both new panels can render structured violation/issue
+  arrays instead of a generic message. Confirmed the exact wire shape before
+  relying on it: both `capability.controller.ts#resolve()` and
+  `template.service.ts#save()` throw `BadRequestException(arrayOfIssues)`,
+  and Nest's `HttpException.createBody()` (read directly from
+  `node_modules/@nestjs/common/exceptions/http.exception.js`) wraps a thrown
+  array as `{message: <array>, error: 'Bad Request', statusCode: 400}` — so
+  `request()` parses the JSON body and sets `issues = body.message` when
+  that's an array, else the raw parsed body, else `undefined` on a
+  non-JSON/empty body. This is a strict superset of the old behavior:
+  existing callers (`listChannels`, `createChannel`, etc.) only ever read
+  `.message`, which is unchanged (the original template-literal string).
+  `resolve()`'s violations are `{path, message}` (no `severity` —
+  `SchemaValidatorService.validate()`'s return shape, confirmed by reading
+  it), distinct from `template.save()`'s `ValidationIssue[]`
+  (`{path, message, severity}`) — `CapabilityConfigForm` renders the former,
+  `SchemaEditor` the latter, typed separately rather than forcing one shared
+  shape.
+- `CapabilityConfigForm` fetches `GET /capabilities` via a shared
+  `['capabilities']` query key (reusable across instances), shows the
+  matched capability's own `configSchema` (read-only `<pre>` dump, per the
+  task brief — no schema-form generator), a config `<textarea>` parsed only
+  on submit (client-side JSON-parse errors rendered separately from
+  server-side schema violations), and a Resolve button hitting
+  `POST /capabilities/:key/resolve`.
+- `EditorPage.tsx` is the single new page per the task's stated preference
+  ("SOMETHING must render these two new components" + "Chunk 7 will extend
+  this same page ... rather than creating a competing one"): a capability
+  `<select>` (from `GET /capabilities`) feeding `CapabilityConfigForm`, plus
+  one always-rendered `SchemaEditor` instance. Routed at `/editor` in
+  `App.tsx` with a nav link next to "Channels". No new page-level styling
+  added to `index.css` — both panels use only plain elements already covered
+  by the existing `section`/`button`/`input` rules.
+- No new dependencies, no schema-form generator, no UI kit — plain JSX
+  throughout, matching `BlueprintsPage.tsx`'s pattern (`useQuery`/
+  `useMutation`, `<section>`/`<ul>`/`<button>`).
+- Verification: `pnpm --filter @reefcraft/shared build` clean; `pnpm
+--filter @reefcraft/web typecheck` clean; `pnpm --filter @reefcraft/web
+build` clean (pre-existing >500kB chunk-size warning on
+  `TimelineEditorPage`, unrelated to this chunk); `pnpm lint` clean (one
+  pre-existing unrelated warning in `media-output.e2e.test.ts`); `pnpm
+format:check` failed once on the 3 touched files, fixed with a targeted
+  `prettier --write` on exactly those 3 files, then clean.

@@ -4,9 +4,28 @@ import type {
   BlueprintVersionDto,
   RunDetailDto,
   CapabilityDto,
+  ResolveCapabilityResponseDto,
+  SaveTemplateDto,
   SaveTimelineDraftDto,
   TimelineEditorSessionDto,
 } from '@reefcraft/shared';
+
+/** Thrown by `request()` on any non-2xx response. `issues` carries the
+ * parsed JSON error body when there is one — Nest wraps an array thrown
+ * via `BadRequestException(arr)` as `{message: arr, ...}`, so `issues` is
+ * that array when present, else the raw parsed body. A strict superset of
+ * the old plain-`Error` behavior: existing callers reading `.message`
+ * still see the same string. */
+export class ApiError extends Error {
+  status: number;
+  issues?: unknown;
+  constructor(message: string, status: number, issues?: unknown) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.issues = issues;
+  }
+}
 
 /** Typed against @reefcraft/shared DTOs — the payoff for the shared
  * package: the same shapes the API validates requests against are what
@@ -17,7 +36,18 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     headers: { 'Content-Type': 'application/json', ...init?.headers },
   });
   if (!res.ok) {
-    throw new Error(`${init?.method ?? 'GET'} ${path} failed: ${res.status}`);
+    let issues: unknown;
+    try {
+      const body = await res.json();
+      issues = Array.isArray(body?.message) ? body.message : body;
+    } catch {
+      // Non-JSON or empty error body — issues stays undefined.
+    }
+    throw new ApiError(
+      `${init?.method ?? 'GET'} ${path} failed: ${res.status}`,
+      res.status,
+      issues,
+    );
   }
   return res.json() as Promise<T>;
 }
@@ -28,6 +58,14 @@ export const api = {
     request<ChannelDto>('/channels', { method: 'POST', body: JSON.stringify(dto) }),
 
   listCapabilities: () => request<CapabilityDto[]>('/capabilities'),
+  resolveCapability: (key: string, config: Record<string, unknown>) =>
+    request<ResolveCapabilityResponseDto>(`/capabilities/${key}/resolve`, {
+      method: 'POST',
+      body: JSON.stringify({ config }),
+    }),
+
+  saveTemplate: (dto: SaveTemplateDto) =>
+    request<unknown>('/templates', { method: 'POST', body: JSON.stringify(dto) }),
 
   listBuiltinTemplates: () =>
     request<Array<{ id: string; name: string; description: string }>>('/templates'),
