@@ -15,6 +15,10 @@ export const RoleDef = z.object({
   key: z.string(),
   label: z.string(),
   required: z.boolean(),
+  /** Phase 8: a v1 role selects one reusable channel Character. */
+  characterId: z.string().optional(),
+  /** Ordered, explicit subset of that Character's reference images. */
+  referenceBlobIds: z.array(z.string()).optional(),
 });
 export type RoleDef = z.infer<typeof RoleDef>;
 

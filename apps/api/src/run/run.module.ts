@@ -23,6 +23,7 @@ import { RunCancellationService } from './run-cancellation.service';
 import { ArtifactEditService } from './artifact-edit.service';
 import { HumanReminderService } from './human-reminder.service';
 import { TimelineEditorService } from './timeline-editor.service';
+import { ProviderModule } from '../provider/provider.module';
 
 const runControlProviders = [
   PreviewTokenService,
@@ -50,6 +51,7 @@ const runControlProviders = [
     JsonSchemaModule,
     ArtifactModule,
     CheckModule,
+    ProviderModule,
   ],
   providers: [RunService, RunInputService, ...runControlProviders],
   controllers: [RunController],

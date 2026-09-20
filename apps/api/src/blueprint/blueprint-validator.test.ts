@@ -92,6 +92,20 @@ const withManySlot: CapabilityImpl = {
   slots: () => [{ name: 'items', accepts: ['text'], required: false, cardinality: 'many' }],
 };
 
+const withManyImageReferences: CapabilityImpl = {
+  ...llmGenerate,
+  slots: () => [
+    { name: 'references', accepts: ['media.image'], required: false, cardinality: 'many' },
+  ],
+};
+
+const withOneImageSlot: CapabilityImpl = {
+  ...llmGenerate,
+  slots: () => [
+    { name: 'startFrame', accepts: ['media.image'], required: false, cardinality: 'one' },
+  ],
+};
+
 const videoGen: CapabilityImpl = {
   ...llmGenerate,
   modality: 'video',
@@ -167,6 +181,58 @@ describe('BlueprintValidatorService', () => {
     ];
     const issues = validator.validate({ graph: [stage({ key: 'a' })], inputs: [], roles });
     expect(hasError(issues, 'roles')).toBe(true);
+  });
+
+  it('allows a Character role only in a many-image reference slot', () => {
+    const validator = makeValidator({ 'llm.generate': withManyImageReferences });
+    const roles: RoleDef[] = [
+      {
+        key: 'host',
+        label: 'Host',
+        required: true,
+        characterId: 'char-1',
+        referenceBlobIds: ['ref-1'],
+      },
+    ];
+    const issues = validator.validate({
+      graph: [stage({ key: 'a', slots: { references: { from: 'role', roleKey: 'host' } } })],
+      inputs: [],
+      roles,
+      blueprintChannelId: 'channel-1',
+      charactersById: new Map([
+        [
+          'char-1',
+          { channelId: 'channel-1', readiness: 'ready', referenceBlobIds: new Set(['ref-1']) },
+        ],
+      ]),
+    });
+    expect(issues.filter((issue) => issue.severity === 'error')).toEqual([]);
+  });
+
+  it('rejects a Character role in a single-image slot before a run can spend', () => {
+    const validator = makeValidator({ 'llm.generate': withOneImageSlot });
+    const roles: RoleDef[] = [
+      {
+        key: 'host',
+        label: 'Host',
+        required: true,
+        characterId: 'char-1',
+        referenceBlobIds: ['ref-1'],
+      },
+    ];
+    const issues = validator.validate({
+      graph: [stage({ key: 'a', slots: { startFrame: { from: 'role', roleKey: 'host' } } })],
+      inputs: [],
+      roles,
+      blueprintChannelId: 'channel-1',
+      charactersById: new Map([
+        [
+          'char-1',
+          { channelId: 'channel-1', readiness: 'ready', referenceBlobIds: new Set(['ref-1']) },
+        ],
+      ]),
+    });
+    expect(hasError(issues, 'stages.a.slots.startFrame')).toBe(true);
   });
 
   it('errors on an unknown capability', () => {

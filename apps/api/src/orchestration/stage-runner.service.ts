@@ -333,21 +333,51 @@ export class StageRunnerService {
     return row.assetBindings as Record<string, { blobId: string; kind: string }>;
   }
 
+  private async loadRoleBindings(runId: string): Promise<
+    Record<
+      string,
+      {
+        characterId: string;
+        name: string;
+        description: string;
+        references: Array<{ blobId: string; sourceKey: string; mime: string; probe?: unknown }>;
+      }
+    >
+  > {
+    const [row] = await this.db
+      .select({ roleBindings: run.roleBindings })
+      .from(run)
+      .where(eq(run.id, runId))
+      .limit(1);
+    if (!row) throw new Error(`StageRunnerService: run ${runId} not found`);
+    return row.roleBindings as Record<
+      string,
+      {
+        characterId: string;
+        name: string;
+        description: string;
+        references: Array<{ blobId: string; sourceKey: string; mime: string; probe?: unknown }>;
+      }
+    >;
+  }
+
   private async resolveBindings(
     stage: StageDef,
     runId: string,
     prevStageKey: string | undefined,
     itemIndex?: number,
   ): Promise<ResolvedBindings> {
-    const [inputs, assetBindings] = await Promise.all([
+    const [inputs, assetBindings, roleBindings] = await Promise.all([
       this.loadRunInputs(runId),
       this.loadAssetBindings(runId),
+      this.loadRoleBindings(runId),
     ]);
     return this.bindingResolver.resolveAll(stage, {
       runId,
       prevStageKey,
       inputs,
       assetBindings,
+      roleBindings,
       stageKey: stage.key,
       itemIndex,
     });
@@ -480,7 +510,14 @@ export class StageRunnerService {
       stage.capability === 'timeline.render' && bindings.slots.timeline
         ? await this.timelineResources.resolve(ctx.runId, bindings.slots.timeline)
         : undefined;
-    const execCtx = this.buildExecCtx(ctx, effective, bindings, renderedPrompt, resources);
+    const unpreparedExecCtx = this.buildExecCtx(
+      ctx,
+      effective,
+      bindings,
+      renderedPrompt,
+      resources,
+    );
+    const execCtx = capability.prepare?.(unpreparedExecCtx) ?? unpreparedExecCtx;
 
     const costEstimate = await capability.estimateCost(execCtx);
     const reserved = await this.ledger.reserve({
@@ -525,7 +562,7 @@ export class StageRunnerService {
       .set({
         phase: 'submitted',
         idempotencyKey: execCtx.idempotencyKey,
-        renderedPrompt,
+        renderedPrompt: execCtx.renderedPrompt,
         jobHandle: handle,
         resolvedInputs: bindings.provenance,
       })

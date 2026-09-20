@@ -72,7 +72,10 @@ export function sourceTypeOfRef(
       if (!ctx.roleKeys.has(ref.roleKey)) {
         return unresolved(`references undeclared role "${ref.roleKey}"`, issuePath);
       }
-      return { type: { kind: 'unknown', reason: 'role bindings resolve at run time (phase 8)' } };
+      // A role resolves to its selected Character image references. The
+      // runtime value is an ordered array for a cardinality-many slot, but
+      // compatibility is still the underlying media.image kind.
+      return { type: { kind: 'media.image' } };
 
     case 'asset': {
       const found = ctx.assetsById.get(ref.assetId);

@@ -1,13 +1,14 @@
 import { ConflictException, Inject, Injectable, Logger } from '@nestjs/common';
 import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
-import type { CreateRunDto, ConfigLayer } from '@reefcraft/shared';
-import { InputDef, StageDef } from '@reefcraft/shared';
+import type { CreateRunDto, ConfigLayer, ReferenceImage, Ref, RoleDef } from '@reefcraft/shared';
+import { InputDef, RoleDef as RoleDefSchema, StageDef } from '@reefcraft/shared';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
 import {
   asset,
   blob,
   blueprintVersion,
   channel,
+  character,
   run,
   stageAttempt,
   stageExecution,
@@ -23,6 +24,7 @@ import { collectAssetIds } from '../blueprint/collect-asset-refs';
 import { RunInputService } from './run-input.service';
 import { RunMutationService } from './run-mutation.service';
 import { RunWakeupDispatcher } from './run-wakeup-dispatcher.service';
+import { ProviderRegistry } from '../provider/provider.registry';
 
 /**
  * §5/§12/§21 — run start resolves and snapshots resolved_config, keyed per
@@ -43,6 +45,7 @@ export class RunService {
     private readonly runInputs: RunInputService,
     private readonly runMutation: RunMutationService,
     private readonly wakeupDispatcher: RunWakeupDispatcher,
+    private readonly providers: ProviderRegistry,
   ) {}
 
   /** §6.2/§21 — inserts the run in `CREATED` without sending `run/started`.
@@ -126,16 +129,28 @@ export class RunService {
     if (!version) throw new Error(`BlueprintVersion ${current.blueprintVersionId} not found`);
     const graph = StageDef.array().parse(version.graph);
     const inputDefs = InputDef.array().parse(version.inputs);
+    const roles = RoleDefSchema.array().parse(version.roles ?? []);
 
     await this.runInputs.assertInputsSatisfied(runId, inputDefs);
 
-    const assetBindings = await this.resolveAssetBindings(graph, current.channelId);
+    const [assetBindings, roleBindings] = await Promise.all([
+      this.resolveAssetBindings(graph, current.channelId),
+      this.resolveRoleBindings(roles, current.channelId),
+    ]);
+    await this.assertReferenceLimits(
+      graph,
+      current.resolvedConfig as Record<string, ConfigLayer>,
+      roleBindings,
+    );
     const mutation = await this.runMutation.withLockedRun(
       runId,
       'start',
       ['CREATED'],
       async (tx) => {
-        await tx.update(run).set({ assetBindings }).where(eq(run.id, runId));
+        await tx
+          .update(run)
+          .set({ assetBindings, ...(Object.keys(roleBindings).length > 0 && { roleBindings }) })
+          .where(eq(run.id, runId));
       },
       'run/started',
     );
@@ -143,6 +158,133 @@ export class RunService {
     await this.dispatchBestEffort(mutation.wakeupId);
 
     return this.get(runId);
+  }
+
+  /** Resolves blueprint-selected references once, before the start wakeup.
+   * Snapshots include storage locations, so later Character edits/deletes do
+   * not change a paid run's identity conditioning. */
+  private async resolveRoleBindings(roles: RoleDef[], channelId: string) {
+    if (roles.length === 0) return {};
+    const result: Record<
+      string,
+      {
+        characterId: string;
+        name: string;
+        description: string;
+        references: Array<{ blobId: string; sourceKey: string; mime: string; probe?: unknown }>;
+      }
+    > = {};
+    for (const role of roles) {
+      const referenceBlobIds = role.referenceBlobIds ?? [];
+      if (!role.characterId || referenceBlobIds.length === 0) {
+        throw new ConflictException(
+          `RunService.start: role "${role.key}" has no selected Character references`,
+        );
+      }
+      const [row] = await this.db
+        .select()
+        .from(character)
+        .where(
+          and(
+            eq(character.id, role.characterId),
+            eq(character.channelId, channelId),
+            eq(character.scope, 'channel'),
+          ),
+        )
+        .limit(1);
+      if (!row || row.readiness !== 'ready')
+        throw new ConflictException(
+          `RunService.start: Character for role "${role.key}" is not ready`,
+        );
+      const refs = row.referenceSet as ReferenceImage[];
+      const selected = referenceBlobIds
+        .map((id) => refs.find((ref) => ref.blobId === id))
+        .filter((ref): ref is ReferenceImage => Boolean(ref));
+      if (selected.length !== referenceBlobIds.length)
+        throw new ConflictException(
+          `RunService.start: role "${role.key}" selects a reference not owned by its Character`,
+        );
+      const rows = await this.db
+        .select({ id: blob.id, objectKey: blob.objectKey, mime: blob.mime, probe: blob.probe })
+        .from(blob)
+        .where(
+          and(
+            inArray(blob.id, referenceBlobIds),
+            eq(blob.characterId, row.id),
+            isNull(blob.deletedAt),
+          ),
+        );
+      if (rows.length !== selected.length)
+        throw new ConflictException(`RunService.start: role "${role.key}" has a deleted reference`);
+      const byId = new Map(rows.map((ref) => [ref.id, ref]));
+      const primaryFirst = selected
+        .slice()
+        .sort(
+          (a, b) => Number(b.blobId === row.primaryRefId) - Number(a.blobId === row.primaryRefId),
+        );
+      result[role.key] = {
+        characterId: row.id,
+        name: row.name,
+        description: row.description,
+        references: primaryFirst.map((ref) => {
+          const source = byId.get(ref.blobId)!;
+          return {
+            blobId: source.id,
+            sourceKey: source.objectKey,
+            mime: source.mime,
+            ...(source.probe != null && { probe: source.probe }),
+          };
+        }),
+      };
+    }
+    return result;
+  }
+
+  /** A pinned model's advertised limit is the authority. Missing metadata is
+   * deliberately a start failure: silently truncating selected identity
+   * references makes a blueprint non-reproducible. */
+  private async assertReferenceLimits(
+    graph: StageDef[],
+    resolvedConfig: Record<string, ConfigLayer>,
+    roleBindings: Record<string, { references: Array<unknown> }>,
+  ): Promise<void> {
+    const roleKeys = new Set(Object.keys(roleBindings));
+    if (roleKeys.size === 0) return;
+    for (const stage of graph) {
+      const roles = Object.values(stage.slots).filter(
+        (ref): ref is Extract<Ref, { from: 'role' }> =>
+          ref.from === 'role' && roleKeys.has(ref.roleKey),
+      );
+      if (roles.length === 0) continue;
+      const model = resolvedConfig[stage.key]?.model;
+      if (!model?.provider || !model.modelId)
+        throw new ConflictException(
+          `RunService.start: role-consuming stage "${stage.key}" has no pinned model`,
+        );
+      const info = (await this.providers.get(model.provider).listModels()).find(
+        (candidate) => candidate.modelId === model.modelId,
+      );
+      const maxRefs = info?.capabilities.maxRefs ?? info?.capabilities.image?.maxReferences;
+      if (!info || maxRefs === undefined)
+        throw new ConflictException(
+          `RunService.start: model "${model.modelId}" does not declare a reference limit`,
+        );
+      if (
+        stage.capability === 'video.generate' &&
+        !info.capabilities.video?.inputs.includes('references')
+      ) {
+        throw new ConflictException(
+          `RunService.start: model "${model.modelId}" does not support reference-image conditioning`,
+        );
+      }
+      for (const ref of roles) {
+        const count = roleBindings[ref.roleKey]!.references.length;
+        if (count > maxRefs)
+          throw new ConflictException(
+            `RunService.start: role "${ref.roleKey}" selects ${count} references but model "${model.modelId}" accepts ${maxRefs}`,
+          );
+      }
+    }
   }
 
   /** §6.2 — walks every `{from:'asset'}` ref in the graph and snapshots the

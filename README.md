@@ -108,6 +108,17 @@ environment key. Video defaults to requiring an audio stream unless its output
 constraint explicitly selects `optional` or `forbidden`. Real-provider calls
 should be run locally with explicit funded keys; the normal test suite is free.
 
+## Characters
+
+Characters are reusable channel assets. Create one with `POST
+/api/channels/:channelId/characters`, request and confirm reference-image
+uploads under `/api/characters/:id/references`, or promote an active generated
+image with `POST /api/characters/:id/references/promote`. A one-role blueprint
+stores its selected Character and ordered reference blob IDs. Starting a run
+snapshots those references before any provider work; changing or deleting a
+Character later cannot alter an existing run. LoRA training is not yet part of
+the product.
+
 Targeted fake-media runner coverage requires Docker Postgres and can be run with:
 
 ```bash

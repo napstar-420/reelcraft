@@ -34,22 +34,32 @@ abstract class ProviderMediaCapability implements CapabilityImpl<MediaConfig> {
   allowedOutputs(_cfg: MediaConfig): OutputKind[] {
     return [this.outputKind];
   }
+  prepare(ctx: ExecCtx<MediaConfig>): ExecCtx<MediaConfig> {
+    const descriptions = new Set<string>();
+    for (const value of Object.values(ctx.slots)) {
+      const candidates = Array.isArray(value) ? value : [value];
+      for (const candidate of candidates) {
+        if (
+          candidate &&
+          typeof candidate === 'object' &&
+          typeof (candidate as { characterDescription?: unknown }).characterDescription === 'string'
+        ) {
+          descriptions.add((candidate as { characterDescription: string }).characterDescription);
+        }
+      }
+    }
+    const identity = [...descriptions]
+      .map((description) => `Character identity: ${description}`)
+      .join('\n');
+    return { ...ctx, renderedPrompt: [ctx.renderedPrompt, identity].filter(Boolean).join('\n') };
+  }
   async estimateCost(ctx: ExecCtx<MediaConfig>): Promise<CostEstimate> {
-    return this.providers.get(ctx.config.provider).estimate({
-      modelId: ctx.config.modelId,
-      params: { ...ctx.config.params, slots: ctx.slots, __mediaKind: this.outputKind },
-      renderedPrompt: ctx.renderedPrompt,
-    });
+    return this.providers.get(ctx.config.provider).estimate(this.providerRequest(ctx));
   }
   async submit(ctx: ExecCtx<MediaConfig>): Promise<JobHandle> {
-    return this.providers.get(ctx.config.provider).submit(
-      {
-        modelId: ctx.config.modelId,
-        params: { ...ctx.config.params, slots: ctx.slots, __mediaKind: this.outputKind },
-        renderedPrompt: ctx.renderedPrompt,
-      },
-      ctx.idempotencyKey,
-    );
+    return this.providers
+      .get(ctx.config.provider)
+      .submit(this.providerRequest(ctx), ctx.idempotencyKey);
   }
   async poll(handle: JobHandle): Promise<JobStatus> {
     return this.providers.get(handle.providerId).poll(handle);
@@ -60,6 +70,14 @@ abstract class ProviderMediaCapability implements CapabilityImpl<MediaConfig> {
   }
   async cancel(handle: JobHandle) {
     return this.providers.get(handle.providerId).cancel(handle);
+  }
+
+  private providerRequest(ctx: ExecCtx<MediaConfig>) {
+    return {
+      modelId: ctx.config.modelId,
+      params: { ...ctx.config.params, slots: ctx.slots, __mediaKind: this.outputKind },
+      renderedPrompt: ctx.renderedPrompt,
+    };
   }
 }
 

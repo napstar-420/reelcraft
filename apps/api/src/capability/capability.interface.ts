@@ -65,6 +65,10 @@ export interface CapabilityImpl<Cfg = Record<string, unknown>> {
   allowedOutputs(cfg: Cfg): OutputKind[];
   validate?(cfg: Cfg, stage: StageDef, caps: ModelCapabilities): ValidationIssue[];
 
+  /** Derive the exact request context used for both cost estimation and
+   * submission. The stage runner persists this context's prompt for audit. */
+  prepare?(ctx: ExecCtx<Cfg>): ExecCtx<Cfg>;
+
   estimateCost(ctx: ExecCtx<Cfg>): Promise<CostEstimate>;
   submit(ctx: ExecCtx<Cfg>): Promise<JobHandle>;
   poll(handle: JobHandle): Promise<JobStatus>;
