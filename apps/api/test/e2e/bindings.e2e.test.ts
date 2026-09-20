@@ -286,10 +286,10 @@ describe('binding resolver + memory writes (e2e)', () => {
     ).rejects.toThrow('stale or unavailable');
   });
 
-  it('throws naming phase 8 for a role ref', async () => {
+  it('rejects a role ref without a run snapshot', async () => {
     await expect(
       bindings.resolve({ from: 'role', roleKey: 'host' }, { runId, inputs: {} }),
-    ).rejects.toThrow('phase 8');
+    ).rejects.toThrow('no snapshot for role "host"');
   });
 
   it('{from: "asset"} throws an engine-bug error when run.assetBindings has no entry', async () => {

@@ -44,6 +44,7 @@ export class BlueprintService {
     const [blueprintRow] = await this.db
       .select({ channelId: blueprint.channelId, defaults: channel.defaults })
       .from(blueprint)
+      .innerJoin(channel, eq(blueprint.channelId, channel.id))
       .where(eq(blueprint.id, blueprintId))
       .limit(1);
     if (!blueprintRow) throw new Error(`Blueprint ${blueprintId} not found`);
