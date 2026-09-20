@@ -7,7 +7,7 @@ Branch: `codex/phase9-editor-templates`
 
 - [x] Chunk 1 — Capability resolve + check-types plumbing
 - [x] Chunk 2 — `POST /checks/test`
-- [ ] Chunk 3 — `POST /blueprints/:id/validate`
+- [x] Chunk 3 — `POST /blueprints/:id/validate`
 - [ ] Chunk 4 — Template library completion
 - [ ] Chunk 5 — Dry-run execution
 - [ ] Chunk 6 — Frontend: capability config form + schema editor panel
@@ -68,20 +68,20 @@ CapabilityImpl`), mirroring the exact cast `capability.registry.ts` already
   `prevStageKey` is just left `undefined` in that case rather than
   throwing, since testing a check against an input artifact is a valid use
   case this chunk shouldn't block.
-- Found and worked around (test-only, no production fix) a latent bug in
-  `ScriptSandboxService.evaluate()`: `Date.now() + this.config.sandboxTimeoutMs`
-  string-concatenates instead of adding whenever `@nestjs/config`'s
-  `ConfigService.get()` sees a raw `process.env.SANDBOX_TIMEOUT_MS` (a
-  string, from `.env`) ahead of the typed value handed to a hand-built
-  `ConfigService` in tests — `ConfigService.get()` checks
-  `getFromProcessEnv` before `getFromInternalConfig`. This never surfaced
-  before because no existing e2e spec exercises `ScriptSandboxService`
-  (only unit tests, which don't load the e2e harness's `setup-e2e-env.ts`
-  and its full `.env` load). The new `check-test.e2e.test.ts` needs a real
-  script-check authoring-fault case, so it saves/deletes/restores
-  `process.env.SANDBOX_TIMEOUT_MS` around its `beforeAll`/`afterAll` so the
-  typed fake config wins, rather than patching `EngineConfig`/
-  `ScriptSandboxService` (out of scope for this chunk).
+- Found and worked around (test-only, no production fix) a `SANDBOX_TIMEOUT_MS`
+  string/number quirk in a hand-built test `ConfigService` — verified
+  afterwards this is NOT a real production bug: `@nestjs/config`'s actual
+  `ConfigService.get()` (checked directly in
+  `node_modules/@nestjs/config/dist/config.service.js`) checks
+  `getFromValidatedEnv` (the zod-`coerce`d value from `validateEnv`) BEFORE
+  `getFromProcessEnv` (the raw string), and `SANDBOX_TIMEOUT_MS` has
+  `z.coerce.number().default(100)` in `env.schema.ts`, so the real app
+  always gets a coerced number. The quirk only appears in this suite's own
+  hand-built `ConfigService`, whose fake internal config isn't wrapped in
+  the `VALIDATED_ENV_PROPNAME` structure `getFromValidatedEnv` looks for, so
+  it falls through to the raw `.env` string. `check-test.e2e.test.ts`
+  saves/deletes/restores `process.env.SANDBOX_TIMEOUT_MS` around its
+  `beforeAll`/`afterAll` as a test-harness workaround only.
 - The task's suggested verification command (`vitest run src/artifact
 src/check test/e2e/check-test.e2e.test.ts`, no `-c` flag) silently drops
   the e2e file: the default `vitest.config.ts`'s `include` is
@@ -90,3 +90,20 @@ src/check test/e2e/check-test.e2e.test.ts`, no `-c` flag) silently drops
   file separately with `vitest run -c vitest.e2e.config.ts
 test/e2e/check-test.e2e.test.ts` (the same config `pnpm test:e2e` uses) —
   both runs passed.
+
+### Chunk 3
+
+- Implemented directly (no subagent) given the small, well-understood scope.
+- `BlueprintService.createVersion()`'s pre-persist half (blueprint row load,
+  `loadAssetsById`/`loadCharactersById`, `validator.validate()`,
+  `validateReferenceLimits()`, `runnable` computation) extracted into a
+  private `computeValidation()`; `createVersion()` calls it then persists as
+  before (byte-identical behavior — verified via a regression e2e run of
+  `phase2-acceptance.e2e.test.ts`), and a new public `validateOnly()` calls
+  it without writing anything. `POST /blueprints/:id/validate` wraps
+  `validateOnly` with `ZodValidationPipe(CreateBlueprintVersionDto)`, mirroring
+  `POST :id/versions`'s existing pattern exactly.
+- New `blueprint-validate.e2e.test.ts` proves `validateOnly` and
+  `createVersion` compute byte-identical `issues`/`runnable` for both a
+  valid and an invalid graph, and that `validateOnly` never changes the
+  `blueprint_version` row count.

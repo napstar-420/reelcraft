@@ -41,29 +41,7 @@ export class BlueprintService {
     dto: CreateBlueprintVersionDto,
     sourceTemplateId?: string,
   ) {
-    const [blueprintRow] = await this.db
-      .select({ channelId: blueprint.channelId, defaults: channel.defaults })
-      .from(blueprint)
-      .innerJoin(channel, eq(blueprint.channelId, channel.id))
-      .where(eq(blueprint.id, blueprintId))
-      .limit(1);
-    if (!blueprintRow) throw new Error(`Blueprint ${blueprintId} not found`);
-
-    const [assetsById, charactersById] = await Promise.all([
-      this.loadAssetsById(dto.graph),
-      this.loadCharactersById(dto.roles),
-    ]);
-
-    const issues = this.validator.validate({
-      graph: dto.graph,
-      inputs: dto.inputs,
-      roles: dto.roles,
-      assetsById,
-      blueprintChannelId: blueprintRow.channelId,
-      charactersById,
-    });
-    issues.push(...(await this.validateReferenceLimits(dto, blueprintRow.defaults as ConfigLayer)));
-    const runnable = issues.every((i) => i.severity !== 'error');
+    const { issues, runnable } = await this.computeValidation(blueprintId, dto);
 
     const [row] = await this.db
       .select({ maxVersion: max(blueprintVersion.version) })
@@ -92,6 +70,49 @@ export class BlueprintService {
     });
 
     return this.getVersion(id);
+  }
+
+  /** Chunk 9.3 — the no-persist half of `createVersion`, extracted so
+   * `POST /blueprints/:id/validate` reuses exactly this logic rather than
+   * duplicating it. Requires the blueprint to already exist (it needs the
+   * blueprint's own `channelId` for asset/character channel-scoping), so a
+   * draft graph is always validated against a real blueprint, not a fully
+   * hypothetical one. */
+  private async computeValidation(
+    blueprintId: string,
+    dto: CreateBlueprintVersionDto,
+  ): Promise<{ issues: ValidationIssue[]; runnable: boolean }> {
+    const [blueprintRow] = await this.db
+      .select({ channelId: blueprint.channelId, defaults: channel.defaults })
+      .from(blueprint)
+      .innerJoin(channel, eq(blueprint.channelId, channel.id))
+      .where(eq(blueprint.id, blueprintId))
+      .limit(1);
+    if (!blueprintRow) throw new Error(`Blueprint ${blueprintId} not found`);
+
+    const [assetsById, charactersById] = await Promise.all([
+      this.loadAssetsById(dto.graph),
+      this.loadCharactersById(dto.roles),
+    ]);
+
+    const issues = this.validator.validate({
+      graph: dto.graph,
+      inputs: dto.inputs,
+      roles: dto.roles,
+      assetsById,
+      blueprintChannelId: blueprintRow.channelId,
+      charactersById,
+    });
+    issues.push(...(await this.validateReferenceLimits(dto, blueprintRow.defaults as ConfigLayer)));
+    const runnable = issues.every((i) => i.severity !== 'error');
+    return { issues, runnable };
+  }
+
+  async validateOnly(
+    blueprintId: string,
+    dto: CreateBlueprintVersionDto,
+  ): Promise<{ issues: ValidationIssue[]; runnable: boolean }> {
+    return this.computeValidation(blueprintId, dto);
   }
 
   async getVersion(id: string) {

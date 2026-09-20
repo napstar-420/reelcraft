@@ -19,4 +19,12 @@ export class BlueprintController {
   listVersions(@Param('id') id: string) {
     return this.blueprints.listVersions(id);
   }
+
+  @Post(':id/validate')
+  validate(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(CreateBlueprintVersionDto)) dto: CreateBlueprintVersionDto,
+  ) {
+    return this.blueprints.validateOnly(id, dto);
+  }
 }
