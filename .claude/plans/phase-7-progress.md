@@ -6,7 +6,7 @@ Updated as each chunk lands; not part of the shipped plan doc.
 - [x] Branch `codex/phase7-iteration` created off `main`
 - [x] Plan doc committed
 - [x] Chunk 1 — Types, config layer, and validator completion (commit e60c7ce)
-- [ ] Chunk 2 — Run Memory indexed groups
+- [x] Chunk 2 — Run Memory indexed groups (commit db96a30)
 - [ ] Chunk 3 — Binding resolver: item, prevItem, prev+alignWith, derived frames
 - [ ] Chunk 4 — Orchestration: the per-item loop
 - [ ] Chunk 5 — Item-level invalidation
