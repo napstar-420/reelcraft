@@ -198,7 +198,7 @@ undefined)`. A non-iterating stage keeps exactly one node (`itemIndex`
   being duplicated inside each branch; the resulting DB writes for stage-mode
   are byte-identical to before, just expressed without repeating that one
   statement. The item-mode branch writes `stage_item.state =
-  'awaiting_approval'` and opens the `humanWait` with `stageItemId` set,
+'awaiting_approval'` and opens the `humanWait` with `stageItemId` set,
   deliberately leaving `stage_execution` untouched (still `'running'`) —
   the outer per-item loop's own `finishIteratingStage` is the only thing
   that ever flips it to `'passed'`.
@@ -212,7 +212,7 @@ undefined)`. A non-iterating stage keeps exactly one node (`itemIndex`
   needing the controller or DTO to change beyond threading `itemIndex`
   through (both already had the field/plumbing from earlier chunks).
 - Chunk 6: `approveInTransaction` branches on `stage.approval?.mode ===
-  'item'` at its very top and calls a new private `approveItemInTransaction`
+'item'` at its very top and calls a new private `approveItemInTransaction`
   for that case; everything below is the original stage-mode body,
   unchanged. `pendingAttempt`, `requireOpenWait`, and `retryDebits` (the
   "own" count only — see below) each gained an optional trailing
@@ -226,7 +226,7 @@ undefined)`. A non-iterating stage keeps exactly one node (`itemIndex`
   BOTH (a) the rejected stage is itself item-mode, and (b) the retry TARGET
   stage also declares `iterate` — in which case the same item index is
   assumed to carry over pointwise (the same assumption `{from:'prev',
-  alignWith:'item'}` already makes elsewhere in this phase). A routed
+alignWith:'item'}` already makes elsewhere in this phase). A routed
   rejection to a non-iterating earlier stage (the case this chunk's tests
   cover) stays a whole-stage `{stageKeys:[...]}` seed. The rejected item
   itself is always additionally force-included in the seed's `items` array
@@ -296,7 +296,7 @@ undefined)`. A non-iterating stage keeps exactly one node (`itemIndex`
   (2) `MemoryService.buildWriteCallback`'s "did the write path resolve"
   guard ran before the media-vs-data branch, so ANY media-kind stage with a
   `writes` entry threw `"...did not resolve against the finalized artifact's
-  data"` — `source.data` is legitimately always `undefined` for a media
+data"` — `source.data` is legitimately always `undefined` for a media
   artifact (its payload lives in `artifactId`/blob), which the guard didn't
   know. Fixed by skipping the "value resolved" check entirely for media
   writes (they never had a `value` to check in the first place). Both are
