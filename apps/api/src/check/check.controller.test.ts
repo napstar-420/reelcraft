@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { CheckController } from './check.controller';
+import type { CheckTestService } from './check-test.service';
 import { BUILTIN_CHECKS } from './builtins/index';
 
 describe('CheckController.listCheckTypes', () => {
   it('returns every BUILTIN_CHECKS entry plus the script entry', () => {
-    const controller = new CheckController();
+    const controller = new CheckController({} as CheckTestService);
     const types = controller.listCheckTypes();
 
     const builtinKeys = Object.keys(BUILTIN_CHECKS);

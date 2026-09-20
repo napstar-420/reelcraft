@@ -2,9 +2,11 @@ import { Module } from '@nestjs/common';
 import { JsonSchemaModule } from '../json-schema/json-schema.module';
 import { SandboxModule } from '../sandbox/sandbox.module';
 import { CheckRunner } from './check-runner.service';
+import { CheckTestService } from './check-test.service';
 import { TimelineCheckService } from './timeline-check.service';
 import { DbModule } from '../db/db.module';
 import { CapabilityModule } from '../capability/capability.module';
+import { ArtifactModule } from '../artifact/artifact.module';
 import { CheckController } from './check.controller';
 
 export type {
@@ -18,8 +20,8 @@ export { CheckRunner } from './check-runner.service';
 export { BUILTIN_CHECKS } from './builtins/index';
 
 @Module({
-  imports: [JsonSchemaModule, SandboxModule, DbModule, CapabilityModule],
-  providers: [CheckRunner, TimelineCheckService],
+  imports: [JsonSchemaModule, SandboxModule, DbModule, CapabilityModule, ArtifactModule],
+  providers: [CheckRunner, TimelineCheckService, CheckTestService],
   controllers: [CheckController],
   exports: [CheckRunner, TimelineCheckService],
 })

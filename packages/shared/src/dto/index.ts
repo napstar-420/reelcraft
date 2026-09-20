@@ -6,3 +6,4 @@ export * from './asset.dto';
 export * from './run-action.dto';
 export * from './timeline-editor.dto';
 export * from './character.dto';
+export * from './check.dto';
