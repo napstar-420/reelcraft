@@ -10,9 +10,9 @@ plan (via `/plan`) written just before it starts — this table is the index.
 | 3   | Budget                 | done              | `.claude/plans/phase-3-budget-*.md`      | #9, #10                |
 | 4   | Inputs & human-in-loop | done (chunks 1–7) | `.claude/plans/phase-4-inputs-hitl.md`   | #11, #12, #13          |
 | 5   | Media                  | done              | —                                        | #14                    |
-| 6   | Assembly               | done              | `docs/plans/phase-6-assembly.md`         | current branch         |
+| 6   | Assembly               | done              | `docs/plans/phase-6-assembly.md`         | #16                    |
 | 7   | Iteration              | done              | `docs/plans/phase-7-iteration.md`        | #17                    |
-| 8   | Characters             | done              | `docs/plans/phase-8-characters.md`       | current branch         |
+| 8   | Characters             | done              | `docs/plans/phase-8-characters.md`       | #18                    |
 | 9   | Editor & templates     | pending           |                                          |                        |
 
 ## Phase scope (one-liners, from design spec §24)
