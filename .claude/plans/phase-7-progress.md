@@ -13,7 +13,7 @@ Updated as each chunk lands; not part of the shipped plan doc.
 - [x] Chunk 6 — Item-mode approval (commit 40f0373)
 - [x] Chunk 7 — Acceptance scenario, docs, hardening (commit 3b4e520)
 - [x] Full monorepo typecheck/lint/test green
-- [ ] PR opened against `main`
+- [x] PR opened against `main` (#17: https://github.com/napstar-420/reelcraft/pull/17)
 
 ## Notes / deviations from plan
 
