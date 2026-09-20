@@ -10,7 +10,7 @@ plan (via `/plan`) written just before it starts — this table is the index.
 | 3   | Budget                 | done              | `.claude/plans/phase-3-budget-*.md`      | #9, #10                |
 | 4   | Inputs & human-in-loop | done (chunks 1–7) | `.claude/plans/phase-4-inputs-hitl.md`   | #11, #12, #13          |
 | 5   | Media                  | done              | —                                        | #14                    |
-| 6   | Assembly               | pending           |                                          |                        |
+| 6   | Assembly               | done              | `docs/plans/phase-6-assembly.md`         | current branch         |
 | 7   | Iteration              | pending           |                                          |                        |
 | 8   | Characters             | pending           |                                          |                        |
 | 9   | Editor & templates     | pending           |                                          |                        |

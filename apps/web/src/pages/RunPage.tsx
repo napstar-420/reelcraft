@@ -1,4 +1,4 @@
-import { useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import { useRun } from '../hooks/useRun';
 
 export function RunPage() {
@@ -18,7 +18,10 @@ export function RunPage() {
       <ul>
         {run.stageExecutions.map((se) => (
           <li key={se.id}>
-            {se.stageKey}: {se.state} (attempts: {se.attemptCount})
+            {se.stageKey}: {se.state} (attempts: {se.attemptCount}){' '}
+            {se.interaction === 'timeline_editor' && se.state === 'awaiting_input' ? (
+              <Link to={`/runs/${run.id}/stages/${se.stageKey}/edit`}>Open editor</Link>
+            ) : null}
           </li>
         ))}
       </ul>

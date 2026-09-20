@@ -7,6 +7,10 @@ import { CapabilityController } from './capability.controller';
 import { LlmGenerate } from './impls/llm-generate.capability';
 import { PublishStub } from './impls/publish-stub.capability';
 import { HumanInputCapability } from './impls/human-input.capability';
+import { HumanTimelineEditCapability } from './impls/human-timeline-edit.capability';
+import { StyleRegistry } from './style.registry';
+import { SubtitlesExportCapability } from './impls/subtitles-export.capability';
+import { TimelineRenderCapability, VideoConcatCapability } from './impls/assembly.capability';
 import {
   ImageGenerateCapability,
   VideoGenerateCapability,
@@ -26,6 +30,11 @@ import {
     CapabilityRegistry,
     LlmGenerate,
     HumanInputCapability,
+    HumanTimelineEditCapability,
+    StyleRegistry,
+    SubtitlesExportCapability,
+    VideoConcatCapability,
+    TimelineRenderCapability,
     PublishStub,
     ImageGenerateCapability,
     VideoGenerateCapability,
@@ -33,6 +42,6 @@ import {
     MediaAnalyzeCapability,
   ],
   controllers: [CapabilityController],
-  exports: [CapabilityRegistry],
+  exports: [CapabilityRegistry, StyleRegistry],
 })
 export class CapabilityModule {}

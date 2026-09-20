@@ -6,7 +6,7 @@ import {
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
-import { StageDef } from '@reefcraft/shared';
+import { StageDef, Timeline } from '@reefcraft/shared';
 import { ArtifactService } from '../artifact/artifact.service';
 import { BindingResolverService, type RefProvenance } from '../artifact/binding-resolver.service';
 import { MemoryService } from '../artifact/memory.service';
@@ -30,6 +30,7 @@ import { HumanWaitService } from './human-wait.service';
 import { PreviewTokenService } from './preview-token.service';
 import { RunMutationService } from './run-mutation.service';
 import { RunWakeupDispatcher } from './run-wakeup-dispatcher.service';
+import { TimelineCheckService } from '../check/timeline-check.service';
 
 @Injectable()
 export class HumanActionService {
@@ -48,6 +49,7 @@ export class HumanActionService {
     private readonly invalidation: InvalidationService,
     private readonly tokens: PreviewTokenService,
     private readonly configResolver: ConfigResolverService,
+    private readonly timelineChecks: TimelineCheckService,
   ) {}
 
   async approve(runId: string, stageKey: string) {
@@ -215,13 +217,21 @@ export class HumanActionService {
     return { accepted: true, revision: result.revision, state: exhausted ? 'FAILED' : 'PENDING' };
   }
 
-  async submitInput(runId: string, stageKey: string, value: unknown) {
+  async submitInput(
+    runId: string,
+    stageKey: string,
+    value: unknown,
+    expectedDraftRevision?: number,
+  ) {
     const context = await this.loadRunContext(runId, stageKey);
     if (context.run.state !== 'PAUSED_INPUT' || context.run.cursorStageKey !== stageKey) {
       throw new ConflictException('The run is not waiting for input at this stage');
     }
-    if (context.stage.capability !== 'human.input') {
-      throw new ConflictException('The cursor stage is not human.input');
+    if (
+      context.stage.capability !== 'human.input' &&
+      context.stage.capability !== 'human.timeline_edit'
+    ) {
+      throw new ConflictException('The cursor stage is not a human input capability');
     }
     const candidateData = this.validateHumanValue(context.stage, value);
     const evaluated = await this.evaluateHumanChecks(
@@ -253,6 +263,25 @@ export class HumanActionService {
         if (lockedRun.revision !== context.run.revision || lockedRun.cursorStageKey !== stageKey) {
           throw new ConflictException('The input wait changed; submit again');
         }
+        if (expectedDraftRevision !== undefined) {
+          const [wait] = await tx
+            .select({ draftRevision: humanWait.draftRevision })
+            .from(humanWait)
+            .where(
+              and(
+                eq(humanWait.stageExecutionId, context.execution.id),
+                eq(humanWait.kind, 'timeline_edit'),
+                isNull(humanWait.resolvedAt),
+              ),
+            )
+            .limit(1);
+          if (!wait || wait.draftRevision !== expectedDraftRevision) {
+            throw new ConflictException({
+              code: 'timeline_draft_conflict',
+              draftRevision: wait?.draftRevision,
+            });
+          }
+        }
         await this.persistPassingHumanSubmission(
           tx,
           lockedRun,
@@ -276,7 +305,11 @@ export class HumanActionService {
     data: unknown,
     evaluated: { provenance: Record<string, RefProvenance>; checkResults: CheckResult[] },
   ) {
-    await this.requireOpenWait(tx, executionId, 'input');
+    await this.requireOpenWait(
+      tx,
+      executionId,
+      stage.capability === 'human.timeline_edit' ? 'timeline_edit' : 'input',
+    );
     const attemptNo = await this.nextAttemptNo(tx, executionId);
     const artifactId = await this.artifacts.recordAttemptArtifact(
       {
@@ -342,7 +375,11 @@ export class HumanActionService {
       ) {
         throw new ConflictException('The input wait changed; submit again');
       }
-      await this.requireOpenWait(tx, executionId, 'input');
+      await this.requireOpenWait(
+        tx,
+        executionId,
+        stage.capability === 'human.timeline_edit' ? 'timeline_edit' : 'input',
+      );
       const attemptNo = await this.nextAttemptNo(tx, executionId);
       const artifactId = await this.artifacts.recordAttemptArtifact(
         {
@@ -404,6 +441,22 @@ export class HumanActionService {
       resolvedRefs,
       ...(stage.output.kind === 'data' ? { outputSchema: stage.output.schema } : {}),
     });
+    if (stage.output.kind === 'timeline') {
+      const effective = await this.configResolver.effectiveStageConfig(runRow.id, stage.key, stage);
+      const config = effective.capabilityConfig as {
+        allowGaps?: boolean;
+        toleranceSec?: number;
+      };
+      checkResults.unshift(
+        ...(await this.timelineChecks.run({
+          runId: runRow.id,
+          timeline: data,
+          allowGaps: config.allowGaps,
+          toleranceSec: config.toleranceSec,
+          aspectRatio: effective.layer.format?.aspectRatio,
+        })),
+      );
+    }
     return { provenance, checkResults };
   }
 
@@ -420,6 +473,19 @@ export class HumanActionService {
         throw new UnprocessableEntityException({ code: 'schema_invalid', violations });
       }
       return value;
+    }
+    if (stage.output.kind === 'timeline') {
+      const parsed = Timeline.safeParse(value);
+      if (!parsed.success) {
+        throw new UnprocessableEntityException({
+          code: 'timeline_invalid',
+          violations: parsed.error.issues.map((issue) => ({
+            path: issue.path.join('.'),
+            message: issue.message,
+          })),
+        });
+      }
+      return parsed.data;
     }
     throw new UnprocessableEntityException('Media human input is not available until Phase 5');
   }
@@ -479,7 +545,11 @@ export class HumanActionService {
     return row;
   }
 
-  private async requireOpenWait(tx: Tx, executionId: string, kind: 'approval' | 'input') {
+  private async requireOpenWait(
+    tx: Tx,
+    executionId: string,
+    kind: 'approval' | 'input' | 'timeline_edit',
+  ) {
     const [wait] = await tx
       .select({ id: humanWait.id })
       .from(humanWait)

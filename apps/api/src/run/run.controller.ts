@@ -22,6 +22,8 @@ import {
   PatchRunOverridesDto,
   ManualArtifactEditDto,
   PutRunInputDto,
+  SaveTimelineDraftDto,
+  SubmitTimelineDraftDto,
 } from '@reefcraft/shared';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { InProcessRunEvents, type RunEvent } from '../orchestration/run-events';
@@ -32,6 +34,7 @@ import { InvalidationService } from './invalidation.service';
 import { HumanActionService } from './human-action.service';
 import { RunCancellationService } from './run-cancellation.service';
 import { ArtifactEditService } from './artifact-edit.service';
+import { TimelineEditorService } from './timeline-editor.service';
 
 @Controller('runs')
 export class RunController {
@@ -44,6 +47,7 @@ export class RunController {
     private readonly humanActions: HumanActionService,
     private readonly cancellation: RunCancellationService,
     private readonly artifactEdits: ArtifactEditService,
+    private readonly timelineEditor: TimelineEditorService,
   ) {}
 
   @Post()
@@ -161,6 +165,29 @@ export class RunController {
     @Body(new ZodValidationPipe(HumanInputSubmissionDto)) dto: HumanInputSubmissionDto,
   ) {
     return this.humanActions.submitInput(id, key, dto.value);
+  }
+
+  @Get(':id/stages/:key/timeline-editor')
+  timelineEditorSession(@Param('id') id: string, @Param('key') key: string) {
+    return this.timelineEditor.session(id, key);
+  }
+
+  @Put(':id/stages/:key/timeline-editor/draft')
+  saveTimelineDraft(
+    @Param('id') id: string,
+    @Param('key') key: string,
+    @Body(new ZodValidationPipe(SaveTimelineDraftDto)) dto: SaveTimelineDraftDto,
+  ) {
+    return this.timelineEditor.save(id, key, dto);
+  }
+
+  @Post(':id/stages/:key/timeline-editor/submit')
+  submitTimelineDraft(
+    @Param('id') id: string,
+    @Param('key') key: string,
+    @Body(new ZodValidationPipe(SubmitTimelineDraftDto)) dto: SubmitTimelineDraftDto,
+  ) {
+    return this.timelineEditor.submit(id, key, dto.draftRevision);
   }
 
   @Post(':id/cancel')

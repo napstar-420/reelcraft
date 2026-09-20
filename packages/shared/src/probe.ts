@@ -25,8 +25,22 @@ export const MediaSource = z.object({
   base64: z.string().optional(),
   mime: z.string().optional(),
   filename: z.string().optional(),
+  /** Internal local-compute result. It is consumed and cleaned within the
+   * fetch step and must never cross an orchestration boundary. */
+  localPath: z.string().optional(),
 });
 export type MediaSource = z.infer<typeof MediaSource>;
+
+export const FileSource = z.object({
+  kind: z.literal('file.subtitles'),
+  format: z.enum(['srt', 'vtt']),
+  text: z.string().optional(),
+  base64: z.string().optional(),
+  localPath: z.string().optional(),
+  mime: z.string().optional(),
+  filename: z.string().optional(),
+});
+export type FileSource = z.infer<typeof FileSource>;
 
 export const MediaManifest = z.object({
   handle: z.string(),

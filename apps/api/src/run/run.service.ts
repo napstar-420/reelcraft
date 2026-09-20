@@ -267,7 +267,25 @@ export class RunService {
       .select()
       .from(stageExecution)
       .where(eq(stageExecution.runId, runId));
-    return { ...row, stageExecutions: executions };
+    const [version] = await this.db
+      .select({ graph: blueprintVersion.graph })
+      .from(blueprintVersion)
+      .where(eq(blueprintVersion.id, row.blueprintVersionId))
+      .limit(1);
+    const graph = StageDef.array().parse(version?.graph ?? []);
+    const definitions = new Map(graph.map((stage) => [stage.key, stage]));
+    return {
+      ...row,
+      stageExecutions: executions.map((execution) => {
+        const definition = definitions.get(execution.stageKey);
+        const capability = definition?.capability ?? 'unknown';
+        return {
+          ...execution,
+          capability,
+          interaction: this.capabilities.get(capability).interaction?.kind ?? null,
+        };
+      }),
+    };
   }
 
   async list() {

@@ -30,6 +30,13 @@ export const EnvSchema = z
     DEEPGRAM_CALLBACK_SECRET: z.string().min(32).optional(),
 
     WORKSPACE_ROOT: z.string().default('./.workspace'),
+    COMPUTE_MIN_FREE_BYTES: z.coerce
+      .number()
+      .int()
+      .nonnegative()
+      .default(5 * 1024 * 1024 * 1024),
+    COMPUTE_JOB_RETENTION_SEC: z.coerce.number().int().positive().default(86_400),
+    REMOTION_BROWSER_EXECUTABLE: z.string().optional(),
     BLOB_RETENTION_DAYS: z.coerce.number().default(30),
     ITERATE_MAX_ITEMS: z.coerce.number().default(50),
     PRE_SUBMIT_TTL_SEC: z.coerce.number().default(600),

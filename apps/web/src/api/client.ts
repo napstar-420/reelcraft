@@ -4,6 +4,8 @@ import type {
   BlueprintVersionDto,
   RunDetailDto,
   CapabilityDto,
+  SaveTimelineDraftDto,
+  TimelineEditorSessionDto,
 } from '@reefcraft/shared';
 
 /** Typed against @reefcraft/shared DTOs — the payoff for the shared
@@ -37,6 +39,18 @@ export const api = {
 
   listRuns: () => request<RunDetailDto[]>('/runs'),
   getRun: (id: string) => request<RunDetailDto>(`/runs/${id}`),
+  getTimelineEditor: (runId: string, stageKey: string) =>
+    request<TimelineEditorSessionDto>(`/runs/${runId}/stages/${stageKey}/timeline-editor`),
+  saveTimelineDraft: (runId: string, stageKey: string, dto: SaveTimelineDraftDto) =>
+    request<{ draftRevision: number }>(`/runs/${runId}/stages/${stageKey}/timeline-editor/draft`, {
+      method: 'PUT',
+      body: JSON.stringify(dto),
+    }),
+  submitTimelineDraft: (runId: string, stageKey: string, draftRevision: number) =>
+    request(`/runs/${runId}/stages/${stageKey}/timeline-editor/submit`, {
+      method: 'POST',
+      body: JSON.stringify({ draftRevision }),
+    }),
   startRun: (params: { channelId: string; blueprintVersionId: string; budgetCapUsd: number }) =>
     request<RunDetailDto>('/runs', {
       method: 'POST',

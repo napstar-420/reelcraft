@@ -23,6 +23,7 @@ export const JobStatus = z.union([
     outcome: z.literal('failed'),
     reason: z.string(),
     retryable: z.boolean(),
+    failureClass: z.enum(['provider', 'infrastructure']).optional(),
   }),
 ]);
 export type JobStatus = z.infer<typeof JobStatus>;
@@ -82,6 +83,7 @@ export const ComputeSpec = z.object({
   command: z.string(),
   args: z.array(z.string()),
   inputs: z.array(z.object({ sourceKey: z.string(), asFilename: z.string() })),
+  files: z.array(z.object({ asFilename: z.string(), contents: z.string() })).optional(),
   outputFilename: z.string(),
   maxWaitSec: z.number(),
 });

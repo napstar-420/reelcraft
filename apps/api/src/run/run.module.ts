@@ -22,6 +22,7 @@ import { HumanActionService } from './human-action.service';
 import { RunCancellationService } from './run-cancellation.service';
 import { ArtifactEditService } from './artifact-edit.service';
 import { HumanReminderService } from './human-reminder.service';
+import { TimelineEditorService } from './timeline-editor.service';
 
 const runControlProviders = [
   PreviewTokenService,
@@ -35,6 +36,7 @@ const runControlProviders = [
   RunCancellationService,
   ArtifactEditService,
   HumanReminderService,
+  TimelineEditorService,
 ];
 
 @Module({

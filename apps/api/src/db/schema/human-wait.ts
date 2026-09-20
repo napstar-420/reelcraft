@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { index, pgTable, text, timestamptz, uniqueIndex } from './pg-helpers';
+import { index, integer, jsonb, pgTable, text, timestamptz, uniqueIndex } from './pg-helpers';
 import { run } from './run';
 import { stageExecution, stageItem } from './execution';
 
@@ -16,6 +16,9 @@ export const humanWait = pgTable(
       .references(() => stageExecution.id),
     stageItemId: text('stage_item_id').references(() => stageItem.id),
     kind: text('kind').notNull(),
+    draft: jsonb('draft'),
+    draftRevision: integer('draft_revision').notNull().default(0),
+    draftUpdatedAt: timestamptz('draft_updated_at'),
     waitingSince: timestamptz('waiting_since').notNull().defaultNow(),
     reminded24hAt: timestamptz('reminded_24h_at'),
     reminded48hAt: timestamptz('reminded_48h_at'),

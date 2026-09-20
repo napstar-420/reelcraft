@@ -87,6 +87,8 @@ export const StageExecutionDto = z.object({
   attemptCount: z.number(),
   outputArtifactId: z.string().nullable(),
   costUsd: z.number(),
+  capability: z.string(),
+  interaction: z.enum(['form', 'timeline_editor']).nullable(),
 });
 export type StageExecutionDto = z.infer<typeof StageExecutionDto>;
 

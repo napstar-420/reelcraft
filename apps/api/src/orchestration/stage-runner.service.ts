@@ -31,6 +31,10 @@ import type { CheckArtifact, CheckResult } from '../check/check.types';
 import { QcRunner, type QcOutcome, type QcVerdict } from '../qc/qc-runner.service';
 import { buildQcEnvelope } from '../qc/qc-envelope';
 import { HumanWaitService } from '../run/human-wait.service';
+import { TimelineCheckService } from '../check/timeline-check.service';
+import { TimelineHandleService } from '../artifact/timeline-handle.service';
+import { TimelineResourceResolverService } from '../artifact/timeline-resource-resolver.service';
+import { FileArtifactService } from '../artifact/file-artifact.service';
 
 export interface StageAttemptContext {
   runId: string;
@@ -102,17 +106,33 @@ export class StageRunnerService {
     private readonly qc: QcRunner,
     private readonly engineConfig: EngineConfig,
     private readonly humanWaits: HumanWaitService,
+    private readonly timelineChecks: TimelineCheckService,
+    private readonly timelineHandles: TimelineHandleService,
+    private readonly timelineResources: TimelineResourceResolverService,
+    private readonly fileArtifacts: FileArtifactService,
   ) {}
+
+  interactionFor(capabilityKey: string): 'form' | 'timeline_editor' | undefined {
+    return this.capabilities.get(capabilityKey).interaction?.kind;
+  }
+
+  infraAttemptLimit(): number {
+    return this.engineConfig.infraRetries + 1;
+  }
 
   /** Parks an orchestrator-only human.input stage without creating an
    * engine attempt, reservation, or provider job. */
-  async awaitHumanInput(runId: string, stageExecutionId: string): Promise<void> {
+  async awaitHumanInput(
+    runId: string,
+    stageExecutionId: string,
+    kind: 'input' | 'timeline_edit' = 'input',
+  ): Promise<void> {
     await this.db.transaction(async (tx) => {
       await tx
         .update(stageExecution)
         .set({ state: 'awaiting_input', startedAt: new Date().toISOString() })
         .where(eq(stageExecution.id, stageExecutionId));
-      await this.humanWaits.open(tx, { runId, stageExecutionId, kind: 'input' });
+      await this.humanWaits.open(tx, { runId, stageExecutionId, kind });
     });
   }
 
@@ -232,6 +252,20 @@ export class StageRunnerService {
     return (row?.count ?? 0) + (routed?.count ?? 0);
   }
 
+  async countInfraAttemptsUsed(stageExecutionId: string): Promise<number> {
+    const [row] = await this.db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(stageAttempt)
+      .where(
+        and(
+          eq(stageAttempt.stageExecutionId, stageExecutionId),
+          isNull(stageAttempt.stageItemId),
+          eq(stageAttempt.outcome, 'infra_error'),
+        ),
+      );
+    return row?.count ?? 0;
+  }
+
   private idempotencyKey(ctx: StageAttemptContext, itemIndex?: number): string {
     return createHash('sha256')
       .update(`${ctx.stageExecutionId}:${ctx.attemptNo}:${itemIndex ?? 0}`)
@@ -340,6 +374,7 @@ export class StageRunnerService {
     effective: EffectiveStageConfig,
     bindings: ResolvedBindings,
     renderedPrompt?: string,
+    resources?: Awaited<ReturnType<TimelineResourceResolverService['resolve']>>,
   ) {
     return {
       runId: ctx.runId,
@@ -355,6 +390,7 @@ export class StageRunnerService {
       renderedPrompt,
       idempotencyKey: this.idempotencyKey(ctx),
       logger: { log: () => {}, error: () => {} },
+      ...(resources && { resources }),
     };
   }
 
@@ -384,7 +420,11 @@ export class StageRunnerService {
     const renderedPrompt = stage.instructions?.template
       ? renderPrompt(stage.instructions.template, templateScope)
       : undefined;
-    const execCtx = this.buildExecCtx(ctx, effective, bindings, renderedPrompt);
+    const resources =
+      stage.capability === 'timeline.render' && bindings.slots.timeline
+        ? await this.timelineResources.resolve(ctx.runId, bindings.slots.timeline)
+        : undefined;
+    const execCtx = this.buildExecCtx(ctx, effective, bindings, renderedPrompt, resources);
 
     const costEstimate = await capability.estimateCost(execCtx);
     const reserved = await this.ledger.reserve({
@@ -487,6 +527,13 @@ export class StageRunnerService {
     });
   }
 
+  async recordInfraError(ctx: StageAttemptContext, reason: string): Promise<void> {
+    await this.db
+      .update(stageAttempt)
+      .set({ outcome: 'infra_error', phase: 'settled', reviewNote: reason })
+      .where(eq(stageAttempt.id, ctx.stageAttemptId));
+  }
+
   async fetchAndFinalize(
     stage: StageDef,
     ctx: StageAttemptContext,
@@ -496,8 +543,16 @@ export class StageRunnerService {
   ): Promise<FetchAndFinalizeResult> {
     const capability = this.capabilities.get(stage.capability);
     const bindings = await this.resolveBindings(stage, ctx.runId, prevStageKey);
-    const execCtx = this.buildExecCtx(ctx, effective, bindings);
+    const resources =
+      stage.capability === 'timeline.render' && bindings.slots.timeline
+        ? await this.timelineResources.resolve(ctx.runId, bindings.slots.timeline)
+        : undefined;
+    const execCtx = this.buildExecCtx(ctx, effective, bindings, undefined, resources);
     const result = await capability.fetch(handle, execCtx);
+    const output =
+      stage.output.kind === 'timeline'
+        ? this.timelineHandles.canonicalize(result.output, bindings.provenance)
+        : result.output;
 
     const [runRow] = await this.db.select().from(run).where(eq(run.id, ctx.runId)).limit(1);
     if (!runRow) throw new Error(`StageRunnerService: run ${ctx.runId} not found`);
@@ -516,16 +571,38 @@ export class StageRunnerService {
     });
 
     const mediaOutput = stage.output.kind.startsWith('media.')
-      ? (result.output as import('@reefcraft/shared').MediaSource)
+      ? (output as import('@reefcraft/shared').MediaSource)
       : undefined;
-    const persistedMedia = mediaOutput
-      ? await this.mediaArtifacts.persist({
-          ownerId: channelRow?.ownerId ?? 'local',
-          channelId: runRow.channelId,
-          runId: ctx.runId,
-          source: mediaOutput,
-        })
-      : undefined;
+    const fileOutput =
+      stage.output.kind === 'file.subtitles'
+        ? (output as import('@reefcraft/shared').FileSource)
+        : undefined;
+    let persistedMedia: Awaited<ReturnType<MediaArtifactService['persist']>> | undefined;
+    try {
+      persistedMedia = mediaOutput
+        ? await this.mediaArtifacts.persist({
+            ownerId: channelRow?.ownerId ?? 'local',
+            channelId: runRow.channelId,
+            runId: ctx.runId,
+            source: mediaOutput,
+          })
+        : undefined;
+    } finally {
+      if (mediaOutput?.localPath) await capability.cleanup?.(handle);
+    }
+    let persistedFile: Awaited<ReturnType<FileArtifactService['persist']>> | undefined;
+    try {
+      persistedFile = fileOutput
+        ? await this.fileArtifacts.persist({
+            ownerId: channelRow?.ownerId ?? 'local',
+            channelId: runRow.channelId,
+            runId: ctx.runId,
+            source: fileOutput,
+          })
+        : undefined;
+    } finally {
+      if (fileOutput?.localPath) await capability.cleanup?.(handle);
+    }
     const kind =
       stage.output.kind === 'data'
         ? 'data'
@@ -533,13 +610,21 @@ export class StageRunnerService {
           ? 'text'
           : stage.output.kind;
     const data =
-      kind === 'text' ? { text: result.output } : kind === 'data' ? result.output : undefined;
+      kind === 'text'
+        ? { text: output }
+        : kind === 'data' || kind === 'timeline'
+          ? output
+          : undefined;
     const artifactId = await this.artifacts.recordAttemptArtifact({
       runId: ctx.runId,
       producerStageKey: stage.key,
       kind,
       data,
       ...(persistedMedia && { blobId: persistedMedia.blobId, probe: persistedMedia.probe }),
+      ...(persistedFile && {
+        blobId: persistedFile.blobId,
+        data: { format: fileOutput!.format },
+      }),
       ...(stage.output.kind === 'data' && {
         schemaHash: this.schemaValidator.hashOf(stage.output.schema),
       }),
@@ -600,6 +685,21 @@ export class StageRunnerService {
       resolvedRefs,
       ...(stage.output.kind === 'data' && { outputSchema: stage.output.schema }),
     });
+    if (stage.output.kind === 'timeline') {
+      const config = effective.capabilityConfig as {
+        allowGaps?: boolean;
+        toleranceSec?: number;
+      };
+      checkResults.unshift(
+        ...(await this.timelineChecks.run({
+          runId: ctx.runId,
+          timeline: output,
+          allowGaps: config.allowGaps,
+          toleranceSec: config.toleranceSec,
+          aspectRatio: effective.layer.format?.aspectRatio,
+        })),
+      );
+    }
     // Video is audio-bearing by default. A stage must explicitly request
     // `forbidden` or `optional` to accept a silent provider result.
     if (stage.output.kind === 'media.video' && persistedMedia) {

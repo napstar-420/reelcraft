@@ -2,9 +2,9 @@
 
 A general-purpose AI video/reel generation engine. See `docs/ai-reel-engine-requirements.md`
 and `docs/ai-video-engine-design-spec-v6.md` for the full requirements and design spec — this
-the implementation currently covers Build Order Phases 1–3 and the Phase 4
-inputs/human-in-the-loop control plane plus the Phase 5 media storage and
-provider foundation from design spec §24.
+the implementation currently covers Build Order Phases 1–6, including the
+inputs/human-in-the-loop control plane, media storage/providers, and assembly
+with a browser timeline editor from design spec §24.
 
 ## Stack
 
@@ -40,9 +40,11 @@ needed).
 ```
 apps/
   api/      NestJS backend — engine core, Drizzle schema, Inngest orchestration
+  render-worker/ Remotion render process used by durable compute jobs
   web/      React + Vite frontend — minimal shell (channels → instantiate → run → watch)
 packages/
   shared/   Zod schemas shared by api and web (StageDef, Ref, ConfigLayer, DTOs, ...)
+  timeline-composition/ Shared Remotion composition for preview and final render
 docker/     Postgres init script, MinIO bootstrap script
 ```
 
@@ -58,6 +60,25 @@ pnpm db:generate      # drizzle-kit generate (after schema changes)
 pnpm db:migrate       # apply migrations
 pnpm db:studio        # drizzle studio
 ```
+
+## Phase 6 assembly prerequisites
+
+Install FFmpeg (both `ffmpeg` and `ffprobe`) plus Chrome/Chromium. Assembly
+supports the async `video.concat` and `timeline.render` capabilities and the
+sync `subtitles.export` capability. A `human.timeline_edit` stage opens the
+browser editor, whose preview and server renderer share the same Remotion
+composition. Set `REMOTION_BROWSER_EXECUTABLE` if Remotion cannot discover the
+browser automatically.
+
+Run the local-only uploaded-input render acceptance with:
+
+```bash
+pnpm --filter @reefcraft/api acceptance:phase6-render
+```
+
+The command builds the render worker, creates an input clip, renders a timeline,
+and verifies the resulting MP4 with `ffprobe`. It is intentionally not part of
+CI because it requires system media and browser dependencies.
 
 ## Phase 5 media prerequisites
 
@@ -129,8 +150,7 @@ no mocks): `docker compose up` → `pnpm db:migrate` → API boot → `POST /cha
 verified: `pnpm typecheck`, `pnpm lint`, `pnpm test` (`packages/shared`), `nest build`,
 `vite build`.
 
-**Not yet verified:** a real run against OpenRouter (needs a funded key), and Inngest resumption
-of an in-flight provider poll after an API restart.
+**Not yet verified:** a real run against OpenRouter or other funded media providers.
 
 **Phase 4 restart acceptance:** with Docker Postgres/MinIO/Inngest running and migrations applied,
 run `pnpm --filter @reefcraft/api acceptance:phase4-restart`. It compiles the API, starts a slow fake-provider run,
@@ -241,10 +261,6 @@ received object"` error with no hint of a module-identity problem underneath. Ca
 
 ## Follow-ups not done in this pass
 
-- Phase 4 chunk 7 still needs the destructive restart/durability exercise and
-  the full multi-client race matrix before the phase is marked done. The
-  focused Postgres/Inngest suites cover invalidation, durable wakeup claims,
-  approval, human input, cancellation, and the Phase 1–3 regression paths.
 - `pnpm --filter @reefcraft/api test:e2e` needs a live Postgres and isn't wired into CI yet
   (tracked in `docs/build-progress.md`) — run it locally against `docker compose up`.
 - `eslint.config.mjs`'s shared-package import-boundary rule is scoped slightly too broadly
