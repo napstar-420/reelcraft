@@ -12,7 +12,7 @@ plan (via `/plan`) written just before it starts — this table is the index.
 | 5   | Media                  | done              | —                                        | #14                    |
 | 6   | Assembly               | done              | `docs/plans/phase-6-assembly.md`         | current branch         |
 | 7   | Iteration              | done              | `docs/plans/phase-7-iteration.md`        | #17                    |
-| 8   | Characters             | pending           |                                          |                        |
+| 8   | Characters             | done              | `docs/plans/phase-8-characters.md`       | current branch         |
 | 9   | Editor & templates     | pending           |                                          |                        |
 
 ## Phase scope (one-liners, from design spec §24)
@@ -31,8 +31,9 @@ plan (via `/plan`) written just before it starts — this table is the index.
   timeline checks, `timeline.render` via ComputeJobService.
 - **7 Iteration**: `iterate`, sequential loop, `prevItem` carry, per-item retry,
   partial resume. "Where the money protection becomes real."
-- **8 Characters**: character assets, reference upload/promotion, readiness
-  gate, selection policy, LoRA job.
+- **8 Characters**: channel Character assets, reference upload/promotion,
+  readiness gate, explicit blueprint reference selection, and immutable
+  run snapshots. LoRA is deliberately deferred.
 - **9 Editor & templates**: capability-resolved forms, schema editor,
   script-check tester, template library, dry-run.
 

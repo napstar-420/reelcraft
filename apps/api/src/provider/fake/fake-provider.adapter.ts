@@ -101,6 +101,7 @@ export class FakeProviderAdapter implements ProviderAdapter {
         modelId: 'fake-video-1',
         label: 'Fake Video 1',
         capabilities: {
+          maxRefs: 4,
           supportsSeed: true,
           supportsIdempotency: true,
           video: {
@@ -115,6 +116,7 @@ export class FakeProviderAdapter implements ProviderAdapter {
         modelId: 'fake-image-1',
         label: 'Fake Image 1',
         capabilities: {
+          maxRefs: 4,
           supportsSeed: true,
           supportsIdempotency: true,
           image: { formats: ['png'], resolutions: ['1x1'] },

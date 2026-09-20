@@ -98,7 +98,9 @@ export const RunDetailDto = z.object({
   blueprintVersionId: z.string(),
   state: RunState,
   inputs: z.record(z.string(), z.unknown()),
-  roleBindings: z.record(z.string(), z.string()),
+  // Created runs initially hold ids; start() replaces them with immutable
+  // Character snapshots. Keep the detail DTO forward-compatible with both.
+  roleBindings: z.record(z.string(), z.unknown()),
   resolvedConfig: z.record(z.string(), ConfigLayer),
   overrides: z.record(z.string(), ConfigLayer),
   cursorStageKey: z.string().nullable(),

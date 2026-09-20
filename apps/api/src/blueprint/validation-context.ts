@@ -8,6 +8,14 @@ export interface AssetLookup {
   channelId: string;
 }
 
+/** Live lookup material supplied by BlueprintService; the validator remains
+ * pure and records only validation findings, never database access. */
+export interface CharacterLookup {
+  channelId: string;
+  readiness: string;
+  referenceBlobIds: Set<string>;
+}
+
 export interface BlueprintValidationInput {
   graph: StageDef[];
   inputs: InputDef[];
@@ -20,6 +28,7 @@ export interface BlueprintValidationInput {
   /** The blueprint's own channel — an asset ref is only valid if it names an
    * asset scoped to THIS channel (§3.3). */
   blueprintChannelId?: string;
+  charactersById?: Map<string, CharacterLookup>;
 }
 
 export interface MemoryWriter {
@@ -36,6 +45,7 @@ export interface ValidationContext {
   memoryWriters: Map<string, MemoryWriter[]>;
   assetsById: Map<string, AssetLookup>;
   blueprintChannelId: string;
+  charactersById: Map<string, CharacterLookup>;
 }
 
 export function buildValidationContext(input: BlueprintValidationInput): ValidationContext {
@@ -61,5 +71,6 @@ export function buildValidationContext(input: BlueprintValidationInput): Validat
     memoryWriters,
     assetsById: input.assetsById ?? new Map(),
     blueprintChannelId: input.blueprintChannelId ?? '',
+    charactersById: input.charactersById ?? new Map(),
   };
 }

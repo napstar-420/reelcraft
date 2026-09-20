@@ -52,6 +52,7 @@ export class BlueprintValidatorService {
     this.checkFirstStagePrev(graph, issues);
     this.checkDuplicateKeys(graph, issues);
     this.checkRoleCount(roles, issues);
+    this.checkRoleCharacters(roles, input, issues);
     this.checkInputSchemas(inputs, issues);
 
     const ctx = buildValidationContext(input);
@@ -103,6 +104,64 @@ export class BlueprintValidatorService {
         message: 'a blueprint may declare at most one role (§18.5)',
         severity: 'error',
       });
+    }
+  }
+
+  private checkRoleCharacters(
+    roles: RoleDef[],
+    input: BlueprintValidationInput,
+    issues: ValidationIssue[],
+  ): void {
+    for (const role of roles) {
+      const path = `roles.${role.key}`;
+      const selected = role.referenceBlobIds ?? [];
+      if (!role.characterId) {
+        issues.push({
+          path,
+          message: `role "${role.key}" must select a channel Character`,
+          severity: 'error',
+        });
+        continue;
+      }
+      const character = input.charactersById?.get(role.characterId);
+      if (!character) {
+        issues.push({
+          path,
+          message: `role "${role.key}" selects an unknown Character`,
+          severity: 'error',
+        });
+        continue;
+      }
+      if (character.channelId !== input.blueprintChannelId) {
+        issues.push({
+          path,
+          message: `Character "${role.characterId}" belongs to a different channel`,
+          severity: 'error',
+        });
+      }
+      if (character.readiness !== 'ready') {
+        issues.push({
+          path,
+          message: `Character "${role.characterId}" has no usable references`,
+          severity: 'error',
+        });
+      }
+      if (selected.length === 0) {
+        issues.push({
+          path,
+          message: `role "${role.key}" must select at least one reference image`,
+          severity: 'error',
+        });
+      }
+      for (const blobId of selected) {
+        if (!character.referenceBlobIds.has(blobId)) {
+          issues.push({
+            path: `${path}.referenceBlobIds`,
+            message: `reference "${blobId}" is not usable for this Character`,
+            severity: 'error',
+          });
+        }
+      }
     }
   }
 
@@ -264,6 +323,7 @@ export class BlueprintValidatorService {
     }
 
     if (impl) {
+      this.checkRoleSlotBindings(stage, base, impl, issues);
       for (const slotDef of impl.slots(stage.config)) {
         const ref = stage.slots[slotDef.name];
         if (!ref) {
@@ -400,6 +460,52 @@ export class BlueprintValidatorService {
           ctx,
           issues,
         );
+      }
+    }
+  }
+
+  /** A role is an ordered image-reference collection, never a scalar image
+   * or arbitrary context/check value. Restrict it to compatible many slots
+   * before a provider request can reserve spend. */
+  private checkRoleSlotBindings(
+    stage: StageDef,
+    base: string,
+    impl: CapabilityImpl,
+    issues: ValidationIssue[],
+  ): void {
+    const slotsByName = new Map(impl.slots(stage.config).map((slot) => [slot.name, slot]));
+    for (const [name, ref] of Object.entries(stage.slots)) {
+      if (ref.from !== 'role') continue;
+      const slot = slotsByName.get(name);
+      const acceptsImages = slot?.accepts.some((accepted) => accepted === 'media.image') ?? false;
+      if (!slot || slot.cardinality !== 'many' || !acceptsImages) {
+        issues.push({
+          path: `${base}.slots.${name}`,
+          message:
+            "a Character role may bind only to a cardinality:'many' media.image reference slot",
+          severity: 'error',
+        });
+      }
+    }
+    for (const [name, ref] of Object.entries(stage.context)) {
+      if (ref.from === 'role') {
+        issues.push({
+          path: `${base}.context.${name}`,
+          message: 'a Character role may only bind to a reference slot',
+          severity: 'error',
+        });
+      }
+    }
+    for (const [checkIndex, check] of stage.checks.entries()) {
+      if (check.type !== 'script') continue;
+      for (const [name, ref] of Object.entries(check.refs ?? {})) {
+        if (ref.from === 'role') {
+          issues.push({
+            path: `${base}.checks[${checkIndex}].refs.${name}`,
+            message: 'a Character role may only bind to a reference slot',
+            severity: 'error',
+          });
+        }
       }
     }
   }

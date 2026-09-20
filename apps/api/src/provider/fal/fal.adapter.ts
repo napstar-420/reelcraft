@@ -25,6 +25,7 @@ export class FalAdapter implements ProviderAdapter {
         modelId: 'fal-ai/kling-video/v3/standard',
         label: 'Kling Video v3 Standard',
         capabilities: {
+          maxRefs: 4,
           supportsSeed: false,
           supportsIdempotency: false,
           video: {

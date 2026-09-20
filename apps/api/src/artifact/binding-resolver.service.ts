@@ -23,6 +23,18 @@ export interface BindingScope {
    * here, so a later channel-asset edit can't retroactively change a past
    * run. */
   assetBindings?: Record<string, { blobId: string; kind: string }> | undefined;
+  /** Immutable Character snapshots written by RunService.start(). */
+  roleBindings?:
+    | Record<
+        string,
+        {
+          characterId: string;
+          name: string;
+          description: string;
+          references: Array<{ blobId: string; sourceKey: string; mime: string; probe?: unknown }>;
+        }
+      >
+    | undefined;
   /** phase 7 — carried through the interface now so callers don't churn later. */
   itemIndex?: number | undefined;
   /** phase 7 — the CURRENTLY executing stage's own key, distinct from
@@ -262,8 +274,24 @@ export class BindingResolverService {
         };
       }
 
-      case 'role':
-        throw new Error(`BindingResolverService: {from: "role"} is not implemented until phase 8`);
+      case 'role': {
+        const binding = ctx.roleBindings?.[ref.roleKey];
+        if (!binding)
+          throw new Error(`BindingResolverService: no snapshot for role "${ref.roleKey}"`);
+        const references = binding.references.map((image) => ({
+          handle: `character:${binding.characterId}:${image.blobId}`,
+          blobId: image.blobId,
+          kind: 'media.image',
+          sourceKey: image.sourceKey,
+          characterId: binding.characterId,
+          characterDescription: binding.description,
+          ...(image.probe != null && { probe: image.probe }),
+        }));
+        return {
+          value: references,
+          provenance: { ref, artifactIds: binding.references.map((image) => image.blobId) },
+        };
+      }
 
       case 'item': {
         if (ctx.itemIndex === undefined) {

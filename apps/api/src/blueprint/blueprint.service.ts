@@ -1,18 +1,26 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { and, eq, inArray, isNull, max } from 'drizzle-orm';
-import type { CreateBlueprintVersionDto } from '@reefcraft/shared';
+import type { ConfigLayer, CreateBlueprintVersionDto, ValidationIssue } from '@reefcraft/shared';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
-import { asset, blob, blueprint, blueprintVersion } from '../db/schema/index';
+import { asset, blob, blueprint, blueprintVersion, character, channel } from '../db/schema/index';
 import { ulid } from '../common/ulid';
 import { BlueprintValidatorService } from './blueprint-validator.service';
 import { collectAssetIds } from './collect-asset-refs';
-import type { AssetLookup } from './validation-context';
+import type { AssetLookup, CharacterLookup } from './validation-context';
+import { ConfigResolverService } from '../run-config/config-resolver.service';
+import { EngineConfig } from '../config/engine-config';
+import { engineDefaults } from '../run-config/engine-defaults';
+import { ProviderRegistry } from '../provider/provider.registry';
+import type { ModelInfo } from '../provider/provider-adapter.interface';
 
 @Injectable()
 export class BlueprintService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly validator: BlueprintValidatorService,
+    private readonly configResolver: ConfigResolverService,
+    private readonly engineConfig: EngineConfig,
+    private readonly providers: ProviderRegistry,
   ) {}
 
   async ensureBlueprint(channelId: string, name: string): Promise<string> {
@@ -34,13 +42,16 @@ export class BlueprintService {
     sourceTemplateId?: string,
   ) {
     const [blueprintRow] = await this.db
-      .select({ channelId: blueprint.channelId })
+      .select({ channelId: blueprint.channelId, defaults: channel.defaults })
       .from(blueprint)
       .where(eq(blueprint.id, blueprintId))
       .limit(1);
     if (!blueprintRow) throw new Error(`Blueprint ${blueprintId} not found`);
 
-    const assetsById = await this.loadAssetsById(dto.graph);
+    const [assetsById, charactersById] = await Promise.all([
+      this.loadAssetsById(dto.graph),
+      this.loadCharactersById(dto.roles),
+    ]);
 
     const issues = this.validator.validate({
       graph: dto.graph,
@@ -48,7 +59,9 @@ export class BlueprintService {
       roles: dto.roles,
       assetsById,
       blueprintChannelId: blueprintRow.channelId,
+      charactersById,
     });
+    issues.push(...(await this.validateReferenceLimits(dto, blueprintRow.defaults as ConfigLayer)));
     const runnable = issues.every((i) => i.severity !== 'error');
 
     const [row] = await this.db
@@ -119,5 +132,112 @@ export class BlueprintService {
       .innerJoin(blob, eq(asset.blobId, blob.id))
       .where(and(inArray(asset.id, assetIds), isNull(blob.deletedAt)));
     return new Map(rows.map((r) => [r.id, { kind: r.kind, channelId: r.channelId }]));
+  }
+
+  private async loadCharactersById(
+    roles: CreateBlueprintVersionDto['roles'],
+  ): Promise<Map<string, CharacterLookup>> {
+    const ids = roles.flatMap((role) => (role.characterId ? [role.characterId] : []));
+    if (ids.length === 0) return new Map();
+    const rows = await this.db
+      .select({
+        id: character.id,
+        channelId: character.channelId,
+        readiness: character.readiness,
+        referenceSet: character.referenceSet,
+      })
+      .from(character)
+      .where(and(inArray(character.id, ids), eq(character.scope, 'channel')));
+    return new Map(
+      rows.map((row) => [
+        row.id,
+        {
+          channelId: row.channelId ?? '',
+          readiness: row.readiness,
+          referenceBlobIds: new Set(
+            (row.referenceSet as Array<{ blobId: string }>).map((ref) => ref.blobId),
+          ),
+        },
+      ]),
+    );
+  }
+
+  /** Validate the authored selection against the same merged model pins a
+   * run will use. This rejects over-limit blueprints at save time instead of
+   * letting providers silently drop identity references. */
+  private async validateReferenceLimits(
+    dto: CreateBlueprintVersionDto,
+    channelDefaults: ConfigLayer,
+  ): Promise<ValidationIssue[]> {
+    const selectedByRole = new Map(
+      dto.roles.map((role) => [role.key, role.referenceBlobIds?.length ?? 0]),
+    );
+    if (selectedByRole.size === 0) return [];
+    const config = this.configResolver.resolveRunConfig({
+      graph: dto.graph,
+      engine: engineDefaults(this.engineConfig),
+      channelDefaults,
+      blueprintDefaults: dto.defaults,
+    });
+    const issues: ValidationIssue[] = [];
+    for (const stage of dto.graph) {
+      const used = Object.values(stage.slots).filter(
+        (ref): ref is Extract<(typeof stage.slots)[string], { from: 'role' }> =>
+          ref.from === 'role',
+      );
+      if (used.length === 0) continue;
+      const model = config[stage.key]?.model;
+      if (!model?.provider || !model.modelId) {
+        issues.push({
+          path: `stages.${stage.key}`,
+          message: 'a role-consuming stage requires a pinned model with a declared reference limit',
+          severity: 'error',
+        });
+        continue;
+      }
+      let info: ModelInfo | undefined;
+      try {
+        info = (await this.providers.get(model.provider).listModels()).find(
+          (candidate) => candidate.modelId === model.modelId,
+        );
+      } catch {
+        issues.push({
+          path: `stages.${stage.key}`,
+          message: `unknown provider "${model.provider}" for a role-consuming stage`,
+          severity: 'error',
+        });
+        continue;
+      }
+      const maxRefs = info?.capabilities.maxRefs ?? info?.capabilities.image?.maxReferences;
+      if (!info || maxRefs === undefined) {
+        issues.push({
+          path: `stages.${stage.key}`,
+          message: `model "${model.modelId}" does not declare a reference limit`,
+          severity: 'error',
+        });
+        continue;
+      }
+      if (
+        stage.capability === 'video.generate' &&
+        !info.capabilities.video?.inputs.includes('references')
+      ) {
+        issues.push({
+          path: `stages.${stage.key}`,
+          message: `model "${model.modelId}" does not support reference-image conditioning`,
+          severity: 'error',
+        });
+        continue;
+      }
+      for (const ref of used) {
+        if ((selectedByRole.get(ref.roleKey) ?? 0) > maxRefs) {
+          issues.push({
+            path: `roles.${ref.roleKey}.referenceBlobIds`,
+            message: `selected references exceed ${model.modelId}'s limit of ${maxRefs}`,
+            severity: 'error',
+          });
+        }
+      }
+    }
+    return issues;
   }
 }
