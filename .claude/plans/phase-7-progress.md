@@ -10,7 +10,7 @@ Updated as each chunk lands; not part of the shipped plan doc.
 - [x] Chunk 3 — Binding resolver: item, prevItem, prev+alignWith, derived frames (commit 4159723)
 - [x] Chunk 4 — Orchestration: the per-item loop (commit d20c8fd)
 - [x] Chunk 5 — Item-level invalidation (commit b1f86a8)
-- [ ] Chunk 6 — Item-mode approval
+- [x] Chunk 6 — Item-mode approval (commit 40f0373)
 - [ ] Chunk 7 — Acceptance scenario, docs, hardening
 - [ ] Full monorepo typecheck/lint/test green
 - [ ] PR opened against `main`
@@ -192,3 +192,92 @@ undefined)`. A non-iterating stage keeps exactly one node (`itemIndex`
   siblings), tombstones only `broll#1`'s memory row, leaves `stage_execution
 .state` at `'passed'`, and confirms `itemState()` would no longer skip
   that item on a re-entered `stage.execute`.
+- Chunk 6: `StageRunnerService.fetchAndFinalize`'s approval branch was
+  restructured (not just extended) — the `stage_attempt` "awaiting_approval"
+  update now happens once, before the stage-mode/item-mode split, instead of
+  being duplicated inside each branch; the resulting DB writes for stage-mode
+  are byte-identical to before, just expressed without repeating that one
+  statement. The item-mode branch writes `stage_item.state =
+  'awaiting_approval'` and opens the `humanWait` with `stageItemId` set,
+  deliberately leaving `stage_execution` untouched (still `'running'`) —
+  the outer per-item loop's own `finishIteratingStage` is the only thing
+  that ever flips it to `'passed'`.
+- Chunk 6: `HumanActionService.approve`/`.reject` gained a shared private
+  `resolveOpenItem(executor, stageExecutionId, itemIndex?)` helper: it loads
+  the one `stage_item` currently `'awaiting_approval'` for an execution
+  (iteration is strictly sequential, so there's ever at most one) and, when
+  the caller supplied an `itemIndex`, verifies it matches rather than
+  trusting it blindly — satisfying the plan's "server-side resolution,
+  client itemIndex as a confirmation/race-safety check" requirement without
+  needing the controller or DTO to change beyond threading `itemIndex`
+  through (both already had the field/plumbing from earlier chunks).
+- Chunk 6: `approveInTransaction` branches on `stage.approval?.mode ===
+  'item'` at its very top and calls a new private `approveItemInTransaction`
+  for that case; everything below is the original stage-mode body,
+  unchanged. `pendingAttempt`, `requireOpenWait`, and `retryDebits` (the
+  "own" count only — see below) each gained an optional trailing
+  `stageItemId` parameter that switches their `stageItemId IS NULL`
+  predicate to an exact match; every existing call site keeps passing
+  nothing extra, so stage-mode behavior is provably unchanged (confirmed by
+  the full stage-mode approve/reject e2e and unit coverage passing
+  unmodified).
+- Chunk 6: `reject()`'s routed-rejection item-scoping question (an open
+  design point in the plan) was resolved as: item-scoping only applies when
+  BOTH (a) the rejected stage is itself item-mode, and (b) the retry TARGET
+  stage also declares `iterate` — in which case the same item index is
+  assumed to carry over pointwise (the same assumption `{from:'prev',
+  alignWith:'item'}` already makes elsewhere in this phase). A routed
+  rejection to a non-iterating earlier stage (the case this chunk's tests
+  cover) stays a whole-stage `{stageKeys:[...]}` seed. The rejected item
+  itself is always additionally force-included in the seed's `items` array
+  (`{stageKey, itemIndex}`), mirroring what `forcedStageKeys:[stageKey]`
+  already does for stage-mode — `computeInvalidationClosure`'s dedup-by-key
+  `markInvalid`/`markWholeStage` makes this safe to include unconditionally
+  even when it overlaps the target seed.
+- Chunk 6: `retryDebits`'s "routed" (cross-stage critique) count deliberately
+  stays stage-wide even for an item-mode rejection — `critiqueTargetStageKey`
+  names a stage, not an item, and no other part of the schema carries an
+  item dimension for a routed rejection, so inventing one here would be
+  unsupported by anything else in the phase. Only the "own" count (this
+  stage/item's own consumed retries) is scoped by `stageItemId`. The
+  `exhausted` check switches to `effective.iterate!.itemRetryLimit` exactly
+  when the retry TARGET stage iterates, independent of whether the
+  REJECTED stage does (matters for the routed-to-a-different-iterating-stage
+  edge case, though this chunk's own tests only exercise the non-iterating
+  routed target).
+- Chunk 6: on item-mode exhaustion, only the target's own `stage_item.state`
+  is set to `'failed'` (never `stage_execution`) — sibling items are left
+  completely alone, matching §14.1's "no continue-and-isolate" read as
+  "the item still fails the run" rather than "the whole stage's other items
+  are discarded too." The run itself is still marked `FAILED` exactly as
+  stage-mode does today; that part is unconditional and unchanged.
+- Chunk 6: the existing `human-action.service.test.ts` wiring test (asserts
+  `approve()` delegates into `approveInTransaction` with the right args) was
+  updated to expect the new trailing `itemIndex` argument (`undefined` when
+  omitted) — a mechanical adjustment to the new signature, not a weakened
+  assertion; it still checks the exact `tx`/`runId`/`stageKey`/`lockedRun`
+  values.
+- Chunk 6: new `apps/api/test/e2e/item-approval.e2e.test.ts` (4 tests, no
+  Inngest — same direct-`StageRunnerService`-call style as Chunk 4/5's own
+  suites), covering: (1) the pause lands on `stage_item`, not
+  `stage_execution`, before item 1 ever gets a `stage_attempt` row, with a
+  ledger-based cost-containment assertion (total confirmed `'actual'` spend
+  for the stage at the pause point equals exactly item 0's own cost); (2)
+  approving with `itemIndex` omitted resolves the open item server-side and
+  resumes exactly at item 1 (a real new `stage_attempt` row for item 1,
+  item 0 not re-invoked); (3) rejecting item 0 with the default (no
+  `onReject`) retry target re-submits item 0 alone (new attempt, same
+  `stageItemId`), leaving item 1's zero `stage_attempt` rows untouched; (4)
+  a routed rejection to an earlier non-iterating `style` stage seeds
+  `style` whole-stage AND forces the rejected `broll` item itself invalid,
+  without touching sibling `broll` items. Driving the loop past an
+  approve/reject in these tests required manually flipping `run.state` back
+  to `'RUNNING'` after each — `HumanActionService.approve`/`.reject` only
+  enqueue a `run/resumed` wakeup row; the actual state transition normally
+  happens via the Inngest-driven wakeup consumer, which isn't running in
+  this no-Inngest test style (the same reason `createRun` itself has to set
+  `RUNNING` by hand after creation).
+- Chunk 6: all stage-mode approve/reject e2e and unit coverage
+  (`phase4-actions.e2e.test.ts`, `human-action.service.test.ts`'s existing
+  test body) passes with zero behavioral changes — verified by running the
+  full suite, not just the new file.
