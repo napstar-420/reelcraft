@@ -3,14 +3,14 @@ import { and, eq, isNull, sql } from 'drizzle-orm';
 import { ulid } from '../common/ulid';
 import { fromUsd } from '../common/money';
 import { DRIZZLE, type Db, type Tx } from '../db/drizzle.provider';
-import { artifact, stageExecution } from '../db/schema/index';
+import { artifact, stageExecution, stageItem } from '../db/schema/index';
 
 type Executor = Db | Tx;
 
 export interface RecordAttemptArtifactInput {
   runId: string;
   producerStageKey: string;
-  itemIndex?: number;
+  itemIndex?: number | undefined;
   kind: string;
   data?: unknown;
   blobId?: string;
@@ -124,8 +124,19 @@ export class ArtifactService {
       runId: string;
       stageExecutionId: string;
       producerStageKey: string;
-      itemIndex?: number;
+      itemIndex?: number | undefined;
       newArtifactId: string;
+      /** phase 7 chunk 4 — when set, this finalize belongs to one item of
+       * an iterating stage: `stage_item` (not `stage_execution`) gets the
+       * new artifact/attemptCount/cost. `stage_execution`'s own
+       * `outputArtifactId`/`attemptCount` are left untouched here — Locked
+       * Decision 5/6 sets them once, separately, after every item has
+       * passed (`StageRunnerService.finishIteratingStage`). */
+      stageItemId?: string | undefined;
+      /** phase 7 chunk 4 — mirrors `stage_execution.costUsd`'s sibling
+       * column on `stage_item` (Locked Decision 5). Only meaningful
+       * alongside `stageItemId`. */
+      costUsd?: number | undefined;
       applyWrites?: (tx: Tx) => Promise<void>;
     },
     executor?: Tx,
@@ -147,13 +158,25 @@ export class ArtifactService {
 
       await tx.update(artifact).set({ stale: false }).where(eq(artifact.id, params.newArtifactId));
 
-      await tx
-        .update(stageExecution)
-        .set({
-          outputArtifactId: params.newArtifactId,
-          attemptCount: sql`${stageExecution.attemptCount} + 1`,
-        })
-        .where(eq(stageExecution.id, params.stageExecutionId));
+      if (params.stageItemId) {
+        await tx
+          .update(stageItem)
+          .set({
+            state: 'passed',
+            outputArtifactId: params.newArtifactId,
+            attemptCount: sql`${stageItem.attemptCount} + 1`,
+            ...(params.costUsd !== undefined && { costUsd: fromUsd(params.costUsd) }),
+          })
+          .where(eq(stageItem.id, params.stageItemId));
+      } else {
+        await tx
+          .update(stageExecution)
+          .set({
+            outputArtifactId: params.newArtifactId,
+            attemptCount: sql`${stageExecution.attemptCount} + 1`,
+          })
+          .where(eq(stageExecution.id, params.stageExecutionId));
+      }
 
       if (params.applyWrites) await params.applyWrites(tx);
     };

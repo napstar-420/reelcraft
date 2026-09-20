@@ -54,6 +54,13 @@ export interface ResolvedBindings {
   slots: Record<string, unknown>;
   context: Record<string, unknown>;
   provenance: Record<string, RefProvenance>;
+  /** phase 7 chunk 4 — the resolved `stage.iterate.over` array, when the
+   * stage declares `iterate` (undefined otherwise). Exposed so callers that
+   * resolve slots/context once (`StageRunnerService.reserveAndSubmit`/
+   * `fetchAndFinalize`) can reuse it for check-ref resolution's
+   * `{from:'item'}` support instead of re-resolving `iterate.over` a second
+   * time. */
+  iterateOverValue?: unknown[] | undefined;
 }
 
 export interface RefEnvelope {
@@ -330,7 +337,7 @@ export class BindingResolverService {
       context[key] = resolved.value;
       provenance[`context.${key}`] = resolved.provenance;
     }
-    return { slots, context, provenance };
+    return { slots, context, provenance, iterateOverValue: scope.iterateOverValue };
   }
 
   /** §9.2 — resolves `CheckDef.refs` (script checks) into `{kind, data,
