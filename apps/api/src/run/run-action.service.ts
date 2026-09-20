@@ -1,13 +1,21 @@
 import { ConflictException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { ConfigLayer, StageDef, type ConfigLayer as ConfigLayerType } from '@reefcraft/shared';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
-import { blueprintVersion, run } from '../db/schema/index';
+import { blueprintVersion, run, stageExecution, stageItem } from '../db/schema/index';
 import { mergeLayer } from '../run-config/layer-merge';
 import { InvalidationService, type InvalidationPreview } from './invalidation.service';
+import type { InvalidationSeed } from './invalidation-closure';
 import { PreviewTokenService } from './preview-token.service';
 import { RunMutationService } from './run-mutation.service';
 import { RunWakeupDispatcher } from './run-wakeup-dispatcher.service';
+
+/** phase 7 MEDIUM finding #3 (PR #17 review) — a `stage_item.state` that
+ * cannot yet be retried: still in flight or waiting on a human. Mirrors the
+ * full `stage_item.state` enum documented on the schema
+ * (`db/schema/execution.ts`) minus the three terminal-or-retryable states
+ * (`passed`/`failed`/`stale`). */
+const NOT_YET_RETRYABLE_ITEM_STATES = ['pending', 'running', 'awaiting_approval'] as const;
 
 const RETRY_STATES = [
   'PAUSED_BUDGET',
@@ -34,18 +42,20 @@ export class RunActionService {
   ) {}
 
   async previewInvalidation(runId: string, stageKey: string, itemIndex?: number) {
-    if (itemIndex !== undefined) {
-      throw new ConflictException('Item invalidation is not available until iteration support');
-    }
-    return this.buildStagePreview(runId, stageKey, 'invalidation_preview');
+    return this.buildStagePreview(runId, stageKey, 'invalidation_preview', itemIndex);
   }
 
-  async previewStageRetry(runId: string, stageKey: string) {
-    return this.buildStagePreview(runId, stageKey, 'retry');
+  async previewStageRetry(runId: string, stageKey: string, itemIndex?: number) {
+    return this.buildStagePreview(runId, stageKey, 'retry', itemIndex);
   }
 
-  async confirmStageRetry(runId: string, stageKey: string, previewToken: string) {
-    const payload = { stageKey };
+  async confirmStageRetry(
+    runId: string,
+    stageKey: string,
+    previewToken: string,
+    itemIndex?: number,
+  ) {
+    const payload = { stageKey, ...(itemIndex !== undefined ? { itemIndex } : {}) };
     const revision = await this.currentRevision(runId);
     const claims = this.tokens.verify<RetryTokenPreview>(previewToken, {
       action: 'retry',
@@ -53,7 +63,8 @@ export class RunActionService {
       runRevision: revision,
       proposedPayload: payload,
     });
-    const preview = await this.invalidation.preview({ runId, seed: { stageKeys: [stageKey] } });
+    const seed = await this.resolveRetrySeed(runId, stageKey, itemIndex);
+    const preview = await this.invalidation.preview({ runId, seed });
     if (claims.preview.fingerprint !== preview.fingerprint) {
       throw new ConflictException('The invalidation preview changed; request a new preview');
     }
@@ -76,6 +87,59 @@ export class RunActionService {
     );
     await this.dispatchBestEffort(result.wakeupId);
     return { accepted: true, revision: result.revision };
+  }
+
+  /** phase 7 MEDIUM finding #3 (PR #17 review) — resolves the
+   * `InvalidationSeed` for a stage retry, item-scoped when `itemIndex` is
+   * given. Mirrors `HumanActionService.reject()`'s own item-scoping: server
+   * resolves and validates against the DB rather than trusting the caller's
+   * `itemIndex` blindly, and rejects it outright when it doesn't apply
+   * (a non-iterating stage) or doesn't point at a retryable item. */
+  private async resolveRetrySeed(
+    runId: string,
+    stageKey: string,
+    itemIndex: number | undefined,
+  ): Promise<InvalidationSeed> {
+    if (itemIndex === undefined) return { stageKeys: [stageKey] };
+
+    const [context] = await this.db
+      .select({ graph: blueprintVersion.graph })
+      .from(run)
+      .innerJoin(blueprintVersion, eq(run.blueprintVersionId, blueprintVersion.id))
+      .where(eq(run.id, runId))
+      .limit(1);
+    if (!context) throw new NotFoundException(`Run ${runId} not found`);
+    const graph = StageDef.array().parse(context.graph);
+    const stage = graph.find((candidate) => candidate.key === stageKey);
+    if (!stage) throw new ConflictException(`Stage ${stageKey} not found`);
+    if (!stage.iterate) {
+      throw new ConflictException(
+        `Stage ${stageKey} does not iterate; itemIndex does not apply to it`,
+      );
+    }
+
+    const [execution] = await this.db
+      .select({ id: stageExecution.id })
+      .from(stageExecution)
+      .where(and(eq(stageExecution.runId, runId), eq(stageExecution.stageKey, stageKey)))
+      .limit(1);
+    if (!execution) throw new ConflictException(`Execution ${stageKey} not found`);
+
+    const [item] = await this.db
+      .select({ state: stageItem.state })
+      .from(stageItem)
+      .where(and(eq(stageItem.stageExecutionId, execution.id), eq(stageItem.itemIndex, itemIndex)))
+      .limit(1);
+    if (!item) {
+      throw new ConflictException(`Retry target item ${itemIndex} of ${stageKey} not found`);
+    }
+    if ((NOT_YET_RETRYABLE_ITEM_STATES as readonly string[]).includes(item.state)) {
+      throw new ConflictException(
+        `Item ${itemIndex} of ${stageKey} is '${item.state}' and cannot be retried yet`,
+      );
+    }
+
+    return { items: [{ stageKey, itemIndex }] };
   }
 
   async patchOverrides(
@@ -163,14 +227,21 @@ export class RunActionService {
     return { applied: true, revision: result.revision, resumes: hasActiveOutputs };
   }
 
-  private async buildStagePreview(runId: string, stageKey: string, action: string) {
+  private async buildStagePreview(
+    runId: string,
+    stageKey: string,
+    action: string,
+    itemIndex?: number,
+  ) {
     const revision = await this.currentRevision(runId);
-    const preview = await this.invalidation.preview({ runId, seed: { stageKeys: [stageKey] } });
+    const seed = await this.resolveRetrySeed(runId, stageKey, itemIndex);
+    const preview = await this.invalidation.preview({ runId, seed });
+    const payload = { stageKey, ...(itemIndex !== undefined ? { itemIndex } : {}) };
     const issued = this.tokens.issue({
       action,
       runId,
       runRevision: revision,
-      proposedPayload: { stageKey },
+      proposedPayload: payload,
       preview: { fingerprint: preview.fingerprint },
     });
     return this.toApiPreview(preview, issued.token, issued.expiresAt);

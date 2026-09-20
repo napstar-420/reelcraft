@@ -30,6 +30,18 @@ describe('run action DTOs', () => {
     });
   });
 
+  it('accepts an optional itemIndex on the retry-confirmation DTO, mirroring ApprovalActionDto', () => {
+    expect(ConfirmRunActionDto.parse({ previewToken: 'token' })).toEqual({
+      previewToken: 'token',
+    });
+    expect(ConfirmRunActionDto.parse({ previewToken: 'token', itemIndex: 2 })).toEqual({
+      previewToken: 'token',
+      itemIndex: 2,
+    });
+    expect(() => ConfirmRunActionDto.parse({ previewToken: 'token', itemIndex: -1 })).toThrow();
+    expect(() => ConfirmRunActionDto.parse({ previewToken: 'token', itemIndex: 1.5 })).toThrow();
+  });
+
   it('validates sparse per-stage overrides', () => {
     expect(
       PatchRunOverridesDto.parse({

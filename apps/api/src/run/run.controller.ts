@@ -112,22 +112,16 @@ export class RunController {
     @Query('itemIndex') itemIndex?: string,
   ) {
     if (!stageKey) throw new BadRequestException('stageKey is required');
-    if (
-      itemIndex !== undefined &&
-      (!Number.isInteger(Number(itemIndex)) || Number(itemIndex) < 0)
-    ) {
-      throw new BadRequestException('itemIndex must be a non-negative integer');
-    }
-    return this.actions.previewInvalidation(
-      id,
-      stageKey,
-      itemIndex === undefined ? undefined : Number(itemIndex),
-    );
+    return this.actions.previewInvalidation(id, stageKey, this.parseItemIndexQuery(itemIndex));
   }
 
   @Post(':id/stages/:key/retry')
-  retryPreview(@Param('id') id: string, @Param('key') key: string) {
-    return this.actions.previewStageRetry(id, key);
+  retryPreview(
+    @Param('id') id: string,
+    @Param('key') key: string,
+    @Query('itemIndex') itemIndex?: string,
+  ) {
+    return this.actions.previewStageRetry(id, key, this.parseItemIndexQuery(itemIndex));
   }
 
   @Get(':id/stages/:key/attempts')
@@ -141,7 +135,21 @@ export class RunController {
     @Param('key') key: string,
     @Body(new ZodValidationPipe(ConfirmRunActionDto)) dto: ConfirmRunActionDto,
   ) {
-    return this.actions.confirmStageRetry(id, key, dto.previewToken);
+    return this.actions.confirmStageRetry(id, key, dto.previewToken, dto.itemIndex);
+  }
+
+  /** Shared by `invalidationPreview`/`retryPreview` — both accept an
+   * optional `?itemIndex=` query param scoping the preview/retry to one
+   * item of an iterating stage (phase 7 MEDIUM finding #3, PR #17 review).
+   * Server-side resolution against the DB (in `RunActionService`) is what
+   * actually validates the index; this only validates the query string's
+   * shape. */
+  private parseItemIndexQuery(itemIndex?: string): number | undefined {
+    if (itemIndex === undefined) return undefined;
+    if (!Number.isInteger(Number(itemIndex)) || Number(itemIndex) < 0) {
+      throw new BadRequestException('itemIndex must be a non-negative integer');
+    }
+    return Number(itemIndex);
   }
 
   @Post(':id/stages/:key/approve')
