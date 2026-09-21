@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { ReactFlow, ReactFlowProvider, Background, type Node, type Edge } from '@xyflow/react';
@@ -6,7 +6,16 @@ import '@xyflow/react/dist/style.css';
 import { api } from '../api/client';
 import { AddStageMenu } from '../components/canvas/AddStageMenu';
 import { StageInspector } from '../components/canvas/StageInspector';
-import type { StageDef, InputDef, RoleDef, ConfigLayer } from '@reefcraft/shared';
+import { deriveMemoryWriters } from '../lib/memory-writers';
+import { parseValidationPath } from '../lib/parse-validation-path';
+import type {
+  StageDef,
+  InputDef,
+  RoleDef,
+  ConfigLayer,
+  Ref,
+  ValidationIssue,
+} from '@reefcraft/shared';
 
 type BlueprintDraft = {
   graph: StageDef[];
@@ -41,6 +50,78 @@ function prevEdges(graph: StageDef[]): Edge[] {
   return edges;
 }
 
+/** Every `{from:'memory'}` key a stage reads — `Ref` appears uniformly in
+ * slots/context/iterate.over/script-check refs (point 5, Chunk 7a). */
+function memoryKeysReadByStage(stage: StageDef): string[] {
+  const keys = new Set<string>();
+  const note = (ref: Ref | undefined) => {
+    if (ref?.from === 'memory') keys.add(ref.key);
+  };
+  for (const ref of Object.values(stage.slots)) note(ref);
+  for (const ref of Object.values(stage.context)) note(ref);
+  if (stage.iterate) note(stage.iterate.over);
+  for (const check of stage.checks) {
+    if (check.type === 'script') {
+      for (const ref of Object.values(check.refs ?? {})) note(ref);
+    }
+  }
+  return [...keys];
+}
+
+/** Locked Decision 6 — writer lookup is derived client-side purely to draw
+ * these arcs; a key with more than one writer isn't suppressed or merged,
+ * it gets one edge per writer with a distinct (warning) color, mirroring
+ * the validator's own `checkMemoryWrittenByMultiple`. */
+function memoryEdges(graph: StageDef[]): Edge[] {
+  const writers = deriveMemoryWriters(graph);
+  const edges: Edge[] = [];
+  for (const stage of graph) {
+    for (const key of memoryKeysReadByStage(stage)) {
+      const writerKeys = writers.get(key) ?? [];
+      const ambiguous = writerKeys.length > 1;
+      for (const writerKey of writerKeys) {
+        if (writerKey === stage.key) continue;
+        edges.push({
+          id: `mem:${key}:${writerKey}->${stage.key}`,
+          source: writerKey,
+          target: stage.key,
+          type: 'default',
+          animated: true,
+          label: key,
+          style: { stroke: ambiguous ? '#dc2626' : '#7c3aed', strokeDasharray: '4 3' },
+        });
+      }
+    }
+  }
+  return edges;
+}
+
+function groupIssuesByStage(issues: ValidationIssue[]): Map<string, ValidationIssue[]> {
+  const byStage = new Map<string, ValidationIssue[]>();
+  for (const issue of issues) {
+    const { stageKey } = parseValidationPath(issue.path);
+    if (!stageKey) continue;
+    const list = byStage.get(stageKey);
+    if (list) list.push(issue);
+    else byStage.set(stageKey, [issue]);
+  }
+  return byStage;
+}
+
+function graphLevelIssues(issues: ValidationIssue[]): ValidationIssue[] {
+  return issues.filter((issue) => !parseValidationPath(issue.path).stageKey);
+}
+
+function stageIssueBadge(issues: ValidationIssue[] | undefined): string | null {
+  if (!issues || issues.length === 0) return null;
+  const errors = issues.filter((i) => i.severity === 'error').length;
+  const warnings = issues.filter((i) => i.severity === 'warning').length;
+  const parts: string[] = [];
+  if (errors) parts.push(`✗ ${errors}`);
+  if (warnings) parts.push(`⚠ ${warnings}`);
+  return parts.join(' ');
+}
+
 /** Splices `graph[fromIndex]` out and back in at `toIndex`. Pure so it's
  * testable without React or @xyflow/react. */
 function moveStage(graph: StageDef[], fromIndex: number, toIndex: number): StageDef[] {
@@ -54,17 +135,19 @@ function moveStage(graph: StageDef[], fromIndex: number, toIndex: number): Stage
 
 function StageGraphCanvas({
   graph,
+  issuesByStage,
   onDeleteStage,
   onReorder,
   onSelectStage,
 }: {
   graph: StageDef[];
+  issuesByStage: Map<string, ValidationIssue[]>;
   onDeleteStage: (key: string) => void;
   onReorder: (fromIndex: number, toIndex: number) => void;
   onSelectStage: (key: string) => void;
 }) {
   const nodes = useMemo(() => stageNodes(graph), [graph]);
-  const edges = useMemo(() => prevEdges(graph), [graph]);
+  const edges = useMemo(() => [...prevEdges(graph), ...memoryEdges(graph)], [graph]);
 
   if (graph.length === 0) {
     return <p>Add your first stage to begin building this blueprint.</p>;
@@ -85,14 +168,17 @@ function StageGraphCanvas({
   return (
     <div>
       <ul>
-        {graph.map((stage) => (
-          <li key={stage.key}>
-            {stage.label || stage.key}{' '}
-            <button type="button" onClick={() => onDeleteStage(stage.key)}>
-              Delete
-            </button>
-          </li>
-        ))}
+        {graph.map((stage) => {
+          const badge = stageIssueBadge(issuesByStage.get(stage.key));
+          return (
+            <li key={stage.key}>
+              {stage.label || stage.key} {badge && <strong>{badge}</strong>}{' '}
+              <button type="button" onClick={() => onDeleteStage(stage.key)}>
+                Delete
+              </button>
+            </li>
+          );
+        })}
       </ul>
       <div style={{ height: 480, border: '1px solid #ccc' }}>
         <ReactFlowProvider>
@@ -176,6 +262,12 @@ function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
   });
   const [draft, setDraft] = useState<BlueprintDraft | null>(null);
   const [selectedStageKey, setSelectedStageKey] = useState<string | null>(null);
+  const [validation, setValidation] = useState<{
+    issues: ValidationIssue[];
+    runnable: boolean;
+  } | null>(null);
+  const [validationFailed, setValidationFailed] = useState(false);
+  const validateTimer = useRef<number>();
 
   useEffect(() => {
     if (draft || !versions.data) return;
@@ -192,6 +284,28 @@ function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
       budget: latest.budget,
     });
   }, [draft, versions.data]);
+
+  /** Debounce key: content equality, not `draft`'s referential identity —
+   * mirrors `StageInspector`'s `configKey` idiom (Chunk 4). */
+  const draftKey = draft ? JSON.stringify(draft) : '';
+
+  useEffect(() => {
+    if (!draft) return;
+    window.clearTimeout(validateTimer.current);
+    validateTimer.current = window.setTimeout(() => {
+      api
+        .validateBlueprint(blueprintId, draft)
+        .then((result) => {
+          setValidation(result);
+          setValidationFailed(false);
+        })
+        .catch(() => setValidationFailed(true));
+    }, 450);
+    return () => window.clearTimeout(validateTimer.current);
+  }, [blueprintId, draftKey]);
+
+  const issuesByStage = useMemo(() => groupIssuesByStage(validation?.issues ?? []), [validation]);
+  const bannerIssues = useMemo(() => graphLevelIssues(validation?.issues ?? []), [validation]);
 
   if (versions.isLoading || !draft) {
     return <p>Loading…</p>;
@@ -220,8 +334,23 @@ function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
   return (
     <section>
       <h1>Blueprint canvas</h1>
+      <p>
+        {validationFailed
+          ? "couldn't validate — check your connection"
+          : validation && (validation.runnable ? '✓ Runnable' : '✗ Not runnable yet')}
+      </p>
+      {bannerIssues.length > 0 && (
+        <ul>
+          {bannerIssues.map((issue, i) => (
+            <li key={i}>
+              {issue.severity === 'error' ? '✗' : '⚠'} {issue.path}: {issue.message}
+            </li>
+          ))}
+        </ul>
+      )}
       <StageGraphCanvas
         graph={draft.graph}
+        issuesByStage={issuesByStage}
         onDeleteStage={deleteStage}
         onReorder={reorderStage}
         onSelectStage={setSelectedStageKey}
@@ -234,6 +363,7 @@ function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
           inputs={draft.inputs}
           roles={draft.roles}
           assets={assets.data ?? []}
+          issues={issuesByStage.get(selectedStageKey) ?? []}
           onChange={updateStage}
         />
       )}

@@ -537,3 +537,115 @@ includeInputs: false}` — `params: {}` is required in the seed because
   `media-output.e2e.test.ts`), `pnpm format:check` (clean after `prettier
 --write` on `StageInspector.tsx`, the only file this chunk touched) —
   all green.
+
+### Chunk 7a — validation wiring + memory-edge arcs
+
+Chunk 7 is split into two passes; this is 7a: `parseValidationPath()`, the
+debounced `POST /blueprints/:id/validate` call, a graph/node-level overlay,
+and the memory-edge arcs. Per-field inline highlighting inside
+`StageInspector` is explicitly deferred to 7b — `StageInspector.tsx`'s
+internals are untouched beyond accepting a new, currently-unused `issues`
+prop (see below).
+
+- **`parseValidationPath()`** (new, `apps/web/src/lib/parse-validation-path.ts`)
+  returns `{stageKey?, region?, name?, raw}` — `raw` is always the original
+  path string, unconditionally. For 7b's implementer:
+  - A path not starting with `stages.` (`memory.<key>`, `roles.<key>`, bare
+    `graph`/`roles`) returns just `{raw: path}` — no `stageKey`.
+  - A bare `stages.<key>` returns `{stageKey, region: 'stage', raw}`.
+  - `stages.<key>.slots|context|config|output|approval|model|iterate|
+enabledWhen|instructions.<rest>` returns `{stageKey, region, name: rest,
+raw}` where `rest` is everything after the region segment, dot-joined
+    (so a nested Ajv `config` violation like `config.bar.baz` yields
+    `name: 'bar.baz'`, not just `'bar'`). When there's no `rest` (shouldn't
+    normally happen for these regions, but defends against it),
+    `name` is omitted entirely rather than set to `undefined` —
+    `exactOptionalPropertyTypes` is on in this repo's `tsconfig.base.json`,
+    so `{name: undefined}` doesn't typecheck as omission.
+  - `stages.<key>.capability` and `stages.<key>.qc` return `{stageKey,
+region, raw}` with no `name` (they're scalar fields, not named
+    collection members).
+  - `stages.<key>.checks[<i>].<rest>` (bracket index is part of the same
+    dot-segment as `checks`, e.g. `checks[0]`, matched with a small regex)
+    returns `{stageKey, region: 'checks', name, raw}` where `name` is
+    `"<index>"` alone when the path ends at the check itself, or
+    `"<index>.<rest>"` (e.g. `"0.refs.foo"`, `"2.params.bar"`) when there's
+    a sub-field — split on the first `.` to recover the index as a string.
+  - **One shape the "exhaustive" list in the plan doesn't call out**:
+    `checkFirstStagePrev` (the "`{from:'prev'}` invalid on first stage"
+    error) emits `stages.<key>.<name>` directly — `name` being the slot or
+    context field name itself, with **no** `slots`/`context` segment in
+    between (confirmed by reading the emit site directly, not assumed).
+    This doesn't match any recognized region keyword, so it falls into the
+    parser's default case: `{stageKey, name: '<name>', raw}` with `region`
+    left `undefined`. 7b can't tell from this alone whether `<name>` is a
+    slot or a context key — if that distinction matters, 7b will need to
+    cross-reference the stage's own `slots`/`context` objects.
+  - Any other unrecognized shape under `stages.<key>.*` also falls back to
+    this same default case (`{stageKey, name: <everything after the
+stage key>, raw}`) rather than throwing.
+- **Debounce**: `EditBlueprintCanvas` gained a second `useEffect`/`useRef`
+  pair mirroring `StageInspector`'s Chunk 4 `resolveTimer` idiom exactly —
+  `window.setTimeout`/`window.clearTimeout` on a `useRef<number>`, gated on
+  a `JSON.stringify(draft)` content key (not `draft`'s object identity),
+  450ms delay. Calls `api.validateBlueprint(blueprintId, draft)`; on
+  success stores `{issues, runnable}` in state and clears a `validationFailed`
+  flag; on rejection (network error, etc.) sets `validationFailed` instead
+  of touching the previous `validation` result, so a transient failure
+  doesn't wipe out the last-known-good overlay. `validation` starts `null`
+  and stays `null` until the first successful round-trip.
+- **Overlay**: `groupIssuesByStage()` and `graphLevelIssues()` (both pure,
+  in `BlueprintCanvasPage.tsx`, built on `parseValidationPath()`) split
+  `validation.issues` into per-stage buckets vs. the ones with no
+  `stageKey`. Per-stage counts render as a plain `✗ <n> ⚠ <n>` string next
+  to each stage's `<li>` in the existing delete-button list. Graph-level
+  issues render as a `<ul>` banner above the canvas. A top-level `<p>`
+  shows `✓ Runnable` / `✗ Not runnable yet` once a `validation` result
+  exists, or a "couldn't validate" note when the last request failed —
+  no icon library, plain text/unicode glyphs only, matching this file's
+  existing convention (no UI kit anywhere in this phase).
+- **`StageInspector` hand-off**: gained an optional `issues?: ValidationIssue[]`
+  prop, passed from `BlueprintCanvasPage` as `issuesByStage.get(selectedStageKey) ?? []`.
+  Destructured as `issues: _issues` (renamed, unused) so it doesn't trip
+  `@typescript-eslint/no-unused-vars`'s `argsIgnorePattern: '^_'` while
+  keeping the external prop name `issues` for 7b to just start reading.
+  Nothing else in `StageInspector.tsx` was touched.
+- **`memory-writers.ts`**: added `deriveMemoryWriters(graph): Map<string,
+string[]>` (memory key → stage keys that declare `writes[key]`, in graph
+  order, duplicates preserved per-key never deduped since a key legitimately
+  written by two stages is exactly the "ambiguous" case the arcs need to
+  show). `deriveMemoryKeys()` is now `[...deriveMemoryWriters(graph).keys()]`
+  — no second scan of `stage.writes` anywhere in the codebase.
+- **Memory-edge arcs**: new `memoryKeysReadByStage()` and `memoryEdges()` in
+  `BlueprintCanvasPage.tsx` (not `memory-writers.ts` — this half is
+  reader-side and edge-shaped, judged to belong with the other edge
+  computation, i.e. next to `prevEdges()`). `memoryKeysReadByStage()` scans
+  a stage's `slots`, `context`, `iterate.over`, and every script check's
+  `refs` for `{from:'memory'}` — the same `Ref` shape appears uniformly in
+  all four, so one small helper covers them. `memoryEdges()` joins that
+  against `deriveMemoryWriters()`: one `@xyflow/react` `Edge` per
+  (writer, reader) pair, `id: 'mem:<key>:<writer>-><reader>'`, `type:
+'default'`, `animated: true`, `label: <memoryKey>`, and `style.stroke`
+  `'#7c3aed'` (purple) for a single-writer key or `'#dc2626'` (red,
+  matching the error/warning red used elsewhere) for a key with more than
+  one writer — every writer still gets its own edge, none suppressed or
+  merged, per Locked Decision 6. A stage reading a key it also writes
+  itself is skipped (no self-loop edge) — not spec'd either way, judged
+  safer than a degenerate self-pointing arc. `StageGraphCanvas`'s edges
+  are now `[...prevEdges(graph), ...memoryEdges(graph)]`; `prev` edges are
+  visually unchanged (default styling, no color/dash), so the two edge
+  kinds are easy to tell apart at a glance.
+- No unit tests added for `parseValidationPath()`/`memory-writers.ts` —
+  still no test runner configured for `apps/web`, consistent with every
+  prior chunk's precedent; the plan's own "Tests and exit criteria" section
+  for Chunk 7 assumed one would exist by now, but it doesn't yet.
+- Verification: `pnpm --filter @reefcraft/shared build` (clean, untouched),
+  `pnpm --filter @reefcraft/web typecheck` (clean — needed two small fixes
+  for this repo's `exactOptionalPropertyTypes`/`noUncheckedIndexedAccess`
+  settings: omit `name` entirely rather than assign it `undefined`, and
+  default the regex capture group to `''` since `noUncheckedIndexedAccess`
+  types it as possibly-`undefined`), `pnpm --filter @reefcraft/web build`
+  (clean, same pre-existing chunk-size warning), `pnpm lint` (0 errors,
+  same 1 pre-existing unrelated warning in `media-output.e2e.test.ts`),
+  `pnpm format:check` (clean after `prettier --write` on the two files
+  this chunk's first draft left unformatted) — all green.

@@ -2,16 +2,23 @@ import type { StageDef } from '@reefcraft/shared';
 
 /**
  * Locked Decision 6 — memory-writer lookup is derived client-side, never a
- * new API field. This is the flat, deduped key list `BindingPicker`'s
- * `memory` step needs; Chunk 7 extends this file for edge-drawing
- * (which stage(s) wrote a key), not just the key names.
+ * new API field, purely for `BindingPicker`'s `memory` step and Chunk 7's
+ * edge-drawing. It never re-decides validity (e.g. multiple writers for one
+ * key) — that stays exclusively server-authoritative via
+ * `POST /blueprints/:id/validate`.
  */
-export function deriveMemoryKeys(graph: StageDef[]): string[] {
-  const keys = new Set<string>();
+export function deriveMemoryWriters(graph: StageDef[]): Map<string, string[]> {
+  const writers = new Map<string, string[]>();
   for (const stage of graph) {
     for (const key of Object.keys(stage.writes ?? {})) {
-      keys.add(key);
+      const existing = writers.get(key);
+      if (existing) existing.push(stage.key);
+      else writers.set(key, [stage.key]);
     }
   }
-  return [...keys];
+  return writers;
+}
+
+export function deriveMemoryKeys(graph: StageDef[]): string[] {
+  return [...deriveMemoryWriters(graph).keys()];
 }

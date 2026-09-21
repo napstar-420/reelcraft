@@ -17,6 +17,7 @@ import type {
   EnabledWhen,
   QcDef,
   ModelPin,
+  ValidationIssue,
 } from '@reefcraft/shared';
 
 /** A shallow, non-recursive view of the `JsonSchema` dialect (§4.2) used only
@@ -551,6 +552,7 @@ export function StageInspector({
   inputs,
   roles,
   assets,
+  issues: _issues,
   onChange,
 }: {
   stageKey: string;
@@ -558,6 +560,9 @@ export function StageInspector({
   inputs: InputDef[];
   roles: RoleDef[];
   assets: Array<{ id: string; name: string }>;
+  /** Chunk 7a hand-off — this stage's validation issues, unused until 7b
+   * wires per-field inline highlighting from them. */
+  issues?: ValidationIssue[];
   onChange: (updated: StageDef) => void;
 }) {
   const capabilities = useQuery({ queryKey: ['capabilities'], queryFn: api.listCapabilities });
