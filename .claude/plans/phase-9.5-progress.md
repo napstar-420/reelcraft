@@ -358,3 +358,97 @@ code:''}`) — chosen over a single type-then-add two-step flow since
   `pnpm lint` (0 errors, same 1 pre-existing unrelated warning in
   `media-output.e2e.test.ts`), `pnpm format:check` (clean after `prettier
 --write` on the one new file this chunk added) — all green.
+
+### Chunk 6a
+
+Chunk 6 was split into two passes per the plan's own risk callout (§Risk 1
+and 5). This pass implements only `retryLimit`, `budget`, `model`,
+`enabledWhen`. `qc`, `approval`, `iterate` are explicitly deferred to
+Chunk 6b — not started, not touched.
+
+- **Provider-discovery gap, confirmed and fixed** (plan's Risk 6): there
+  was no way to list registered providers — `ProviderRegistry` had `get()`
+  but no `list()`, and `GET /providers/:id/models` needs a provider id
+  already in hand. Added `ProviderRegistry.list(): string[]`
+  (`apps/api/src/provider/provider.registry.ts`, `[...this.adapters.keys()]`)
+  and `GET providers` on `CapabilityController`
+  (`apps/api/src/capability/capability.controller.ts`, alongside the
+  existing `GET providers/:id/models`, returning `this.providers.list()`)
+  — a pure wrap of existing registry data, no new logic, consistent with
+  Locked Decision 7's spirit. Confirmed the five registered providers via
+  `apps/api/src/provider/provider.module.ts`'s `onModuleInit`: `fake`,
+  `openrouter`, `elevenlabs`, `fal`, `deepgram`.
+- **`apps/web/src/api/client.ts`**: added `api.listProviders()` (`GET
+/providers` → `string[]`) and `api.listModelsForProvider(providerId)`
+  (`GET /providers/:id/models` → `ModelInfoDto[]`) — neither wrapper
+  existed before this chunk; `ModelInfoDto` is `{providerId, modelId,
+label, modality}`, unchanged from Phase 9, already exported from
+  `@reefcraft/shared`.
+- **New `apps/web/src/components/canvas/ModelPinEditor.tsx`** — the
+  reusable model-pin picker the plan calls out Chunk 6b will need for
+  `qc.model` (a full `ModelPin`, not the `PartialModelPin` `StageDef.model`
+  is). Built as **one component, not two**, via a `clearable?: boolean`
+  prop (default `true`):
+  - Renders a provider `<select>` (`api.listProviders`), a model `<select>`
+    scoped to the chosen provider (`api.listModelsForProvider`, disabled
+    until a provider is picked), an optional `version` text input, and a
+    free-form string-valued key/value list for `params` (`ModelInfo`/
+    `ModelInfoDto.capabilities` isn't a `JsonSchema` — plan's Risk 5 — so
+    `params` can't be driven through `SchemaForm`; this is the sanctioned
+    simplification, not a shortcut).
+  - `value: PartialModelPin | undefined`; every field the component itself
+    ever emits back through `onChange` is a concrete value (provider/
+    modelId as strings, possibly `''` if not yet chosen; `params` always an
+    object, never `undefined`) — so a caller that needs the stricter
+    `ModelPin` can pass `clearable={false}` (hides the "Unset model"
+    button, so `onChange` is never called with `undefined`) and cast the
+    non-`undefined` result directly, with no extra normalization needed.
+    **This is the exact hook Chunk 6b's `qc.model` should use**:
+    `<ModelPinEditor value={qc.model} onChange={(pin) => update({...qc,
+model: pin as ModelPin})} clearable={false} />`, seeding `qc.model`
+    with `{provider: '', modelId: '', params: {}}` when a `qc` block is
+    first added (since `QcDef.model` is a required `ModelPin`, not
+    optional).
+- **`StageInspector.tsx`** — four new sections after "Checks":
+  - **Retry limit**: a single number input on `stage.retryLimit`, `?? 0`
+    as the displayed fallback (the field is non-optional on `StageDef`, so
+    a real graph always has a value already; the fallback only covers an
+    edge case, not runtime data).
+  - **Budget**: new local `BudgetEditor` — two optional number inputs
+    (`stageCapUsd`/`qcCapUsd`). Clearing semantics: an empty input string
+    maps to `undefined` for that one field (`toNumberOrUndefined`, also
+    guards against `NaN` from a stray non-numeric value), and once **both**
+    fields are `undefined`, `onChange` is called with `undefined` for the
+    whole `budget` object rather than `{}` — chosen after checking
+    `apps/api/src/run-config/stage-def-layer.ts`, which only branches on
+    each sub-field's own `!== undefined` check and never distinguishes
+    `stage.budget` being `{}` vs `undefined` itself, so either is
+    functionally safe there; `undefined` was picked anyway to mirror the
+    field's own optionality (matches how `model`/`enabledWhen` clear too,
+    and how the rest of `StageDef`'s optional fields already round-trip
+    through this same inspector).
+  - **Model**: `ModelPinEditor` bound to `stage.model` directly (default
+    `clearable={true}`, so its "Unset model" button clears the whole field
+    back to `undefined`).
+  - **Enabled when**: new local `EnabledWhenEditor`. Reuses the `inputs:
+InputDef[]` prop `StageInspector` already receives for `BindingPicker`
+    (no new prop threading needed) — a `<select>` of `input.key`/
+    `input.label` pairs plus a plain text `equals` input. Kept `equals` as
+    a plain string for this pass rather than inferring/coercing to the
+    input's declared type (explicitly a nice-to-have per the plan, not
+    required); when `stage.enabledWhen` is unset, only a "+ add condition"
+    button renders (seeds `{input: inputs[0]?.key ?? '', equals: ''}`); a
+    "Remove condition" button clears it back to `undefined`.
+- No unit tests added — still no test runner configured for `apps/web`.
+  Backend change is a pure additive wrap with no branching logic, so no
+  new `apps/api` unit test was added either; the full e2e suite (below)
+  covers regression.
+- Verification: `pnpm --filter @reefcraft/shared build` (clean, untouched),
+  `pnpm --filter @reefcraft/api typecheck` (clean), `pnpm --filter
+@reefcraft/api exec vitest run -c vitest.e2e.config.ts` (32 files, 178
+  tests, all passing — zero regressions from the new `GET /providers`
+  route), `pnpm --filter @reefcraft/web typecheck` (clean), `pnpm --filter
+@reefcraft/web build` (clean, same pre-existing chunk-size warning),
+  `pnpm lint` (0 errors, same 1 pre-existing unrelated warning in
+  `media-output.e2e.test.ts`), `pnpm format:check` (clean after `prettier
+--write` on the files this chunk touched) — all green.

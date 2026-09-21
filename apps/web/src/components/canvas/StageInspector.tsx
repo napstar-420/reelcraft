@@ -4,6 +4,7 @@ import { api } from '../../api/client';
 import { BindingPicker } from './BindingPicker';
 import { SchemaForm } from './SchemaForm';
 import { ChecksEditor } from './ChecksEditor';
+import { ModelPinEditor } from './ModelPinEditor';
 import type {
   StageDef,
   InputDef,
@@ -13,6 +14,7 @@ import type {
   OutputKind,
   SlotDef,
   JsonSchema,
+  EnabledWhen,
 } from '@reefcraft/shared';
 
 /** A shallow, non-recursive view of the `JsonSchema` dialect (§4.2) used only
@@ -122,6 +124,98 @@ function WritesEditor({
       ))}
       <button type="button" onClick={add}>
         + Add write
+      </button>
+    </div>
+  );
+}
+
+function toNumberOrUndefined(raw: string): number | undefined {
+  if (raw.trim() === '') return undefined;
+  const n = Number(raw);
+  return Number.isNaN(n) ? undefined : n;
+}
+
+/** `stageCapUsd`/`qcCapUsd`, both optional — an empty input clears its own
+ * field back to `undefined` rather than `0`/`NaN`, and once both are unset
+ * `onChange` is called with `undefined` for the whole `budget` object
+ * (mirrors `StageDef.budget` itself being optional, not `{}`). */
+function BudgetEditor({
+  budget,
+  onChange,
+}: {
+  budget: StageDef['budget'];
+  onChange: (budget: StageDef['budget']) => void;
+}) {
+  function set(patch: Partial<NonNullable<StageDef['budget']>>) {
+    const next = { ...budget, ...patch };
+    onChange(next.stageCapUsd === undefined && next.qcCapUsd === undefined ? undefined : next);
+  }
+
+  return (
+    <div>
+      <label>
+        Stage cap (USD)
+        <input
+          type="number"
+          value={budget?.stageCapUsd ?? ''}
+          onChange={(e) => set({ stageCapUsd: toNumberOrUndefined(e.target.value) })}
+        />
+      </label>
+      <label>
+        QC cap (USD)
+        <input
+          type="number"
+          value={budget?.qcCapUsd ?? ''}
+          onChange={(e) => set({ qcCapUsd: toNumberOrUndefined(e.target.value) })}
+        />
+      </label>
+    </div>
+  );
+}
+
+/** `input` is one of the blueprint's declared `InputDef.key`s; `equals` is
+ * kept as a plain string for this pass (coercing it to the input's declared
+ * shape is a nice-to-have, not required by Chunk 6a). */
+function EnabledWhenEditor({
+  enabledWhen,
+  inputs,
+  onChange,
+}: {
+  enabledWhen: EnabledWhen | undefined;
+  inputs: InputDef[];
+  onChange: (enabledWhen: EnabledWhen | undefined) => void;
+}) {
+  if (!enabledWhen) {
+    return (
+      <button type="button" onClick={() => onChange({ input: inputs[0]?.key ?? '', equals: '' })}>
+        + add condition
+      </button>
+    );
+  }
+
+  return (
+    <div>
+      <select
+        value={enabledWhen.input}
+        onChange={(e) => onChange({ ...enabledWhen, input: e.target.value })}
+      >
+        <option value="">Select an input…</option>
+        {inputs.map((input) => (
+          <option key={input.key} value={input.key}>
+            {input.label}
+          </option>
+        ))}
+      </select>
+      <label>
+        equals
+        <input
+          type="text"
+          value={String(enabledWhen.equals)}
+          onChange={(e) => onChange({ ...enabledWhen, equals: e.target.value })}
+        />
+      </label>
+      <button type="button" onClick={() => onChange(undefined)}>
+        Remove condition
       </button>
     </div>
   );
@@ -358,6 +452,38 @@ export function StageInspector({
           roles={roles}
           assets={assets}
           iterating={!!stage.iterate}
+        />
+      </div>
+
+      <div>
+        <h3>Retry limit</h3>
+        <label>
+          Retries
+          <input
+            type="number"
+            min={0}
+            value={stage.retryLimit ?? 0}
+            onChange={(e) => onChange({ ...stage, retryLimit: Number(e.target.value) || 0 })}
+          />
+        </label>
+      </div>
+
+      <div>
+        <h3>Budget</h3>
+        <BudgetEditor budget={stage.budget} onChange={(budget) => onChange({ ...stage, budget })} />
+      </div>
+
+      <div>
+        <h3>Model</h3>
+        <ModelPinEditor value={stage.model} onChange={(model) => onChange({ ...stage, model })} />
+      </div>
+
+      <div>
+        <h3>Enabled when</h3>
+        <EnabledWhenEditor
+          enabledWhen={stage.enabledWhen}
+          inputs={inputs}
+          onChange={(enabledWhen) => onChange({ ...stage, enabledWhen })}
         />
       </div>
     </section>

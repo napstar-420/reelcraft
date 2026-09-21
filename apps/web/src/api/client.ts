@@ -6,6 +6,7 @@ import type {
   RunDetailDto,
   CapabilityDto,
   ResolveCapabilityResponseDto,
+  ModelInfoDto,
   SaveTemplateDto,
   SaveTimelineDraftDto,
   TimelineEditorSessionDto,
@@ -149,6 +150,10 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ config }),
     }),
+
+  listProviders: () => request<string[]>('/providers'),
+  listModelsForProvider: (providerId: string) =>
+    request<ModelInfoDto[]>(`/providers/${providerId}/models`),
 
   saveTemplate: (dto: SaveTemplateDto) =>
     request<unknown>('/templates', { method: 'POST', body: JSON.stringify(dto) }),
