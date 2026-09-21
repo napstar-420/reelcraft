@@ -12,6 +12,7 @@
     "@reefcraft/shared": "workspace:*",
     "@reefcraft/timeline-composition": "workspace:*",
     "@remotion/player": "4.0.526",
+    "@xyflow/react": "^12.11.6",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^7.1.1",

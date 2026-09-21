@@ -19,4 +19,8 @@ export class ProviderRegistry {
     }
     return adapter;
   }
+
+  list(): string[] {
+    return [...this.adapters.keys()];
+  }
 }

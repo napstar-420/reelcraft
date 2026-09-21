@@ -22,6 +22,12 @@ export const RoleDef = z.object({
 });
 export type RoleDef = z.infer<typeof RoleDef>;
 
+export const CreateBlueprintDto = z.object({
+  channelId: z.string().min(1),
+  name: z.string().min(1),
+});
+export type CreateBlueprintDto = z.infer<typeof CreateBlueprintDto>;
+
 export const CreateBlueprintVersionDto = z.object({
   graph: z.array(StageDef),
   inputs: z.array(InputDef).default([]),

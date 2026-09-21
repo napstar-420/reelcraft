@@ -1,4 +1,4 @@
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { api } from '../api/client';
 
@@ -24,6 +24,7 @@ export function BlueprintsPage() {
   return (
     <section>
       <h1>Builtin templates</h1>
+      {channelId && <Link to={`/channels/${channelId}/build`}>Create custom blueprint</Link>}
       {templates.isLoading && <p>Loading…</p>}
       <ul>
         {templates.data?.map((t) => (

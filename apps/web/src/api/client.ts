@@ -2,15 +2,38 @@ import type {
   ChannelDto,
   CreateChannelDto,
   BlueprintVersionDto,
+  CreateBlueprintVersionDto,
   RunDetailDto,
   CapabilityDto,
   ResolveCapabilityResponseDto,
+  ModelInfoDto,
   SaveTemplateDto,
   SaveTimelineDraftDto,
   TimelineEditorSessionDto,
   CheckDef,
   JsonSchema,
+  ValidationIssue,
+  AssetDto,
 } from '@reefcraft/shared';
+
+/** `blueprint.service.ts#getBlueprint()`'s row shape — the whole `blueprint`
+ * table row (Chunk 3, Phase 9.5's binding-picker asset step needs the
+ * blueprint's `channelId`, which no existing endpoint exposed). */
+export type BlueprintDto = {
+  id: string;
+  channelId: string;
+  name: string;
+  currentVersionId: string | null;
+  archived: boolean;
+};
+
+/** `character.service.ts#list()`'s row shape, narrowed to the fields the
+ * canvas's role `characterId` picker actually needs — the full row (Phase 8)
+ * also carries `referenceSet`/`primaryRefId`/etc., not used here. */
+export type CharacterListItemDto = {
+  id: string;
+  name: string;
+};
 
 /** `template.service.ts#list()`'s row shape: every builtin plus the
  * caller's own `source: 'user'` templates, each with its latest version's
@@ -108,12 +131,39 @@ export const api = {
   createChannel: (dto: CreateChannelDto) =>
     request<ChannelDto>('/channels', { method: 'POST', body: JSON.stringify(dto) }),
 
+  createBlueprint: (channelId: string, name: string) =>
+    request<{ blueprintId: string }>('/blueprints', {
+      method: 'POST',
+      body: JSON.stringify({ channelId, name }),
+    }),
+  getBlueprint: (blueprintId: string) => request<BlueprintDto>(`/blueprints/${blueprintId}`),
+  createBlueprintVersion: (blueprintId: string, dto: CreateBlueprintVersionDto) =>
+    request<BlueprintVersionDto>(`/blueprints/${blueprintId}/versions`, {
+      method: 'POST',
+      body: JSON.stringify(dto),
+    }),
+  listBlueprintVersions: (blueprintId: string) =>
+    request<BlueprintVersionDto[]>(`/blueprints/${blueprintId}/versions`),
+  validateBlueprint: (blueprintId: string, dto: CreateBlueprintVersionDto) =>
+    request<{ issues: ValidationIssue[]; runnable: boolean }>(
+      `/blueprints/${blueprintId}/validate`,
+      { method: 'POST', body: JSON.stringify(dto) },
+    ),
+
+  listChannelAssets: (channelId: string) => request<AssetDto[]>(`/channels/${channelId}/assets`),
+  listCharacters: (channelId: string) =>
+    request<CharacterListItemDto[]>(`/channels/${channelId}/characters`),
+
   listCapabilities: () => request<CapabilityDto[]>('/capabilities'),
   resolveCapability: (key: string, config: Record<string, unknown>) =>
     request<ResolveCapabilityResponseDto>(`/capabilities/${key}/resolve`, {
       method: 'POST',
       body: JSON.stringify({ config }),
     }),
+
+  listProviders: () => request<string[]>('/providers'),
+  listModelsForProvider: (providerId: string) =>
+    request<ModelInfoDto[]>(`/providers/${providerId}/models`),
 
   saveTemplate: (dto: SaveTemplateDto) =>
     request<unknown>('/templates', { method: 'POST', body: JSON.stringify(dto) }),

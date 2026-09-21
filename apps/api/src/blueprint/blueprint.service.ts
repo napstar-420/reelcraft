@@ -36,6 +36,15 @@ export class BlueprintService {
     return id;
   }
 
+  /** Chunk 3 (Phase 9.5) — the canvas needs a blueprint's `channelId` from
+   * just a `blueprintId` (e.g. to scope the asset picker); no existing
+   * endpoint exposed it. Matches `getVersion`'s not-found convention. */
+  async getBlueprint(id: string) {
+    const [row] = await this.db.select().from(blueprint).where(eq(blueprint.id, id)).limit(1);
+    if (!row) throw new Error(`Blueprint ${id} not found`);
+    return row;
+  }
+
   async createVersion(
     blueprintId: string,
     dto: CreateBlueprintVersionDto,

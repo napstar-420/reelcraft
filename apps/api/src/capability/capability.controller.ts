@@ -39,6 +39,11 @@ export class CapabilityController {
     return this.styles.list();
   }
 
+  @Get('providers')
+  listProviders() {
+    return this.providers.list();
+  }
+
   @Get('providers/:id/models')
   listModels(@Param('id') id: string) {
     return this.providers.get(id).listModels();
