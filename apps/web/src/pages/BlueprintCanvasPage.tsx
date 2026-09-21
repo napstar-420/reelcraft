@@ -201,6 +201,67 @@ function StageGraphCanvas({
   );
 }
 
+/** Chunk 9 — an alternative to the blank-create form below: pick a
+ * `blueprint`-kind template and instantiate it instead of starting empty.
+ * Reuses the same `onCreated` hand-off as the blank path, so
+ * `BlueprintCanvasPage` doesn't need a second transition-to-edit-mode
+ * path. */
+function StartFromTemplate({
+  channelId,
+  onCreated,
+}: {
+  channelId: string;
+  onCreated: (blueprintId: string) => void;
+}) {
+  const templates = useQuery({ queryKey: ['templates'], queryFn: api.listTemplates });
+  const blueprintTemplates = (templates.data ?? []).filter((t) => t.kind === 'blueprint');
+  const [templateId, setTemplateId] = useState('');
+  const [runCapUsd, setRunCapUsd] = useState(5);
+
+  const instantiate = useMutation({
+    mutationFn: () => api.instantiateTemplate(templateId, channelId, runCapUsd),
+    onSuccess: (result) => {
+      if ('blueprintId' in result) onCreated(result.blueprintId);
+    },
+  });
+
+  if (templates.isLoading) return <p>Loading templates…</p>;
+  if (blueprintTemplates.length === 0) return null;
+
+  return (
+    <section>
+      <h2>Or start from a template</h2>
+      <label>
+        Template
+        <select value={templateId} onChange={(e) => setTemplateId(e.target.value)}>
+          <option value="">Select a template…</option>
+          {blueprintTemplates.map((t) => (
+            <option key={t.id} value={t.id}>
+              {t.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label>
+        Run cap (USD)
+        <input
+          type="number"
+          value={runCapUsd}
+          onChange={(e) => setRunCapUsd(Number(e.target.value))}
+        />
+      </label>
+      <button
+        type="button"
+        onClick={() => instantiate.mutate()}
+        disabled={!templateId || instantiate.isPending}
+      >
+        {instantiate.isPending ? 'Instantiating…' : 'Instantiate from template'}
+      </button>
+      {instantiate.isError && <p role="alert">{instantiate.error.message}</p>}
+    </section>
+  );
+}
+
 function CreateBlueprintForm({
   channelId,
   onCreated,
@@ -242,6 +303,7 @@ function CreateBlueprintForm({
         </button>
       </form>
       {error && <p role="alert">{error}</p>}
+      <StartFromTemplate channelId={channelId} onCreated={onCreated} />
     </section>
   );
 }
@@ -313,6 +375,82 @@ function SaveAndDryRun({
         {dryRun.isPending ? 'Starting…' : 'Dry run'}
       </button>
       {dryRun.isError && <p role="alert">{dryRun.error.message}</p>}
+    </section>
+  );
+}
+
+/** Chunk 9 — saves the current draft graph as a reusable `blueprint`-kind
+ * template. Mirrors `SchemaEditor.tsx`'s save-as-template form pattern
+ * exactly (name/description/tags inputs, `api.saveTemplate`,
+ * `ApiError`/`.issues` rendering on failure), just with `kind: 'blueprint'`
+ * and `body: graph` instead of a schema body. */
+function SaveAsTemplate({ graph }: { graph: StageDef[] }) {
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+  const [tagsText, setTagsText] = useState('');
+
+  const save = useMutation({
+    mutationFn: () =>
+      api.saveTemplate({
+        kind: 'blueprint',
+        name,
+        description,
+        tags: tagsText
+          .split(',')
+          .map((t) => t.trim())
+          .filter(Boolean),
+        body: graph,
+      }),
+  });
+
+  const issues =
+    save.error instanceof ApiError ? (save.error.issues as ValidationIssue[]) : undefined;
+
+  return (
+    <section>
+      <h2>Save as template</h2>
+
+      <label>
+        Name
+        <input value={name} onChange={(e) => setName(e.target.value)} />
+      </label>
+      <label>
+        Description
+        <input value={description} onChange={(e) => setDescription(e.target.value)} />
+      </label>
+      <label>
+        Tags (comma-separated)
+        <input value={tagsText} onChange={(e) => setTagsText(e.target.value)} />
+      </label>
+
+      <div>
+        <button onClick={() => save.mutate()} disabled={save.isPending || !name}>
+          Save as template
+        </button>
+      </div>
+
+      {save.isSuccess && (
+        <p>
+          Saved as template <code>{JSON.stringify(save.data)}</code>
+        </p>
+      )}
+
+      {save.isError && (
+        <div>
+          <h3>Save failed</h3>
+          {issues ? (
+            <ul>
+              {issues.map((issue, i) => (
+                <li key={i}>
+                  [{issue.severity}] <code>{issue.path}</code>: {issue.message}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p role="alert">{save.error.message}</p>
+          )}
+        </div>
+      )}
     </section>
   );
 }
@@ -455,6 +593,7 @@ function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
         />
       )}
       <SaveAndDryRun blueprintId={blueprintId} draft={draft} runnable={validation?.runnable} />
+      <SaveAsTemplate graph={draft.graph} />
     </section>
   );
 }

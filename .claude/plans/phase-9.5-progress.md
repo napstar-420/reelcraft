@@ -13,7 +13,7 @@ Branch: `codex/phase9.5-visual-canvas`
 - [x] Chunk 6 — Remaining StageDef fields (qc, retryLimit, approval, budget, model, enabledWhen, iterate)
 - [x] Chunk 7 — Live validation overlay + memory-edge arcs
 - [x] Chunk 8 — Save, create-new flow, and dry-run integration
-- [ ] Chunk 9 — Template library integration
+- [x] Chunk 9 — Template library integration
 
 ## Notes / deviations from plan
 
@@ -824,3 +824,65 @@ lint` (0 errors, same 1 pre-existing unrelated warning in
   `media-output.e2e.test.ts`), `pnpm format:check` (clean after `prettier
 --write` on the one new file, `BlueprintSettingsPanel.tsx`, this chunk
   added) — all green.
+
+### Chunk 9 — template library integration (tie-back to Phase 9)
+
+Final chunk of Phase 9.5. Frontend-only, both features landed entirely
+inside `apps/web/src/pages/BlueprintCanvasPage.tsx` — no changes to
+`TemplateLibraryPanel.tsx`, `SchemaEditor.tsx`, `apps/web/src/api/client.ts`,
+or any backend/`packages/shared` file, since everything needed
+(`api.listTemplates`, `api.instantiateTemplate`, `api.saveTemplate`) already
+existed per the task's own confirmed facts.
+
+- **Start from a template**: new `StartFromTemplate` component, rendered
+  inside `CreateBlueprintForm` right after the existing blank-create form
+  (not replacing it — both paths coexist). Fetches `api.listTemplates()`
+  via `useQuery(['templates'], ...)` (same query key
+  `TemplateLibraryPanel.tsx`/`BlueprintsPage.tsx` already use, so this page
+  shares that cache entry), filters to `t.kind === 'blueprint'`, and renders
+  nothing (`return null`) if that filtered list is empty rather than showing
+  an empty picker. A `<select>` of template names plus a `runCapUsd` number
+  input (defaulted to `5`, matching `TemplateLibraryPanel.tsx`'s own
+  default) and an "Instantiate from template" button, wired through a
+  `useMutation` calling `api.instantiateTemplate(templateId, channelId,
+runCapUsd)`. On success, narrows the `InstantiateTemplateResult` union via
+  `'blueprintId' in result` (the task's specified idiom — `blueprintId`
+  specifically, not `BlueprintsPage.tsx`'s existing `'id' in version` check,
+  since only the blueprint branch has `blueprintId` and that's the field
+  actually needed) and calls the same `onCreated(result.blueprintId)`
+  callback the blank-create path already uses — `BlueprintCanvasPage`'s
+  existing `createdBlueprintId` state and transition-to-edit-mode logic
+  required zero changes, exactly as scoped.
+- **Save as template**: new `SaveAsTemplate` component, rendered at the
+  bottom of `EditBlueprintCanvas`'s JSX, right after the existing
+  `SaveAndDryRun` section. Mirrors `SchemaEditor.tsx`'s save-as-template
+  form pattern verbatim — the same name/description/comma-separated-tags
+  inputs, the same `useMutation`-backed save button disabled on
+  `save.isPending || !name`, the same success line
+  (`Saved as template <code>{JSON.stringify(save.data)}</code>`), and the
+  same `ApiError`/`.issues` failure rendering (a `<ul>` of
+  `[severity] path: message` when `.issues` parses as `ValidationIssue[]`,
+  else a plain `<p role="alert">`). The only differences from
+  `SchemaEditor.tsx`: `kind: 'blueprint'` instead of `'schema'`, and
+  `body: graph` (the current draft's `StageDef[]`, passed in as a prop from
+  `draft.graph`) instead of a parsed `JsonSchema` — there's no JSON-parse
+  step here since the graph is already a typed value, not textarea text.
+- **Deviation**: the plan's "Primary files" list also named
+  `TemplateLibraryPanel.tsx` as a "minor extension" target, but nothing in
+  either of this chunk's two features required touching it — `listTemplates`
+  and `instantiateTemplate` were both already public, general-purpose
+  `api` functions, not private to that component. Left untouched, per the
+  task's own ground rules.
+- No unit tests added — still no test runner configured for `apps/web`,
+  consistent with every prior chunk's precedent.
+- Verification: `pnpm --filter @reefcraft/shared build` (clean, untouched),
+  `pnpm --filter @reefcraft/web typecheck` (clean), `pnpm --filter
+@reefcraft/web build` (clean, same pre-existing chunk-size warning), `pnpm
+lint` (0 errors, same 1 pre-existing unrelated warning in
+  `media-output.e2e.test.ts`), `pnpm format:check` (clean, no `--write`
+  needed) — all green.
+
+**Phase 9.5 is now complete — all 9 chunks (1, 2, 3, 4, 5, 6a, 6b, 7a, 7b, 8, 9) are checked off above.** The canvas supports full round-trip authoring
+of a blueprint's stage graph with no JSON-authoring surface anywhere in the
+product, live validation, save, dry-run, and now ties back into Phase 9's
+template library in both directions.
