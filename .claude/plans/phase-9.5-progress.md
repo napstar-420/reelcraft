@@ -52,7 +52,7 @@ Branch: `codex/phase9.5-visual-canvas`
     `listBlueprintVersions`, seeds the draft from the highest-`version`
     entry's `graph`/`inputs`/`roles`/`defaults`/`budget`, or an empty
     draft (`{graph: [], inputs: [], roles: [], defaults: {}, budget:
-    {runCapUsd: 5}}`) when the list is empty.
+{runCapUsd: 5}}`) when the list is empty.
   - The draft is plain local `useState`, seeded once via a guarded
     `useEffect` (no React Query mutation) per the chunk's spec.
 - Canvas rendering: one node per `graph` entry positioned at
@@ -80,6 +80,6 @@ Branch: `codex/phase9.5-visual-canvas`
   `pnpm --filter @reefcraft/api typecheck`, the new e2e test (3/3 passed),
   the full e2e regression suite (31 files / 176 tests, all passed),
   `pnpm --filter @reefcraft/web typecheck`/`build` (both clean), `pnpm
-  lint` (0 errors, 1 pre-existing unrelated warning in
+lint` (0 errors, 1 pre-existing unrelated warning in
   `media-output.e2e.test.ts`), and `pnpm format:check` (clean) — all run
   and all green.
