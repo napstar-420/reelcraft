@@ -668,7 +668,7 @@ passed into `StageInspector` before this pass started.
   no existing shared-component module to put it in and a 10-line function
   didn't justify creating one.
 - **Matching issues to fields** (`StageInspector.tsx`): one `parsedIssues =
-  issues.map(issue => ({issue, parsed: parseValidationPath(issue.path)}))`
+issues.map(issue => ({issue, parsed: parseValidationPath(issue.path)}))`
   computed once per render, filtered per section via a local `issuesFor(predicate)`
   helper:
   - `region: 'capability'` → under the Capability `<select>`.
@@ -686,9 +686,9 @@ passed into `StageInspector` before this pass started.
     on `region` alone (none of these regions carry a `name` this pass
     needs to sub-attribute against, per the task spec).
   - `region: 'checks'`: `name` split into `"<index>[.<rest>]"` — matched
-    by `p.name === String(index) || p.name?.startsWith(\`${index}.\`)` —
-    and handed to `ChecksEditor` pre-bucketed by index (see below), not
-    sub-attributed further to `key`/`code`/`params`/`refs.<name>` within a
+    by `p.name === String(index) || p.name?.startsWith(\`${index}.\`)`—
+and handed to`ChecksEditor`pre-bucketed by index (see below), not
+sub-attributed further to`key`/`code`/`params`/`refs.<name>` within a
     check, per the task spec.
   - `region: undefined` (the `checkFirstStagePrev` fallback — a bare name
     with no region prefix): if `name` matches one of this stage's resolved
