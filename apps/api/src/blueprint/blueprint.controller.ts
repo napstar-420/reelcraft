@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Param, ParseIntPipe, Post } from '@nestjs/common';
-import { CreateBlueprintVersionDto, StartDryRunDto } from '@reefcraft/shared';
+import { CreateBlueprintDto, CreateBlueprintVersionDto, StartDryRunDto } from '@reefcraft/shared';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { BlueprintService } from './blueprint.service';
 import { RunService } from '../run/run.service';
@@ -10,6 +10,12 @@ export class BlueprintController {
     private readonly blueprints: BlueprintService,
     private readonly runs: RunService,
   ) {}
+
+  @Post()
+  async create(@Body(new ZodValidationPipe(CreateBlueprintDto)) dto: CreateBlueprintDto) {
+    const blueprintId = await this.blueprints.ensureBlueprint(dto.channelId, dto.name);
+    return { blueprintId };
+  }
 
   @Post(':id/versions')
   createVersion(

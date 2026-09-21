@@ -2,6 +2,7 @@ import type {
   ChannelDto,
   CreateChannelDto,
   BlueprintVersionDto,
+  CreateBlueprintVersionDto,
   RunDetailDto,
   CapabilityDto,
   ResolveCapabilityResponseDto,
@@ -10,6 +11,7 @@ import type {
   TimelineEditorSessionDto,
   CheckDef,
   JsonSchema,
+  ValidationIssue,
 } from '@reefcraft/shared';
 
 /** `template.service.ts#list()`'s row shape: every builtin plus the
@@ -107,6 +109,24 @@ export const api = {
   listChannels: () => request<ChannelDto[]>('/channels'),
   createChannel: (dto: CreateChannelDto) =>
     request<ChannelDto>('/channels', { method: 'POST', body: JSON.stringify(dto) }),
+
+  createBlueprint: (channelId: string, name: string) =>
+    request<{ blueprintId: string }>('/blueprints', {
+      method: 'POST',
+      body: JSON.stringify({ channelId, name }),
+    }),
+  createBlueprintVersion: (blueprintId: string, dto: CreateBlueprintVersionDto) =>
+    request<BlueprintVersionDto>(`/blueprints/${blueprintId}/versions`, {
+      method: 'POST',
+      body: JSON.stringify(dto),
+    }),
+  listBlueprintVersions: (blueprintId: string) =>
+    request<BlueprintVersionDto[]>(`/blueprints/${blueprintId}/versions`),
+  validateBlueprint: (blueprintId: string, dto: CreateBlueprintVersionDto) =>
+    request<{ issues: ValidationIssue[]; runnable: boolean }>(
+      `/blueprints/${blueprintId}/validate`,
+      { method: 'POST', body: JSON.stringify(dto) },
+    ),
 
   listCapabilities: () => request<CapabilityDto[]>('/capabilities'),
   resolveCapability: (key: string, config: Record<string, unknown>) =>
