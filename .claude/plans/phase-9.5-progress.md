@@ -12,7 +12,7 @@ Branch: `codex/phase9.5-visual-canvas`
 - [x] Chunk 5 — Checks editor
 - [x] Chunk 6 — Remaining StageDef fields (qc, retryLimit, approval, budget, model, enabledWhen, iterate)
 - [x] Chunk 7 — Live validation overlay + memory-edge arcs
-- [ ] Chunk 8 — Save, create-new flow, and dry-run integration
+- [x] Chunk 8 — Save, create-new flow, and dry-run integration
 - [ ] Chunk 9 — Template library integration
 
 ## Notes / deviations from plan
@@ -725,3 +725,102 @@ sub-attributed further to`key`/`code`/`params`/`refs.<name>` within a
   pre-existing unrelated warning in `media-output.e2e.test.ts`), `pnpm
 format:check` (clean after `prettier --write` on the two files this
   chunk touched) — all green.
+
+### Chunk 8 — save, create-new flow, and dry-run integration
+
+Closes the loop: `draft.inputs`/`draft.roles`/`draft.budget` previously had
+no editor anywhere on the canvas (only `draft.graph` was editable, via
+Chunks 2-7); there was also no Save or Dry-run action on the page at all.
+"Create-new flow" (per point 2 of the plan's own Chunk 8 section) was
+already fully wired up back in Chunk 1 (`BlueprintsPage.tsx`'s "Create
+custom blueprint" link → `CreateBlueprintForm` → `POST /blueprints` →
+switches straight into `EditBlueprintCanvas`), so this pass is Save +
+settings editor + Dry-run only.
+
+- **New `apps/web/src/components/canvas/BlueprintSettingsPanel.tsx`** —
+  props landed as `{inputs: InputDef[]; roles: RoleDef[]; budget: {runCapUsd:
+number}; channelId: string; onChange: (patch: {inputs?: InputDef[]; roles?:
+RoleDef[]; budget?: {runCapUsd: number}}) => void}` (a local patch-object
+  type, not `Partial<Pick<BlueprintDraft, ...>>` as the plan sketched —
+  `BlueprintDraft` is a private type in `BlueprintCanvasPage.tsx` with no
+  export, and adding one just for this narrower shape wasn't worth it).
+  Always rendered above the stage graph canvas in `EditBlueprintCanvas`,
+  never gated behind stage selection.
+  - **Budget**: one `runCapUsd` number input.
+  - **Inputs**: a repeatable list (`InputsEditor`) — `key`/`label` text
+    inputs, `required` checkbox, an `accepts.kind` `<select>`
+    (`text`/`data`/`media.image`/`media.video`/`media.audio`) that reshapes
+    `accepts` via a small `buildAccepts()` switch (preserves the existing
+    `schema`/`cardinality` when switching between compatible kinds, defaults
+    fresh otherwise); `data` renders a nested `SchemaForm` for `accepts.schema`
+    against a **new, duplicated** `JSON_SCHEMA_META` constant — this is
+    `StageInspector.tsx`'s own `OUTPUT_SCHEMA_META` copied verbatim rather
+    than imported, since that file exports nothing today and a 15-line
+    constant didn't justify adding an export, matching this phase's own
+    precedent of small-piece duplication (Chunk 7b's `IssueList`); a media
+    kind renders a `cardinality` `<select>` (`one`/`many`). Add/remove
+    buttons, `nextFreeInputKey()` picks `input-N`.
+  - **Role** (`RoleEditor`, 0 or 1 per `CreateBlueprintVersionDto.roles.max(1)`):
+    mirrors `StageInspector`'s `QcEditor`/`ApprovalEditor` "+ add X" /
+    "Remove X" toggle over a single-element array. `key`/`label` text
+    inputs, `required` checkbox, a `characterId` `<select>` populated from
+    the new `api.listCharacters(channelId)` (see below). **`referenceBlobIds`
+    is never read or set anywhere in this editor** — confirmed left
+    entirely out of scope per the task's explicit instruction; a role
+    object built or edited through this UI always has it `undefined`.
+- **`apps/web/src/api/client.ts`**: added `CharacterListItemDto` (`{id:
+string; name: string}` — a narrowed view of `character.service.ts#list()`'s
+  full drizzle-row response, confirmed by reading `character.controller.ts`/
+  `character.service.ts` directly; only `id`/`name` are used by the picker)
+  and `api.listCharacters(channelId)` (`GET /channels/:channelId/characters`)
+  — confirmed missing before this chunk (no frontend file referenced
+  `characters` anywhere).
+- **`EditBlueprintCanvas`** (`BlueprintCanvasPage.tsx`) gained one new
+  `updateSettings(patch)` handler (`setDraft(prev => prev && {...prev,
+...patch})`), wired to `BlueprintSettingsPanel`'s `onChange`, rendered
+  right after the runnable/banner-issues block and before `StageGraphCanvas`.
+- **New `SaveAndDryRun` component**, same file, rendered at the bottom of
+  `EditBlueprintCanvas`'s JSX (after the `StageInspector` block):
+  - **Save**: a `useMutation` calling `api.createBlueprintVersion(blueprintId,
+draft)`; `draft`'s shape (`{graph, inputs, roles, defaults, budget}`) is
+    already exactly `CreateBlueprintVersionDto`'s shape (same object already
+    passed to `api.validateBlueprint` elsewhere in this file). On success,
+    the returned `version.version` is kept in local `useState<number | null>`
+    for the Dry-run button, and a confirmation line shows the version number
+    plus runnable status. Disabled only while pending. Errors render via the
+    `ApiError`/`.issues` convention copied from `SchemaEditor.tsx` (a `<ul>`
+    of `[severity] path: message` when `.issues` is a `ValidationIssue[]`,
+    else a plain `<p role="alert">{message}</p>`).
+  - **Deviation, called out explicitly**: the task said "disable/warn" the
+    Save button when `validation?.runnable === false` — this pass chose
+    **warn, not disable**, after reading `BlueprintService.createVersion`
+    directly: it calls `computeValidation()` and **always persists the
+    version regardless of `runnable`**, storing `issues`/`runnable` on the
+    row rather than rejecting the request. Disabling Save on a non-runnable
+    draft would block a legitimate use case (saving a work-in-progress
+    blueprint) that the server itself explicitly supports. A `<p
+role="alert">` above the button reads "Not runnable yet — you can still
+    save this draft." when `validation?.runnable === false`; the button
+    itself is never disabled for this reason.
+  - **Dry-run**: enabled only once `savedVersion !== null` (i.e. after at
+    least one successful Save this session — a fresh page load has no
+    version to target, matching the task's own framing). Calls
+    `api.startDryRun(blueprintId, savedVersion)` and navigates to
+    `/runs/${run.id}` on success — the exact pattern `DryRunTrigger.tsx`
+    already uses, reusing `RunPage` entirely rather than building any new
+    run-watching UI. The mutation function throws a plain `Error` if
+    `savedVersion` is somehow `null` when invoked (defensive; the button's
+    own `disabled` prop is the real guard, this just avoids a `!`
+    non-null-assertion that could crash instead of surfacing a message).
+- No new backend or `@reefcraft/shared` changes — this chunk was frontend-only
+  end to end, confirmed by the fact that `pnpm --filter @reefcraft/shared
+build` needed no changes.
+- No unit tests added — still no test runner configured for `apps/web`,
+  consistent with every prior chunk's precedent.
+- Verification: `pnpm --filter @reefcraft/shared build` (clean, untouched),
+  `pnpm --filter @reefcraft/web typecheck` (clean), `pnpm --filter
+@reefcraft/web build` (clean, same pre-existing chunk-size warning), `pnpm
+lint` (0 errors, same 1 pre-existing unrelated warning in
+  `media-output.e2e.test.ts`), `pnpm format:check` (clean after `prettier
+--write` on the one new file, `BlueprintSettingsPanel.tsx`, this chunk
+  added) — all green.

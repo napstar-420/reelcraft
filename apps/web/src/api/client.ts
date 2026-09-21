@@ -27,6 +27,14 @@ export type BlueprintDto = {
   archived: boolean;
 };
 
+/** `character.service.ts#list()`'s row shape, narrowed to the fields the
+ * canvas's role `characterId` picker actually needs — the full row (Phase 8)
+ * also carries `referenceSet`/`primaryRefId`/etc., not used here. */
+export type CharacterListItemDto = {
+  id: string;
+  name: string;
+};
+
 /** `template.service.ts#list()`'s row shape: every builtin plus the
  * caller's own `source: 'user'` templates, each with its latest version's
  * `requires`. */
@@ -143,6 +151,8 @@ export const api = {
     ),
 
   listChannelAssets: (channelId: string) => request<AssetDto[]>(`/channels/${channelId}/assets`),
+  listCharacters: (channelId: string) =>
+    request<CharacterListItemDto[]>(`/channels/${channelId}/characters`),
 
   listCapabilities: () => request<CapabilityDto[]>('/capabilities'),
   resolveCapability: (key: string, config: Record<string, unknown>) =>

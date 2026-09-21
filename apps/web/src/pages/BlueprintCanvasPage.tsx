@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
-import { useParams } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useParams, useNavigate } from 'react-router-dom';
+import { useQuery, useMutation } from '@tanstack/react-query';
 import { ReactFlow, ReactFlowProvider, Background, type Node, type Edge } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { api } from '../api/client';
+import { api, ApiError } from '../api/client';
 import { AddStageMenu } from '../components/canvas/AddStageMenu';
 import { StageInspector } from '../components/canvas/StageInspector';
+import { BlueprintSettingsPanel } from '../components/canvas/BlueprintSettingsPanel';
 import { deriveMemoryWriters } from '../lib/memory-writers';
 import { parseValidationPath } from '../lib/parse-validation-path';
 import type {
@@ -245,6 +246,77 @@ function CreateBlueprintForm({
   );
 }
 
+/** Chunk 8 — save/dry-run wiring. Plain `<p role="alert">` messages, no
+ * icon library, matching the rest of this file's convention. */
+function SaveAndDryRun({
+  blueprintId,
+  draft,
+  runnable,
+}: {
+  blueprintId: string;
+  draft: BlueprintDraft;
+  runnable: boolean | undefined;
+}) {
+  const navigate = useNavigate();
+  const [savedVersion, setSavedVersion] = useState<number | null>(null);
+
+  const save = useMutation({
+    mutationFn: () => api.createBlueprintVersion(blueprintId, draft),
+    onSuccess: (version) => setSavedVersion(version.version),
+  });
+
+  const dryRun = useMutation({
+    mutationFn: () => {
+      if (savedVersion === null) throw new Error('save a version before dry-running');
+      return api.startDryRun(blueprintId, savedVersion);
+    },
+    onSuccess: (run) => navigate(`/runs/${run.id}`),
+  });
+
+  const saveIssues =
+    save.error instanceof ApiError ? (save.error.issues as ValidationIssue[]) : undefined;
+
+  return (
+    <section>
+      <h2>Save &amp; dry-run</h2>
+      {/* `POST /blueprints/:id/versions` saves a non-runnable draft anyway
+       * (`BlueprintService.createVersion` never rejects on `runnable:
+       * false` — it just stores the issues) — so this is a warning, not a
+       * disabled button; Save itself is only disabled while pending. */}
+      {runnable === false && <p role="alert">Not runnable yet — you can still save this draft.</p>}
+      <button type="button" onClick={() => save.mutate()} disabled={save.isPending}>
+        {save.isPending ? 'Saving…' : 'Save'}
+      </button>
+      {save.isSuccess && (
+        <p>
+          Saved as version {save.data.version} ({save.data.runnable ? 'runnable' : 'not runnable'})
+        </p>
+      )}
+      {save.isError &&
+        (saveIssues ? (
+          <ul>
+            {saveIssues.map((issue, i) => (
+              <li key={i}>
+                [{issue.severity}] <code>{issue.path}</code>: {issue.message}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p role="alert">{save.error.message}</p>
+        ))}
+
+      <button
+        type="button"
+        onClick={() => dryRun.mutate()}
+        disabled={savedVersion === null || dryRun.isPending}
+      >
+        {dryRun.isPending ? 'Starting…' : 'Dry run'}
+      </button>
+      {dryRun.isError && <p role="alert">{dryRun.error.message}</p>}
+    </section>
+  );
+}
+
 function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
   const versions = useQuery({
     queryKey: ['blueprint-versions', blueprintId],
@@ -331,6 +403,14 @@ function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
     );
   }
 
+  function updateSettings(patch: {
+    inputs?: InputDef[];
+    roles?: RoleDef[];
+    budget?: { runCapUsd: number };
+  }) {
+    setDraft((prev) => prev && { ...prev, ...patch });
+  }
+
   return (
     <section>
       <h1>Blueprint canvas</h1>
@@ -348,6 +428,13 @@ function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
           ))}
         </ul>
       )}
+      <BlueprintSettingsPanel
+        inputs={draft.inputs}
+        roles={draft.roles}
+        budget={draft.budget}
+        channelId={channelId ?? ''}
+        onChange={updateSettings}
+      />
       <StageGraphCanvas
         graph={draft.graph}
         issuesByStage={issuesByStage}
@@ -367,6 +454,7 @@ function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
           onChange={updateStage}
         />
       )}
+      <SaveAndDryRun blueprintId={blueprintId} draft={draft} runnable={validation?.runnable} />
     </section>
   );
 }
