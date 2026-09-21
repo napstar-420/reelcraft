@@ -9,6 +9,10 @@
     "outDir": "dist",
     "rootDir": "src",
     "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"]
+    },
     "composite": false,
     "declaration": false,
     "declarationMap": false,
