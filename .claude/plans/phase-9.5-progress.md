@@ -11,7 +11,7 @@ Branch: `codex/phase9.5-visual-canvas`
 - [x] Chunk 4 — Inspector panel: capability config + slots/context
 - [x] Chunk 5 — Checks editor
 - [x] Chunk 6 — Remaining StageDef fields (qc, retryLimit, approval, budget, model, enabledWhen, iterate)
-- [ ] Chunk 7 — Live validation overlay + memory-edge arcs
+- [x] Chunk 7 — Live validation overlay + memory-edge arcs
 - [ ] Chunk 8 — Save, create-new flow, and dry-run integration
 - [ ] Chunk 9 — Template library integration
 
@@ -649,3 +649,79 @@ string[]>` (memory key → stage keys that declare `writes[key]`, in graph
   same 1 pre-existing unrelated warning in `media-output.e2e.test.ts`),
   `pnpm format:check` (clean after `prettier --write` on the two files
   this chunk's first draft left unformatted) — all green.
+
+### Chunk 7b — per-field inline validation messages
+
+Final pass of Chunk 7. Consumes the `issues` prop `StageInspector` already
+received (unused) from 7a, rendering each issue inline next to the field
+`parseValidationPath()` says it's about. `BlueprintCanvasPage.tsx`'s
+grouping/badge/banner logic and the memory-edge arcs (both 7a) were not
+touched — `issuesByStage.get(selectedStageKey) ?? []` was already being
+passed into `StageInspector` before this pass started.
+
+- **New local `IssueList` component**, duplicated verbatim (not extracted
+  to a shared file) in both `StageInspector.tsx` and `ChecksEditor.tsx` —
+  a 10-line `<ul>` of `"ERROR: <message>"` / `"WARNING: <message>"` `<li>`s,
+  no color/icon library, matching the task spec's explicit "plain text
+  prefix is fine" instruction over the original plan doc's red/yellow
+  badge language. Duplicated rather than shared because the two files have
+  no existing shared-component module to put it in and a 10-line function
+  didn't justify creating one.
+- **Matching issues to fields** (`StageInspector.tsx`): one `parsedIssues =
+  issues.map(issue => ({issue, parsed: parseValidationPath(issue.path)}))`
+  computed once per render, filtered per section via a local `issuesFor(predicate)`
+  helper:
+  - `region: 'capability'` → under the Capability `<select>`.
+  - `region: 'config'` → one flat list under the whole `SchemaForm` (no
+    per-nested-property attribution, per the task spec).
+  - `region: 'slots'`, `name` matching a resolved slot's `name` → under
+    that slot's `BindingPicker` row.
+  - `region: 'context'`, `name` matching a context key → under that
+    context row.
+  - `region: 'output'`: `name === 'kind'` → under the kind `<select>`;
+    `name === 'schema'` → under the `SchemaForm`; `name === undefined` →
+    under the section heading generally.
+  - `region: 'model'` / `'enabledWhen'` / `'qc'` / `'approval'` /
+    `'iterate'` → one flat list under each section's editor, matched 1:1
+    on `region` alone (none of these regions carry a `name` this pass
+    needs to sub-attribute against, per the task spec).
+  - `region: 'checks'`: `name` split into `"<index>[.<rest>]"` — matched
+    by `p.name === String(index) || p.name?.startsWith(\`${index}.\`)` —
+    and handed to `ChecksEditor` pre-bucketed by index (see below), not
+    sub-attributed further to `key`/`code`/`params`/`refs.<name>` within a
+    check, per the task spec.
+  - `region: undefined` (the `checkFirstStagePrev` fallback — a bare name
+    with no region prefix): if `name` matches one of this stage's resolved
+    slot names or its own `context` keys, it's treated exactly like a
+    `slots`/`context` issue and attached to that row; otherwise it falls
+    through to the top-level banner alongside `region: 'stage'` issues.
+    `resolved.slots` (from the existing capability-resolve `useState`) and
+    `Object.keys(stage.context)` are the two lookups used to make that
+    call — no new resolve call added.
+  - `region: 'stage'` (whole-stage issues, e.g. "neither checks nor qc",
+    duplicate-key warnings) → a top-of-inspector `<IssueList>`, above
+    "Key"/"Label", combined with the unmatched-fallback case above into
+    one `stageLevelIssues` list.
+  - Memory writes / Retry limit / Budget sections get no `<IssueList>` —
+    confirmed against 7a's exhaustive path enumeration that no validator
+    path shape maps to them.
+- **`ChecksEditor.tsx` prop addition**: `issues?: ValidationIssue[][]`
+  added to `ChecksEditorProps`, indexed by check position — `StageInspector`
+  builds this as `stage.checks.map((_, i) => issuesFor(...))` and passes it
+  straight through. Inside `ChecksEditor`, one `<IssueList issues={issues?.[index]
+??  []} />` renders per check `<fieldset>`, right after `CheckTestPanel` and
+  before the "Remove check" button — all of that check's issues shown
+  together under its row, not sub-attributed to the exact `key`/`code`/
+  `params`/`refs.<name>` field within it, per the task spec. This is the
+  only prop-shape change made outside `StageInspector.tsx`.
+- No unit tests added — still no test runner configured for `apps/web`,
+  consistent with every prior chunk's precedent.
+- Verification: `pnpm --filter @reefcraft/shared build` (clean, untouched),
+  `pnpm --filter @reefcraft/web typecheck` (one fix needed: `p.name === String(index)
+|| p.name?.startsWith(...)` inferred as `boolean | undefined` rather than
+  `boolean` because `p.name` is optional — wrapped the `startsWith` call in
+  `!!` to force a boolean), `pnpm --filter @reefcraft/web build` (clean,
+  same pre-existing chunk-size warning), `pnpm lint` (0 errors, same 1
+  pre-existing unrelated warning in `media-output.e2e.test.ts`), `pnpm
+format:check` (clean after `prettier --write` on the two files this
+  chunk touched) — all green.

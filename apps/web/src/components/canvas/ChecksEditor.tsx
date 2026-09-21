@@ -3,9 +3,31 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { api } from '../../api/client';
 import { BindingPicker } from './BindingPicker';
 import { SchemaForm } from './SchemaForm';
-import type { CheckDef, InputDef, Ref, RoleDef, StageDef } from '@reefcraft/shared';
+import type {
+  CheckDef,
+  InputDef,
+  Ref,
+  RoleDef,
+  StageDef,
+  ValidationIssue,
+} from '@reefcraft/shared';
 
 const EMPTY_OBJECT_SCHEMA = { type: 'object' as const };
+
+/** Mirrors `StageInspector`'s own `IssueList` — plain `[severity] message`,
+ * no color/icon library. */
+function IssueList({ issues }: { issues: ValidationIssue[] }) {
+  if (issues.length === 0) return null;
+  return (
+    <ul>
+      {issues.map((issue, index) => (
+        <li key={index}>
+          {issue.severity === 'error' ? 'ERROR' : 'WARNING'}: {issue.message}
+        </li>
+      ))}
+    </ul>
+  );
+}
 
 function nextFreeKey(existing: Record<string, unknown>, prefix: string): string {
   let n = 1;
@@ -137,6 +159,10 @@ export type ChecksEditorProps = {
   roles: RoleDef[];
   assets: Array<{ id: string; name: string }>;
   iterating: boolean;
+  /** Chunk 7b — this stage's validation issues, one bucket per check
+   * position (`checksIssues[i]` for `checks[i]`), already sliced out of
+   * `region: 'checks'` issues by `StageInspector`. */
+  issues?: ValidationIssue[][];
 };
 
 /** Chunk 5 — attach builtin/script checks to a stage. `params` (builtin) is
@@ -151,6 +177,7 @@ export function ChecksEditor({
   roles,
   assets,
   iterating,
+  issues,
 }: ChecksEditorProps) {
   const checkTypes = useQuery({ queryKey: ['check-types'], queryFn: api.listCheckTypes });
   const builtins = checkTypes.data?.filter((t) => t.kind === 'builtin') ?? [];
@@ -249,6 +276,7 @@ export function ChecksEditor({
           )}
 
           <CheckTestPanel check={check} />
+          <IssueList issues={issues?.[index] ?? []} />
 
           <button type="button" onClick={() => remove(index)}>
             Remove check

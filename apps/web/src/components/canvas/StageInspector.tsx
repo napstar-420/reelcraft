@@ -5,6 +5,7 @@ import { BindingPicker } from './BindingPicker';
 import { SchemaForm } from './SchemaForm';
 import { ChecksEditor } from './ChecksEditor';
 import { ModelPinEditor } from './ModelPinEditor';
+import { parseValidationPath, type ParsedValidationPath } from '../../lib/parse-validation-path';
 import type {
   StageDef,
   InputDef,
@@ -19,6 +20,21 @@ import type {
   ModelPin,
   ValidationIssue,
 } from '@reefcraft/shared';
+
+/** Plain `[severity] message` list, no color/icon library — matches this
+ * file's "no UI kit" convention throughout. */
+function IssueList({ issues }: { issues: ValidationIssue[] }) {
+  if (issues.length === 0) return null;
+  return (
+    <ul>
+      {issues.map((issue, index) => (
+        <li key={index}>
+          {issue.severity === 'error' ? 'ERROR' : 'WARNING'}: {issue.message}
+        </li>
+      ))}
+    </ul>
+  );
+}
 
 /** A shallow, non-recursive view of the `JsonSchema` dialect (§4.2) used only
  * to build `output.schema` via `SchemaForm` itself — the dialect has no
@@ -552,7 +568,7 @@ export function StageInspector({
   inputs,
   roles,
   assets,
-  issues: _issues,
+  issues = [],
   onChange,
 }: {
   stageKey: string;
@@ -560,8 +576,8 @@ export function StageInspector({
   inputs: InputDef[];
   roles: RoleDef[];
   assets: Array<{ id: string; name: string }>;
-  /** Chunk 7a hand-off — this stage's validation issues, unused until 7b
-   * wires per-field inline highlighting from them. */
+  /** This stage's own validation issues (already filtered/grouped by stage
+   * key one level up in `BlueprintCanvasPage`'s `issuesByStage`). */
   issues?: ValidationIssue[];
   onChange: (updated: StageDef) => void;
 }) {
@@ -603,6 +619,53 @@ export function StageInspector({
 
   const configSchema = capabilities.data?.find((c) => c.key === stage.capability)?.configSchema;
 
+  /** Chunk 7b — attribute this stage's validation issues to the field each
+   * one's `path` (via `parseValidationPath`) names. Slot/context names come
+   * from the resolved slots and the stage's own context keys, since the
+   * `checkFirstStagePrev` fallback shape (`region` undefined) only carries
+   * a bare name with no region prefix to disambiguate it by itself. */
+  const parsedIssues = issues.map((issue) => ({ issue, parsed: parseValidationPath(issue.path) }));
+  const slotNames = resolved.slots.map((s) => s.name);
+  const contextNames = Object.keys(stage.context);
+
+  function issuesFor(predicate: (parsed: ParsedValidationPath) => boolean): ValidationIssue[] {
+    return parsedIssues.filter(({ parsed }) => predicate(parsed)).map(({ issue }) => issue);
+  }
+
+  function isSlotOrContextName(name: string): boolean {
+    return slotNames.includes(name) || contextNames.includes(name);
+  }
+
+  const stageLevelIssues = issuesFor(
+    (p) =>
+      p.region === 'stage' ||
+      (p.region === undefined && p.name !== undefined && !isSlotOrContextName(p.name)),
+  );
+  const capabilityIssues = issuesFor((p) => p.region === 'capability');
+  const configIssues = issuesFor((p) => p.region === 'config');
+  const outputIssues = issuesFor((p) => p.region === 'output' && p.name === undefined);
+  const outputKindIssues = issuesFor((p) => p.region === 'output' && p.name === 'kind');
+  const outputSchemaIssues = issuesFor((p) => p.region === 'output' && p.name === 'schema');
+  const modelIssues = issuesFor((p) => p.region === 'model');
+  const enabledWhenIssues = issuesFor((p) => p.region === 'enabledWhen');
+  const qcIssues = issuesFor((p) => p.region === 'qc');
+  const approvalIssues = issuesFor((p) => p.region === 'approval');
+  const iterateIssues = issuesFor((p) => p.region === 'iterate');
+  const checksIssues: ValidationIssue[][] = stage.checks.map((_, index) =>
+    issuesFor(
+      (p) =>
+        p.region === 'checks' && (p.name === String(index) || !!p.name?.startsWith(`${index}.`)),
+    ),
+  );
+
+  function slotIssues(name: string): ValidationIssue[] {
+    return issuesFor((p) => (p.region === 'slots' || p.region === undefined) && p.name === name);
+  }
+
+  function contextIssues(key: string): ValidationIssue[] {
+    return issuesFor((p) => (p.region === 'context' || p.region === undefined) && p.name === key);
+  }
+
   function handleContextKeyChange(oldKey: string, newKey: string) {
     const { [oldKey]: refValue, ...rest } = stage.context;
     if (refValue === undefined) return;
@@ -633,6 +696,8 @@ export function StageInspector({
     <section>
       <h2>Inspect stage</h2>
 
+      <IssueList issues={stageLevelIssues} />
+
       <label>
         Key
         <input type="text" value={stage.key} disabled />
@@ -660,6 +725,7 @@ export function StageInspector({
             </option>
           ))}
         </select>
+        <IssueList issues={capabilityIssues} />
       </label>
 
       {configSchema && (
@@ -672,6 +738,7 @@ export function StageInspector({
               onChange({ ...stage, config: (next as Record<string, unknown>) ?? {} })
             }
           />
+          <IssueList issues={configIssues} />
         </div>
       )}
 
@@ -694,6 +761,7 @@ export function StageInspector({
               assets={assets}
               iterating={!!stage.iterate}
             />
+            <IssueList issues={slotIssues(slot.name)} />
           </div>
         ))}
       </div>
@@ -721,6 +789,7 @@ export function StageInspector({
             <button type="button" onClick={() => handleRemoveContext(key)}>
               Remove
             </button>
+            <IssueList issues={contextIssues(key)} />
           </div>
         ))}
         <button type="button" onClick={handleAddContext}>
@@ -745,6 +814,8 @@ export function StageInspector({
             </option>
           ))}
         </select>
+        <IssueList issues={outputKindIssues} />
+        <IssueList issues={outputIssues} />
         {stage.output.kind === 'data' && (
           <SchemaForm
             schema={OUTPUT_SCHEMA_META}
@@ -757,6 +828,7 @@ export function StageInspector({
             }
           />
         )}
+        <IssueList issues={outputSchemaIssues} />
       </div>
 
       <div>
@@ -775,6 +847,7 @@ export function StageInspector({
           roles={roles}
           assets={assets}
           iterating={!!stage.iterate}
+          issues={checksIssues}
         />
       </div>
 
@@ -799,6 +872,7 @@ export function StageInspector({
       <div>
         <h3>Model</h3>
         <ModelPinEditor value={stage.model} onChange={(model) => onChange({ ...stage, model })} />
+        <IssueList issues={modelIssues} />
       </div>
 
       <div>
@@ -808,11 +882,13 @@ export function StageInspector({
           inputs={inputs}
           onChange={(enabledWhen) => onChange({ ...stage, enabledWhen })}
         />
+        <IssueList issues={enabledWhenIssues} />
       </div>
 
       <div>
         <h3>QC</h3>
         <QcEditor qc={stage.qc} onChange={(qc) => onChange({ ...stage, qc })} />
+        <IssueList issues={qcIssues} />
       </div>
 
       <div>
@@ -822,6 +898,7 @@ export function StageInspector({
           graph={graph}
           onChange={(approval) => onChange({ ...stage, approval })}
         />
+        <IssueList issues={approvalIssues} />
       </div>
 
       <div>
@@ -835,6 +912,7 @@ export function StageInspector({
           assets={assets}
           onChange={(iterate) => onChange({ ...stage, iterate })}
         />
+        <IssueList issues={iterateIssues} />
       </div>
     </section>
   );
