@@ -217,7 +217,7 @@ typecheck`/`build` (both clean, same pre-existing chunk-size warning),
   `slots`/`context`/`output`/`writes`.
   - **`key` is not editable after creation** — the plan's own suggested
     simpler option, taken as-is: re-keying a stage would require rewriting
-    every `{from:'prev'}`-adjacent reference by *position* (fine, `prev` is
+    every `{from:'prev'}`-adjacent reference by _position_ (fine, `prev` is
     positional) but also every other stage's checks/approval that might
     reference it by identity elsewhere in a later chunk; punting entirely
     avoids inventing a collision-check UI for a field nothing yet depends on
