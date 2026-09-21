@@ -9,7 +9,7 @@ Branch: `codex/phase9.5-visual-canvas`
 - [x] Chunk 2 — Stage node CRUD (add / remove / reorder)
 - [x] Chunk 3 — Binding picker (the `Ref` editor)
 - [x] Chunk 4 — Inspector panel: capability config + slots/context
-- [ ] Chunk 5 — Checks editor
+- [x] Chunk 5 — Checks editor
 - [ ] Chunk 6 — Remaining StageDef fields (qc, retryLimit, approval, budget, model, enabledWhen, iterate)
 - [ ] Chunk 7 — Live validation overlay + memory-edge arcs
 - [ ] Chunk 8 — Save, create-new flow, and dry-run integration
@@ -300,3 +300,61 @@ Record<string,string>`, add/remove, free-form text inputs for both key and
   `pnpm lint` (0 errors, same 1 pre-existing unrelated warning in
   `media-output.e2e.test.ts`), `pnpm format:check` (clean after `prettier
 --write` on the three files this chunk touched) — all green.
+
+### Chunk 5
+
+- **New `apps/web/src/components/canvas/ChecksEditor.tsx`** — one row per
+  `stage.checks[i]`, a `type` `<select>` (`builtin`/`script`) that rebuilds
+  a fresh default `CheckDef` on switch (mirrors `StageInspector`'s own
+  capability-switch reset pattern rather than trying to carry fields across
+  the discriminated union).
+  - **`builtin`**: a `<select>` of `GET /check-types` entries filtered to
+    `kind === 'builtin'` (same filter expression `CheckTesterPage.tsx`
+    already uses), the selected builtin's `description` shown as help text,
+    then `params` edited via Chunk 4's `SchemaForm` bound to that builtin's
+    `paramsSchema`. `CheckTypeDto`'s builtin variant has `paramsSchema?:
+JsonSchema` (confirmed optional in `apps/web/src/api/client.ts`) — a
+    module-level `EMPTY_OBJECT_SCHEMA = {type: 'object'}` constant is
+    substituted whenever it's absent or no builtin is selected yet, so
+    `SchemaForm` always has a schema to render against (an empty object
+    form: no fields, matching "no params" semantics rather than crashing
+    or falling back to a textarea).
+  - **`script`**: a `name` text input, a `<textarea>` for `code` (the one
+    named exception, Locked Decision 3), and a `refs: Record<string, Ref>`
+    editor (`RefsEditor`, a new local component in the same file) that
+    copies `StageInspector`'s existing `Context` section's exact
+    add/remove/editable-key pattern verbatim, one `BindingPicker` per named
+    ref, threading through the same `stageIndex`/`graph`/`inputs`/`roles`/
+    `assets`/`iterating` props `StageInspector` already has in scope.
+  - **Test action**: a small per-row `CheckTestPanel` (artifact-id input +
+    "Test" button + result rendering) that mirrors
+    `CheckTesterPage.tsx`'s existing result JSX near-verbatim (pass/fail
+    heading, kind/name line, message/fault lines, a `<pre>` for `details`)
+    but is **not a literal extraction/import** — `CheckTesterPage`'s
+    version is entangled with its own local `paramsText`/`scriptName`/etc.
+    state and JSON-textarea construction of the `check` object, which this
+    chunk explicitly must not reuse (Locked Decision 3). Re-deriving the
+    ~15-line result-rendering block locally was simpler and lower-risk than
+    extracting a shared sub-component out of `CheckTesterPage` under this
+    chunk's own scope; `CheckTesterPage.tsx` itself is left untouched.
+  - **Add-check flow**: two explicit buttons, "+ Add builtin check" / "+
+    Add script check", each appending one default `CheckDef`
+    (`{type:'builtin', key:'', params:{}}` / `{type:'script', name:'',
+code:''}`) — chosen over a single type-then-add two-step flow since
+    the type is already known at click time and two buttons is strictly
+    less UI/state than a picker-plus-confirm.
+- **`StageInspector.tsx`**: one new `<div><h3>Checks</h3>...</div>` section
+  after "Memory writes", rendering `ChecksEditor` bound to `stage.checks`
+  via `onChange={(checks) => onChange({...stage, checks})}`, passing the
+  same `stageIndex`/`graph`/`inputs`/`roles`/`assets`/`iterating` values
+  already computed for every other `BindingPicker` usage on this page.
+- Chunk 6 (qc/retryLimit/approval/budget/model/enabledWhen/iterate) is
+  explicitly untouched — `stage.checks` was the only field this chunk
+  edited.
+- No unit tests added — still no test runner configured for `apps/web`.
+- Verification: `pnpm --filter @reefcraft/shared build` (clean, untouched),
+  `pnpm --filter @reefcraft/web typecheck` (clean), `pnpm --filter
+@reefcraft/web build` (clean, same pre-existing chunk-size warning),
+  `pnpm lint` (0 errors, same 1 pre-existing unrelated warning in
+  `media-output.e2e.test.ts`), `pnpm format:check` (clean after `prettier
+--write` on the one new file this chunk added) — all green.

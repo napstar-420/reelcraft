@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { api } from '../../api/client';
 import { BindingPicker } from './BindingPicker';
 import { SchemaForm } from './SchemaForm';
+import { ChecksEditor } from './ChecksEditor';
 import type {
   StageDef,
   InputDef,
@@ -344,6 +345,20 @@ export function StageInspector({
       <div>
         <h3>Memory writes</h3>
         <WritesEditor writes={stage.writes} onChange={(writes) => onChange({ ...stage, writes })} />
+      </div>
+
+      <div>
+        <h3>Checks</h3>
+        <ChecksEditor
+          checks={stage.checks}
+          onChange={(checks) => onChange({ ...stage, checks })}
+          stageIndex={stageIndex}
+          graph={graph}
+          inputs={inputs}
+          roles={roles}
+          assets={assets}
+          iterating={!!stage.iterate}
+        />
       </div>
     </section>
   );
