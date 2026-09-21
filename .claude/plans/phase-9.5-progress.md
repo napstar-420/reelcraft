@@ -7,7 +7,7 @@ Branch: `codex/phase9.5-visual-canvas`
 
 - [x] Chunk 1 — Backend baseline + canvas skeleton
 - [x] Chunk 2 — Stage node CRUD (add / remove / reorder)
-- [ ] Chunk 3 — Binding picker (the `Ref` editor)
+- [x] Chunk 3 — Binding picker (the `Ref` editor)
 - [ ] Chunk 4 — Inspector panel: capability config + slots/context
 - [ ] Chunk 5 — Checks editor
 - [ ] Chunk 6 — Remaining StageDef fields (qc, retryLimit, approval, budget, model, enabledWhen, iterate)
@@ -140,3 +140,60 @@ lint` (0 errors, 1 pre-existing unrelated warning in
   chunk-size warning as always, unrelated), `pnpm lint` (0 errors, the
   same 1 pre-existing unrelated warning in `media-output.e2e.test.ts`),
   `pnpm format:check` (clean) — all green.
+
+### Chunk 3
+
+- **`BindingPicker` props landed exactly as scoped**:
+  `{ value: Ref; onChange: (ref: Ref) => void; stageIndex: number; graph:
+StageDef[]; inputs: InputDef[]; roles: RoleDef[]; assets: Array<{id:
+string; name: string}>; iterating: boolean }` (`apps/web/src/components/canvas/BindingPicker.tsx`).
+  Step 1 is a `<select>` of `Ref['from']` filtered by
+  `availableRefKinds(stageIndex, iterating)` — `prev` hidden entirely on
+  `stageIndex === 0` (covers the plain and `alignWith` variants together,
+  since both are the same `from`); `item`/`prevItem` hidden unless
+  `iterating`. Step 2 renders per the plan's kind → widget mapping;
+  `alignWith`'s checkbox is only shown when `graph[stageIndex - 1]?.iterate`
+  is set. This filtering is UI convenience only, not a second validator —
+  `POST /blueprints/:id/validate` remains authoritative.
+- **`const`** renders a single text input, stored/coerced as a `string`
+  (no type-aware literal editor against the target slot's `accepts` —
+  explicitly deferred per the task spec, not a gap).
+- **New `apps/web/src/lib/memory-writers.ts`** — `deriveMemoryKeys(graph):
+string[]`, the pure Locked-Decision-6 scan (`for stage of graph: for key
+in stage.writes ?? {}`), deduped via a `Set`. **Flag for Chunk 4/7's
+  implementer**: no chunk so far builds any UI to actually _set_
+  `stage.writes` — the plan doesn't list it under Chunk 4's inspector
+  scope either. Until something writes `writes`, a `{from:'memory'}`
+  binding has no real key to pick and can't be exercised end-to-end
+  through the UI (only by a graph seeded via the API/template path). This
+  is a real gap, called out here rather than silently worked around.
+- **`GET /blueprints/:id`** added to `apps/api/src/blueprint/blueprint.controller.ts`,
+  backed by new `BlueprintService.getBlueprint(id)`
+  (`apps/api/src/blueprint/blueprint.service.ts`) — a plain
+  `db.select().from(blueprint).where(eq(blueprint.id, id)).limit(1)`,
+  returning the full row. Not-found convention matches `getVersion`'s
+  existing pattern exactly: `throw new Error(\`Blueprint ${id} not
+  found\`)`(a plain`Error`, not a Nest `NotFoundException`— this repo's`blueprint.service.ts` had no HTTP-exception convention to match, only
+this plain-`Error` one, already used twice before this chunk).
+- **Client**: `api.getBlueprint(blueprintId)` (new `BlueprintDto` type,
+  the whole `blueprint` table row shape) and `api.listChannelAssets(channelId)`
+  (typed against the pre-existing `AssetDto` from `@reefcraft/shared` —
+  no new DTO needed, confirmed it already matched the controller's raw
+  row shape) added to `apps/web/src/api/client.ts`.
+- **Demo harness**: `DemoBindingHarness` in `BlueprintCanvasPage.tsx`
+  (`EditBlueprintCanvas`) — a stage-key `<select>` plus one `BindingPicker`
+  bound to a local `useState<Ref>` demo value, fed `channelId` via a new
+  `api.getBlueprint` query. Explicitly commented as temporary; Chunk 4's
+  `StageInspector` replaces it entirely (not extends it).
+- No unit tests added for `availableRefKinds`/`deriveMemoryKeys` — this
+  repo still has no test runner configured for `apps/web` (reconfirmed,
+  consistent with Chunks 1-2's precedent).
+- Verification: `pnpm --filter @reefcraft/shared build` (clean),
+  `pnpm --filter @reefcraft/api typecheck` (clean), new e2e test
+  `blueprint-get.e2e.test.ts` (2/2 passed), full e2e regression suite
+  (32 files / 178 tests, all passed — up from 31/176 by exactly the 1
+  file / 2 tests this chunk added), `pnpm --filter @reefcraft/web
+typecheck`/`build` (both clean, same pre-existing chunk-size warning),
+  `pnpm lint` (0 errors, same 1 pre-existing unrelated warning in
+  `media-output.e2e.test.ts`), `pnpm format:check` (clean after
+  `prettier --write` on the one new test file) — all green.

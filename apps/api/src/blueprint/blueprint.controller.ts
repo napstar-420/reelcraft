@@ -17,6 +17,11 @@ export class BlueprintController {
     return { blueprintId };
   }
 
+  @Get(':id')
+  getBlueprint(@Param('id') id: string) {
+    return this.blueprints.getBlueprint(id);
+  }
+
   @Post(':id/versions')
   createVersion(
     @Param('id') id: string,

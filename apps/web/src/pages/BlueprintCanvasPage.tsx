@@ -5,7 +5,8 @@ import { ReactFlow, ReactFlowProvider, Background, type Node, type Edge } from '
 import '@xyflow/react/dist/style.css';
 import { api } from '../api/client';
 import { AddStageMenu } from '../components/canvas/AddStageMenu';
-import type { StageDef, InputDef, RoleDef, ConfigLayer } from '@reefcraft/shared';
+import { BindingPicker } from '../components/canvas/BindingPicker';
+import type { StageDef, InputDef, RoleDef, ConfigLayer, Ref } from '@reefcraft/shared';
 
 type BlueprintDraft = {
   graph: StageDef[];
@@ -151,10 +152,67 @@ function CreateBlueprintForm({
   );
 }
 
+/** Temporary Chunk 3 demo harness for `BindingPicker` — Chunk 4's real
+ * `StageInspector` replaces this with actual slot/context editing wired to
+ * every binding a stage declares. This exists only so the picker is
+ * exercisable against real stage data before that inspector exists. */
+function DemoBindingHarness({
+  graph,
+  inputs,
+  roles,
+  channelId,
+}: {
+  graph: StageDef[];
+  inputs: InputDef[];
+  roles: RoleDef[];
+  channelId: string | undefined;
+}) {
+  const [stageKey, setStageKey] = useState('');
+  const [demoRef, setDemoRef] = useState<Ref>({ from: 'const', value: '' });
+  const assets = useQuery({
+    queryKey: ['channel-assets', channelId],
+    queryFn: () => api.listChannelAssets(channelId!),
+    enabled: !!channelId,
+  });
+
+  const stageIndex = graph.findIndex((stage) => stage.key === stageKey);
+  const stage = graph[stageIndex];
+
+  return (
+    <section>
+      <h2>Demo binding (slots/context editing lands in Chunk 4)</h2>
+      <select value={stageKey} onChange={(e) => setStageKey(e.target.value)}>
+        <option value="">Select a stage…</option>
+        {graph.map((s) => (
+          <option key={s.key} value={s.key}>
+            {s.key}
+          </option>
+        ))}
+      </select>
+      {stage && (
+        <BindingPicker
+          value={demoRef}
+          onChange={setDemoRef}
+          stageIndex={stageIndex}
+          graph={graph}
+          inputs={inputs}
+          roles={roles}
+          assets={assets.data ?? []}
+          iterating={!!stage.iterate}
+        />
+      )}
+    </section>
+  );
+}
+
 function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
   const versions = useQuery({
     queryKey: ['blueprint-versions', blueprintId],
     queryFn: () => api.listBlueprintVersions(blueprintId),
+  });
+  const blueprintMeta = useQuery({
+    queryKey: ['blueprint', blueprintId],
+    queryFn: () => api.getBlueprint(blueprintId),
   });
   const [draft, setDraft] = useState<BlueprintDraft | null>(null);
 
@@ -195,12 +253,19 @@ function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
       <h1>Blueprint canvas</h1>
       <StageGraphCanvas graph={draft.graph} onDeleteStage={deleteStage} onReorder={reorderStage} />
       <AddStageMenu graph={draft.graph} onAdd={addStage} />
+      <DemoBindingHarness
+        graph={draft.graph}
+        inputs={draft.inputs}
+        roles={draft.roles}
+        channelId={blueprintMeta.data?.channelId}
+      />
     </section>
   );
 }
 
 /** Chunk 1 — route → load-or-create → render nodes; Chunk 2 adds add/
- * remove/reorder. Select/inspector interactivity lands in Chunk 3+. */
+ * remove/reorder; Chunk 3 adds the `BindingPicker` demo harness above.
+ * Select/inspector interactivity lands in Chunk 4+. */
 export function BlueprintCanvasPage() {
   const { channelId, blueprintId } = useParams<{ channelId?: string; blueprintId?: string }>();
   const [createdBlueprintId, setCreatedBlueprintId] = useState<string | null>(null);

@@ -12,7 +12,19 @@ import type {
   CheckDef,
   JsonSchema,
   ValidationIssue,
+  AssetDto,
 } from '@reefcraft/shared';
+
+/** `blueprint.service.ts#getBlueprint()`'s row shape — the whole `blueprint`
+ * table row (Chunk 3, Phase 9.5's binding-picker asset step needs the
+ * blueprint's `channelId`, which no existing endpoint exposed). */
+export type BlueprintDto = {
+  id: string;
+  channelId: string;
+  name: string;
+  currentVersionId: string | null;
+  archived: boolean;
+};
 
 /** `template.service.ts#list()`'s row shape: every builtin plus the
  * caller's own `source: 'user'` templates, each with its latest version's
@@ -115,6 +127,7 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ channelId, name }),
     }),
+  getBlueprint: (blueprintId: string) => request<BlueprintDto>(`/blueprints/${blueprintId}`),
   createBlueprintVersion: (blueprintId: string, dto: CreateBlueprintVersionDto) =>
     request<BlueprintVersionDto>(`/blueprints/${blueprintId}/versions`, {
       method: 'POST',
@@ -127,6 +140,8 @@ export const api = {
       `/blueprints/${blueprintId}/validate`,
       { method: 'POST', body: JSON.stringify(dto) },
     ),
+
+  listChannelAssets: (channelId: string) => request<AssetDto[]>(`/channels/${channelId}/assets`),
 
   listCapabilities: () => request<CapabilityDto[]>('/capabilities'),
   resolveCapability: (key: string, config: Record<string, unknown>) =>
