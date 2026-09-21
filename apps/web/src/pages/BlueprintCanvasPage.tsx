@@ -5,8 +5,8 @@ import { ReactFlow, ReactFlowProvider, Background, type Node, type Edge } from '
 import '@xyflow/react/dist/style.css';
 import { api } from '../api/client';
 import { AddStageMenu } from '../components/canvas/AddStageMenu';
-import { BindingPicker } from '../components/canvas/BindingPicker';
-import type { StageDef, InputDef, RoleDef, ConfigLayer, Ref } from '@reefcraft/shared';
+import { StageInspector } from '../components/canvas/StageInspector';
+import type { StageDef, InputDef, RoleDef, ConfigLayer } from '@reefcraft/shared';
 
 type BlueprintDraft = {
   graph: StageDef[];
@@ -56,10 +56,12 @@ function StageGraphCanvas({
   graph,
   onDeleteStage,
   onReorder,
+  onSelectStage,
 }: {
   graph: StageDef[];
   onDeleteStage: (key: string) => void;
   onReorder: (fromIndex: number, toIndex: number) => void;
+  onSelectStage: (key: string) => void;
 }) {
   const nodes = useMemo(() => stageNodes(graph), [graph]);
   const edges = useMemo(() => prevEdges(graph), [graph]);
@@ -74,6 +76,10 @@ function StageGraphCanvas({
     const toIndex = Math.min(Math.max(Math.round(node.position.x / 250), 0), graph.length - 1);
     if (toIndex === fromIndex) return;
     onReorder(fromIndex, toIndex);
+  }
+
+  function handleNodeClick(_event: unknown, node: Node) {
+    onSelectStage(node.id);
   }
 
   return (
@@ -96,8 +102,9 @@ function StageGraphCanvas({
             fitView
             nodesDraggable
             nodesConnectable={false}
-            elementsSelectable={false}
+            elementsSelectable
             onNodeDragStop={handleNodeDragStop}
+            onNodeClick={handleNodeClick}
           >
             <Background />
           </ReactFlow>
@@ -152,59 +159,6 @@ function CreateBlueprintForm({
   );
 }
 
-/** Temporary Chunk 3 demo harness for `BindingPicker` — Chunk 4's real
- * `StageInspector` replaces this with actual slot/context editing wired to
- * every binding a stage declares. This exists only so the picker is
- * exercisable against real stage data before that inspector exists. */
-function DemoBindingHarness({
-  graph,
-  inputs,
-  roles,
-  channelId,
-}: {
-  graph: StageDef[];
-  inputs: InputDef[];
-  roles: RoleDef[];
-  channelId: string | undefined;
-}) {
-  const [stageKey, setStageKey] = useState('');
-  const [demoRef, setDemoRef] = useState<Ref>({ from: 'const', value: '' });
-  const assets = useQuery({
-    queryKey: ['channel-assets', channelId],
-    queryFn: () => api.listChannelAssets(channelId!),
-    enabled: !!channelId,
-  });
-
-  const stageIndex = graph.findIndex((stage) => stage.key === stageKey);
-  const stage = graph[stageIndex];
-
-  return (
-    <section>
-      <h2>Demo binding (slots/context editing lands in Chunk 4)</h2>
-      <select value={stageKey} onChange={(e) => setStageKey(e.target.value)}>
-        <option value="">Select a stage…</option>
-        {graph.map((s) => (
-          <option key={s.key} value={s.key}>
-            {s.key}
-          </option>
-        ))}
-      </select>
-      {stage && (
-        <BindingPicker
-          value={demoRef}
-          onChange={setDemoRef}
-          stageIndex={stageIndex}
-          graph={graph}
-          inputs={inputs}
-          roles={roles}
-          assets={assets.data ?? []}
-          iterating={!!stage.iterate}
-        />
-      )}
-    </section>
-  );
-}
-
 function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
   const versions = useQuery({
     queryKey: ['blueprint-versions', blueprintId],
@@ -214,7 +168,14 @@ function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
     queryKey: ['blueprint', blueprintId],
     queryFn: () => api.getBlueprint(blueprintId),
   });
+  const channelId = blueprintMeta.data?.channelId;
+  const assets = useQuery({
+    queryKey: ['channel-assets', channelId],
+    queryFn: () => api.listChannelAssets(channelId!),
+    enabled: !!channelId,
+  });
   const [draft, setDraft] = useState<BlueprintDraft | null>(null);
+  const [selectedStageKey, setSelectedStageKey] = useState<string | null>(null);
 
   useEffect(() => {
     if (draft || !versions.data) return;
@@ -242,30 +203,47 @@ function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
 
   function deleteStage(key: string) {
     setDraft((prev) => prev && { ...prev, graph: prev.graph.filter((s) => s.key !== key) });
+    setSelectedStageKey((prev) => (prev === key ? null : prev));
   }
 
   function reorderStage(fromIndex: number, toIndex: number) {
     setDraft((prev) => prev && { ...prev, graph: moveStage(prev.graph, fromIndex, toIndex) });
   }
 
+  function updateStage(updated: StageDef) {
+    setDraft(
+      (prev) =>
+        prev && { ...prev, graph: prev.graph.map((s) => (s.key === updated.key ? updated : s)) },
+    );
+  }
+
   return (
     <section>
       <h1>Blueprint canvas</h1>
-      <StageGraphCanvas graph={draft.graph} onDeleteStage={deleteStage} onReorder={reorderStage} />
-      <AddStageMenu graph={draft.graph} onAdd={addStage} />
-      <DemoBindingHarness
+      <StageGraphCanvas
         graph={draft.graph}
-        inputs={draft.inputs}
-        roles={draft.roles}
-        channelId={blueprintMeta.data?.channelId}
+        onDeleteStage={deleteStage}
+        onReorder={reorderStage}
+        onSelectStage={setSelectedStageKey}
       />
+      <AddStageMenu graph={draft.graph} onAdd={addStage} />
+      {selectedStageKey && draft.graph.some((s) => s.key === selectedStageKey) && (
+        <StageInspector
+          stageKey={selectedStageKey}
+          graph={draft.graph}
+          inputs={draft.inputs}
+          roles={draft.roles}
+          assets={assets.data ?? []}
+          onChange={updateStage}
+        />
+      )}
     </section>
   );
 }
 
 /** Chunk 1 — route → load-or-create → render nodes; Chunk 2 adds add/
- * remove/reorder; Chunk 3 adds the `BindingPicker` demo harness above.
- * Select/inspector interactivity lands in Chunk 4+. */
+ * remove/reorder; Chunk 4 adds click-to-select + `StageInspector` for
+ * config/slots/context/output/writes. */
 export function BlueprintCanvasPage() {
   const { channelId, blueprintId } = useParams<{ channelId?: string; blueprintId?: string }>();
   const [createdBlueprintId, setCreatedBlueprintId] = useState<string | null>(null);

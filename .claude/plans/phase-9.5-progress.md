@@ -8,7 +8,7 @@ Branch: `codex/phase9.5-visual-canvas`
 - [x] Chunk 1 — Backend baseline + canvas skeleton
 - [x] Chunk 2 — Stage node CRUD (add / remove / reorder)
 - [x] Chunk 3 — Binding picker (the `Ref` editor)
-- [ ] Chunk 4 — Inspector panel: capability config + slots/context
+- [x] Chunk 4 — Inspector panel: capability config + slots/context
 - [ ] Chunk 5 — Checks editor
 - [ ] Chunk 6 — Remaining StageDef fields (qc, retryLimit, approval, budget, model, enabledWhen, iterate)
 - [ ] Chunk 7 — Live validation overlay + memory-edge arcs
@@ -197,3 +197,106 @@ typecheck`/`build` (both clean, same pre-existing chunk-size warning),
   `pnpm lint` (0 errors, same 1 pre-existing unrelated warning in
   `media-output.e2e.test.ts`), `pnpm format:check` (clean after
   `prettier --write` on the one new test file) — all green.
+
+### Chunk 4
+
+- **New `apps/web/src/components/canvas/SchemaForm.tsx`** — the generic
+  no-code editor for any restricted-dialect `JsonSchema` value (Locked
+  Decision 3), purely recursive on `schema.type`: `string`/`number`/
+  `integer` → text/number input (`enum` short-circuits to a `<select>` for
+  exactly these three types, matching the dialect's own shape — `enum` on
+  `object`/`array`/`boolean` isn't a case the dialect produces, so it's not
+  handled); `boolean` → checkbox; `object` → a `<fieldset>` recursing into
+  `properties` (label = key, marked `*` if listed in `required`); `array` →
+  a repeatable list of `items`-typed sub-forms with add/remove
+  (add disabled at `maxItems`, remove disabled at/under `minItems`). Reused
+  as-is for capability `config` and (this chunk's addition) `output.schema`.
+- **New `apps/web/src/components/canvas/StageInspector.tsx`** replaces
+  Chunk 3's `DemoBindingHarness` entirely (deleted, not extended) — the
+  real editor for one selected stage's `key`/`label`/`capability`/`config`/
+  `slots`/`context`/`output`/`writes`.
+  - **`key` is not editable after creation** — the plan's own suggested
+    simpler option, taken as-is: re-keying a stage would require rewriting
+    every `{from:'prev'}`-adjacent reference by *position* (fine, `prev` is
+    positional) but also every other stage's checks/approval that might
+    reference it by identity elsewhere in a later chunk; punting entirely
+    avoids inventing a collision-check UI for a field nothing yet depends on
+    being renamable. `label` is freely editable.
+  - **Capability `<select>`** resets `config: {}` and `slots: {}` on
+    change (matches the task spec exactly) — the next render's effect
+    re-resolves against the new capability with an empty config.
+  - **Debounced resolve**: a `useEffect` keyed on `[capability, configKey]`
+    where `configKey = JSON.stringify(stage.config)` — content equality,
+    not `stage.config`'s object identity, which changes on every draft
+    edit (label, slots, context) even when `config` itself didn't change.
+    400ms debounce (close to `TimelineEditorPage`'s existing 450ms
+    precedent, not copied exactly since this is a network call with a
+    different cost profile, not an autosave). Populates
+    `{slots, allowedOutputs}` from `POST /capabilities/:key/resolve`;
+    resolve failures reset to `{slots: [], allowedOutputs: []}` rather than
+    leaving stale data.
+  - **Slots**: one `BindingPicker` per resolved `SlotDef`, defaulting an
+    unset slot to `{from: 'const', value: undefined}`; `required`/
+    `cardinality` shown as plain text next to the label, no deeper
+    `accepts` interpretation (per task spec).
+  - **Context**: `Object.entries(stage.context)`, each row an editable key
+    `<input>` (renaming overwrites silently on collision — no dedupe UI,
+    consistent with "don't over-engineer" and no chunk before this one
+    needing it) plus a `BindingPicker` for the value; "+ add context" picks
+    the next free `context-N` key.
+  - **`output.kind`** restricted to `resolved.allowedOutputs`; changing kind
+    rebuilds the `OutputDef` via an exhaustive `switch` (needed because
+    `OutputDef` is a discriminated union — spreading the old value across
+    kinds doesn't type-check, e.g. a `text`→`data` change can't carry over
+    a nonexistent `schema` field).
+  - **`output.schema` (kind `'data'`)** — also edited via `SchemaForm`, but
+    against a **new, hand-written, non-recursive `OUTPUT_SCHEMA_META`**
+    constant (top-level `type`/`description`/`enum`/`required`/min-max
+    fields only), not a fully general "schema of a `JsonSchema`". The
+    restricted dialect has no `$ref`, so a schema literally describing
+    "a `JsonSchema` value" can't recurse into its own `properties`/`items`
+    without one — building nested object/array output schemas by picker is
+    therefore out of scope for this chunk (flagged, not silently dropped);
+    most capabilities don't emit `data` outputs with deep schemas anyway.
+    This still satisfies "no JSON textarea anywhere" for the cases it
+    covers.
+  - **New addition — `writes` editor** (not in the original plan; flagged
+    by Chunk 3's own progress notes as a real gap: nothing built any UI to
+    set `stage.writes`, so a `{from:'memory'}` binding had no key to
+    actually point at outside of API/template-seeded graphs). A small
+    repeatable `{memoryKey, path}` list backed by `stage.writes:
+Record<string,string>`, add/remove, free-form text inputs for both key and
+    path (no picker needed — a memory key is user-invented text, not
+    selected from an existing list, the way `BindingPicker`'s consuming
+    side works via `deriveMemoryKeys`).
+  - `BindingPicker`'s `stageIndex` is recomputed via `graph.findIndex`
+    every render (not cached), so it stays correct across reorders.
+- **`BlueprintCanvasPage.tsx`**: `DemoBindingHarness` deleted outright.
+  `StageGraphCanvas` gained `elementsSelectable` (was `false`) and an
+  `onNodeClick` handler reporting `node.id` (the stage key) via a new
+  `onSelectStage` prop. `EditBlueprintCanvas` gained `selectedStageKey`
+  state, an `updateStage(updated)` handler (immutable replace-by-key in
+  `draft.graph`), and moved the channel-assets `useQuery` up from the old
+  demo harness (now keyed off `blueprintMeta.data?.channelId` directly in
+  this component, passed down as a plain prop). `deleteStage` now also
+  clears `selectedStageKey` if the deleted stage was selected, so the
+  inspector doesn't render against a stage key no longer in the graph.
+- A closure-narrowing gotcha worth recording: inside `StageInspector`,
+  `handleContextKeyChange` etc. are `function` declarations defined after
+  an `if (!found) return null` guard on the `StageDef | undefined` lookup —
+  TypeScript does not carry that narrowing into hoisted function-declaration
+  closures (property-level narrowing like `stage.output.kind === 'data'`
+  has the same limitation across any closure boundary, not just hoisted
+  ones). Fixed by rebinding to a fresh `const stage: StageDef = found`
+  right after the guard, and by not spreading `stage.output` when building
+  a `'data'` output (constructing `{kind: 'data', schema}` directly instead
+  of `{...stage.output, schema}`, since the spread's static type stays the
+  full `OutputDef` union inside the callback).
+- No unit tests added for `SchemaForm`'s recursion — still no test runner
+  configured for `apps/web` (reconfirmed, consistent with Chunks 1-3).
+- Verification: `pnpm --filter @reefcraft/shared build` (clean, untouched),
+  `pnpm --filter @reefcraft/web typecheck` (clean), `pnpm --filter
+@reefcraft/web build` (clean, same pre-existing chunk-size warning),
+  `pnpm lint` (0 errors, same 1 pre-existing unrelated warning in
+  `media-output.e2e.test.ts`), `pnpm format:check` (clean after `prettier
+--write` on the three files this chunk touched) — all green.
