@@ -10,7 +10,7 @@ Branch: `codex/phase9.5-visual-canvas`
 - [x] Chunk 3 — Binding picker (the `Ref` editor)
 - [x] Chunk 4 — Inspector panel: capability config + slots/context
 - [x] Chunk 5 — Checks editor
-- [ ] Chunk 6 — Remaining StageDef fields (qc, retryLimit, approval, budget, model, enabledWhen, iterate)
+- [x] Chunk 6 — Remaining StageDef fields (qc, retryLimit, approval, budget, model, enabledWhen, iterate)
 - [ ] Chunk 7 — Live validation overlay + memory-edge arcs
 - [ ] Chunk 8 — Save, create-new flow, and dry-run integration
 - [ ] Chunk 9 — Template library integration
@@ -452,3 +452,88 @@ InputDef[]` prop `StageInspector` already receives for `BindingPicker`
   `pnpm lint` (0 errors, same 1 pre-existing unrelated warning in
   `media-output.e2e.test.ts`), `pnpm format:check` (clean after `prettier
 --write` on the files this chunk touched) — all green.
+
+### Chunk 6b
+
+Final pass of Chunk 6 — `qc`, `approval`, `iterate`, the three fields
+deferred by 6a. With this, every `StageDef` field has form UI and Locked
+Decision 3's no-code mandate holds with no gaps in the per-stage
+inspector. All three sections live in `apps/web/src/components/canvas/StageInspector.tsx`,
+added after "Enabled when", each following 6a's optional-block "+ add X" /
+"Remove X" toggle pattern:
+
+- **QC** (`QcEditor` + `QcDimensionsEditor`): `criteria` (text),
+  `threshold` (number), `includeInputs` (checkbox), `media.includeTranscript`
+  (checkbox — checked constructs `media: {includeTranscript: true}`,
+  unchecked omits `media` entirely rather than storing `false`, mirroring
+  `BudgetEditor`'s "omit the optional object rather than false-ify it"
+  convention), `model` (the existing `ModelPinEditor` from 6a, with
+  `clearable={false}` since `QcDef.model` is a full, required `ModelPin`;
+  its `onChange` result is cast `as ModelPin` per that component's own
+  doc comment — every field it emits is concrete when `clearable={false}`),
+  and `dimensions` as a repeatable `{key, description, weight}` list
+  (add/remove rows, mirroring `ChecksEditor`'s repeatable-list shape).
+  Adding a fresh `qc` block seeds
+  `{criteria: '', threshold: 0, model: {provider: '', modelId: '', params: {}},
+includeInputs: false}` — `params: {}` is required in the seed because
+  `ModelPin.params` (unlike `PartialModelPin.params`) is a non-optional
+  `z.record`, so a bare `{provider, modelId}` doesn't typecheck as a full
+  `ModelPin`.
+- **Approval** (`ApprovalEditor`): `mode` as a `stage`/`item` `<select>`
+  (spec said "radio" for `enabledWhen`'s sibling fields elsewhere in the
+  plan text, but every other two-option field in this inspector, e.g.
+  check `type`, already uses `<select>` — kept consistent with that,
+  not a deviation from the actual `StageInspector.tsx` house style).
+  `onReject` is its own nested optional sub-block with its own add/remove
+  toggle; when present, `retryStageKey` is a plain `<select>` over
+  `graph.map(s => s.key)` — not a `BindingPicker`, since it names a stage
+  identity, not a `Ref`. No extra validation beyond offering the list (a
+  stage retrying itself is valid and is the documented default when
+  `onReject` is entirely absent).
+- **Iterate** (`IterateEditor`): `over` via `BindingPicker` with
+  `iterating={false}` **always** — including when this same stage already
+  declares `iterate` — because `iterate.over` resolves the source array
+  _before_ any item of this stage's own iteration exists, so `item`/
+  `prevItem` referencing this stage would be circular as a source for its
+  own `over`. Every other `BindingPicker`/`ChecksEditor` usage in this
+  file is untouched and still passes `iterating={!!stage.iterate}`.
+  `itemAlias` is a plain text input. `alignWith` is a checkbox toggling
+  the literal `'item'` vs `undefined`, rendered unconditionally (the plan
+  doc's Chunk 6 section suggested gating this on "previous stage also
+  iterates," but the validator (`blueprint-validator.service.ts`) already
+  enforces that precondition server-side with a real error message, and
+  the task spec for this pass asked only for the plain on/off toggle —
+  so no client-side gating was added here, consistent with this file's
+  general pattern of leaving cross-field validation to
+  `POST /blueprints/:id/validate`). `itemRetryLimit` is a number input;
+  `maxItems` is an optional number input clearing to `undefined` on an
+  empty string, mirroring `BudgetEditor`'s `toNumberOrUndefined` pattern.
+  Adding a fresh `iterate` block seeds
+  `{over: {from: 'const', value: []}, itemAlias: 'item', itemRetryLimit: 0}`.
+  **`groupKey` was deliberately left untouched — no UI was added for it
+  anywhere.** It remains reserved/unimplemented per its own doc comment
+  in `packages/shared/src/stage-def.ts` ("Reserved for a future phase —
+  not implemented; the engine and validator never read it"); nothing in
+  this pass sets, reads, or renders it.
+- A minor TypeScript wrinkle worth flagging for future editors of this
+  file: a `set(patch: Partial<T>)` helper that spreads `{...current,
+...patch}` back into a fully-required type (`QcDef`, `StageDef['iterate']`,
+  and the new `QcDimensionsEditor` row type all have required, not
+  optional, fields) needs an explicit `as T` cast on the merged result —
+  TypeScript's object-spread inference otherwise widens the merged
+  object's properties to optional wherever the second spread operand
+  (`Partial<T>`) could omit them, even though every call site only ever
+  passes concrete values for the fields it's actually changing. This
+  differs from `BudgetEditor`'s pre-existing `set` helper, which never
+  needed a cast because `StageDef['budget']`'s own fields are already
+  optional.
+- No unit tests added — still no test runner configured for `apps/web`;
+  consistent with every prior chunk's precedent.
+- Verification: `pnpm --filter @reefcraft/shared build` (clean,
+  untouched), `pnpm --filter @reefcraft/web typecheck` (clean after
+  adding the three `as T` casts described above), `pnpm --filter
+@reefcraft/web build` (clean, same pre-existing chunk-size warning),
+  `pnpm lint` (0 errors, same 1 pre-existing unrelated warning in
+  `media-output.e2e.test.ts`), `pnpm format:check` (clean after `prettier
+--write` on `StageInspector.tsx`, the only file this chunk touched) —
+  all green.
