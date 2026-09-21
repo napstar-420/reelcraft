@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../api/client';
+import { TypedValueInput } from './TypedValueInput';
 import type { PartialModelPin } from '@reefcraft/shared';
 
 function nextFreeKey(existing: Record<string, unknown>, prefix: string): string {
@@ -23,7 +24,7 @@ function ParamsEditor({
     onChange({ ...rest, [newKey]: value });
   }
 
-  function updateValue(key: string, value: string) {
+  function updateValue(key: string, value: string | number | boolean) {
     onChange({ ...(params ?? {}), [key]: value });
   }
 
@@ -47,12 +48,7 @@ function ParamsEditor({
             value={key}
             onChange={(e) => updateKey(key, e.target.value)}
           />
-          <input
-            type="text"
-            placeholder="value"
-            value={String(value)}
-            onChange={(e) => updateValue(key, e.target.value)}
-          />
+          <TypedValueInput value={value} onChange={(next) => updateValue(key, next)} />
           <button type="button" onClick={() => remove(key)}>
             Remove
           </button>

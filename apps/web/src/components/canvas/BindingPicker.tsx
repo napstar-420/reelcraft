@@ -1,5 +1,6 @@
 import type { InputDef, Ref, RoleDef, StageDef } from '@reefcraft/shared';
 import { deriveMemoryKeys } from '../../lib/memory-writers';
+import { TypedValueInput } from './TypedValueInput';
 
 const ALL_REF_KINDS: Ref['from'][] = [
   'prev',
@@ -206,10 +207,9 @@ export function BindingPicker({
       )}
 
       {value.from === 'const' && (
-        <input
-          type="text"
-          value={typeof value.value === 'string' ? value.value : ''}
-          onChange={(e) => onChange({ from: 'const', value: e.target.value })}
+        <TypedValueInput
+          value={value.value}
+          onChange={(next) => onChange({ from: 'const', value: next })}
         />
       )}
 

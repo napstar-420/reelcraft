@@ -5,6 +5,7 @@ import { BindingPicker } from './BindingPicker';
 import { SchemaForm } from './SchemaForm';
 import { ChecksEditor } from './ChecksEditor';
 import { ModelPinEditor } from './ModelPinEditor';
+import { TypedValueInput } from './TypedValueInput';
 import { parseValidationPath, type ParsedValidationPath } from '../../lib/parse-validation-path';
 import type {
   StageDef,
@@ -227,10 +228,9 @@ function EnabledWhenEditor({
       </select>
       <label>
         equals
-        <input
-          type="text"
-          value={String(enabledWhen.equals)}
-          onChange={(e) => onChange({ ...enabledWhen, equals: e.target.value })}
+        <TypedValueInput
+          value={enabledWhen.equals}
+          onChange={(equals) => onChange({ ...enabledWhen, equals })}
         />
       </label>
       <button type="button" onClick={() => onChange(undefined)}>
