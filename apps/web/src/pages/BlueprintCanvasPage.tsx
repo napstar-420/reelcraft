@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { ReactFlow, ReactFlowProvider, Background, type Node, type Edge } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { api } from '../api/client';
+import { AddStageMenu } from '../components/canvas/AddStageMenu';
 import type { StageDef, InputDef, RoleDef, ConfigLayer } from '@reefcraft/shared';
 
 type BlueprintDraft = {
@@ -39,7 +40,26 @@ function prevEdges(graph: StageDef[]): Edge[] {
   return edges;
 }
 
-function StageGraphCanvas({ graph }: { graph: StageDef[] }) {
+/** Splices `graph[fromIndex]` out and back in at `toIndex`. Pure so it's
+ * testable without React or @xyflow/react. */
+function moveStage(graph: StageDef[], fromIndex: number, toIndex: number): StageDef[] {
+  if (fromIndex === toIndex) return graph;
+  const next = [...graph];
+  const [moved] = next.splice(fromIndex, 1);
+  if (!moved) return graph;
+  next.splice(toIndex, 0, moved);
+  return next;
+}
+
+function StageGraphCanvas({
+  graph,
+  onDeleteStage,
+  onReorder,
+}: {
+  graph: StageDef[];
+  onDeleteStage: (key: string) => void;
+  onReorder: (fromIndex: number, toIndex: number) => void;
+}) {
   const nodes = useMemo(() => stageNodes(graph), [graph]);
   const edges = useMemo(() => prevEdges(graph), [graph]);
 
@@ -47,20 +67,41 @@ function StageGraphCanvas({ graph }: { graph: StageDef[] }) {
     return <p>Add your first stage to begin building this blueprint.</p>;
   }
 
+  function handleNodeDragStop(_event: unknown, node: Node) {
+    const fromIndex = graph.findIndex((s) => s.key === node.id);
+    if (fromIndex === -1) return;
+    const toIndex = Math.min(Math.max(Math.round(node.position.x / 250), 0), graph.length - 1);
+    if (toIndex === fromIndex) return;
+    onReorder(fromIndex, toIndex);
+  }
+
   return (
-    <div style={{ height: 480, border: '1px solid #ccc' }}>
-      <ReactFlowProvider>
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          fitView
-          nodesDraggable={false}
-          nodesConnectable={false}
-          elementsSelectable={false}
-        >
-          <Background />
-        </ReactFlow>
-      </ReactFlowProvider>
+    <div>
+      <ul>
+        {graph.map((stage) => (
+          <li key={stage.key}>
+            {stage.label || stage.key}{' '}
+            <button type="button" onClick={() => onDeleteStage(stage.key)}>
+              Delete
+            </button>
+          </li>
+        ))}
+      </ul>
+      <div style={{ height: 480, border: '1px solid #ccc' }}>
+        <ReactFlowProvider>
+          <ReactFlow
+            nodes={nodes}
+            edges={edges}
+            fitView
+            nodesDraggable
+            nodesConnectable={false}
+            elementsSelectable={false}
+            onNodeDragStop={handleNodeDragStop}
+          >
+            <Background />
+          </ReactFlow>
+        </ReactFlowProvider>
+      </div>
     </div>
   );
 }
@@ -137,16 +178,29 @@ function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
     return <p>Loading…</p>;
   }
 
+  function addStage(stage: StageDef) {
+    setDraft((prev) => prev && { ...prev, graph: [...prev.graph, stage] });
+  }
+
+  function deleteStage(key: string) {
+    setDraft((prev) => prev && { ...prev, graph: prev.graph.filter((s) => s.key !== key) });
+  }
+
+  function reorderStage(fromIndex: number, toIndex: number) {
+    setDraft((prev) => prev && { ...prev, graph: moveStage(prev.graph, fromIndex, toIndex) });
+  }
+
   return (
     <section>
       <h1>Blueprint canvas</h1>
-      <StageGraphCanvas graph={draft.graph} />
+      <StageGraphCanvas graph={draft.graph} onDeleteStage={deleteStage} onReorder={reorderStage} />
+      <AddStageMenu graph={draft.graph} onAdd={addStage} />
     </section>
   );
 }
 
-/** Chunk 1 — route → load-or-create → render nodes read-only. Add/remove/
- * reorder/select interactivity lands in Chunk 2+. */
+/** Chunk 1 — route → load-or-create → render nodes; Chunk 2 adds add/
+ * remove/reorder. Select/inspector interactivity lands in Chunk 3+. */
 export function BlueprintCanvasPage() {
   const { channelId, blueprintId } = useParams<{ channelId?: string; blueprintId?: string }>();
   const [createdBlueprintId, setCreatedBlueprintId] = useState<string | null>(null);
