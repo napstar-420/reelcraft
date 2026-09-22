@@ -1,7 +1,14 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation } from '@tanstack/react-query';
-import { ReactFlow, ReactFlowProvider, Background, type Node, type Edge } from '@xyflow/react';
+import {
+  ReactFlow,
+  ReactFlowProvider,
+  Background,
+  type Node,
+  type Edge,
+  type NodeProps,
+} from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { api, ApiError } from '../api/client';
 import { AddStageMenu } from '../components/canvas/AddStageMenu';
@@ -9,6 +16,24 @@ import { StageInspector } from '../components/canvas/StageInspector';
 import { BlueprintSettingsPanel } from '../components/canvas/BlueprintSettingsPanel';
 import { deriveMemoryWriters } from '../lib/memory-writers';
 import { parseValidationPath } from '../lib/parse-validation-path';
+import { cn } from 'cn';
+import { Button } from '../components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
+import { Input } from '../components/ui/input';
+import { Label } from '../components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../components/ui/select';
+import { Alert, AlertDescription, AlertTitle } from '../components/ui/alert';
+import { Badge } from '../components/ui/badge';
+import { StatusBadge } from '../components/ui/status-badge';
+import { IssueList } from '../components/ui/issue-list';
+import { ScrollArea } from '../components/ui/scroll-area';
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '../components/ui/sheet';
 import type {
   StageDef,
   InputDef,
@@ -32,11 +57,12 @@ function emptyDraft(): BlueprintDraft {
 
 /** Locked Decision 5 — trunk layout: x = array index * fixed spacing,
  * recomputed on every render, never persisted or user-draggable. */
-function stageNodes(graph: StageDef[]): Node[] {
+function stageNodes(graph: StageDef[], issuesByStage: Map<string, ValidationIssue[]>): Node[] {
   return graph.map((stage, index) => ({
     id: stage.key,
+    type: 'stage',
     position: { x: index * 250, y: 100 },
-    data: { label: stage.label || stage.key },
+    data: { label: stage.label || stage.key, issues: issuesByStage.get(stage.key) },
   }));
 }
 
@@ -134,6 +160,44 @@ function moveStage(graph: StageDef[], fromIndex: number, toIndex: number): Stage
   return next;
 }
 
+/** Custom React Flow node — a mini card showing the stage label plus an
+ * error/warning badge derived from that stage's validation issues. Purely
+ * presentational: click/drag handling stays on the `<ReactFlow>` instance. */
+function StageNode({ data }: NodeProps) {
+  const label = (data as { label: string }).label;
+  const issues = (data as { issues?: ValidationIssue[] }).issues;
+  const errors = issues?.filter((i) => i.severity === 'error').length ?? 0;
+  const warnings = issues?.filter((i) => i.severity === 'warning').length ?? 0;
+
+  return (
+    <div className="min-w-36 rounded-lg border bg-card px-3 py-2 text-card-foreground shadow-sm ring-1 ring-foreground/10">
+      <p className="text-sm font-medium">{label}</p>
+      {(errors > 0 || warnings > 0) && (
+        <div className="mt-1 flex gap-1">
+          {errors > 0 && (
+            <Badge
+              variant="outline"
+              className={cn(errors > 0 && 'border-destructive/30 text-destructive')}
+            >
+              ✗ {errors}
+            </Badge>
+          )}
+          {warnings > 0 && (
+            <Badge
+              variant="outline"
+              className="border-amber-500/30 text-amber-700 dark:text-amber-400"
+            >
+              ⚠ {warnings}
+            </Badge>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const nodeTypes = { stage: StageNode };
+
 function StageGraphCanvas({
   graph,
   issuesByStage,
@@ -147,11 +211,15 @@ function StageGraphCanvas({
   onReorder: (fromIndex: number, toIndex: number) => void;
   onSelectStage: (key: string) => void;
 }) {
-  const nodes = useMemo(() => stageNodes(graph), [graph]);
+  const nodes = useMemo(() => stageNodes(graph, issuesByStage), [graph, issuesByStage]);
   const edges = useMemo(() => [...prevEdges(graph), ...memoryEdges(graph)], [graph]);
 
   if (graph.length === 0) {
-    return <p>Add your first stage to begin building this blueprint.</p>;
+    return (
+      <p className="text-sm text-muted-foreground">
+        Add your first stage to begin building this blueprint.
+      </p>
+    );
   }
 
   function handleNodeDragStop(_event: unknown, node: Node) {
@@ -167,25 +235,48 @@ function StageGraphCanvas({
   }
 
   return (
-    <div>
-      <ul>
+    <div className="space-y-3">
+      <ul className="flex flex-col gap-1.5">
         {graph.map((stage) => {
           const badge = stageIssueBadge(issuesByStage.get(stage.key));
           return (
-            <li key={stage.key}>
-              {stage.label || stage.key} {badge && <strong>{badge}</strong>}{' '}
-              <button type="button" onClick={() => onDeleteStage(stage.key)}>
+            <li
+              key={stage.key}
+              className="flex items-center justify-between gap-2 rounded-lg border bg-card px-3 py-1.5 text-sm"
+            >
+              <span className="flex items-center gap-2">
+                <span className="font-medium">{stage.label || stage.key}</span>
+                {badge && (
+                  <Badge
+                    variant="outline"
+                    className={cn(
+                      issuesByStage.get(stage.key)?.some((i) => i.severity === 'error')
+                        ? 'border-destructive/30 text-destructive'
+                        : 'border-amber-500/30 text-amber-700 dark:text-amber-400',
+                    )}
+                  >
+                    {badge}
+                  </Badge>
+                )}
+              </span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => onDeleteStage(stage.key)}
+              >
                 Delete
-              </button>
+              </Button>
             </li>
           );
         })}
       </ul>
-      <div style={{ height: 480, border: '1px solid #ccc' }}>
+      <div className="h-[480px] overflow-hidden rounded-lg border bg-card">
         <ReactFlowProvider>
           <ReactFlow
             nodes={nodes}
             edges={edges}
+            nodeTypes={nodeTypes}
             fitView
             nodesDraggable
             nodesConnectable={false}
@@ -225,40 +316,54 @@ function StartFromTemplate({
     },
   });
 
-  if (templates.isLoading) return <p>Loading templates…</p>;
+  if (templates.isLoading)
+    return <p className="text-sm text-muted-foreground">Loading templates…</p>;
   if (blueprintTemplates.length === 0) return null;
 
   return (
-    <section>
-      <h2>Or start from a template</h2>
-      <label>
-        Template
-        <select value={templateId} onChange={(e) => setTemplateId(e.target.value)}>
-          <option value="">Select a template…</option>
-          {blueprintTemplates.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.name}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label>
-        Run cap (USD)
-        <input
-          type="number"
-          value={runCapUsd}
-          onChange={(e) => setRunCapUsd(Number(e.target.value))}
-        />
-      </label>
-      <button
-        type="button"
-        onClick={() => instantiate.mutate()}
-        disabled={!templateId || instantiate.isPending}
-      >
-        {instantiate.isPending ? 'Instantiating…' : 'Instantiate from template'}
-      </button>
-      {instantiate.isError && <p role="alert">{instantiate.error.message}</p>}
-    </section>
+    <Card>
+      <CardHeader>
+        <CardTitle>Or start from a template</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="space-y-1.5">
+          <Label htmlFor="template-select">Template</Label>
+          <Select value={templateId} onValueChange={setTemplateId}>
+            <SelectTrigger id="template-select" className="w-full">
+              <SelectValue placeholder="Select a template…" />
+            </SelectTrigger>
+            <SelectContent>
+              {blueprintTemplates.map((t) => (
+                <SelectItem key={t.id} value={t.id}>
+                  {t.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="run-cap">Run cap (USD)</Label>
+          <Input
+            id="run-cap"
+            type="number"
+            value={runCapUsd}
+            onChange={(e) => setRunCapUsd(Number(e.target.value))}
+          />
+        </div>
+        <Button
+          type="button"
+          onClick={() => instantiate.mutate()}
+          disabled={!templateId || instantiate.isPending}
+        >
+          {instantiate.isPending ? 'Instantiating…' : 'Instantiate from template'}
+        </Button>
+        {instantiate.isError && (
+          <Alert variant="destructive">
+            <AlertDescription>{instantiate.error.message}</AlertDescription>
+          </Alert>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -290,26 +395,37 @@ function CreateBlueprintForm({
   }
 
   return (
-    <section>
-      <h1>Name your blueprint</h1>
-      <form onSubmit={handleSubmit}>
-        <input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="Blueprint name"
-        />
-        <button type="submit" disabled={pending || !name.trim()}>
-          Create
-        </button>
-      </form>
-      {error && <p role="alert">{error}</p>}
+    <div className="mx-auto flex max-w-xl flex-col gap-6">
+      <h1 className="text-2xl font-semibold tracking-tight">Name your blueprint</h1>
+      <Card>
+        <CardContent>
+          <form onSubmit={handleSubmit} className="flex flex-col gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="blueprint-name">Blueprint name</Label>
+              <Input
+                id="blueprint-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Blueprint name"
+              />
+            </div>
+            <Button type="submit" disabled={pending || !name.trim()} className="self-start">
+              Create
+            </Button>
+            {error && (
+              <Alert variant="destructive">
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            )}
+          </form>
+        </CardContent>
+      </Card>
       <StartFromTemplate channelId={channelId} onCreated={onCreated} />
-    </section>
+    </div>
   );
 }
 
-/** Chunk 8 — save/dry-run wiring. Plain `<p role="alert">` messages, no
- * icon library, matching the rest of this file's convention. */
+/** Chunk 8 — save/dry-run wiring. */
 function SaveAndDryRun({
   blueprintId,
   draft,
@@ -339,43 +455,56 @@ function SaveAndDryRun({
     save.error instanceof ApiError ? (save.error.issues as ValidationIssue[]) : undefined;
 
   return (
-    <section>
-      <h2>Save &amp; dry-run</h2>
-      {/* `POST /blueprints/:id/versions` saves a non-runnable draft anyway
-       * (`BlueprintService.createVersion` never rejects on `runnable:
-       * false` — it just stores the issues) — so this is a warning, not a
-       * disabled button; Save itself is only disabled while pending. */}
-      {runnable === false && <p role="alert">Not runnable yet — you can still save this draft.</p>}
-      <button type="button" onClick={() => save.mutate()} disabled={save.isPending}>
-        {save.isPending ? 'Saving…' : 'Save'}
-      </button>
-      {save.isSuccess && (
-        <p>
-          Saved as version {save.data.version} ({save.data.runnable ? 'runnable' : 'not runnable'})
-        </p>
-      )}
-      {save.isError &&
-        (saveIssues ? (
-          <ul>
-            {saveIssues.map((issue, i) => (
-              <li key={i}>
-                [{issue.severity}] <code>{issue.path}</code>: {issue.message}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p role="alert">{save.error.message}</p>
-        ))}
-
-      <button
-        type="button"
-        onClick={() => dryRun.mutate()}
-        disabled={savedVersion === null || dryRun.isPending}
-      >
-        {dryRun.isPending ? 'Starting…' : 'Dry run'}
-      </button>
-      {dryRun.isError && <p role="alert">{dryRun.error.message}</p>}
-    </section>
+    <Card>
+      <CardHeader>
+        <CardTitle>Save &amp; dry-run</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {/* `POST /blueprints/:id/versions` saves a non-runnable draft anyway
+         * (`BlueprintService.createVersion` never rejects on `runnable:
+         * false` — it just stores the issues) — so this is a warning, not a
+         * disabled button; Save itself is only disabled while pending. */}
+        {runnable === false && (
+          <Alert className="border-amber-500/30 bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400 [&>svg]:text-current">
+            <AlertDescription className="text-current">
+              Not runnable yet — you can still save this draft.
+            </AlertDescription>
+          </Alert>
+        )}
+        <div className="flex flex-wrap items-center gap-2">
+          <Button type="button" onClick={() => save.mutate()} disabled={save.isPending}>
+            {save.isPending ? 'Saving…' : 'Save'}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => dryRun.mutate()}
+            disabled={savedVersion === null || dryRun.isPending}
+          >
+            {dryRun.isPending ? 'Starting…' : 'Dry run'}
+          </Button>
+        </div>
+        {save.isSuccess && (
+          <p className="text-sm text-muted-foreground">
+            Saved as version {save.data.version} ({save.data.runnable ? 'runnable' : 'not runnable'}
+            )
+          </p>
+        )}
+        {save.isError &&
+          (saveIssues ? (
+            <IssueList issues={saveIssues} />
+          ) : (
+            <Alert variant="destructive">
+              <AlertDescription>{save.error.message}</AlertDescription>
+            </Alert>
+          ))}
+        {dryRun.isError && (
+          <Alert variant="destructive">
+            <AlertDescription>{dryRun.error.message}</AlertDescription>
+          </Alert>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -407,51 +536,56 @@ function SaveAsTemplate({ graph }: { graph: StageDef[] }) {
     save.error instanceof ApiError ? (save.error.issues as ValidationIssue[]) : undefined;
 
   return (
-    <section>
-      <h2>Save as template</h2>
-
-      <label>
-        Name
-        <input value={name} onChange={(e) => setName(e.target.value)} />
-      </label>
-      <label>
-        Description
-        <input value={description} onChange={(e) => setDescription(e.target.value)} />
-      </label>
-      <label>
-        Tags (comma-separated)
-        <input value={tagsText} onChange={(e) => setTagsText(e.target.value)} />
-      </label>
-
-      <div>
-        <button onClick={() => save.mutate()} disabled={save.isPending || !name}>
-          Save as template
-        </button>
-      </div>
-
-      {save.isSuccess && (
-        <p>
-          Saved as template <code>{JSON.stringify(save.data)}</code>
-        </p>
-      )}
-
-      {save.isError && (
-        <div>
-          <h3>Save failed</h3>
-          {issues ? (
-            <ul>
-              {issues.map((issue, i) => (
-                <li key={i}>
-                  [{issue.severity}] <code>{issue.path}</code>: {issue.message}
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p role="alert">{save.error.message}</p>
-          )}
+    <Card>
+      <CardHeader>
+        <CardTitle>Save as template</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="space-y-1.5">
+          <Label htmlFor="template-name">Name</Label>
+          <Input id="template-name" value={name} onChange={(e) => setName(e.target.value)} />
         </div>
-      )}
-    </section>
+        <div className="space-y-1.5">
+          <Label htmlFor="template-description">Description</Label>
+          <Input
+            id="template-description"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="template-tags">Tags (comma-separated)</Label>
+          <Input
+            id="template-tags"
+            value={tagsText}
+            onChange={(e) => setTagsText(e.target.value)}
+          />
+        </div>
+
+        <Button onClick={() => save.mutate()} disabled={save.isPending || !name}>
+          Save as template
+        </Button>
+
+        {save.isSuccess && (
+          <p className="text-sm text-muted-foreground">
+            Saved as template <code>{JSON.stringify(save.data)}</code>
+          </p>
+        )}
+
+        {save.isError &&
+          (issues ? (
+            <div className="space-y-1.5">
+              <p className="text-sm font-medium">Save failed</p>
+              <IssueList issues={issues} />
+            </div>
+          ) : (
+            <Alert variant="destructive">
+              <AlertTitle>Save failed</AlertTitle>
+              <AlertDescription>{save.error.message}</AlertDescription>
+            </Alert>
+          ))}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -518,7 +652,7 @@ function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
   const bannerIssues = useMemo(() => graphLevelIssues(validation?.issues ?? []), [validation]);
 
   if (versions.isLoading || !draft) {
-    return <p>Loading…</p>;
+    return <p className="text-sm text-muted-foreground">Loading…</p>;
   }
 
   function addStage(stage: StageDef) {
@@ -549,52 +683,77 @@ function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
     setDraft((prev) => prev && { ...prev, ...patch });
   }
 
+  const stageSelected = !!selectedStageKey && draft.graph.some((s) => s.key === selectedStageKey);
+
   return (
-    <section>
-      <h1>Blueprint canvas</h1>
-      <p>
-        {validationFailed
-          ? "couldn't validate — check your connection"
-          : validation && (validation.runnable ? '✓ Runnable' : '✗ Not runnable yet')}
-      </p>
-      {bannerIssues.length > 0 && (
-        <ul>
-          {bannerIssues.map((issue, i) => (
-            <li key={i}>
-              {issue.severity === 'error' ? '✗' : '⚠'} {issue.path}: {issue.message}
-            </li>
-          ))}
-        </ul>
-      )}
-      <BlueprintSettingsPanel
-        inputs={draft.inputs}
-        roles={draft.roles}
-        budget={draft.budget}
-        channelId={channelId ?? ''}
-        onChange={updateSettings}
-      />
-      <StageGraphCanvas
-        graph={draft.graph}
-        issuesByStage={issuesByStage}
-        onDeleteStage={deleteStage}
-        onReorder={reorderStage}
-        onSelectStage={setSelectedStageKey}
-      />
-      <AddStageMenu graph={draft.graph} onAdd={addStage} />
-      {selectedStageKey && draft.graph.some((s) => s.key === selectedStageKey) && (
-        <StageInspector
-          stageKey={selectedStageKey}
-          graph={draft.graph}
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-2xl font-semibold tracking-tight">Blueprint canvas</h1>
+        {!validationFailed && validation && (
+          <StatusBadge
+            tone={validation.runnable ? 'success' : 'error'}
+            label={validation.runnable ? 'Runnable' : 'Not runnable yet'}
+          />
+        )}
+        {validationFailed && (
+          <StatusBadge tone="warning" label="couldn't validate — check your connection" />
+        )}
+      </div>
+
+      <IssueList issues={bannerIssues} />
+
+      <section className="space-y-2">
+        <h2 className="text-lg font-medium">Settings</h2>
+        <BlueprintSettingsPanel
           inputs={draft.inputs}
           roles={draft.roles}
-          assets={assets.data ?? []}
-          issues={issuesByStage.get(selectedStageKey) ?? []}
-          onChange={updateStage}
+          budget={draft.budget}
+          channelId={channelId ?? ''}
+          onChange={updateSettings}
         />
-      )}
+      </section>
+
+      <section className="space-y-2">
+        <h2 className="text-lg font-medium">Stages</h2>
+        <StageGraphCanvas
+          graph={draft.graph}
+          issuesByStage={issuesByStage}
+          onDeleteStage={deleteStage}
+          onReorder={reorderStage}
+          onSelectStage={setSelectedStageKey}
+        />
+        <AddStageMenu graph={draft.graph} onAdd={addStage} />
+      </section>
+
+      <Sheet
+        open={stageSelected}
+        onOpenChange={(open) => {
+          if (!open) setSelectedStageKey(null);
+        }}
+      >
+        <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-xl">
+          <SheetHeader>
+            <SheetTitle>{selectedStageKey}</SheetTitle>
+          </SheetHeader>
+          <ScrollArea className="flex-1 px-4 pb-4">
+            {selectedStageKey && stageSelected && (
+              <StageInspector
+                stageKey={selectedStageKey}
+                graph={draft.graph}
+                inputs={draft.inputs}
+                roles={draft.roles}
+                assets={assets.data ?? []}
+                issues={issuesByStage.get(selectedStageKey) ?? []}
+                onChange={updateStage}
+              />
+            )}
+          </ScrollArea>
+        </SheetContent>
+      </Sheet>
+
       <SaveAndDryRun blueprintId={blueprintId} draft={draft} runnable={validation?.runnable} />
       <SaveAsTemplate graph={draft.graph} />
-    </section>
+    </div>
   );
 }
 
@@ -612,5 +771,9 @@ export function BlueprintCanvasPage() {
   if (channelId) {
     return <CreateBlueprintForm channelId={channelId} onCreated={setCreatedBlueprintId} />;
   }
-  return <p>Missing channel or blueprint id.</p>;
+  return (
+    <div className="flex h-full items-center justify-center">
+      <p className="text-sm text-muted-foreground">Missing channel or blueprint id.</p>
+    </div>
+  );
 }
