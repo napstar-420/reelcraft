@@ -1,4 +1,9 @@
-import type { AttemptOutcome, RunState, StageExecutionState, ValidationIssue } from '@reefcraft/shared';
+import type {
+  AttemptOutcome,
+  RunState,
+  StageExecutionState,
+  ValidationIssue,
+} from '@reefcraft/shared';
 
 export type StatusTone = 'success' | 'running' | 'warning' | 'error' | 'neutral';
 

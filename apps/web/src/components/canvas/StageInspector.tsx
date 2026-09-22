@@ -21,21 +21,26 @@ import type {
   ModelPin,
   ValidationIssue,
 } from '@reefcraft/shared';
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from '@/components/ui/accordion';
+import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
+import { IssueList } from '@/components/ui/issue-list';
+import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
-/** Plain `[severity] message` list, no color/icon library — matches this
- * file's "no UI kit" convention throughout. */
-function IssueList({ issues }: { issues: ValidationIssue[] }) {
-  if (issues.length === 0) return null;
-  return (
-    <ul>
-      {issues.map((issue, index) => (
-        <li key={index}>
-          {issue.severity === 'error' ? 'ERROR' : 'WARNING'}: {issue.message}
-        </li>
-      ))}
-    </ul>
-  );
-}
+const UNSET = '__unset__';
 
 /** A shallow, non-recursive view of the `JsonSchema` dialect (§4.2) used only
  * to build `output.schema` via `SchemaForm` itself — the dialect has no
@@ -122,29 +127,31 @@ function WritesEditor({
   }
 
   return (
-    <div>
+    <div className="flex flex-col gap-2">
       {entries.map(([key, path]) => (
-        <div key={key}>
-          <input
+        <div key={key} className="flex flex-wrap items-center gap-2">
+          <Input
             type="text"
+            className="w-40"
             placeholder="memory key"
             value={key}
             onChange={(e) => updateKey(key, e.target.value)}
           />
-          <input
+          <Input
             type="text"
+            className="w-40"
             placeholder="path"
             value={path}
             onChange={(e) => updatePath(key, e.target.value)}
           />
-          <button type="button" onClick={() => remove(key)}>
+          <Button type="button" variant="outline" size="sm" onClick={() => remove(key)}>
             Remove
-          </button>
+          </Button>
         </div>
       ))}
-      <button type="button" onClick={add}>
+      <Button type="button" variant="outline" size="sm" onClick={add} className="self-start">
         + Add write
-      </button>
+      </Button>
     </div>
   );
 }
@@ -172,23 +179,23 @@ function BudgetEditor({
   }
 
   return (
-    <div>
-      <label>
-        Stage cap (USD)
-        <input
+    <div className="grid gap-3 sm:grid-cols-2">
+      <div className="flex flex-col gap-1.5">
+        <Label>Stage cap (USD)</Label>
+        <Input
           type="number"
           value={budget?.stageCapUsd ?? ''}
           onChange={(e) => set({ stageCapUsd: toNumberOrUndefined(e.target.value) })}
         />
-      </label>
-      <label>
-        QC cap (USD)
-        <input
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <Label>QC cap (USD)</Label>
+        <Input
           type="number"
           value={budget?.qcCapUsd ?? ''}
           onChange={(e) => set({ qcCapUsd: toNumberOrUndefined(e.target.value) })}
         />
-      </label>
+      </div>
     </div>
   );
 }
@@ -207,35 +214,48 @@ function EnabledWhenEditor({
 }) {
   if (!enabledWhen) {
     return (
-      <button type="button" onClick={() => onChange({ input: inputs[0]?.key ?? '', equals: '' })}>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        onClick={() => onChange({ input: inputs[0]?.key ?? '', equals: '' })}
+      >
         + add condition
-      </button>
+      </Button>
     );
   }
 
   return (
-    <div>
-      <select
-        value={enabledWhen.input}
-        onChange={(e) => onChange({ ...enabledWhen, input: e.target.value })}
-      >
-        <option value="">Select an input…</option>
-        {inputs.map((input) => (
-          <option key={input.key} value={input.key}>
-            {input.label}
-          </option>
-        ))}
-      </select>
-      <label>
-        equals
+    <div className="flex flex-wrap items-end gap-3">
+      <div className="flex flex-col gap-1.5">
+        <Label>Input</Label>
+        <Select
+          value={enabledWhen.input || UNSET}
+          onValueChange={(next) => onChange({ ...enabledWhen, input: next === UNSET ? '' : next })}
+        >
+          <SelectTrigger size="sm" className="w-48">
+            <SelectValue placeholder="Select an input…" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={UNSET}>Select an input…</SelectItem>
+            {inputs.map((input) => (
+              <SelectItem key={input.key} value={input.key}>
+                {input.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <Label>equals</Label>
         <TypedValueInput
           value={enabledWhen.equals}
           onChange={(equals) => onChange({ ...enabledWhen, equals })}
         />
-      </label>
-      <button type="button" onClick={() => onChange(undefined)}>
+      </div>
+      <Button type="button" variant="outline" size="sm" onClick={() => onChange(undefined)}>
         Remove condition
-      </button>
+      </Button>
     </div>
   );
 }
@@ -262,35 +282,38 @@ function QcDimensionsEditor({
   }
 
   return (
-    <div>
+    <div className="flex flex-col gap-2">
       {dimensions.map((dim, index) => (
-        <div key={index}>
-          <input
+        <div key={index} className="flex flex-wrap items-center gap-2">
+          <Input
             type="text"
+            className="w-32"
             placeholder="key"
             value={dim.key}
             onChange={(e) => update(index, { key: e.target.value })}
           />
-          <input
+          <Input
             type="text"
+            className="w-56"
             placeholder="description"
             value={dim.description}
             onChange={(e) => update(index, { description: e.target.value })}
           />
-          <input
+          <Input
             type="number"
+            className="w-24"
             placeholder="weight"
             value={dim.weight}
             onChange={(e) => update(index, { weight: Number(e.target.value) || 0 })}
           />
-          <button type="button" onClick={() => remove(index)}>
+          <Button type="button" variant="outline" size="sm" onClick={() => remove(index)}>
             Remove
-          </button>
+          </Button>
         </div>
       ))}
-      <button type="button" onClick={add}>
+      <Button type="button" variant="outline" size="sm" onClick={add} className="self-start">
         + add dimension
-      </button>
+      </Button>
     </div>
   );
 }
@@ -307,8 +330,10 @@ function QcEditor({
 }) {
   if (!qc) {
     return (
-      <button
+      <Button
         type="button"
+        variant="outline"
+        size="sm"
         onClick={() =>
           onChange({
             criteria: '',
@@ -319,7 +344,7 @@ function QcEditor({
         }
       >
         + add QC
-      </button>
+      </Button>
     );
   }
 
@@ -328,58 +353,67 @@ function QcEditor({
   }
 
   return (
-    <div>
-      <label>
-        Criteria
-        <input
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-1.5">
+        <Label>Criteria</Label>
+        <Input
           type="text"
           value={qc.criteria}
           onChange={(e) => set({ criteria: e.target.value })}
         />
-      </label>
-      <label>
-        Threshold
-        <input
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <Label>Threshold</Label>
+        <Input
           type="number"
+          className="w-32"
           value={qc.threshold}
           onChange={(e) => set({ threshold: Number(e.target.value) || 0 })}
         />
-      </label>
-      <label>
-        <input
-          type="checkbox"
+      </div>
+      <Label className="font-normal">
+        <Checkbox
           checked={qc.includeInputs}
-          onChange={(e) => set({ includeInputs: e.target.checked })}
+          onCheckedChange={(checked) => set({ includeInputs: checked === true })}
         />
         Include inputs
-      </label>
-      <label>
-        <input
-          type="checkbox"
+      </Label>
+      <Label className="font-normal">
+        <Checkbox
           checked={!!qc.media?.includeTranscript}
-          onChange={(e) =>
-            set({ media: e.target.checked ? { includeTranscript: true } : undefined })
+          onCheckedChange={(checked) =>
+            set({ media: checked === true ? { includeTranscript: true } : undefined })
           }
         />
         Include transcript
-      </label>
+      </Label>
 
-      <h4>Model</h4>
-      <ModelPinEditor
-        value={qc.model}
-        onChange={(model) => set({ model: model as ModelPin })}
-        clearable={false}
-      />
+      <div className="flex flex-col gap-1.5">
+        <h4 className="text-sm font-medium">Model</h4>
+        <ModelPinEditor
+          value={qc.model}
+          onChange={(model) => set({ model: model as ModelPin })}
+          clearable={false}
+        />
+      </div>
 
-      <h4>Dimensions</h4>
-      <QcDimensionsEditor
-        dimensions={qc.dimensions ?? []}
-        onChange={(dimensions) => set({ dimensions })}
-      />
+      <div className="flex flex-col gap-1.5">
+        <h4 className="text-sm font-medium">Dimensions</h4>
+        <QcDimensionsEditor
+          dimensions={qc.dimensions ?? []}
+          onChange={(dimensions) => set({ dimensions })}
+        />
+      </div>
 
-      <button type="button" onClick={() => onChange(undefined)}>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="self-start"
+        onClick={() => onChange(undefined)}
+      >
         Remove QC
-      </button>
+      </Button>
     </div>
   );
 }
@@ -397,61 +431,85 @@ function ApprovalEditor({
 }) {
   if (!approval) {
     return (
-      <button type="button" onClick={() => onChange({ mode: 'stage' })}>
+      <Button type="button" variant="outline" size="sm" onClick={() => onChange({ mode: 'stage' })}>
         + add approval
-      </button>
+      </Button>
     );
   }
 
   return (
-    <div>
-      <label>
-        Mode
-        <select
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-1.5">
+        <Label>Mode</Label>
+        <Select
           value={approval.mode}
-          onChange={(e) => onChange({ ...approval, mode: e.target.value as 'stage' | 'item' })}
+          onValueChange={(next) => onChange({ ...approval, mode: next as 'stage' | 'item' })}
         >
-          <option value="stage">stage</option>
-          <option value="item">item</option>
-        </select>
-      </label>
+          <SelectTrigger size="sm" className="w-32">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="stage">stage</SelectItem>
+            <SelectItem value="item">item</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
 
       {approval.onReject ? (
-        <div>
-          <label>
-            Retry stage
-            <select
-              value={approval.onReject.retryStageKey}
-              onChange={(e) =>
-                onChange({ ...approval, onReject: { retryStageKey: e.target.value } })
+        <div className="flex flex-wrap items-end gap-2">
+          <div className="flex flex-col gap-1.5">
+            <Label>Retry stage</Label>
+            <Select
+              value={approval.onReject.retryStageKey || UNSET}
+              onValueChange={(next) =>
+                onChange({ ...approval, onReject: { retryStageKey: next === UNSET ? '' : next } })
               }
             >
-              <option value="">Select a stage…</option>
-              {graph.map((s) => (
-                <option key={s.key} value={s.key}>
-                  {s.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <button type="button" onClick={() => onChange({ ...approval, onReject: undefined })}>
+              <SelectTrigger size="sm" className="w-48">
+                <SelectValue placeholder="Select a stage…" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={UNSET}>Select a stage…</SelectItem>
+                {graph.map((s) => (
+                  <SelectItem key={s.key} value={s.key}>
+                    {s.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => onChange({ ...approval, onReject: undefined })}
+          >
             Remove on-reject
-          </button>
+          </Button>
         </div>
       ) : (
-        <button
+        <Button
           type="button"
+          variant="outline"
+          size="sm"
+          className="self-start"
           onClick={() =>
             onChange({ ...approval, onReject: { retryStageKey: graph[0]?.key ?? '' } })
           }
         >
           + add on-reject
-        </button>
+        </Button>
       )}
 
-      <button type="button" onClick={() => onChange(undefined)}>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="self-start"
+        onClick={() => onChange(undefined)}
+      >
         Remove approval
-      </button>
+      </Button>
     </div>
   );
 }
@@ -480,8 +538,10 @@ function IterateEditor({
 }) {
   if (!iterate) {
     return (
-      <button
+      <Button
         type="button"
+        variant="outline"
+        size="sm"
         onClick={() =>
           onChange({
             over: { from: 'const', value: [] },
@@ -491,7 +551,7 @@ function IterateEditor({
         }
       >
         + add iterate
-      </button>
+      </Button>
     );
   }
 
@@ -500,9 +560,9 @@ function IterateEditor({
   }
 
   return (
-    <div>
-      <label>
-        Over
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-1.5">
+        <Label>Over</Label>
         <BindingPicker
           value={iterate.over}
           onChange={(over) => set({ over })}
@@ -513,48 +573,58 @@ function IterateEditor({
           assets={assets}
           iterating={false}
         />
-      </label>
-      <label>
-        Item alias
-        <input
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <Label>Item alias</Label>
+        <Input
           type="text"
+          className="w-40"
           value={iterate.itemAlias}
           onChange={(e) => set({ itemAlias: e.target.value })}
         />
-      </label>
-      <label>
-        <input
-          type="checkbox"
+      </div>
+      <Label className="font-normal">
+        <Checkbox
           checked={iterate.alignWith === 'item'}
-          onChange={(e) => set({ alignWith: e.target.checked ? 'item' : undefined })}
+          onCheckedChange={(checked) => set({ alignWith: checked === true ? 'item' : undefined })}
         />
         align with item
-      </label>
-      <label>
-        Item retry limit
-        <input
+      </Label>
+      <div className="flex flex-col gap-1.5">
+        <Label>Item retry limit</Label>
+        <Input
           type="number"
+          className="w-32"
           min={0}
           value={iterate.itemRetryLimit}
           onChange={(e) => set({ itemRetryLimit: Number(e.target.value) || 0 })}
         />
-      </label>
-      <label>
-        Max items
-        <input
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <Label>Max items</Label>
+        <Input
           type="number"
+          className="w-32"
           min={0}
           value={iterate.maxItems ?? ''}
           onChange={(e) => set({ maxItems: toNumberOrUndefined(e.target.value) })}
         />
-      </label>
+      </div>
 
-      <button type="button" onClick={() => onChange(undefined)}>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="self-start"
+        onClick={() => onChange(undefined)}
+      >
         Remove iterate
-      </button>
+      </Button>
     </div>
   );
 }
+
+const ACCORDION_SECTIONS = ['basics', 'data', 'checks-qc', 'execution'];
 
 /** Chunk 4 — the real slot/context/config/output/writes editor for one
  * selected stage, replacing Chunk 3's `DemoBindingHarness`. `stage.key` is
@@ -693,227 +763,288 @@ export function StageInspector({
   }
 
   return (
-    <section>
-      <h2>Inspect stage</h2>
+    <section className="flex flex-col gap-4">
+      <h2 className="text-lg font-semibold">Inspect stage</h2>
 
       <IssueList issues={stageLevelIssues} />
 
-      <label>
-        Key
-        <input type="text" value={stage.key} disabled />
-      </label>
-      <label>
-        Label
-        <input
-          type="text"
-          value={stage.label}
-          onChange={(e) => onChange({ ...stage, label: e.target.value })}
-        />
-      </label>
-      <label>
-        Capability
-        <select
-          value={stage.capability}
-          onChange={(e) =>
-            onChange({ ...stage, capability: e.target.value, config: {}, slots: {} })
-          }
-        >
-          <option value="">Select a capability…</option>
-          {capabilities.data?.map((c) => (
-            <option key={c.key} value={c.key}>
-              {c.key}
-            </option>
-          ))}
-        </select>
-        <IssueList issues={capabilityIssues} />
-      </label>
+      <Accordion type="multiple" defaultValue={ACCORDION_SECTIONS} className="flex flex-col gap-2">
+        <AccordionItem value="basics" className="rounded-xl border border-border px-3">
+          <AccordionTrigger>Basics</AccordionTrigger>
+          <AccordionContent className="flex flex-col gap-4">
+            <div className="flex flex-col gap-1.5">
+              <Label>Key</Label>
+              <Input type="text" value={stage.key} disabled />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label>Label</Label>
+              <Input
+                type="text"
+                value={stage.label}
+                onChange={(e) => onChange({ ...stage, label: e.target.value })}
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label>Capability</Label>
+              <Select
+                value={stage.capability || UNSET}
+                onValueChange={(next) =>
+                  onChange({
+                    ...stage,
+                    capability: next === UNSET ? '' : next,
+                    config: {},
+                    slots: {},
+                  })
+                }
+              >
+                <SelectTrigger size="sm" className="w-full sm:w-64">
+                  <SelectValue placeholder="Select a capability…" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={UNSET}>Select a capability…</SelectItem>
+                  {capabilities.data?.map((c) => (
+                    <SelectItem key={c.key} value={c.key}>
+                      {c.key}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <IssueList issues={capabilityIssues} />
+            </div>
 
-      {configSchema && (
-        <div>
-          <h3>Config</h3>
-          <SchemaForm
-            schema={configSchema}
-            value={stage.config}
-            onChange={(next) =>
-              onChange({ ...stage, config: (next as Record<string, unknown>) ?? {} })
-            }
-          />
-          <IssueList issues={configIssues} />
-        </div>
-      )}
+            {configSchema && (
+              <div className="flex flex-col gap-1.5">
+                <h3 className="text-sm font-medium">Config</h3>
+                <SchemaForm
+                  schema={configSchema}
+                  value={stage.config}
+                  onChange={(next) =>
+                    onChange({ ...stage, config: (next as Record<string, unknown>) ?? {} })
+                  }
+                />
+                <IssueList issues={configIssues} />
+              </div>
+            )}
+          </AccordionContent>
+        </AccordionItem>
 
-      <div>
-        <h3>Slots</h3>
-        {resolved.slots.map((slot) => (
-          <div key={slot.name}>
-            <label>
-              {slot.name} — {slot.required ? 'required' : 'optional'}, {slot.cardinality}
-            </label>
-            <BindingPicker
-              value={stage.slots[slot.name] ?? { from: 'const', value: undefined }}
-              onChange={(ref) =>
-                onChange({ ...stage, slots: { ...stage.slots, [slot.name]: ref } })
-              }
-              stageIndex={stageIndex}
-              graph={graph}
-              inputs={inputs}
-              roles={roles}
-              assets={assets}
-              iterating={!!stage.iterate}
-            />
-            <IssueList issues={slotIssues(slot.name)} />
-          </div>
-        ))}
-      </div>
+        <AccordionItem value="data" className="rounded-xl border border-border px-3">
+          <AccordionTrigger>Data (slots, context, output, writes)</AccordionTrigger>
+          <AccordionContent className="flex flex-col gap-4">
+            <div className="flex flex-col gap-3">
+              <h3 className="text-sm font-medium">Slots</h3>
+              {resolved.slots.map((slot) => (
+                <div key={slot.name} className="flex flex-col gap-1.5">
+                  <Label>
+                    {slot.name} — {slot.required ? 'required' : 'optional'}, {slot.cardinality}
+                  </Label>
+                  <BindingPicker
+                    value={stage.slots[slot.name] ?? { from: 'const', value: undefined }}
+                    onChange={(ref) =>
+                      onChange({ ...stage, slots: { ...stage.slots, [slot.name]: ref } })
+                    }
+                    stageIndex={stageIndex}
+                    graph={graph}
+                    inputs={inputs}
+                    roles={roles}
+                    assets={assets}
+                    iterating={!!stage.iterate}
+                  />
+                  <IssueList issues={slotIssues(slot.name)} />
+                </div>
+              ))}
+            </div>
 
-      <div>
-        <h3>Context</h3>
-        {Object.entries(stage.context).map(([key, ref]) => (
-          <div key={key}>
-            <input
-              type="text"
-              placeholder="context key"
-              value={key}
-              onChange={(e) => handleContextKeyChange(key, e.target.value)}
-            />
-            <BindingPicker
-              value={ref}
-              onChange={(next) => handleContextValueChange(key, next)}
-              stageIndex={stageIndex}
-              graph={graph}
-              inputs={inputs}
-              roles={roles}
-              assets={assets}
-              iterating={!!stage.iterate}
-            />
-            <button type="button" onClick={() => handleRemoveContext(key)}>
-              Remove
-            </button>
-            <IssueList issues={contextIssues(key)} />
-          </div>
-        ))}
-        <button type="button" onClick={handleAddContext}>
-          + add context
-        </button>
-      </div>
+            <div className="flex flex-col gap-3">
+              <h3 className="text-sm font-medium">Context</h3>
+              {Object.entries(stage.context).map(([key, ref]) => (
+                <div key={key} className="flex flex-col gap-1.5">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Input
+                      type="text"
+                      className="w-40"
+                      placeholder="context key"
+                      value={key}
+                      onChange={(e) => handleContextKeyChange(key, e.target.value)}
+                    />
+                    <BindingPicker
+                      value={ref}
+                      onChange={(next) => handleContextValueChange(key, next)}
+                      stageIndex={stageIndex}
+                      graph={graph}
+                      inputs={inputs}
+                      roles={roles}
+                      assets={assets}
+                      iterating={!!stage.iterate}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleRemoveContext(key)}
+                    >
+                      Remove
+                    </Button>
+                  </div>
+                  <IssueList issues={contextIssues(key)} />
+                </div>
+              ))}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="self-start"
+                onClick={handleAddContext}
+              >
+                + add context
+              </Button>
+            </div>
 
-      <div>
-        <h3>Output</h3>
-        <select
-          value={stage.output.kind}
-          onChange={(e) =>
-            onChange({ ...stage, output: buildOutput(e.target.value as OutputKind, stage.output) })
-          }
-        >
-          {resolved.allowedOutputs.length === 0 && (
-            <option value={stage.output.kind}>{stage.output.kind}</option>
-          )}
-          {resolved.allowedOutputs.map((kind) => (
-            <option key={kind} value={kind}>
-              {kind}
-            </option>
-          ))}
-        </select>
-        <IssueList issues={outputKindIssues} />
-        <IssueList issues={outputIssues} />
-        {stage.output.kind === 'data' && (
-          <SchemaForm
-            schema={OUTPUT_SCHEMA_META}
-            value={stage.output.schema}
-            onChange={(next) =>
-              onChange({
-                ...stage,
-                output: { kind: 'data', schema: (next as JsonSchema) ?? { type: 'object' } },
-              })
-            }
-          />
-        )}
-        <IssueList issues={outputSchemaIssues} />
-      </div>
+            <div className="flex flex-col gap-1.5">
+              <h3 className="text-sm font-medium">Output</h3>
+              <Select
+                value={stage.output.kind}
+                onValueChange={(next) =>
+                  onChange({ ...stage, output: buildOutput(next as OutputKind, stage.output) })
+                }
+              >
+                <SelectTrigger size="sm" className="w-48">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {resolved.allowedOutputs.length === 0 && (
+                    <SelectItem value={stage.output.kind}>{stage.output.kind}</SelectItem>
+                  )}
+                  {resolved.allowedOutputs.map((kind) => (
+                    <SelectItem key={kind} value={kind}>
+                      {kind}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <IssueList issues={outputKindIssues} />
+              <IssueList issues={outputIssues} />
+              {stage.output.kind === 'data' && (
+                <SchemaForm
+                  schema={OUTPUT_SCHEMA_META}
+                  value={stage.output.schema}
+                  onChange={(next) =>
+                    onChange({
+                      ...stage,
+                      output: { kind: 'data', schema: (next as JsonSchema) ?? { type: 'object' } },
+                    })
+                  }
+                />
+              )}
+              <IssueList issues={outputSchemaIssues} />
+            </div>
 
-      <div>
-        <h3>Memory writes</h3>
-        <WritesEditor writes={stage.writes} onChange={(writes) => onChange({ ...stage, writes })} />
-      </div>
+            <div className="flex flex-col gap-1.5">
+              <h3 className="text-sm font-medium">Memory writes</h3>
+              <WritesEditor
+                writes={stage.writes}
+                onChange={(writes) => onChange({ ...stage, writes })}
+              />
+            </div>
+          </AccordionContent>
+        </AccordionItem>
 
-      <div>
-        <h3>Checks</h3>
-        <ChecksEditor
-          checks={stage.checks}
-          onChange={(checks) => onChange({ ...stage, checks })}
-          stageIndex={stageIndex}
-          graph={graph}
-          inputs={inputs}
-          roles={roles}
-          assets={assets}
-          iterating={!!stage.iterate}
-          issues={checksIssues}
-        />
-      </div>
+        <AccordionItem value="checks-qc" className="rounded-xl border border-border px-3">
+          <AccordionTrigger>Checks &amp; QC</AccordionTrigger>
+          <AccordionContent className="flex flex-col gap-4">
+            <div className="flex flex-col gap-1.5">
+              <h3 className="text-sm font-medium">Checks</h3>
+              <ChecksEditor
+                checks={stage.checks}
+                onChange={(checks) => onChange({ ...stage, checks })}
+                stageIndex={stageIndex}
+                graph={graph}
+                inputs={inputs}
+                roles={roles}
+                assets={assets}
+                iterating={!!stage.iterate}
+                issues={checksIssues}
+              />
+            </div>
 
-      <div>
-        <h3>Retry limit</h3>
-        <label>
-          Retries
-          <input
-            type="number"
-            min={0}
-            value={stage.retryLimit ?? 0}
-            onChange={(e) => onChange({ ...stage, retryLimit: Number(e.target.value) || 0 })}
-          />
-        </label>
-      </div>
+            <div className="flex flex-col gap-1.5">
+              <h3 className="text-sm font-medium">QC</h3>
+              <QcEditor qc={stage.qc} onChange={(qc) => onChange({ ...stage, qc })} />
+              <IssueList issues={qcIssues} />
+            </div>
+          </AccordionContent>
+        </AccordionItem>
 
-      <div>
-        <h3>Budget</h3>
-        <BudgetEditor budget={stage.budget} onChange={(budget) => onChange({ ...stage, budget })} />
-      </div>
+        <AccordionItem value="execution" className="rounded-xl border border-border px-3">
+          <AccordionTrigger>Execution (retry, budget, model, approval, iterate)</AccordionTrigger>
+          <AccordionContent className="flex flex-col gap-4">
+            <div className="flex flex-col gap-1.5">
+              <h3 className="text-sm font-medium">Retry limit</h3>
+              <div className="flex flex-col gap-1.5">
+                <Label>Retries</Label>
+                <Input
+                  type="number"
+                  className="w-32"
+                  min={0}
+                  value={stage.retryLimit ?? 0}
+                  onChange={(e) => onChange({ ...stage, retryLimit: Number(e.target.value) || 0 })}
+                />
+              </div>
+            </div>
 
-      <div>
-        <h3>Model</h3>
-        <ModelPinEditor value={stage.model} onChange={(model) => onChange({ ...stage, model })} />
-        <IssueList issues={modelIssues} />
-      </div>
+            <div className="flex flex-col gap-1.5">
+              <h3 className="text-sm font-medium">Budget</h3>
+              <BudgetEditor
+                budget={stage.budget}
+                onChange={(budget) => onChange({ ...stage, budget })}
+              />
+            </div>
 
-      <div>
-        <h3>Enabled when</h3>
-        <EnabledWhenEditor
-          enabledWhen={stage.enabledWhen}
-          inputs={inputs}
-          onChange={(enabledWhen) => onChange({ ...stage, enabledWhen })}
-        />
-        <IssueList issues={enabledWhenIssues} />
-      </div>
+            <div className="flex flex-col gap-1.5">
+              <h3 className="text-sm font-medium">Model</h3>
+              <ModelPinEditor
+                value={stage.model}
+                onChange={(model) => onChange({ ...stage, model })}
+              />
+              <IssueList issues={modelIssues} />
+            </div>
 
-      <div>
-        <h3>QC</h3>
-        <QcEditor qc={stage.qc} onChange={(qc) => onChange({ ...stage, qc })} />
-        <IssueList issues={qcIssues} />
-      </div>
+            <div className="flex flex-col gap-1.5">
+              <h3 className="text-sm font-medium">Enabled when</h3>
+              <EnabledWhenEditor
+                enabledWhen={stage.enabledWhen}
+                inputs={inputs}
+                onChange={(enabledWhen) => onChange({ ...stage, enabledWhen })}
+              />
+              <IssueList issues={enabledWhenIssues} />
+            </div>
 
-      <div>
-        <h3>Approval</h3>
-        <ApprovalEditor
-          approval={stage.approval}
-          graph={graph}
-          onChange={(approval) => onChange({ ...stage, approval })}
-        />
-        <IssueList issues={approvalIssues} />
-      </div>
+            <div className="flex flex-col gap-1.5">
+              <h3 className="text-sm font-medium">Approval</h3>
+              <ApprovalEditor
+                approval={stage.approval}
+                graph={graph}
+                onChange={(approval) => onChange({ ...stage, approval })}
+              />
+              <IssueList issues={approvalIssues} />
+            </div>
 
-      <div>
-        <h3>Iterate</h3>
-        <IterateEditor
-          iterate={stage.iterate}
-          stageIndex={stageIndex}
-          graph={graph}
-          inputs={inputs}
-          roles={roles}
-          assets={assets}
-          onChange={(iterate) => onChange({ ...stage, iterate })}
-        />
-        <IssueList issues={iterateIssues} />
-      </div>
+            <div className="flex flex-col gap-1.5">
+              <h3 className="text-sm font-medium">Iterate</h3>
+              <IterateEditor
+                iterate={stage.iterate}
+                stageIndex={stageIndex}
+                graph={graph}
+                inputs={inputs}
+                roles={roles}
+                assets={assets}
+                onChange={(iterate) => onChange({ ...stage, iterate })}
+              />
+              <IssueList issues={iterateIssues} />
+            </div>
+          </AccordionContent>
+        </AccordionItem>
+      </Accordion>
     </section>
   );
 }

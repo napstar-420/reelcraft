@@ -1,6 +1,11 @@
 import { cn } from 'cn';
 import { Badge } from '@/components/ui/badge';
-import { formatStatusLabel, toneBadgeClassName, toneDotClassName, type StatusTone } from '@/lib/status';
+import {
+  formatStatusLabel,
+  toneBadgeClassName,
+  toneDotClassName,
+  type StatusTone,
+} from '@/lib/status';
 
 export function StatusBadge({
   tone,

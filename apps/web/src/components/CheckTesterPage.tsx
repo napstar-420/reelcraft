@@ -2,6 +2,20 @@ import { useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { api } from '../api/client';
 import type { CheckDef } from '@reefcraft/shared';
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
+import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Button } from '@/components/ui/button';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 /** Authors one `CheckDef` (builtin or script) and runs it against a
  * real artifact via `POST /checks/test` — the only way to try a check
@@ -45,94 +59,114 @@ export function CheckTesterPage() {
   };
 
   return (
-    <section>
-      <h2>Check tester</h2>
+    <Card>
+      <CardHeader>
+        <CardTitle>Check tester</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <Tabs value={type} onValueChange={(v) => setType(v as 'builtin' | 'script')}>
+          <TabsList>
+            <TabsTrigger value="builtin">builtin</TabsTrigger>
+            <TabsTrigger value="script">script</TabsTrigger>
+          </TabsList>
 
-      <label>
-        Type
-        <select value={type} onChange={(e) => setType(e.target.value as 'builtin' | 'script')}>
-          <option value="builtin">builtin</option>
-          <option value="script">script</option>
-        </select>
-      </label>
+          <TabsContent value="builtin" className="space-y-3">
+            <div className="space-y-1.5">
+              <Label>Builtin key</Label>
+              <Select value={builtinKey} onValueChange={setBuiltinKey}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select a builtin check…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {builtins.map((b) => (
+                    <SelectItem key={b.key} value={b.key}>
+                      {b.key}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            {builtinKey && (
+              <p className="text-sm text-muted-foreground">
+                {builtins.find((b) => b.key === builtinKey)?.description}
+              </p>
+            )}
+            <div className="space-y-1.5">
+              <h3 className="text-sm font-medium">Params</h3>
+              <Textarea
+                rows={6}
+                value={paramsText}
+                onChange={(e) => setParamsText(e.target.value)}
+                onBlur={() => setParseError(null)}
+                className="font-mono text-xs"
+              />
+            </div>
+          </TabsContent>
 
-      {type === 'builtin' ? (
-        <div>
-          <label>
-            Builtin key
-            <select value={builtinKey} onChange={(e) => setBuiltinKey(e.target.value)}>
-              <option value="">Select a builtin check…</option>
-              {builtins.map((b) => (
-                <option key={b.key} value={b.key}>
-                  {b.key}
-                </option>
-              ))}
-            </select>
-          </label>
-          <p>{builtins.find((b) => b.key === builtinKey)?.description}</p>
-          <h3>Params</h3>
-          <textarea
-            rows={6}
-            cols={60}
-            value={paramsText}
-            onChange={(e) => setParamsText(e.target.value)}
-            onBlur={() => setParseError(null)}
-          />
+          <TabsContent value="script" className="space-y-3">
+            <div className="space-y-1.5">
+              <Label>Name</Label>
+              <Input value={scriptName} onChange={(e) => setScriptName(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <h3 className="text-sm font-medium">Code</h3>
+              <Textarea
+                rows={10}
+                value={scriptCode}
+                onChange={(e) => setScriptCode(e.target.value)}
+                className="font-mono text-xs"
+              />
+            </div>
+          </TabsContent>
+        </Tabs>
+
+        {parseError && (
+          <Alert variant="destructive">
+            <AlertDescription>Invalid JSON: {parseError}</AlertDescription>
+          </Alert>
+        )}
+
+        <div className="space-y-1.5">
+          <Label>Artifact id</Label>
+          <Input value={artifactId} onChange={(e) => setArtifactId(e.target.value)} />
         </div>
-      ) : (
+
         <div>
-          <label>
-            Name
-            <input value={scriptName} onChange={(e) => setScriptName(e.target.value)} />
-          </label>
-          <h3>Code</h3>
-          <textarea
-            rows={10}
-            cols={60}
-            value={scriptCode}
-            onChange={(e) => setScriptCode(e.target.value)}
-          />
+          <Button
+            onClick={handleTest}
+            disabled={
+              test.isPending || !artifactId || (type === 'builtin' ? !builtinKey : !scriptName)
+            }
+          >
+            Test
+          </Button>
         </div>
-      )}
 
-      {parseError && <p role="alert">Invalid JSON: {parseError}</p>}
+        {test.isSuccess && (
+          <div className="space-y-2 rounded-lg border border-border p-3">
+            <h3 className="text-sm font-medium">Result: {test.data.pass ? 'pass' : 'fail'}</h3>
+            <p className="text-sm text-muted-foreground">
+              {test.data.kind} · {test.data.name}
+            </p>
+            {test.data.message && <p className="text-sm">{test.data.message}</p>}
+            {test.data.fault && <p className="text-sm">fault: {test.data.fault}</p>}
+            {test.data.details !== undefined && (
+              <pre className="max-h-48 overflow-auto rounded-lg border border-border bg-muted p-3 text-xs">
+                {JSON.stringify(test.data.details, null, 2)}
+              </pre>
+            )}
+          </div>
+        )}
 
-      <label>
-        Artifact id
-        <input value={artifactId} onChange={(e) => setArtifactId(e.target.value)} />
-      </label>
-
-      <div>
-        <button
-          onClick={handleTest}
-          disabled={
-            test.isPending || !artifactId || (type === 'builtin' ? !builtinKey : !scriptName)
-          }
-        >
-          Test
-        </button>
-      </div>
-
-      {test.isSuccess && (
-        <div>
-          <h3>Result: {test.data.pass ? 'pass' : 'fail'}</h3>
-          <p>
-            {test.data.kind} · {test.data.name}
-          </p>
-          {test.data.message && <p>{test.data.message}</p>}
-          {test.data.fault && <p>fault: {test.data.fault}</p>}
-          {test.data.details !== undefined && (
-            <pre>{JSON.stringify(test.data.details, null, 2)}</pre>
-          )}
-        </div>
-      )}
-
-      {test.isError && (
-        <div>
-          <h3>Test failed</h3>
-          <p role="alert">{test.error.message}</p>
-        </div>
-      )}
-    </section>
+        {test.isError && (
+          <div className="space-y-2">
+            <h3 className="text-sm font-medium">Test failed</h3>
+            <Alert variant="destructive">
+              <AlertDescription>{test.error.message}</AlertDescription>
+            </Alert>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }

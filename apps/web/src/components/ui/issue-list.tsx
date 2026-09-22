@@ -3,7 +3,13 @@ import type { ValidationIssue } from '@reefcraft/shared';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { cn } from 'cn';
 
-export function IssueList({ issues, className }: { issues: ValidationIssue[]; className?: string }) {
+export function IssueList({
+  issues,
+  className,
+}: {
+  issues: ValidationIssue[];
+  className?: string;
+}) {
   if (issues.length === 0) return null;
 
   return (

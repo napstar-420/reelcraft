@@ -2,6 +2,18 @@ import { useQuery } from '@tanstack/react-query';
 import { api } from '../../api/client';
 import { TypedValueInput } from './TypedValueInput';
 import type { PartialModelPin } from '@reefcraft/shared';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+
+const UNSET = '__unset__';
 
 function nextFreeKey(existing: Record<string, unknown>, prefix: string): string {
   let n = 1;
@@ -39,24 +51,25 @@ function ParamsEditor({
   }
 
   return (
-    <div>
+    <div className="flex flex-col gap-2">
       {entries.map(([key, value]) => (
-        <div key={key}>
-          <input
+        <div key={key} className="flex flex-wrap items-center gap-2">
+          <Input
             type="text"
+            className="w-40"
             placeholder="param name"
             value={key}
             onChange={(e) => updateKey(key, e.target.value)}
           />
           <TypedValueInput value={value} onChange={(next) => updateValue(key, next)} />
-          <button type="button" onClick={() => remove(key)}>
+          <Button type="button" variant="outline" size="sm" onClick={() => remove(key)}>
             Remove
-          </button>
+          </Button>
         </div>
       ))}
-      <button type="button" onClick={add}>
+      <Button type="button" variant="outline" size="sm" onClick={add} className="self-start">
         + add param
-      </button>
+      </Button>
     </div>
   );
 }
@@ -94,56 +107,75 @@ export function ModelPinEditor({ value, onChange, clearable = true }: ModelPinEd
   }
 
   return (
-    <div>
-      <label>
-        Provider
-        <select
-          value={provider}
-          onChange={(e) => set({ provider: e.target.value || undefined, modelId: undefined })}
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-1.5">
+        <Label>Provider</Label>
+        <Select
+          value={provider || UNSET}
+          onValueChange={(next) =>
+            set({ provider: next === UNSET ? undefined : next, modelId: undefined })
+          }
         >
-          <option value="">Select a provider…</option>
-          {providers.data?.map((id) => (
-            <option key={id} value={id}>
-              {id}
-            </option>
-          ))}
-        </select>
-      </label>
+          <SelectTrigger size="sm" className="w-56">
+            <SelectValue placeholder="Select a provider…" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={UNSET}>Select a provider…</SelectItem>
+            {providers.data?.map((id) => (
+              <SelectItem key={id} value={id}>
+                {id}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
 
-      <label>
-        Model
-        <select
-          value={value?.modelId ?? ''}
-          onChange={(e) => set({ modelId: e.target.value || undefined })}
+      <div className="flex flex-col gap-1.5">
+        <Label>Model</Label>
+        <Select
+          value={value?.modelId || UNSET}
+          onValueChange={(next) => set({ modelId: next === UNSET ? undefined : next })}
           disabled={!provider}
         >
-          <option value="">Select a model…</option>
-          {models.data?.map((m) => (
-            <option key={m.modelId} value={m.modelId}>
-              {m.label}
-            </option>
-          ))}
-        </select>
-      </label>
+          <SelectTrigger size="sm" className="w-56">
+            <SelectValue placeholder="Select a model…" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={UNSET}>Select a model…</SelectItem>
+            {models.data?.map((m) => (
+              <SelectItem key={m.modelId} value={m.modelId}>
+                {m.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
 
-      <label>
-        Version
-        <input
+      <div className="flex flex-col gap-1.5">
+        <Label>Version</Label>
+        <Input
           type="text"
+          className="w-56"
           value={value?.version ?? ''}
           onChange={(e) => set({ version: e.target.value || undefined })}
         />
-      </label>
+      </div>
 
-      <div>
-        <h4>Params</h4>
+      <div className="flex flex-col gap-1.5">
+        <h4 className="text-sm font-medium">Params</h4>
         <ParamsEditor params={value?.params} onChange={(params) => set({ params })} />
       </div>
 
       {clearable && (
-        <button type="button" onClick={() => onChange(undefined)}>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="self-start"
+          onClick={() => onChange(undefined)}
+        >
           Unset model
-        </button>
+        </Button>
       )}
     </div>
   );
