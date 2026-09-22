@@ -25,8 +25,9 @@ export function RunPage() {
     );
   }
 
-  const spentPct =
-    run.budgetCapUsd > 0 ? Math.min(100, (run.spentUsd / run.budgetCapUsd) * 100) : 0;
+  const spentUsd = Number(run.spentUsd);
+  const budgetCapUsd = Number(run.budgetCapUsd);
+  const spentPct = budgetCapUsd > 0 ? Math.min(100, (spentUsd / budgetCapUsd) * 100) : 0;
 
   return (
     <section className="flex flex-col gap-6">
@@ -40,7 +41,7 @@ export function RunPage() {
         <div className="flex flex-col gap-1.5">
           <Progress value={spentPct} className="max-w-md" />
           <p className="text-sm text-muted-foreground">
-            ${run.spentUsd.toFixed(2)} spent of ${run.budgetCapUsd.toFixed(2)} budget
+            ${spentUsd.toFixed(2)} spent of ${budgetCapUsd.toFixed(2)} budget
           </p>
         </div>
       </div>
