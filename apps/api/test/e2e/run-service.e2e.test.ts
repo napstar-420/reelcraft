@@ -212,7 +212,7 @@ describe('RunController raiseBudget & resume (e2e)', () => {
     await expect(controller.raiseBudget(runId, { capUsd: 25 })).rejects.toThrow();
   });
 
-  it.each(['CREATED', 'RUNNING', 'COMPLETED'])(
+  it.each(['CREATED', 'RUNNING', 'COMPLETED'] as const)(
     'resume rejects a %s run, naming the actual state',
     async (state) => {
       const controller = testApp.app.get(RunController);

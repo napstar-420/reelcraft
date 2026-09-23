@@ -278,8 +278,8 @@ describe('InvalidationService (e2e)', () => {
         runId,
         stageKey: stageKey!,
         stageAttemptId: stageAttemptId!,
-        kind: 'reservation',
-        category: 'stage_output',
+        kind: 'reservation' as const,
+        category: 'stage_output' as const,
         amountUsd: amountUsd!,
       })),
     ]);

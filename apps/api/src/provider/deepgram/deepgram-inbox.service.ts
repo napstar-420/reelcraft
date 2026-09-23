@@ -23,7 +23,7 @@ export class DeepgramInboxService {
       provider: 'deepgram',
       idempotencyKey,
       callbackToken: randomBytes(24).toString('hex'),
-      state: 'submitting',
+      state: 'submitting' as const,
       payload,
     };
     try {

@@ -21,7 +21,7 @@ export interface RecordAttemptArtifactInput {
   runId: string;
   producerStageKey: string;
   itemIndex?: number | undefined;
-  kind: string;
+  kind: ArtifactKind;
   data?: unknown;
   blobId?: string;
   probe?: unknown;
@@ -40,7 +40,7 @@ export interface RecordInputArtifactInput {
    * '$input:<key>'` (§6.2). */
   key: string;
   itemIndex?: number;
-  kind: string;
+  kind: ArtifactKind;
   data?: unknown;
   blobId?: string;
   probe?: unknown;

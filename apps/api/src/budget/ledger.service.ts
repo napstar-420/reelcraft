@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { and, eq, inArray, lt, notExists, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
+import type { LedgerEntryCategory } from '@reefcraft/shared';
 import { ulid } from '../common/ulid';
 import { fromUsd, toUsd } from '../common/money';
 import { DRIZZLE, type Db, type Tx } from '../db/drizzle.provider';
@@ -434,7 +435,7 @@ export class LedgerService {
     runId: string;
     stageKey: string;
     stageAttemptId?: string;
-    category: 'stage_output' | 'qc' | 'check';
+    category: LedgerEntryCategory;
     amountUsd: number;
   }): Promise<void> {
     await this.db.transaction(async (tx) => {

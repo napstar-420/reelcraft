@@ -1,4 +1,16 @@
-import { boolean, integer, jsonb, pgTable, text, timestamptz, uniqueIndex } from './pg-helpers';
+import {
+  boolean,
+  integer,
+  jsonb,
+  pgEnum,
+  pgTable,
+  text,
+  timestamptz,
+  uniqueIndex,
+} from './pg-helpers';
+
+export const templateSourceEnum = pgEnum('template_source', ['builtin', 'user']);
+export const templateKindEnum = pgEnum('template_kind', ['blueprint', 'schema', 'check', 'stage']);
 
 /** §20 — immutable versions, matching the Blueprint model. `source =
  * 'builtin'` marks engine-shipped presets seeded on migration. */
@@ -7,8 +19,8 @@ export const template = pgTable(
   {
     id: text('id').primaryKey(), // unique template identifier
     ownerId: text('owner_id').notNull().default('local'), // account that owns this template
-    source: text('source').notNull(), // 'builtin' | 'user'
-    kind: text('kind').notNull(), // 'blueprint' | 'schema' | 'check' | 'stage'
+    source: templateSourceEnum('source').notNull(),
+    kind: templateKindEnum('kind').notNull(),
     name: text('name').notNull(), // template name, unique within owner+kind
     description: text('description').notNull().default(''), // human-readable summary of the template
     tags: text('tags').array().notNull().default([]), // freeform labels for search/filtering

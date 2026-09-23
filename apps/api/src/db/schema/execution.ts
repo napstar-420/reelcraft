@@ -5,6 +5,7 @@ import {
   integer,
   jsonb,
   numeric,
+  pgEnum,
   pgTable,
   text,
   timestamptz,
@@ -12,6 +13,58 @@ import {
 } from './pg-helpers';
 import { run } from './run';
 import { artifact } from './artifact';
+
+export const stageExecutionStateEnum = pgEnum('stage_execution_state', [
+  'pending',
+  'running',
+  'awaiting_approval',
+  'awaiting_input',
+  'passed',
+  'failed',
+  'stale',
+  'skipped',
+]);
+
+export const stageItemStateEnum = pgEnum('stage_item_state', [
+  'pending',
+  'running',
+  'awaiting_approval',
+  'passed',
+  'failed',
+  'stale',
+]);
+
+export const attemptOutcomeEnum = pgEnum('attempt_outcome', [
+  'success',
+  'check_failed',
+  'qc_failed',
+  'qc_error',
+  'qc_budget_exhausted',
+  'provider_error',
+  'provider_timeout',
+  'infra_error',
+  'budget_blocked',
+  'rejected',
+  'cancelled',
+  'user_edit',
+  // in-flight sentinel, not a terminal outcome — set alongside phase
+  // 'awaiting_approval' while a stage-level approval gate is open
+  // (see StageRunnerService.pauseForApproval and HumanActionService).
+  'awaiting_approval',
+]);
+
+export const stageAttemptPhaseEnum = pgEnum('stage_attempt_phase', [
+  'created',
+  'reserved',
+  'submitting',
+  'submitted',
+  'settled',
+  // in-flight sentinel marking a stage-level approval pause — see
+  // attemptOutcomeEnum's matching value.
+  'awaiting_approval',
+]);
+
+export const stageAttemptActorEnum = pgEnum('stage_attempt_actor', ['engine', 'user']);
 
 /** §3.8 */
 export const stageExecution = pgTable(
@@ -22,8 +75,7 @@ export const stageExecution = pgTable(
       .notNull()
       .references(() => run.id), // run this stage execution belongs to
     stageKey: text('stage_key').notNull(), // key of the blueprint stage being executed
-    // pending|running|awaiting_approval|awaiting_input|passed|failed|stale|skipped
-    state: text('state').notNull(), // current lifecycle state of the stage execution
+    state: stageExecutionStateEnum('state').notNull(), // current lifecycle state of the stage execution
     isIterating: boolean('is_iterating').notNull().default(false), // whether this stage fans out into per-item stage_item rows
     itemCount: integer('item_count'), // number of stage_item rows expected, when iterating
     attemptCount: integer('attempt_count').notNull().default(0), // number of attempts made at the stage level
@@ -45,7 +97,7 @@ export const stageItem = pgTable(
       .notNull()
       .references(() => stageExecution.id), // stage execution this item belongs to
     itemIndex: integer('item_index').notNull(), // position of this item within the iterating stage
-    state: text('state').notNull(), // pending|running|awaiting_approval|passed|failed|stale
+    state: stageItemStateEnum('state').notNull(),
     attemptCount: integer('attempt_count').notNull().default(0), // number of attempts made for this item
     outputArtifactId: text('output_artifact_id').references(() => artifact.id), // artifact produced for this item
     costUsd: numeric('cost_usd', { precision: 12, scale: 4 }).notNull().default('0'), // total cost accrued by this item
@@ -78,11 +130,11 @@ export const stageAttempt = pgTable(
       .references(() => stageExecution.id), // stage execution this attempt belongs to
     stageItemId: text('stage_item_id').references(() => stageItem.id), // stage item this attempt belongs to, when iterating
     attemptNo: integer('attempt_no').notNull(), // monotonic attempt number, never reset (see class comment)
-    outcome: text('outcome').notNull(), // §3.8.1
+    outcome: attemptOutcomeEnum('outcome').notNull(), // §3.8.1
     resolvedInputs: jsonb('resolved_inputs').notNull(), // includes memory versions read (§6.3)
     renderedPrompt: text('rendered_prompt'), // fully rendered prompt sent to the provider
     idempotencyKey: text('idempotency_key'), // key used to dedupe provider submissions on retry
-    phase: text('phase').notNull().default('created'), // created|reserved|submitting|submitted|settled
+    phase: stageAttemptPhaseEnum('phase').notNull().default('created'),
     jobHandle: jsonb('job_handle'), // provider-specific job handle/reference for this attempt
     providerRequestId: text('provider_request_id'), // request id returned by the provider
     rawResponseRef: text('raw_response_ref'), // reference to the raw provider response, for debugging/audit
@@ -92,7 +144,7 @@ export const stageAttempt = pgTable(
     reviewNote: text('review_note'), // human rejection note (§10.5)
     critiqueTargetStageKey: text('critique_target_stage_key'), // stage key this attempt critiques, when it's a critique attempt
     costUsd: numeric('cost_usd', { precision: 12, scale: 4 }).notNull().default('0'), // cost incurred by this attempt
-    actor: text('actor').notNull().default('engine'), // 'engine' | 'user'
+    actor: stageAttemptActorEnum('actor').notNull().default('engine'),
     durationMs: integer('duration_ms'), // wall-clock duration of the attempt, in milliseconds
     createdAt: timestamptz('created_at').notNull().defaultNow(), // when the attempt was created
   },

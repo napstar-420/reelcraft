@@ -222,7 +222,7 @@ export class CharacterService {
     return {
       referenceSet: normalized,
       primaryRefId,
-      readiness: normalized.length > 0 ? 'ready' : 'draft',
+      readiness: normalized.length > 0 ? ('ready' as const) : ('draft' as const),
     };
   }
   private async requireChannel(id: string) {

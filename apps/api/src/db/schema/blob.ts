@@ -1,7 +1,19 @@
 import { sql } from 'drizzle-orm';
-import { bigint, boolean, check, index, jsonb, pgTable, text, timestamptz } from './pg-helpers';
+import {
+  bigint,
+  boolean,
+  check,
+  index,
+  jsonb,
+  pgEnum,
+  pgTable,
+  text,
+  timestamptz,
+} from './pg-helpers';
 import { run } from './run';
 import { character } from './character';
+
+export const blobScopeEnum = pgEnum('blob_scope', ['run', 'input', 'character', 'asset']);
 
 /**
  * §3.10 — only `scope = 'run'` is collectable by retention GC (§4.5). Input
@@ -12,7 +24,7 @@ export const blob = pgTable(
   {
     id: text('id').primaryKey(), // unique blob identifier
     ownerId: text('owner_id').notNull().default('local'), // account that owns this blob
-    scope: text('scope').notNull(), // 'run' | 'input' | 'character' | 'asset'
+    scope: blobScopeEnum('scope').notNull(),
     runId: text('run_id').references(() => run.id), // owning run, required when scope is 'run' or 'input'
     characterId: text('character_id').references(() => character.id), // owning character, required when scope is 'character'
     bucket: text('bucket').notNull(), // storage bucket the object lives in

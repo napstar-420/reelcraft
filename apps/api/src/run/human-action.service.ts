@@ -6,7 +6,7 @@ import {
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
-import { StageDef, Timeline } from '@reefcraft/shared';
+import { StageDef, Timeline, type HumanWaitKind } from '@reefcraft/shared';
 import { ArtifactService } from '../artifact/artifact.service';
 import { BindingResolverService, type RefProvenance } from '../artifact/binding-resolver.service';
 import { MemoryService } from '../artifact/memory.service';
@@ -744,7 +744,7 @@ export class HumanActionService {
   private async requireOpenWait(
     tx: Tx,
     executionId: string,
-    kind: 'approval' | 'input' | 'timeline_edit',
+    kind: HumanWaitKind,
     stageItemId?: string,
   ) {
     const [wait] = await tx

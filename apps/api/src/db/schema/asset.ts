@@ -1,6 +1,14 @@
-import { pgTable, text, timestamptz, uniqueIndex } from './pg-helpers';
+import { pgEnum, pgTable, text, timestamptz, uniqueIndex } from './pg-helpers';
 import { channel } from './channel';
 import { blob } from './blob';
+
+export const assetKindEnum = pgEnum('asset_kind', [
+  'media.image',
+  'media.video',
+  'media.audio',
+  'font',
+  'lut',
+]);
 
 /** §3.3 — reusable channel material with a lifetime longer than a run. */
 export const asset = pgTable(
@@ -12,7 +20,7 @@ export const asset = pgTable(
       .notNull()
       .references(() => channel.id), // channel this asset belongs to
     name: text('name').notNull(), // asset name, unique within its channel
-    kind: text('kind').notNull(), // media.image | media.video | media.audio | font | lut
+    kind: assetKindEnum('kind').notNull(),
     blobId: text('blob_id')
       .notNull()
       .references(() => blob.id), // underlying stored file backing this asset

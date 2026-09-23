@@ -1,7 +1,18 @@
 import { sql } from 'drizzle-orm';
-import { index, integer, jsonb, pgTable, text, timestamptz, uniqueIndex } from './pg-helpers';
+import {
+  index,
+  integer,
+  jsonb,
+  pgEnum,
+  pgTable,
+  text,
+  timestamptz,
+  uniqueIndex,
+} from './pg-helpers';
 import { run } from './run';
 import { stageExecution, stageItem } from './execution';
+
+export const humanWaitKindEnum = pgEnum('human_wait_kind', ['approval', 'input', 'timeline_edit']);
 
 /** Durable operator-attention state shared by approval and human-input gates. */
 export const humanWait = pgTable(
@@ -15,7 +26,7 @@ export const humanWait = pgTable(
       .notNull()
       .references(() => stageExecution.id), // stage execution this wait gate blocks
     stageItemId: text('stage_item_id').references(() => stageItem.id), // specific stage item this wait gate blocks, if per-item
-    kind: text('kind').notNull(), // type of human gate, e.g. approval vs human-input
+    kind: humanWaitKindEnum('kind').notNull(), // type of human gate
     draft: jsonb('draft'), // in-progress operator input/edits before submission
     draftRevision: integer('draft_revision').notNull().default(0), // increments each time the draft is saved
     draftUpdatedAt: timestamptz('draft_updated_at'), // when the draft was last saved
