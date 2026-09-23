@@ -3,6 +3,7 @@ import { ConfigLayer } from '../config-layer';
 
 export const CreateChannelDto = z.object({
   name: z.string().min(1),
+  description: z.string().max(255).optional(),
   theme: z.record(z.string(), z.unknown()).default({}),
   defaults: ConfigLayer.default({}),
 });
@@ -12,6 +13,7 @@ export const ChannelDto = z.object({
   id: z.string(),
   ownerId: z.string(),
   name: z.string(),
+  description: z.string().nullable(),
   theme: z.record(z.string(), z.unknown()),
   defaults: ConfigLayer,
   createdAt: z.string(),
