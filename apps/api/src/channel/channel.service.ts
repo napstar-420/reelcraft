@@ -15,6 +15,7 @@ export class ChannelService {
       id,
       ownerId,
       name: dto.name,
+      description: dto.description ?? null,
       theme: dto.theme,
       defaults: dto.defaults,
     });
