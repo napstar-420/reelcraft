@@ -49,6 +49,7 @@ export class LlmGenerate implements CapabilityImpl<LlmGenerateConfig> {
       modelId: ctx.config.modelId,
       params: ctx.config.params ?? {},
       renderedPrompt: ctx.renderedPrompt,
+      system: ctx.systemPrompt,
     });
   }
 
@@ -59,6 +60,7 @@ export class LlmGenerate implements CapabilityImpl<LlmGenerateConfig> {
         modelId: ctx.config.modelId,
         params: ctx.config.params ?? {},
         renderedPrompt: ctx.renderedPrompt,
+        system: ctx.systemPrompt,
       },
       ctx.idempotencyKey,
     );

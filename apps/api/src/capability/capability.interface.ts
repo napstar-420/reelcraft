@@ -23,6 +23,7 @@ export interface ExecCtx<Cfg> {
   slots: Record<string, unknown>;
   context: Record<string, unknown>;
   renderedPrompt?: string | undefined;
+  systemPrompt?: string | undefined;
   idempotencyKey: string;
   logger: { log: (msg: string) => void; error: (msg: string, err?: unknown) => void };
   resources?: Record<

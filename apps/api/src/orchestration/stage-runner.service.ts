@@ -456,6 +456,7 @@ export class StageRunnerService {
     bindings: ResolvedBindings,
     renderedPrompt?: string,
     resources?: Awaited<ReturnType<TimelineResourceResolverService['resolve']>>,
+    systemPrompt?: string,
   ) {
     return {
       runId: ctx.runId,
@@ -470,6 +471,7 @@ export class StageRunnerService {
       slots: bindings.slots,
       context: bindings.context,
       renderedPrompt,
+      systemPrompt,
       idempotencyKey: this.idempotencyKey(ctx, ctx.itemIndex),
       logger: { log: () => {}, error: () => {} },
       ...(resources && { resources }),
@@ -516,6 +518,7 @@ export class StageRunnerService {
       bindings,
       renderedPrompt,
       resources,
+      stage.instructions?.system,
     );
     const execCtx = capability.prepare?.(unpreparedExecCtx) ?? unpreparedExecCtx;
 
