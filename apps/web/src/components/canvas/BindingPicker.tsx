@@ -1,6 +1,16 @@
 import type { InputDef, Ref, RoleDef, StageDef } from '@reefcraft/shared';
 import { deriveMemoryKeys } from '../../lib/memory-writers';
 import { TypedValueInput } from './TypedValueInput';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 const ALL_REF_KINDS: Ref['from'][] = [
   'prev',
@@ -12,6 +22,8 @@ const ALL_REF_KINDS: Ref['from'][] = [
   'prevItem',
   'const',
 ];
+
+const UNSET = '__unset__';
 
 /** UI-convenience filtering only — mirrors `checkFirstStagePrev`'s and the
  * iterate-gating rules from `blueprint-validator.service.ts`, but never
@@ -89,53 +101,67 @@ export function BindingPicker({
   const memoryKeys = deriveMemoryKeys(graph);
 
   return (
-    <div>
-      <select
+    <div className="flex flex-wrap items-center gap-2">
+      <Select
         value={value.from}
-        onChange={(e) => onChange(defaultRefFor(e.target.value as Ref['from']))}
+        onValueChange={(next) => onChange(defaultRefFor(next as Ref['from']))}
       >
-        {kinds.map((kind) => (
-          <option key={kind} value={kind}>
-            {kind}
-          </option>
-        ))}
-      </select>
+        <SelectTrigger size="sm" className="w-32">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {kinds.map((kind) => (
+            <SelectItem key={kind} value={kind}>
+              {kind}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
 
       {value.from === 'prev' && (
-        <span>
-          <input
+        <span className="flex flex-wrap items-center gap-2">
+          <Input
             type="text"
+            className="w-40"
             placeholder="path (optional)"
             value={value.path ?? ''}
             onChange={(e) => onChange({ ...value, path: e.target.value || undefined })}
           />
           {prevStageIterates && (
-            <label>
-              <input
-                type="checkbox"
+            <Label className="font-normal">
+              <Checkbox
                 checked={value.alignWith === 'item'}
-                onChange={(e) =>
-                  onChange({ ...value, alignWith: e.target.checked ? 'item' : undefined })
+                onCheckedChange={(checked) =>
+                  onChange({ ...value, alignWith: checked === true ? 'item' : undefined })
                 }
               />
               align with item
-            </label>
+            </Label>
           )}
         </span>
       )}
 
       {value.from === 'memory' && (
-        <span>
-          <select value={value.key} onChange={(e) => onChange({ ...value, key: e.target.value })}>
-            <option value="">Select a memory key…</option>
-            {memoryKeys.map((key) => (
-              <option key={key} value={key}>
-                {key}
-              </option>
-            ))}
-          </select>
-          <input
+        <span className="flex flex-wrap items-center gap-2">
+          <Select
+            value={value.key || UNSET}
+            onValueChange={(next) => onChange({ ...value, key: next === UNSET ? '' : next })}
+          >
+            <SelectTrigger size="sm" className="w-48">
+              <SelectValue placeholder="Select a memory key…" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={UNSET}>Select a memory key…</SelectItem>
+              {memoryKeys.map((key) => (
+                <SelectItem key={key} value={key}>
+                  {key}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Input
             type="text"
+            className="w-40"
             placeholder="path (optional)"
             value={value.path ?? ''}
             onChange={(e) => onChange({ ...value, path: e.target.value || undefined })}
@@ -144,49 +170,67 @@ export function BindingPicker({
       )}
 
       {value.from === 'asset' && (
-        <select
-          value={value.assetId}
-          onChange={(e) => onChange({ ...value, assetId: e.target.value })}
+        <Select
+          value={value.assetId || UNSET}
+          onValueChange={(next) => onChange({ ...value, assetId: next === UNSET ? '' : next })}
         >
-          <option value="">Select an asset…</option>
-          {assets.map((asset) => (
-            <option key={asset.id} value={asset.id}>
-              {asset.name}
-            </option>
-          ))}
-        </select>
+          <SelectTrigger size="sm" className="w-48">
+            <SelectValue placeholder="Select an asset…" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={UNSET}>Select an asset…</SelectItem>
+            {assets.map((asset) => (
+              <SelectItem key={asset.id} value={asset.id}>
+                {asset.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       )}
 
       {value.from === 'role' && (
-        <select
-          value={value.roleKey}
-          onChange={(e) => onChange({ ...value, roleKey: e.target.value })}
+        <Select
+          value={value.roleKey || UNSET}
+          onValueChange={(next) => onChange({ ...value, roleKey: next === UNSET ? '' : next })}
         >
-          <option value="">Select a role…</option>
-          {roles.map((role) => (
-            <option key={role.key} value={role.key}>
-              {role.label}
-            </option>
-          ))}
-        </select>
+          <SelectTrigger size="sm" className="w-48">
+            <SelectValue placeholder="Select a role…" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={UNSET}>Select a role…</SelectItem>
+            {roles.map((role) => (
+              <SelectItem key={role.key} value={role.key}>
+                {role.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       )}
 
       {value.from === 'input' && (
-        <span>
-          <select
-            value={value.inputKey}
-            onChange={(e) => onChange({ ...value, inputKey: e.target.value, index: undefined })}
+        <span className="flex flex-wrap items-center gap-2">
+          <Select
+            value={value.inputKey || UNSET}
+            onValueChange={(next) =>
+              onChange({ ...value, inputKey: next === UNSET ? '' : next, index: undefined })
+            }
           >
-            <option value="">Select an input…</option>
-            {inputs.map((input) => (
-              <option key={input.key} value={input.key}>
-                {input.label}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger size="sm" className="w-48">
+              <SelectValue placeholder="Select an input…" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={UNSET}>Select an input…</SelectItem>
+              {inputs.map((input) => (
+                <SelectItem key={input.key} value={input.key}>
+                  {input.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           {acceptsManyMedia(inputs.find((input) => input.key === value.inputKey)) && (
-            <input
+            <Input
               type="number"
+              className="w-24"
               placeholder="index"
               value={value.index ?? ''}
               onChange={(e) =>
@@ -197,8 +241,9 @@ export function BindingPicker({
               }
             />
           )}
-          <input
+          <Input
             type="text"
+            className="w-40"
             placeholder="path (optional)"
             value={value.path ?? ''}
             onChange={(e) => onChange({ ...value, path: e.target.value || undefined })}
@@ -214,8 +259,9 @@ export function BindingPicker({
       )}
 
       {(value.from === 'item' || value.from === 'prevItem') && (
-        <input
+        <Input
           type="text"
+          className="w-40"
           placeholder="path (optional)"
           value={value.path ?? ''}
           onChange={(e) => onChange({ ...value, path: e.target.value || undefined })}

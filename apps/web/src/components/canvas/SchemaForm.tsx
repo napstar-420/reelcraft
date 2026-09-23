@@ -1,4 +1,16 @@
 import type { JsonSchema } from '@reefcraft/shared';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 function defaultForSchema(schema: JsonSchema): unknown {
   switch (schema.type) {
@@ -20,6 +32,8 @@ function coerceEnumValue(schema: JsonSchema, raw: string): string | number {
   return typeof schema.enum?.[0] === 'number' ? Number(raw) : raw;
 }
 
+const ENUM_UNSET = '__unset__';
+
 function EnumSelect({
   schema,
   value,
@@ -29,19 +43,31 @@ function EnumSelect({
   value: unknown;
   onChange: (value: unknown) => void;
 }) {
+  const selected = value === undefined || value === null ? ENUM_UNSET : String(value);
   return (
-    <select
-      value={value === undefined || value === null ? '' : String(value)}
-      onChange={(e) => onChange(coerceEnumValue(schema, e.target.value))}
+    <Select
+      value={selected}
+      onValueChange={(next) =>
+        onChange(next === ENUM_UNSET ? undefined : coerceEnumValue(schema, next))
+      }
     >
-      <option value="">Select…</option>
-      {(schema.enum ?? []).map((option) => (
-        <option key={String(option)} value={String(option)}>
-          {String(option)}
-        </option>
-      ))}
-    </select>
+      <SelectTrigger size="sm" className="w-full">
+        <SelectValue placeholder="Select…" />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value={ENUM_UNSET}>Select…</SelectItem>
+        {(schema.enum ?? []).map((option) => (
+          <SelectItem key={String(option)} value={String(option)}>
+            {String(option)}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   );
+}
+
+function RequiredMark() {
+  return <span className="text-destructive"> *</span>;
 }
 
 function ObjectForm({
@@ -60,14 +86,14 @@ function ObjectForm({
   const required = new Set(schema.required ?? []);
 
   return (
-    <fieldset>
-      {schema.description && <p>{schema.description}</p>}
+    <div className="flex flex-col gap-3 border-l-2 border-border pl-3">
+      {schema.description && <p className="text-sm text-muted-foreground">{schema.description}</p>}
       {Object.entries(properties).map(([propKey, propSchema]) => (
-        <div key={propKey}>
-          <label>
+        <div key={propKey} className="flex flex-col gap-1.5">
+          <Label>
             {propKey}
-            {required.has(propKey) ? ' *' : ''}
-          </label>
+            {required.has(propKey) && <RequiredMark />}
+          </Label>
           <SchemaForm
             schema={propSchema}
             value={obj[propKey]}
@@ -75,7 +101,7 @@ function ObjectForm({
           />
         </div>
       ))}
-    </fieldset>
+    </div>
   );
 }
 
@@ -94,35 +120,43 @@ function ArrayForm({
   const canRemove = schema.minItems === undefined || items.length > schema.minItems;
 
   return (
-    <div>
-      {schema.description && <p>{schema.description}</p>}
+    <div className="flex flex-col gap-2 border-l-2 border-border pl-3">
+      {schema.description && <p className="text-sm text-muted-foreground">{schema.description}</p>}
       {items.map((item, index) => (
-        <div key={index}>
-          <SchemaForm
-            schema={itemSchema}
-            value={item}
-            onChange={(next) => {
-              const copy = [...items];
-              copy[index] = next;
-              onChange(copy);
-            }}
-          />
-          <button
-            type="button"
-            disabled={!canRemove}
-            onClick={() => onChange(items.filter((_, i) => i !== index))}
-          >
-            Remove item
-          </button>
-        </div>
+        <Card key={index} size="sm">
+          <CardContent className="flex flex-col gap-2">
+            <SchemaForm
+              schema={itemSchema}
+              value={item}
+              onChange={(next) => {
+                const copy = [...items];
+                copy[index] = next;
+                onChange(copy);
+              }}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={!canRemove}
+              onClick={() => onChange(items.filter((_, i) => i !== index))}
+              className="self-start"
+            >
+              Remove item
+            </Button>
+          </CardContent>
+        </Card>
       ))}
-      <button
+      <Button
         type="button"
+        variant="outline"
+        size="sm"
         disabled={!canAdd}
         onClick={() => onChange([...items, defaultForSchema(itemSchema)])}
+        className="self-start"
       >
         + Add item
-      </button>
+      </Button>
     </div>
   );
 }
@@ -153,8 +187,9 @@ export function SchemaForm({
   switch (schema.type) {
     case 'string':
       return (
-        <input
+        <Input
           type="text"
+          className="w-full"
           value={typeof value === 'string' ? value : ''}
           minLength={schema.minLength}
           maxLength={schema.maxLength}
@@ -164,8 +199,9 @@ export function SchemaForm({
     case 'number':
     case 'integer':
       return (
-        <input
+        <Input
           type="number"
+          className="w-full"
           value={typeof value === 'number' ? value : ''}
           min={schema.minimum}
           max={schema.maximum}
@@ -175,7 +211,7 @@ export function SchemaForm({
       );
     case 'boolean':
       return (
-        <input type="checkbox" checked={!!value} onChange={(e) => onChange(e.target.checked)} />
+        <Checkbox checked={!!value} onCheckedChange={(checked) => onChange(checked === true)} />
       );
     case 'object':
       return <ObjectForm schema={schema} value={value} onChange={onChange} />;

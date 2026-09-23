@@ -2,6 +2,16 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../api/client';
 import type { StageDef, OutputDef, OutputKind } from '@reefcraft/shared';
+import { Button } from '@/components/ui/button';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+
+const UNSET = '__unset__';
 
 function nextStageKey(graph: StageDef[]): string {
   const used = new Set(graph.map((s) => s.key));
@@ -58,19 +68,33 @@ export function AddStageMenu({
   }
 
   return (
-    <div>
-      <select value={selectedKey} onChange={(e) => setSelectedKey(e.target.value)}>
-        <option value="">Select a capability…</option>
-        {capabilities.data?.map((c) => (
-          <option key={c.key} value={c.key}>
-            {c.key}
-          </option>
-        ))}
-      </select>
-      <button type="button" onClick={handleAdd} disabled={!selectedKey || pending}>
-        + Add stage
-      </button>
-      {error && <p role="alert">{error}</p>}
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <Select
+          value={selectedKey || UNSET}
+          onValueChange={(next) => setSelectedKey(next === UNSET ? '' : next)}
+        >
+          <SelectTrigger size="sm" className="w-56">
+            <SelectValue placeholder="Select a capability…" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={UNSET}>Select a capability…</SelectItem>
+            {capabilities.data?.map((c) => (
+              <SelectItem key={c.key} value={c.key}>
+                {c.key}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Button type="button" size="sm" onClick={handleAdd} disabled={!selectedKey || pending}>
+          + Add stage
+        </Button>
+      </div>
+      {error && (
+        <p role="alert" className="text-sm text-destructive">
+          {error}
+        </p>
+      )}
     </div>
   );
 }

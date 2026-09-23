@@ -1,3 +1,13 @@
+import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+
 export type PrimitiveType = 'string' | 'number' | 'boolean';
 
 function primitiveTypeOf(value: unknown): PrimitiveType {
@@ -32,31 +42,37 @@ export function TypedValueInput({
   }
 
   return (
-    <span>
-      <select value={type} onChange={(e) => setType(e.target.value as PrimitiveType)}>
-        <option value="string">string</option>
-        <option value="number">number</option>
-        <option value="boolean">boolean</option>
-      </select>
+    <span className="inline-flex items-center gap-2">
+      <Select value={type} onValueChange={(next) => setType(next as PrimitiveType)}>
+        <SelectTrigger size="sm" className="w-28">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="string">string</SelectItem>
+          <SelectItem value="number">number</SelectItem>
+          <SelectItem value="boolean">boolean</SelectItem>
+        </SelectContent>
+      </Select>
       {type === 'string' && (
-        <input
+        <Input
           type="text"
+          className="w-48"
           value={typeof value === 'string' ? value : ''}
           onChange={(e) => onChange(e.target.value)}
         />
       )}
       {type === 'number' && (
-        <input
+        <Input
           type="number"
+          className="w-32"
           value={typeof value === 'number' ? value : 0}
           onChange={(e) => onChange(Number(e.target.value) || 0)}
         />
       )}
       {type === 'boolean' && (
-        <input
-          type="checkbox"
+        <Checkbox
           checked={typeof value === 'boolean' ? value : false}
-          onChange={(e) => onChange(e.target.checked)}
+          onCheckedChange={(checked) => onChange(checked === true)}
         />
       )}
     </span>

@@ -2,6 +2,20 @@ import { useQuery } from '@tanstack/react-query';
 import { api } from '../../api/client';
 import { SchemaForm } from './SchemaForm';
 import type { InputDef, RoleDef, JsonSchema } from '@reefcraft/shared';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+
+const UNSET = '__unset__';
 
 /** Mirrors `StageInspector.tsx`'s own `OUTPUT_SCHEMA_META` verbatim (not
  * imported — that file has no exports today and a 15-line constant doesn't
@@ -66,14 +80,15 @@ function BudgetEditor({
   onChange: (budget: { runCapUsd: number }) => void;
 }) {
   return (
-    <label>
-      Run cap (USD)
-      <input
+    <div className="flex flex-col gap-1.5">
+      <Label>Run cap (USD)</Label>
+      <Input
         type="number"
+        className="w-48"
         value={budget.runCapUsd}
         onChange={(e) => onChange({ runCapUsd: Number(e.target.value) || 0 })}
       />
-    </label>
+    </div>
   );
 }
 
@@ -104,99 +119,117 @@ function InputsEditor({
   }
 
   return (
-    <div>
+    <div className="flex flex-col gap-3">
       {inputs.map((input, index) => (
-        <fieldset key={index}>
-          <label>
-            Key
-            <input
-              type="text"
-              value={input.key}
-              onChange={(e) => update(index, { key: e.target.value })}
-            />
-          </label>
-          <label>
-            Label
-            <input
-              type="text"
-              value={input.label}
-              onChange={(e) => update(index, { label: e.target.value })}
-            />
-          </label>
-          <label>
-            <input
-              type="checkbox"
-              checked={input.required}
-              onChange={(e) => update(index, { required: e.target.checked })}
-            />
-            Required
-          </label>
-          <label>
-            Accepts
-            <select
-              value={input.accepts.kind}
-              onChange={(e) =>
-                update(index, {
-                  accepts: buildAccepts(
-                    e.target.value as InputDef['accepts']['kind'],
-                    input.accepts,
-                  ),
-                })
-              }
-            >
-              <option value="text">text</option>
-              <option value="data">data</option>
-              <option value="media.image">media.image</option>
-              <option value="media.video">media.video</option>
-              <option value="media.audio">media.audio</option>
-            </select>
-          </label>
-
-          {input.accepts.kind === 'data' && (
-            <div>
-              <h4>Schema</h4>
-              <SchemaForm
-                schema={JSON_SCHEMA_META}
-                value={input.accepts.schema}
-                onChange={(next) =>
-                  update(index, {
-                    accepts: { kind: 'data', schema: (next as JsonSchema) ?? { type: 'object' } },
-                  })
-                }
-              />
+        <Card key={index} size="sm">
+          <CardContent className="flex flex-col gap-3">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="flex flex-col gap-1.5">
+                <Label>Key</Label>
+                <Input
+                  type="text"
+                  value={input.key}
+                  onChange={(e) => update(index, { key: e.target.value })}
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label>Label</Label>
+                <Input
+                  type="text"
+                  value={input.label}
+                  onChange={(e) => update(index, { label: e.target.value })}
+                />
+              </div>
             </div>
-          )}
 
-          {(input.accepts.kind === 'media.image' ||
-            input.accepts.kind === 'media.video' ||
-            input.accepts.kind === 'media.audio') && (
-            <label>
-              Cardinality
-              <select
-                value={input.accepts.cardinality}
-                onChange={(e) =>
+            <Label className="font-normal">
+              <Checkbox
+                checked={input.required}
+                onCheckedChange={(checked) => update(index, { required: checked === true })}
+              />
+              Required
+            </Label>
+
+            <div className="flex flex-col gap-1.5">
+              <Label>Accepts</Label>
+              <Select
+                value={input.accepts.kind}
+                onValueChange={(next) =>
                   update(index, {
-                    accepts: {
-                      kind: input.accepts.kind as 'media.image' | 'media.video' | 'media.audio',
-                      cardinality: e.target.value as 'one' | 'many',
-                    },
+                    accepts: buildAccepts(next as InputDef['accepts']['kind'], input.accepts),
                   })
                 }
               >
-                <option value="one">one</option>
-                <option value="many">many</option>
-              </select>
-            </label>
-          )}
+                <SelectTrigger size="sm" className="w-48">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="text">text</SelectItem>
+                  <SelectItem value="data">data</SelectItem>
+                  <SelectItem value="media.image">media.image</SelectItem>
+                  <SelectItem value="media.video">media.video</SelectItem>
+                  <SelectItem value="media.audio">media.audio</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
 
-          <button type="button" onClick={() => remove(index)}>
-            Remove input
-          </button>
-        </fieldset>
+            {input.accepts.kind === 'data' && (
+              <div className="flex flex-col gap-1.5 border-l-2 border-border pl-3">
+                <h4 className="text-sm font-medium">Schema</h4>
+                <SchemaForm
+                  schema={JSON_SCHEMA_META}
+                  value={input.accepts.schema}
+                  onChange={(next) =>
+                    update(index, {
+                      accepts: { kind: 'data', schema: (next as JsonSchema) ?? { type: 'object' } },
+                    })
+                  }
+                />
+              </div>
+            )}
+
+            {(input.accepts.kind === 'media.image' ||
+              input.accepts.kind === 'media.video' ||
+              input.accepts.kind === 'media.audio') && (
+              <div className="flex flex-col gap-1.5">
+                <Label>Cardinality</Label>
+                <Select
+                  value={input.accepts.cardinality}
+                  onValueChange={(next) =>
+                    update(index, {
+                      accepts: {
+                        kind: input.accepts.kind as 'media.image' | 'media.video' | 'media.audio',
+                        cardinality: next as 'one' | 'many',
+                      },
+                    })
+                  }
+                >
+                  <SelectTrigger size="sm" className="w-32">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="one">one</SelectItem>
+                    <SelectItem value="many">many</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="self-start"
+              onClick={() => remove(index)}
+            >
+              Remove input
+            </Button>
+          </CardContent>
+        </Card>
       ))}
-      <button type="button" onClick={add}>
+      <Button type="button" variant="outline" size="sm" onClick={add} className="self-start">
         + add input
-      </button>
+      </Button>
     </div>
   );
 }
@@ -224,12 +257,14 @@ function RoleEditor({
 
   if (!role) {
     return (
-      <button
+      <Button
         type="button"
+        variant="outline"
+        size="sm"
         onClick={() => onChange([{ key: 'role-1', label: '', required: false }])}
       >
         + add role
-      </button>
+      </Button>
     );
   }
 
@@ -238,41 +273,62 @@ function RoleEditor({
   }
 
   return (
-    <div>
-      <label>
-        Key
-        <input type="text" value={role.key} onChange={(e) => set({ key: e.target.value })} />
-      </label>
-      <label>
-        Label
-        <input type="text" value={role.label} onChange={(e) => set({ label: e.target.value })} />
-      </label>
-      <label>
-        <input
-          type="checkbox"
-          checked={role.required}
-          onChange={(e) => set({ required: e.target.checked })}
-        />
-        Required
-      </label>
-      <label>
-        Character
-        <select
-          value={role.characterId ?? ''}
-          onChange={(e) => set({ characterId: e.target.value || undefined })}
+    <Card size="sm">
+      <CardContent className="flex flex-col gap-3">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="flex flex-col gap-1.5">
+            <Label>Key</Label>
+            <Input type="text" value={role.key} onChange={(e) => set({ key: e.target.value })} />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label>Label</Label>
+            <Input
+              type="text"
+              value={role.label}
+              onChange={(e) => set({ label: e.target.value })}
+            />
+          </div>
+        </div>
+
+        <Label className="font-normal">
+          <Checkbox
+            checked={role.required}
+            onCheckedChange={(checked) => set({ required: checked === true })}
+          />
+          Required
+        </Label>
+
+        <div className="flex flex-col gap-1.5">
+          <Label>Character</Label>
+          <Select
+            value={role.characterId || UNSET}
+            onValueChange={(next) => set({ characterId: next === UNSET ? undefined : next })}
+          >
+            <SelectTrigger size="sm" className="w-56">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={UNSET}>None</SelectItem>
+              {characters.data?.map((c) => (
+                <SelectItem key={c.id} value={c.id}>
+                  {c.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="self-start"
+          onClick={() => onChange([])}
         >
-          <option value="">None</option>
-          {characters.data?.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </select>
-      </label>
-      <button type="button" onClick={() => onChange([])}>
-        Remove role
-      </button>
-    </div>
+          Remove role
+        </Button>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -298,27 +354,39 @@ export function BlueprintSettingsPanel({
   }) => void;
 }) {
   return (
-    <section>
-      <h2>Blueprint settings</h2>
+    <section className="flex flex-col gap-4">
+      <h2 className="text-lg font-semibold">Blueprint settings</h2>
 
-      <div>
-        <h3>Budget</h3>
-        <BudgetEditor budget={budget} onChange={(next) => onChange({ budget: next })} />
-      </div>
+      <Card>
+        <CardHeader>
+          <CardTitle>Budget</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <BudgetEditor budget={budget} onChange={(next) => onChange({ budget: next })} />
+        </CardContent>
+      </Card>
 
-      <div>
-        <h3>Inputs</h3>
-        <InputsEditor inputs={inputs} onChange={(next) => onChange({ inputs: next })} />
-      </div>
+      <Card>
+        <CardHeader>
+          <CardTitle>Inputs</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <InputsEditor inputs={inputs} onChange={(next) => onChange({ inputs: next })} />
+        </CardContent>
+      </Card>
 
-      <div>
-        <h3>Role</h3>
-        <RoleEditor
-          roles={roles}
-          channelId={channelId}
-          onChange={(next) => onChange({ roles: next })}
-        />
-      </div>
+      <Card>
+        <CardHeader>
+          <CardTitle>Role</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <RoleEditor
+            roles={roles}
+            channelId={channelId}
+            onChange={(next) => onChange({ roles: next })}
+          />
+        </CardContent>
+      </Card>
     </section>
   );
 }

@@ -11,23 +11,22 @@ import type {
   StageDef,
   ValidationIssue,
 } from '@reefcraft/shared';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { IssueList } from '@/components/ui/issue-list';
+import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
 
 const EMPTY_OBJECT_SCHEMA = { type: 'object' as const };
-
-/** Mirrors `StageInspector`'s own `IssueList` — plain `[severity] message`,
- * no color/icon library. */
-function IssueList({ issues }: { issues: ValidationIssue[] }) {
-  if (issues.length === 0) return null;
-  return (
-    <ul>
-      {issues.map((issue, index) => (
-        <li key={index}>
-          {issue.severity === 'error' ? 'ERROR' : 'WARNING'}: {issue.message}
-        </li>
-      ))}
-    </ul>
-  );
-}
+const UNSET = '__unset__';
 
 function nextFreeKey(existing: Record<string, unknown>, prefix: string): string {
   let n = 1;
@@ -75,11 +74,12 @@ function RefsEditor({
   }
 
   return (
-    <div>
+    <div className="flex flex-col gap-2">
       {Object.entries(refs ?? {}).map(([key, ref]) => (
-        <div key={key}>
-          <input
+        <div key={key} className="flex flex-wrap items-center gap-2">
+          <Input
             type="text"
+            className="w-36"
             placeholder="ref name"
             value={key}
             onChange={(e) => updateKey(key, e.target.value)}
@@ -94,14 +94,14 @@ function RefsEditor({
             assets={assets}
             iterating={iterating}
           />
-          <button type="button" onClick={() => remove(key)}>
+          <Button type="button" variant="outline" size="sm" onClick={() => remove(key)}>
             Remove
-          </button>
+          </Button>
         </div>
       ))}
-      <button type="button" onClick={add}>
+      <Button type="button" variant="outline" size="sm" onClick={add} className="self-start">
         + add ref
-      </button>
+      </Button>
     </div>
   );
 }
@@ -113,37 +113,49 @@ function CheckTestPanel({ check }: { check: CheckDef }) {
   });
 
   return (
-    <div>
-      <label>
-        Artifact id
-        <input value={artifactId} onChange={(e) => setArtifactId(e.target.value)} />
-      </label>
-      <button
-        type="button"
-        onClick={() => test.mutate(artifactId)}
-        disabled={test.isPending || !artifactId}
-      >
-        Test
-      </button>
+    <div className="flex flex-col gap-2 rounded-lg border border-border bg-muted/30 p-3">
+      <div className="flex flex-wrap items-end gap-2">
+        <div className="flex flex-col gap-1.5">
+          <Label>Artifact id</Label>
+          <Input
+            className="w-56"
+            value={artifactId}
+            onChange={(e) => setArtifactId(e.target.value)}
+          />
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => test.mutate(artifactId)}
+          disabled={test.isPending || !artifactId}
+        >
+          Test
+        </Button>
+      </div>
 
       {test.isSuccess && (
-        <div>
-          <h4>Result: {test.data.pass ? 'pass' : 'fail'}</h4>
-          <p>
+        <div className="flex flex-col gap-1 text-sm">
+          <h4 className="font-medium">Result: {test.data.pass ? 'pass' : 'fail'}</h4>
+          <p className="text-muted-foreground">
             {test.data.kind} · {test.data.name}
           </p>
           {test.data.message && <p>{test.data.message}</p>}
           {test.data.fault && <p>fault: {test.data.fault}</p>}
           {test.data.details !== undefined && (
-            <pre>{JSON.stringify(test.data.details, null, 2)}</pre>
+            <pre className="overflow-x-auto rounded-md bg-muted p-2 text-xs">
+              {JSON.stringify(test.data.details, null, 2)}
+            </pre>
           )}
         </div>
       )}
 
       {test.isError && (
-        <div>
-          <h4>Test failed</h4>
-          <p role="alert">{test.error.message}</p>
+        <div className="flex flex-col gap-1 text-sm">
+          <h4 className="font-medium">Test failed</h4>
+          <p role="alert" className="text-destructive">
+            {test.error.message}
+          </p>
         </div>
       )}
     </div>
@@ -201,95 +213,121 @@ export function ChecksEditor({
   }
 
   return (
-    <div>
+    <div className="flex flex-col gap-3">
       {checks.map((check, index) => (
-        <fieldset key={index}>
-          <select
-            value={check.type}
-            onChange={(e) =>
-              update(
-                index,
-                e.target.value === 'builtin'
-                  ? { type: 'builtin', key: '', params: {} }
-                  : { type: 'script', name: '', code: '' },
-              )
-            }
-          >
-            <option value="builtin">builtin</option>
-            <option value="script">script</option>
-          </select>
-
-          {check.type === 'builtin' ? (
-            <div>
-              <label>
-                Builtin key
-                <select
-                  value={check.key}
-                  onChange={(e) => update(index, { ...check, key: e.target.value, params: {} })}
-                >
-                  <option value="">Select a builtin check…</option>
-                  {builtins.map((b) => (
-                    <option key={b.key} value={b.key}>
-                      {b.key}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <p>{builtins.find((b) => b.key === check.key)?.description}</p>
-              <SchemaForm
-                schema={
-                  builtins.find((b) => b.key === check.key)?.paramsSchema ?? EMPTY_OBJECT_SCHEMA
+        <Card key={index}>
+          <CardHeader className="flex-row items-center justify-between gap-2">
+            <CardTitle className="flex items-center gap-2">
+              <Select
+                value={check.type}
+                onValueChange={(next) =>
+                  update(
+                    index,
+                    next === 'builtin'
+                      ? { type: 'builtin', key: '', params: {} }
+                      : { type: 'script', name: '', code: '' },
+                  )
                 }
-                value={check.params}
-                onChange={(next) => update(index, { ...check, params: next })}
-              />
-            </div>
-          ) : (
-            <div>
-              <label>
-                Name
-                <input
-                  type="text"
-                  value={check.name}
-                  onChange={(e) => update(index, { ...check, name: e.target.value })}
+              >
+                <SelectTrigger size="sm" className="w-32">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="builtin">builtin</SelectItem>
+                  <SelectItem value="script">script</SelectItem>
+                </SelectContent>
+              </Select>
+            </CardTitle>
+            <Button type="button" variant="ghost" size="sm" onClick={() => remove(index)}>
+              Remove check
+            </Button>
+          </CardHeader>
+
+          <CardContent className="flex flex-col gap-3">
+            {check.type === 'builtin' ? (
+              <div className="flex flex-col gap-2">
+                <div className="flex flex-col gap-1.5">
+                  <Label>Builtin key</Label>
+                  <Select
+                    value={check.key || UNSET}
+                    onValueChange={(next) =>
+                      update(index, { ...check, key: next === UNSET ? '' : next, params: {} })
+                    }
+                  >
+                    <SelectTrigger size="sm" className="w-56">
+                      <SelectValue placeholder="Select a builtin check…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={UNSET}>Select a builtin check…</SelectItem>
+                      {builtins.map((b) => (
+                        <SelectItem key={b.key} value={b.key}>
+                          {b.key}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  {builtins.find((b) => b.key === check.key)?.description}
+                </p>
+                <SchemaForm
+                  schema={
+                    builtins.find((b) => b.key === check.key)?.paramsSchema ?? EMPTY_OBJECT_SCHEMA
+                  }
+                  value={check.params}
+                  onChange={(next) => update(index, { ...check, params: next })}
                 />
-              </label>
-              <h4>Code</h4>
-              <textarea
-                rows={10}
-                cols={60}
-                value={check.code}
-                onChange={(e) => update(index, { ...check, code: e.target.value })}
-              />
-              <h4>Refs</h4>
-              <RefsEditor
-                refs={check.refs}
-                onChange={(refs) => update(index, { ...check, refs })}
-                stageIndex={stageIndex}
-                graph={graph}
-                inputs={inputs}
-                roles={roles}
-                assets={assets}
-                iterating={iterating}
-              />
-            </div>
-          )}
+              </div>
+            ) : (
+              <div className="flex flex-col gap-3">
+                <div className="flex flex-col gap-1.5">
+                  <Label>Name</Label>
+                  <Input
+                    type="text"
+                    className="w-56"
+                    value={check.name}
+                    onChange={(e) => update(index, { ...check, name: e.target.value })}
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <h4 className="text-sm font-medium">Code</h4>
+                  <Textarea
+                    rows={10}
+                    className="font-mono text-xs"
+                    value={check.code}
+                    onChange={(e) => update(index, { ...check, code: e.target.value })}
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <h4 className="text-sm font-medium">Refs</h4>
+                  <RefsEditor
+                    refs={check.refs}
+                    onChange={(refs) => update(index, { ...check, refs })}
+                    stageIndex={stageIndex}
+                    graph={graph}
+                    inputs={inputs}
+                    roles={roles}
+                    assets={assets}
+                    iterating={iterating}
+                  />
+                </div>
+              </div>
+            )}
 
-          <CheckTestPanel check={check} />
-          <IssueList issues={issues?.[index] ?? []} />
-
-          <button type="button" onClick={() => remove(index)}>
-            Remove check
-          </button>
-        </fieldset>
+            <CheckTestPanel check={check} />
+            <IssueList issues={issues?.[index] ?? []} />
+          </CardContent>
+        </Card>
       ))}
 
-      <button type="button" onClick={addBuiltin}>
-        + Add builtin check
-      </button>
-      <button type="button" onClick={addScript}>
-        + Add script check
-      </button>
+      <div className="flex gap-2">
+        <Button type="button" variant="outline" size="sm" onClick={addBuiltin}>
+          + Add builtin check
+        </Button>
+        <Button type="button" variant="outline" size="sm" onClick={addScript}>
+          + Add script check
+        </Button>
+      </div>
     </div>
   );
 }
