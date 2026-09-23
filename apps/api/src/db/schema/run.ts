@@ -1,6 +1,18 @@
-import { bigint, boolean, jsonb, numeric, pgTable, text, timestamptz } from './pg-helpers';
+import { bigint, boolean, jsonb, numeric, pgEnum, pgTable, text, timestamptz } from './pg-helpers';
 import { channel } from './channel';
 import { blueprintVersion } from './blueprint';
+
+/** §12.1 RunState — reused by `run_wakeup.source_state`. */
+export const runStateEnum = pgEnum('run_state', [
+  'CREATED',
+  'RUNNING',
+  'PAUSED_BUDGET',
+  'PAUSED_APPROVAL',
+  'PAUSED_INPUT',
+  'FAILED',
+  'COMPLETED',
+  'CANCELLED',
+]);
 
 /** §3.7 — `role_bindings` and asset refs store full snapshots, not FKs, so
  * editing a Character or replacing a logo cannot retroactively change a past
@@ -13,7 +25,7 @@ export const run = pgTable('run', {
   blueprintVersionId: text('blueprint_version_id')
     .notNull()
     .references(() => blueprintVersion.id), // blueprint version this run executes
-  state: text('state').notNull(), // §12.1 RunState — current orchestration state of the run
+  state: runStateEnum('state').notNull(), // current orchestration state of the run
   /** Monotonic optimistic precondition for every operator mutation and
    * orchestration wakeup. Kept as bigint in Postgres while Drizzle exposes a
    * number: a run cannot practically approach Number.MAX_SAFE_INTEGER

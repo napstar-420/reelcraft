@@ -4,6 +4,7 @@ import {
   integer,
   jsonb,
   numeric,
+  pgEnum,
   pgTable,
   text,
   timestamptz,
@@ -11,6 +12,19 @@ import {
 } from './pg-helpers';
 import { run } from './run';
 import { blob } from './blob';
+
+/** §4.1 — reused by `run_memory.kind` (memory writes are typed like artifacts). */
+export const artifactKind = pgEnum('artifact_kind', [
+  'data',
+  'text',
+  'media.image',
+  'media.video',
+  'media.audio',
+  'file.subtitles',
+  'timeline',
+]);
+
+export const reproLevelEnum = pgEnum('repro_level', ['exact', 'approximate', 'none']);
 
 /**
  * §3.9 — artifacts are born stale (§3.9.1): every attempt writes one,
@@ -32,7 +46,7 @@ export const artifact = pgTable(
     producerStageKey: text('producer_stage_key').notNull(), // or '$input:<key>' (§6.2)
     itemIndex: integer('item_index'), // stage_item index this artifact belongs to, when iterating
     generation: integer('generation').notNull().default(0), // increments each time this producer/item slot is superseded
-    kind: text('kind').notNull(), // §4.1
+    kind: artifactKind('kind').notNull(),
     schemaHash: text('schema_hash'), // sha256 of canonical JSON Schema; null for fixed kinds
     data: jsonb('data'), // structured artifact payload, when not a blob-backed kind
     blobId: text('blob_id').references(() => blob.id), // underlying stored file backing this artifact, when media-based
@@ -40,7 +54,7 @@ export const artifact = pgTable(
     derived: jsonb('derived'), // firstFrame/lastFrame blob ids (§14.4)
     stale: boolean('stale').notNull().default(true), // born stale, §3.9.1
     userAuthored: boolean('user_authored').notNull().default(false), // whether a human manually authored/edited this artifact
-    reproLevel: text('repro_level').notNull(), // exact|approximate|none
+    reproLevel: reproLevelEnum('repro_level').notNull(),
     repro: jsonb('repro'), // inputs/settings needed to reproduce this artifact
     costUsd: numeric('cost_usd', { precision: 12, scale: 4 }).notNull().default('0'), // cost incurred producing this artifact
     createdAt: timestamptz('created_at').notNull().defaultNow(), // when the artifact was created

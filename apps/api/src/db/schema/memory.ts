@@ -9,7 +9,7 @@ import {
   uniqueIndex,
 } from './pg-helpers';
 import { run } from './run';
-import { artifact } from './artifact';
+import { artifact, artifactKind } from './artifact';
 
 /** §3.11 — append-only for audit; the highest version is authoritative,
  * and a tombstone there makes the key absent without deleting history. */
@@ -24,7 +24,7 @@ export const runMemory = pgTable(
     version: integer('version').notNull(), // monotonic per (run_id, mem_key)
     writtenBy: text('written_by').notNull(), // stage_key
     writtenItem: integer('written_item'), // item index, when written from an iterating stage
-    kind: text('kind').notNull(), // type of value stored (data/text/media)
+    kind: artifactKind('kind').notNull(), // type of value stored, same set as artifact.kind
     schemaHash: text('schema_hash'), // sha256 of canonical JSON Schema, when applicable
     data: jsonb('data'), // resolved JSON for data/text writes
     artifactId: text('artifact_id').references(() => artifact.id), // media writes reference the artifact

@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 import { and, asc, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
-import type { JobHandle, JobStatus, QcDef, Ref } from '@reefcraft/shared';
+import type { HumanWaitKind, JobHandle, JobStatus, QcDef, Ref } from '@reefcraft/shared';
 import { StageDef } from '@reefcraft/shared';
 import { CONSUMES_SEMANTIC_ATTEMPT } from './attempt-outcome';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
@@ -143,7 +143,7 @@ export class StageRunnerService {
   async awaitHumanInput(
     runId: string,
     stageExecutionId: string,
-    kind: 'input' | 'timeline_edit' = 'input',
+    kind: Extract<HumanWaitKind, 'input' | 'timeline_edit'> = 'input',
   ): Promise<void> {
     await this.db.transaction(async (tx) => {
       await tx

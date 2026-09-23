@@ -14,6 +14,7 @@ import type {
   JsonSchema,
   ValidationIssue,
   AssetDto,
+  TemplateSource,
 } from '@reefcraft/shared';
 
 /** `blueprint.service.ts#getBlueprint()`'s row shape — the whole `blueprint`
@@ -41,7 +42,7 @@ export type CharacterListItemDto = {
 export type TemplateListItem = {
   id: string;
   ownerId: string;
-  source: 'builtin' | 'user';
+  source: TemplateSource;
   kind: string;
   name: string;
   description: string;

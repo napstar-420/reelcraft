@@ -1,7 +1,28 @@
 import { sql } from 'drizzle-orm';
-import { boolean, index, numeric, pgTable, text, timestamptz, uniqueIndex } from './pg-helpers';
+import {
+  boolean,
+  index,
+  numeric,
+  pgEnum,
+  pgTable,
+  text,
+  timestamptz,
+  uniqueIndex,
+} from './pg-helpers';
 import { run } from './run';
 import { stageItem, stageAttempt } from './execution';
+
+export const ledgerEntryKindEnum = pgEnum('ledger_entry_kind', [
+  'reservation',
+  'actual',
+  'release',
+]);
+
+export const ledgerEntryCategoryEnum = pgEnum('ledger_entry_category', [
+  'stage_output',
+  'qc',
+  'check',
+]);
 
 /** §3.12 */
 export const ledgerEntry = pgTable(
@@ -14,8 +35,8 @@ export const ledgerEntry = pgTable(
     stageKey: text('stage_key').notNull(), // stage key the spend/reservation is attributed to
     stageItemId: text('stage_item_id').references(() => stageItem.id), // stage item the spend/reservation is attributed to, when iterating
     stageAttemptId: text('stage_attempt_id').references(() => stageAttempt.id), // attempt the spend/reservation is attributed to
-    kind: text('kind').notNull(), // reservation|actual|release
-    category: text('category').notNull(), // stage_output|qc|check
+    kind: ledgerEntryKindEnum('kind').notNull(),
+    category: ledgerEntryCategoryEnum('category').notNull(),
     amountUsd: numeric('amount_usd', { precision: 12, scale: 4 }).notNull(), // dollar amount of this ledger entry
     confirmed: boolean('confirmed').notNull().default(true), // false = provisional (§11.3)
     reservationId: text('reservation_id'), // id linking a reservation to its later actual/release entries

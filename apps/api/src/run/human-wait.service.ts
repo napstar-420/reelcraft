@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { and, eq, isNull } from 'drizzle-orm';
+import type { HumanWaitKind } from '@reefcraft/shared';
 import { ulid } from '../common/ulid';
 import { DRIZZLE, type Db, type Tx } from '../db/drizzle.provider';
 import { humanWait } from '../db/schema/index';
@@ -14,7 +15,7 @@ export class HumanWaitService {
       runId: string;
       stageExecutionId: string;
       stageItemId?: string;
-      kind: 'approval' | 'input' | 'timeline_edit';
+      kind: HumanWaitKind;
     },
   ): Promise<void> {
     await tx
