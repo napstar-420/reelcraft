@@ -7,20 +7,20 @@ import { stageItem, stageAttempt } from './execution';
 export const ledgerEntry = pgTable(
   'ledger_entry',
   {
-    id: text('id').primaryKey(),
+    id: text('id').primaryKey(), // unique ledger-entry identifier
     runId: text('run_id')
       .notNull()
-      .references(() => run.id),
-    stageKey: text('stage_key').notNull(),
-    stageItemId: text('stage_item_id').references(() => stageItem.id),
-    stageAttemptId: text('stage_attempt_id').references(() => stageAttempt.id),
+      .references(() => run.id), // run this ledger entry belongs to
+    stageKey: text('stage_key').notNull(), // stage key the spend/reservation is attributed to
+    stageItemId: text('stage_item_id').references(() => stageItem.id), // stage item the spend/reservation is attributed to, when iterating
+    stageAttemptId: text('stage_attempt_id').references(() => stageAttempt.id), // attempt the spend/reservation is attributed to
     kind: text('kind').notNull(), // reservation|actual|release
     category: text('category').notNull(), // stage_output|qc|check
-    amountUsd: numeric('amount_usd', { precision: 12, scale: 4 }).notNull(),
+    amountUsd: numeric('amount_usd', { precision: 12, scale: 4 }).notNull(), // dollar amount of this ledger entry
     confirmed: boolean('confirmed').notNull().default(true), // false = provisional (§11.3)
-    reservationId: text('reservation_id'),
+    reservationId: text('reservation_id'), // id linking a reservation to its later actual/release entries
     expiresAt: timestamptz('expires_at'), // clock starts at submit (§11.4)
-    createdAt: timestamptz('created_at').notNull().defaultNow(),
+    createdAt: timestamptz('created_at').notNull().defaultNow(), // when this ledger entry was recorded
   },
   (t) => [
     index('ledger_open_idx')

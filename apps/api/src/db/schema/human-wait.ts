@@ -7,22 +7,22 @@ import { stageExecution, stageItem } from './execution';
 export const humanWait = pgTable(
   'human_wait',
   {
-    id: text('id').primaryKey(),
+    id: text('id').primaryKey(), // unique human-wait record identifier
     runId: text('run_id')
       .notNull()
-      .references(() => run.id),
+      .references(() => run.id), // run this wait gate belongs to
     stageExecutionId: text('stage_execution_id')
       .notNull()
-      .references(() => stageExecution.id),
-    stageItemId: text('stage_item_id').references(() => stageItem.id),
-    kind: text('kind').notNull(),
-    draft: jsonb('draft'),
-    draftRevision: integer('draft_revision').notNull().default(0),
-    draftUpdatedAt: timestamptz('draft_updated_at'),
-    waitingSince: timestamptz('waiting_since').notNull().defaultNow(),
-    reminded24hAt: timestamptz('reminded_24h_at'),
-    reminded48hAt: timestamptz('reminded_48h_at'),
-    resolvedAt: timestamptz('resolved_at'),
+      .references(() => stageExecution.id), // stage execution this wait gate blocks
+    stageItemId: text('stage_item_id').references(() => stageItem.id), // specific stage item this wait gate blocks, if per-item
+    kind: text('kind').notNull(), // type of human gate, e.g. approval vs human-input
+    draft: jsonb('draft'), // in-progress operator input/edits before submission
+    draftRevision: integer('draft_revision').notNull().default(0), // increments each time the draft is saved
+    draftUpdatedAt: timestamptz('draft_updated_at'), // when the draft was last saved
+    waitingSince: timestamptz('waiting_since').notNull().defaultNow(), // when the gate started waiting on a human
+    reminded24hAt: timestamptz('reminded_24h_at'), // when the 24-hour reminder notification was sent
+    reminded48hAt: timestamptz('reminded_48h_at'), // when the 48-hour reminder notification was sent
+    resolvedAt: timestamptz('resolved_at'), // when the human responded and the gate was resolved
   },
   (t) => [
     uniqueIndex('human_wait_open_execution_item_uq')

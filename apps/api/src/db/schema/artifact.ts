@@ -25,25 +25,25 @@ import { blob } from './blob';
 export const artifact = pgTable(
   'artifact',
   {
-    id: text('id').primaryKey(),
+    id: text('id').primaryKey(), // unique artifact identifier
     runId: text('run_id')
       .notNull()
-      .references(() => run.id),
+      .references(() => run.id), // run this artifact was produced in
     producerStageKey: text('producer_stage_key').notNull(), // or '$input:<key>' (§6.2)
-    itemIndex: integer('item_index'),
-    generation: integer('generation').notNull().default(0),
+    itemIndex: integer('item_index'), // stage_item index this artifact belongs to, when iterating
+    generation: integer('generation').notNull().default(0), // increments each time this producer/item slot is superseded
     kind: text('kind').notNull(), // §4.1
     schemaHash: text('schema_hash'), // sha256 of canonical JSON Schema; null for fixed kinds
-    data: jsonb('data'),
-    blobId: text('blob_id').references(() => blob.id),
+    data: jsonb('data'), // structured artifact payload, when not a blob-backed kind
+    blobId: text('blob_id').references(() => blob.id), // underlying stored file backing this artifact, when media-based
     probe: jsonb('probe'), // media metadata, populated at write (§9.3)
     derived: jsonb('derived'), // firstFrame/lastFrame blob ids (§14.4)
     stale: boolean('stale').notNull().default(true), // born stale, §3.9.1
-    userAuthored: boolean('user_authored').notNull().default(false),
+    userAuthored: boolean('user_authored').notNull().default(false), // whether a human manually authored/edited this artifact
     reproLevel: text('repro_level').notNull(), // exact|approximate|none
-    repro: jsonb('repro'),
-    costUsd: numeric('cost_usd', { precision: 12, scale: 4 }).notNull().default('0'),
-    createdAt: timestamptz('created_at').notNull().defaultNow(),
+    repro: jsonb('repro'), // inputs/settings needed to reproduce this artifact
+    costUsd: numeric('cost_usd', { precision: 12, scale: 4 }).notNull().default('0'), // cost incurred producing this artifact
+    createdAt: timestamptz('created_at').notNull().defaultNow(), // when the artifact was created
   },
   (t) => [
     uniqueIndex('artifact_active_uq')

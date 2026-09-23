@@ -6,18 +6,18 @@ import { blob } from './blob';
 export const asset = pgTable(
   'asset',
   {
-    id: text('id').primaryKey(),
-    ownerId: text('owner_id').notNull().default('local'),
+    id: text('id').primaryKey(), // unique asset identifier
+    ownerId: text('owner_id').notNull().default('local'), // account that owns this asset
     channelId: text('channel_id')
       .notNull()
-      .references(() => channel.id),
-    name: text('name').notNull(),
+      .references(() => channel.id), // channel this asset belongs to
+    name: text('name').notNull(), // asset name, unique within its channel
     kind: text('kind').notNull(), // media.image | media.video | media.audio | font | lut
     blobId: text('blob_id')
       .notNull()
-      .references(() => blob.id),
-    tags: text('tags').array().notNull().default([]),
-    createdAt: timestamptz('created_at').notNull().defaultNow(),
+      .references(() => blob.id), // underlying stored file backing this asset
+    tags: text('tags').array().notNull().default([]), // freeform labels for search/filtering
+    createdAt: timestamptz('created_at').notNull().defaultNow(), // when the asset was created
   },
   (t) => [uniqueIndex('asset_channel_id_name_uq').on(t.channelId, t.name)],
 );

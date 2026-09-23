@@ -10,32 +10,32 @@ import { channel } from './channel';
  * Do not add `.references()` here without also removing that migration.
  */
 export const blueprint = pgTable('blueprint', {
-  id: text('id').primaryKey(),
+  id: text('id').primaryKey(), // unique blueprint identifier
   channelId: text('channel_id')
     .notNull()
-    .references(() => channel.id),
-  name: text('name').notNull(),
-  currentVersionId: text('current_version_id'),
-  archived: boolean('archived').notNull().default(false),
+    .references(() => channel.id), // channel this blueprint belongs to
+  name: text('name').notNull(), // display name of the blueprint
+  currentVersionId: text('current_version_id'), // id of the blueprint_version currently active (see FK note above)
+  archived: boolean('archived').notNull().default(false), // whether the blueprint is archived/hidden from active use
 });
 
 export const blueprintVersion = pgTable(
   'blueprint_version',
   {
-    id: text('id').primaryKey(),
+    id: text('id').primaryKey(), // unique blueprint_version identifier
     blueprintId: text('blueprint_id')
       .notNull()
-      .references(() => blueprint.id),
-    version: integer('version').notNull(),
-    graph: jsonb('graph').notNull(), // StageDef[]
-    inputs: jsonb('inputs').notNull().default([]), // InputDef[]
+      .references(() => blueprint.id), // blueprint this version belongs to
+    version: integer('version').notNull(), // monotonically increasing version number for the blueprint
+    graph: jsonb('graph').notNull(), // StageDef[]: the pipeline stage graph for this version
+    inputs: jsonb('inputs').notNull().default([]), // InputDef[]: input parameters a run of this version accepts
     roles: jsonb('roles').notNull().default([]), // RoleDef[]; v1 permits 0 or 1 (§18.5)
-    defaults: jsonb('defaults').notNull(), // ConfigLayer
-    budget: jsonb('budget').notNull(), // { runCapUsd }
-    validation: jsonb('validation').notNull(),
-    runnable: boolean('runnable').notNull().default(false),
-    sourceTemplateId: text('source_template_id'),
-    createdAt: timestamptz('created_at').notNull().defaultNow(),
+    defaults: jsonb('defaults').notNull(), // ConfigLayer: default config values for runs of this version
+    budget: jsonb('budget').notNull(), // { runCapUsd }: spending limit for runs of this version
+    validation: jsonb('validation').notNull(), // validation rules/results applied to this version's graph
+    runnable: boolean('runnable').notNull().default(false), // whether this version has passed validation and can be run
+    sourceTemplateId: text('source_template_id'), // template this version was generated from, if any
+    createdAt: timestamptz('created_at').notNull().defaultNow(), // when this version was created
   },
   (t) => [uniqueIndex('blueprint_version_blueprint_id_version_uq').on(t.blueprintId, t.version)],
 );
