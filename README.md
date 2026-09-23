@@ -2,9 +2,11 @@
 
 A general-purpose AI video/reel generation engine. See `docs/ai-reel-engine-requirements.md`
 and `docs/ai-video-engine-design-spec-v6.md` for the full requirements and design spec — this
-the implementation currently covers Build Order Phases 1–6, including the
-inputs/human-in-the-loop control plane, media storage/providers, and assembly
-with a browser timeline editor from design spec §24.
+implementation currently covers Build Order Phases 1–9.5 (`docs/build-progress.md`), including
+the inputs/human-in-the-loop control plane, media storage/providers, assembly with a browser
+timeline editor, sequential iteration, channel Characters, the capability-driven editor and
+template library, and a drag/drop visual Blueprint canvas, from design spec §24. Phase 10
+(Socket.IO live updates) is the only pending phase.
 
 ## Stack
 
@@ -45,8 +47,12 @@ apps/
 packages/
   shared/   Zod schemas shared by api and web (StageDef, Ref, ConfigLayer, DTOs, ...)
   timeline-composition/ Shared Remotion composition for preview and final render
+design/     Design tokens and static HTML previews backing docs/design-system.md
 docker/     Postgres init script, MinIO bootstrap script
 ```
+
+See `docs/design-system.md` ("Night Studio") for the web app's design tokens and component
+rules — `apps/web` uses Tailwind CSS v4 and shadcn/ui with light/dark mode.
 
 ## Commands
 
@@ -163,8 +169,14 @@ records durable 24h/48h reminder events without changing run state.
   the DI factory pattern, artifact finalization with the born-stale/stale-before-insert
   ordering the partial unique index requires, and the phase-1 API surface (channels,
   blueprints, templates, runs, capabilities, SSE run events).
-- `apps/web`: channels list/create → instantiate the builtin template → start a run → watch
-  its state and stage executions update live.
+- `apps/web`: channels list/create, a drag/drop visual Blueprint canvas (Phase 9.5) for
+  authoring the stage graph, the capability-resolved editor and template library with a
+  script-check tester and dry-run (Phase 9), channel Character management, instantiate →
+  start a run → watch its state and stage executions update live via SSE, and the browser
+  timeline editor for assembly. Built with Tailwind CSS v4 and shadcn/ui, with light/dark
+  mode (`docs/design-system.md`).
+- Phase 7 (`iterate`) sequential per-item loops with `prevItem` carry and per-item retry;
+  Phase 8 channel Characters with reference upload/promotion and immutable run snapshots.
 - `docker-compose.yml`: Postgres (two databases), MinIO with a bootstrap sidecar, Inngest via
   `inngest start`.
 
