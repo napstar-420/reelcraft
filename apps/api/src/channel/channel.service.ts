@@ -1,6 +1,6 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
-import type { CreateChannelDto } from '@reefcraft/shared';
+import type { CreateChannelDto, UpdateChannelDto } from '@reefcraft/shared';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
 import { channel } from '../db/schema/index';
 import { ulid } from '../common/ulid';
@@ -28,7 +28,13 @@ export class ChannelService {
 
   async get(id: string) {
     const [row] = await this.db.select().from(channel).where(eq(channel.id, id)).limit(1);
-    if (!row) throw new Error(`Channel ${id} not found`);
+    if (!row) throw new NotFoundException(`Channel ${id} not found`);
     return row;
+  }
+
+  async update(id: string, dto: UpdateChannelDto) {
+    await this.get(id);
+    await this.db.update(channel).set(dto).where(eq(channel.id, id));
+    return this.get(id);
   }
 }
