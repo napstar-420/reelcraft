@@ -652,7 +652,7 @@ function IterateEditor({
   );
 }
 
-const ACCORDION_SECTIONS = ['basics', 'data', 'checks-qc', 'execution'];
+const ACCORDION_SECTIONS = ['basics', 'data', 'output-writes', 'checks-qc', 'execution'];
 
 /** Chunk 4 — the real slot/context/config/output/writes editor for one
  * selected stage, replacing Chunk 3's `DemoBindingHarness`. `stage.key` is
@@ -849,7 +849,7 @@ export function StageInspector({
           className="rounded-xl border border-border overflow-hidden px-3"
         >
           <AccordionTrigger className={STAGE_SECTION_TRIGGER_CLASS}>
-            Data (slots, context, output, writes)
+            Data (slots, context)
           </AccordionTrigger>
           <AccordionContent className={STAGE_SECTION_CONTENT_CLASS}>
             <div className="flex flex-col gap-3">
@@ -925,7 +925,17 @@ export function StageInspector({
                 + add context
               </Button>
             </div>
+          </AccordionContent>
+        </AccordionItem>
 
+        <AccordionItem
+          value="output-writes"
+          className="rounded-xl border border-border overflow-hidden px-3"
+        >
+          <AccordionTrigger className={STAGE_SECTION_TRIGGER_CLASS}>
+            Output &amp; memory writes
+          </AccordionTrigger>
+          <AccordionContent className={STAGE_SECTION_CONTENT_CLASS}>
             <div className="flex flex-col gap-1.5">
               <SectionHeading info="What this stage returns to the run graph. The kind you pick here (text/data/timeline/media) determines the shape a downstream stage's `prev` Ref receives — it is not stored anywhere else, unlike a memory write.">
                 Output
