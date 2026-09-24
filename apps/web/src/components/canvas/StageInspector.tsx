@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../api/client';
 import { BindingPicker } from './BindingPicker';
+import { CapabilityPicker } from './CapabilityPicker';
 import { SchemaForm } from './SchemaForm';
 import { ChecksEditor } from './ChecksEditor';
 import { ModelPinEditor } from './ModelPinEditor';
@@ -39,7 +40,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 const UNSET = '__unset__';
 
@@ -787,32 +787,14 @@ export function StageInspector({
             </div>
             <div className="flex flex-col gap-1.5">
               <Label>Capability</Label>
-              <Select
-                value={stage.capability || UNSET}
+              <CapabilityPicker
+                value={stage.capability}
                 onValueChange={(next) =>
-                  onChange({
-                    ...stage,
-                    capability: next === UNSET ? '' : next,
-                    config: {},
-                    slots: {},
-                  })
+                  onChange({ ...stage, capability: next, config: {}, slots: {} })
                 }
-              >
-                <SelectTrigger size="sm" className="w-full sm:w-64">
-                  <SelectValue placeholder="Select a capability…" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={UNSET}>Select a capability…</SelectItem>
-                  {capabilities.data?.map((c) => (
-                    <Tooltip key={c.key}>
-                      <TooltipTrigger asChild>
-                        <SelectItem value={c.key}>{c.label}</SelectItem>
-                      </TooltipTrigger>
-                      <TooltipContent side="right">{c.description}</TooltipContent>
-                    </Tooltip>
-                  ))}
-                </SelectContent>
-              </Select>
+                size="sm"
+                triggerClassName="w-full sm:w-64"
+              />
               <IssueList issues={capabilityIssues} />
             </div>
 
