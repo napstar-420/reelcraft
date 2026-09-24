@@ -11,10 +11,11 @@ export const SECTION_HEADING_CLASS =
  * Accordion component used elsewhere (blueprint settings, template
  * library). `-mx-3` cancels the AccordionItem's own `px-3` so the
  * background spans the item's full width instead of sitting inset with
- * gaps on either side; the item needs `overflow-hidden` (see
- * StageInspector.tsx) so the now-square trigger corners clip to the
- * item's own rounded corners (top only — see `rounded-t-xl` there, so the
- * header's own square bottom edge doesn't fight a rounded item corner).
- * `mb-2` separates the header band from the accordion content below it,
- * which otherwise butts straight up against the header with no gap. */
-export const STAGE_SECTION_TRIGGER_CLASS = '-mx-3 mb-2 bg-secondary px-3 text-secondary-foreground';
+ * gaps on either side. The base trigger is `rounded-lg` on all four
+ * corners (see ui/accordion.tsx); `rounded-t-lg rounded-b-none` squares
+ * off just the bottom so the header band doesn't look like a floating
+ * pill sitting on top of the item. `mb-2` separates the header band from
+ * the accordion content below it, which otherwise butts straight up
+ * against the header with no gap. */
+export const STAGE_SECTION_TRIGGER_CLASS =
+  '-mx-3 mb-2 rounded-t-lg rounded-b-none bg-secondary px-3 text-secondary-foreground';

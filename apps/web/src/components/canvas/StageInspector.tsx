@@ -773,7 +773,7 @@ export function StageInspector({
       <Accordion type="multiple" defaultValue={ACCORDION_SECTIONS} className="flex flex-col gap-2">
         <AccordionItem
           value="basics"
-          className="rounded-t-xl border border-border overflow-hidden px-3"
+          className="rounded-xl border border-border overflow-hidden px-3"
         >
           <AccordionTrigger className={STAGE_SECTION_TRIGGER_CLASS}>Basics</AccordionTrigger>
           <AccordionContent className="flex flex-col gap-4">
@@ -820,7 +820,7 @@ export function StageInspector({
 
         <AccordionItem
           value="data"
-          className="rounded-t-xl border border-border overflow-hidden px-3"
+          className="rounded-xl border border-border overflow-hidden px-3"
         >
           <AccordionTrigger className={STAGE_SECTION_TRIGGER_CLASS}>
             Data (slots, context, output, writes)
@@ -946,7 +946,7 @@ export function StageInspector({
 
         <AccordionItem
           value="checks-qc"
-          className="rounded-t-xl border border-border overflow-hidden px-3"
+          className="rounded-xl border border-border overflow-hidden px-3"
         >
           <AccordionTrigger className={STAGE_SECTION_TRIGGER_CLASS}>
             Checks &amp; QC
@@ -977,7 +977,7 @@ export function StageInspector({
 
         <AccordionItem
           value="execution"
-          className="rounded-t-xl border border-border overflow-hidden px-3"
+          className="rounded-xl border border-border overflow-hidden px-3"
         >
           <AccordionTrigger className={STAGE_SECTION_TRIGGER_CLASS}>
             Execution (retry, budget, model, approval, iterate)
