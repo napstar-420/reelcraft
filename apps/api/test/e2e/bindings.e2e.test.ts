@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { StageDef } from '@reefcraft/shared';
+import type { StageDef } from '@reelcraft/shared';
 import { BindingResolverService } from '../../src/artifact/binding-resolver.service';
 import type { DerivedFrameService } from '../../src/artifact/derived-frame.service';
 import { ArtifactService } from '../../src/artifact/artifact.service';

@@ -10,7 +10,7 @@ import {
 } from '@aws-sdk/client-s3';
 import { Upload } from '@aws-sdk/lib-storage';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import type { ByteRange, PutResult } from '@reefcraft/shared';
+import type { ByteRange, PutResult } from '@reelcraft/shared';
 import { EngineConfig } from '../config/engine-config';
 import type { StorageAdapter } from './storage.adapter';
 import { createS3Client } from './s3-client.factory';

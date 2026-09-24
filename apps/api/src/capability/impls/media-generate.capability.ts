@@ -7,7 +7,7 @@ import type {
   MediaSource,
   OutputKind,
   SlotDef,
-} from '@reefcraft/shared';
+} from '@reelcraft/shared';
 import { Capability } from '../capability.decorator';
 import type { CapabilityImpl, ExecCtx, ExecResult } from '../capability.interface';
 import { ProviderRegistry } from '../../provider/provider.registry';

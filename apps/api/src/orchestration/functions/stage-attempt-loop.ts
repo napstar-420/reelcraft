@@ -1,5 +1,5 @@
 import type { Context } from 'inngest';
-import type { StageDef } from '@reefcraft/shared';
+import type { StageDef } from '@reelcraft/shared';
 import type { StageAttemptContext, StageRunnerService } from '../stage-runner.service';
 import type { EffectiveStageConfig } from '../../run-config/config-resolver.service';
 

@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { and, eq, isNull } from 'drizzle-orm';
-import type { HumanWaitKind } from '@reefcraft/shared';
+import type { HumanWaitKind } from '@reelcraft/shared';
 import { ulid } from '../common/ulid';
 import { DRIZZLE, type Db, type Tx } from '../db/drizzle.provider';
 import { humanWait } from '../db/schema/index';

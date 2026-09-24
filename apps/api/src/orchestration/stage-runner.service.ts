@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 import { and, asc, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
-import type { HumanWaitKind, JobHandle, JobStatus, QcDef, Ref } from '@reefcraft/shared';
-import { StageDef } from '@reefcraft/shared';
+import type { HumanWaitKind, JobHandle, JobStatus, QcDef, Ref } from '@reelcraft/shared';
+import { StageDef } from '@reelcraft/shared';
 import { CONSUMES_SEMANTIC_ATTEMPT } from './attempt-outcome';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
 import {
@@ -667,11 +667,11 @@ export class StageRunnerService {
     });
 
     const mediaOutput = stage.output.kind.startsWith('media.')
-      ? (output as import('@reefcraft/shared').MediaSource)
+      ? (output as import('@reelcraft/shared').MediaSource)
       : undefined;
     const fileOutput =
       stage.output.kind === 'file.subtitles'
-        ? (output as import('@reefcraft/shared').FileSource)
+        ? (output as import('@reelcraft/shared').FileSource)
         : undefined;
     let persistedMedia: Awaited<ReturnType<MediaArtifactService['persist']>> | undefined;
     try {

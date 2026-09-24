@@ -23,7 +23,7 @@ import type {
   UpdateCharacterReferenceDto,
   RequestAssetUploadResultDto,
   CreateAssetDto,
-} from '@reefcraft/shared';
+} from '@reelcraft/shared';
 
 /** `blueprint.service.ts#getBlueprint()`'s row shape — the whole `blueprint`
  * table row (Chunk 3, Phase 9.5's binding-picker asset step needs the
@@ -83,7 +83,7 @@ export type CheckTypeDto =
   | { key: 'script'; kind: 'script'; description: string };
 
 /** `check.types.ts`'s `CheckResult` — internal to `apps/api`, not exported
- * from `@reefcraft/shared`. */
+ * from `@reelcraft/shared`. */
 export type CheckResultDto = {
   name: string;
   kind: 'schema' | 'builtin' | 'script';
@@ -110,7 +110,7 @@ export class ApiError extends Error {
   }
 }
 
-/** Typed against @reefcraft/shared DTOs — the payoff for the shared
+/** Typed against @reelcraft/shared DTOs — the payoff for the shared
  * package: the same shapes the API validates requests against are what
  * the UI compiles against. */
 async function request<T>(path: string, init?: RequestInit): Promise<T> {

@@ -8,7 +8,7 @@ import {
   SetPrimaryCharacterReferenceDto,
   UpdateCharacterDto,
   UpdateCharacterReferenceDto,
-} from '@reefcraft/shared';
+} from '@reelcraft/shared';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { CharacterService } from './character.service';
 

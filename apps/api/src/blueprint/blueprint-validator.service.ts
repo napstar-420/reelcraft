@@ -7,7 +7,7 @@ import type {
   RoleDef,
   StageDef,
   ValidationIssue,
-} from '@reefcraft/shared';
+} from '@reelcraft/shared';
 import type { CapabilityImpl } from '../capability/capability.interface';
 import { CapabilityRegistry } from '../capability/capability.registry';
 import { SchemaValidatorService } from '../json-schema/schema-validator.service';

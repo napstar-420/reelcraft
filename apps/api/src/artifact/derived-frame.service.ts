@@ -6,7 +6,7 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import { Inject, Injectable } from '@nestjs/common';
 import { eq, sql } from 'drizzle-orm';
-import type { Probe } from '@reefcraft/shared';
+import type { Probe } from '@reelcraft/shared';
 import { DRIZZLE, type Db, type Tx } from '../db/drizzle.provider';
 import { artifact, blob, channel, run } from '../db/schema/index';
 import { objectKey } from '../storage/object-key';

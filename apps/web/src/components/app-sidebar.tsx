@@ -26,7 +26,7 @@ export function AppSidebar() {
         <div className="flex items-center gap-2 px-2 py-1.5">
           <Clapperboard className="size-5 shrink-0 text-primary" />
           <span className="text-sm font-semibold tracking-tight group-data-[collapsible=icon]:hidden">
-            Reefcraft
+            Reelcraft
           </span>
         </div>
       </SidebarHeader>

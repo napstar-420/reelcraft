@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { and, eq, inArray, isNull, max } from 'drizzle-orm';
-import type { ConfigLayer, CreateBlueprintVersionDto, ValidationIssue } from '@reefcraft/shared';
+import type { ConfigLayer, CreateBlueprintVersionDto, ValidationIssue } from '@reelcraft/shared';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
 import { asset, blob, blueprint, blueprintVersion, character, channel } from '../db/schema/index';
 import { ulid } from '../common/ulid';

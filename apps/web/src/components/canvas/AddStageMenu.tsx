@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { api } from '../../api/client';
-import type { StageDef, OutputDef, OutputKind } from '@reefcraft/shared';
+import type { StageDef, OutputDef, OutputKind } from '@reelcraft/shared';
 import { Button } from '@/components/ui/button';
 import { CapabilityPicker } from './CapabilityPicker';
 

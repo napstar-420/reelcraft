@@ -12,7 +12,7 @@ import {
   useVideoConfig,
 } from 'remotion';
 import type { CalculateMetadataFunction } from 'remotion';
-import type { Timeline, TimelineItem, TimingMap } from '@reefcraft/shared';
+import type { Timeline, TimelineItem, TimingMap } from '@reelcraft/shared';
 
 export type TimelineCompositionProps = {
   timeline: Timeline;

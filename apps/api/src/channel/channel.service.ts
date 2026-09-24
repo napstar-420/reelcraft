@@ -1,6 +1,6 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
-import type { CreateChannelDto, UpdateChannelDto } from '@reefcraft/shared';
+import type { CreateChannelDto, UpdateChannelDto } from '@reelcraft/shared';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
 import { channel } from '../db/schema/index';
 import { ulid } from '../common/ulid';

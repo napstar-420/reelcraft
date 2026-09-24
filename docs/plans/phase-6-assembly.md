@@ -24,7 +24,7 @@ dependencies and run:
 
 ```sh
 pnpm install
-pnpm --filter @reefcraft/api acceptance:phase6-render
+pnpm --filter @reelcraft/api acceptance:phase6-render
 ```
 
 Set `REMOTION_BROWSER_EXECUTABLE` when Chromium is not discoverable. The command

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { ConfigLayer } from '@reefcraft/shared';
+import type { ConfigLayer } from '@reelcraft/shared';
 import { mergeLayer, mergeLayers } from './layer-merge';
 
 describe('mergeLayer', () => {

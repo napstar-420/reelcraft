@@ -1,4 +1,4 @@
-import type { CostEstimate, JobHandle, JobStatus, ModelCapabilities } from '@reefcraft/shared';
+import type { CostEstimate, JobHandle, JobStatus, ModelCapabilities } from '@reelcraft/shared';
 
 export interface ModelInfo {
   modelId: string;

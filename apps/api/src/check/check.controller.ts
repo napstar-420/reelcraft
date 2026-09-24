@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Post } from '@nestjs/common';
-import { TestCheckRequestDto } from '@reefcraft/shared';
+import { TestCheckRequestDto } from '@reelcraft/shared';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { BUILTIN_CHECKS } from './builtins/index';
 import { CheckTestService } from './check-test.service';

@@ -1,5 +1,5 @@
 import { ConflictException, Injectable } from '@nestjs/common';
-import type { RunState } from '@reefcraft/shared';
+import type { RunState } from '@reelcraft/shared';
 
 export type RunAction =
   | 'attach'

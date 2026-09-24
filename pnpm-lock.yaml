@@ -53,7 +53,7 @@ importers:
       '@nestjs/platform-express':
         specifier: ^10.4.15
         version: 10.4.22(@nestjs/common@10.4.22(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@10.4.22)
-      '@reefcraft/shared':
+      '@reelcraft/shared':
         specifier: workspace:*
         version: link:../../packages/shared
       ajv:
@@ -123,10 +123,10 @@ importers:
 
   apps/render-worker:
     dependencies:
-      '@reefcraft/shared':
+      '@reelcraft/shared':
         specifier: workspace:*
         version: link:../../packages/shared
-      '@reefcraft/timeline-composition':
+      '@reelcraft/timeline-composition':
         specifier: workspace:*
         version: link:../../packages/timeline-composition
       '@remotion/bundler':
@@ -151,10 +151,10 @@ importers:
       '@fontsource-variable/geist':
         specifier: ^5.3.0
         version: 5.3.0
-      '@reefcraft/shared':
+      '@reelcraft/shared':
         specifier: workspace:*
         version: link:../../packages/shared
-      '@reefcraft/timeline-composition':
+      '@reelcraft/timeline-composition':
         specifier: workspace:*
         version: link:../../packages/timeline-composition
       '@remotion/player':
@@ -240,7 +240,7 @@ importers:
 
   packages/timeline-composition:
     dependencies:
-      '@reefcraft/shared':
+      '@reelcraft/shared':
         specifier: workspace:*
         version: link:../shared
       '@remotion/media':

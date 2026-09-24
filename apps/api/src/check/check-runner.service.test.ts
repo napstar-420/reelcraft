@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { ConfigService } from '@nestjs/config';
-import type { CheckDef } from '@reefcraft/shared';
+import type { CheckDef } from '@reelcraft/shared';
 import type { Env } from '../config/env.schema';
 import { EngineConfig } from '../config/engine-config';
 import { SchemaValidatorService } from '../json-schema/schema-validator.service';

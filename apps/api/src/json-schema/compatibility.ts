@@ -1,4 +1,4 @@
-import type { ArtifactKind, JsonSchema } from '@reefcraft/shared';
+import type { ArtifactKind, JsonSchema } from '@reelcraft/shared';
 import type { SourceType } from './source-type';
 
 export interface CompatibilityVerdict {

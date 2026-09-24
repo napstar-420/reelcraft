@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import type { RunState } from '@reefcraft/shared';
+import type { RunState } from '@reelcraft/shared';
 import { eq } from 'drizzle-orm';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
 import { run, runWakeup } from '../db/schema/index';

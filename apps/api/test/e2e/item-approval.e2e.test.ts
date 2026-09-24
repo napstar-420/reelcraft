@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { and, eq, isNull } from 'drizzle-orm';
-import type { InputDef, StageDef } from '@reefcraft/shared';
+import type { InputDef, StageDef } from '@reelcraft/shared';
 import type { EffectiveStageConfig } from '../../src/run-config/config-resolver.service';
 import type { FetchAndFinalizeResult } from '../../src/orchestration/stage-runner.service';
 import { BlueprintService } from '../../src/blueprint/blueprint.service';

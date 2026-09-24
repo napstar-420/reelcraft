@@ -119,7 +119,7 @@ describe('DerivedFrameService (e2e, ffmpeg stubbed)', () => {
   beforeAll(async () => {
     testDb = await createTestDb();
     storage = new MemoryStorageAdapter();
-    const workspaceRoot = path.join(os.tmpdir(), `reefcraft-derived-frame-test-${ulid()}`);
+    const workspaceRoot = path.join(os.tmpdir(), `reelcraft-derived-frame-test-${ulid()}`);
     const workspaces = new WorkspaceService(fakeEngineConfig(workspaceRoot), storage);
     service = new TestableDerivedFrameService(testDb.db, workspaces, storage, fakeProbes);
 

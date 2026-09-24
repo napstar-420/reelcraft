@@ -1,4 +1,4 @@
-# Reefcraft Build Progress
+# Reelcraft Build Progress
 
 Tracks design-spec §24 Build Order phases. Each phase gets its own detailed
 plan (via `/plan`) written just before it starts — this table is the index.

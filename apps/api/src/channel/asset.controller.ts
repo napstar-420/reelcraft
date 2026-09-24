@@ -1,5 +1,5 @@
 import { Body, Controller, Delete, Get, Param, Post } from '@nestjs/common';
-import { CreateAssetDto, RequestAssetUploadDto } from '@reefcraft/shared';
+import { CreateAssetDto, RequestAssetUploadDto } from '@reelcraft/shared';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { AssetService } from './asset.service';
 

@@ -11,13 +11,13 @@ jobs:
       postgres:
         image: postgres:16-alpine
         env:
-          POSTGRES_USER: reefcraft
-          POSTGRES_PASSWORD: reefcraft
-          POSTGRES_DB: reefcraft
+          POSTGRES_USER: reelcraft
+          POSTGRES_PASSWORD: reelcraft
+          POSTGRES_DB: reelcraft
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U reefcraft -d reefcraft"
+          --health-cmd "pg_isready -U reelcraft -d reelcraft"
           --health-interval 2s
           --health-timeout 5s
           --health-retries 20
@@ -29,13 +29,13 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @reefcraft/shared build
+      - run: pnpm --filter @reelcraft/shared build
       - run: pnpm typecheck
-      - run: pnpm --filter @reefcraft/api typecheck
+      - run: pnpm --filter @reelcraft/api typecheck
       - run: pnpm lint
       - run: pnpm format:check
-      - run: pnpm --filter @reefcraft/shared test
-      - run: pnpm --filter @reefcraft/api test
-      - run: pnpm --filter @reefcraft/api test:e2e
+      - run: pnpm --filter @reelcraft/shared test
+      - run: pnpm --filter @reelcraft/api test
+      - run: pnpm --filter @reelcraft/api test:e2e
         env:
-          TEST_DATABASE_URL: postgres://reefcraft:reefcraft@localhost:5432/reefcraft
+          TEST_DATABASE_URL: postgres://reelcraft:reelcraft@localhost:5432/reelcraft

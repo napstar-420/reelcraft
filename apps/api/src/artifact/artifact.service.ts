@@ -1,6 +1,6 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { and, eq, isNull, sql } from 'drizzle-orm';
-import type { ArtifactKind } from '@reefcraft/shared';
+import type { ArtifactKind } from '@reelcraft/shared';
 import { ulid } from '../common/ulid';
 import { fromUsd } from '../common/money';
 import { DRIZZLE, type Db, type Tx } from '../db/drizzle.provider';

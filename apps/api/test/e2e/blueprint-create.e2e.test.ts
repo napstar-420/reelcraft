@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { CreateBlueprintDto } from '@reefcraft/shared';
+import { CreateBlueprintDto } from '@reelcraft/shared';
 import { ChannelService } from '../../src/channel/channel.service';
 import { BlueprintController } from '../../src/blueprint/blueprint.controller';
 import { buildTestApp, type TestApp } from '../support/build-app';

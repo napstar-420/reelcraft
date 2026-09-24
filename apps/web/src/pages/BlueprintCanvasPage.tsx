@@ -41,7 +41,7 @@ import type {
   ConfigLayer,
   Ref,
   ValidationIssue,
-} from '@reefcraft/shared';
+} from '@reelcraft/shared';
 
 type BlueprintDraft = {
   graph: StageDef[];

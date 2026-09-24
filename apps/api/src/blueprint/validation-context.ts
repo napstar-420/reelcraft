@@ -1,4 +1,4 @@
-import type { InputDef, RoleDef, StageDef } from '@reefcraft/shared';
+import type { InputDef, RoleDef, StageDef } from '@reelcraft/shared';
 
 /** An `asset` row's channel-scoping/kind, as loaded by the async caller
  * (`BlueprintService`) — the validator itself stays synchronous/pure (§14.3)

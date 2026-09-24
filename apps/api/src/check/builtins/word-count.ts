@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { JsonSchema } from '@reefcraft/shared';
+import type { JsonSchema } from '@reelcraft/shared';
 import type { BuiltinCheck } from '../check.types';
 import { getPath } from '../../common/path';
 

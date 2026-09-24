@@ -8,7 +8,7 @@ import type {
   SlotDef,
   StageDef,
   ValidationIssue,
-} from '@reefcraft/shared';
+} from '@reelcraft/shared';
 import { Capability } from '../capability.decorator';
 import type { CapabilityImpl, ExecCtx, ExecResult } from '../capability.interface';
 import { HUMAN_INPUT_ORCHESTRATOR_ONLY_ERROR } from './human-input.capability';

@@ -27,7 +27,7 @@ import type {
   QcDef,
   ModelPin,
   ValidationIssue,
-} from '@reefcraft/shared';
+} from '@reelcraft/shared';
 import {
   Accordion,
   AccordionContent,

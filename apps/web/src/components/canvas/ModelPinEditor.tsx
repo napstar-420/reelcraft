@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { api } from '../../api/client';
 import { TypedValueInput } from './TypedValueInput';
 import { InfoHeading, InfoLabel } from './info-label';
-import type { PartialModelPin } from '@reefcraft/shared';
+import type { PartialModelPin } from '@reelcraft/shared';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {

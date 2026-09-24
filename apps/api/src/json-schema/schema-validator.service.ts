@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Ajv, type AnySchema, type ValidateFunction } from 'ajv';
-import { JsonSchema } from '@reefcraft/shared';
-import type { ValidationIssue } from '@reefcraft/shared';
+import { JsonSchema } from '@reelcraft/shared';
+import type { ValidationIssue } from '@reelcraft/shared';
 import { schemaHash } from './schema-hash';
 
 export interface SchemaViolation {

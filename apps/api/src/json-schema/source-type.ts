@@ -1,4 +1,4 @@
-import type { ArtifactKind, JsonSchema } from '@reefcraft/shared';
+import type { ArtifactKind, JsonSchema } from '@reelcraft/shared';
 
 /**
  * §16.4 — what a `Ref`/template binding actually resolves to, for the

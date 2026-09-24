@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { Info, Pencil } from 'lucide-react';
-import type { ChannelDto } from '@reefcraft/shared';
+import type { ChannelDto } from '@reelcraft/shared';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';

@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
-import { ConfigLayer } from '@reefcraft/shared';
-import type { ModelPin, QcDef, StageDef } from '@reefcraft/shared';
+import { ConfigLayer } from '@reelcraft/shared';
+import type { ModelPin, QcDef, StageDef } from '@reelcraft/shared';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
 import { run } from '../db/schema/index';
 import { EngineConfig } from '../config/engine-config';
@@ -120,8 +120,8 @@ export class ConfigResolverService {
  * `Record<stageKey, ConfigLayer>`, validating every entry. Deliberately
  * loops calling `ConfigLayer.parse(...)` per entry rather than building a
  * `z.record(z.string(), ConfigLayer)` wrapper: wrapping a schema imported
- * from `@reefcraft/shared` in a freshly-constructed `z.record()` here breaks
- * under Vite/vitest's module handling — `@reefcraft/shared`'s zod and this
+ * from `@reelcraft/shared` in a freshly-constructed `z.record()` here breaks
+ * under Vite/vitest's module handling — `@reelcraft/shared`'s zod and this
  * file's `zod` import end up as distinct module instances, so `z.record()`'s
  * internal `value instanceof ZodType` check on `ConfigLayer` silently fails
  * and `z.record` falls back to treating the KEY schema as the value schema

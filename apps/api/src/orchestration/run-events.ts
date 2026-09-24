@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { Subject, filter, type Observable } from 'rxjs';
-import type { RunState } from '@reefcraft/shared';
+import type { RunState } from '@reelcraft/shared';
 
 export interface RunEvent {
   runId: string;

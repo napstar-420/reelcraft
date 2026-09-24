@@ -1,4 +1,4 @@
-import type { JsonSchema } from '@reefcraft/shared';
+import type { JsonSchema } from '@reelcraft/shared';
 import { parseTemplatePathSegments, type PathSegment } from '../common/prompt-template';
 import type { SourceType } from './source-type';
 

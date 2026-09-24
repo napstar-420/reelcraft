@@ -1,5 +1,5 @@
 {
-  "name": "reefcraft",
+  "name": "reelcraft",
   "private": true,
   "version": "0.0.0",
   "engines": {
@@ -7,18 +7,18 @@
   },
   "packageManager": "pnpm@9.15.0",
   "scripts": {
-    "dev": "pnpm --parallel --filter @reefcraft/api --filter @reefcraft/web dev",
+    "dev": "pnpm --parallel --filter @reelcraft/api --filter @reelcraft/web dev",
     "build": "pnpm -r build",
     "typecheck": "tsc -b tsconfig.json",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "test": "pnpm -r --filter @reefcraft/shared --filter @reefcraft/api --filter @reefcraft/web test",
-    "test:e2e": "pnpm --filter @reefcraft/api test:e2e",
-    "db:generate": "pnpm --filter @reefcraft/api db:generate",
-    "db:migrate": "pnpm --filter @reefcraft/api db:migrate",
-    "db:studio": "pnpm --filter @reefcraft/api db:studio",
-    "smoke": "pnpm --filter @reefcraft/api smoke"
+    "test": "pnpm -r --filter @reelcraft/shared --filter @reelcraft/api --filter @reelcraft/web test",
+    "test:e2e": "pnpm --filter @reelcraft/api test:e2e",
+    "db:generate": "pnpm --filter @reelcraft/api db:generate",
+    "db:migrate": "pnpm --filter @reelcraft/api db:migrate",
+    "db:studio": "pnpm --filter @reelcraft/api db:studio",
+    "smoke": "pnpm --filter @reelcraft/api smoke"
   },
   "devDependencies": {
     "typescript-eslint": "^8.18.0",

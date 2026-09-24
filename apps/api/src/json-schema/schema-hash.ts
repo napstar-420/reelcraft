@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import type { JsonSchema } from '@reefcraft/shared';
+import type { JsonSchema } from '@reelcraft/shared';
 
 /** Recursively sorts object keys and drops `undefined` values, so a jsonb
  * round-trip (which reorders keys, per postgres-js) can't change the

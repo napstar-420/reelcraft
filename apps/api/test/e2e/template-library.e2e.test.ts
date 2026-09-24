@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { BadRequestException, ConflictException } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
-import type { CheckDef, JsonSchema, SaveTemplateDto, StageDef } from '@reefcraft/shared';
+import type { CheckDef, JsonSchema, SaveTemplateDto, StageDef } from '@reelcraft/shared';
 import { ChannelService } from '../../src/channel/channel.service';
 import { TemplateService } from '../../src/template/template.service';
 import { HELLO_STAGE_GRAPH } from '../../src/template/template-seed.service';

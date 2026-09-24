@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Param, Post } from '@nestjs/common';
-import { InstantiateTemplateDto, SaveTemplateDto } from '@reefcraft/shared';
+import { InstantiateTemplateDto, SaveTemplateDto } from '@reelcraft/shared';
 import { Owner } from '../common/owner.decorator';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { TemplateService } from './template.service';

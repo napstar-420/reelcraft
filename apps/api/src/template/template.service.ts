@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { and, desc, eq, inArray, or } from 'drizzle-orm';
-import type { SaveTemplateDto, StageDef, ValidationIssue } from '@reefcraft/shared';
+import type { SaveTemplateDto, StageDef, ValidationIssue } from '@reelcraft/shared';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
 import { template, templateVersion } from '../db/schema/index';
 import { ulid } from '../common/ulid';

@@ -3,7 +3,7 @@ import { createReadStream } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { Inject, Injectable } from '@nestjs/common';
-import type { FileSource } from '@reefcraft/shared';
+import type { FileSource } from '@reelcraft/shared';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
 import { blob } from '../db/schema';
 import { ulid } from '../common/ulid';

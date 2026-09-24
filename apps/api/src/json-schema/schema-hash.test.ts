@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { JsonSchema } from '@reefcraft/shared';
+import type { JsonSchema } from '@reelcraft/shared';
 import { canonicalJson, schemaHash } from './schema-hash';
 
 describe('canonicalJson', () => {

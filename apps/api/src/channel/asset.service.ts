@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { and, eq, isNull } from 'drizzle-orm';
-import type { CreateAssetDto } from '@reefcraft/shared';
+import type { CreateAssetDto } from '@reelcraft/shared';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
 import { asset, blob, channel } from '../db/schema/index';
 import { ulid } from '../common/ulid';

@@ -1,19 +1,19 @@
-name: reefcraft
+name: reelcraft
 
 services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: reefcraft
-      POSTGRES_PASSWORD: reefcraft
-      POSTGRES_DB: reefcraft
+      POSTGRES_USER: reelcraft
+      POSTGRES_PASSWORD: reelcraft
+      POSTGRES_DB: reelcraft
     ports:
       - '5432:5432'
     volumes:
       - ./docker/data/postgres:/var/lib/postgresql/data
       - ./docker/postgres/init:/docker-entrypoint-initdb.d
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U reefcraft -d reefcraft']
+      test: ['CMD-SHELL', 'pg_isready -U reelcraft -d reelcraft']
       interval: 2s
       timeout: 5s
       retries: 20
@@ -22,8 +22,8 @@ services:
     image: quay.io/minio/minio
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: reefcraft-root
-      MINIO_ROOT_PASSWORD: reefcraft-root-secret
+      MINIO_ROOT_USER: reelcraft-root
+      MINIO_ROOT_PASSWORD: reelcraft-root-secret
     ports:
       - '9000:9000'
       - '9001:9001'
@@ -50,7 +50,7 @@ services:
       - 'inngest'
       - 'start'
       - '--postgres-uri'
-      - 'postgres://reefcraft:reefcraft@postgres:5432/inngest?sslmode=disable'
+      - 'postgres://reelcraft:reelcraft@postgres:5432/inngest?sslmode=disable'
       - '--sdk-url'
       - 'http://host.docker.internal:3000/api/inngest'
     environment:

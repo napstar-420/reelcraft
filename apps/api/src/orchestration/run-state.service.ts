@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
-import type { RunState } from '@reefcraft/shared';
+import type { RunState } from '@reelcraft/shared';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
 import { run } from '../db/schema/index';
 import { InProcessRunEvents } from './run-events';

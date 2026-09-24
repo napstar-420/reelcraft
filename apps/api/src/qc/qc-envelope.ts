@@ -1,4 +1,4 @@
-import type { ArtifactKind } from '@reefcraft/shared';
+import type { ArtifactKind } from '@reelcraft/shared';
 
 /**
  * §10.2 — everything a QC judge is allowed to see. Deliberately does NOT

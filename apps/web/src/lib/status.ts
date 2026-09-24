@@ -3,7 +3,7 @@ import type {
   RunState,
   StageExecutionState,
   ValidationIssue,
-} from '@reefcraft/shared';
+} from '@reelcraft/shared';
 
 export type StatusTone = 'success' | 'running' | 'warning' | 'error' | 'neutral';
 

@@ -7,7 +7,7 @@ import { promisify } from 'node:util';
 const exec = promisify(execFile);
 
 async function main() {
-  const dir = await mkdtemp(path.join(tmpdir(), 'reefcraft-phase6-'));
+  const dir = await mkdtemp(path.join(tmpdir(), 'reelcraft-phase6-'));
   const clip = path.join(dir, 'uploaded-input.mp4');
   const output = path.join(dir, 'assembled.mp4');
   await exec('ffmpeg', [

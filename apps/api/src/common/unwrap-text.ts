@@ -1,4 +1,4 @@
-import type { ArtifactKind } from '@reefcraft/shared';
+import type { ArtifactKind } from '@reelcraft/shared';
 
 /** A text artifact stores its content wrapped as `{text: string}`; unwrap
  * down to the plain string. Other kinds pass through unchanged. Shared by

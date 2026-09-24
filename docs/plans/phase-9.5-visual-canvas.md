@@ -184,7 +184,7 @@ skeleton every later chunk builds on.
 3. **`apps/web/src/api/client.ts`** — add `createBlueprint`,
    `createBlueprintVersion`, `validateBlueprint` wrappers (none exist
    today), typed against `CreateBlueprintDto`/`CreateBlueprintVersionDto`/
-   the validate response shape from `@reefcraft/shared`.
+   the validate response shape from `@reelcraft/shared`.
 4. **New `apps/web/src/pages/BlueprintCanvasPage.tsx`** — routed at (e.g.)
    `/channels/:channelId/build` (new blueprint) and
    `/blueprints/:blueprintId/build` (edit existing, loading its latest
@@ -216,7 +216,7 @@ skeleton every later chunk builds on.
 - New e2e test for `POST /blueprints` (mirrors the existing e2e style):
   creates a blueprint, asserts idempotency by `(channelId, name)` matches
   `ensureBlueprint`'s existing contract.
-- `pnpm --filter @reefcraft/web typecheck`/`build` clean with the new
+- `pnpm --filter @reelcraft/web typecheck`/`build` clean with the new
   dependency installed.
 - Manual: navigate to the new route, see an empty canvas render with no
   console errors.

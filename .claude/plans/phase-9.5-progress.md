@@ -36,7 +36,7 @@ Branch: `codex/phase9.5-visual-canvas`
   `createBlueprintVersion`, `listBlueprintVersions`, and
   `validateBlueprint`. All four were confirmed missing before this chunk.
   `CreateBlueprintVersionDto`, `BlueprintVersionDto`, and `ValidationIssue`
-  all import cleanly from `@reefcraft/shared`'s root barrel — no path
+  all import cleanly from `@reelcraft/shared`'s root barrel — no path
   surprises.
 - `BlueprintCanvasPage.tsx` handles both routes in one component,
   branching on which route param is present:
@@ -76,10 +76,10 @@ Branch: `codex/phase9.5-visual-canvas`
   the controller method directly bypasses the `ZodValidationPipe`, so DTO
   validation itself is tested against the schema directly rather than
   through the controller).
-- Verification: `pnpm install`, `pnpm --filter @reefcraft/shared build`,
-  `pnpm --filter @reefcraft/api typecheck`, the new e2e test (3/3 passed),
+- Verification: `pnpm install`, `pnpm --filter @reelcraft/shared build`,
+  `pnpm --filter @reelcraft/api typecheck`, the new e2e test (3/3 passed),
   the full e2e regression suite (31 files / 176 tests, all passed),
-  `pnpm --filter @reefcraft/web typecheck`/`build` (both clean), `pnpm
+  `pnpm --filter @reelcraft/web typecheck`/`build` (both clean), `pnpm
 lint` (0 errors, 1 pre-existing unrelated warning in
   `media-output.e2e.test.ts`), and `pnpm format:check` (clean) — all run
   and all green.
@@ -134,9 +134,9 @@ lint` (0 errors, 1 pre-existing unrelated warning in
   exit criterion is deferred until such a runner exists, consistent with
   Chunk 1's precedent of relying on typecheck/build/lint/format as the
   full automated gate for this package.
-- Verification: `pnpm --filter @reefcraft/shared build` (clean, no
-  changes needed), `pnpm --filter @reefcraft/web typecheck` (clean),
-  `pnpm --filter @reefcraft/web build` (clean, same pre-existing
+- Verification: `pnpm --filter @reelcraft/shared build` (clean, no
+  changes needed), `pnpm --filter @reelcraft/web typecheck` (clean),
+  `pnpm --filter @reelcraft/web build` (clean, same pre-existing
   chunk-size warning as always, unrelated), `pnpm lint` (0 errors, the
   same 1 pre-existing unrelated warning in `media-output.e2e.test.ts`),
   `pnpm format:check` (clean) — all green.
@@ -177,7 +177,7 @@ in stage.writes ?? {}`), deduped via a `Set`. **Flag for Chunk 4/7's
 this plain-`Error` one, already used twice before this chunk).
 - **Client**: `api.getBlueprint(blueprintId)` (new `BlueprintDto` type,
   the whole `blueprint` table row shape) and `api.listChannelAssets(channelId)`
-  (typed against the pre-existing `AssetDto` from `@reefcraft/shared` —
+  (typed against the pre-existing `AssetDto` from `@reelcraft/shared` —
   no new DTO needed, confirmed it already matched the controller's raw
   row shape) added to `apps/web/src/api/client.ts`.
 - **Demo harness**: `DemoBindingHarness` in `BlueprintCanvasPage.tsx`
@@ -188,11 +188,11 @@ this plain-`Error` one, already used twice before this chunk).
 - No unit tests added for `availableRefKinds`/`deriveMemoryKeys` — this
   repo still has no test runner configured for `apps/web` (reconfirmed,
   consistent with Chunks 1-2's precedent).
-- Verification: `pnpm --filter @reefcraft/shared build` (clean),
-  `pnpm --filter @reefcraft/api typecheck` (clean), new e2e test
+- Verification: `pnpm --filter @reelcraft/shared build` (clean),
+  `pnpm --filter @reelcraft/api typecheck` (clean), new e2e test
   `blueprint-get.e2e.test.ts` (2/2 passed), full e2e regression suite
   (32 files / 178 tests, all passed — up from 31/176 by exactly the 1
-  file / 2 tests this chunk added), `pnpm --filter @reefcraft/web
+  file / 2 tests this chunk added), `pnpm --filter @reelcraft/web
 typecheck`/`build` (both clean, same pre-existing chunk-size warning),
   `pnpm lint` (0 errors, same 1 pre-existing unrelated warning in
   `media-output.e2e.test.ts`), `pnpm format:check` (clean after
@@ -294,9 +294,9 @@ Record<string,string>`, add/remove, free-form text inputs for both key and
   full `OutputDef` union inside the callback).
 - No unit tests added for `SchemaForm`'s recursion — still no test runner
   configured for `apps/web` (reconfirmed, consistent with Chunks 1-3).
-- Verification: `pnpm --filter @reefcraft/shared build` (clean, untouched),
-  `pnpm --filter @reefcraft/web typecheck` (clean), `pnpm --filter
-@reefcraft/web build` (clean, same pre-existing chunk-size warning),
+- Verification: `pnpm --filter @reelcraft/shared build` (clean, untouched),
+  `pnpm --filter @reelcraft/web typecheck` (clean), `pnpm --filter
+@reelcraft/web build` (clean, same pre-existing chunk-size warning),
   `pnpm lint` (0 errors, same 1 pre-existing unrelated warning in
   `media-output.e2e.test.ts`), `pnpm format:check` (clean after `prettier
 --write` on the three files this chunk touched) — all green.
@@ -352,9 +352,9 @@ code:''}`) — chosen over a single type-then-add two-step flow since
   explicitly untouched — `stage.checks` was the only field this chunk
   edited.
 - No unit tests added — still no test runner configured for `apps/web`.
-- Verification: `pnpm --filter @reefcraft/shared build` (clean, untouched),
-  `pnpm --filter @reefcraft/web typecheck` (clean), `pnpm --filter
-@reefcraft/web build` (clean, same pre-existing chunk-size warning),
+- Verification: `pnpm --filter @reelcraft/shared build` (clean, untouched),
+  `pnpm --filter @reelcraft/web typecheck` (clean), `pnpm --filter
+@reelcraft/web build` (clean, same pre-existing chunk-size warning),
   `pnpm lint` (0 errors, same 1 pre-existing unrelated warning in
   `media-output.e2e.test.ts`), `pnpm format:check` (clean after `prettier
 --write` on the one new file this chunk added) — all green.
@@ -383,7 +383,7 @@ Chunk 6b — not started, not touched.
   (`GET /providers/:id/models` → `ModelInfoDto[]`) — neither wrapper
   existed before this chunk; `ModelInfoDto` is `{providerId, modelId,
 label, modality}`, unchanged from Phase 9, already exported from
-  `@reefcraft/shared`.
+  `@reelcraft/shared`.
 - **New `apps/web/src/components/canvas/ModelPinEditor.tsx`** — the
   reusable model-pin picker the plan calls out Chunk 6b will need for
   `qc.model` (a full `ModelPin`, not the `PartialModelPin` `StageDef.model`
@@ -443,12 +443,12 @@ InputDef[]` prop `StageInspector` already receives for `BindingPicker`
   Backend change is a pure additive wrap with no branching logic, so no
   new `apps/api` unit test was added either; the full e2e suite (below)
   covers regression.
-- Verification: `pnpm --filter @reefcraft/shared build` (clean, untouched),
-  `pnpm --filter @reefcraft/api typecheck` (clean), `pnpm --filter
-@reefcraft/api exec vitest run -c vitest.e2e.config.ts` (32 files, 178
+- Verification: `pnpm --filter @reelcraft/shared build` (clean, untouched),
+  `pnpm --filter @reelcraft/api typecheck` (clean), `pnpm --filter
+@reelcraft/api exec vitest run -c vitest.e2e.config.ts` (32 files, 178
   tests, all passing — zero regressions from the new `GET /providers`
-  route), `pnpm --filter @reefcraft/web typecheck` (clean), `pnpm --filter
-@reefcraft/web build` (clean, same pre-existing chunk-size warning),
+  route), `pnpm --filter @reelcraft/web typecheck` (clean), `pnpm --filter
+@reelcraft/web build` (clean, same pre-existing chunk-size warning),
   `pnpm lint` (0 errors, same 1 pre-existing unrelated warning in
   `media-output.e2e.test.ts`), `pnpm format:check` (clean after `prettier
 --write` on the files this chunk touched) — all green.
@@ -529,10 +529,10 @@ includeInputs: false}` — `params: {}` is required in the seed because
   optional.
 - No unit tests added — still no test runner configured for `apps/web`;
   consistent with every prior chunk's precedent.
-- Verification: `pnpm --filter @reefcraft/shared build` (clean,
-  untouched), `pnpm --filter @reefcraft/web typecheck` (clean after
+- Verification: `pnpm --filter @reelcraft/shared build` (clean,
+  untouched), `pnpm --filter @reelcraft/web typecheck` (clean after
   adding the three `as T` casts described above), `pnpm --filter
-@reefcraft/web build` (clean, same pre-existing chunk-size warning),
+@reelcraft/web build` (clean, same pre-existing chunk-size warning),
   `pnpm lint` (0 errors, same 1 pre-existing unrelated warning in
   `media-output.e2e.test.ts`), `pnpm format:check` (clean after `prettier
 --write` on `StageInspector.tsx`, the only file this chunk touched) —
@@ -639,12 +639,12 @@ string[]>` (memory key → stage keys that declare `writes[key]`, in graph
   still no test runner configured for `apps/web`, consistent with every
   prior chunk's precedent; the plan's own "Tests and exit criteria" section
   for Chunk 7 assumed one would exist by now, but it doesn't yet.
-- Verification: `pnpm --filter @reefcraft/shared build` (clean, untouched),
-  `pnpm --filter @reefcraft/web typecheck` (clean — needed two small fixes
+- Verification: `pnpm --filter @reelcraft/shared build` (clean, untouched),
+  `pnpm --filter @reelcraft/web typecheck` (clean — needed two small fixes
   for this repo's `exactOptionalPropertyTypes`/`noUncheckedIndexedAccess`
   settings: omit `name` entirely rather than assign it `undefined`, and
   default the regex capture group to `''` since `noUncheckedIndexedAccess`
-  types it as possibly-`undefined`), `pnpm --filter @reefcraft/web build`
+  types it as possibly-`undefined`), `pnpm --filter @reelcraft/web build`
   (clean, same pre-existing chunk-size warning), `pnpm lint` (0 errors,
   same 1 pre-existing unrelated warning in `media-output.e2e.test.ts`),
   `pnpm format:check` (clean after `prettier --write` on the two files
@@ -716,11 +716,11 @@ sub-attributed further to`key`/`code`/`params`/`refs.<name>` within a
   only prop-shape change made outside `StageInspector.tsx`.
 - No unit tests added — still no test runner configured for `apps/web`,
   consistent with every prior chunk's precedent.
-- Verification: `pnpm --filter @reefcraft/shared build` (clean, untouched),
-  `pnpm --filter @reefcraft/web typecheck` (one fix needed: `p.name === String(index)
+- Verification: `pnpm --filter @reelcraft/shared build` (clean, untouched),
+  `pnpm --filter @reelcraft/web typecheck` (one fix needed: `p.name === String(index)
 || p.name?.startsWith(...)` inferred as `boolean | undefined` rather than
   `boolean` because `p.name` is optional — wrapped the `startsWith` call in
-  `!!` to force a boolean), `pnpm --filter @reefcraft/web build` (clean,
+  `!!` to force a boolean), `pnpm --filter @reelcraft/web build` (clean,
   same pre-existing chunk-size warning), `pnpm lint` (0 errors, same 1
   pre-existing unrelated warning in `media-output.e2e.test.ts`), `pnpm
 format:check` (clean after `prettier --write` on the two files this
@@ -812,14 +812,14 @@ role="alert">` above the button reads "Not runnable yet — you can still
     `savedVersion` is somehow `null` when invoked (defensive; the button's
     own `disabled` prop is the real guard, this just avoids a `!`
     non-null-assertion that could crash instead of surfacing a message).
-- No new backend or `@reefcraft/shared` changes — this chunk was frontend-only
-  end to end, confirmed by the fact that `pnpm --filter @reefcraft/shared
+- No new backend or `@reelcraft/shared` changes — this chunk was frontend-only
+  end to end, confirmed by the fact that `pnpm --filter @reelcraft/shared
 build` needed no changes.
 - No unit tests added — still no test runner configured for `apps/web`,
   consistent with every prior chunk's precedent.
-- Verification: `pnpm --filter @reefcraft/shared build` (clean, untouched),
-  `pnpm --filter @reefcraft/web typecheck` (clean), `pnpm --filter
-@reefcraft/web build` (clean, same pre-existing chunk-size warning), `pnpm
+- Verification: `pnpm --filter @reelcraft/shared build` (clean, untouched),
+  `pnpm --filter @reelcraft/web typecheck` (clean), `pnpm --filter
+@reelcraft/web build` (clean, same pre-existing chunk-size warning), `pnpm
 lint` (0 errors, same 1 pre-existing unrelated warning in
   `media-output.e2e.test.ts`), `pnpm format:check` (clean after `prettier
 --write` on the one new file, `BlueprintSettingsPanel.tsx`, this chunk
@@ -875,9 +875,9 @@ runCapUsd)`. On success, narrows the `InstantiateTemplateResult` union via
   task's own ground rules.
 - No unit tests added — still no test runner configured for `apps/web`,
   consistent with every prior chunk's precedent.
-- Verification: `pnpm --filter @reefcraft/shared build` (clean, untouched),
-  `pnpm --filter @reefcraft/web typecheck` (clean), `pnpm --filter
-@reefcraft/web build` (clean, same pre-existing chunk-size warning), `pnpm
+- Verification: `pnpm --filter @reelcraft/shared build` (clean, untouched),
+  `pnpm --filter @reelcraft/web typecheck` (clean), `pnpm --filter
+@reelcraft/web build` (clean, same pre-existing chunk-size warning), `pnpm
 lint` (0 errors, same 1 pre-existing unrelated warning in
   `media-output.e2e.test.ts`), `pnpm format:check` (clean, no `--write`
   needed) — all green.
