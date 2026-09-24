@@ -5,9 +5,15 @@ import { BindingPicker } from './BindingPicker';
 import { CapabilityPicker } from './CapabilityPicker';
 import { SchemaForm } from './SchemaForm';
 import { ChecksEditor } from './ChecksEditor';
+import { InfoHeading, InfoLabel } from './info-label';
 import { ModelPinEditor } from './ModelPinEditor';
 import { TypedValueInput } from './TypedValueInput';
 import { parseValidationPath, type ParsedValidationPath } from '../../lib/parse-validation-path';
+import {
+  SECTION_HEADING_CLASS,
+  STAGE_SECTION_CONTENT_CLASS,
+  STAGE_SECTION_TRIGGER_CLASS,
+} from './typography';
 import type {
   StageDef,
   InputDef,
@@ -33,6 +39,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { IssueList } from '@/components/ui/issue-list';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import {
   Select,
   SelectContent,
@@ -157,6 +164,64 @@ function WritesEditor({
   );
 }
 
+/** `system` is optional even when `instructions` is present; an empty
+ * `template` (the only genuinely required field of the pair) clears the
+ * whole `instructions` block back to `undefined` rather than leaving behind
+ * `{ template: '' }` — mirrors `BudgetEditor`'s all-fields-empty → `undefined`
+ * pattern. Only capabilities that render a prompt (`stage-runner.service.ts`'s
+ * `instructions?.template` → `renderPrompt`) read this at all; it's shown
+ * unconditionally here since the inspector has no per-capability flag for
+ * "uses a prompt". */
+function InstructionsEditor({
+  instructions,
+  onChange,
+}: {
+  instructions: StageDef['instructions'];
+  onChange: (instructions: StageDef['instructions']) => void;
+}) {
+  function set(patch: { system?: string; template?: string }) {
+    const next = {
+      system: instructions?.system ?? '',
+      template: instructions?.template ?? '',
+      ...patch,
+    };
+    onChange(
+      next.template === '' && next.system === ''
+        ? undefined
+        : { system: next.system || undefined, template: next.template },
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-1.5">
+        <InfoLabel info="Optional system-role prompt sent before the template on every call — sets tone, persona, or constraints that shouldn't change per-run. Leave blank to use the capability's own default system prompt, if it has one.">
+          System
+        </InfoLabel>
+        <Textarea
+          rows={3}
+          className="font-mono text-xs"
+          placeholder="e.g. You are a meticulous video-production assistant."
+          value={instructions?.system ?? ''}
+          onChange={(e) => set({ system: e.target.value })}
+        />
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <InfoLabel info="The user-role prompt sent to the model. Supports {{ }} interpolation: reference this stage's Slots or Context values by name, e.g. {{ myContextKey }}, plus {{ priorCritique }} when a stage is re-run after a failed quality control check. Required for capabilities that read a prompt (e.g. text/LLM generation) — leave blank for capabilities that don't.">
+          Template
+        </InfoLabel>
+        <Textarea
+          rows={6}
+          className="font-mono text-xs"
+          placeholder={'e.g. Write a title for {{ topic }}.'}
+          value={instructions?.template ?? ''}
+          onChange={(e) => set({ template: e.target.value })}
+        />
+      </div>
+    </div>
+  );
+}
+
 function toNumberOrUndefined(raw: string): number | undefined {
   if (raw.trim() === '') return undefined;
   const n = Number(raw);
@@ -180,9 +245,11 @@ function BudgetEditor({
   }
 
   return (
-    <div className="grid gap-3 sm:grid-cols-2">
+    <div className="flex flex-col gap-3">
       <div className="flex flex-col gap-1.5">
-        <Label>Stage cap (USD)</Label>
+        <InfoLabel info="Maximum USD this stage's own model calls may spend. If exceeded mid-run, the stage stops with a budget-exceeded failure.">
+          Stage cap (USD)
+        </InfoLabel>
         <Input
           type="number"
           value={budget?.stageCapUsd ?? ''}
@@ -190,7 +257,9 @@ function BudgetEditor({
         />
       </div>
       <div className="flex flex-col gap-1.5">
-        <Label>QC cap (USD)</Label>
+        <InfoLabel info="Maximum USD this stage's quality control pass (if any) may spend, tracked separately from the stage cap above.">
+          Quality control cap (USD)
+        </InfoLabel>
         <Input
           type="number"
           value={budget?.qcCapUsd ?? ''}
@@ -229,7 +298,7 @@ function EnabledWhenEditor({
   return (
     <div className="flex flex-wrap items-end gap-3">
       <div className="flex flex-col gap-1.5">
-        <Label>Input</Label>
+        <InfoLabel info="Which blueprint Input this condition reads at run time.">Input</InfoLabel>
         <Select
           value={enabledWhen.input || UNSET}
           onValueChange={(next) => onChange({ ...enabledWhen, input: next === UNSET ? '' : next })}
@@ -248,7 +317,9 @@ function EnabledWhenEditor({
         </Select>
       </div>
       <div className="flex flex-col gap-1.5">
-        <Label>equals</Label>
+        <InfoLabel info="The value the Input above must equal for this stage to run; otherwise the stage is skipped entirely.">
+          equals
+        </InfoLabel>
         <TypedValueInput
           value={enabledWhen.equals}
           onChange={(equals) => onChange({ ...enabledWhen, equals })}
@@ -344,7 +415,7 @@ function QcEditor({
           })
         }
       >
-        + add QC
+        + add quality control
       </Button>
     );
   }
@@ -356,7 +427,9 @@ function QcEditor({
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-col gap-1.5">
-        <Label>Criteria</Label>
+        <InfoLabel info="Free-text description of what a passing output looks like — sent to the quality control model alongside this stage's output as the judgment prompt.">
+          Criteria
+        </InfoLabel>
         <Input
           type="text"
           value={qc.criteria}
@@ -364,7 +437,9 @@ function QcEditor({
         />
       </div>
       <div className="flex flex-col gap-1.5">
-        <Label>Threshold</Label>
+        <InfoLabel info="Minimum score (0–1) the quality control model's judgment must reach for this stage to pass. Below it, the run treats this stage as failed quality control.">
+          Threshold
+        </InfoLabel>
         <Input
           type="number"
           className="w-32"
@@ -390,7 +465,9 @@ function QcEditor({
       </Label>
 
       <div className="flex flex-col gap-1.5">
-        <h4 className="text-sm font-medium">Model</h4>
+        <InfoHeading info="Which model judges this stage's output against Criteria. Required — unlike a stage's own Model, quality control has no default to fall back to.">
+          Model
+        </InfoHeading>
         <ModelPinEditor
           value={qc.model}
           onChange={(model) => set({ model: model as ModelPin })}
@@ -399,7 +476,9 @@ function QcEditor({
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <h4 className="text-sm font-medium">Dimensions</h4>
+        <InfoHeading info="Optional named sub-scores (e.g. clarity, accuracy), each weighted, that the quality control model rates individually instead of — or alongside — a single overall score.">
+          Dimensions
+        </InfoHeading>
         <QcDimensionsEditor
           dimensions={qc.dimensions ?? []}
           onChange={(dimensions) => set({ dimensions })}
@@ -413,7 +492,7 @@ function QcEditor({
         className="self-start"
         onClick={() => onChange(undefined)}
       >
-        Remove QC
+        Remove quality control
       </Button>
     </div>
   );
@@ -433,7 +512,7 @@ function ApprovalEditor({
   if (!approval) {
     return (
       <Button type="button" variant="outline" size="sm" onClick={() => onChange({ mode: 'stage' })}>
-        + add approval
+        + add human approval
       </Button>
     );
   }
@@ -441,7 +520,9 @@ function ApprovalEditor({
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-col gap-1.5">
-        <Label>Mode</Label>
+        <InfoLabel info="`stage` pauses once for the whole stage's output; `item` pauses once per iteration item, only meaningful when this stage also declares Iterate.">
+          Mode
+        </InfoLabel>
         <Select
           value={approval.mode}
           onValueChange={(next) => onChange({ ...approval, mode: next as 'stage' | 'item' })}
@@ -459,7 +540,9 @@ function ApprovalEditor({
       {approval.onReject ? (
         <div className="flex flex-wrap items-end gap-2">
           <div className="flex flex-col gap-1.5">
-            <Label>Retry stage</Label>
+            <InfoLabel info="Which stage to re-run when this stage's output is rejected during human approval. Leave unset to just fail the run on rejection.">
+              Retry stage
+            </InfoLabel>
             <Select
               value={approval.onReject.retryStageKey || UNSET}
               onValueChange={(next) =>
@@ -509,7 +592,7 @@ function ApprovalEditor({
         className="self-start"
         onClick={() => onChange(undefined)}
       >
-        Remove approval
+        Remove human approval
       </Button>
     </div>
   );
@@ -563,7 +646,9 @@ function IterateEditor({
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-col gap-1.5">
-        <Label>Over</Label>
+        <InfoLabel info="The array this stage iterates over — resolved once, before iteration starts, so it can't reference this stage's own item/prevItem.">
+          Over
+        </InfoLabel>
         <BindingPicker
           value={iterate.over}
           onChange={(over) => set({ over })}
@@ -576,7 +661,9 @@ function IterateEditor({
         />
       </div>
       <div className="flex flex-col gap-1.5">
-        <Label>Item alias</Label>
+        <InfoLabel info="The name used to reference the current item in this stage's Slots, Context, and Instructions template, e.g. {{ item }}.">
+          Item alias
+        </InfoLabel>
         <Input
           type="text"
           className="w-40"
@@ -592,7 +679,9 @@ function IterateEditor({
         align with item
       </Label>
       <div className="flex flex-col gap-1.5">
-        <Label>Item retry limit</Label>
+        <InfoLabel info="How many times a single failing iteration item retries before the whole iteration is treated as failed.">
+          Item retry limit
+        </InfoLabel>
         <Input
           type="number"
           className="w-32"
@@ -602,7 +691,9 @@ function IterateEditor({
         />
       </div>
       <div className="flex flex-col gap-1.5">
-        <Label>Max items</Label>
+        <InfoLabel info="Optional cap on how many items from Over are processed; leave blank to process all of them.">
+          Max items
+        </InfoLabel>
         <Input
           type="number"
           className="w-32"
@@ -625,7 +716,7 @@ function IterateEditor({
   );
 }
 
-const ACCORDION_SECTIONS = ['basics', 'data', 'checks-qc', 'execution'];
+const ACCORDION_SECTIONS = ['basics', 'data', 'output-writes', 'checks-qc', 'model', 'execution'];
 
 /** Chunk 4 — the real slot/context/config/output/writes editor for one
  * selected stage, replacing Chunk 3's `DemoBindingHarness`. `stage.key` is
@@ -714,6 +805,7 @@ export function StageInspector({
   );
   const capabilityIssues = issuesFor((p) => p.region === 'capability');
   const configIssues = issuesFor((p) => p.region === 'config');
+  const instructionsIssues = issuesFor((p) => p.region === 'instructions');
   const outputIssues = issuesFor((p) => p.region === 'output' && p.name === undefined);
   const outputKindIssues = issuesFor((p) => p.region === 'output' && p.name === 'kind');
   const outputSchemaIssues = issuesFor((p) => p.region === 'output' && p.name === 'schema');
@@ -770,15 +862,22 @@ export function StageInspector({
       <IssueList issues={stageLevelIssues} />
 
       <Accordion type="multiple" defaultValue={ACCORDION_SECTIONS} className="flex flex-col gap-2">
-        <AccordionItem value="basics" className="rounded-xl border border-border px-3">
-          <AccordionTrigger>Basics</AccordionTrigger>
-          <AccordionContent className="flex flex-col gap-4">
+        <AccordionItem
+          value="basics"
+          className="rounded-xl border border-border overflow-hidden px-3"
+        >
+          <AccordionTrigger className={STAGE_SECTION_TRIGGER_CLASS}>Basics</AccordionTrigger>
+          <AccordionContent className={STAGE_SECTION_CONTENT_CLASS}>
             <div className="flex flex-col gap-1.5">
-              <Label>Key</Label>
+              <InfoLabel info="This stage's unique identifier within the blueprint. Set once at creation and immutable afterward — other stages' Refs and memory `writes` keys address this stage by it.">
+                Key
+              </InfoLabel>
               <Input type="text" value={stage.key} disabled />
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label>Label</Label>
+              <InfoLabel info="A human-readable name shown on the canvas node and in stage pickers (e.g. Human approval's retry-stage select). Purely cosmetic — doesn't affect execution.">
+                Label
+              </InfoLabel>
               <Input
                 type="text"
                 value={stage.label}
@@ -786,7 +885,9 @@ export function StageInspector({
               />
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label>Capability</Label>
+              <InfoLabel info="The type of work this stage performs (e.g. text.generate, media.generate). Determines what Slots it accepts, what Config schema applies, and what output kinds are allowed.">
+                Capability
+              </InfoLabel>
               <CapabilityPicker
                 value={stage.capability}
                 onValueChange={(next) =>
@@ -798,9 +899,20 @@ export function StageInspector({
               <IssueList issues={capabilityIssues} />
             </div>
 
-            {configSchema && (
+            <div className="flex flex-col gap-1.5">
+              <h3 className={SECTION_HEADING_CLASS}>Instructions</h3>
+              <InstructionsEditor
+                instructions={stage.instructions}
+                onChange={(instructions) => onChange({ ...stage, instructions })}
+              />
+              <IssueList issues={instructionsIssues} />
+            </div>
+
+            {configSchema && Object.keys(configSchema.properties ?? {}).length > 0 && (
               <div className="flex flex-col gap-1.5">
-                <h3 className="text-sm font-medium">Config</h3>
+                <InfoHeading info="Capability-specific settings defined by the selected capability's own config schema — e.g. model defaults or generation parameters distinct from Instructions.">
+                  Config
+                </InfoHeading>
                 <SchemaForm
                   schema={configSchema}
                   value={stage.config}
@@ -814,11 +926,23 @@ export function StageInspector({
           </AccordionContent>
         </AccordionItem>
 
-        <AccordionItem value="data" className="rounded-xl border border-border px-3">
-          <AccordionTrigger>Data (slots, context, output, writes)</AccordionTrigger>
-          <AccordionContent className="flex flex-col gap-4">
+        <AccordionItem
+          value="data"
+          className="rounded-xl border border-border overflow-hidden px-3"
+        >
+          <AccordionTrigger className={STAGE_SECTION_TRIGGER_CLASS}>
+            Data (slots, context)
+          </AccordionTrigger>
+          <AccordionContent className={STAGE_SECTION_CONTENT_CLASS}>
             <div className="flex flex-col gap-3">
-              <h3 className="text-sm font-medium">Slots</h3>
+              <InfoHeading info="Typed data inputs the selected capability declares via its own slots() method (e.g. startFrame, references for video.generate). Bind each to a value — a prior stage's output, a memory key, a blueprint input, and more.">
+                Slots
+              </InfoHeading>
+              {resolved.slots.length === 0 && (
+                <p className="text-sm text-muted-foreground">
+                  This capability doesn't declare any slots.
+                </p>
+              )}
               {resolved.slots.map((slot) => (
                 <div key={slot.name} className="flex flex-col gap-1.5">
                   <Label>
@@ -842,7 +966,9 @@ export function StageInspector({
             </div>
 
             <div className="flex flex-col gap-3">
-              <h3 className="text-sm font-medium">Context</h3>
+              <InfoHeading info="Free-form key/value bindings interpolated into this stage's Instructions template ({{ key }}). Unlike Slots, any capability can read Context regardless of what it declares.">
+                Context
+              </InfoHeading>
               {Object.entries(stage.context).map(([key, ref]) => (
                 <div key={key} className="flex flex-col gap-1.5">
                   <div className="flex flex-wrap items-center gap-2">
@@ -885,9 +1011,21 @@ export function StageInspector({
                 + add context
               </Button>
             </div>
+          </AccordionContent>
+        </AccordionItem>
 
+        <AccordionItem
+          value="output-writes"
+          className="rounded-xl border border-border overflow-hidden px-3"
+        >
+          <AccordionTrigger className={STAGE_SECTION_TRIGGER_CLASS}>
+            Output &amp; memory writes
+          </AccordionTrigger>
+          <AccordionContent className={STAGE_SECTION_CONTENT_CLASS}>
             <div className="flex flex-col gap-1.5">
-              <h3 className="text-sm font-medium">Output</h3>
+              <InfoHeading info="What this stage returns to the run graph. The kind you pick here (text/data/timeline/media) determines the shape a downstream stage's `prev` Ref receives — it is not stored anywhere else, unlike a memory write.">
+                Output
+              </InfoHeading>
               <Select
                 value={stage.output.kind}
                 onValueChange={(next) =>
@@ -926,7 +1064,9 @@ export function StageInspector({
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <h3 className="text-sm font-medium">Memory writes</h3>
+              <InfoHeading info="Optional: extract values out of this stage's finished output and save them under a named key in the run's persistent memory. Any later stage can then read that key with a `memory` Ref, even if it isn't directly next in the graph.">
+                Memory writes
+              </InfoHeading>
               <WritesEditor
                 writes={stage.writes}
                 onChange={(writes) => onChange({ ...stage, writes })}
@@ -935,11 +1075,18 @@ export function StageInspector({
           </AccordionContent>
         </AccordionItem>
 
-        <AccordionItem value="checks-qc" className="rounded-xl border border-border px-3">
-          <AccordionTrigger>Checks &amp; QC</AccordionTrigger>
-          <AccordionContent className="flex flex-col gap-4">
+        <AccordionItem
+          value="checks-qc"
+          className="rounded-xl border border-border overflow-hidden px-3"
+        >
+          <AccordionTrigger className={STAGE_SECTION_TRIGGER_CLASS}>
+            Checks &amp; Quality control
+          </AccordionTrigger>
+          <AccordionContent className={STAGE_SECTION_CONTENT_CLASS}>
             <div className="flex flex-col gap-1.5">
-              <h3 className="text-sm font-medium">Checks</h3>
+              <InfoHeading info="Automated pass/fail validations run against this stage's finished output — builtin checks or custom scripts. A failing check can block the run depending on its severity.">
+                Checks
+              </InfoHeading>
               <ChecksEditor
                 checks={stage.checks}
                 onChange={(checks) => onChange({ ...stage, checks })}
@@ -954,20 +1101,50 @@ export function StageInspector({
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <h3 className="text-sm font-medium">QC</h3>
+              <InfoHeading info="Optional model-graded quality review of this stage's output against written criteria. Unlike Checks' pass/fail, quality control produces a score against a threshold and can drive a human approval retry.">
+                Quality control
+              </InfoHeading>
               <QcEditor qc={stage.qc} onChange={(qc) => onChange({ ...stage, qc })} />
               <IssueList issues={qcIssues} />
             </div>
           </AccordionContent>
         </AccordionItem>
 
-        <AccordionItem value="execution" className="rounded-xl border border-border px-3">
-          <AccordionTrigger>Execution (retry, budget, model, approval, iterate)</AccordionTrigger>
-          <AccordionContent className="flex flex-col gap-4">
+        <AccordionItem
+          value="model"
+          className="rounded-xl border border-border overflow-hidden px-3"
+        >
+          <AccordionTrigger className={STAGE_SECTION_TRIGGER_CLASS}>Model</AccordionTrigger>
+          <AccordionContent className={STAGE_SECTION_CONTENT_CLASS}>
             <div className="flex flex-col gap-1.5">
-              <h3 className="text-sm font-medium">Retry limit</h3>
+              <InfoHeading info="Pins this stage to a specific provider/model/version, overriding the blueprint or channel's default. Leave fields unset to inherit the default at run time.">
+                Model
+              </InfoHeading>
+              <ModelPinEditor
+                value={stage.model}
+                onChange={(model) => onChange({ ...stage, model })}
+              />
+              <IssueList issues={modelIssues} />
+            </div>
+          </AccordionContent>
+        </AccordionItem>
+
+        <AccordionItem
+          value="execution"
+          className="rounded-xl border border-border overflow-hidden px-3"
+        >
+          <AccordionTrigger className={STAGE_SECTION_TRIGGER_CLASS}>
+            Execution (retry, budget)
+          </AccordionTrigger>
+          <AccordionContent className={STAGE_SECTION_CONTENT_CLASS}>
+            <div className="flex flex-col gap-1.5">
+              <InfoHeading info="How many times this stage automatically retries after a failed run (execution error or failing check) before surfacing as a run failure.">
+                Retry limit
+              </InfoHeading>
               <div className="flex flex-col gap-1.5">
-                <Label>Retries</Label>
+                <InfoLabel info="Number of automatic retries; 0 disables retrying entirely for this stage.">
+                  Retries
+                </InfoLabel>
                 <Input
                   type="number"
                   className="w-32"
@@ -979,58 +1156,57 @@ export function StageInspector({
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <h3 className="text-sm font-medium">Budget</h3>
+              <InfoHeading info="Optional per-stage USD spending caps. If exceeded mid-run, the stage (or its quality control pass) stops with a budget-exceeded failure rather than continuing to spend.">
+                Budget
+              </InfoHeading>
               <BudgetEditor
                 budget={stage.budget}
                 onChange={(budget) => onChange({ ...stage, budget })}
               />
             </div>
-
-            <div className="flex flex-col gap-1.5">
-              <h3 className="text-sm font-medium">Model</h3>
-              <ModelPinEditor
-                value={stage.model}
-                onChange={(model) => onChange({ ...stage, model })}
-              />
-              <IssueList issues={modelIssues} />
-            </div>
-
-            <div className="flex flex-col gap-1.5">
-              <h3 className="text-sm font-medium">Enabled when</h3>
-              <EnabledWhenEditor
-                enabledWhen={stage.enabledWhen}
-                inputs={inputs}
-                onChange={(enabledWhen) => onChange({ ...stage, enabledWhen })}
-              />
-              <IssueList issues={enabledWhenIssues} />
-            </div>
-
-            <div className="flex flex-col gap-1.5">
-              <h3 className="text-sm font-medium">Approval</h3>
-              <ApprovalEditor
-                approval={stage.approval}
-                graph={graph}
-                onChange={(approval) => onChange({ ...stage, approval })}
-              />
-              <IssueList issues={approvalIssues} />
-            </div>
-
-            <div className="flex flex-col gap-1.5">
-              <h3 className="text-sm font-medium">Iterate</h3>
-              <IterateEditor
-                iterate={stage.iterate}
-                stageIndex={stageIndex}
-                graph={graph}
-                inputs={inputs}
-                roles={roles}
-                assets={assets}
-                onChange={(iterate) => onChange({ ...stage, iterate })}
-              />
-              <IssueList issues={iterateIssues} />
-            </div>
           </AccordionContent>
         </AccordionItem>
       </Accordion>
+
+      <div className="flex flex-col gap-1.5">
+        <InfoHeading info="Optional condition gating whether this stage runs at all. When set, the stage is skipped unless the named blueprint Input equals the given value.">
+          Enabled when
+        </InfoHeading>
+        <EnabledWhenEditor
+          enabledWhen={stage.enabledWhen}
+          inputs={inputs}
+          onChange={(enabledWhen) => onChange({ ...stage, enabledWhen })}
+        />
+        <IssueList issues={enabledWhenIssues} />
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <InfoHeading info="Optional human-in-the-loop gate. When set, the run pauses after this stage (or after each item, in item mode) for a person to approve or reject before continuing.">
+          Human approval
+        </InfoHeading>
+        <ApprovalEditor
+          approval={stage.approval}
+          graph={graph}
+          onChange={(approval) => onChange({ ...stage, approval })}
+        />
+        <IssueList issues={approvalIssues} />
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <InfoHeading info="Loops this stage once per item in an array, in order — item i may consume item i-1's result, but nothing runs in parallel. Leave unset to run this stage once.">
+          Iterate
+        </InfoHeading>
+        <IterateEditor
+          iterate={stage.iterate}
+          stageIndex={stageIndex}
+          graph={graph}
+          inputs={inputs}
+          roles={roles}
+          assets={assets}
+          onChange={(iterate) => onChange({ ...stage, iterate })}
+        />
+        <IssueList issues={iterateIssues} />
+      </div>
     </section>
   );
 }

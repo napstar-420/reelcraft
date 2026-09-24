@@ -3,6 +3,7 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { api } from '../../api/client';
 import { BindingPicker } from './BindingPicker';
 import { SchemaForm } from './SchemaForm';
+import { InfoHeading, InfoLabel } from './info-label';
 import type {
   CheckDef,
   InputDef,
@@ -15,7 +16,6 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { IssueList } from '@/components/ui/issue-list';
-import { Label } from '@/components/ui/label';
 import {
   Select,
   SelectContent,
@@ -116,7 +116,9 @@ function CheckTestPanel({ check }: { check: CheckDef }) {
     <div className="flex flex-col gap-2 rounded-lg border border-border bg-muted/30 p-3">
       <div className="flex flex-wrap items-end gap-2">
         <div className="flex flex-col gap-1.5">
-          <Label>Artifact id</Label>
+          <InfoLabel info="An existing artifact's id to run this check against directly, without executing the full stage — useful for tuning a check's params before wiring it into a run.">
+            Artifact id
+          </InfoLabel>
           <Input
             className="w-56"
             value={artifactId}
@@ -216,7 +218,7 @@ export function ChecksEditor({
     <div className="flex flex-col gap-3">
       {checks.map((check, index) => (
         <Card key={index}>
-          <CardHeader className="flex-row items-center justify-between gap-2">
+          <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Select
                 value={check.type}
@@ -238,16 +240,15 @@ export function ChecksEditor({
                 </SelectContent>
               </Select>
             </CardTitle>
-            <Button type="button" variant="ghost" size="sm" onClick={() => remove(index)}>
-              Remove check
-            </Button>
           </CardHeader>
 
           <CardContent className="flex flex-col gap-3">
             {check.type === 'builtin' ? (
-              <div className="flex flex-col gap-2">
+              <div className="flex flex-col gap-3">
                 <div className="flex flex-col gap-1.5">
-                  <Label>Builtin key</Label>
+                  <InfoLabel info="Which server-defined builtin check to run — its own params schema (below) is generated from the selected check's definition.">
+                    Builtin key
+                  </InfoLabel>
                   <Select
                     value={check.key || UNSET}
                     onValueChange={(next) =>
@@ -281,7 +282,9 @@ export function ChecksEditor({
             ) : (
               <div className="flex flex-col gap-3">
                 <div className="flex flex-col gap-1.5">
-                  <Label>Name</Label>
+                  <InfoLabel info="A display name for this script check, shown in check results and quality control/approval logs.">
+                    Name
+                  </InfoLabel>
                   <Input
                     type="text"
                     className="w-56"
@@ -290,7 +293,9 @@ export function ChecksEditor({
                   />
                 </div>
                 <div className="flex flex-col gap-1.5">
-                  <h4 className="text-sm font-medium">Code</h4>
+                  <InfoHeading info="The script's source, run against this stage's finished output. Receives the artifact plus any Refs declared below and must return a pass/fail result.">
+                    Code
+                  </InfoHeading>
                   <Textarea
                     rows={10}
                     className="font-mono text-xs"
@@ -299,7 +304,9 @@ export function ChecksEditor({
                   />
                 </div>
                 <div className="flex flex-col gap-1.5">
-                  <h4 className="text-sm font-medium">Refs</h4>
+                  <InfoHeading info="Extra named values bound in for the script to read alongside the stage's output — the same Ref kinds (prev, memory, input, asset, role, item, const) as Slots and Context.">
+                    Refs
+                  </InfoHeading>
                   <RefsEditor
                     refs={check.refs}
                     onChange={(refs) => update(index, { ...check, refs })}
@@ -316,6 +323,16 @@ export function ChecksEditor({
 
             <CheckTestPanel check={check} />
             <IssueList issues={issues?.[index] ?? []} />
+
+            <Button
+              type="button"
+              variant="destructive"
+              size="sm"
+              className="self-start"
+              onClick={() => remove(index)}
+            >
+              Remove check
+            </Button>
           </CardContent>
         </Card>
       ))}

@@ -1,10 +1,10 @@
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../api/client';
 import { TypedValueInput } from './TypedValueInput';
+import { InfoHeading, InfoLabel } from './info-label';
 import type { PartialModelPin } from '@reefcraft/shared';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import {
   Select,
   SelectContent,
@@ -109,7 +109,9 @@ export function ModelPinEditor({ value, onChange, clearable = true }: ModelPinEd
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-col gap-1.5">
-        <Label>Provider</Label>
+        <InfoLabel info="Which AI provider serves this stage's model calls (e.g. openai, fake). Changing it clears the selected model below.">
+          Provider
+        </InfoLabel>
         <Select
           value={provider || UNSET}
           onValueChange={(next) =>
@@ -131,7 +133,7 @@ export function ModelPinEditor({ value, onChange, clearable = true }: ModelPinEd
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <Label>Model</Label>
+        <InfoLabel info="The specific model id offered by the selected provider.">Model</InfoLabel>
         <Select
           value={value?.modelId || UNSET}
           onValueChange={(next) => set({ modelId: next === UNSET ? undefined : next })}
@@ -152,7 +154,9 @@ export function ModelPinEditor({ value, onChange, clearable = true }: ModelPinEd
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <Label>Version</Label>
+        <InfoLabel info="Optional pinned model version/snapshot string, if the provider supports one. Leave blank to use the provider's default version.">
+          Version
+        </InfoLabel>
         <Input
           type="text"
           className="w-56"
@@ -162,7 +166,9 @@ export function ModelPinEditor({ value, onChange, clearable = true }: ModelPinEd
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <h4 className="text-sm font-medium">Params</h4>
+        <InfoHeading info="Extra provider-specific call parameters (e.g. max_tokens, temperature) merged into every request this stage — or its quality control pass — makes.">
+          Params
+        </InfoHeading>
         <ParamsEditor params={value?.params} onChange={(params) => set({ params })} />
       </div>
 

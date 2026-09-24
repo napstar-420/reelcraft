@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../api/client';
 import { SchemaForm } from './SchemaForm';
+import { SECTION_HEADING_CLASS } from './typography';
 import type { InputDef, RoleDef, JsonSchema } from '@reefcraft/shared';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -175,7 +176,7 @@ function InputsEditor({
 
             {input.accepts.kind === 'data' && (
               <div className="flex flex-col gap-1.5 border-l-2 border-border pl-3">
-                <h4 className="text-sm font-medium">Schema</h4>
+                <h4 className={SECTION_HEADING_CLASS}>Schema</h4>
                 <SchemaForm
                   schema={JSON_SCHEMA_META}
                   value={input.accepts.schema}

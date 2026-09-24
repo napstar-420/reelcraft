@@ -11,6 +11,11 @@ export function BlueprintsPage() {
   const { channelId } = useParams<{ channelId: string }>();
   const navigate = useNavigate();
   const templates = useQuery({ queryKey: ['templates'], queryFn: api.listTemplates });
+  const blueprints = useQuery({
+    queryKey: ['blueprints', channelId],
+    queryFn: () => api.listBlueprints(channelId!),
+    enabled: !!channelId,
+  });
 
   const instantiateAndRun = useMutation({
     mutationFn: async (templateId: string) => {
@@ -28,9 +33,10 @@ export function BlueprintsPage() {
     <section className="flex flex-col gap-6">
       <div className="flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Builtin templates</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Blueprints</h1>
           <p className="text-sm text-muted-foreground">
-            Instantiate a template and start a run, or build your own blueprint.
+            Open a blueprint you've built, instantiate a template and start a run, or build your
+            own.
           </p>
         </div>
         {channelId && (
@@ -39,6 +45,37 @@ export function BlueprintsPage() {
           </Button>
         )}
       </div>
+
+      {blueprints.isLoading && (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Skeleton key={i} className="h-24 w-full" />
+          ))}
+        </div>
+      )}
+
+      {blueprints.data && blueprints.data.length > 0 && (
+        <div className="flex flex-col gap-3">
+          <h2 className="text-lg font-medium tracking-tight">Blueprints in this channel</h2>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {blueprints.data.map((b) => (
+              <Card key={b.id}>
+                <CardHeader>
+                  <CardTitle>{b.name}</CardTitle>
+                  {!b.currentVersionId && <CardDescription>No saved version yet</CardDescription>}
+                </CardHeader>
+                <CardFooter className="mt-auto">
+                  <Button variant="outline" asChild>
+                    <Link to={`/blueprints/${b.id}/build`}>Open</Link>
+                  </Button>
+                </CardFooter>
+              </Card>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <h2 className="text-lg font-medium tracking-tight">Builtin templates</h2>
 
       {templates.isLoading && (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">

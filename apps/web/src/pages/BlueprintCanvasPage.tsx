@@ -731,7 +731,7 @@ function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
           if (!open) setSelectedStageKey(null);
         }}
       >
-        <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-xl">
+        <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-2xl">
           <SheetHeader>
             <SheetTitle>{selectedStageKey}</SheetTitle>
           </SheetHeader>
