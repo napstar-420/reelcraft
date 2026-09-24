@@ -62,9 +62,7 @@ export function BlueprintsPage() {
               <Card key={b.id}>
                 <CardHeader>
                   <CardTitle>{b.name}</CardTitle>
-                  {!b.currentVersionId && (
-                    <CardDescription>No saved version yet</CardDescription>
-                  )}
+                  {!b.currentVersionId && <CardDescription>No saved version yet</CardDescription>}
                 </CardHeader>
                 <CardFooter className="mt-auto">
                   <Button variant="outline" asChild>
