@@ -1,5 +1,5 @@
-import { Body, Controller, Get, Post } from '@nestjs/common';
-import { CreateChannelDto } from '@reefcraft/shared';
+import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
+import { CreateChannelDto, UpdateChannelDto } from '@reefcraft/shared';
 import { Owner } from '../common/owner.decorator';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { ChannelService } from './channel.service';
@@ -21,5 +21,18 @@ export class ChannelController {
   @Get()
   list() {
     return this.channels.list();
+  }
+
+  @Get(':id')
+  get(@Param('id') id: string) {
+    return this.channels.get(id);
+  }
+
+  @Patch(':id')
+  update(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(UpdateChannelDto)) dto: UpdateChannelDto,
+  ) {
+    return this.channels.update(id, dto);
   }
 }

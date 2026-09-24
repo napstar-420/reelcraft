@@ -1,6 +1,7 @@
 import type {
   ChannelDto,
   CreateChannelDto,
+  UpdateChannelDto,
   BlueprintVersionDto,
   CreateBlueprintVersionDto,
   RunDetailDto,
@@ -131,6 +132,9 @@ export const api = {
   listChannels: () => request<ChannelDto[]>('/channels'),
   createChannel: (dto: CreateChannelDto) =>
     request<ChannelDto>('/channels', { method: 'POST', body: JSON.stringify(dto) }),
+  getChannel: (id: string) => request<ChannelDto>(`/channels/${id}`),
+  updateChannel: (id: string, dto: UpdateChannelDto) =>
+    request<ChannelDto>(`/channels/${id}`, { method: 'PATCH', body: JSON.stringify(dto) }),
 
   createBlueprint: (channelId: string, name: string) =>
     request<{ blueprintId: string }>('/blueprints', {

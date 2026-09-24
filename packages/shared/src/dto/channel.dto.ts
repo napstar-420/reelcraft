@@ -9,6 +9,13 @@ export const CreateChannelDto = z.object({
 });
 export type CreateChannelDto = z.infer<typeof CreateChannelDto>;
 
+export const UpdateChannelDto = z.object({
+  name: z.string().min(1).optional(),
+  description: z.string().max(255).optional(),
+  theme: z.record(z.string(), z.unknown()).optional(),
+});
+export type UpdateChannelDto = z.infer<typeof UpdateChannelDto>;
+
 export const ChannelDto = z.object({
   id: z.string(),
   ownerId: z.string(),
