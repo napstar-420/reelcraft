@@ -39,6 +39,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { IssueList } from '@/components/ui/issue-list';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   Select,
@@ -180,6 +181,58 @@ function WritesEditor({
       <Button type="button" variant="outline" size="sm" onClick={add} className="self-start">
         + Add write
       </Button>
+    </div>
+  );
+}
+
+/** `system` is optional even when `instructions` is present; an empty
+ * `template` (the only genuinely required field of the pair) clears the
+ * whole `instructions` block back to `undefined` rather than leaving behind
+ * `{ template: '' }` — mirrors `BudgetEditor`'s all-fields-empty → `undefined`
+ * pattern. Only capabilities that render a prompt (`stage-runner.service.ts`'s
+ * `instructions?.template` → `renderPrompt`) read this at all; it's shown
+ * unconditionally here since the inspector has no per-capability flag for
+ * "uses a prompt". */
+function InstructionsEditor({
+  instructions,
+  onChange,
+}: {
+  instructions: StageDef['instructions'];
+  onChange: (instructions: StageDef['instructions']) => void;
+}) {
+  function set(patch: { system?: string; template?: string }) {
+    const next = {
+      system: instructions?.system ?? '',
+      template: instructions?.template ?? '',
+      ...patch,
+    };
+    onChange(
+      next.template === '' && next.system === ''
+        ? undefined
+        : { system: next.system || undefined, template: next.template },
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-1.5">
+        <Label>System</Label>
+        <Textarea
+          rows={3}
+          className="font-mono text-xs"
+          value={instructions?.system ?? ''}
+          onChange={(e) => set({ system: e.target.value })}
+        />
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <Label>Template</Label>
+        <Textarea
+          rows={6}
+          className="font-mono text-xs"
+          value={instructions?.template ?? ''}
+          onChange={(e) => set({ template: e.target.value })}
+        />
+      </div>
     </div>
   );
 }
@@ -741,6 +794,7 @@ export function StageInspector({
   );
   const capabilityIssues = issuesFor((p) => p.region === 'capability');
   const configIssues = issuesFor((p) => p.region === 'config');
+  const instructionsIssues = issuesFor((p) => p.region === 'instructions');
   const outputIssues = issuesFor((p) => p.region === 'output' && p.name === undefined);
   const outputKindIssues = issuesFor((p) => p.region === 'output' && p.name === 'kind');
   const outputSchemaIssues = issuesFor((p) => p.region === 'output' && p.name === 'schema');
@@ -826,6 +880,17 @@ export function StageInspector({
                 triggerClassName="w-full sm:w-64"
               />
               <IssueList issues={capabilityIssues} />
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <SectionHeading info="The prompt this stage sends to the model, for capabilities that wrap an LLM. `template` supports {{ }} interpolation over this stage's Slots/Context values and `priorCritique` on a QC retry; `system` is an optional system-role prefix. Leave both blank for non-prompt capabilities.">
+                Instructions
+              </SectionHeading>
+              <InstructionsEditor
+                instructions={stage.instructions}
+                onChange={(instructions) => onChange({ ...stage, instructions })}
+              />
+              <IssueList issues={instructionsIssues} />
             </div>
 
             {configSchema && Object.keys(configSchema.properties ?? {}).length > 0 && (
