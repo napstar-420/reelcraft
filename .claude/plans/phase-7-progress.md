@@ -430,7 +430,7 @@ data"` — `source.data` is legitimately always `undefined` for a media
   `draft`/`final` from §25.1's full 9-stage example — they add no new
   binding/invalidation coverage beyond what this file and Chunks 1-6's own
   suites already exercise) with `broll` using the REAL `video.generate`
-  capability (not a stand-in `llm.generate`, unlike Chunks 4-6's own
+  capability (not a stand-in `text.generate`, unlike Chunks 4-6's own
   precedent) so `{from:'prevItem', path:'lastFrame'}` really exercises
   `DerivedFrameService`, with a `TestableDerivedFrameService` subclass (same
   pattern as `derived-frame.e2e.test.ts`) swapped in via a new

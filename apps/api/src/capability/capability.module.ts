@@ -5,7 +5,7 @@ import { StorageModule } from '../storage/storage.module';
 import { JsonSchemaModule } from '../json-schema/json-schema.module';
 import { CapabilityRegistry } from './capability.registry';
 import { CapabilityController } from './capability.controller';
-import { LlmGenerate } from './impls/llm-generate.capability';
+import { TextGenerateCapability } from './impls/text-generate.capability';
 import { PublishStub } from './impls/publish-stub.capability';
 import { HumanInputCapability } from './impls/human-input.capability';
 import { HumanTimelineEditCapability } from './impls/human-timeline-edit.capability';
@@ -29,7 +29,7 @@ import {
   imports: [DiscoveryModule, ProviderModule, StorageModule, JsonSchemaModule],
   providers: [
     CapabilityRegistry,
-    LlmGenerate,
+    TextGenerateCapability,
     HumanInputCapability,
     HumanTimelineEditCapability,
     StyleRegistry,

@@ -54,7 +54,7 @@ describe('dry-run execution (e2e)', () => {
     {
       key: 'draft',
       label: 'Draft',
-      capability: 'llm.generate',
+      capability: 'text.generate',
       config: {},
       slots: {},
       context: {},

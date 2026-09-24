@@ -3,7 +3,7 @@ import { z } from 'zod';
 const finiteNonNegative = z.number().finite().nonnegative();
 const finitePositive = z.number().finite().positive();
 
-/** §17.1 — engine-owned schema; produced by llm.generate(timeline) and
+/** §17.1 — engine-owned schema; produced by text.generate(timeline) and
  * consumed by timeline.render. */
 export const TimelineItem = z.discriminatedUnion('type', [
   z.object({

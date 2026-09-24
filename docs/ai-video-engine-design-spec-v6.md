@@ -746,7 +746,7 @@ The rendered prompt is persisted per attempt so the audit shows exactly what was
 
 ### 6.6 Media manifests
 
-A planning stage must know *what media exists* without receiving bytes, and must refer to it by a handle it cannot mistype into a blob ID. When a media artifact — or a `cardinality: 'many'` set — is bound into an `llm.generate` context, the template receives a **manifest**:
+A planning stage must know *what media exists* without receiving bytes, and must refer to it by a handle it cannot mistype into a blob ID. When a media artifact — or a `cardinality: 'many'` set — is bound into an `text.generate` context, the template receives a **manifest**:
 
 ```json
 [
@@ -830,7 +830,7 @@ The split exists so the orchestrator can place step boundaries correctly (§13.3
 
 | Capability | Modality | Kind | Notes |
 |---|---|---|---|
-| `llm.generate` | text | sync | Output `text` or `data`. Image slots enable vision; video slots sampled to frames. |
+| `text.generate` | text | sync | Output `text` or `data`. Image slots enable vision; video slots sampled to frames. |
 | `image.generate` | image | async | Optional `references` slot, cardinality many |
 | `image.edit` | image | async | `operation`: inpaint, restyle, background removal |
 | `video.generate` | video | async | Optional slots `startFrame`, `endFrame`, `references`; legality per pinned model |
@@ -849,7 +849,7 @@ There is no `human.approve` capability. Approval is a property of the stage that
 
 Two assembly capabilities rather than one. `video.concat` covers the common case — join the clips, add subtitles — without requiring the user to produce timeline JSON. `timeline.render` covers overlays, multi-track audio, transitions, and motion. Neither is mandatory; a blueprint may end at a single generated clip.
 
-WPM-based timestamp estimation is not a capability. It is either an `llm.generate` output or an inequality inside a check, and shipping it as a capability invites the accuracy trap the validator already warns about.
+WPM-based timestamp estimation is not a capability. It is either an `text.generate` output or an inequality inside a check, and shipping it as a capability invites the accuracy trap the validator already warns about.
 
 ---
 
@@ -1755,7 +1755,7 @@ Treat this as a standing rule for phase 1, not a one-off fix: **every sweep quer
 
 ## 24. Build Order
 
-1. **Skeleton** — workspace, Drizzle schema, MinIO with bucket bootstrap, Nest modules, `shared` with StageDef and Ref, Inngest via the DI factory, `llm.generate` over OpenRouter, **`FakeProviderAdapter`**, minimal React shell. One-stage blueprint end to end.
+1. **Skeleton** — workspace, Drizzle schema, MinIO with bucket bootstrap, Nest modules, `shared` with StageDef and Ref, Inngest via the DI factory, `text.generate` over OpenRouter, **`FakeProviderAdapter`**, minimal React shell. One-stage blueprint end to end.
 2. **Core loop** — config resolver; binding resolver with slots and context; restricted JSON Schema + Ajv; compatibility walker (§16.4); template paths; builtin and script checks with the QuickJS sandbox; QC; semantic retry. *Test: a three-stage text blueprint with user-defined schemas and a cross-artifact script check.*
 3. **Budget** — ledger, row-locked reserve/reconcile, settlement branches, `PAUSED_BUDGET`, orphan sweep with submit-anchored TTL. Exercised against a slow, costly fake.
 4. **Inputs and human-in-loop** — run inputs, channel assets, Run Memory with tombstones, stage approval with reject routing, `human.input` with `PAUSED_INPUT`, manual edit, invalidation from recorded reads, overrides, resume, the action matrix.
@@ -1779,13 +1779,13 @@ Run input: `topic` (`text`). Inputs are not stages.
 
 | # | Stage | Capability | Output | Writes | Notes |
 |---|---|---|---|---|---|
-| 1 | `script` | `llm.generate` | `data` | `script` | binds `input:topic` |
+| 1 | `script` | `text.generate` | `data` | `script` | binds `input:topic` |
 | 2 | `vo` | `audio.speech` | `media.audio` | `vo` | |
 | 3 | `timing` | `media.analyze` (transcribe_align) | `data` | `timing` | |
-| 4 | `shots` | `llm.generate` | `data` (array) | `shots` | binds `prev` + `memory:script` |
+| 4 | `shots` | `text.generate` | `data` (array) | `shots` | binds `prev` + `memory:script` |
 | 5 | `broll` | `video.generate`, iterates `memory:shots` | `media.video` | `broll` | `approval: { mode: 'item' }` |
 | 6 | `music` | `audio.music` | `media.audio` | `music` | binds `memory:script` only |
-| 7 | `timeline` | `llm.generate` | `timeline` | `timeline` | manifests for `memory:broll`, `vo`, `music` |
+| 7 | `timeline` | `text.generate` | `timeline` | `timeline` | manifests for `memory:broll`, `vo`, `music` |
 | 8 | `draft` | `timeline.render` (draft) | `media.video` | — | `approval: { onReject: { retryStageKey: 'timeline' } }` |
 | 9 | `final` | `timeline.render` (final) | `media.video` | — | binds `memory:timeline` |
 
@@ -1804,10 +1804,10 @@ Stresses: duration reconciliation, manifests, memory as the long-range data path
 
 ```
 brief (input:text) + screenshots (input:media.image, many) + logo (asset)
-  → outline   (llm.generate, vision on screenshots)     writes: outline
+  → outline   (text.generate, vision on screenshots)     writes: outline
   → vo        (audio.speech)                            writes: vo
   → timing    (media.analyze:transcribe_align)          writes: timing
-  → timeline  (llm.generate:timeline)
+  → timeline  (text.generate:timeline)
   → render    (timeline.render)
 ```
 
@@ -1820,12 +1820,12 @@ This is the genericity test. If this blueprint needs a code change, the engine i
 ```
 track (input:media.audio)
   → beats    (media.analyze:beats)                      writes: beats
-  → sections (llm.generate:data, context: beats)        writes: sections
+  → sections (text.generate:data, context: beats)        writes: sections
   → theme    (human.input: choose visual theme)         writes: theme
-  → prompts  (llm.generate:data, one per section)       writes: prompts
+  → prompts  (text.generate:data, one per section)       writes: prompts
   → clips    (video.generate, iterates over memory:prompts,
               startFrame from prevItem.lastFrame)       writes: clips
-  → timeline (llm.generate:timeline, cuts aligned to beats)
+  → timeline (text.generate:timeline, cuts aligned to beats)
   → render   (timeline.render)
 ```
 
@@ -2029,7 +2029,7 @@ type ExecCtx<Cfg> = {
   config: Cfg;
   slots: Record<string, unknown>;      // resolved per SlotDef (§6.4)
   context: Record<string, unknown>;    // resolved per StageDef.context (§6.4)
-  renderedPrompt?: string;             // for llm.generate and any templated capability
+  renderedPrompt?: string;             // for text.generate and any templated capability
   provider: ProviderClient;            // scoped to the effective ModelPin
   blobs: Pick<StorageAdapter, 'put' | 'presignPut'>;   // BlobWriter — write-only, no reads
   idempotencyKey: string;

@@ -20,7 +20,7 @@ function stage(key: string, overrides: Partial<StageDef> = {}): StageDef {
   return {
     key,
     label: key,
-    capability: 'llm.generate',
+    capability: 'text.generate',
     config: {},
     slots: {},
     context: {},

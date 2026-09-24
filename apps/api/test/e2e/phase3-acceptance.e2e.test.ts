@@ -34,7 +34,7 @@ const GRAPH: StageDef[] = [
   {
     key: 'cheap',
     label: 'Cheap',
-    capability: 'llm.generate',
+    capability: 'text.generate',
     config: {},
     slots: {},
     context: {},
@@ -46,7 +46,7 @@ const GRAPH: StageDef[] = [
   {
     key: 'expensive',
     label: 'Expensive',
-    capability: 'llm.generate',
+    capability: 'text.generate',
     config: {},
     slots: {},
     context: {},

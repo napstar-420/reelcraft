@@ -18,6 +18,8 @@ import { HUMAN_INPUT_ORCHESTRATOR_ONLY_ERROR } from './human-input.capability';
 export class HumanTimelineEditCapability implements CapabilityImpl<Record<string, unknown>> {
   readonly modality = 'human' as const;
   readonly kind = 'sync' as const;
+  readonly label = 'Human Timeline Edit';
+  readonly description = 'Pause the run for a person to edit the timeline.';
   readonly interaction = { kind: 'timeline_editor' as const };
   readonly configSchema: JsonSchema = {
     type: 'object',

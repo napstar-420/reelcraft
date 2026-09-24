@@ -9,6 +9,8 @@ export const CapabilityDto = z.object({
   key: z.string(),
   modality: Modality,
   kind: z.enum(['sync', 'async']),
+  label: z.string(),
+  description: z.string(),
   configSchema: JsonSchema,
   interaction: z.object({ kind: z.enum(['form', 'timeline_editor']) }).optional(),
 });

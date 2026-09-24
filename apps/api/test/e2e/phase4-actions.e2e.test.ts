@@ -15,7 +15,7 @@ function stage({ key, ...overrides }: Partial<StageDef> & Pick<StageDef, 'key'>)
   return {
     key,
     label: key,
-    capability: 'llm.generate',
+    capability: 'text.generate',
     config: {},
     slots: {},
     context: {},

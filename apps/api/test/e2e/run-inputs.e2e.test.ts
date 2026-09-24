@@ -15,7 +15,7 @@ function stage(key: string): StageDef {
   return {
     key,
     label: key,
-    capability: 'llm.generate',
+    capability: 'text.generate',
     config: {},
     slots: {},
     context: {},

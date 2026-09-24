@@ -13,7 +13,7 @@ const DATA_STAGE_GRAPH: StageDef[] = [
   {
     key: 'outline',
     label: 'Outline',
-    capability: 'llm.generate',
+    capability: 'text.generate',
     config: {},
     slots: {},
     context: {},

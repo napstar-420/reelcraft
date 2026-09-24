@@ -45,7 +45,7 @@ describe('phase 7 chunk 5 — item-level invalidation (e2e)', () => {
     return {
       key: 'shots',
       label: 'Shots',
-      capability: 'llm.generate',
+      capability: 'text.generate',
       config: {},
       slots: {},
       context: {},
@@ -64,7 +64,7 @@ describe('phase 7 chunk 5 — item-level invalidation (e2e)', () => {
     return {
       key: 'broll',
       label: 'B-roll',
-      capability: 'llm.generate',
+      capability: 'text.generate',
       config: {},
       slots: { shot: { from: 'item' } },
       context: {},

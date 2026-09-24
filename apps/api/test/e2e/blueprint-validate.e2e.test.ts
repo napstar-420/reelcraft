@@ -31,7 +31,7 @@ describe('BlueprintService.validateOnly (e2e)', () => {
     {
       key: 'outline',
       label: 'Outline',
-      capability: 'llm.generate',
+      capability: 'text.generate',
       config: {},
       slots: {},
       context: {},

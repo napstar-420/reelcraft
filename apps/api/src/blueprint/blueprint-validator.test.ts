@@ -46,7 +46,7 @@ const sandbox = new ScriptSandboxService(fakeEngineConfig());
 function stage(overrides: Partial<StageDef> & Pick<StageDef, 'key'>): StageDef {
   return {
     label: overrides.key,
-    capability: 'llm.generate',
+    capability: 'text.generate',
     config: {},
     slots: {},
     context: {},
@@ -60,6 +60,8 @@ function stage(overrides: Partial<StageDef> & Pick<StageDef, 'key'>): StageDef {
 const llmGenerate: CapabilityImpl = {
   modality: 'text',
   kind: 'sync',
+  label: 'Generate Text',
+  description: 'Generate text with an LLM from a prompt.',
   configSchema: { type: 'object' },
   slots: () => [],
   allowedOutputs: () => ['text', 'data'],
@@ -123,7 +125,7 @@ function fakeRegistry(capabilities: Record<string, CapabilityImpl>): CapabilityR
 }
 
 function makeValidator(
-  capabilities: Record<string, CapabilityImpl> = { 'llm.generate': llmGenerate },
+  capabilities: Record<string, CapabilityImpl> = { 'text.generate': llmGenerate },
 ) {
   return new BlueprintValidatorService(
     fakeRegistry(capabilities),
@@ -184,7 +186,7 @@ describe('BlueprintValidatorService', () => {
   });
 
   it('allows a Character role only in a many-image reference slot', () => {
-    const validator = makeValidator({ 'llm.generate': withManyImageReferences });
+    const validator = makeValidator({ 'text.generate': withManyImageReferences });
     const roles: RoleDef[] = [
       {
         key: 'host',
@@ -210,7 +212,7 @@ describe('BlueprintValidatorService', () => {
   });
 
   it('rejects a Character role in a single-image slot before a run can spend', () => {
-    const validator = makeValidator({ 'llm.generate': withOneImageSlot });
+    const validator = makeValidator({ 'text.generate': withOneImageSlot });
     const roles: RoleDef[] = [
       {
         key: 'host',
@@ -260,7 +262,7 @@ describe('BlueprintValidatorService', () => {
         required: ['mode'],
       },
     };
-    const validator = makeValidator({ 'llm.generate': capability });
+    const validator = makeValidator({ 'text.generate': capability });
     const graph = [stage({ key: 'a', config: {} })];
     expect(hasError(validator.validate({ graph, inputs: [], roles: [] }), 'stages.a.config')).toBe(
       true,
@@ -295,7 +297,7 @@ describe('BlueprintValidatorService', () => {
 
   it('errors when qc is declared on a media.video output', () => {
     const validator = makeValidator({
-      'llm.generate': { ...llmGenerate, allowedOutputs: () => ['media.video'] },
+      'text.generate': { ...llmGenerate, allowedOutputs: () => ['media.video'] },
     });
     const graph = [
       stage({
@@ -350,7 +352,7 @@ describe('BlueprintValidatorService', () => {
   });
 
   it('errors on a required slot left unbound', () => {
-    const validator = makeValidator({ 'llm.generate': withRequiredSlot });
+    const validator = makeValidator({ 'text.generate': withRequiredSlot });
     const graph = [stage({ key: 'a' })];
     expect(
       hasError(validator.validate({ graph, inputs: [], roles: [] }), 'stages.a.slots.topic'),
@@ -358,7 +360,7 @@ describe('BlueprintValidatorService', () => {
   });
 
   it('errors when a bound slot is structurally incompatible', () => {
-    const validator = makeValidator({ 'llm.generate': withRequiredSlot });
+    const validator = makeValidator({ 'text.generate': withRequiredSlot });
     const graph = [
       stage({
         key: 'a',
@@ -379,7 +381,7 @@ describe('BlueprintValidatorService', () => {
   });
 
   it('passes a compatible slot binding', () => {
-    const validator = makeValidator({ 'llm.generate': withRequiredSlot });
+    const validator = makeValidator({ 'text.generate': withRequiredSlot });
     const graph = [stage({ key: 'a', slots: { topic: { from: 'input', inputKey: 'topic' } } })];
     const inputs: InputDef[] = [
       { key: 'topic', label: 'Topic', required: true, accepts: { kind: 'text' } },
@@ -790,7 +792,7 @@ describe('BlueprintValidatorService — iterate (Phase 7, §14/§16.2)', () => {
   });
 
   it('errors with a distinct message for a many-cardinality media iterate.over source', () => {
-    const validator = makeValidator({ 'llm.generate': llmGenerate, 'video.generate': videoGen });
+    const validator = makeValidator({ 'text.generate': llmGenerate, 'video.generate': videoGen });
     const graph = [
       stage({
         key: 'clip',
@@ -816,7 +818,7 @@ describe('BlueprintValidatorService — iterate (Phase 7, §14/§16.2)', () => {
   });
 
   it('errors when a required slot binds {from:"prevItem"} — no config fallback escape hatch', () => {
-    const validator = makeValidator({ 'llm.generate': withRequiredSlot });
+    const validator = makeValidator({ 'text.generate': withRequiredSlot });
     const graph = [
       stage({
         key: 'a',
@@ -833,7 +835,7 @@ describe('BlueprintValidatorService — iterate (Phase 7, §14/§16.2)', () => {
   });
 
   it('does not error when an optional slot binds {from:"prevItem"}', () => {
-    const validator = makeValidator({ 'llm.generate': withOptionalSlot });
+    const validator = makeValidator({ 'text.generate': withOptionalSlot });
     const graph = [
       stage({
         key: 'a',
@@ -958,7 +960,7 @@ describe('BlueprintValidatorService — iterate (Phase 7, §14/§16.2)', () => {
   });
 
   it('errors when a cardinality:"one" slot binds a memory group written by an iterating stage', () => {
-    const validator = makeValidator({ 'llm.generate': withRequiredSlot });
+    const validator = makeValidator({ 'text.generate': withRequiredSlot });
     const graph = [
       stage({
         key: 'p',
@@ -976,7 +978,7 @@ describe('BlueprintValidatorService — iterate (Phase 7, §14/§16.2)', () => {
   });
 
   it('errors when a cardinality:"many" slot binds {from:"item"}', () => {
-    const validator = makeValidator({ 'llm.generate': withManySlot });
+    const validator = makeValidator({ 'text.generate': withManySlot });
     const graph = [
       stage({
         key: 'a',

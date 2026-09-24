@@ -67,7 +67,7 @@ describe('phase 2 acceptance: three-stage blueprint, cross-artifact check (e2e)'
     {
       key: 'outline',
       label: 'Outline',
-      capability: 'llm.generate',
+      capability: 'text.generate',
       config: {},
       slots: {},
       context: {},
@@ -97,7 +97,7 @@ describe('phase 2 acceptance: three-stage blueprint, cross-artifact check (e2e)'
     {
       key: 'script',
       label: 'Script',
-      capability: 'llm.generate',
+      capability: 'text.generate',
       instructions: { template: 'Write a short script about {{ title }}. {{ priorCritique }}' },
       config: {},
       slots: {},
@@ -119,7 +119,7 @@ describe('phase 2 acceptance: three-stage blueprint, cross-artifact check (e2e)'
     {
       key: 'audit',
       label: 'Audit',
-      capability: 'llm.generate',
+      capability: 'text.generate',
       config: {},
       slots: {},
       context: {},

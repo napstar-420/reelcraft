@@ -28,6 +28,8 @@ const timestamp = (seconds: number, separator: ',' | '.') => {
 export class SubtitlesExportCapability implements CapabilityImpl<SubtitleConfig> {
   readonly modality = 'compute' as const;
   readonly kind = 'sync' as const;
+  readonly label = 'Export Subtitles';
+  readonly description = 'Convert timing data into SRT/VTT subtitle files.';
   readonly configSchema: JsonSchema = {
     type: 'object',
     properties: { format: { type: 'string', enum: ['srt', 'vtt'] } },

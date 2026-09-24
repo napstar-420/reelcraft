@@ -10,7 +10,7 @@ function textStage(overrides: Partial<StageDef> = {}): StageDef {
   return {
     key: 'outline',
     label: 'outline',
-    capability: 'llm.generate',
+    capability: 'text.generate',
     config: { temperature: 0.2 },
     slots: {},
     context: {},

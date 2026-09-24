@@ -47,8 +47,10 @@ export function CapabilityConfigForm({ capabilityKey }: { capabilityKey: string 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{capability.key}</CardTitle>
+        <CardTitle>{capability.label}</CardTitle>
         <CardDescription>
+          {capability.description}
+          <br />
           {capability.modality} · {capability.kind}
         </CardDescription>
       </CardHeader>

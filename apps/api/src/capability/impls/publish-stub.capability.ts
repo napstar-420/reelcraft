@@ -17,6 +17,8 @@ import type { CapabilityImpl, ExecCtx, ExecResult } from '../capability.interfac
 export class PublishStub implements CapabilityImpl<Record<string, unknown>> {
   readonly modality = 'publish' as const;
   readonly kind = 'sync' as const;
+  readonly label = 'Publish (Stub)';
+  readonly description = 'Placeholder publish step — not yet implemented.';
   readonly configSchema: JsonSchema = { type: 'object' };
 
   slots(): SlotDef[] {
