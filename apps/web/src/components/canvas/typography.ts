@@ -13,5 +13,8 @@ export const SECTION_HEADING_CLASS =
  * background spans the item's full width instead of sitting inset with
  * gaps on either side; the item needs `overflow-hidden` (see
  * StageInspector.tsx) so the now-square trigger corners clip to the
- * item's own rounded corners. */
-export const STAGE_SECTION_TRIGGER_CLASS = '-mx-3 bg-secondary px-3 text-secondary-foreground';
+ * item's own rounded corners (top only — see `rounded-t-xl` there, so the
+ * header's own square bottom edge doesn't fight a rounded item corner).
+ * `mb-2` separates the header band from the accordion content below it,
+ * which otherwise butts straight up against the header with no gap. */
+export const STAGE_SECTION_TRIGGER_CLASS = '-mx-3 mb-2 bg-secondary px-3 text-secondary-foreground';
