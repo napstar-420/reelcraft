@@ -832,6 +832,11 @@ export function StageInspector({
           <AccordionContent className={STAGE_SECTION_CONTENT_CLASS}>
             <div className="flex flex-col gap-3">
               <h3 className={SECTION_HEADING_CLASS}>Slots</h3>
+              {resolved.slots.length === 0 && (
+                <p className="text-sm text-muted-foreground">
+                  This capability doesn't declare any slots.
+                </p>
+              )}
               {resolved.slots.map((slot) => (
                 <div key={slot.name} className="flex flex-col gap-1.5">
                   <Label>
