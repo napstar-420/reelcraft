@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { InfoIcon } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../api/client';
 import { BindingPicker } from './BindingPicker';
@@ -38,6 +39,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { IssueList } from '@/components/ui/issue-list';
 import { Label } from '@/components/ui/label';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   Select,
   SelectContent,
@@ -47,6 +49,26 @@ import {
 } from '@/components/ui/select';
 
 const UNSET = '__unset__';
+
+/** A `SECTION_HEADING_CLASS` heading with an info icon whose tooltip carries
+ * a longer explanation — for sub-sections (Output, Memory writes) whose
+ * name alone doesn't convey what they do or how they differ from each
+ * other. */
+function SectionHeading({ children, info }: { children: ReactNode; info: string }) {
+  return (
+    <h3 className={`${SECTION_HEADING_CLASS} flex items-center gap-1.5`}>
+      {children}
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <InfoIcon className="size-3.5 cursor-help" />
+        </TooltipTrigger>
+        <TooltipContent side="right" className="max-w-64 text-left normal-case">
+          {info}
+        </TooltipContent>
+      </Tooltip>
+    </h3>
+  );
+}
 
 /** A shallow, non-recursive view of the `JsonSchema` dialect (§4.2) used only
  * to build `output.schema` via `SchemaForm` itself — the dialect has no
@@ -905,7 +927,9 @@ export function StageInspector({
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <h3 className={SECTION_HEADING_CLASS}>Output</h3>
+              <SectionHeading info="What this stage returns to the run graph. The kind you pick here (text/data/timeline/media) determines the shape a downstream stage's `prev` Ref receives — it is not stored anywhere else, unlike a memory write.">
+                Output
+              </SectionHeading>
               <Select
                 value={stage.output.kind}
                 onValueChange={(next) =>
@@ -944,7 +968,9 @@ export function StageInspector({
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <h3 className={SECTION_HEADING_CLASS}>Memory writes</h3>
+              <SectionHeading info="Optional: extract values out of this stage's finished output and save them under a named key in the run's persistent memory. Any later stage can then read that key with a `memory` Ref, even if it isn't directly next in the graph.">
+                Memory writes
+              </SectionHeading>
               <WritesEditor
                 writes={stage.writes}
                 onChange={(writes) => onChange({ ...stage, writes })}
