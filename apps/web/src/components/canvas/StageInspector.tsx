@@ -716,7 +716,7 @@ function IterateEditor({
   );
 }
 
-const ACCORDION_SECTIONS = ['basics', 'data', 'output-writes', 'checks-qc', 'execution'];
+const ACCORDION_SECTIONS = ['basics', 'data', 'output-writes', 'checks-qc', 'model', 'execution'];
 
 /** Chunk 4 — the real slot/context/config/output/writes editor for one
  * selected stage, replacing Chunk 3's `DemoBindingHarness`. `stage.key` is
@@ -1111,11 +1111,30 @@ export function StageInspector({
         </AccordionItem>
 
         <AccordionItem
+          value="model"
+          className="rounded-xl border border-border overflow-hidden px-3"
+        >
+          <AccordionTrigger className={STAGE_SECTION_TRIGGER_CLASS}>Model</AccordionTrigger>
+          <AccordionContent className={STAGE_SECTION_CONTENT_CLASS}>
+            <div className="flex flex-col gap-1.5">
+              <InfoHeading info="Pins this stage to a specific provider/model/version, overriding the blueprint or channel's default. Leave fields unset to inherit the default at run time.">
+                Model
+              </InfoHeading>
+              <ModelPinEditor
+                value={stage.model}
+                onChange={(model) => onChange({ ...stage, model })}
+              />
+              <IssueList issues={modelIssues} />
+            </div>
+          </AccordionContent>
+        </AccordionItem>
+
+        <AccordionItem
           value="execution"
           className="rounded-xl border border-border overflow-hidden px-3"
         >
           <AccordionTrigger className={STAGE_SECTION_TRIGGER_CLASS}>
-            Execution (retry, budget, model, approval, iterate)
+            Execution (retry, budget)
           </AccordionTrigger>
           <AccordionContent className={STAGE_SECTION_CONTENT_CLASS}>
             <div className="flex flex-col gap-1.5">
@@ -1145,60 +1164,49 @@ export function StageInspector({
                 onChange={(budget) => onChange({ ...stage, budget })}
               />
             </div>
-
-            <div className="flex flex-col gap-1.5">
-              <InfoHeading info="Pins this stage to a specific provider/model/version, overriding the blueprint or channel's default. Leave fields unset to inherit the default at run time.">
-                Model
-              </InfoHeading>
-              <ModelPinEditor
-                value={stage.model}
-                onChange={(model) => onChange({ ...stage, model })}
-              />
-              <IssueList issues={modelIssues} />
-            </div>
-
-            <div className="flex flex-col gap-1.5">
-              <InfoHeading info="Optional condition gating whether this stage runs at all. When set, the stage is skipped unless the named blueprint Input equals the given value.">
-                Enabled when
-              </InfoHeading>
-              <EnabledWhenEditor
-                enabledWhen={stage.enabledWhen}
-                inputs={inputs}
-                onChange={(enabledWhen) => onChange({ ...stage, enabledWhen })}
-              />
-              <IssueList issues={enabledWhenIssues} />
-            </div>
-
-            <div className="flex flex-col gap-1.5">
-              <InfoHeading info="Optional human-in-the-loop gate. When set, the run pauses after this stage (or after each item, in item mode) for a person to approve or reject before continuing.">
-                Approval
-              </InfoHeading>
-              <ApprovalEditor
-                approval={stage.approval}
-                graph={graph}
-                onChange={(approval) => onChange({ ...stage, approval })}
-              />
-              <IssueList issues={approvalIssues} />
-            </div>
-
-            <div className="flex flex-col gap-1.5">
-              <InfoHeading info="Loops this stage once per item in an array, in order — item i may consume item i-1's result, but nothing runs in parallel. Leave unset to run this stage once.">
-                Iterate
-              </InfoHeading>
-              <IterateEditor
-                iterate={stage.iterate}
-                stageIndex={stageIndex}
-                graph={graph}
-                inputs={inputs}
-                roles={roles}
-                assets={assets}
-                onChange={(iterate) => onChange({ ...stage, iterate })}
-              />
-              <IssueList issues={iterateIssues} />
-            </div>
           </AccordionContent>
         </AccordionItem>
       </Accordion>
+
+      <div className="flex flex-col gap-1.5">
+        <InfoHeading info="Optional condition gating whether this stage runs at all. When set, the stage is skipped unless the named blueprint Input equals the given value.">
+          Enabled when
+        </InfoHeading>
+        <EnabledWhenEditor
+          enabledWhen={stage.enabledWhen}
+          inputs={inputs}
+          onChange={(enabledWhen) => onChange({ ...stage, enabledWhen })}
+        />
+        <IssueList issues={enabledWhenIssues} />
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <InfoHeading info="Optional human-in-the-loop gate. When set, the run pauses after this stage (or after each item, in item mode) for a person to approve or reject before continuing.">
+          Approval
+        </InfoHeading>
+        <ApprovalEditor
+          approval={stage.approval}
+          graph={graph}
+          onChange={(approval) => onChange({ ...stage, approval })}
+        />
+        <IssueList issues={approvalIssues} />
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <InfoHeading info="Loops this stage once per item in an array, in order — item i may consume item i-1's result, but nothing runs in parallel. Leave unset to run this stage once.">
+          Iterate
+        </InfoHeading>
+        <IterateEditor
+          iterate={stage.iterate}
+          stageIndex={stageIndex}
+          graph={graph}
+          inputs={inputs}
+          roles={roles}
+          assets={assets}
+          onChange={(iterate) => onChange({ ...stage, iterate })}
+        />
+        <IssueList issues={iterateIssues} />
+      </div>
     </section>
   );
 }
