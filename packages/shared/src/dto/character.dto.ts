@@ -42,3 +42,20 @@ export type PromoteCharacterReferenceDto = z.infer<typeof PromoteCharacterRefere
 
 export const SetPrimaryCharacterReferenceDto = z.object({ blobId: z.string() });
 export type SetPrimaryCharacterReferenceDto = z.infer<typeof SetPrimaryCharacterReferenceDto>;
+
+/** `character` table row shape (`apps/api/src/db/schema/character.ts`), minus
+ * `lora` — untyped jsonb, not read/written by any current consumer. */
+export const CharacterDto = z.object({
+  id: z.string(),
+  ownerId: z.string(),
+  channelId: z.string().nullable(),
+  blueprintId: z.string().nullable(),
+  scope: z.enum(['channel', 'blueprint']),
+  name: z.string(),
+  description: z.string(),
+  referenceSet: z.array(ReferenceImage),
+  primaryRefId: z.string().nullable(),
+  readiness: z.enum(['draft', 'ready']),
+  createdAt: z.string(),
+});
+export type CharacterDto = z.infer<typeof CharacterDto>;
