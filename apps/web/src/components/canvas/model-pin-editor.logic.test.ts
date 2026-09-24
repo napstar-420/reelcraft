@@ -25,4 +25,22 @@ describe('Codex model pin editor logic', () => {
       personality: 'concise',
     });
   });
+
+  it('retains normal version and params behavior for other providers', () => {
+    const openRouter = {
+      providerId: 'openrouter',
+      modelId: 'openai/example',
+      label: 'Example',
+      modality: 'text' as const,
+    };
+    expect(
+      nextModelPinForModel(
+        { provider: 'openrouter', version: 'snapshot', params: { reasoningEffort: 'raw' } },
+        openRouter,
+      ),
+    ).toMatchObject({ modelId: 'openai/example', version: 'snapshot' });
+    expect(visibleParams({ reasoningEffort: 'raw' }, 'openrouter')).toEqual({
+      reasoningEffort: 'raw',
+    });
+  });
 });

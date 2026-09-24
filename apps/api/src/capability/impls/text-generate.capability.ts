@@ -52,6 +52,7 @@ export class TextGenerateCapability implements CapabilityImpl<TextGenerateConfig
       params: ctx.config.params ?? {},
       renderedPrompt: ctx.renderedPrompt,
       system: ctx.systemPrompt,
+      output: ctx.output,
     });
   }
 
@@ -63,6 +64,7 @@ export class TextGenerateCapability implements CapabilityImpl<TextGenerateConfig
         params: ctx.config.params ?? {},
         renderedPrompt: ctx.renderedPrompt,
         system: ctx.systemPrompt,
+        output: ctx.output,
       },
       ctx.idempotencyKey,
     );

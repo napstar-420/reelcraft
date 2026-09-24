@@ -451,6 +451,7 @@ export class StageRunnerService {
   }
 
   private buildExecCtx(
+    stage: StageDef,
     ctx: StageAttemptContext,
     effective: EffectiveStageConfig,
     bindings: ResolvedBindings,
@@ -472,6 +473,7 @@ export class StageRunnerService {
       context: bindings.context,
       renderedPrompt,
       systemPrompt,
+      output: stage.output,
       idempotencyKey: this.idempotencyKey(ctx, ctx.itemIndex),
       logger: { log: () => {}, error: () => {} },
       ...(resources && { resources }),
@@ -513,6 +515,7 @@ export class StageRunnerService {
         ? await this.timelineResources.resolve(ctx.runId, bindings.slots.timeline)
         : undefined;
     const unpreparedExecCtx = this.buildExecCtx(
+      stage,
       ctx,
       effective,
       bindings,
@@ -643,7 +646,7 @@ export class StageRunnerService {
       stage.capability === 'timeline.render' && bindings.slots.timeline
         ? await this.timelineResources.resolve(ctx.runId, bindings.slots.timeline)
         : undefined;
-    const execCtx = this.buildExecCtx(ctx, effective, bindings, undefined, resources);
+    const execCtx = this.buildExecCtx(stage, ctx, effective, bindings, undefined, resources);
     const result = await capability.fetch(handle, execCtx);
     const output =
       stage.output.kind === 'timeline'

@@ -11,6 +11,10 @@ import { DeepgramInboxService } from './deepgram/deepgram-inbox.service';
 import { DeepgramController } from './deepgram/deepgram.controller';
 import { DbModule } from '../db/db.module';
 import { StorageModule } from '../storage/storage.module';
+import { EngineConfig } from '../config/engine-config';
+import { CodexAppServerClient } from './codex/codex-app-server.client';
+import { CodexJobLauncher } from './codex/codex-job-launcher';
+import { CodexProviderAdapter } from './codex/codex-provider.adapter';
 
 @Module({
   imports: [DbModule, StorageModule],
@@ -24,6 +28,17 @@ import { StorageModule } from '../storage/storage.module';
     FalAdapter,
     DeepgramAdapter,
     DeepgramInboxService,
+    CodexAppServerClient,
+    CodexJobLauncher,
+    {
+      provide: CodexProviderAdapter,
+      inject: [EngineConfig, CodexAppServerClient, CodexJobLauncher],
+      useFactory: (
+        config: EngineConfig,
+        models: CodexAppServerClient,
+        launcher: CodexJobLauncher,
+      ) => new CodexProviderAdapter(config, models, launcher),
+    },
   ],
   controllers: [DeepgramController],
   exports: [
@@ -33,6 +48,7 @@ import { StorageModule } from '../storage/storage.module';
     ElevenLabsAdapter,
     FalAdapter,
     DeepgramAdapter,
+    CodexProviderAdapter,
   ],
 })
 export class ProviderModule implements OnModuleInit {
@@ -43,6 +59,7 @@ export class ProviderModule implements OnModuleInit {
     private readonly elevenlabs: ElevenLabsAdapter,
     private readonly fal: FalAdapter,
     private readonly deepgram: DeepgramAdapter,
+    private readonly codex: CodexProviderAdapter,
   ) {}
 
   onModuleInit(): void {
@@ -51,5 +68,6 @@ export class ProviderModule implements OnModuleInit {
     this.registry.register(this.elevenlabs);
     this.registry.register(this.fal);
     this.registry.register(this.deepgram);
+    this.registry.register(this.codex);
   }
 }

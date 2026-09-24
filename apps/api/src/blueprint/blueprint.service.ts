@@ -114,6 +114,7 @@ export class BlueprintService {
       charactersById,
     });
     issues.push(...(await this.validateReferenceLimits(dto, blueprintRow.defaults as ConfigLayer)));
+    issues.push(...(await this.validateCodexPins(dto, blueprintRow.defaults as ConfigLayer)));
     const runnable = issues.every((i) => i.severity !== 'error');
     return { issues, runnable };
   }
@@ -194,6 +195,51 @@ export class BlueprintService {
     );
   }
 
+  private async validateCodexPins(
+    dto: CreateBlueprintVersionDto,
+    channelDefaults: ConfigLayer,
+  ): Promise<ValidationIssue[]> {
+    const config = this.configResolver.resolveRunConfig({
+      graph: dto.graph,
+      engine: engineDefaults(this.engineConfig),
+      channelDefaults,
+      blueprintDefaults: dto.defaults,
+    });
+    const issues: ValidationIssue[] = [];
+    for (const stage of dto.graph) {
+      const pin = config[stage.key]?.model;
+      if (stage.capability !== 'text.generate' || pin?.provider !== 'codex') continue;
+      try {
+        const model = (await this.providers.get('codex').listModels()).find(
+          (candidate) => candidate.modelId === pin.modelId,
+        );
+        const effort = pin.params?.reasoningEffort;
+        if (!model) {
+          issues.push({
+            path: `stages.${stage.key}.model.modelId`,
+            message: `Codex model "${String(pin.modelId)}" is not available for the authenticated CLI`,
+            severity: 'error',
+          });
+        } else if (
+          typeof effort !== 'string' ||
+          !model.supportedReasoningEfforts?.includes(effort)
+        ) {
+          issues.push({
+            path: `stages.${stage.key}.model.params.reasoningEffort`,
+            message: `reasoning effort "${String(effort)}" is not supported by Codex model "${model.modelId}"`,
+            severity: 'error',
+          });
+        }
+      } catch (error) {
+        issues.push({
+          path: `stages.${stage.key}.model`,
+          message: `Codex model discovery failed: ${(error as Error).message}`,
+          severity: 'error',
+        });
+      }
+    }
+    return issues;
+  }
   /** Validate the authored selection against the same merged model pins a
    * run will use. This rejects over-limit blueprints at save time instead of
    * letting providers silently drop identity references. */

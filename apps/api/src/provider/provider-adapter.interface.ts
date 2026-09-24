@@ -1,9 +1,17 @@
-import type { CostEstimate, JobHandle, JobStatus, ModelCapabilities } from '@reelcraft/shared';
+import type {
+  CostEstimate,
+  JobHandle,
+  JobStatus,
+  ModelCapabilities,
+  OutputDef,
+} from '@reelcraft/shared';
 
 export interface ModelInfo {
   modelId: string;
   label: string;
   capabilities: ModelCapabilities;
+  supportedReasoningEfforts?: string[];
+  defaultReasoningEffort?: string;
 }
 
 export interface ProviderRequest {
@@ -11,6 +19,7 @@ export interface ProviderRequest {
   params: Record<string, unknown>;
   renderedPrompt?: string | undefined;
   system?: string | undefined;
+  output?: OutputDef | undefined;
 }
 
 export interface ProviderResult {

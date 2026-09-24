@@ -26,6 +26,7 @@ describe('Codex command construction', () => {
     expect(args).not.toContain('sandbox_mode="danger-full-access"');
     expect(args).not.toContain('model="must-not-win"');
     expect(args).toContain('--output-schema');
+    expect(args).toContain('--skip-git-repo-check');
     expect(args.at(-1)).toBe('-');
   });
 

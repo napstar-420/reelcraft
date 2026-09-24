@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { api } from '../../api/client';
 import { TypedValueInput } from './TypedValueInput';
 import { InfoHeading, InfoLabel } from './info-label';
+import { nextModelPinForModel } from './model-pin-editor.logic';
 import type { PartialModelPin } from '@reelcraft/shared';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -24,11 +25,13 @@ function nextFreeKey(existing: Record<string, unknown>, prefix: string): string 
 function ParamsEditor({
   params,
   onChange,
+  hiddenKeys = [],
 }: {
   params: Record<string, unknown> | undefined;
   onChange: (params: Record<string, unknown>) => void;
+  hiddenKeys?: string[];
 }) {
-  const entries = Object.entries(params ?? {});
+  const entries = Object.entries(params ?? {}).filter(([key]) => !hiddenKeys.includes(key));
 
   function updateKey(oldKey: string, newKey: string) {
     const { [oldKey]: value, ...rest } = params ?? {};
@@ -101,6 +104,7 @@ export function ModelPinEditor({ value, onChange, clearable = true }: ModelPinEd
     queryFn: () => api.listModelsForProvider(provider),
     enabled: !!provider,
   });
+  const selectedModel = models.data?.find((model) => model.modelId === value?.modelId);
 
   function set(patch: Partial<PartialModelPin>) {
     onChange({ ...value, ...patch });
@@ -114,9 +118,10 @@ export function ModelPinEditor({ value, onChange, clearable = true }: ModelPinEd
         </InfoLabel>
         <Select
           value={provider || UNSET}
-          onValueChange={(next) =>
-            set({ provider: next === UNSET ? undefined : next, modelId: undefined })
-          }
+          onValueChange={(next) => {
+            const nextProvider = next === UNSET ? undefined : next;
+            set({ provider: nextProvider, modelId: undefined, version: undefined });
+          }}
         >
           <SelectTrigger size="sm" className="w-56">
             <SelectValue placeholder="Select a provider…" />
@@ -136,7 +141,15 @@ export function ModelPinEditor({ value, onChange, clearable = true }: ModelPinEd
         <InfoLabel info="The specific model id offered by the selected provider.">Model</InfoLabel>
         <Select
           value={value?.modelId || UNSET}
-          onValueChange={(next) => set({ modelId: next === UNSET ? undefined : next })}
+          onValueChange={(next) => {
+            if (next === UNSET) return set({ modelId: undefined });
+            const model = models.data?.find((candidate) => candidate.modelId === next);
+            if (model) {
+              onChange(nextModelPinForModel(value ?? { provider }, model));
+            } else {
+              set({ modelId: next });
+            }
+          }}
           disabled={!provider}
         >
           <SelectTrigger size="sm" className="w-56">
@@ -153,23 +166,57 @@ export function ModelPinEditor({ value, onChange, clearable = true }: ModelPinEd
         </Select>
       </div>
 
-      <div className="flex flex-col gap-1.5">
-        <InfoLabel info="Optional pinned model version/snapshot string, if the provider supports one. Leave blank to use the provider's default version.">
-          Version
-        </InfoLabel>
-        <Input
-          type="text"
-          className="w-56"
-          value={value?.version ?? ''}
-          onChange={(e) => set({ version: e.target.value || undefined })}
-        />
-      </div>
+      {provider === 'codex' ? (
+        <div className="flex flex-col gap-1.5">
+          <InfoLabel info="Reasoning effort supported by the selected Codex model.">
+            Effort
+          </InfoLabel>
+          <Select
+            value={
+              typeof value?.params?.reasoningEffort === 'string'
+                ? value.params.reasoningEffort
+                : UNSET
+            }
+            onValueChange={(reasoningEffort) =>
+              set({ params: { ...(value?.params ?? {}), reasoningEffort } })
+            }
+            disabled={!selectedModel}
+          >
+            <SelectTrigger size="sm" className="w-56">
+              <SelectValue placeholder="Select effort…" />
+            </SelectTrigger>
+            <SelectContent>
+              {selectedModel?.supportedReasoningEfforts?.map((effort) => (
+                <SelectItem key={effort} value={effort}>
+                  {effort}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-1.5">
+          <InfoLabel info="Optional pinned model version/snapshot string, if the provider supports one. Leave blank to use the provider's default version.">
+            Version
+          </InfoLabel>
+          <Input
+            type="text"
+            className="w-56"
+            value={value?.version ?? ''}
+            onChange={(e) => set({ version: e.target.value || undefined })}
+          />
+        </div>
+      )}
 
       <div className="flex flex-col gap-1.5">
         <InfoHeading info="Extra provider-specific call parameters (e.g. max_tokens, temperature) merged into every request this stage — or its quality control pass — makes.">
           Params
         </InfoHeading>
-        <ParamsEditor params={value?.params} onChange={(params) => set({ params })} />
+        <ParamsEditor
+          params={value?.params}
+          hiddenKeys={provider === 'codex' ? ['reasoningEffort'] : []}
+          onChange={(params) => set({ params })}
+        />
       </div>
 
       {clearable && (

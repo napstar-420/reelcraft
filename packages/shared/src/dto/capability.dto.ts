@@ -36,5 +36,7 @@ export const ModelInfoDto = z.object({
   modelId: z.string(),
   label: z.string(),
   modality: Modality,
+  supportedReasoningEfforts: z.array(z.string()).optional(),
+  defaultReasoningEffort: z.string().optional(),
 });
 export type ModelInfoDto = z.infer<typeof ModelInfoDto>;

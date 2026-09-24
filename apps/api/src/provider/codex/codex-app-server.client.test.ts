@@ -91,4 +91,47 @@ describe('CodexAppServerClient', () => {
       },
     ]);
   });
+
+  it('caches the authenticated catalog briefly and refreshes after expiry', async () => {
+    const now = vi.spyOn(Date, 'now').mockReturnValue(100);
+    const spawn = vi.fn(() => fakeProcess([{ data: [], nextCursor: null }]));
+    const client = new CodexAppServerClient(spawn as never, 1_000, 30_000);
+    await client.listModels();
+    await client.listModels();
+    expect(spawn).toHaveBeenCalledTimes(1);
+    now.mockReturnValue(30_101);
+    await client.listModels();
+    expect(spawn).toHaveBeenCalledTimes(2);
+    now.mockRestore();
+  });
+
+  it('reports authentication failures clearly', async () => {
+    const spawn = vi.fn(() => {
+      const proc = new EventEmitter() as EventEmitter & {
+        stdin: PassThrough;
+        stdout: PassThrough;
+        stderr: PassThrough;
+        kill: ReturnType<typeof vi.fn>;
+      };
+      proc.stdin = new PassThrough();
+      proc.stdout = new PassThrough();
+      proc.stderr = new PassThrough();
+      proc.kill = vi.fn();
+      proc.stdin.on('data', (chunk) => {
+        for (const line of chunk.toString().trim().split('\n')) {
+          const message = JSON.parse(line) as { id?: number; method: string };
+          if (message.method === 'initialize') {
+            proc.stdout.write(`${JSON.stringify({ id: message.id, result: {} })}\n`);
+          } else if (message.method === 'model/list') {
+            proc.stdout.write(
+              `${JSON.stringify({ id: message.id, error: { message: 'not logged in' } })}\n`,
+            );
+          }
+        }
+      });
+      return proc;
+    });
+    const client = new CodexAppServerClient(spawn as never, 1_000);
+    await expect(client.listModels()).rejects.toThrow(/not logged in/i);
+  });
 });

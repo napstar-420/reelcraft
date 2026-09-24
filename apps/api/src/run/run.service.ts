@@ -147,6 +147,7 @@ export class RunService {
       current.resolvedConfig as Record<string, ConfigLayer>,
       roleBindings,
     );
+    await this.assertCodexPins(graph, current.resolvedConfig as Record<string, ConfigLayer>);
     const mutation = await this.runMutation.withLockedRun(
       runId,
       'start',
@@ -540,5 +541,35 @@ export class RunService {
       .innerJoin(stageExecution, eq(stageAttempt.stageExecutionId, stageExecution.id))
       .where(and(eq(stageExecution.runId, runId), eq(stageExecution.stageKey, stageKey)))
       .orderBy(asc(stageAttempt.attemptNo));
+  }
+  private async assertCodexPins(
+    graph: StageDef[],
+    resolvedConfig: Record<string, ConfigLayer>,
+  ): Promise<void> {
+    for (const stage of graph) {
+      const pin = resolvedConfig[stage.key]?.model;
+      if (stage.capability !== 'text.generate' || pin?.provider !== 'codex') continue;
+      let model;
+      try {
+        model = (await this.providers.get('codex').listModels()).find(
+          (candidate) => candidate.modelId === pin.modelId,
+        );
+      } catch (error) {
+        throw new ConflictException(
+          `RunService.start: Codex model discovery failed: ${(error as Error).message}`,
+        );
+      }
+      if (!model) {
+        throw new ConflictException(
+          `RunService.start: Codex model "${String(pin.modelId)}" is unavailable`,
+        );
+      }
+      const effort = pin.params?.reasoningEffort;
+      if (typeof effort !== 'string' || !model.supportedReasoningEfforts?.includes(effort)) {
+        throw new ConflictException(
+          `RunService.start: reasoning effort "${String(effort)}" is unsupported by Codex model "${model.modelId}"`,
+        );
+      }
+    }
   }
 }

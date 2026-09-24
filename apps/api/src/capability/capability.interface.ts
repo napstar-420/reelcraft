@@ -1,6 +1,7 @@
 import type {
   JsonSchema,
   ModelCapabilities,
+  OutputDef,
   OutputKind,
   SlotDef,
   StageDef,
@@ -24,6 +25,7 @@ export interface ExecCtx<Cfg> {
   context: Record<string, unknown>;
   renderedPrompt?: string | undefined;
   systemPrompt?: string | undefined;
+  output?: OutputDef | undefined;
   idempotencyKey: string;
   logger: { log: (msg: string) => void; error: (msg: string, err?: unknown) => void };
   resources?: Record<

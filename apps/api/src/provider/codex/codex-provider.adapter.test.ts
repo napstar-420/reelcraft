@@ -18,7 +18,10 @@ async function fixture() {
   };
   const launcher = {
     launch: vi.fn(async ({ jobDir }: { jobDir: string }) => {
-      await writeFile(join(jobDir, 'status.json'), JSON.stringify({ state: 'succeeded', exitCode: 0 }));
+      await writeFile(
+        join(jobDir, 'status.json'),
+        JSON.stringify({ state: 'succeeded', exitCode: 0 }),
+      );
       await writeFile(join(jobDir, 'result.txt'), 'hello');
       return 123;
     }),
@@ -71,14 +74,17 @@ describe('CodexProviderAdapter', () => {
   it('parses structured output and writes the requested schema', async () => {
     const { adapter, launcher } = await fixture();
     launcher.launch.mockImplementationOnce(async ({ jobDir }: { jobDir: string }) => {
-      await writeFile(join(jobDir, 'status.json'), JSON.stringify({ state: 'succeeded', exitCode: 0 }));
+      await writeFile(
+        join(jobDir, 'status.json'),
+        JSON.stringify({ state: 'succeeded', exitCode: 0 }),
+      );
       await writeFile(join(jobDir, 'result.txt'), '{"answer":42}');
       return 456;
     });
     const handle = await adapter.submit(
       {
         modelId: 'gpt-example',
-        params: { reasoningEffort: 'low' },
+        params: { reasoningEffort: 'low', apiKey: 'must-not-persist' },
         renderedPrompt: 'answer',
         output: {
           kind: 'data',
@@ -96,9 +102,13 @@ describe('CodexProviderAdapter', () => {
       expect.objectContaining({ output: { answer: 42 } }),
     );
     const manifest = JSON.parse(
-      await readFile(join((launcher.launch.mock.calls[0]?.[0] as { jobDir: string }).jobDir, 'manifest.json'), 'utf8'),
-    ) as { outputSchemaPath?: string };
+      await readFile(
+        join((launcher.launch.mock.calls[0]?.[0] as { jobDir: string }).jobDir, 'manifest.json'),
+        'utf8',
+      ),
+    ) as { outputSchemaPath?: string; params: Record<string, unknown> };
     expect(manifest.outputSchemaPath).toMatch(/schema\.json$/);
+    expect(manifest.params.apiKey).toBe('[REDACTED]');
   });
 
   it('rejects unsupported efforts before launching', async () => {
@@ -127,8 +137,113 @@ describe('CodexProviderAdapter', () => {
       },
       'cancel-key',
     );
+    const jobDir = (launcher.launch.mock.calls[0]?.[0] as { jobDir: string }).jobDir;
+    await writeFile(join(jobDir, 'status.json'), JSON.stringify({ state: 'running', pid: 123 }));
     await expect(adapter.cancel(handle)).resolves.toEqual({ confirmed: true, billed: false });
     await expect(adapter.cancel(handle)).resolves.toEqual({ confirmed: true, billed: false });
     expect(launcher.cancel).toHaveBeenCalledTimes(1);
+  });
+
+  it('recovers a completed durable job after an API restart', async () => {
+    const { root, models, launcher, adapter } = await fixture();
+    const request = {
+      modelId: 'gpt-example',
+      params: { reasoningEffort: 'low' },
+      output: { kind: 'text' as const },
+    };
+    const handle = await adapter.submit(request, 'restart-key');
+    const restarted = new CodexProviderAdapter(
+      { workspaceRoot: root } as never,
+      models as never,
+      launcher as never,
+    );
+    await expect(restarted.poll(handle)).resolves.toEqual({ done: true, outcome: 'succeeded' });
+    await expect(restarted.fetch(handle)).resolves.toEqual(
+      expect.objectContaining({ output: 'hello' }),
+    );
+  });
+
+  it('classifies a lost runner after restart as retryable infrastructure failure', async () => {
+    const { adapter, launcher } = await fixture();
+    const handle = await adapter.submit(
+      {
+        modelId: 'gpt-example',
+        params: { reasoningEffort: 'low' },
+        output: { kind: 'text' },
+      },
+      'lost-key',
+    );
+    const jobDir = (launcher.launch.mock.calls[0]?.[0] as { jobDir: string }).jobDir;
+    await writeFile(
+      join(jobDir, 'status.json'),
+      JSON.stringify({ state: 'queued', createdAt: new Date(0).toISOString() }),
+    );
+    await expect(adapter.poll(handle)).resolves.toEqual(
+      expect.objectContaining({
+        done: true,
+        outcome: 'failed',
+        retryable: true,
+        failureClass: 'infrastructure',
+      }),
+    );
+    await writeFile(
+      join(jobDir, 'status.json'),
+      JSON.stringify({ state: 'running', pid: 999_999_999 }),
+    );
+    await expect(adapter.poll(handle)).resolves.toEqual(
+      expect.objectContaining({
+        done: true,
+        outcome: 'failed',
+        retryable: true,
+        failureClass: 'infrastructure',
+      }),
+    );
+  });
+
+  it('surfaces provider process failures and malformed structured output', async () => {
+    const { adapter, launcher } = await fixture();
+    const failed = await adapter.submit(
+      {
+        modelId: 'gpt-example',
+        params: { reasoningEffort: 'low' },
+        output: { kind: 'text' },
+      },
+      'failed-key',
+    );
+    const failedDir = (launcher.launch.mock.calls[0]?.[0] as { jobDir: string }).jobDir;
+    await writeFile(
+      join(failedDir, 'status.json'),
+      JSON.stringify({ state: 'failed', reason: 'exit 7' }),
+    );
+    await expect(adapter.poll(failed)).resolves.toEqual(
+      expect.objectContaining({ done: true, outcome: 'failed', retryable: false }),
+    );
+
+    const malformed = await adapter.submit(
+      {
+        modelId: 'gpt-example',
+        params: { reasoningEffort: 'low' },
+        output: { kind: 'data', schema: { type: 'object' } },
+      },
+      'malformed-key',
+    );
+    const malformedDir = (launcher.launch.mock.calls[1]?.[0] as { jobDir: string }).jobDir;
+    await writeFile(join(malformedDir, 'result.txt'), '{not-json');
+    await expect(adapter.fetch(malformed)).rejects.toThrow(/malformed structured JSON/i);
+  });
+
+  it('rejects final messages above the durable output limit', async () => {
+    const { adapter, launcher } = await fixture();
+    const handle = await adapter.submit(
+      {
+        modelId: 'gpt-example',
+        params: { reasoningEffort: 'low' },
+        output: { kind: 'text' },
+      },
+      'oversized-key',
+    );
+    const jobDir = (launcher.launch.mock.calls[0]?.[0] as { jobDir: string }).jobDir;
+    await writeFile(join(jobDir, 'result.txt'), 'x'.repeat(4 * 1024 * 1024 + 1));
+    await expect(adapter.fetch(handle)).rejects.toThrow(/4 MiB output limit/i);
   });
 });

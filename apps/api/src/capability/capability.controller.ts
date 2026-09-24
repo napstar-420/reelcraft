@@ -47,8 +47,14 @@ export class CapabilityController {
   }
 
   @Get('providers/:id/models')
-  listModels(@Param('id') id: string) {
-    return this.providers.get(id).listModels();
+  async listModels(@Param('id') id: string) {
+    const provider = this.providers.get(id);
+    const models = await provider.listModels();
+    return models.map((model) => ({
+      ...model,
+      providerId: id,
+      modality: provider.modalities[0] ?? 'text',
+    }));
   }
 
   @Post('capabilities/:key/resolve')
