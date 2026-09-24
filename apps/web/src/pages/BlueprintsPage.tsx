@@ -56,7 +56,7 @@ export function BlueprintsPage() {
                 <CardTitle>{t.name}</CardTitle>
                 <CardDescription>{t.description}</CardDescription>
               </CardHeader>
-              <CardFooter>
+              <CardFooter className="mt-auto">
                 <Button
                   onClick={() => instantiateAndRun.mutate(t.id)}
                   disabled={instantiateAndRun.isPending}
