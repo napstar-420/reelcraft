@@ -243,7 +243,7 @@ export function ChecksEditor({
 
           <CardContent className="flex flex-col gap-3">
             {check.type === 'builtin' ? (
-              <div className="flex flex-col gap-2">
+              <div className="flex flex-col gap-3">
                 <div className="flex flex-col gap-1.5">
                   <Label>Builtin key</Label>
                   <Select

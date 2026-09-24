@@ -9,5 +9,9 @@ export const SECTION_HEADING_CLASS =
  * Data, Checks & QC, Execution) a secondary background so they read as
  * section headers — scoped to the stage inspector only, not the shared
  * Accordion component used elsewhere (blueprint settings, template
- * library). */
-export const STAGE_SECTION_TRIGGER_CLASS = 'bg-secondary px-3 text-secondary-foreground';
+ * library). `-mx-3` cancels the AccordionItem's own `px-3` so the
+ * background spans the item's full width instead of sitting inset with
+ * gaps on either side; the item needs `overflow-hidden` (see
+ * StageInspector.tsx) so the now-square trigger corners clip to the
+ * item's own rounded corners. */
+export const STAGE_SECTION_TRIGGER_CLASS = '-mx-3 bg-secondary px-3 text-secondary-foreground';

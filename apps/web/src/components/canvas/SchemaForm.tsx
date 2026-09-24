@@ -120,7 +120,7 @@ function ArrayForm({
   const canRemove = schema.minItems === undefined || items.length > schema.minItems;
 
   return (
-    <div className="flex flex-col gap-2 border-l-2 border-border pl-3">
+    <div className="flex flex-col gap-3 border-l-2 border-border pl-3">
       {schema.description && <p className="text-sm text-muted-foreground">{schema.description}</p>}
       {items.map((item, index) => (
         <Card key={index} size="sm">

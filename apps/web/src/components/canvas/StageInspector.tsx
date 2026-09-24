@@ -771,7 +771,10 @@ export function StageInspector({
       <IssueList issues={stageLevelIssues} />
 
       <Accordion type="multiple" defaultValue={ACCORDION_SECTIONS} className="flex flex-col gap-2">
-        <AccordionItem value="basics" className="rounded-xl border border-border px-3">
+        <AccordionItem
+          value="basics"
+          className="rounded-xl border border-border overflow-hidden px-3"
+        >
           <AccordionTrigger className={STAGE_SECTION_TRIGGER_CLASS}>Basics</AccordionTrigger>
           <AccordionContent className="flex flex-col gap-4">
             <div className="flex flex-col gap-1.5">
@@ -815,7 +818,10 @@ export function StageInspector({
           </AccordionContent>
         </AccordionItem>
 
-        <AccordionItem value="data" className="rounded-xl border border-border px-3">
+        <AccordionItem
+          value="data"
+          className="rounded-xl border border-border overflow-hidden px-3"
+        >
           <AccordionTrigger className={STAGE_SECTION_TRIGGER_CLASS}>
             Data (slots, context, output, writes)
           </AccordionTrigger>
@@ -938,7 +944,10 @@ export function StageInspector({
           </AccordionContent>
         </AccordionItem>
 
-        <AccordionItem value="checks-qc" className="rounded-xl border border-border px-3">
+        <AccordionItem
+          value="checks-qc"
+          className="rounded-xl border border-border overflow-hidden px-3"
+        >
           <AccordionTrigger className={STAGE_SECTION_TRIGGER_CLASS}>
             Checks &amp; QC
           </AccordionTrigger>
@@ -966,7 +975,10 @@ export function StageInspector({
           </AccordionContent>
         </AccordionItem>
 
-        <AccordionItem value="execution" className="rounded-xl border border-border px-3">
+        <AccordionItem
+          value="execution"
+          className="rounded-xl border border-border overflow-hidden px-3"
+        >
           <AccordionTrigger className={STAGE_SECTION_TRIGGER_CLASS}>
             Execution (retry, budget, model, approval, iterate)
           </AccordionTrigger>
