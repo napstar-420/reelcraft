@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { and, eq, inArray, lt, notExists, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
-import type { LedgerEntryCategory } from '@reefcraft/shared';
+import type { LedgerEntryCategory } from '@reelcraft/shared';
 import { ulid } from '../common/ulid';
 import { fromUsd, toUsd } from '../common/money';
 import { DRIZZLE, type Db, type Tx } from '../db/drizzle.provider';

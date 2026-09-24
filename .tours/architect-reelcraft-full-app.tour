@@ -1,0 +1,165 @@
+{
+  "$schema": "https://aka.ms/codetour-schema",
+  "title": "Reelcraft: The Whole App, End to End",
+  "description": "A from-scratch walkthrough of Reelcraft as if you wrote every line yourself: shared contracts, the NestJS engine, durable Inngest orchestration, capabilities/providers, artifacts, and the React control-room UI.",
+  "steps": [
+    {
+      "title": "What you're building",
+      "description": "SITUATION: Reelcraft is a general-purpose AI video/reel generation engine. A user defines a Blueprint (a graph of Stages), instantiates it into a Run, and the engine walks the Stages sequentially, calling out to LLM/media/human capabilities, until a finished video comes out the other end.\n\nMECHANISM: TypeScript end to end — NestJS API (`apps/api`), React+Vite UI (`apps/web`), Postgres+Drizzle for state, self-hosted Inngest for durable orchestration, MinIO for blobs, Zod for every contract.\n\nIMPLICATION: because Runs are long-running and must survive restarts, almost nothing here is 'call a function and get a result' — it's 'commit a durable event, let Inngest replay you back in.' That single fact shapes most of what follows.\n\nGOTCHA: the README (open alongside this tour) documents ~20 hard-won gotchas — CommonJS-not-ESM, the `artifact_active_uq` ordering, `DbModule` not being `@Global()`. Skim it once; several tour steps below reference it directly."
+    },
+    {
+      "directory": "packages/shared",
+      "title": "Start at the contracts, not the code",
+      "description": "SITUATION: `packages/shared` is the Zod source of truth for every type both the API and the web app agree on — StageDef, Ref, ConfigLayer, DTOs, Timeline, and more.\n\nMECHANISM: pure schema definitions, zero I/O, zero imports from `apps/*` (that boundary is enforced by an eslint rule). API and web both import from `@reelcraft/shared` rather than redefining shapes.\n\nIMPLICATION: when a request or a run's stored config fails validation, this is where to look — the runtime error almost always traces back to one of these `z.object(...)` shapes.\n\nGOTCHA: it round-trips through two different bundlers (`tsc` for the API, Vite for the web), which is the root cause of a subtle module-identity bug documented in the README (`z.record` silently misbehaving across compiled `dist/` boundaries) — don't wrap a shared schema in a freshly-imported `z.record`/`z.union` inside API test code."
+    },
+    {
+      "file": "packages/shared/src/stage-def.ts",
+      "line": 18,
+      "title": "StageDef: the atomic unit of work",
+      "description": "SITUATION: `StageDef` is what a user actually authors — one node in a Blueprint's graph.\n\nMECHANISM: `capability` names which capability implementation runs it; `slots`/`context` are `Ref`s pointing at other stages' outputs or run inputs; `iterate` (renamed from an earlier `fanOut`) turns a stage into a sequential per-item loop where item *i* may read item *i-1*'s output via `prevItem`.\n\nIMPLICATION: everything downstream — the orchestration engine, the validator, the canvas editor — is built to interpret this one shape. Understanding its fields here means the rest of the tour is just 'where each field gets read.'\n\nGOTCHA: `iterate` is explicitly sequential, never parallel — 'nothing runs in parallel' is a locked design decision, not a missing optimization. Also note `groupKey` inside `iterate` is reserved and never actually read (see the comment) — don't go looking for its implementation."
+    },
+    {
+      "directory": "apps/api/src/db/schema",
+      "title": "The 13 tables Stages become",
+      "description": "SITUATION: Drizzle schema for Postgres — the durable record of every Blueprint, Run, StageExecution, Artifact, and more.\n\nMECHANISM: one file per table (`run.ts`, `execution.ts`, `artifact.ts`, `blueprint.ts`, ...), composed in `index.ts`.\n\nIMPLICATION: this is the actual state machine. Nothing in the orchestration layer holds meaningful state in memory between steps — it's read from and written back to these tables on every durable step.\n\nGOTCHA: `blueprint.current_version_id` has no FK in the initial migration (a documented FK-cycle workaround, fixed in a follow-up migration) — don't 'fix' that by adding a naive circular FK without reading the README's note on it first."
+    },
+    {
+      "file": "apps/api/src/db/schema/run.ts",
+      "line": 8,
+      "title": "The `run` table",
+      "description": "SITUATION: one row per Run — its lifecycle state (`CREATED` → `RUNNING` → `COMPLETED`/`PAUSED_BUDGET`/`FAILED`, etc.) and a `revision` counter.\n\nMECHANISM: every operator mutation (start, retry, approve, cancel) bumps or checks `revision` — it's the optimistic-concurrency backbone for the preview-token system you'll see later in `run/preview-token.service.ts`.\n\nIMPLICATION: if you're ever debugging 'why did my mutation get rejected,' check whether the run's `revision` moved between when the operator fetched state and when they submitted the action."
+    },
+    {
+      "file": "apps/api/src/db/schema/execution.ts",
+      "line": 17,
+      "title": "`stage_execution`: one row per Stage per Run",
+      "description": "SITUATION: tracks a single Stage's progress within one Run — state, attempt count, output artifact.\n\nMECHANISM: notably has **no ordinal column** — execution order isn't stored per row, it's derived at runtime from the Blueprint's graph array order (you'll see exactly where next).\n\nGOTCHA: this is a deliberate omission, not an oversight — adding an ordinal column was considered and rejected in favor of an in-memory sort, because a run-start-time property didn't seem worth a migration. If you ever need per-row ordering here, check `orderStageExecutions` first before reaching for a schema change."
+    },
+    {
+      "file": "apps/api/src/app.module.ts",
+      "line": 11,
+      "title": "The 8 (of 14) top-level Nest modules wired at boot",
+      "description": "SITUATION: `AppModule` composes Config, Channel, Blueprint, Template, Capability, Check, Qc, and Run modules.\n\nMECHANISM: several other modules (`DbModule`, `ArtifactModule`, `OrchestrationModule`, `ProviderModule`, `StorageModule`, `SandboxModule`) aren't listed here because they're imported transitively by the modules that need them — `DbModule` in particular is deliberately **not** `@Global()`.\n\nIMPLICATION: if you add a new module that needs Drizzle access, you must import `DbModule` explicitly in it; it won't just be available.\n\nGOTCHA: this is a documented, intentional violation of what the design spec's prose says elsewhere — the spec also requires `CapabilityModule` to be unable to reach `db`/`run`/`blueprint` modules, and those two requirements can't both hold if `DbModule` were global. When in doubt, `DbModule`'s non-globalness wins."
+    },
+    {
+      "file": "apps/api/src/main.ts",
+      "line": 12,
+      "title": "Boot: two servers in one process",
+      "description": "SITUATION: `bootstrap()` creates the Nest app, then mounts Inngest's own HTTP handler at `/api/inngest` alongside the normal REST API.\n\nMECHANISM: `buildInngestFunctions(app)` (next stop) constructs every durable function with access to the Nest DI container, and `serve({ client, functions })` from `inngest/express` exposes them to the self-hosted Inngest server, which polls/pushes to this endpoint.\n\nIMPLICATION: the API process is simultaneously a normal REST server *and* an Inngest worker. If Inngest can't reach `/api/inngest` (wrong port, CORS, signing key mismatch), Runs will silently never progress even though the REST API looks healthy.\n\nGOTCHA: `app.use(json({ limit: '10mb' }))` — deliberately raised from Express's 100kb default, because Inngest's memoized step state grows with the Run and can legitimately exceed the default."
+    },
+    {
+      "directory": "apps/api/src/orchestration",
+      "title": "The durable execution engine",
+      "description": "SITUATION: this is the module that actually drives a Run forward — everything before this point was setup and contracts; this is the machine.\n\nMECHANISM: Inngest functions in `functions/` are durable, replayable step-functions; `stage-runner.service.ts` (1300+ lines) holds the actual per-stage execution logic they call into; `run-state.service.ts` centralizes state transitions.\n\nIMPLICATION: because Inngest functions replay from the start on every new step (memoizing prior `step.run`/`step.invoke` results), code in here must be safe to re-execute — side effects live in Postgres/MinIO, not in local variables that vanish on replay."
+    },
+    {
+      "file": "apps/api/src/orchestration/functions/run-orchestrate.fn.ts",
+      "line": 24,
+      "title": "`orderStageExecutions`: solving the missing-ordinal problem",
+      "description": "SITUATION: this is the answer to the gotcha two steps ago — `stage_execution` has no ordinal, so this pure function sorts execution rows into the order the Blueprint's `graph` array declares.\n\nMECHANISM: builds a `Map` from stage key → array index, sorts by it. Deliberately pure and exported so it's unit-testable without an Inngest test driver.\n\nIMPLICATION: 'Runs execute Stages strictly sequentially' isn't enforced by the database — it's enforced here, once, in memory, every time the orchestrate function runs or resumes."
+    },
+    {
+      "file": "apps/api/src/orchestration/functions/run-orchestrate.fn.ts",
+      "line": 62,
+      "title": "One function, three triggers: start, resume, and mid-flight re-entry",
+      "description": "SITUATION: `buildRunOrchestrateFunction` is keyed by `runId` for concurrency (one Run at a time) and cancels itself on a matching `run/cancelled` event.\n\nMECHANISM: it triggers on both `run/started` and `run/resumed` — the same unconditional 'mark running' step handles both a fresh start and un-pausing a `PAUSED_BUDGET` run, so there's no separate resume code path. The loop's skip condition isn't just `state === 'passed'`; it also checks `needsItemWork`, because an iterating stage can have `stage_execution.state === 'passed'` while individual `stage_item` rows are still `'stale'` after a targeted item-level retry.\n\nGOTCHA: if you ever 'simplify' that skip condition back down to a bare `state === 'passed'` check, you will silently strand stale items forever — read the long comment block above this function before touching it."
+    },
+    {
+      "file": "apps/api/src/orchestration/functions/stage-execute.fn.ts",
+      "line": 1,
+      "title": "`stage.execute`: one Stage, invoked durably",
+      "description": "SITUATION: this is the Inngest function `run.orchestrate` invokes (via `step.invoke`) for each Stage in order.\n\nMECHANISM: delegates the actual work to `StageRunnerService` — this file is the thin durable wrapper; the service next door is where capability dispatch, retries, checks, and QC actually happen.\n\nIMPLICATION: keep this file thin. Business logic that needs testing without an Inngest harness belongs in the service, not here — that's exactly why `stage-runner.service.ts` exists as a separate, directly-unit-testable class."
+    },
+    {
+      "directory": "apps/api/src/capability",
+      "title": "Capabilities: the plugin system for 'what a Stage does'",
+      "description": "SITUATION: a `StageDef.capability` string (like `text.generate` or `media.generate`) selects one of these implementations.\n\nMECHANISM: `impls/` holds one file per capability (`text-generate`, `media-generate`, `human-input`, `human-timeline-edit`, `assembly`, `subtitles-export`, `publish-stub`); each is registered via a `@Capability(key)` decorator, discovered at boot by `CapabilityRegistry`.\n\nIMPLICATION: adding a new kind of Stage behavior means adding a new file here and decorating it — you never touch the orchestration engine itself to add a capability.\n\nGOTCHA: `CapabilityModule` must not import `db`, `run`, or `blueprint` modules (enforced convention, see the `app.module.ts` step) — capabilities are meant to be a clean, engine-agnostic plugin surface."
+    },
+    {
+      "file": "apps/api/src/capability/capability.registry.ts",
+      "line": 17,
+      "title": "How a capability gets found at runtime",
+      "description": "SITUATION: `onModuleInit` scans every Nest-discovered provider for the `CAPABILITY_KEY_METADATA` the `@Capability()` decorator attaches, and throws immediately on a duplicate key.\n\nMECHANISM: this registry backs three consumers from one source: `GET /capabilities` (editor form generation), the Blueprint validator's type checking, and actual Stage execution — so there's exactly one place capability keys are ever mapped to implementations.\n\nIMPLICATION: a 'capability not found' error at runtime means either a typo in `StageDef.capability`, or the capability class isn't decorated/registered in its module's providers."
+    },
+    {
+      "directory": "apps/api/src/provider",
+      "title": "Providers: the plugin system for 'who actually does the work'",
+      "description": "SITUATION: one layer below capabilities — a capability like `media.generate` doesn't call OpenRouter or fal directly, it calls through `ProviderRegistry` to a named `ProviderAdapter`.\n\nMECHANISM: `fake/` is the default, deterministic, zero-cost adapter used everywhere in dev and tests; `openrouter/`, `elevenlabs/`, `fal/`, `deepgram/` are real adapters gated behind funded API keys.\n\nIMPLICATION: this split is why the whole app runs and tests green with zero credentials — swap the provider id in config, not the capability, to point a Stage at a real model."
+    },
+    {
+      "file": "apps/api/src/provider/fake/fake-provider.adapter.ts",
+      "line": 1,
+      "title": "FakeProviderAdapter: the engine's real default",
+      "description": "SITUATION: not a test stub bolted on the side — this is the adapter the README tells fresh-clone users to run against, with injectable failure modes for testing retry/error paths deliberately.\n\nMECHANISM: implements the same `ProviderAdapter` interface as the real adapters, so a Stage config can't tell the difference except by provider id.\n\nIMPLICATION: when verifying a change to the orchestration or capability layer, you almost never need real credentials — reproduce the scenario against `fake` first, and only reach for a real provider if the bug is provider-specific."
+    },
+    {
+      "directory": "apps/api/src/artifact",
+      "title": "Artifacts: every Stage's durable output",
+      "description": "SITUATION: whatever a Stage produces — text, structured data, or a media blob reference — becomes an `artifact` row, which is what downstream Stages' `Ref`s actually resolve to.\n\nMECHANISM: `artifact.service.ts` owns creation and the stale/active lifecycle; `media-artifact.service.ts`/`file-artifact.service.ts` specialize for media vs. structured output; `blob.controller.ts`/`blob.service.ts` expose the underlying bytes.\n\nIMPLICATION: 'invalidation' (retrying a Stage, editing an artifact manually) is fundamentally about superseding rows here, not deleting them — old artifacts are marked stale, never dropped, which is what makes provenance and rollback possible."
+    },
+    {
+      "file": "apps/api/src/artifact/artifact.service.ts",
+      "line": 50,
+      "title": "Artifacts are born stale — the one non-negotiable ordering rule in the app",
+      "description": "SITUATION: `artifact_active_uq` is a partial unique index enforcing 'at most one active artifact per (run, stage, item)' — and it cannot be `DEFERRABLE` in Postgres.\n\nMECHANISM: every attempt (including failing ones) inserts an artifact row with `stale: true`. `finalize()` (a few lines below, line 149) is the **only** method allowed to flip `stale` to `false`, and it must mark the old active row stale *before* inserting/activating the new one, inside one transaction — reverse that order and the unique index throws.\n\nGOTCHA: this is called out explicitly in the README as one of the sharpest edges in the codebase. If you ever write a new 'replace this artifact' code path, route it through `finalize()` rather than hand-rolling the stale/insert sequence."
+    },
+    {
+      "file": "apps/api/src/artifact/artifact.service.ts",
+      "line": 139,
+      "title": "`finalize()`: three writes, one transaction, fixed order",
+      "description": "SITUATION: beyond the stale-then-insert rule, `finalize()` also repoints `stage_execution.output_artifact_id` and — if given `applyWrites` — runs the Stage's Run Memory writes, all atomically.\n\nMECHANISM: `applyWrites` exists purely to dodge a module import cycle: `MemoryService` can't import `ArtifactService` directly, so `ArtifactService` accepts a callback and hands it the open transaction instead.\n\nIMPLICATION: memory writes landing in the same transaction as artifact finalization isn't an optimization — it's a correctness requirement (§6.3 in the design spec) so a crash can never leave memory updated but the artifact not-yet-active, or vice versa."
+    },
+    {
+      "directory": "apps/api/src/run",
+      "title": "Run control: the operator-facing surface",
+      "description": "SITUATION: the largest domain module by file count — everything an operator or the UI can *do* to a running video job: start, retry, approve/reject, edit an artifact, submit human input, raise budget, cancel.\n\nMECHANISM: split into focused services (`run-action.service.ts`, `human-action.service.ts`, `run-cancellation.service.ts`, `artifact-edit.service.ts`, `invalidation.service.ts`, `preview-token.service.ts`, `timeline-editor.service.ts`...) fronted by one `run.controller.ts`.\n\nIMPLICATION: 'the UI is a view over Run state, not the driver of it' (a rule in this project's CLAUDE.md) is enforced here — every mutation goes through a durable Postgres outbox and an Inngest wakeup event, never a direct in-memory state flip."
+    },
+    {
+      "file": "apps/api/src/run/run.controller.ts",
+      "line": 39,
+      "title": "Nine services behind one controller",
+      "description": "SITUATION: `RunController` doesn't implement logic itself — it's a thin dispatcher over `RunService`, `RunInputService`, `RunActionService`, `InvalidationService`, `HumanActionService`, `RunCancellationService`, `ArtifactEditService`, and `TimelineEditorService`.\n\nMECHANISM: each endpoint below this point (`POST /runs`, `/runs/:id/start`, `/stages/:key/retry`, `/stages/:key/approve`, etc.) is a one-line call into the matching service.\n\nIMPLICATION: if you're hunting for where a specific `POST /runs/...` endpoint's logic lives, skim this constructor's service list first, then jump straight to the matching `*.service.ts` — don't expect to find real logic in the controller file itself."
+    },
+    {
+      "title": "Previewed mutations: signed tokens bound to run revision",
+      "description": "SITUATION: per the README, mutations like a stage retry are first *previewed*, returning a signed token; the operator then re-submits the exact same payload with that token to confirm.\n\nMECHANISM: the token is bound to run revision, action, payload digest, expiry, and an invalidation fingerprint (`preview-token.service.ts`). If a competing mutation lands first — bumping the run's `revision` — the older preview token fails closed rather than silently applying to stale state.\n\nIMPLICATION: this is the concrete mechanism behind 'the durable wakeup/outbox drives run state, not the UI' — even a same-operator double-click can't race past this, because the second submission's token no longer matches current state.\n\nGOTCHA: approval and human-input waits are the exception — they do not expire, by design, since a human may take days to respond."
+    },
+    {
+      "directory": "packages/timeline-composition",
+      "title": "One Remotion composition, two callers",
+      "description": "SITUATION: the browser timeline editor's live preview and the server-side final render must produce pixel-identical output, so they share this single composition instead of maintaining two rendering implementations.\n\nMECHANISM: exports a React component driven by `TimelineCompositionProps` (`timeline`, `resources`, optional `timingMaps`) — `apps/render-worker` renders it headlessly via `@remotion/renderer`, while `apps/web`'s `TimelineEditorPage` renders the same component live in-browser for scrubbing/preview.\n\nIMPLICATION: any visual bug in the editor's preview and the exact same bug in the final render almost certainly traces to this one file, not two separate ones."
+    },
+    {
+      "file": "apps/render-worker/src/cli.ts",
+      "line": 12,
+      "title": "The render worker: a durable compute job, not a service",
+      "description": "SITUATION: this CLI is what `storage/compute-job.service.ts` and `compute-supervisor.ts` spawn as a subprocess when a `timeline.render` capability needs a final MP4.\n\nMECHANISM: reads a `Timeline` JSON and a resources map from disk, bundles the shared composition with `@remotion/bundler`, and calls `renderMedia` — draft quality uses `crf: 28`, final uses `crf: 18`.\n\nIMPLICATION: because it's a subprocess (not an in-process call), a render job surviving an API restart is a compute-job/supervisor concern, following the same 'durable, resumable' philosophy as the Inngest orchestration layer — it isn't accidental that both layers converge on 'never trust in-memory state to survive a restart.'"
+    },
+    {
+      "directory": "apps/web/src",
+      "title": "Crossing into the browser",
+      "description": "SITUATION: React 18 + Vite + React Router + TanStack Query + Tailwind v4/shadcn. In dev, Vite proxies `/api` straight to the Nest server on :3000.\n\nMECHANISM: `pages/` are routes, `components/` is UI (including the Blueprint canvas editor under `components/canvas/`), `api/client.ts` is the single typed boundary to the backend, `hooks/` wraps read/subscribe patterns.\n\nIMPLICATION: everything from here on is a *view* — the actual state machine you toured above lives entirely in Postgres/Inngest on the server."
+    },
+    {
+      "file": "apps/web/src/App.tsx",
+      "line": 24,
+      "title": "Routes, and one deliberate layout exception",
+      "description": "SITUATION: every route renders inside `AppShell` (sidebar + breadcrumbs) except the Timeline Editor, which needs full-bleed space for its media bin, player, and tracks.\n\nMECHANISM: `RoutedShell` checks `location.pathname.includes('/stages/')` to decide whether to skip the shell — a path-based check rather than a route-level flag.\n\nGOTCHA: `TimelineEditorPage` is lazy-loaded (`React.lazy`) specifically because it pulls in the Remotion player — keeping it out of the main bundle for every other route."
+    },
+    {
+      "file": "apps/web/src/hooks/useRun.ts",
+      "line": 5,
+      "title": "useRun: the concrete shape of 'UI is a view, not a driver'",
+      "description": "SITUATION: this hook is the clearest single piece of evidence for the project's core UI rule (stated explicitly in its own comment, citing REQ-2.8.4).\n\nMECHANISM: it only reads — `useQuery` fetches Run state, an `EventSource` subscribes to server-sent Run events and invalidates the query cache on each message, and a 3-second `setInterval` is a belt-and-suspenders fallback in case SSE drops silently. Nothing here calls a mutation or advances state.\n\nIMPLICATION: if you're tempted to make the UI 'smarter' by having it compute or predict Run progress client-side, that would violate the pattern this hook exists to enforce — always let a fetch from the server be the source of truth, even if that means a brief lag."
+    },
+    {
+      "directory": "apps/web/src/components/canvas",
+      "title": "The Blueprint canvas: authoring a StageDef graph visually",
+      "description": "SITUATION: this is where a user builds the exact `StageDef` shape you read at the very start of this tour, without hand-writing JSON.\n\nMECHANISM: `AddStageMenu` picks a capability (reading from the same `CapabilityRegistry` you toured on the server, via `GET /capabilities`), `StageInspector` edits one Stage's fields, `BindingPicker` wires up `Ref`s for `slots`/`context`, `SchemaForm`/`TypedValueInput` render config forms directly from a capability's JSON Schema, `ChecksEditor` and `ModelPinEditor` cover `checks`/`model`.\n\nIMPLICATION: the canvas is a UI generator over the shared Zod/JsonSchema contracts, not a hand-maintained form set — when a capability's `configSchema` changes on the server, the canvas's generated form changes with it automatically."
+    },
+    {
+      "title": "The full loop, now that you've seen every piece",
+      "description": "You can now trace one full request end to end: author a Blueprint in the canvas (`components/canvas`) → it validates against `StageDef` (`packages/shared`) and is stored via `blueprint.controller.ts` → instantiating a template creates `run` + `stage_execution` rows (`db/schema`) → `POST /runs/:id/start` commits a `run/started` wakeup → `run-orchestrate.fn.ts` walks stages in graph order, invoking `stage-execute.fn.ts` → `StageRunnerService` dispatches to a `CapabilityImpl` → the capability calls a `ProviderAdapter` (`fake` by default) → the result becomes a stale-then-active `artifact` via `ArtifactService.finalize()` → `useRun`'s SSE subscription picks up the change and the browser re-renders, having driven nothing itself.\n\nFrom here: pick any domain module under `apps/api/src/` you haven't opened yet (`qc/`, `check/`, `budget/`, `template/`) and read its `*.service.ts` — the same conventions (Zod contracts in, Drizzle transaction out, durable-first) repeat throughout."
+    }
+  ]
+}

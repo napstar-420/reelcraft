@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Radio, Plus } from 'lucide-react';
-import type { ChannelDto } from '@reefcraft/shared';
+import type { ChannelDto } from '@reelcraft/shared';
 import { api } from '../api/client';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';

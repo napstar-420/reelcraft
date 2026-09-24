@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { ConfigService } from '@nestjs/config';
-import type { InputDef, RoleDef, StageDef } from '@reefcraft/shared';
+import type { InputDef, RoleDef, StageDef } from '@reelcraft/shared';
 import type { CapabilityImpl } from '../capability/capability.interface';
 import type { CapabilityRegistry } from '../capability/capability.registry';
 import { SchemaValidatorService } from '../json-schema/schema-validator.service';

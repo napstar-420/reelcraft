@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { and, eq } from 'drizzle-orm';
-import { Timeline, type Probe } from '@reefcraft/shared';
+import { Timeline, type Probe } from '@reelcraft/shared';
 import { StyleRegistry } from '../capability/style.registry';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
 import { artifact, blob, run } from '../db/schema';

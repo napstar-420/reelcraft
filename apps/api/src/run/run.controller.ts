@@ -24,7 +24,7 @@ import {
   PutRunInputDto,
   SaveTimelineDraftDto,
   SubmitTimelineDraftDto,
-} from '@reefcraft/shared';
+} from '@reelcraft/shared';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { InProcessRunEvents, type RunEvent } from '../orchestration/run-events';
 import { RunService } from './run.service';

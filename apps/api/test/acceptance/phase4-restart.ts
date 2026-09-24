@@ -51,7 +51,7 @@ async function waitFor<T>(
 function startApi(): ChildProcess {
   assert(
     existsSync(apiEntry),
-    `Missing ${apiEntry}; run \`pnpm --filter @reefcraft/api build\` first`,
+    `Missing ${apiEntry}; run \`pnpm --filter @reelcraft/api build\` first`,
   );
   const child = spawn(process.execPath, [apiEntry], {
     cwd: process.cwd(),

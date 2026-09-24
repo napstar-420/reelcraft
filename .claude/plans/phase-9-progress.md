@@ -29,7 +29,7 @@ Branch: `codex/phase9-editor-templates`
   since `GET /check-types` needs it.
 - The first attempt at this chunk (a subagent) was killed mid-run by a
   transient network error right after finishing all the code changes and
-  starting `pnpm --filter @reefcraft/api typecheck`. Its uncommitted changes
+  starting `pnpm --filter @reelcraft/api typecheck`. Its uncommitted changes
   were verified and one bug was fixed directly: the new
   `capability.controller.test.ts` called `image.slots(config)` /
   `audio.allowedOutputs(config)` on concrete `ImageGenerateCapability`/
@@ -269,8 +269,8 @@ failed validation"` for a non-runnable version once handed that version's
   `create()`/no dry-run option throws `/max_tokens/`, proving the override
   never leaks into real-run validation and `assertTextStagesHaveMaxTokens`
   itself was never touched.
-- Full verification: `pnpm --filter @reefcraft/shared build` clean;
-  `pnpm --filter @reefcraft/api typecheck` clean; targeted unit suite
+- Full verification: `pnpm --filter @reelcraft/shared build` clean;
+  `pnpm --filter @reelcraft/api typecheck` clean; targeted unit suite
   (`src/run src/run-config`) 17 files / 73 tests passed; the new e2e file
   alone 3/3 passed; full e2e regression (`vitest.e2e.config.ts`, no filter)
   **30 files / 173 tests, 100% passed** — confirming `RunService.create()`'s
@@ -326,8 +326,8 @@ format:check` clean after one `prettier --write` pass on the new test file.
 - No new dependencies, no schema-form generator, no UI kit — plain JSX
   throughout, matching `BlueprintsPage.tsx`'s pattern (`useQuery`/
   `useMutation`, `<section>`/`<ul>`/`<button>`).
-- Verification: `pnpm --filter @reefcraft/shared build` clean; `pnpm
---filter @reefcraft/web typecheck` clean; `pnpm --filter @reefcraft/web
+- Verification: `pnpm --filter @reelcraft/shared build` clean; `pnpm
+--filter @reelcraft/web typecheck` clean; `pnpm --filter @reelcraft/web
 build` clean (pre-existing >500kB chunk-size warning on
   `TimelineEditorPage`, unrelated to this chunk); `pnpm lint` clean (one
   pre-existing unrelated warning in `media-output.e2e.test.ts`); `pnpm
@@ -406,8 +406,8 @@ format:check` failed once on the 3 touched files, fixed with a targeted
   endpoints — plain JSX throughout, matching Chunk 6's `useQuery`/
   `useMutation`/textarea-parse-on-submit conventions exactly. This is the
   last chunk of Phase 9 — all 7 boxes are now checked.
-- Verification: `pnpm --filter @reefcraft/shared build` clean; `pnpm
---filter @reefcraft/web typecheck` clean; `pnpm --filter @reefcraft/web
+- Verification: `pnpm --filter @reelcraft/shared build` clean; `pnpm
+--filter @reelcraft/web typecheck` clean; `pnpm --filter @reelcraft/web
 build` clean (same pre-existing >500kB chunk-size warning on
   `TimelineEditorPage`, unrelated to this chunk); `pnpm lint` clean (same
   one pre-existing unrelated warning in `media-output.e2e.test.ts`); `pnpm

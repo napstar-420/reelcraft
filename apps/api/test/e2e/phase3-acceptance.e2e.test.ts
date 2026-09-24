@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { InngestTestEngine, mockCtx } from '@inngest/test';
 import type { Context } from 'inngest';
 import { and, eq } from 'drizzle-orm';
-import type { StageDef } from '@reefcraft/shared';
+import type { StageDef } from '@reelcraft/shared';
 import { ChannelService } from '../../src/channel/channel.service';
 import { BlueprintService } from '../../src/blueprint/blueprint.service';
 import { RunService } from '../../src/run/run.service';

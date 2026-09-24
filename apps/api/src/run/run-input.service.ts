@@ -1,6 +1,6 @@
 import { ConflictException, Inject, Injectable, Logger } from '@nestjs/common';
 import { and, eq } from 'drizzle-orm';
-import { InputDef, StageDef, type PutRunInputDto } from '@reefcraft/shared';
+import { InputDef, StageDef, type PutRunInputDto } from '@reelcraft/shared';
 import { DRIZZLE, type Db, type Tx } from '../db/drizzle.provider';
 import { artifact, blob, blueprintVersion, channel, run } from '../db/schema/index';
 import { ulid } from '../common/ulid';

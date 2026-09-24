@@ -1,4 +1,4 @@
-import type { InputDef, Ref, RoleDef, StageDef } from '@reefcraft/shared';
+import type { InputDef, Ref, RoleDef, StageDef } from '@reelcraft/shared';
 import { deriveMemoryKeys } from '../../lib/memory-writers';
 import { TypedValueInput } from './TypedValueInput';
 import { Checkbox } from '@/components/ui/checkbox';

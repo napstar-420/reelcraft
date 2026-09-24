@@ -356,7 +356,7 @@ yet supported` — rather than letting the generic array-narrowing/
   `{from:'prev'}` (no alignWith) targeting an iterating stage fails;
   `cardinality:'one'` bound to a memory group read fails; `cardinality:'many'`
   bound to `{from:'item'}` fails.
-- `pnpm --filter @reefcraft/api typecheck` after the `StageDef`/`ConfigLayer`
+- `pnpm --filter @reelcraft/api typecheck` after the `StageDef`/`ConfigLayer`
   changes (nothing downstream should break — every consumer already treats
   `iterate` as optional).
 - Migration applies cleanly against a database at the current head.
@@ -1072,7 +1072,7 @@ timeline(memory:broll manifests) → draft → final`, using `fake` models
 2. Generate and review the one new migration (Chunk 1).
 3. Run the full Postgres/Inngest e2e suite, including the new
    `phase7-broll.e2e.test.ts`.
-4. Run `pnpm --filter @reefcraft/api acceptance:phase7-broll` locally
+4. Run `pnpm --filter @reelcraft/api acceptance:phase7-broll` locally
    (ffmpeg installed) and confirm it passes.
 5. Manually sanity-check the git workflow per project convention: feature
    branch, Conventional Commit messages, PR against `main` — not a per-chunk
@@ -1201,7 +1201,7 @@ Install FFmpeg, then install workspace dependencies and run:
 
 ```sh
 pnpm install
-pnpm --filter @reefcraft/api acceptance:phase7-broll
+pnpm --filter @reelcraft/api acceptance:phase7-broll
 ```
 
 The command builds a tiny synthetic video fixture, drives a 3-item

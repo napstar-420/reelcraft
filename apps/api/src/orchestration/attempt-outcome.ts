@@ -1,4 +1,4 @@
-import type { AttemptOutcome } from '@reefcraft/shared';
+import type { AttemptOutcome } from '@reelcraft/shared';
 
 /**
  * §3.8.1 — outcomes that consume a semantic retry (count against

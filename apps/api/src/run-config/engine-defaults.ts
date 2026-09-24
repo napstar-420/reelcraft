@@ -1,4 +1,4 @@
-import type { ConfigLayer } from '@reefcraft/shared';
+import type { ConfigLayer } from '@reelcraft/shared';
 import { EngineConfig } from '../config/engine-config';
 
 /**

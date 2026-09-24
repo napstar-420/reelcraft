@@ -1,5 +1,5 @@
 {
-  "name": "@reefcraft/render-worker",
+  "name": "@reelcraft/render-worker",
   "version": "0.0.0",
   "private": true,
   "scripts": {
@@ -7,8 +7,8 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@reefcraft/shared": "workspace:*",
-    "@reefcraft/timeline-composition": "workspace:*",
+    "@reelcraft/shared": "workspace:*",
+    "@reelcraft/timeline-composition": "workspace:*",
     "@remotion/bundler": "4.0.526",
     "@remotion/renderer": "4.0.526",
     "remotion": "4.0.526"

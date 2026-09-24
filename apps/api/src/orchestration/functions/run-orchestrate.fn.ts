@@ -1,6 +1,6 @@
 import type { Inngest } from 'inngest';
 import { and, eq, inArray, ne } from 'drizzle-orm';
-import { StageDef } from '@reefcraft/shared';
+import { StageDef } from '@reelcraft/shared';
 import type { Db } from '../../db/drizzle.provider';
 import { blueprintVersion, run, stageExecution, stageItem } from '../../db/schema/index';
 import type { RunStateService } from '../run-state.service';

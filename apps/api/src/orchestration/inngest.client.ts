@@ -10,6 +10,6 @@ export const inngestClientProvider: Provider = {
   provide: INNGEST_CLIENT,
   inject: [EngineConfig],
   useFactory: (config: EngineConfig): Inngest => {
-    return new Inngest({ id: 'reefcraft', eventKey: config.inngest.eventKey, isDev: false });
+    return new Inngest({ id: 'reelcraft', eventKey: config.inngest.eventKey, isDev: false });
   },
 };

@@ -189,7 +189,7 @@ paramsSchema: c.paramsSchema, description: c.description }))` plus one
   small fixture set that its `params: ZodType` also accepts (the drift guard
   from Locked Decision 4).
 - `GET /check-types` returns all 9 builtins + the `script` entry.
-- `pnpm --filter @reefcraft/api typecheck`, `pnpm lint`.
+- `pnpm --filter @reelcraft/api typecheck`, `pnpm lint`.
 
 ---
 
@@ -237,7 +237,7 @@ artifact: {...}, outputSchema: undefined })` and returns the single
   `BindingScope` construction from just an `artifactId` is new plumbing).
 - Authoring-fault cases: unknown builtin key, a script that doesn't compile —
   both return `fault: 'authoring'` results, not a 500.
-- `pnpm test`, `pnpm --filter @reefcraft/api typecheck`.
+- `pnpm test`, `pnpm --filter @reelcraft/api typecheck`.
 
 ---
 
@@ -274,7 +274,7 @@ blueprintId, dto): Promise<{issues: ValidationIssue[]; runnable: boolean}>`.
   unchanged before/after, asserted directly against the DB).
 - Existing `createVersion` behavior/tests unchanged (regression guard on the
   refactor).
-- `pnpm test`, `pnpm --filter @reefcraft/api typecheck`.
+- `pnpm test`, `pnpm --filter @reelcraft/api typecheck`.
 
 ---
 
@@ -341,7 +341,7 @@ OR (source = 'user' AND ownerId = @Owner())`.
 - `instantiate` on `schema`/`check`/`stage` kinds returns `{body, requires}`
   and writes nothing.
 - Name collision within the same owner+kind is rejected cleanly.
-- `pnpm test`, `pnpm --filter @reefcraft/api typecheck`.
+- `pnpm test`, `pnpm --filter @reelcraft/api typecheck`.
 
 ---
 
@@ -398,7 +398,7 @@ fake provider, through the real async pipeline.
   them.
 - A graph missing `max_tokens` on a text stage still dry-runs successfully
   (the real-spend guard doesn't block it).
-- `pnpm test`, `pnpm --filter @reefcraft/api typecheck`, migration applies
+- `pnpm test`, `pnpm --filter @reelcraft/api typecheck`, migration applies
   cleanly against a database at the current head.
 
 ---
@@ -438,7 +438,7 @@ Ship the first two editor panels, reusable across later chunks.
 - Manual verification in the browser: pick a capability, edit its config,
   see `slots`/`allowedOutputs` update live; edit a schema, see dialect/
   compile errors surface.
-- `pnpm --filter @reefcraft/web typecheck`, `pnpm --filter @reefcraft/web
+- `pnpm --filter @reelcraft/web typecheck`, `pnpm --filter @reelcraft/web
 build`.
 
 ---
@@ -478,7 +478,7 @@ Ship the remaining panels and wire them into the existing pages.
   the body back) → test it via the check-tester panel against a real
   artifact → save/instantiate a `blueprint`-kind template → dry-run it →
   watch it complete via the existing SSE run view.
-- `pnpm --filter @reefcraft/web typecheck`, `pnpm --filter @reefcraft/web
+- `pnpm --filter @reelcraft/web typecheck`, `pnpm --filter @reelcraft/web
 build`.
 
 ---

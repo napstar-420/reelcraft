@@ -1,6 +1,6 @@
 import { ConflictException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { and, eq } from 'drizzle-orm';
-import { ConfigLayer, StageDef, type ConfigLayer as ConfigLayerType } from '@reefcraft/shared';
+import { ConfigLayer, StageDef, type ConfigLayer as ConfigLayerType } from '@reelcraft/shared';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
 import { blueprintVersion, run, stageExecution, stageItem } from '../db/schema/index';
 import { mergeLayer } from '../run-config/layer-merge';

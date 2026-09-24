@@ -1,4 +1,4 @@
-import type { ConfigLayer } from '@reefcraft/shared';
+import type { ConfigLayer } from '@reelcraft/shared';
 
 type Json = Record<string, unknown>;
 

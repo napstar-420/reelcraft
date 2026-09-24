@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { Probe, type JsonSchema } from '@reefcraft/shared';
+import { Probe, type JsonSchema } from '@reelcraft/shared';
 import type { BuiltinCheck } from '../check.types';
 
 const Params = z.object({ min: z.number().optional(), max: z.number().optional() });

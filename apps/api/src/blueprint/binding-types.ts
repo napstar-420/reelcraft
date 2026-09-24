@@ -1,4 +1,4 @@
-import type { InputDef, Ref, StageDef, ValidationIssue } from '@reefcraft/shared';
+import type { InputDef, Ref, StageDef, ValidationIssue } from '@reelcraft/shared';
 import type { SourceType } from '../json-schema/source-type';
 import { narrowRefPath } from '../json-schema/schema-path';
 import type { ValidationContext } from './validation-context';

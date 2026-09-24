@@ -7,7 +7,7 @@ import {
   TimingMap,
   type Ref,
   type TimelineResource,
-} from '@reefcraft/shared';
+} from '@reelcraft/shared';
 import { BlobService } from '../artifact/blob.service';
 import { StyleRegistry } from '../capability/style.registry';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
@@ -219,7 +219,7 @@ export class TimelineEditorService {
 
   private async authorizedSources(context: Context) {
     const resources: TimelineResource[] = [];
-    const timingMaps: Record<string, import('@reefcraft/shared').TimingMap> = {};
+    const timingMaps: Record<string, import('@reelcraft/shared').TimingMap> = {};
     const allowedHandles = new Set<string>();
     let sourceTimeline: Timeline | undefined;
     for (const [slotName, ref] of Object.entries(context.stage.slots)) {
@@ -265,7 +265,7 @@ export class TimelineEditorService {
   private async addTimelineTimingMaps(
     context: Context,
     timeline: Timeline,
-    timingMaps: Record<string, import('@reefcraft/shared').TimingMap>,
+    timingMaps: Record<string, import('@reelcraft/shared').TimingMap>,
   ) {
     const handles = new Set(
       timeline.tracks.flatMap((track) =>

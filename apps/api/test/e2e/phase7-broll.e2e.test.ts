@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { and, eq } from 'drizzle-orm';
-import type { InputDef, StageDef } from '@reefcraft/shared';
+import type { InputDef, StageDef } from '@reelcraft/shared';
 import type { EffectiveStageConfig } from '../../src/run-config/config-resolver.service';
 import { BlueprintService } from '../../src/blueprint/blueprint.service';
 import { ChannelService } from '../../src/channel/channel.service';
@@ -84,7 +84,7 @@ describe('phase 7 chunk 7 — broll acceptance scenario (e2e)', () => {
   beforeAll(async () => {
     testDb = await createTestDb();
     testApp = await buildTestApp(testDb, { derivedFrame: TestableDerivedFrameService });
-    const dir = await mkdtemp(path.join(tmpdir(), 'reefcraft-phase7-broll-'));
+    const dir = await mkdtemp(path.join(tmpdir(), 'reelcraft-phase7-broll-'));
     fixturePath = path.join(dir, 'fake-clip.mp4');
     // Never actually decoded — `MediaProbeService` is stubbed by
     // `buildTestApp`'s default (`testMediaProbe()`), so this just needs to

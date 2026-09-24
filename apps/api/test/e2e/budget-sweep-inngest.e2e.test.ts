@@ -9,7 +9,7 @@ import { createTestDb, type TestDb } from '../support/test-db';
 import { RunService } from '../../src/run/run.service';
 import { ChannelService } from '../../src/channel/channel.service';
 import { BlueprintService } from '../../src/blueprint/blueprint.service';
-import type { StageDef } from '@reefcraft/shared';
+import type { StageDef } from '@reelcraft/shared';
 
 function stage(key: string): StageDef {
   return {

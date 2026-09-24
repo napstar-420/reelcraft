@@ -10,7 +10,7 @@ import { buildCronShellFunctions } from './cron-shells.fn';
  * live Inngest server.
  */
 describe('cron shells', () => {
-  const client = new Inngest({ id: 'reefcraft-test' });
+  const client = new Inngest({ id: 'reelcraft-test' });
   const functions = buildCronShellFunctions(client);
 
   it.each(functions.map((fn) => [fn.id(), fn] as const))(

@@ -1,4 +1,4 @@
-# Reefcraft
+# Reelcraft
 
 A general-purpose AI video/reel generation engine. See `docs/ai-reel-engine-requirements.md`
 and `docs/ai-video-engine-design-spec-v6.md` for the full requirements and design spec — this
@@ -19,7 +19,7 @@ Inngest (self-hosted, `inngest start`) · MinIO (S3-compatible blob storage) · 
 | ------------ | --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
 | API (NestJS) | `:3000`                           | REST + SSE, `/api/inngest`                                                                                                          |
 | Web (Vite)   | `:5173`                           | Proxies `/api` → `:3000` in dev                                                                                                     |
-| Postgres     | `:5432`                           | Two databases: `reefcraft` (engine) and `inngest`                                                                                   |
+| Postgres     | `:5432`                           | Two databases: `reelcraft` (engine) and `inngest`                                                                                   |
 | MinIO        | `:9000` (API) / `:9001` (console) |                                                                                                                                     |
 | Inngest      | `:8288`                           | Runs via `inngest start`, **not** `inngest dev` — the dev server's state is ephemeral and would not survive a restart mid-video-job |
 
@@ -79,7 +79,7 @@ browser automatically.
 Run the local-only uploaded-input render acceptance with:
 
 ```bash
-pnpm --filter @reefcraft/api acceptance:phase6-render
+pnpm --filter @reelcraft/api acceptance:phase6-render
 ```
 
 The command builds the render worker, creates an input clip, renders a timeline,
@@ -95,7 +95,7 @@ ffmpeg-backed `lastFrame`/`firstFrame` derived-frame shortcut.
 Run the local-only broll derived-frame acceptance with:
 
 ```bash
-pnpm --filter @reefcraft/api acceptance:phase7-broll
+pnpm --filter @reelcraft/api acceptance:phase7-broll
 ```
 
 The command builds a synthetic video fixture, drives a 3-item `video.generate`
@@ -128,7 +128,7 @@ the product.
 Targeted fake-media runner coverage requires Docker Postgres and can be run with:
 
 ```bash
-pnpm --filter @reefcraft/api exec vitest run -c vitest.e2e.config.ts test/e2e/media-output.e2e.test.ts
+pnpm --filter @reelcraft/api exec vitest run -c vitest.e2e.config.ts test/e2e/media-output.e2e.test.ts
 ```
 
 It uses deterministic fixtures and a test probe so CI does not require FFmpeg.
@@ -193,7 +193,7 @@ verified: `pnpm typecheck`, `pnpm lint`, `pnpm test` (`packages/shared`), `nest 
 **Not yet verified:** a real run against OpenRouter or other funded media providers.
 
 **Phase 4 restart acceptance:** with Docker Postgres/MinIO/Inngest running and migrations applied,
-run `pnpm --filter @reefcraft/api acceptance:phase4-restart`. It compiles the API, starts a slow fake-provider run,
+run `pnpm --filter @reelcraft/api acceptance:phase4-restart`. It compiles the API, starts a slow fake-provider run,
 and stops/restarts the API process. It allows for Inngest's durable exponential callback retry
 window, then verifies completion without a second provider submission. This is intentionally
 local-only; CI covers deterministic HTTP action and race tests with Postgres alone.
@@ -286,8 +286,8 @@ start` only surfaced it as a runtime `Cannot find module`. If a build looks inco
   root-level `*.config.ts` files need an `allowDefaultProject` glob in `eslint.config.mjs`,
   which is protected by a `config-protection` hook this session couldn't get past — needs a
   maintainer to add it (or temporarily disable the hook).
-- **Never wrap a `@reefcraft/shared` zod schema in a freshly-imported `z.record(...)`/`z.union(...)`
-  inside `apps/api` test code.** Under Vite/vitest, `@reefcraft/shared`'s compiled `dist/` (its
+- **Never wrap a `@reelcraft/shared` zod schema in a freshly-imported `z.record(...)`/`z.union(...)`
+  inside `apps/api` test code.** Under Vite/vitest, `@reelcraft/shared`'s compiled `dist/` (its
   own `require('zod')`) and a plain `import { z } from 'zod'` in `apps/api` source end up as
   distinct module instances — `sharedSchema instanceof (apps/api's) z.ZodType` is `false` even
   though `sharedSchema.constructor.name === 'ZodObject'`. `z.record(keySchema, valueSchema)`
@@ -301,7 +301,7 @@ received object"` error with no hint of a module-identity problem underneath. Ca
 
 ## Follow-ups not done in this pass
 
-- `pnpm --filter @reefcraft/api test:e2e` needs a live Postgres and isn't wired into CI yet
+- `pnpm --filter @reelcraft/api test:e2e` needs a live Postgres and isn't wired into CI yet
   (tracked in `docs/build-progress.md`) — run it locally against `docker compose up`.
 - `eslint.config.mjs`'s shared-package import-boundary rule is scoped slightly too broadly
   (applies repo-wide rather than only under `packages/shared/**`) — harmless in practice since

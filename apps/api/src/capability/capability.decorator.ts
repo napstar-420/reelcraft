@@ -1,6 +1,6 @@
 import { SetMetadata } from '@nestjs/common';
 
-export const CAPABILITY_KEY_METADATA = 'reefcraft:capability-key';
+export const CAPABILITY_KEY_METADATA = 'reelcraft:capability-key';
 
 /**
  * §7.1 — carries ONLY the key; all other metadata lives on the instance

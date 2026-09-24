@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import type { ModelPin } from '@reefcraft/shared';
+import type { ModelPin } from '@reelcraft/shared';
 import { ProviderRegistry } from '../provider/provider.registry';
 import type { QcEnvelope } from './qc-envelope';
 import { buildQcPrompt } from './qc-prompt';

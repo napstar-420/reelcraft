@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Player } from '@remotion/player';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import type { Timeline, TimelineItem, TimelineResource, TimingMap } from '@reefcraft/shared';
-import { TimelineComposition, timelineDurationSec } from '@reefcraft/timeline-composition';
+import type { Timeline, TimelineItem, TimelineResource, TimingMap } from '@reelcraft/shared';
+import { TimelineComposition, timelineDurationSec } from '@reelcraft/timeline-composition';
 import { cn } from 'cn';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';

@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { and, asc, desc, eq } from 'drizzle-orm';
-import type { ArtifactKind, StageDef } from '@reefcraft/shared';
+import type { ArtifactKind, StageDef } from '@reelcraft/shared';
 import type { Db, Tx } from '../db/drizzle.provider';
 import { runMemory } from '../db/schema/index';
 import { ulid } from '../common/ulid';

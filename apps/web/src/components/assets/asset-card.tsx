@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Trash2, Image, Video, Music, Type, Palette } from 'lucide-react';
-import type { AssetDto, AssetKind } from '@reefcraft/shared';
+import type { AssetDto, AssetKind } from '@reelcraft/shared';
 import { api } from '@/api/client';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';

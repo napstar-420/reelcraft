@@ -6,8 +6,8 @@ import type {
   PromoteCharacterReferenceDto,
   UpdateCharacterDto,
   UpdateCharacterReferenceDto,
-} from '@reefcraft/shared';
-import type { ReferenceImage } from '@reefcraft/shared';
+} from '@reelcraft/shared';
+import type { ReferenceImage } from '@reelcraft/shared';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
 import { artifact, blob, character, channel, run } from '../db/schema';
 import { ulid } from '../common/ulid';

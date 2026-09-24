@@ -483,7 +483,7 @@ data"` — `source.data` is legitimately always `undefined` for a media
   module is imported, before any of the script's own top-level code could
   otherwise set `DATABASE_URL`/`NODE_ENV`). `package.json`'s
   `acceptance:phase7-broll` now points at that shell script instead of a
-  bare `tsx` invocation. Manually re-run: `pnpm --filter @reefcraft/api
+  bare `tsx` invocation. Manually re-run: `pnpm --filter @reelcraft/api
 acceptance:phase7-broll` passed, real `ffmpeg` extraction confirmed (2
   invocations logged, second resolution of the same derived frame proven
   cached via a call-count spy on a `CountingDerivedFrameService` subclass

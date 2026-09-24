@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { StageDef } from '@reefcraft/shared';
+import type { StageDef } from '@reelcraft/shared';
 import { stageDefLayer } from './stage-def-layer';
 import { mergeLayer } from './layer-merge';
 

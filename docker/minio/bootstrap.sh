@@ -7,7 +7,7 @@
 # fresh clone and a working bucket.
 set -e
 
-mc alias set local http://minio:9000 reefcraft-root reefcraft-root-secret
+mc alias set local http://minio:9000 reelcraft-root reelcraft-root-secret
 mc mb --ignore-existing local/video-engine
 
 cat > /tmp/cors.json <<-EOF
@@ -27,7 +27,7 @@ mc anonymous set-json /tmp/cors.json local/video-engine || true
 # Scoped service account limited to this bucket. Fixed dev credentials so
 # .env.example can reference them directly; rotate for anything beyond
 # local development.
-mc admin user add local reefcraft-app reefcraft-app-secret || true
+mc admin user add local reelcraft-app reelcraft-app-secret || true
 cat > /tmp/policy.json <<-EOF
 {
   "Version": "2012-10-17",
@@ -41,6 +41,6 @@ cat > /tmp/policy.json <<-EOF
 }
 EOF
 mc admin policy create local video-engine-rw /tmp/policy.json || true
-mc admin policy attach local video-engine-rw --user reefcraft-app || true
+mc admin policy attach local video-engine-rw --user reelcraft-app || true
 
 echo "MinIO bootstrap complete."

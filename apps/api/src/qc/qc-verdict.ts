@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 /** The judge model's raw structured-output contract — constructed fresh
- * over `unknown`, never wraps a `@reefcraft/shared` schema. */
+ * over `unknown`, never wraps a `@reelcraft/shared` schema. */
 export const JudgeResponse = z.object({
   dimensions: z
     .array(

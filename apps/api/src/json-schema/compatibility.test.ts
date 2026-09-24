@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { JsonSchema } from '@reefcraft/shared';
+import type { JsonSchema } from '@reelcraft/shared';
 import { isCompatible, isSubschema, type CompatibilityDeps } from './compatibility';
 import type { SourceType } from './source-type';
 

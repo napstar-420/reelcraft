@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
-import { CreateChannelDto, UpdateChannelDto } from '@reefcraft/shared';
+import { CreateChannelDto, UpdateChannelDto } from '@reelcraft/shared';
 import { Owner } from '../common/owner.decorator';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { ChannelService } from './channel.service';

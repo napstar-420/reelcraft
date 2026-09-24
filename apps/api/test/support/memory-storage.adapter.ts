@@ -1,6 +1,6 @@
 import { Readable } from 'node:stream';
 import { createHash } from 'node:crypto';
-import type { ByteRange, PutResult } from '@reefcraft/shared';
+import type { ByteRange, PutResult } from '@reelcraft/shared';
 import type { StorageAdapter } from '../../src/storage/storage.adapter';
 
 interface StoredObject {

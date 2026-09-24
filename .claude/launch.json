@@ -10,7 +10,7 @@
     {
       "name": "web",
       "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["--filter", "@reefcraft/web", "dev"],
+      "runtimeArgs": ["--filter", "@reelcraft/web", "dev"],
       "port": 5173
     }
   ]

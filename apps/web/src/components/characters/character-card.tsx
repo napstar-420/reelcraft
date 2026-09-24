@@ -1,5 +1,5 @@
 import { Pencil, UserRound } from 'lucide-react';
-import type { CharacterDto } from '@reefcraft/shared';
+import type { CharacterDto } from '@reelcraft/shared';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';

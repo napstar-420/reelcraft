@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { ConfigLayer, StageDef } from '@reefcraft/shared';
+import type { ConfigLayer, StageDef } from '@reelcraft/shared';
 import type { Db } from '../db/drizzle.provider';
 import type { EngineConfig } from '../config/engine-config';
 import { ConfigResolverService } from './config-resolver.service';

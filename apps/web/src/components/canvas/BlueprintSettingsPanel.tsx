@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { api } from '../../api/client';
 import { SchemaForm } from './SchemaForm';
 import { SECTION_HEADING_CLASS } from './typography';
-import type { InputDef, RoleDef, JsonSchema } from '@reefcraft/shared';
+import type { InputDef, RoleDef, JsonSchema } from '@reelcraft/shared';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';

@@ -100,7 +100,7 @@ export class EngineConfig {
     const secret = this.config.get('PREVIEW_TOKEN_SECRET', { infer: true });
     if (secret !== undefined) return secret;
     if (this.config.get('NODE_ENV', { infer: true }) === 'test') {
-      return 'reefcraft-test-only-preview-token-secret';
+      return 'reelcraft-test-only-preview-token-secret';
     }
     throw new Error('PREVIEW_TOKEN_SECRET is required outside tests');
   }

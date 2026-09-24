@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { and, eq, isNotNull } from 'drizzle-orm';
-import { StageDef, type JobHandle } from '@reefcraft/shared';
+import { StageDef, type JobHandle } from '@reelcraft/shared';
 import { LedgerService } from '../budget/ledger.service';
 import { CapabilityRegistry } from '../capability/capability.registry';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';

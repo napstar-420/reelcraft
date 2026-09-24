@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Timeline, type Ref } from '@reefcraft/shared';
+import { Timeline, type Ref } from '@reelcraft/shared';
 import type { RefProvenance } from './binding-resolver.service';
 
 @Injectable()

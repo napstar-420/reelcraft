@@ -1,5 +1,5 @@
 import { AlertTriangle, XCircle } from 'lucide-react';
-import type { ValidationIssue } from '@reefcraft/shared';
+import type { ValidationIssue } from '@reelcraft/shared';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { cn } from 'cn';
 

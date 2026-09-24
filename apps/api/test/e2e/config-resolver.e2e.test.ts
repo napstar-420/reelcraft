@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { StageDef } from '@reefcraft/shared';
+import type { StageDef } from '@reelcraft/shared';
 import { ConfigResolverService } from '../../src/run-config/config-resolver.service';
 import type { EngineConfig } from '../../src/config/engine-config';
 import { ulid } from '../../src/common/ulid';

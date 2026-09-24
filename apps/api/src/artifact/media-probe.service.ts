@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { Injectable } from '@nestjs/common';
-import type { Probe } from '@reefcraft/shared';
+import type { Probe } from '@reelcraft/shared';
 
 const execFileAsync = promisify(execFile);
 

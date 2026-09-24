@@ -1,9 +1,9 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { and, desc, eq, isNull } from 'drizzle-orm';
-import type { ArtifactKind, Ref } from '@reefcraft/shared';
+import type { ArtifactKind, Ref } from '@reelcraft/shared';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
 import { artifact, blob, runMemory } from '../db/schema/index';
-import type { StageDef } from '@reefcraft/shared';
+import type { StageDef } from '@reelcraft/shared';
 import { getPath } from '../common/path';
 import { unwrapText } from '../common/unwrap-text';
 import { DerivedFrameService } from './derived-frame.service';

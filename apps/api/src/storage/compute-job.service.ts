@@ -4,7 +4,7 @@ import { access, mkdir, readFile, readdir, rm, stat, statfs, writeFile } from 'n
 import path from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { Inject, Injectable } from '@nestjs/common';
-import type { ComputeSpec, JobStatus } from '@reefcraft/shared';
+import type { ComputeSpec, JobStatus } from '@reelcraft/shared';
 import { EngineConfig } from '../config/engine-config';
 import { STORAGE_ADAPTER, type StorageAdapter } from './storage.adapter';
 

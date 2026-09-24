@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { Probe, StageDef } from '@reefcraft/shared';
+import type { Probe, StageDef } from '@reelcraft/shared';
 import { and, eq } from 'drizzle-orm';
 import { ChannelService } from '../../src/channel/channel.service';
 import { BlueprintService } from '../../src/blueprint/blueprint.service';

@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { Injectable } from '@nestjs/common';
-import { Timeline, TimingMap } from '@reefcraft/shared';
+import { Timeline, TimingMap } from '@reelcraft/shared';
 import type {
   CostEstimate,
   JobHandle,
@@ -9,7 +9,7 @@ import type {
   MediaSource,
   OutputKind,
   SlotDef,
-} from '@reefcraft/shared';
+} from '@reelcraft/shared';
 import { ComputeJobService, type ComputeHandle } from '../../storage/compute-job.service';
 import { EngineConfig } from '../../config/engine-config';
 import { Capability } from '../capability.decorator';
@@ -221,7 +221,7 @@ export class TimelineRenderCapability extends LocalComputeCapability<RenderConfi
     const resources = ctx.resources ?? {};
     const inputs: Array<{ sourceKey: string; asFilename: string }> = [];
     const resourceFiles: Record<string, string> = {};
-    const timingMaps: Record<string, import('@reefcraft/shared').TimingMap> = {};
+    const timingMaps: Record<string, import('@reelcraft/shared').TimingMap> = {};
     let index = 0;
     for (const [handle, resource] of Object.entries(resources)) {
       if (!resource.kind.startsWith('media.')) {

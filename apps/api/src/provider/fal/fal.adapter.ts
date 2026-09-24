@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import type { CostEstimate, JobHandle, JobStatus } from '@reefcraft/shared';
+import type { CostEstimate, JobHandle, JobStatus } from '@reelcraft/shared';
 import { KEY_PROVIDER, type KeyProvider } from '../key-provider';
 import type {
   ModelInfo,

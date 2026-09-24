@@ -4,7 +4,7 @@ import { validateEnv } from './env.schema';
 function requiredEnv(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     NODE_ENV: 'development',
-    DATABASE_URL: 'postgres://reefcraft:reefcraft@localhost:5432/reefcraft',
+    DATABASE_URL: 'postgres://reelcraft:reelcraft@localhost:5432/reelcraft',
     S3_ENDPOINT: 'http://localhost:9000',
     S3_ACCESS_KEY_ID: 'access',
     S3_SECRET_ACCESS_KEY: 'secret',

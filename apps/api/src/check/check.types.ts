@@ -1,5 +1,5 @@
 import type { ZodType } from 'zod';
-import type { ArtifactKind, CheckDef, JsonSchema } from '@reefcraft/shared';
+import type { ArtifactKind, CheckDef, JsonSchema } from '@reelcraft/shared';
 import type { RefEnvelope } from '../artifact/binding-resolver.service';
 
 export interface CheckArtifact {
@@ -40,7 +40,7 @@ export interface CheckRunInput {
 
 export interface BuiltinCheck<P = unknown> {
   readonly key: string;
-  /** Constructed locally, never wraps a `@reefcraft/shared` schema — the
+  /** Constructed locally, never wraps a `@reelcraft/shared` schema — the
    * cross-module zod hazard doesn't apply here (see README's Known
    * gotchas): this parses plain `unknown` (`CheckDef.params`), it never
    * builds a new combinator around an imported schema. */

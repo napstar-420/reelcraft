@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { z } from 'zod';
-import type { CheckDef } from '@reefcraft/shared';
+import type { CheckDef } from '@reelcraft/shared';
 import { SchemaValidatorService } from '../json-schema/schema-validator.service';
 import { ScriptSandboxService } from '../sandbox/script-sandbox.service';
 import type { RefEnvelope } from '../artifact/binding-resolver.service';
@@ -8,7 +8,7 @@ import { BUILTIN_CHECKS } from './builtins/index';
 import type { CheckArtifact, CheckOutcome, CheckResult, CheckRunInput } from './check.types';
 
 /** A script check's return value, validated after `context.dump()` — not a
- * `@reefcraft/shared` schema, constructed fresh over `unknown`. */
+ * `@reelcraft/shared` schema, constructed fresh over `unknown`. */
 const ScriptReturn = z.object({
   pass: z.boolean(),
   message: z.string().optional(),

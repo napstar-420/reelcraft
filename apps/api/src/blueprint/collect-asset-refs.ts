@@ -1,4 +1,4 @@
-import type { Ref, StageDef } from '@reefcraft/shared';
+import type { Ref, StageDef } from '@reelcraft/shared';
 
 /** Walks every stage's slots/context/check-refs collecting every
  * `{from:'asset'}` ref's assetId — shared by save-time validation

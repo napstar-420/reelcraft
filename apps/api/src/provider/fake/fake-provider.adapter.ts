@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
-import type { CostEstimate, JobHandle, JobStatus } from '@reefcraft/shared';
+import type { CostEstimate, JobHandle, JobStatus } from '@reelcraft/shared';
 import type {
   ModelInfo,
   ProviderAdapter,

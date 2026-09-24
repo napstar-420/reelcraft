@@ -7,7 +7,7 @@ import {
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { and, desc, eq, sql } from 'drizzle-orm';
-import { StageDef } from '@reefcraft/shared';
+import { StageDef } from '@reelcraft/shared';
 import { ArtifactService } from '../artifact/artifact.service';
 import { MemoryService } from '../artifact/memory.service';
 import { ulid } from '../common/ulid';

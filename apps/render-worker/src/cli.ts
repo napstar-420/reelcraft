@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { bundle } from '@remotion/bundler';
 import { renderMedia, selectComposition } from '@remotion/renderer';
-import { Timeline } from '@reefcraft/shared';
+import { Timeline } from '@reelcraft/shared';
 
 type RenderJob = {
   quality: 'draft' | 'final';
@@ -23,7 +23,7 @@ async function main() {
   const timeline = Timeline.parse(JSON.parse(await readFile(timelinePath, 'utf8')));
   const renderData = JSON.parse(await readFile(resourcesPath, 'utf8')) as {
     media: Record<string, string>;
-    timing: Record<string, import('@reefcraft/shared').TimingMap>;
+    timing: Record<string, import('@reelcraft/shared').TimingMap>;
   };
   const resourceDir = path.dirname(resourcesPath);
   const resources = renderData.media;

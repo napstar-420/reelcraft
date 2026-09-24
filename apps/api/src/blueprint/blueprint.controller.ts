@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Param, ParseIntPipe, Post, Query } from '@nestjs/common';
-import { CreateBlueprintDto, CreateBlueprintVersionDto, StartDryRunDto } from '@reefcraft/shared';
+import { CreateBlueprintDto, CreateBlueprintVersionDto, StartDryRunDto } from '@reelcraft/shared';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { BlueprintService } from './blueprint.service';
 import { RunService } from '../run/run.service';

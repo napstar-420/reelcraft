@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
-import type { RunState } from '@reefcraft/shared';
+import type { RunState } from '@reelcraft/shared';
 import { eq, sql } from 'drizzle-orm';
 import { ulid } from '../common/ulid';
 import { DRIZZLE, type Db, type Tx } from '../db/drizzle.provider';

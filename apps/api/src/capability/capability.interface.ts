@@ -5,8 +5,8 @@ import type {
   SlotDef,
   StageDef,
   ValidationIssue,
-} from '@reefcraft/shared';
-import type { CostEstimate, JobHandle, JobStatus } from '@reefcraft/shared';
+} from '@reelcraft/shared';
+import type { CostEstimate, JobHandle, JobStatus } from '@reelcraft/shared';
 
 /**
  * §7.2/Appendix A — deliberately absent: database access, the run object,

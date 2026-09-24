@@ -1,4 +1,4 @@
-import type { StageDef } from '@reefcraft/shared';
+import type { StageDef } from '@reelcraft/shared';
 
 /**
  * Locked Decision 6 — memory-writer lookup is derived client-side, never a

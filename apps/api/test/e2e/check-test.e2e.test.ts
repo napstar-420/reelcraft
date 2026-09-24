@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ConfigService } from '@nestjs/config';
 import { NotFoundException } from '@nestjs/common';
-import type { CheckDef, StageDef } from '@reefcraft/shared';
+import type { CheckDef, StageDef } from '@reelcraft/shared';
 import type { Env } from '../../src/config/env.schema';
 import { EngineConfig } from '../../src/config/engine-config';
 import { SchemaValidatorService } from '../../src/json-schema/schema-validator.service';

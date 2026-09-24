@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { UserRound, Plus } from 'lucide-react';
-import type { CharacterDto } from '@reefcraft/shared';
+import type { CharacterDto } from '@reelcraft/shared';
 import { api } from '@/api/client';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';

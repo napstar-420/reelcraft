@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import type { TimelineStyle } from '@reefcraft/shared';
+import type { TimelineStyle } from '@reelcraft/shared';
 
 export type RenderStyle = TimelineStyle & {
   css: Record<string, string | number>;

@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
-import type { ReferenceImage } from '@reefcraft/shared';
+import type { ReferenceImage } from '@reelcraft/shared';
 import { ChannelService } from '../../src/channel/channel.service';
 import { CharacterService } from '../../src/channel/character.service';
 import { STORAGE_ADAPTER, type StorageAdapter } from '../../src/storage/storage.adapter';

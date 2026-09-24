@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
-import type { CheckDef } from '@reefcraft/shared';
-import { StageDef } from '@reefcraft/shared';
+import type { CheckDef } from '@reelcraft/shared';
+import { StageDef } from '@reelcraft/shared';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
 import { blueprintVersion, run } from '../db/schema/index';
 import { ArtifactService, type ArtifactRecord } from '../artifact/artifact.service';

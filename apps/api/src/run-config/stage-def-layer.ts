@@ -1,4 +1,4 @@
-import type { ConfigLayer, StageDef } from '@reefcraft/shared';
+import type { ConfigLayer, StageDef } from '@reelcraft/shared';
 
 /**
  * §5.2 — the top-most ConfigLayer, projected from the StageDef itself.

@@ -7,7 +7,7 @@ import {
   Param,
   Post,
 } from '@nestjs/common';
-import { ResolveCapabilityRequestDto } from '@reefcraft/shared';
+import { ResolveCapabilityRequestDto } from '@reelcraft/shared';
 import { CapabilityRegistry } from './capability.registry';
 import { ProviderRegistry } from '../provider/provider.registry';
 import { StyleRegistry } from './style.registry';

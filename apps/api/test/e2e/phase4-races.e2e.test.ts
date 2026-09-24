@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { and, eq, isNull } from 'drizzle-orm';
-import type { StageDef } from '@reefcraft/shared';
+import type { StageDef } from '@reelcraft/shared';
 import { BlueprintService } from '../../src/blueprint/blueprint.service';
 import { ChannelService } from '../../src/channel/channel.service';
 import {

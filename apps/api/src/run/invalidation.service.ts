@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto';
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { and, eq, inArray, sql } from 'drizzle-orm';
-import type { Ref, StageDef } from '@reefcraft/shared';
-import { StageDef as StageDefSchema } from '@reefcraft/shared';
+import type { Ref, StageDef } from '@reelcraft/shared';
+import { StageDef as StageDefSchema } from '@reelcraft/shared';
 import { MemoryService } from '../artifact/memory.service';
 import type { RefProvenance } from '../artifact/binding-resolver.service';
 import { DRIZZLE, type Db, type Tx } from '../db/drizzle.provider';

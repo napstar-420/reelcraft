@@ -1,5 +1,5 @@
 import type { Readable } from 'node:stream';
-import type { ByteRange, PutResult } from '@reefcraft/shared';
+import type { ByteRange, PutResult } from '@reelcraft/shared';
 
 /**
  * §4.3 — behavioral interface, intentionally not in packages/shared

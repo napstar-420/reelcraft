@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { api, ApiError } from '../api/client';
-import type { JsonSchema, ValidationIssue } from '@reefcraft/shared';
+import type { JsonSchema, ValidationIssue } from '@reelcraft/shared';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';

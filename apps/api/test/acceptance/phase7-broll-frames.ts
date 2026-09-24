@@ -6,7 +6,7 @@ import { promisify } from 'node:util';
 import { Test } from '@nestjs/testing';
 import { and, eq } from 'drizzle-orm';
 import type { Inngest } from 'inngest';
-import type { StageDef } from '@reefcraft/shared';
+import type { StageDef } from '@reelcraft/shared';
 import { AppModule } from '../../src/app.module';
 import { DRIZZLE } from '../../src/db/drizzle.provider';
 import { INNGEST_CLIENT } from '../../src/orchestration/inngest.client';
@@ -106,7 +106,7 @@ async function main() {
   // before this module (or `AppModule`, imported above) is ever loaded,
   // which a same-process `applyTestEnvDefaults()` call here could not
   // guarantee against a static `import { AppModule }`.
-  const dir = await mkdtemp(path.join(tmpdir(), 'reefcraft-phase7-broll-frames-'));
+  const dir = await mkdtemp(path.join(tmpdir(), 'reelcraft-phase7-broll-frames-'));
   const clip = path.join(dir, 'fixture.mp4');
   await exec('ffmpeg', [
     '-y',
