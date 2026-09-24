@@ -28,8 +28,14 @@ export class MediaProbeService {
       format?: { format_name?: string; duration?: string };
       streams?: Array<Record<string, string | number | undefined>>;
     };
-    const durationSec = Number(parsed.format?.duration);
-    if (!parsed.format?.format_name || !Number.isFinite(durationSec) || durationSec < 0)
+    if (!parsed.format?.format_name) throw new Error('MediaProbeService: corrupt media');
+    // Still images (png_pipe/jpeg_pipe/…) never report `format.duration` at
+    // all — that's normal, not corruption, so an absent duration becomes 0
+    // rather than failing the probe. A duration that *is* present but
+    // negative or non-finite is a genuine corruption signal.
+    const rawDuration = parsed.format?.duration;
+    const durationSec = rawDuration === undefined ? 0 : Number(rawDuration);
+    if (!Number.isFinite(durationSec) || durationSec < 0)
       throw new Error('MediaProbeService: corrupt or duration-less media');
     const streams = (parsed.streams ?? []).flatMap((stream) => {
       if (stream.codec_type !== 'video' && stream.codec_type !== 'audio') return [];
