@@ -30,7 +30,7 @@ function shotsStage(fakeOutput: string[]): StageDef {
   return {
     key: 'shots',
     label: 'Shots',
-    capability: 'llm.generate',
+    capability: 'text.generate',
     config: {},
     slots: {},
     context: {},
@@ -45,7 +45,7 @@ function brollStage(): StageDef {
   return {
     key: 'broll',
     label: 'B-roll',
-    capability: 'llm.generate',
+    capability: 'text.generate',
     config: {},
     slots: { shot: { from: 'item' } },
     context: {},

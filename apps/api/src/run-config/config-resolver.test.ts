@@ -7,7 +7,7 @@ import { ConfigResolverService } from './config-resolver.service';
 function stage(overrides: Partial<StageDef> & Pick<StageDef, 'key'>): StageDef {
   return {
     label: overrides.key,
-    capability: 'llm.generate',
+    capability: 'text.generate',
     config: {},
     slots: {},
     context: {},

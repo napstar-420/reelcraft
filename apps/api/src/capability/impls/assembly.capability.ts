@@ -44,6 +44,8 @@ const unwrap = (handle: JobHandle): ComputeHandle => handle.payload as ComputeHa
 
 abstract class LocalComputeCapability<Cfg> implements CapabilityImpl<Cfg> {
   abstract readonly modality: string;
+  abstract readonly label: string;
+  abstract readonly description: string;
   readonly kind = 'async' as const;
   abstract readonly configSchema: JsonSchema;
   constructor(protected readonly compute: ComputeJobService) {}
@@ -73,6 +75,8 @@ abstract class LocalComputeCapability<Cfg> implements CapabilityImpl<Cfg> {
 @Injectable()
 export class VideoConcatCapability extends LocalComputeCapability<ConcatConfig> {
   readonly modality = 'compute' as const;
+  readonly label = 'Concatenate Video';
+  readonly description = 'Combine media sources into one video, locally.';
   readonly configSchema: JsonSchema = {
     type: 'object',
     properties: {
@@ -191,6 +195,8 @@ export class VideoConcatCapability extends LocalComputeCapability<ConcatConfig> 
 @Injectable()
 export class TimelineRenderCapability extends LocalComputeCapability<RenderConfig> {
   readonly modality = 'compute' as const;
+  readonly label = 'Render Timeline';
+  readonly description = 'Render a timeline into a final video, locally.';
   readonly configSchema: JsonSchema = {
     type: 'object',
     properties: {

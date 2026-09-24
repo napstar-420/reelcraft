@@ -23,6 +23,8 @@ export const HUMAN_INPUT_ORCHESTRATOR_ONLY_ERROR =
 export class HumanInputCapability implements CapabilityImpl<Record<string, unknown>> {
   readonly modality = 'human' as const;
   readonly kind = 'sync' as const;
+  readonly label = 'Human Input';
+  readonly description = 'Pause the run for a person to submit an artifact.';
   readonly interaction = { kind: 'form' as const };
   readonly configSchema: JsonSchema = { type: 'object' };
 

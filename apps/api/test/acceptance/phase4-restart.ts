@@ -102,7 +102,7 @@ async function main() {
       {
         key: 'slow',
         label: 'Slow fake provider',
-        capability: 'llm.generate',
+        capability: 'text.generate',
         config: {},
         slots: {},
         context: {},

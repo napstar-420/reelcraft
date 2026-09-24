@@ -81,7 +81,7 @@ export function AddStageMenu({
             <SelectItem value={UNSET}>Select a capability…</SelectItem>
             {capabilities.data?.map((c) => (
               <SelectItem key={c.key} value={c.key}>
-                {c.key}
+                {c.label}
               </SelectItem>
             ))}
           </SelectContent>

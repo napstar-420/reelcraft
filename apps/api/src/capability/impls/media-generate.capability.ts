@@ -25,6 +25,8 @@ abstract class ProviderMediaCapability implements CapabilityImpl<MediaConfig> {
     OutputKind,
     'media.image' | 'media.video' | 'media.audio' | 'data'
   >;
+  abstract readonly label: string;
+  abstract readonly description: string;
   readonly kind = 'async' as const;
   readonly configSchema: JsonSchema = { type: 'object' };
   constructor(protected readonly providers: ProviderRegistry) {}
@@ -86,6 +88,8 @@ abstract class ProviderMediaCapability implements CapabilityImpl<MediaConfig> {
 export class ImageGenerateCapability extends ProviderMediaCapability {
   readonly modality = 'image';
   readonly outputKind = 'media.image' as const;
+  readonly label = 'Generate Image';
+  readonly description = 'Generate an image from a prompt.';
   constructor(providers: ProviderRegistry) {
     super(providers);
   }
@@ -99,6 +103,8 @@ export class ImageGenerateCapability extends ProviderMediaCapability {
 export class VideoGenerateCapability extends ProviderMediaCapability {
   readonly modality = 'video';
   readonly outputKind = 'media.video' as const;
+  readonly label = 'Generate Video';
+  readonly description = 'Generate a video clip from a prompt.';
   constructor(providers: ProviderRegistry) {
     super(providers);
   }
@@ -116,6 +122,8 @@ export class VideoGenerateCapability extends ProviderMediaCapability {
 export class AudioSpeechCapability extends ProviderMediaCapability {
   readonly modality = 'audio';
   readonly outputKind = 'media.audio' as const;
+  readonly label = 'Generate Speech';
+  readonly description = 'Synthesize speech audio from text.';
   constructor(providers: ProviderRegistry) {
     super(providers);
   }
@@ -129,6 +137,8 @@ export class AudioSpeechCapability extends ProviderMediaCapability {
 export class MediaAnalyzeCapability extends ProviderMediaCapability {
   readonly modality = 'media';
   readonly outputKind = 'data' as const;
+  readonly label = 'Analyze Media';
+  readonly description = 'Probe or transcribe/align existing media.';
   constructor(providers: ProviderRegistry) {
     super(providers);
   }

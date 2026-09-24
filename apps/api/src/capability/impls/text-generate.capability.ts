@@ -11,7 +11,7 @@ import { Capability } from '../capability.decorator';
 import type { CapabilityImpl, ExecCtx, ExecResult } from '../capability.interface';
 import { ProviderRegistry } from '../../provider/provider.registry';
 
-export interface LlmGenerateConfig {
+export interface TextGenerateConfig {
   provider: string;
   modelId: string;
   params?: Record<string, unknown>;
@@ -22,11 +22,13 @@ export interface LlmGenerateConfig {
  * happy path; `data` output is accepted but its implicit Ajv check (§4.2)
  * arrives in phase 2.
  */
-@Capability('llm.generate')
+@Capability('text.generate')
 @Injectable()
-export class LlmGenerate implements CapabilityImpl<LlmGenerateConfig> {
+export class TextGenerateCapability implements CapabilityImpl<TextGenerateConfig> {
   readonly modality = 'text' as const;
   readonly kind = 'sync' as const;
+  readonly label = 'Generate Text';
+  readonly description = 'Generate text with an LLM from a prompt.';
   // Permissive by design: the provider/modelId pin lives on the resolved
   // model layer (§5), not StageDef.config — see the interface doc comment.
   readonly configSchema: JsonSchema = { type: 'object' };
@@ -35,15 +37,15 @@ export class LlmGenerate implements CapabilityImpl<LlmGenerateConfig> {
 
   // Functions of config per §7.1, even where phase 1's answer is constant —
   // the signature must not change when vision/context slots are added later.
-  slots(_cfg: LlmGenerateConfig): SlotDef[] {
+  slots(_cfg: TextGenerateConfig): SlotDef[] {
     return [];
   }
 
-  allowedOutputs(_cfg: LlmGenerateConfig): OutputKind[] {
+  allowedOutputs(_cfg: TextGenerateConfig): OutputKind[] {
     return ['text', 'data', 'timeline'];
   }
 
-  async estimateCost(ctx: ExecCtx<LlmGenerateConfig>): Promise<CostEstimate> {
+  async estimateCost(ctx: ExecCtx<TextGenerateConfig>): Promise<CostEstimate> {
     const adapter = this.providers.get(ctx.config.provider);
     return adapter.estimate({
       modelId: ctx.config.modelId,
@@ -53,7 +55,7 @@ export class LlmGenerate implements CapabilityImpl<LlmGenerateConfig> {
     });
   }
 
-  async submit(ctx: ExecCtx<LlmGenerateConfig>): Promise<JobHandle> {
+  async submit(ctx: ExecCtx<TextGenerateConfig>): Promise<JobHandle> {
     const adapter = this.providers.get(ctx.config.provider);
     return adapter.submit(
       {
@@ -71,7 +73,7 @@ export class LlmGenerate implements CapabilityImpl<LlmGenerateConfig> {
     return adapter.poll(handle);
   }
 
-  async fetch(handle: JobHandle, _ctx: ExecCtx<LlmGenerateConfig>): Promise<ExecResult> {
+  async fetch(handle: JobHandle, _ctx: ExecCtx<TextGenerateConfig>): Promise<ExecResult> {
     const adapter = this.providers.get(handle.providerId);
     const result = await adapter.fetch(handle);
     return {

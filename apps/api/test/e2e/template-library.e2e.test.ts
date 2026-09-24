@@ -50,7 +50,7 @@ describe('template library (e2e)', () => {
   const VALID_STAGE: StageDef = {
     key: 'hello',
     label: 'Hello',
-    capability: 'llm.generate',
+    capability: 'text.generate',
     config: {},
     slots: {},
     context: {},
@@ -86,13 +86,13 @@ describe('template library (e2e)', () => {
       const saved = await templates.save(dto, owner);
       expect(saved.templateId).toBeTruthy();
       expect(saved.version).toBe(1);
-      expect(saved.requires).toEqual({ capabilities: ['llm.generate'], inputs: [] });
+      expect(saved.requires).toEqual({ capabilities: ['text.generate'], inputs: [] });
 
       const listed = await templates.list(owner);
       const found = listed.find((row) => row.id === saved.templateId);
       expect(found).toBeTruthy();
       expect(found?.source).toBe('user');
-      expect(found?.requires).toEqual({ capabilities: ['llm.generate'], inputs: [] });
+      expect(found?.requires).toEqual({ capabilities: ['text.generate'], inputs: [] });
 
       const channels = testApp.app.get(ChannelService);
       const channel = await channels.create('local', {
@@ -104,7 +104,7 @@ describe('template library (e2e)', () => {
       if (!('graph' in instantiated)) throw new Error('expected a blueprint-version result');
       expect(instantiated.graph).toEqual([VALID_STAGE]);
       expect(instantiated.runnable).toBe(true);
-      expect(instantiated.requires).toEqual({ capabilities: ['llm.generate'], inputs: [] });
+      expect(instantiated.requires).toEqual({ capabilities: ['text.generate'], inputs: [] });
     });
 
     it('schema kind', async () => {
@@ -171,7 +171,7 @@ describe('template library (e2e)', () => {
       };
 
       const saved = await templates.save(dto, owner);
-      expect(saved.requires).toEqual({ capabilities: ['llm.generate'], inputs: [] });
+      expect(saved.requires).toEqual({ capabilities: ['text.generate'], inputs: [] });
 
       const listed = await templates.list(owner);
       expect(listed.some((row) => row.id === saved.templateId)).toBe(true);
@@ -180,7 +180,7 @@ describe('template library (e2e)', () => {
       const instantiated = await templates.instantiate(saved.templateId);
       expect(instantiated).toEqual({
         body: VALID_STAGE,
-        requires: { capabilities: ['llm.generate'], inputs: [] },
+        requires: { capabilities: ['text.generate'], inputs: [] },
       });
       expect(await tableCounts()).toEqual(before);
     });
@@ -303,6 +303,6 @@ describe('template library (e2e)', () => {
     expect(result.runnable).toBe(true);
     const validation = result.validation as Array<{ severity: string }>;
     expect(validation.filter((i) => i.severity === 'error')).toEqual([]);
-    expect(result.requires).toEqual({ capabilities: ['llm.generate'], inputs: [] });
+    expect(result.requires).toEqual({ capabilities: ['text.generate'], inputs: [] });
   });
 });

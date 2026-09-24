@@ -51,12 +51,16 @@ export interface CancelResult {
 export interface CapabilityImpl<Cfg = Record<string, unknown>> {
   readonly modality: string;
   readonly kind: 'sync' | 'async';
+  /** Short human-facing name for the stage picker, e.g. "Generate Text". */
+  readonly label: string;
+  /** One-sentence explanation shown alongside `label` in the stage picker. */
+  readonly description: string;
   readonly interaction?: { kind: 'form' | 'timeline_editor' };
   /** §4.2/§16.2 — the restricted-dialect shape of `StageDef.config` this
    * capability accepts, backing `GET /capabilities` (`CapabilityDto`,
    * `packages/shared/src/dto/capability.dto.ts`) and save-time validation.
    * Describes the AUTHORED `StageDef.config` shape, not the merged runtime
-   * `Cfg` this interface is generic over — e.g. `LlmGenerate`'s `provider`/
+   * `Cfg` this interface is generic over — e.g. `TextGenerateCapability`'s `provider`/
    * `modelId` arrive from the resolved model pin layer
    * (`ConfigResolverService`), not from `StageDef.config` itself; its
    * `configSchema` must not require them. A capability with no config

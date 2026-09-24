@@ -106,7 +106,7 @@ describe('RunActionService stage retry', () => {
 const nonIteratingStage = {
   key: 'draft',
   label: 'Draft',
-  capability: 'llm.generate',
+  capability: 'text.generate',
   config: {},
   slots: {},
   context: {},
@@ -118,7 +118,7 @@ const nonIteratingStage = {
 const iteratingStage = {
   key: 'broll',
   label: 'B-roll',
-  capability: 'llm.generate',
+  capability: 'text.generate',
   config: {},
   slots: {},
   context: {},

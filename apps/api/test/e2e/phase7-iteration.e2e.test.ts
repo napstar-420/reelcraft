@@ -39,7 +39,7 @@ describe('phase 7 chunk 4 — iterating stage per-item loop (e2e)', () => {
     return {
       key: 'shots',
       label: 'Shots',
-      capability: 'llm.generate',
+      capability: 'text.generate',
       config: {},
       slots: {},
       context: {},
@@ -60,7 +60,7 @@ describe('phase 7 chunk 4 — iterating stage per-item loop (e2e)', () => {
     return {
       key: 'broll',
       label: 'B-roll',
-      capability: 'llm.generate',
+      capability: 'text.generate',
       config: {},
       slots: { shot: { from: 'item' } },
       context: {},

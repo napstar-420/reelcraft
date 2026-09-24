@@ -116,7 +116,7 @@ describe('phase 7 chunk 7 — broll acceptance scenario (e2e)', () => {
     return {
       key: 'script',
       label: 'Script',
-      capability: 'llm.generate',
+      capability: 'text.generate',
       config: {},
       slots: {},
       context: {},
@@ -143,7 +143,7 @@ describe('phase 7 chunk 7 — broll acceptance scenario (e2e)', () => {
     return {
       key: 'shots',
       label: 'Shots',
-      capability: 'llm.generate',
+      capability: 'text.generate',
       config: {},
       slots: {},
       context: {},
@@ -224,7 +224,7 @@ describe('phase 7 chunk 7 — broll acceptance scenario (e2e)', () => {
     return {
       key: 'music',
       label: 'Music',
-      capability: 'llm.generate',
+      capability: 'text.generate',
       config: {},
       slots: {},
       context: { scriptRef: { from: 'memory', key: 'script' } },
@@ -249,7 +249,7 @@ describe('phase 7 chunk 7 — broll acceptance scenario (e2e)', () => {
     return {
       key: 'timeline',
       label: 'Timeline',
-      capability: 'llm.generate',
+      capability: 'text.generate',
       config: {},
       slots: {},
       context: { brollRef: { from: 'memory', key: 'broll' } },

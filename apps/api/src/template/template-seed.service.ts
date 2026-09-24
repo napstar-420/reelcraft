@@ -12,7 +12,7 @@ export const HELLO_STAGE_GRAPH: StageDef[] = [
   {
     key: 'hello',
     label: 'Hello',
-    capability: 'llm.generate',
+    capability: 'text.generate',
     instructions: { template: 'Say a short, friendly hello to a new video-engine project.' },
     config: {},
     slots: {},
@@ -59,14 +59,14 @@ export class TemplateSeedService implements OnApplicationBootstrap {
         source: 'builtin',
         kind: 'blueprint',
         name: 'Hello Stage',
-        description: 'A single llm.generate stage against the fake provider — phase 1 smoke test.',
+        description: 'A single text.generate stage against the fake provider — phase 1 smoke test.',
       });
       await tx.insert(templateVersion).values({
         id: ulid(),
         templateId,
         version: 1,
         body: HELLO_STAGE_GRAPH,
-        requires: { capabilities: ['llm.generate'], inputs: [] },
+        requires: { capabilities: ['text.generate'], inputs: [] },
       });
     });
 

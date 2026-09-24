@@ -65,7 +65,7 @@ describe('channel assets (e2e)', () => {
       {
         key: 'brand',
         label: 'Brand',
-        capability: 'llm.generate',
+        capability: 'text.generate',
         config: {},
         slots: {},
         context: { logo: { from: 'asset', assetId: logo.id } },
@@ -103,7 +103,7 @@ describe('channel assets (e2e)', () => {
       {
         key: 'brand',
         label: 'Brand',
-        capability: 'llm.generate',
+        capability: 'text.generate',
         config: {},
         slots: {},
         context: { logo: { from: 'asset', assetId: logo.id } },
@@ -176,7 +176,7 @@ describe('channel assets (e2e)', () => {
       {
         key: 'brand',
         label: 'Brand',
-        capability: 'llm.generate',
+        capability: 'text.generate',
         config: {},
         slots: {},
         context: { logo: { from: 'asset', assetId: logo.id } },

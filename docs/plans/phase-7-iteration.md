@@ -735,7 +735,7 @@ DO NOTHING` for `itemIndex` 0..N-1, all `state: 'pending'`; also sets
 ### Tests and exit criteria
 
 - e2e (`apps/api/test/e2e/phase7-iteration.e2e.test.ts`, Postgres-backed, no
-  ffmpeg dependency): a `data`-output iterating stage (e.g., `llm.generate`
+  ffmpeg dependency): a `data`-output iterating stage (e.g., `text.generate`
   producing one JSON object per item over a `memory:shots`-shaped array) run
   directly against `StageRunnerService`'s new item-scoped methods (same style
   as `phase4-actions.e2e.test.ts`, calling `beginAttempt`/`reserveAndSubmit`/

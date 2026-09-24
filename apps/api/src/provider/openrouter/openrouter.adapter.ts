@@ -15,7 +15,7 @@ interface OpenRouterJob {
 
 /**
  * §8/§16 — OpenRouter (BYOK), one adapter implementation covering text and
- * some image modalities. `llm.generate` is synchronous in practice (resolves
+ * some image modalities. `text.generate` is synchronous in practice (resolves
  * on the first poll, per §2.5.4) but still implements the full lifecycle.
  */
 @Injectable()

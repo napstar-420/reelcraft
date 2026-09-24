@@ -6,7 +6,7 @@ describe('StageDef', () => {
     const raw = {
       key: 'script',
       label: 'Script',
-      capability: 'llm.generate',
+      capability: 'text.generate',
       instructions: { template: 'Write a short narration script about {{ topic }}.' },
       config: {},
       slots: {},
@@ -28,7 +28,7 @@ describe('StageDef', () => {
     };
 
     const parsed = StageDef.parse(raw);
-    expect(parsed.capability).toBe('llm.generate');
+    expect(parsed.capability).toBe('text.generate');
     expect(parsed.output.kind).toBe('data');
     expect(parsed.context.topic).toEqual({ from: 'input', inputKey: 'topic' });
 
@@ -42,7 +42,7 @@ describe('StageDef', () => {
       StageDef.parse({
         key: 'x',
         label: 'X',
-        capability: 'llm.generate',
+        capability: 'text.generate',
         config: {},
         slots: { bad: { from: 'stage', stageKey: 'script' } },
         context: {},

@@ -47,7 +47,7 @@ describe('phase 7 chunk 6 — item-mode approval (e2e)', () => {
     return {
       key: 'shots',
       label: 'Shots',
-      capability: 'llm.generate',
+      capability: 'text.generate',
       config: {},
       slots: {},
       context: {},
@@ -67,7 +67,7 @@ describe('phase 7 chunk 6 — item-mode approval (e2e)', () => {
     return {
       key: 'style',
       label: 'Style',
-      capability: 'llm.generate',
+      capability: 'text.generate',
       config: {},
       slots: {},
       context: {},
@@ -89,7 +89,7 @@ describe('phase 7 chunk 6 — item-mode approval (e2e)', () => {
     return {
       key: 'broll',
       label: 'B-roll',
-      capability: 'llm.generate',
+      capability: 'text.generate',
       config: {},
       slots: { shot: { from: 'item' } },
       context: {},

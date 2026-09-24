@@ -95,7 +95,7 @@ describe('semantic retry loop (e2e)', () => {
       {
         key: 'script',
         label: 'Script',
-        capability: 'llm.generate',
+        capability: 'text.generate',
         instructions: { template: 'Write something. {{ priorCritique }}' },
         config: {},
         slots: {},
@@ -189,7 +189,7 @@ describe('semantic retry loop (e2e)', () => {
       {
         key: 'judged',
         label: 'Judged',
-        capability: 'llm.generate',
+        capability: 'text.generate',
         instructions: { template: 'Write something.' },
         config: {},
         slots: {},
@@ -252,7 +252,7 @@ describe('semantic retry loop (e2e)', () => {
       {
         key: 'unjudgeable',
         label: 'Unjudgeable',
-        capability: 'llm.generate',
+        capability: 'text.generate',
         instructions: { template: 'Write something.' },
         config: {},
         slots: {},
@@ -317,7 +317,7 @@ describe('semantic retry loop (e2e)', () => {
       {
         key: 'slow',
         label: 'Slow',
-        capability: 'llm.generate',
+        capability: 'text.generate',
         instructions: { template: 'Write something.' },
         config: {},
         slots: {},
@@ -382,7 +382,7 @@ describe('semantic retry loop (e2e)', () => {
       {
         key: 'racy',
         label: 'Racy',
-        capability: 'llm.generate',
+        capability: 'text.generate',
         config: {},
         slots: {},
         context: {},
@@ -424,7 +424,7 @@ describe('semantic retry loop (e2e)', () => {
       {
         key: 'flaky',
         label: 'Flaky',
-        capability: 'llm.generate',
+        capability: 'text.generate',
         config: {},
         slots: {},
         context: {},
@@ -481,7 +481,7 @@ describe('semantic retry loop (e2e)', () => {
       {
         key: 'judged',
         label: 'Judged',
-        capability: 'llm.generate',
+        capability: 'text.generate',
         instructions: { template: 'Write something.' },
         config: {},
         slots: {},
@@ -551,7 +551,7 @@ describe('semantic retry loop (e2e)', () => {
       {
         key: 'tight',
         label: 'Tight',
-        capability: 'llm.generate',
+        capability: 'text.generate',
         config: {},
         slots: {},
         context: {},

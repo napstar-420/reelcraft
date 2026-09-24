@@ -29,6 +29,8 @@ export class CapabilityController {
       key,
       modality: impl.modality,
       kind: impl.kind,
+      label: impl.label,
+      description: impl.description,
       configSchema: impl.configSchema,
       ...(impl.interaction && { interaction: impl.interaction }),
     }));

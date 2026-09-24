@@ -61,6 +61,8 @@ describe('CapabilityController.resolve', () => {
     const throwing: CapabilityImpl = {
       modality: 'test',
       kind: 'sync',
+      label: 'Test',
+      description: 'Test capability fixture.',
       configSchema: {
         type: 'object',
         properties: { count: { type: 'number' } },

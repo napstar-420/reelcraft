@@ -165,7 +165,7 @@ records durable 24h/48h reminder events without changing run state.
 - `apps/api`: full Drizzle schema for all 13 tables in §3, all 14 Nest modules from §1.3,
   `StorageAdapter` (MinIO via `@aws-sdk/client-s3`, `forcePathStyle: true`), a first-class
   `FakeProviderAdapter` with injectable failure modes plus an `OpenRouterAdapter`, the
-  `llm.generate` capability, Inngest orchestration (`run.orchestrate` → `stage.execute`) via
+  `text.generate` capability, Inngest orchestration (`run.orchestrate` → `stage.execute`) via
   the DI factory pattern, artifact finalization with the born-stale/stale-before-insert
   ordering the partial unique index requires, and the phase-1 API surface (channels,
   blueprints, templates, runs, capabilities, SSE run events).

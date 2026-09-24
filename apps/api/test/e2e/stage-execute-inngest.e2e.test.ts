@@ -114,7 +114,7 @@ describe('stage.execute (real Inngest steps, e2e)', () => {
       {
         key: 'outline',
         label: 'Outline',
-        capability: 'llm.generate',
+        capability: 'text.generate',
         config: {},
         slots: {},
         context: {},
@@ -168,7 +168,7 @@ describe('stage.execute (real Inngest steps, e2e)', () => {
       {
         key: 'script',
         label: 'Script',
-        capability: 'llm.generate',
+        capability: 'text.generate',
         instructions: { template: 'Write something. {{ priorCritique }}' },
         config: {},
         slots: {},
@@ -219,7 +219,7 @@ describe('stage.execute (real Inngest steps, e2e)', () => {
       {
         key: 'unfixable',
         label: 'Unfixable',
-        capability: 'llm.generate',
+        capability: 'text.generate',
         config: {},
         slots: {},
         context: {},
@@ -260,7 +260,7 @@ describe('stage.execute (real Inngest steps, e2e)', () => {
       {
         key: 'slow',
         label: 'Slow',
-        capability: 'llm.generate',
+        capability: 'text.generate',
         config: {},
         slots: {},
         context: {},
@@ -311,7 +311,7 @@ describe('stage.execute (real Inngest steps, e2e)', () => {
       {
         key: 'judged',
         label: 'Judged',
-        capability: 'llm.generate',
+        capability: 'text.generate',
         config: {},
         slots: {},
         context: {},
@@ -352,7 +352,7 @@ describe('stage.execute (real Inngest steps, e2e)', () => {
       {
         key: 'unjudgeable',
         label: 'Unjudgeable',
-        capability: 'llm.generate',
+        capability: 'text.generate',
         config: {},
         slots: {},
         context: {},
@@ -401,7 +401,7 @@ describe('stage.execute (real Inngest steps, e2e)', () => {
       {
         key: 'flaky-poll',
         label: 'Flaky Poll',
-        capability: 'llm.generate',
+        capability: 'text.generate',
         config: {},
         slots: {},
         context: {},
