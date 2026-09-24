@@ -245,7 +245,7 @@ function BudgetEditor({
   }
 
   return (
-    <div className="grid gap-3 sm:grid-cols-2">
+    <div className="flex flex-col gap-3">
       <div className="flex flex-col gap-1.5">
         <InfoLabel info="Maximum USD this stage's own model calls may spend. If exceeded mid-run, the stage stops with a budget-exceeded failure.">
           Stage cap (USD)
@@ -512,7 +512,7 @@ function ApprovalEditor({
   if (!approval) {
     return (
       <Button type="button" variant="outline" size="sm" onClick={() => onChange({ mode: 'stage' })}>
-        + add approval
+        + add human approval
       </Button>
     );
   }
@@ -540,7 +540,7 @@ function ApprovalEditor({
       {approval.onReject ? (
         <div className="flex flex-wrap items-end gap-2">
           <div className="flex flex-col gap-1.5">
-            <InfoLabel info="Which stage to re-run when this stage's output is rejected during approval. Leave unset to just fail the run on rejection.">
+            <InfoLabel info="Which stage to re-run when this stage's output is rejected during human approval. Leave unset to just fail the run on rejection.">
               Retry stage
             </InfoLabel>
             <Select
@@ -592,7 +592,7 @@ function ApprovalEditor({
         className="self-start"
         onClick={() => onChange(undefined)}
       >
-        Remove approval
+        Remove human approval
       </Button>
     </div>
   );
@@ -875,7 +875,7 @@ export function StageInspector({
               <Input type="text" value={stage.key} disabled />
             </div>
             <div className="flex flex-col gap-1.5">
-              <InfoLabel info="A human-readable name shown on the canvas node and in stage pickers (e.g. Approval's retry-stage select). Purely cosmetic — doesn't affect execution.">
+              <InfoLabel info="A human-readable name shown on the canvas node and in stage pickers (e.g. Human approval's retry-stage select). Purely cosmetic — doesn't affect execution.">
                 Label
               </InfoLabel>
               <Input
@@ -1101,7 +1101,7 @@ export function StageInspector({
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <InfoHeading info="Optional model-graded quality review of this stage's output against written criteria. Unlike Checks' pass/fail, quality control produces a score against a threshold and can drive an approval retry.">
+              <InfoHeading info="Optional model-graded quality review of this stage's output against written criteria. Unlike Checks' pass/fail, quality control produces a score against a threshold and can drive a human approval retry.">
                 Quality control
               </InfoHeading>
               <QcEditor qc={stage.qc} onChange={(qc) => onChange({ ...stage, qc })} />
@@ -1182,7 +1182,7 @@ export function StageInspector({
 
       <div className="flex flex-col gap-1.5">
         <InfoHeading info="Optional human-in-the-loop gate. When set, the run pauses after this stage (or after each item, in item mode) for a person to approve or reject before continuing.">
-          Approval
+          Human approval
         </InfoHeading>
         <ApprovalEditor
           approval={stage.approval}
