@@ -3,6 +3,7 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { api } from '../../api/client';
 import { BindingPicker } from './BindingPicker';
 import { SchemaForm } from './SchemaForm';
+import { SECTION_HEADING_CLASS } from './typography';
 import type {
   CheckDef,
   InputDef,
@@ -216,7 +217,7 @@ export function ChecksEditor({
     <div className="flex flex-col gap-3">
       {checks.map((check, index) => (
         <Card key={index}>
-          <CardHeader className="flex-row items-center justify-between gap-2">
+          <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Select
                 value={check.type}
@@ -238,9 +239,6 @@ export function ChecksEditor({
                 </SelectContent>
               </Select>
             </CardTitle>
-            <Button type="button" variant="ghost" size="sm" onClick={() => remove(index)}>
-              Remove check
-            </Button>
           </CardHeader>
 
           <CardContent className="flex flex-col gap-3">
@@ -290,7 +288,7 @@ export function ChecksEditor({
                   />
                 </div>
                 <div className="flex flex-col gap-1.5">
-                  <h4 className="text-sm font-medium">Code</h4>
+                  <h4 className={SECTION_HEADING_CLASS}>Code</h4>
                   <Textarea
                     rows={10}
                     className="font-mono text-xs"
@@ -299,7 +297,7 @@ export function ChecksEditor({
                   />
                 </div>
                 <div className="flex flex-col gap-1.5">
-                  <h4 className="text-sm font-medium">Refs</h4>
+                  <h4 className={SECTION_HEADING_CLASS}>Refs</h4>
                   <RefsEditor
                     refs={check.refs}
                     onChange={(refs) => update(index, { ...check, refs })}
@@ -316,6 +314,16 @@ export function ChecksEditor({
 
             <CheckTestPanel check={check} />
             <IssueList issues={issues?.[index] ?? []} />
+
+            <Button
+              type="button"
+              variant="destructive"
+              size="sm"
+              className="self-start"
+              onClick={() => remove(index)}
+            >
+              Remove check
+            </Button>
           </CardContent>
         </Card>
       ))}

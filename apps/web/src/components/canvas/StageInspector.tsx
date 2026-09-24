@@ -8,6 +8,7 @@ import { ChecksEditor } from './ChecksEditor';
 import { ModelPinEditor } from './ModelPinEditor';
 import { TypedValueInput } from './TypedValueInput';
 import { parseValidationPath, type ParsedValidationPath } from '../../lib/parse-validation-path';
+import { SECTION_HEADING_CLASS } from './typography';
 import type {
   StageDef,
   InputDef,
@@ -390,7 +391,7 @@ function QcEditor({
       </Label>
 
       <div className="flex flex-col gap-1.5">
-        <h4 className="text-sm font-medium">Model</h4>
+        <h4 className={SECTION_HEADING_CLASS}>Model</h4>
         <ModelPinEditor
           value={qc.model}
           onChange={(model) => set({ model: model as ModelPin })}
@@ -399,7 +400,7 @@ function QcEditor({
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <h4 className="text-sm font-medium">Dimensions</h4>
+        <h4 className={SECTION_HEADING_CLASS}>Dimensions</h4>
         <QcDimensionsEditor
           dimensions={qc.dimensions ?? []}
           onChange={(dimensions) => set({ dimensions })}
@@ -798,9 +799,9 @@ export function StageInspector({
               <IssueList issues={capabilityIssues} />
             </div>
 
-            {configSchema && (
+            {configSchema && Object.keys(configSchema.properties ?? {}).length > 0 && (
               <div className="flex flex-col gap-1.5">
-                <h3 className="text-sm font-medium">Config</h3>
+                <h3 className={SECTION_HEADING_CLASS}>Config</h3>
                 <SchemaForm
                   schema={configSchema}
                   value={stage.config}
@@ -818,7 +819,7 @@ export function StageInspector({
           <AccordionTrigger>Data (slots, context, output, writes)</AccordionTrigger>
           <AccordionContent className="flex flex-col gap-4">
             <div className="flex flex-col gap-3">
-              <h3 className="text-sm font-medium">Slots</h3>
+              <h3 className={SECTION_HEADING_CLASS}>Slots</h3>
               {resolved.slots.map((slot) => (
                 <div key={slot.name} className="flex flex-col gap-1.5">
                   <Label>
@@ -842,7 +843,7 @@ export function StageInspector({
             </div>
 
             <div className="flex flex-col gap-3">
-              <h3 className="text-sm font-medium">Context</h3>
+              <h3 className={SECTION_HEADING_CLASS}>Context</h3>
               {Object.entries(stage.context).map(([key, ref]) => (
                 <div key={key} className="flex flex-col gap-1.5">
                   <div className="flex flex-wrap items-center gap-2">
@@ -887,7 +888,7 @@ export function StageInspector({
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <h3 className="text-sm font-medium">Output</h3>
+              <h3 className={SECTION_HEADING_CLASS}>Output</h3>
               <Select
                 value={stage.output.kind}
                 onValueChange={(next) =>
@@ -926,7 +927,7 @@ export function StageInspector({
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <h3 className="text-sm font-medium">Memory writes</h3>
+              <h3 className={SECTION_HEADING_CLASS}>Memory writes</h3>
               <WritesEditor
                 writes={stage.writes}
                 onChange={(writes) => onChange({ ...stage, writes })}
@@ -939,7 +940,7 @@ export function StageInspector({
           <AccordionTrigger>Checks &amp; QC</AccordionTrigger>
           <AccordionContent className="flex flex-col gap-4">
             <div className="flex flex-col gap-1.5">
-              <h3 className="text-sm font-medium">Checks</h3>
+              <h3 className={SECTION_HEADING_CLASS}>Checks</h3>
               <ChecksEditor
                 checks={stage.checks}
                 onChange={(checks) => onChange({ ...stage, checks })}
@@ -954,7 +955,7 @@ export function StageInspector({
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <h3 className="text-sm font-medium">QC</h3>
+              <h3 className={SECTION_HEADING_CLASS}>QC</h3>
               <QcEditor qc={stage.qc} onChange={(qc) => onChange({ ...stage, qc })} />
               <IssueList issues={qcIssues} />
             </div>
@@ -965,7 +966,7 @@ export function StageInspector({
           <AccordionTrigger>Execution (retry, budget, model, approval, iterate)</AccordionTrigger>
           <AccordionContent className="flex flex-col gap-4">
             <div className="flex flex-col gap-1.5">
-              <h3 className="text-sm font-medium">Retry limit</h3>
+              <h3 className={SECTION_HEADING_CLASS}>Retry limit</h3>
               <div className="flex flex-col gap-1.5">
                 <Label>Retries</Label>
                 <Input
@@ -979,7 +980,7 @@ export function StageInspector({
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <h3 className="text-sm font-medium">Budget</h3>
+              <h3 className={SECTION_HEADING_CLASS}>Budget</h3>
               <BudgetEditor
                 budget={stage.budget}
                 onChange={(budget) => onChange({ ...stage, budget })}
@@ -987,7 +988,7 @@ export function StageInspector({
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <h3 className="text-sm font-medium">Model</h3>
+              <h3 className={SECTION_HEADING_CLASS}>Model</h3>
               <ModelPinEditor
                 value={stage.model}
                 onChange={(model) => onChange({ ...stage, model })}
@@ -996,7 +997,7 @@ export function StageInspector({
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <h3 className="text-sm font-medium">Enabled when</h3>
+              <h3 className={SECTION_HEADING_CLASS}>Enabled when</h3>
               <EnabledWhenEditor
                 enabledWhen={stage.enabledWhen}
                 inputs={inputs}
@@ -1006,7 +1007,7 @@ export function StageInspector({
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <h3 className="text-sm font-medium">Approval</h3>
+              <h3 className={SECTION_HEADING_CLASS}>Approval</h3>
               <ApprovalEditor
                 approval={stage.approval}
                 graph={graph}
@@ -1016,7 +1017,7 @@ export function StageInspector({
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <h3 className="text-sm font-medium">Iterate</h3>
+              <h3 className={SECTION_HEADING_CLASS}>Iterate</h3>
               <IterateEditor
                 iterate={stage.iterate}
                 stageIndex={stageIndex}

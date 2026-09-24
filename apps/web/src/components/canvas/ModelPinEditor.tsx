@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../api/client';
 import { TypedValueInput } from './TypedValueInput';
+import { SECTION_HEADING_CLASS } from './typography';
 import type { PartialModelPin } from '@reefcraft/shared';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -162,7 +163,7 @@ export function ModelPinEditor({ value, onChange, clearable = true }: ModelPinEd
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <h4 className="text-sm font-medium">Params</h4>
+        <h4 className={SECTION_HEADING_CLASS}>Params</h4>
         <ParamsEditor params={value?.params} onChange={(params) => set({ params })} />
       </div>
 
