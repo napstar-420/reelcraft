@@ -241,6 +241,7 @@ function InstructionsEditor({
         <Textarea
           rows={3}
           className="font-mono text-xs"
+          placeholder="e.g. You are a meticulous video-production assistant."
           value={instructions?.system ?? ''}
           onChange={(e) => set({ system: e.target.value })}
         />
@@ -252,6 +253,7 @@ function InstructionsEditor({
         <Textarea
           rows={6}
           className="font-mono text-xs"
+          placeholder={'e.g. Write a title for {{ topic }}.'}
           value={instructions?.template ?? ''}
           onChange={(e) => set({ template: e.target.value })}
         />
