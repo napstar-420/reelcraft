@@ -142,6 +142,8 @@ export const api = {
       body: JSON.stringify({ channelId, name }),
     }),
   getBlueprint: (blueprintId: string) => request<BlueprintDto>(`/blueprints/${blueprintId}`),
+  listBlueprints: (channelId: string) =>
+    request<BlueprintDto[]>(`/blueprints?channelId=${encodeURIComponent(channelId)}`),
   createBlueprintVersion: (blueprintId: string, dto: CreateBlueprintVersionDto) =>
     request<BlueprintVersionDto>(`/blueprints/${blueprintId}/versions`, {
       method: 'POST',

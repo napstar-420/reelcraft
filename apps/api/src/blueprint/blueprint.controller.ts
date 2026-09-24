@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseIntPipe, Post, Query } from '@nestjs/common';
 import { CreateBlueprintDto, CreateBlueprintVersionDto, StartDryRunDto } from '@reefcraft/shared';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { BlueprintService } from './blueprint.service';
@@ -15,6 +15,11 @@ export class BlueprintController {
   async create(@Body(new ZodValidationPipe(CreateBlueprintDto)) dto: CreateBlueprintDto) {
     const blueprintId = await this.blueprints.ensureBlueprint(dto.channelId, dto.name);
     return { blueprintId };
+  }
+
+  @Get()
+  list(@Query('channelId') channelId: string) {
+    return this.blueprints.listByChannel(channelId);
   }
 
   @Get(':id')

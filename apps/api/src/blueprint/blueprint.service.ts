@@ -36,6 +36,10 @@ export class BlueprintService {
     return id;
   }
 
+  async listByChannel(channelId: string) {
+    return this.db.select().from(blueprint).where(eq(blueprint.channelId, channelId));
+  }
+
   async getBlueprint(id: string) {
     const [row] = await this.db.select().from(blueprint).where(eq(blueprint.id, id)).limit(1);
     if (!row) throw new Error(`Blueprint ${id} not found`);
