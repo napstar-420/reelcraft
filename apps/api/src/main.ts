@@ -1,4 +1,11 @@
 import 'reflect-metadata';
+import { loadRootEnv } from './common/load-dotenv';
+
+// Must run before `./app.module` is imported: ConfigModule.forRoot's
+// `validate` executes eagerly at decorator-evaluation time, so process.env
+// needs the root .env loaded before that import line is reached.
+loadRootEnv();
+
 import { json } from 'express';
 import { NestFactory } from '@nestjs/core';
 import { serve } from 'inngest/express';

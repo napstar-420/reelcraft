@@ -36,9 +36,6 @@ export class BlueprintService {
     return id;
   }
 
-  /** Chunk 3 (Phase 9.5) — the canvas needs a blueprint's `channelId` from
-   * just a `blueprintId` (e.g. to scope the asset picker); no existing
-   * endpoint exposed it. Matches `getVersion`'s not-found convention. */
   async getBlueprint(id: string) {
     const [row] = await this.db.select().from(blueprint).where(eq(blueprint.id, id)).limit(1);
     if (!row) throw new Error(`Blueprint ${id} not found`);
@@ -81,7 +78,7 @@ export class BlueprintService {
     return this.getVersion(id);
   }
 
-  /** Chunk 9.3 — the no-persist half of `createVersion`, extracted so
+  /** The no-persist half of `createVersion`, extracted so
    * `POST /blueprints/:id/validate` reuses exactly this logic rather than
    * duplicating it. Requires the blueprint to already exist (it needs the
    * blueprint's own `channelId` for asset/character channel-scoping), so a
@@ -141,7 +138,7 @@ export class BlueprintService {
       .where(eq(blueprintVersion.blueprintId, blueprintId));
   }
 
-  /** §16.2 — loads every asset referenced by a `{from:'asset'}` ref in the
+  /** loads every asset referenced by a `{from:'asset'}` ref in the
    * graph, by id, so the (synchronous, DB-free) validator can check
    * existence/channel/kind without touching the database itself. Deliberately
    * NOT scoped to the blueprint's own channel in the query — an asset from a

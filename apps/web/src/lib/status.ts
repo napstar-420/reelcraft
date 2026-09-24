@@ -50,6 +50,7 @@ const stageExecutionStateTones: Record<StageExecutionState, StatusTone> = {
 
 const attemptOutcomeTones: Record<AttemptOutcome, StatusTone> = {
   success: 'success',
+  awaiting_approval: 'warning',
   check_failed: 'error',
   qc_failed: 'error',
   qc_error: 'error',

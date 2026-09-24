@@ -1,9 +1,7 @@
 import { z } from 'zod';
 
 /**
- * A stage binds only the previous stage (§6.1). Anything further back
- * travels through Run Memory. There is no `{from: 'stage', stageKey}` variant
- * — this is the v6 decision, not an omission.
+ * Refs points to values / blobs, and are not data themselves, they describe where to look
  */
 export const Ref = z.discriminatedUnion('from', [
   z.object({
@@ -24,4 +22,5 @@ export const Ref = z.discriminatedUnion('from', [
   z.object({ from: z.literal('prevItem'), path: z.string().optional() }),
   z.object({ from: z.literal('const'), value: z.unknown() }),
 ]);
+
 export type Ref = z.infer<typeof Ref>;
