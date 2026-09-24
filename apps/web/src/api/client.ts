@@ -16,6 +16,13 @@ import type {
   ValidationIssue,
   AssetDto,
   TemplateSource,
+  CharacterDto,
+  CreateCharacterDto,
+  UpdateCharacterDto,
+  ConfirmCharacterReferenceDto,
+  UpdateCharacterReferenceDto,
+  RequestAssetUploadResultDto,
+  CreateAssetDto,
 } from '@reefcraft/shared';
 
 /** `blueprint.service.ts#getBlueprint()`'s row shape — the whole `blueprint`
@@ -158,8 +165,56 @@ export const api = {
     ),
 
   listChannelAssets: (channelId: string) => request<AssetDto[]>(`/channels/${channelId}/assets`),
+  requestAssetUpload: (channelId: string, ext: string) =>
+    request<RequestAssetUploadResultDto>(`/channels/${channelId}/assets/upload`, {
+      method: 'POST',
+      body: JSON.stringify({ ext }),
+    }),
+  createAsset: (channelId: string, dto: CreateAssetDto) =>
+    request<AssetDto>(`/channels/${channelId}/assets`, {
+      method: 'POST',
+      body: JSON.stringify(dto),
+    }),
+  deleteAsset: (id: string) => request<void>(`/assets/${id}`, { method: 'DELETE' }),
+
   listCharacters: (channelId: string) =>
     request<CharacterListItemDto[]>(`/channels/${channelId}/characters`),
+  listChannelCharacters: (channelId: string) =>
+    request<CharacterDto[]>(`/channels/${channelId}/characters`),
+  getCharacter: (id: string) => request<CharacterDto>(`/characters/${id}`),
+  createCharacter: (channelId: string, dto: CreateCharacterDto) =>
+    request<CharacterDto>(`/channels/${channelId}/characters`, {
+      method: 'POST',
+      body: JSON.stringify(dto),
+    }),
+  updateCharacter: (id: string, dto: UpdateCharacterDto) =>
+    request<CharacterDto>(`/characters/${id}`, { method: 'PATCH', body: JSON.stringify(dto) }),
+  requestCharacterReferenceUpload: (characterId: string, ext: string) =>
+    request<{ blobId: string; objectKey: string; uploadUrl: string; ext: string }>(
+      `/characters/${characterId}/references/upload`,
+      { method: 'POST', body: JSON.stringify({ ext }) },
+    ),
+  confirmCharacterReference: (characterId: string, dto: ConfirmCharacterReferenceDto) =>
+    request<CharacterDto>(`/characters/${characterId}/references`, {
+      method: 'POST',
+      body: JSON.stringify(dto),
+    }),
+  updateCharacterReference: (
+    characterId: string,
+    blobId: string,
+    dto: UpdateCharacterReferenceDto,
+  ) =>
+    request<CharacterDto>(`/characters/${characterId}/references/${blobId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(dto),
+    }),
+  deleteCharacterReference: (characterId: string, blobId: string) =>
+    request<void>(`/characters/${characterId}/references/${blobId}`, { method: 'DELETE' }),
+  setPrimaryCharacterReference: (characterId: string, blobId: string) =>
+    request<CharacterDto>(`/characters/${characterId}/primary-reference`, {
+      method: 'PUT',
+      body: JSON.stringify({ blobId }),
+    }),
 
   listCapabilities: () => request<CapabilityDto[]>('/capabilities'),
   resolveCapability: (key: string, config: Record<string, unknown>) =>
