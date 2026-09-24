@@ -8,7 +8,11 @@ import { ChecksEditor } from './ChecksEditor';
 import { ModelPinEditor } from './ModelPinEditor';
 import { TypedValueInput } from './TypedValueInput';
 import { parseValidationPath, type ParsedValidationPath } from '../../lib/parse-validation-path';
-import { SECTION_HEADING_CLASS, STAGE_SECTION_TRIGGER_CLASS } from './typography';
+import {
+  SECTION_HEADING_CLASS,
+  STAGE_SECTION_CONTENT_CLASS,
+  STAGE_SECTION_TRIGGER_CLASS,
+} from './typography';
 import type {
   StageDef,
   InputDef,
@@ -776,7 +780,7 @@ export function StageInspector({
           className="rounded-xl border border-border overflow-hidden px-3"
         >
           <AccordionTrigger className={STAGE_SECTION_TRIGGER_CLASS}>Basics</AccordionTrigger>
-          <AccordionContent className="flex flex-col gap-4">
+          <AccordionContent className={STAGE_SECTION_CONTENT_CLASS}>
             <div className="flex flex-col gap-1.5">
               <Label>Key</Label>
               <Input type="text" value={stage.key} disabled />
@@ -825,7 +829,7 @@ export function StageInspector({
           <AccordionTrigger className={STAGE_SECTION_TRIGGER_CLASS}>
             Data (slots, context, output, writes)
           </AccordionTrigger>
-          <AccordionContent className="flex flex-col gap-4">
+          <AccordionContent className={STAGE_SECTION_CONTENT_CLASS}>
             <div className="flex flex-col gap-3">
               <h3 className={SECTION_HEADING_CLASS}>Slots</h3>
               {resolved.slots.map((slot) => (
@@ -951,7 +955,7 @@ export function StageInspector({
           <AccordionTrigger className={STAGE_SECTION_TRIGGER_CLASS}>
             Checks &amp; QC
           </AccordionTrigger>
-          <AccordionContent className="flex flex-col gap-4">
+          <AccordionContent className={STAGE_SECTION_CONTENT_CLASS}>
             <div className="flex flex-col gap-1.5">
               <h3 className={SECTION_HEADING_CLASS}>Checks</h3>
               <ChecksEditor
@@ -982,7 +986,7 @@ export function StageInspector({
           <AccordionTrigger className={STAGE_SECTION_TRIGGER_CLASS}>
             Execution (retry, budget, model, approval, iterate)
           </AccordionTrigger>
-          <AccordionContent className="flex flex-col gap-4">
+          <AccordionContent className={STAGE_SECTION_CONTENT_CLASS}>
             <div className="flex flex-col gap-1.5">
               <h3 className={SECTION_HEADING_CLASS}>Retry limit</h3>
               <div className="flex flex-col gap-1.5">
