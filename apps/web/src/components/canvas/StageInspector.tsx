@@ -71,6 +71,25 @@ function SectionHeading({ children, info }: { children: ReactNode; info: string 
   );
 }
 
+/** Like `SectionHeading` but sized/styled for a field `Label` rather than a
+ * `SECTION_HEADING_CLASS` heading — for individual inputs (System, Template)
+ * whose own name doesn't convey their syntax or behavior. */
+function LabelWithInfo({ children, info }: { children: ReactNode; info: string }) {
+  return (
+    <Label className="flex items-center gap-1.5">
+      {children}
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <InfoIcon className="size-3.5 cursor-help" />
+        </TooltipTrigger>
+        <TooltipContent side="right" className="max-w-64 text-left normal-case">
+          {info}
+        </TooltipContent>
+      </Tooltip>
+    </Label>
+  );
+}
+
 /** A shallow, non-recursive view of the `JsonSchema` dialect (§4.2) used only
  * to build `output.schema` via `SchemaForm` itself — the dialect has no
  * `$ref`, so a schema describing "a `JsonSchema` value" can't recurse into
@@ -216,7 +235,9 @@ function InstructionsEditor({
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-col gap-1.5">
-        <Label>System</Label>
+        <LabelWithInfo info="Optional system-role prompt sent before the template on every call — sets tone, persona, or constraints that shouldn't change per-run. Leave blank to use the capability's own default system prompt, if it has one.">
+          System
+        </LabelWithInfo>
         <Textarea
           rows={3}
           className="font-mono text-xs"
@@ -225,7 +246,9 @@ function InstructionsEditor({
         />
       </div>
       <div className="flex flex-col gap-1.5">
-        <Label>Template</Label>
+        <LabelWithInfo info="The user-role prompt sent to the model. Supports {{ }} interpolation: reference this stage's Slots or Context values by name, e.g. {{ myContextKey }}, plus {{ priorCritique }} when a stage is re-run after a failed QC check. Required for capabilities that read a prompt (e.g. text/LLM generation) — leave blank for capabilities that don't.">
+          Template
+        </LabelWithInfo>
         <Textarea
           rows={6}
           className="font-mono text-xs"
@@ -883,9 +906,7 @@ export function StageInspector({
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <SectionHeading info="The prompt this stage sends to the model, for capabilities that wrap an LLM. `template` supports {{ }} interpolation over this stage's Slots/Context values and `priorCritique` on a QC retry; `system` is an optional system-role prefix. Leave both blank for non-prompt capabilities.">
-                Instructions
-              </SectionHeading>
+              <h3 className={SECTION_HEADING_CLASS}>Instructions</h3>
               <InstructionsEditor
                 instructions={stage.instructions}
                 onChange={(instructions) => onChange({ ...stage, instructions })}
