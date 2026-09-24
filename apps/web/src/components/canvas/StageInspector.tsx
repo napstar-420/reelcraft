@@ -39,6 +39,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 const UNSET = '__unset__';
 
@@ -803,9 +804,12 @@ export function StageInspector({
                 <SelectContent>
                   <SelectItem value={UNSET}>Select a capability…</SelectItem>
                   {capabilities.data?.map((c) => (
-                    <SelectItem key={c.key} value={c.key}>
-                      {c.label}
-                    </SelectItem>
+                    <Tooltip key={c.key}>
+                      <TooltipTrigger asChild>
+                        <SelectItem value={c.key}>{c.label}</SelectItem>
+                      </TooltipTrigger>
+                      <TooltipContent side="right">{c.description}</TooltipContent>
+                    </Tooltip>
                   ))}
                 </SelectContent>
               </Select>
