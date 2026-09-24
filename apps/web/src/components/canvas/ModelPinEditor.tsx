@@ -166,7 +166,7 @@ export function ModelPinEditor({ value, onChange, clearable = true }: ModelPinEd
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <InfoHeading info="Extra provider-specific call parameters (e.g. max_tokens, temperature) merged into every request this stage — or its QC pass — makes.">
+        <InfoHeading info="Extra provider-specific call parameters (e.g. max_tokens, temperature) merged into every request this stage — or its quality control pass — makes.">
           Params
         </InfoHeading>
         <ParamsEditor params={value?.params} onChange={(params) => set({ params })} />

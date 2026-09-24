@@ -282,7 +282,7 @@ export function ChecksEditor({
             ) : (
               <div className="flex flex-col gap-3">
                 <div className="flex flex-col gap-1.5">
-                  <InfoLabel info="A display name for this script check, shown in check results and QC/approval logs.">
+                  <InfoLabel info="A display name for this script check, shown in check results and quality control/approval logs.">
                     Name
                   </InfoLabel>
                   <Input

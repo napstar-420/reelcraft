@@ -6,7 +6,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 
 /** A `SECTION_HEADING_CLASS` heading with an info icon whose tooltip carries
  * a longer explanation of what the section below it does — for sub-sections
- * whose name alone doesn't convey their purpose (e.g. "Output", "QC"). */
+ * whose name alone doesn't convey their purpose (e.g. "Output", "Quality
+ * control"). */
 export function InfoHeading({ children, info }: { children: ReactNode; info: string }) {
   return (
     <h3 className={`${SECTION_HEADING_CLASS} flex items-center gap-1.5`}>

@@ -207,7 +207,7 @@ function InstructionsEditor({
         />
       </div>
       <div className="flex flex-col gap-1.5">
-        <InfoLabel info="The user-role prompt sent to the model. Supports {{ }} interpolation: reference this stage's Slots or Context values by name, e.g. {{ myContextKey }}, plus {{ priorCritique }} when a stage is re-run after a failed QC check. Required for capabilities that read a prompt (e.g. text/LLM generation) — leave blank for capabilities that don't.">
+        <InfoLabel info="The user-role prompt sent to the model. Supports {{ }} interpolation: reference this stage's Slots or Context values by name, e.g. {{ myContextKey }}, plus {{ priorCritique }} when a stage is re-run after a failed quality control check. Required for capabilities that read a prompt (e.g. text/LLM generation) — leave blank for capabilities that don't.">
           Template
         </InfoLabel>
         <Textarea
@@ -257,8 +257,8 @@ function BudgetEditor({
         />
       </div>
       <div className="flex flex-col gap-1.5">
-        <InfoLabel info="Maximum USD this stage's QC pass (if any) may spend, tracked separately from the stage cap above.">
-          QC cap (USD)
+        <InfoLabel info="Maximum USD this stage's quality control pass (if any) may spend, tracked separately from the stage cap above.">
+          Quality control cap (USD)
         </InfoLabel>
         <Input
           type="number"
@@ -415,7 +415,7 @@ function QcEditor({
           })
         }
       >
-        + add QC
+        + add quality control
       </Button>
     );
   }
@@ -427,7 +427,7 @@ function QcEditor({
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-col gap-1.5">
-        <InfoLabel info="Free-text description of what a passing output looks like — sent to the QC model alongside this stage's output as the judgment prompt.">
+        <InfoLabel info="Free-text description of what a passing output looks like — sent to the quality control model alongside this stage's output as the judgment prompt.">
           Criteria
         </InfoLabel>
         <Input
@@ -437,7 +437,7 @@ function QcEditor({
         />
       </div>
       <div className="flex flex-col gap-1.5">
-        <InfoLabel info="Minimum score (0–1) the QC model's judgment must reach for this stage to pass QC. Below it, the run treats this stage as failed QC.">
+        <InfoLabel info="Minimum score (0–1) the quality control model's judgment must reach for this stage to pass. Below it, the run treats this stage as failed quality control.">
           Threshold
         </InfoLabel>
         <Input
@@ -465,7 +465,7 @@ function QcEditor({
       </Label>
 
       <div className="flex flex-col gap-1.5">
-        <InfoHeading info="Which model judges this stage's output against Criteria. Required — unlike a stage's own Model, QC has no default to fall back to.">
+        <InfoHeading info="Which model judges this stage's output against Criteria. Required — unlike a stage's own Model, quality control has no default to fall back to.">
           Model
         </InfoHeading>
         <ModelPinEditor
@@ -476,7 +476,7 @@ function QcEditor({
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <InfoHeading info="Optional named sub-scores (e.g. clarity, accuracy), each weighted, that the QC model rates individually instead of — or alongside — a single overall score.">
+        <InfoHeading info="Optional named sub-scores (e.g. clarity, accuracy), each weighted, that the quality control model rates individually instead of — or alongside — a single overall score.">
           Dimensions
         </InfoHeading>
         <QcDimensionsEditor
@@ -492,7 +492,7 @@ function QcEditor({
         className="self-start"
         onClick={() => onChange(undefined)}
       >
-        Remove QC
+        Remove quality control
       </Button>
     </div>
   );
@@ -1080,7 +1080,7 @@ export function StageInspector({
           className="rounded-xl border border-border overflow-hidden px-3"
         >
           <AccordionTrigger className={STAGE_SECTION_TRIGGER_CLASS}>
-            Checks &amp; QC
+            Checks &amp; Quality control
           </AccordionTrigger>
           <AccordionContent className={STAGE_SECTION_CONTENT_CLASS}>
             <div className="flex flex-col gap-1.5">
@@ -1101,8 +1101,8 @@ export function StageInspector({
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <InfoHeading info="Optional model-graded quality review of this stage's output against written criteria. Unlike Checks' pass/fail, QC produces a score against a threshold and can drive an approval retry.">
-                QC
+              <InfoHeading info="Optional model-graded quality review of this stage's output against written criteria. Unlike Checks' pass/fail, quality control produces a score against a threshold and can drive an approval retry.">
+                Quality control
               </InfoHeading>
               <QcEditor qc={stage.qc} onChange={(qc) => onChange({ ...stage, qc })} />
               <IssueList issues={qcIssues} />
@@ -1137,7 +1137,7 @@ export function StageInspector({
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <InfoHeading info="Optional per-stage USD spending caps. If exceeded mid-run, the stage (or its QC pass) stops with a budget-exceeded failure rather than continuing to spend.">
+              <InfoHeading info="Optional per-stage USD spending caps. If exceeded mid-run, the stage (or its quality control pass) stops with a budget-exceeded failure rather than continuing to spend.">
                 Budget
               </InfoHeading>
               <BudgetEditor
