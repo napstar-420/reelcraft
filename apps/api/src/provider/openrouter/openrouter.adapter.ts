@@ -13,6 +13,23 @@ interface OpenRouterJob {
   req: ProviderRequest;
 }
 
+const OWNED_REQUEST_FIELDS = new Set([
+  '__mediaKind',
+  'messages',
+  'model',
+  'prompt',
+  'provider',
+  'response_format',
+  'slots',
+  'stream',
+]);
+
+function forwardedParams(params: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(params).filter(([key]) => !OWNED_REQUEST_FIELDS.has(key)),
+  );
+}
+
 /**
  * §8/§16 — OpenRouter (BYOK), one adapter implementation covering text and
  * some image modalities. `text.generate` is synchronous in practice (resolves
@@ -21,7 +38,7 @@ interface OpenRouterJob {
 @Injectable()
 export class OpenRouterAdapter implements ProviderAdapter {
   readonly id = 'openrouter';
-  readonly modalities = ['text', 'image'];
+  readonly modalities = ['text', 'image'] as const;
 
   private readonly jobs = new Map<string, OpenRouterJob>();
 
@@ -44,14 +61,16 @@ export class OpenRouterAdapter implements ProviderAdapter {
     if (!res.ok) {
       throw new Error(`OpenRouterAdapter.listModels: ${res.status} ${res.statusText}`);
     }
-    const body = (await res.json()) as { data: Array<{ id: string; name: string }> };
+    const body = (await res.json()) as {
+      data: Array<{ id: string; name: string; supported_parameters?: string[] }>;
+    };
     const models: ModelInfo[] = body.data.map((m) => ({
       modelId: m.id,
       label: m.name,
       capabilities: {
         supportsSeed: false,
         supportsIdempotency: false,
-        supportsStructuredOutput: false,
+        supportsStructuredOutput: m.supported_parameters?.includes('structured_outputs') === true,
       },
     }));
     this.modelCache.set(models);
@@ -78,6 +97,17 @@ export class OpenRouterAdapter implements ProviderAdapter {
   }
 
   async submit(req: ProviderRequest, idempotencyKey: string): Promise<JobHandle> {
+    if (req.output?.kind === 'data') {
+      const model = (await this.listModels()).find(
+        (candidate) => candidate.modelId === req.modelId,
+      );
+      if (!model) {
+        throw new Error(`OpenRouter model "${req.modelId}" is not available`);
+      }
+      if (!model.capabilities.supportsStructuredOutput) {
+        throw new Error(`OpenRouter model "${req.modelId}" does not support structured output`);
+      }
+    }
     this.jobs.set(idempotencyKey, { req });
     return { providerId: this.id, externalId: idempotencyKey };
   }
@@ -97,16 +127,30 @@ export class OpenRouterAdapter implements ProviderAdapter {
       throw new Error('OpenRouterAdapter.fetch: no API key configured');
     }
     if (job.req.params.__mediaKind === 'media.image') return this.fetchImage(job.req, apiKey);
+    const responseFormat =
+      job.req.output?.kind === 'data'
+        ? {
+            type: 'json_schema',
+            json_schema: {
+              name: job.req.output.schemaName ?? 'stage_output',
+              strict: true,
+              schema: job.req.output.schema,
+            },
+          }
+        : undefined;
     const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        ...forwardedParams(job.req.params),
         model: job.req.modelId,
         messages: [
           ...(job.req.system ? [{ role: 'system', content: job.req.system }] : []),
           { role: 'user', content: job.req.renderedPrompt ?? '' },
         ],
-        ...job.req.params,
+        ...(responseFormat && { response_format: responseFormat }),
+        ...(responseFormat && { provider: { require_parameters: true } }),
+        stream: false,
       }),
     });
     if (!res.ok) {
@@ -117,9 +161,17 @@ export class OpenRouterAdapter implements ProviderAdapter {
       usage?: { total_tokens?: number };
     };
     const text = body.choices[0]?.message.content ?? '';
+    let output: unknown = text;
+    if (job.req.output?.kind === 'data') {
+      try {
+        output = JSON.parse(text);
+      } catch {
+        throw new Error('OpenRouter returned malformed structured JSON');
+      }
+    }
     const totalTokens = body.usage?.total_tokens ?? 0;
     return {
-      output: text,
+      output,
       costUsd: totalTokens * 0.000_002,
       repro: { level: 'approximate', providerVersion: job.req.modelId },
       rawResponse: body,
@@ -127,13 +179,11 @@ export class OpenRouterAdapter implements ProviderAdapter {
   }
 
   private async fetchImage(req: ProviderRequest, apiKey: string): Promise<ProviderResult> {
-    const params = { ...req.params };
-    delete params.__mediaKind;
-    delete params.slots;
+    const params = forwardedParams(req.params);
     const response = await fetch('https://openrouter.ai/api/v1/images/generations', {
       method: 'POST',
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: req.modelId, prompt: req.renderedPrompt ?? '', ...params }),
+      body: JSON.stringify({ ...params, model: req.modelId, prompt: req.renderedPrompt ?? '' }),
     });
     if (!response.ok)
       throw new Error(`OpenRouter image: ${response.status} ${response.statusText}`);

@@ -534,6 +534,58 @@ describe('BlueprintValidatorService', () => {
     ).toBe(true);
   });
 
+  it('validates output instruction paths against the same bound schemas as the task template', () => {
+    const validator = makeValidator();
+    const graph = [
+      stage({
+        key: 'source',
+        output: {
+          kind: 'data',
+          schema: {
+            type: 'object',
+            properties: {
+              beats: {
+                type: 'array',
+                items: { type: 'object', properties: { text: { type: 'string' } } },
+              },
+            },
+          },
+        },
+        writes: { outline: '$' },
+      }),
+      stage({
+        key: 'valid',
+        context: { outline: { from: 'prev' } },
+        output: {
+          kind: 'text',
+          instructions: 'Use {{ outline.beats[0].text }}. {{ priorCritique }}',
+        },
+      }),
+      stage({
+        key: 'invalid',
+        context: { outline: { from: 'memory', key: 'outline' } },
+        output: {
+          kind: 'data',
+          schema: { type: 'string' },
+          instructions: '{{ outline.beats.text }}',
+        },
+      }),
+    ];
+
+    const issues = validator.validate({ graph, inputs: [], roles: [] });
+    expect(hasError(issues, 'stages.valid.output.instructions')).toBe(false);
+    expect(hasError(issues, 'stages.invalid.output.instructions')).toBe(true);
+  });
+
+  it('reports undeclared output-instruction bindings at the output instructions path', () => {
+    const validator = makeValidator();
+    const graph = [
+      stage({ key: 'a', output: { kind: 'text', instructions: '{{ missing.value }}' } }),
+    ];
+    const issues = validator.validate({ graph, inputs: [], roles: [] });
+    expect(hasError(issues, 'stages.a.output.instructions')).toBe(true);
+  });
+
   it('warns when max_tokens is not visible at save time for a text-modality stage', () => {
     const validator = makeValidator();
     const graph = [

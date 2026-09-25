@@ -65,3 +65,20 @@ export const artifact = pgTable(
       .where(sql`${t.stale} = false`),
   ],
 );
+
+export const artifactAttachment = pgTable(
+  'artifact_attachment',
+  {
+    id: text('id').primaryKey(),
+    artifactId: text('artifact_id')
+      .notNull()
+      .references(() => artifact.id),
+    blobId: text('blob_id')
+      .notNull()
+      .references(() => blob.id),
+    role: text('role').notNull(),
+    filename: text('filename').notNull(),
+    mime: text('mime').notNull(),
+  },
+  (t) => [uniqueIndex('artifact_attachment_blob_uq').on(t.artifactId, t.blobId)],
+);

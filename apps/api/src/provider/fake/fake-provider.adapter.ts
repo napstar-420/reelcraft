@@ -56,7 +56,7 @@ interface FakeJobPayload {
 @Injectable()
 export class FakeProviderAdapter implements ProviderAdapter {
   readonly id = 'fake';
-  readonly modalities = ['text', 'image', 'video', 'audio', 'media'];
+  readonly modalities = ['text', 'image', 'video', 'audio', 'media'] as const;
 
   /** idempotency key -> job, so a transport retry submitting twice is
    * observable in tests as "one job per key". */

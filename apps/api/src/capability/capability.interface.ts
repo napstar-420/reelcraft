@@ -1,6 +1,7 @@
 import type {
   JsonSchema,
   ModelCapabilities,
+  OutputDef,
   OutputKind,
   SlotDef,
   StageDef,
@@ -24,6 +25,7 @@ export interface ExecCtx<Cfg> {
   context: Record<string, unknown>;
   renderedPrompt?: string | undefined;
   systemPrompt?: string | undefined;
+  output?: OutputDef | undefined;
   idempotencyKey: string;
   logger: { log: (msg: string) => void; error: (msg: string, err?: unknown) => void };
   resources?: Record<
@@ -37,6 +39,14 @@ export interface ExecResult<Out = unknown> {
   costUsd: number;
   repro: { level: 'exact' | 'approximate' | 'none'; seed?: string; providerVersion?: string };
   rawResponseRef?: string;
+  attachments?: Array<{
+    role: 'evidence' | 'download';
+    localPath?: string;
+    base64?: string;
+    sourceUrl?: string;
+    mime: string;
+    filename: string;
+  }>;
 }
 
 export interface CancelResult {

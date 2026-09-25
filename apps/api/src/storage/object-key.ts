@@ -12,6 +12,14 @@ export const objectKey = {
     ext: string,
   ): string => `${ownerId}/${channelId}/${runId}/media/${artifactId}.${ext}`,
 
+  attachment: (
+    ownerId: string,
+    channelId: string,
+    runId: string,
+    blobId: string,
+    filename: string,
+  ): string => `${ownerId}/${channelId}/${runId}/attachments/${blobId}-${filename}`,
+
   input: (ownerId: string, channelId: string, runId: string, blobId: string, ext: string): string =>
     `${ownerId}/${channelId}/${runId}/inputs/${blobId}.${ext}`,
 

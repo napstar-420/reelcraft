@@ -51,7 +51,13 @@ export class QcRunner {
     const params = { ...args.judge.params, temperature: 0 };
 
     const handle = await adapter.submit(
-      { modelId: args.judge.modelId, params, renderedPrompt: prompt.user, system: prompt.system },
+      {
+        modality: 'text',
+        modelId: args.judge.modelId,
+        params,
+        renderedPrompt: prompt.user,
+        system: prompt.system,
+      },
       args.idempotencyKey,
     );
 

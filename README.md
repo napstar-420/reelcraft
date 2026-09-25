@@ -37,6 +37,33 @@ Open http://localhost:5173, create a channel, instantiate the seeded "Hello Stag
 start a run, and watch it reach `COMPLETED` against the fake provider (zero cost, no API key
 needed).
 
+## Local Codex provider
+
+`text.generate` stages may select the `codex` provider when the API runs on a macOS workstation
+with an installed, authenticated Codex CLI. Reelcraft discovers the current visible model catalog
+and each model's supported reasoning efforts through `codex app-server`; it does not hard-code the
+catalog. The selected effort is stored in `model.params.reasoningEffort`. Other params become raw
+dotted `codex exec -c key=<TOML value>` overrides, while Reelcraft keeps model, effort, working
+directory, approval policy, output files/schema, and ephemeral execution authoritative.
+
+Jobs run outside this repository under `WORKSPACE_ROOT/codex-jobs`. They inherit the API process
+owner's Codex login, configuration, skills, plugins, and MCP servers, including BrowserOS Neo when
+the user has enabled it. Failures to authenticate, connect BrowserOS, satisfy automatic approval,
+or run the selected model fail the stage; there is no fallback provider. Local ChatGPT-authenticated
+CLI usage settles at `$0` because it has no dependable per-call USD price.
+
+This provider is intentionally local and single-user. A production or multi-user deployment must
+isolate Codex accounts, job workers, BrowserOS profiles, and filesystem/process permissions per
+user. **Unattended BrowserOS stages are high risk:** prompts can mutate signed-in external accounts,
+and Reelcraft's USD budget controls do not constrain purchases, deletions, messages, or other
+external actions. Test browser-capable stages only with disposable accounts and sites.
+
+After reviewing the prompt and account risk, run the opt-in local acceptance check with:
+
+```bash
+REELCRAFT_CODEX_ACCEPTANCE=1 pnpm --filter @reelcraft/api acceptance:codex
+```
+
 ## Repo layout
 
 ```

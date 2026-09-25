@@ -56,6 +56,38 @@ export class EngineConfig {
     return this.config.get('WORKSPACE_ROOT', { infer: true });
   }
 
+  get codexProfile(): string {
+    return this.config.get('CODEX_PROFILE', { infer: true }) ?? 'reelcraft';
+  }
+
+  get codexImageExtension(): string {
+    return this.config.get('CODEX_IMAGE_EXTENSION', { infer: true }) ?? 'imagegen';
+  }
+
+  get codexBrowserExtension(): string {
+    return this.config.get('CODEX_BROWSER_EXTENSION', { infer: true }) ?? 'browseros-neo';
+  }
+
+  get codexBrowserOsUrl(): string {
+    return this.config.get('CODEX_BROWSER_OS_URL', { infer: true }) ?? 'http://127.0.0.1:9010/mcp';
+  }
+
+  get codexReadinessTimeoutMs(): number {
+    return this.config.get('CODEX_READINESS_TIMEOUT_MS', { infer: true }) ?? 2_000;
+  }
+
+  get codexJobTimeoutMs(): number {
+    return this.config.get('CODEX_JOB_TIMEOUT_MS', { infer: true }) ?? 900_000;
+  }
+
+  get codexBrowserMaxSteps(): number {
+    return this.config.get('CODEX_BROWSER_MAX_STEPS', { infer: true }) ?? 50;
+  }
+
+  get codexOutputMaxBytes(): number {
+    return this.config.get('CODEX_OUTPUT_MAX_BYTES', { infer: true }) ?? 16 * 1024 * 1024;
+  }
+
   get computeMinFreeBytes(): number {
     return this.config.get('COMPUTE_MIN_FREE_BYTES', { infer: true });
   }

@@ -49,6 +49,30 @@ export function renderPrompt(template: string, scope: Record<string, unknown>): 
   });
 }
 
+const OUTPUT_CONTRACT = `Produce only the requested stage output.
+Follow the stage-specific output instructions exactly.
+Do not add commentary, labels, or formatting unless requested.`;
+
+/** Renders the task and its optional output instructions with the same scope,
+ * then appends the engine-owned response contract. Providers still receive
+ * structured-output schemas separately through their native APIs. */
+export function renderStagePrompt(
+  template: string | undefined,
+  outputInstructions: string | undefined,
+  scope: Record<string, unknown>,
+  outputKind: 'text' | 'data',
+): string | undefined {
+  const renderedTask = template === undefined ? undefined : renderPrompt(template, scope);
+  const renderedInstructions = outputInstructions
+    ? renderPrompt(outputInstructions, scope)
+    : undefined;
+  if (!renderedInstructions?.trim()) return renderedTask;
+  const dataRule =
+    outputKind === 'data' ? "\nFor data output, the provider's JSON Schema is authoritative." : '';
+  const contract = `<output_contract>\n${OUTPUT_CONTRACT}${dataRule}\n\n<stage_output_instructions>\n${renderedInstructions}\n</stage_output_instructions>\n</output_contract>`;
+  return renderedTask ? `${renderedTask.replace(/\n+$/, '')}\n\n${contract}` : contract;
+}
+
 /** Every distinct `{{ ... }}` path referenced by the template, in first-seen
  * order — used at save time to validate each path resolves against the
  * bound slot/context schema (chunk 3's `narrow()`). */

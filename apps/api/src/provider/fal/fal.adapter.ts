@@ -17,7 +17,7 @@ interface FalHandle {
 @Injectable()
 export class FalAdapter implements ProviderAdapter {
   readonly id = 'fal';
-  readonly modalities = ['video'];
+  readonly modalities = ['video'] as const;
   constructor(@Inject(KEY_PROVIDER) private readonly keys: KeyProvider) {}
   async listModels(): Promise<ModelInfo[]> {
     return [
