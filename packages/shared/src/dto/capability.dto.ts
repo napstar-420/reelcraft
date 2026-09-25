@@ -35,7 +35,8 @@ export const ModelInfoDto = z.object({
   providerId: z.string(),
   modelId: z.string(),
   label: z.string(),
-  modality: Modality,
+  modalities: z.array(Modality).min(1),
+  unavailableModalities: z.record(Modality, z.string()).optional(),
   supportedReasoningEfforts: z.array(z.string()).optional(),
   defaultReasoningEffort: z.string().optional(),
 });

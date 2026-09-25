@@ -3,18 +3,22 @@ import type {
   JobHandle,
   JobStatus,
   ModelCapabilities,
+  Modality,
   OutputDef,
 } from '@reelcraft/shared';
 
 export interface ModelInfo {
   modelId: string;
   label: string;
+  modalities?: Modality[];
+  unavailableModalities?: Partial<Record<Modality, string>>;
   capabilities: ModelCapabilities;
   supportedReasoningEfforts?: string[];
   defaultReasoningEffort?: string;
 }
 
 export interface ProviderRequest {
+  modality?: Modality;
   modelId: string;
   params: Record<string, unknown>;
   renderedPrompt?: string | undefined;
@@ -22,11 +26,21 @@ export interface ProviderRequest {
   output?: OutputDef | undefined;
 }
 
+export interface ProviderAttachment {
+  role: 'evidence' | 'download';
+  localPath?: string;
+  base64?: string;
+  sourceUrl?: string;
+  mime: string;
+  filename: string;
+}
+
 export interface ProviderResult {
   output: unknown;
   costUsd: number;
   repro: { level: 'exact' | 'approximate' | 'none'; seed?: string; providerVersion?: string };
   rawResponse: unknown;
+  attachments?: ProviderAttachment[];
 }
 
 export interface CancelResult {
@@ -42,7 +56,7 @@ export interface CancelResult {
  */
 export interface ProviderAdapter {
   readonly id: string;
-  readonly modalities: string[];
+  readonly modalities: readonly Modality[];
   listModels(): Promise<ModelInfo[]>;
   estimate(req: ProviderRequest): Promise<CostEstimate>;
   submit(req: ProviderRequest, idempotencyKey: string): Promise<JobHandle>;

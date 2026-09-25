@@ -1,4 +1,4 @@
-import type { OutputDef } from '@reelcraft/shared';
+import type { Modality, OutputDef } from '@reelcraft/shared';
 
 const RESERVED_CONFIG_KEYS = new Set([
   'reasoningEffort',
@@ -10,6 +10,12 @@ const RESERVED_CONFIG_KEYS = new Set([
   'output_schema',
   'output_last_message',
   'ephemeral',
+  'slots',
+  '__mediaKind',
+  'startUrl',
+  'maxSteps',
+  'timeoutMs',
+  '__referenceFiles',
 ]);
 
 export function toTomlValue(value: unknown): string {
@@ -34,9 +40,10 @@ export function buildCodexArgs(input: {
   jobDir: string;
   resultPath: string;
   outputSchemaPath?: string;
+  profile: string;
   params: Record<string, unknown>;
 }): string[] {
-  const args = ['exec'];
+  const args = ['exec', '--profile', input.profile];
   for (const [key, value] of Object.entries(input.params).sort(([a], [b]) => a.localeCompare(b))) {
     if (RESERVED_CONFIG_KEYS.has(key)) continue;
     if (!/^[A-Za-z0-9_.-]+$/.test(key)) throw new Error(`Invalid Codex config key: ${key}`);
@@ -57,10 +64,32 @@ export function buildCodexArgs(input: {
 }
 
 export function buildCodexPrompt(input: {
+  modality: Modality;
+  params?: Record<string, unknown>;
   system?: string | undefined;
   renderedPrompt?: string | undefined;
   output?: OutputDef | undefined;
 }): string {
+  const modalityInstruction =
+    input.modality === 'image'
+      ? 'Use the installed image-generation extension. Write exactly one final image under outputs/ and return the supplied result manifest with its relative path, MIME type, and filename.'
+      : input.modality === 'browser'
+        ? 'Use BrowserOS Neo exclusively. Call its name_session operation first with the supplied session name, work only in tabs created for this task, close or detach only those tabs when finished, and return the supplied manifest containing the structured result plus any screenshot or download evidence written under outputs/. Do not fall back to another browser tool.'
+        : undefined;
+  const browserContext =
+    input.modality === 'browser'
+      ? [
+          `Session name: ${String(input.params?.__sessionName ?? 'reelcraft-browser')}`,
+          `Maximum browser steps: ${String(input.params?.__browserMaxSteps ?? 50)}`,
+          ...(typeof input.params?.startUrl === 'string'
+            ? [`Start URL: ${input.params.startUrl}`]
+            : []),
+        ].join('\n')
+      : undefined;
+  const imageContext =
+    input.modality === 'image' && Array.isArray(input.params?.__referenceFiles)
+      ? `Reference images available to the image tool: ${input.params.__referenceFiles.join(', ')}`
+      : undefined;
   const outputInstruction =
     input.output?.kind === 'data'
       ? 'Return only JSON matching the supplied output schema. Do not wrap it in Markdown.'
@@ -75,6 +104,9 @@ export function buildCodexPrompt(input: {
     input.renderedPrompt ?? '',
     '</user_prompt>',
     '<output_requirements>',
+    ...(modalityInstruction ? [modalityInstruction] : []),
+    ...(browserContext ? [browserContext] : []),
+    ...(imageContext ? [imageContext] : []),
     outputInstruction,
     '</output_requirements>',
   ].join('\n');

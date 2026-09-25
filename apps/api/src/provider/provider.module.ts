@@ -15,6 +15,8 @@ import { EngineConfig } from '../config/engine-config';
 import { CodexAppServerClient } from './codex/codex-app-server.client';
 import { CodexJobLauncher } from './codex/codex-job-launcher';
 import { CodexProviderAdapter } from './codex/codex-provider.adapter';
+import { CodexRuntimeReadiness } from './codex/codex-runtime-readiness';
+import { CodexInputMaterializer } from './codex/codex-input-materializer';
 
 @Module({
   imports: [DbModule, StorageModule],
@@ -30,14 +32,24 @@ import { CodexProviderAdapter } from './codex/codex-provider.adapter';
     DeepgramInboxService,
     CodexAppServerClient,
     CodexJobLauncher,
+    CodexRuntimeReadiness,
+    CodexInputMaterializer,
     {
       provide: CodexProviderAdapter,
-      inject: [EngineConfig, CodexAppServerClient, CodexJobLauncher],
+      inject: [
+        EngineConfig,
+        CodexAppServerClient,
+        CodexJobLauncher,
+        CodexRuntimeReadiness,
+        CodexInputMaterializer,
+      ],
       useFactory: (
         config: EngineConfig,
         models: CodexAppServerClient,
         launcher: CodexJobLauncher,
-      ) => new CodexProviderAdapter(config, models, launcher),
+        readiness: CodexRuntimeReadiness,
+        inputs: CodexInputMaterializer,
+      ) => new CodexProviderAdapter(config, models, launcher, readiness, inputs),
     },
   ],
   controllers: [DeepgramController],

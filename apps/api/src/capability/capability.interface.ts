@@ -39,6 +39,14 @@ export interface ExecResult<Out = unknown> {
   costUsd: number;
   repro: { level: 'exact' | 'approximate' | 'none'; seed?: string; providerVersion?: string };
   rawResponseRef?: string;
+  attachments?: Array<{
+    role: 'evidence' | 'download';
+    localPath?: string;
+    base64?: string;
+    sourceUrl?: string;
+    mime: string;
+    filename: string;
+  }>;
 }
 
 export interface CancelResult {

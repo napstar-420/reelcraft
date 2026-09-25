@@ -99,6 +99,13 @@
       "when": 1790194916791,
       "tag": "0013_public_the_initiative",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1790308129080,
+      "tag": "0014_naive_power_pack",
+      "breakpoints": true
     }
   ]
 }

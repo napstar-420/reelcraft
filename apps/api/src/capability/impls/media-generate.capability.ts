@@ -76,6 +76,7 @@ abstract class ProviderMediaCapability implements CapabilityImpl<MediaConfig> {
 
   private providerRequest(ctx: ExecCtx<MediaConfig>) {
     return {
+      modality: this.modality as 'image' | 'video' | 'audio' | 'media',
       modelId: ctx.config.modelId,
       params: { ...ctx.config.params, slots: ctx.slots, __mediaKind: this.outputKind },
       renderedPrompt: ctx.renderedPrompt,

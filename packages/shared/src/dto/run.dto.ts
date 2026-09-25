@@ -99,6 +99,16 @@ export const StageExecutionDto = z.object({
   costUsd: z.number(),
   capability: z.string(),
   interaction: z.enum(['form', 'timeline_editor']).nullable(),
+  attachments: z.array(
+    z.object({
+      id: z.string(),
+      blobId: z.string(),
+      role: z.enum(['evidence', 'download']),
+      filename: z.string(),
+      mime: z.string(),
+      url: z.string().url(),
+    }),
+  ),
 });
 export type StageExecutionDto = z.infer<typeof StageExecutionDto>;
 

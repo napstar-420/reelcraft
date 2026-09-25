@@ -4,7 +4,17 @@ import { z } from 'zod';
 export const Ulid = z.string();
 export type Ulid = z.infer<typeof Ulid>;
 
-export const Modality = z.enum(['text', 'image', 'video', 'audio', 'compute', 'human', 'publish']);
+export const Modality = z.enum([
+  'text',
+  'image',
+  'video',
+  'audio',
+  'media',
+  'browser',
+  'compute',
+  'human',
+  'publish',
+]);
 export type Modality = z.infer<typeof Modality>;
 
 export const ArtifactKind = z.enum([

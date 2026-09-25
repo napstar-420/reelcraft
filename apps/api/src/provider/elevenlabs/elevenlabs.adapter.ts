@@ -11,7 +11,7 @@ import type {
 @Injectable()
 export class ElevenLabsAdapter implements ProviderAdapter {
   readonly id = 'elevenlabs';
-  readonly modalities = ['audio'];
+  readonly modalities = ['audio'] as const;
   private readonly jobs = new Map<string, ProviderRequest>();
   constructor(@Inject(KEY_PROVIDER) private readonly keys: KeyProvider) {}
   async listModels(): Promise<ModelInfo[]> {

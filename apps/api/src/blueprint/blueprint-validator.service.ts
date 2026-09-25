@@ -440,6 +440,35 @@ export class BlueprintValidatorService {
       }
     }
 
+    const outputInstructions =
+      stage.output.kind === 'text' || stage.output.kind === 'data'
+        ? stage.output.instructions
+        : undefined;
+
+    if (outputInstructions) {
+      for (const templatePath of parseTemplatePaths(outputInstructions)) {
+        const [root, ...restSegments] = parseTemplatePathSegments(templatePath);
+        if (!root || root.kind !== 'prop') continue; // the §6.5 grammar guarantees this
+        const boundType = boundTypes.get(root.name);
+        if (!boundType) {
+          issues.push({
+            path: `${base}.output.instructions`,
+            message: `output instructions reference undeclared slot/context name "${root.name}"`,
+            severity: 'error',
+          });
+          continue;
+        }
+        const outcome = narrowSegments(boundType, restSegments);
+        if (!outcome.ok) {
+          issues.push({
+            path: `${base}.output.instructions`,
+            message: `output instructions path "${templatePath}": ${outcome.reason}`,
+            severity: 'error',
+          });
+        }
+      }
+    }
+
     // §16.5 — save time can only see the stage's own model pin; the channel
     // layer (the usual place max_tokens actually lives) is invisible to a
     // pure validator, so this stays a warning. The hard error is enforced

@@ -8,6 +8,12 @@ import { ChecksEditor } from './ChecksEditor';
 import { InfoHeading, InfoLabel } from './info-label';
 import { ModelPinEditor } from './ModelPinEditor';
 import { TypedValueInput } from './TypedValueInput';
+import {
+  buildStageOutput,
+  isOutputInstructionsIssue,
+  supportsOutputInstructions,
+  updateDataOutputSchema,
+} from './stage-inspector.logic';
 import { parseValidationPath, type ParsedValidationPath } from '../../lib/parse-validation-path';
 import {
   SECTION_HEADING_CLASS,
@@ -19,7 +25,6 @@ import type {
   InputDef,
   RoleDef,
   Ref,
-  OutputDef,
   OutputKind,
   SlotDef,
   JsonSchema,
@@ -76,26 +81,6 @@ const OUTPUT_SCHEMA_META: JsonSchema = {
     maxLength: { type: 'number' },
   },
 };
-
-function buildOutput(kind: OutputKind, previous: OutputDef): OutputDef {
-  switch (kind) {
-    case 'data':
-      return {
-        kind: 'data',
-        schema: previous.kind === 'data' ? previous.schema : { type: 'object' },
-      };
-    case 'text':
-      return { kind: 'text' };
-    case 'media.image':
-    case 'media.video':
-    case 'media.audio':
-      return { kind };
-    case 'file.subtitles':
-      return { kind: 'file.subtitles' };
-    case 'timeline':
-      return { kind: 'timeline' };
-  }
-}
 
 function nextFreeKey(existing: Record<string, unknown>, prefix: string): string {
   let n = 1;
@@ -472,6 +457,7 @@ function QcEditor({
           value={qc.model}
           onChange={(model) => set({ model: model as ModelPin })}
           clearable={false}
+          modality="text"
         />
       </div>
 
@@ -778,8 +764,10 @@ export function StageInspector({
    * the `if (!found) return null` above; a fresh `const` with a concrete
    * type sidesteps that entirely. */
   const stage: StageDef = found;
+  const output = stage.output;
 
   const configSchema = capabilities.data?.find((c) => c.key === stage.capability)?.configSchema;
+  const stageCapability = capabilities.data?.find((c) => c.key === stage.capability);
 
   /** Chunk 7b — attribute this stage's validation issues to the field each
    * one's `path` (via `parseValidationPath`) names. Slot/context names come
@@ -809,6 +797,7 @@ export function StageInspector({
   const outputIssues = issuesFor((p) => p.region === 'output' && p.name === undefined);
   const outputKindIssues = issuesFor((p) => p.region === 'output' && p.name === 'kind');
   const outputSchemaIssues = issuesFor((p) => p.region === 'output' && p.name === 'schema');
+  const outputInstructionsIssues = issuesFor(isOutputInstructionsIssue);
   const modelIssues = issuesFor((p) => p.region === 'model');
   const enabledWhenIssues = issuesFor((p) => p.region === 'enabledWhen');
   const qcIssues = issuesFor((p) => p.region === 'qc');
@@ -1027,9 +1016,12 @@ export function StageInspector({
                 Output
               </InfoHeading>
               <Select
-                value={stage.output.kind}
+                value={output.kind}
                 onValueChange={(next) =>
-                  onChange({ ...stage, output: buildOutput(next as OutputKind, stage.output) })
+                  onChange({
+                    ...stage,
+                    output: buildStageOutput(next as OutputKind, output),
+                  })
                 }
               >
                 <SelectTrigger size="sm" className="w-48">
@@ -1037,7 +1029,7 @@ export function StageInspector({
                 </SelectTrigger>
                 <SelectContent>
                   {resolved.allowedOutputs.length === 0 && (
-                    <SelectItem value={stage.output.kind}>{stage.output.kind}</SelectItem>
+                    <SelectItem value={output.kind}>{output.kind}</SelectItem>
                   )}
                   {resolved.allowedOutputs.map((kind) => (
                     <SelectItem key={kind} value={kind}>
@@ -1048,19 +1040,46 @@ export function StageInspector({
               </Select>
               <IssueList issues={outputKindIssues} />
               <IssueList issues={outputIssues} />
-              {stage.output.kind === 'data' && (
+              {output.kind === 'data' && (
                 <SchemaForm
                   schema={OUTPUT_SCHEMA_META}
-                  value={stage.output.schema}
+                  value={output.schema}
                   onChange={(next) =>
                     onChange({
                       ...stage,
-                      output: { kind: 'data', schema: (next as JsonSchema) ?? { type: 'object' } },
+                      output: updateDataOutputSchema(output, next as JsonSchema | undefined),
                     })
                   }
                 />
               )}
               <IssueList issues={outputSchemaIssues} />
+              {supportsOutputInstructions(stage.capability, output) && (
+                <div className="flex flex-col gap-1.5">
+                  <InfoLabel
+                    info={
+                      output.kind === 'data'
+                        ? "Supports the same {{ }} interpolation as the task template, including this stage's Slots, Context, iteration values, and {{ priorCritique }}. JSON Schema controls the output structure; these instructions guide its content and style."
+                        : "Supports the same {{ }} interpolation as the task template, including this stage's Slots, Context, iteration values, and {{ priorCritique }}."
+                    }
+                  >
+                    Output instructions
+                  </InfoLabel>
+                  <Textarea
+                    rows={5}
+                    maxLength={4_000}
+                    className="font-mono text-xs"
+                    placeholder="e.g. Use a concise, professional tone."
+                    value={output.instructions ?? ''}
+                    onChange={(event) =>
+                      onChange({
+                        ...stage,
+                        output: { ...output, instructions: event.target.value },
+                      })
+                    }
+                  />
+                  <IssueList issues={outputInstructionsIssues} />
+                </div>
+              )}
             </div>
 
             <div className="flex flex-col gap-1.5">
@@ -1123,7 +1142,14 @@ export function StageInspector({
               <ModelPinEditor
                 value={stage.model}
                 onChange={(model) => onChange({ ...stage, model })}
+                {...(stageCapability && { modality: stageCapability.modality })}
               />
+              {stageCapability?.modality === 'browser' && (
+                <p className="text-xs text-amber-700 dark:text-amber-400">
+                  Browser automation uses BrowserOS Neo's persistent signed-in profile and may act
+                  on live accounts without an additional provider confirmation.
+                </p>
+              )}
               <IssueList issues={modelIssues} />
             </div>
           </AccordionContent>

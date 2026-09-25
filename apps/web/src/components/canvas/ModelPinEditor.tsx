@@ -3,7 +3,7 @@ import { api } from '../../api/client';
 import { TypedValueInput } from './TypedValueInput';
 import { InfoHeading, InfoLabel } from './info-label';
 import { nextModelPinForModel } from './model-pin-editor.logic';
-import type { PartialModelPin } from '@reelcraft/shared';
+import type { Modality, PartialModelPin } from '@reelcraft/shared';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -85,6 +85,7 @@ export type ModelPinEditorProps = {
    * caller never receives `undefined` back. Defaults to `true`, matching
    * `StageDef.model`'s own optionality. */
   clearable?: boolean;
+  modality?: Modality;
 };
 
 /** Provider/model/version/params picker for a `PartialModelPin` (or, via
@@ -96,7 +97,12 @@ export type ModelPinEditorProps = {
  * `StageInspector`. Model `params` has no schema to drive `SchemaForm`
  * from (`ModelInfo.capabilities` isn't a `JsonSchema`), so `params` is a
  * generic string-valued key/value list rather than a generated form. */
-export function ModelPinEditor({ value, onChange, clearable = true }: ModelPinEditorProps) {
+export function ModelPinEditor({
+  value,
+  onChange,
+  clearable = true,
+  modality,
+}: ModelPinEditorProps) {
   const providers = useQuery({ queryKey: ['providers'], queryFn: api.listProviders });
   const provider = value?.provider ?? '';
   const models = useQuery({
@@ -104,7 +110,10 @@ export function ModelPinEditor({ value, onChange, clearable = true }: ModelPinEd
     queryFn: () => api.listModelsForProvider(provider),
     enabled: !!provider,
   });
-  const selectedModel = models.data?.find((model) => model.modelId === value?.modelId);
+  const compatibleModels = models.data?.filter(
+    (model) => !modality || model.modalities.includes(modality),
+  );
+  const selectedModel = compatibleModels?.find((model) => model.modelId === value?.modelId);
 
   function set(patch: Partial<PartialModelPin>) {
     onChange({ ...value, ...patch });
@@ -143,7 +152,7 @@ export function ModelPinEditor({ value, onChange, clearable = true }: ModelPinEd
           value={value?.modelId || UNSET}
           onValueChange={(next) => {
             if (next === UNSET) return set({ modelId: undefined });
-            const model = models.data?.find((candidate) => candidate.modelId === next);
+            const model = compatibleModels?.find((candidate) => candidate.modelId === next);
             if (model) {
               onChange(nextModelPinForModel(value ?? { provider }, model));
             } else {
@@ -157,13 +166,19 @@ export function ModelPinEditor({ value, onChange, clearable = true }: ModelPinEd
           </SelectTrigger>
           <SelectContent>
             <SelectItem value={UNSET}>Select a model…</SelectItem>
-            {models.data?.map((m) => (
+            {compatibleModels?.map((m) => (
               <SelectItem key={m.modelId} value={m.modelId}>
                 {m.label}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
+        {!!provider && models.data && compatibleModels?.length === 0 && (
+          <p className="text-xs text-destructive">
+            {models.data[0]?.unavailableModalities?.[modality ?? 'text'] ??
+              `This provider has no available ${modality ?? 'compatible'} models.`}
+          </p>
+        )}
       </div>
 
       {provider === 'codex' ? (

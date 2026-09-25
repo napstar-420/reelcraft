@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { nextModelPinForModel, visibleParams } from './model-pin-editor.logic';
+import type { ModelInfoDto } from '@reelcraft/shared';
 
 describe('Codex model pin editor logic', () => {
-  const model = {
+  const model: ModelInfoDto = {
     providerId: 'codex',
     modelId: 'gpt-example',
     label: 'Example',
-    modality: 'text' as const,
+    modalities: ['text'],
     supportedReasoningEfforts: ['low', 'high'],
     defaultReasoningEffort: 'low',
   };
@@ -27,11 +28,11 @@ describe('Codex model pin editor logic', () => {
   });
 
   it('retains normal version and params behavior for other providers', () => {
-    const openRouter = {
+    const openRouter: ModelInfoDto = {
       providerId: 'openrouter',
       modelId: 'openai/example',
       label: 'Example',
-      modality: 'text' as const,
+      modalities: ['text'],
     };
     expect(
       nextModelPinForModel(

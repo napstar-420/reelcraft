@@ -12,6 +12,7 @@ import { BlobController } from './blob.controller';
 import { TimelineHandleService } from './timeline-handle.service';
 import { TimelineResourceResolverService } from './timeline-resource-resolver.service';
 import { FileArtifactService } from './file-artifact.service';
+import { ArtifactAttachmentService } from './artifact-attachment.service';
 
 @Module({
   imports: [DbModule, StorageModule],
@@ -26,6 +27,7 @@ import { FileArtifactService } from './file-artifact.service';
     TimelineHandleService,
     TimelineResourceResolverService,
     FileArtifactService,
+    ArtifactAttachmentService,
   ],
   controllers: [BlobController],
   exports: [
@@ -39,6 +41,7 @@ import { FileArtifactService } from './file-artifact.service';
     TimelineHandleService,
     TimelineResourceResolverService,
     FileArtifactService,
+    ArtifactAttachmentService,
   ],
 })
 export class ArtifactModule {}

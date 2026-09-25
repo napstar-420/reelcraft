@@ -48,6 +48,7 @@ export class TextGenerateCapability implements CapabilityImpl<TextGenerateConfig
   async estimateCost(ctx: ExecCtx<TextGenerateConfig>): Promise<CostEstimate> {
     const adapter = this.providers.get(ctx.config.provider);
     return adapter.estimate({
+      modality: 'text',
       modelId: ctx.config.modelId,
       params: ctx.config.params ?? {},
       renderedPrompt: ctx.renderedPrompt,
@@ -60,6 +61,7 @@ export class TextGenerateCapability implements CapabilityImpl<TextGenerateConfig
     const adapter = this.providers.get(ctx.config.provider);
     return adapter.submit(
       {
+        modality: 'text',
         modelId: ctx.config.modelId,
         params: ctx.config.params ?? {},
         renderedPrompt: ctx.renderedPrompt,

@@ -53,7 +53,7 @@ export class CapabilityController {
     return models.map((model) => ({
       ...model,
       providerId: id,
-      modality: provider.modalities[0] ?? 'text',
+      modalities: model.modalities ?? provider.modalities,
     }));
   }
 

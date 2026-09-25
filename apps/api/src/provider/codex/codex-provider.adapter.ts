@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
-import { mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
-import type { JobHandle, JobStatus, JsonSchema } from '@reelcraft/shared';
+import { mkdir, readFile, realpath, rename, stat, writeFile } from 'node:fs/promises';
+import { basename, join, relative, resolve } from 'node:path';
+import type { JobHandle, JobStatus, JsonSchema, Modality } from '@reelcraft/shared';
 import type {
   CancelResult,
   ModelInfo,
@@ -14,6 +14,8 @@ import { buildCodexPrompt } from './codex-command';
 import type { CodexAppServerClient, CodexModel } from './codex-app-server.client';
 import type { CodexJobLauncher } from './codex-job-launcher';
 import { timelineOutputSchema } from './codex-output-schema';
+import type { CodexRuntimeReadiness } from './codex-runtime-readiness';
+import type { CodexInputMaterializer } from './codex-input-materializer';
 
 type DurableStatus = {
   state: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
@@ -23,7 +25,19 @@ type DurableStatus = {
   createdAt?: string;
 };
 
-const RESULT_LIMIT = 4 * 1024 * 1024;
+type ToolResultManifest = {
+  version: 1;
+  output:
+    unknown | { path: string; mime: 'image/png' | 'image/jpeg' | 'image/webp'; filename: string };
+  attachments?: Array<{
+    path: string;
+    mime: string;
+    filename: string;
+    role: 'evidence' | 'download';
+  }>;
+};
+
+const TEXT_RESULT_LIMIT = 4 * 1024 * 1024;
 
 async function atomicJson(path: string, value: unknown): Promise<void> {
   const temp = `${path}.${process.pid}.tmp`;
@@ -33,28 +47,50 @@ async function atomicJson(path: string, value: unknown): Promise<void> {
 
 export class CodexProviderAdapter implements ProviderAdapter {
   readonly id = 'codex';
-  readonly modalities = ['text'];
+  readonly modalities: Modality[] = ['text', 'image', 'browser'];
   private readonly jobsRoot: string;
+  private readonly profile: string;
+  private readonly resultLimit: number;
+  private readonly jobTimeoutMs: number;
+  private readonly browserMaxSteps: number;
 
   constructor(
-    config: Pick<EngineConfig, 'workspaceRoot'>,
+    config: Pick<EngineConfig, 'workspaceRoot'> & Partial<EngineConfig>,
     private readonly models: CodexAppServerClient,
     private readonly launcher: CodexJobLauncher,
+    private readonly readiness?: CodexRuntimeReadiness,
+    private readonly inputMaterializer?: CodexInputMaterializer,
   ) {
     this.jobsRoot = join(config.workspaceRoot, 'codex-jobs');
+    this.profile = config.codexProfile ?? 'reelcraft';
+    this.resultLimit = config.codexOutputMaxBytes ?? 16 * 1024 * 1024;
+    this.jobTimeoutMs = config.codexJobTimeoutMs ?? 900_000;
+    this.browserMaxSteps = config.codexBrowserMaxSteps ?? 50;
   }
 
   async listModels(): Promise<ModelInfo[]> {
+    const status = this.readiness
+      ? await this.readiness.inspect()
+      : { modalities: this.modalities, unavailable: {} };
+    const modalities = [...status.modalities];
     return (await this.models.listModels()).map((model) => ({
       modelId: model.modelId,
       label: model.label,
       supportedReasoningEfforts: model.supportedReasoningEfforts,
       defaultReasoningEffort: model.defaultReasoningEffort,
+      modalities,
+      ...(Object.keys(status.unavailable).length > 0 && {
+        unavailableModalities: status.unavailable,
+      }),
       capabilities: {
         supportsSeed: false,
         supportsIdempotency: true,
         supportsStructuredOutput: true,
-        supportsVision: false,
+        supportsVision: modalities.includes('image'),
+        ...(modalities.includes('image') && {
+          maxRefs: 5,
+          image: { formats: ['png', 'jpeg', 'webp'], maxReferences: 5 },
+        }),
       },
     }));
   }
@@ -64,6 +100,11 @@ export class CodexProviderAdapter implements ProviderAdapter {
   }
 
   async submit(req: ProviderRequest, idempotencyKey: string): Promise<JobHandle> {
+    const modality = req.modality ?? 'text';
+    if (!this.modalities.includes(modality)) {
+      throw new Error(`Codex does not support modality "${modality}"`);
+    }
+    await this.readiness?.assertAvailable(modality);
     const catalog = await this.models.listModels();
     const selected = catalog.find((model) => model.modelId === req.modelId);
     if (!selected)
@@ -82,7 +123,13 @@ export class CodexProviderAdapter implements ProviderAdapter {
       throw error;
     }
 
-    const resultPath = join(jobDir, 'result.txt');
+    const resultPath = join(jobDir, modality === 'text' ? 'result.txt' : 'result.json');
+    const outputDir = join(jobDir, 'outputs');
+    await mkdir(outputDir, { mode: 0o700 });
+    const referenceFiles =
+      modality === 'image' && this.inputMaterializer
+        ? await this.inputMaterializer.materialize(jobDir, req.params.slots)
+        : [];
     const schema = this.outputSchema(req);
     const outputSchemaPath = schema ? join(jobDir, 'schema.json') : undefined;
     if (outputSchemaPath)
@@ -94,7 +141,8 @@ export class CodexProviderAdapter implements ProviderAdapter {
       ...(outputSchemaPath && { outputSchemaPath }),
       params: this.sanitizeParams(req.params),
       outputKind: req.output?.kind ?? 'text',
-      promptLength: buildCodexPrompt(req).length,
+      modality,
+      promptLength: buildCodexPrompt({ ...req, modality }).length,
     });
     const runnerRequestPath = join(jobDir, 'runner-request.json');
     await atomicJson(runnerRequestPath, {
@@ -102,9 +150,24 @@ export class CodexProviderAdapter implements ProviderAdapter {
       reasoningEffort: effort,
       jobDir,
       resultPath,
+      outputDir,
+      modality,
+      profile: this.profile,
+      timeoutMs: this.jobTimeoutMs,
+      browserMaxSteps: this.browserMaxSteps,
+      sessionName: `reelcraft-${externalId.slice(0, 12)}`,
       ...(outputSchemaPath && { outputSchemaPath }),
       params: req.params,
-      prompt: buildCodexPrompt(req),
+      prompt: buildCodexPrompt({
+        ...req,
+        modality,
+        params: {
+          ...req.params,
+          __sessionName: `reelcraft-${externalId.slice(0, 12)}`,
+          __browserMaxSteps: this.browserMaxSteps,
+          __referenceFiles: referenceFiles,
+        },
+      }),
     });
     await atomicJson(join(jobDir, 'status.json'), {
       state: 'queued',
@@ -163,16 +226,61 @@ export class CodexProviderAdapter implements ProviderAdapter {
     if (status.state !== 'succeeded')
       throw new Error(`Codex job is not successful (${status.state})`);
     const jobDir = this.jobDir(handle);
-    const resultPath = join(jobDir, 'result.txt');
-    const resultStat = await stat(resultPath);
-    if (resultStat.size > RESULT_LIMIT)
-      throw new Error('Codex result exceeds the 4 MiB output limit');
-    const text = await readFile(resultPath, 'utf8');
-    const manifest = JSON.parse(await readFile(join(jobDir, 'manifest.json'), 'utf8')) as {
+    const storedManifest = JSON.parse(await readFile(join(jobDir, 'manifest.json'), 'utf8')) as {
       outputKind?: string;
+      modality?: Modality;
     };
+    const modality = storedManifest.modality ?? 'text';
+    const resultPath = join(jobDir, modality === 'text' ? 'result.txt' : 'result.json');
+    const resultStat = await stat(resultPath);
+    const resultLimit = modality === 'text' ? TEXT_RESULT_LIMIT : this.resultLimit;
+    if (resultStat.size > resultLimit)
+      throw new Error(
+        modality === 'text'
+          ? 'Codex result exceeds the 4 MiB output limit'
+          : `Codex result exceeds the ${resultLimit} byte output limit`,
+      );
+    const text = await readFile(resultPath, 'utf8');
+    if (modality === 'image') {
+      const manifest = this.parseToolManifest(text);
+      const image = manifest.output as {
+        path?: unknown;
+        mime?: unknown;
+        filename?: unknown;
+      };
+      const source = await this.validatedOutputFile(jobDir, image, [
+        'image/png',
+        'image/jpeg',
+        'image/webp',
+      ]);
+      return {
+        output: { kind: 'media.image', ...source },
+        costUsd: 0,
+        repro: { level: 'none', providerVersion: 'codex-cli' },
+        rawResponse: await this.sanitizedMetadata(jobDir, status),
+      };
+    }
+    if (modality === 'browser') {
+      const manifest = this.parseToolManifest(text);
+      if ((manifest.attachments?.length ?? 0) > 20) {
+        throw new Error('Codex browser result exceeds the 20 attachment limit');
+      }
+      const attachments = await Promise.all(
+        (manifest.attachments ?? []).map(async (attachment) => ({
+          role: attachment.role,
+          ...(await this.validatedOutputFile(jobDir, attachment)),
+        })),
+      );
+      return {
+        output: manifest.output,
+        attachments,
+        costUsd: 0,
+        repro: { level: 'approximate', providerVersion: 'codex-cli-browseros-neo' },
+        rawResponse: await this.sanitizedMetadata(jobDir, status),
+      };
+    }
     const output =
-      manifest.outputKind === 'data' || manifest.outputKind === 'timeline'
+      storedManifest.outputKind === 'data' || storedManifest.outputKind === 'timeline'
         ? this.parseStructured(text)
         : text;
     return {
@@ -216,9 +324,88 @@ export class CodexProviderAdapter implements ProviderAdapter {
   }
 
   private outputSchema(req: ProviderRequest): JsonSchema | undefined {
+    if (req.modality === 'image') {
+      return {
+        type: 'object',
+        properties: {
+          version: { type: 'number', enum: [1] },
+          output: {
+            type: 'object',
+            properties: {
+              path: { type: 'string' },
+              mime: { type: 'string', enum: ['image/png', 'image/jpeg', 'image/webp'] },
+              filename: { type: 'string' },
+            },
+            required: ['path', 'mime', 'filename'],
+          },
+        },
+        required: ['version', 'output'],
+      };
+    }
+    if (req.modality === 'browser') {
+      return {
+        type: 'object',
+        properties: {
+          version: { type: 'number', enum: [1] },
+          output: req.output?.kind === 'data' ? req.output.schema : { type: 'object' },
+          attachments: {
+            type: 'array',
+            maxItems: 20,
+            items: {
+              type: 'object',
+              properties: {
+                path: { type: 'string' },
+                mime: { type: 'string' },
+                filename: { type: 'string' },
+                role: { type: 'string', enum: ['evidence', 'download'] },
+              },
+              required: ['path', 'mime', 'filename', 'role'],
+            },
+          },
+        },
+        required: ['version', 'output'],
+      };
+    }
     if (req.output?.kind === 'data') return req.output.schema;
     if (req.output?.kind === 'timeline') return timelineOutputSchema;
     return undefined;
+  }
+
+  private parseToolManifest(text: string): ToolResultManifest {
+    const parsed = this.parseStructured(text) as Partial<ToolResultManifest>;
+    if (parsed.version !== 1 || parsed.output === undefined) {
+      throw new Error('Codex returned an invalid tool result manifest');
+    }
+    return parsed as ToolResultManifest;
+  }
+
+  private async validatedOutputFile(
+    jobDir: string,
+    value: { path?: unknown; mime?: unknown; filename?: unknown },
+    allowedMimes?: string[],
+  ): Promise<{ localPath: string; mime: string; filename: string }> {
+    if (
+      typeof value.path !== 'string' ||
+      typeof value.mime !== 'string' ||
+      typeof value.filename !== 'string'
+    ) {
+      throw new Error('Codex tool result contains malformed file metadata');
+    }
+    if (allowedMimes && !allowedMimes.includes(value.mime)) {
+      throw new Error(`Codex tool result has unsupported MIME type "${value.mime}"`);
+    }
+    const outputRoot = await realpath(join(jobDir, 'outputs'));
+    const candidate = resolve(jobDir, value.path);
+    const localPath = await realpath(candidate);
+    const within = relative(outputRoot, localPath);
+    if (within.startsWith('..') || resolve(outputRoot, within) !== localPath) {
+      throw new Error('Codex tool result path escapes the job output directory');
+    }
+    const fileStat = await stat(localPath);
+    if (!fileStat.isFile() || fileStat.size > this.resultLimit) {
+      throw new Error('Codex tool result file is invalid or exceeds the output limit');
+    }
+    return { localPath, mime: value.mime, filename: basename(value.filename) };
   }
 
   private parseStructured(text: string): unknown {

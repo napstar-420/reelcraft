@@ -17,7 +17,7 @@ import { eq } from 'drizzle-orm';
 @Injectable()
 export class DeepgramAdapter implements ProviderAdapter {
   readonly id = 'deepgram';
-  readonly modalities = ['media'];
+  readonly modalities = ['media'] as const;
   constructor(
     @Inject(KEY_PROVIDER) private readonly keys: KeyProvider,
     @Inject(STORAGE_ADAPTER) private readonly storage: StorageAdapter,

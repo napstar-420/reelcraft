@@ -43,9 +43,86 @@ describe('CodexProviderAdapter', () => {
         modelId: 'gpt-example',
         supportedReasoningEfforts: ['low', 'high'],
         defaultReasoningEffort: 'low',
+        modalities: ['text', 'image', 'browser'],
         capabilities: expect.objectContaining({ supportsStructuredOutput: true }),
       }),
     ]);
+  });
+
+  it('returns generated image files from the confined output directory', async () => {
+    const { adapter, launcher } = await fixture();
+    launcher.launch.mockImplementationOnce(async ({ jobDir }: { jobDir: string }) => {
+      await writeFile(join(jobDir, 'outputs', 'image.png'), 'png-bytes');
+      await writeFile(
+        join(jobDir, 'result.json'),
+        JSON.stringify({
+          version: 1,
+          output: { path: 'outputs/image.png', mime: 'image/png', filename: 'image.png' },
+        }),
+      );
+      await writeFile(join(jobDir, 'status.json'), JSON.stringify({ state: 'succeeded' }));
+      return 321;
+    });
+    const handle = await adapter.submit(
+      {
+        modality: 'image',
+        modelId: 'gpt-example',
+        params: { reasoningEffort: 'low' },
+        output: { kind: 'media.image' },
+      },
+      'image-key',
+    );
+    await expect(adapter.fetch(handle)).resolves.toEqual(
+      expect.objectContaining({
+        output: expect.objectContaining({
+          kind: 'media.image',
+          mime: 'image/png',
+          filename: 'image.png',
+        }),
+      }),
+    );
+  });
+
+  it('returns structured browser data and supporting evidence', async () => {
+    const { adapter, launcher } = await fixture();
+    launcher.launch.mockImplementationOnce(async ({ jobDir }: { jobDir: string }) => {
+      await writeFile(join(jobDir, 'outputs', 'final.png'), 'screenshot');
+      await writeFile(
+        join(jobDir, 'result.json'),
+        JSON.stringify({
+          version: 1,
+          output: { title: 'Done' },
+          attachments: [
+            {
+              path: 'outputs/final.png',
+              mime: 'image/png',
+              filename: 'final.png',
+              role: 'evidence',
+            },
+          ],
+        }),
+      );
+      await writeFile(join(jobDir, 'status.json'), JSON.stringify({ state: 'succeeded' }));
+      return 654;
+    });
+    const handle = await adapter.submit(
+      {
+        modality: 'browser',
+        modelId: 'gpt-example',
+        params: { reasoningEffort: 'low', startUrl: 'https://example.com' },
+        output: {
+          kind: 'data',
+          schema: { type: 'object', properties: { title: { type: 'string' } } },
+        },
+      },
+      'browser-key',
+    );
+    await expect(adapter.fetch(handle)).resolves.toEqual(
+      expect.objectContaining({
+        output: { title: 'Done' },
+        attachments: [expect.objectContaining({ role: 'evidence', filename: 'final.png' })],
+      }),
+    );
   });
 
   it('uses zero-cost accounting and launches once per idempotency key', async () => {
@@ -85,7 +162,8 @@ describe('CodexProviderAdapter', () => {
       {
         modelId: 'gpt-example',
         params: { reasoningEffort: 'low', apiKey: 'must-not-persist' },
-        renderedPrompt: 'answer',
+        renderedPrompt:
+          'answer\n\n<output_contract>\n<stage_output_instructions>\nBe concise.\n</stage_output_instructions>\n</output_contract>',
         output: {
           kind: 'data',
           schemaName: 'answer',
@@ -109,6 +187,19 @@ describe('CodexProviderAdapter', () => {
     ) as { outputSchemaPath?: string; params: Record<string, unknown> };
     expect(manifest.outputSchemaPath).toMatch(/schema\.json$/);
     expect(manifest.params.apiKey).toBe('[REDACTED]');
+    const runnerRequest = JSON.parse(
+      await readFile(
+        join(
+          (launcher.launch.mock.calls[0]?.[0] as { jobDir: string }).jobDir,
+          'runner-request.json',
+        ),
+        'utf8',
+      ),
+    ) as { outputSchemaPath?: string; prompt: string };
+    expect(runnerRequest.outputSchemaPath).toMatch(/schema\.json$/);
+    expect(runnerRequest.prompt).toContain(
+      '<user_prompt>\nanswer\n\n<output_contract>\n<stage_output_instructions>\nBe concise.\n</stage_output_instructions>\n</output_contract>\n</user_prompt>',
+    );
   });
 
   it('rejects unsupported efforts before launching', async () => {

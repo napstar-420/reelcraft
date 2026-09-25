@@ -5,6 +5,7 @@ import { InputDef, RoleDef as RoleDefSchema, StageDef } from '@reelcraft/shared'
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
 import {
   asset,
+  artifactAttachment,
   blob,
   blueprint,
   blueprintVersion,
@@ -26,6 +27,8 @@ import { RunInputService } from './run-input.service';
 import { RunMutationService } from './run-mutation.service';
 import { RunWakeupDispatcher } from './run-wakeup-dispatcher.service';
 import { ProviderRegistry } from '../provider/provider.registry';
+import { modalityForCapability } from '../capability/modality-for-capability';
+import { BlobService } from '../artifact/blob.service';
 
 /**
  * §5/§12/§21 — run start resolves and snapshots resolved_config, keyed per
@@ -47,6 +50,7 @@ export class RunService {
     private readonly runMutation: RunMutationService,
     private readonly wakeupDispatcher: RunWakeupDispatcher,
     private readonly providers: ProviderRegistry,
+    private readonly blobs: BlobService,
   ) {}
 
   /** §6.2/§21 — inserts the run in `CREATED` without sending `run/started`.
@@ -147,7 +151,7 @@ export class RunService {
       current.resolvedConfig as Record<string, ConfigLayer>,
       roleBindings,
     );
-    await this.assertCodexPins(graph, current.resolvedConfig as Record<string, ConfigLayer>);
+    await this.assertProviderPins(graph, current.resolvedConfig as Record<string, ConfigLayer>);
     const mutation = await this.runMutation.withLockedRun(
       runId,
       'start',
@@ -415,7 +419,7 @@ export class RunService {
     const overridden: Record<string, ConfigLayer> = {};
     for (const stage of graph) {
       const layer = resolvedConfig[stage.key] ?? {};
-      const modality = this.capabilities.get(stage.capability).modality;
+      const modality = modalityForCapability(stage.capability);
       const fakeModelId = fakeModelByModality[modality];
       overridden[stage.key] = {
         ...layer,
@@ -499,17 +503,60 @@ export class RunService {
       .limit(1);
     const graph = StageDef.array().parse(version?.graph ?? []);
     const definitions = new Map(graph.map((stage) => [stage.key, stage]));
+    const outputArtifactIds = executions
+      .map((execution) => execution.outputArtifactId)
+      .filter((id): id is string => id !== null);
+    const attachmentRows = outputArtifactIds.length
+      ? await this.db
+          .select()
+          .from(artifactAttachment)
+          .where(inArray(artifactAttachment.artifactId, outputArtifactIds))
+      : [];
+    const [owner] = await this.db
+      .select({ ownerId: channel.ownerId })
+      .from(channel)
+      .where(eq(channel.id, row.channelId))
+      .limit(1);
+    const attachmentsByArtifact = new Map<string, Array<(typeof attachmentRows)[number]>>();
+    for (const attachment of attachmentRows) {
+      const values = attachmentsByArtifact.get(attachment.artifactId) ?? [];
+      values.push(attachment);
+      attachmentsByArtifact.set(attachment.artifactId, values);
+    }
     return {
       ...row,
-      stageExecutions: executions.map((execution) => {
-        const definition = definitions.get(execution.stageKey);
-        const capability = definition?.capability ?? 'unknown';
-        return {
-          ...execution,
-          capability,
-          interaction: this.capabilities.get(capability).interaction?.kind ?? null,
-        };
-      }),
+      stageExecutions: await Promise.all(
+        executions.map(async (execution) => {
+          const definition = definitions.get(execution.stageKey);
+          const capability = definition?.capability ?? 'unknown';
+          return {
+            ...execution,
+            capability,
+            interaction: this.capabilities.get(capability).interaction?.kind ?? null,
+            attachments: (
+              await Promise.all(
+                (attachmentsByArtifact.get(execution.outputArtifactId ?? '') ?? []).map(
+                  async (attachment) => {
+                    const access = await this.blobs.readUrl(
+                      owner?.ownerId ?? 'local',
+                      attachment.blobId,
+                    );
+                    if (access?.status !== 'live') return undefined;
+                    return {
+                      id: attachment.id,
+                      blobId: attachment.blobId,
+                      role: attachment.role,
+                      filename: attachment.filename,
+                      mime: attachment.mime,
+                      url: access.url,
+                    };
+                  },
+                ),
+              )
+            ).filter((attachment) => attachment !== undefined),
+          };
+        }),
+      ),
     };
   }
 
@@ -542,26 +589,42 @@ export class RunService {
       .where(and(eq(stageExecution.runId, runId), eq(stageExecution.stageKey, stageKey)))
       .orderBy(asc(stageAttempt.attemptNo));
   }
-  private async assertCodexPins(
+  private async assertProviderPins(
     graph: StageDef[],
     resolvedConfig: Record<string, ConfigLayer>,
   ): Promise<void> {
     for (const stage of graph) {
       const pin = resolvedConfig[stage.key]?.model;
-      if (stage.capability !== 'text.generate' || pin?.provider !== 'codex') continue;
+      if (!pin?.provider) continue;
+      const modality = modalityForCapability(stage.capability);
+      if (pin.provider === 'openrouter' && stage.output.kind !== 'data') continue;
+      if (pin.provider !== 'codex' && pin.provider !== 'openrouter') continue;
       let model;
       try {
-        model = (await this.providers.get('codex').listModels()).find(
+        model = (await this.providers.get(pin.provider).listModels()).find(
           (candidate) => candidate.modelId === pin.modelId,
         );
       } catch (error) {
         throw new ConflictException(
-          `RunService.start: Codex model discovery failed: ${(error as Error).message}`,
+          `RunService.start: ${pin.provider === 'codex' ? 'Codex' : 'OpenRouter'} model discovery failed: ${(error as Error).message}`,
         );
+      }
+      if (pin.provider === 'openrouter') {
+        if (!model?.capabilities.supportsStructuredOutput) {
+          throw new ConflictException(
+            `RunService.start: OpenRouter model "${String(pin.modelId)}" does not support structured output`,
+          );
+        }
+        continue;
       }
       if (!model) {
         throw new ConflictException(
           `RunService.start: Codex model "${String(pin.modelId)}" is unavailable`,
+        );
+      }
+      if (!model.modalities?.includes(modality)) {
+        throw new ConflictException(
+          `RunService.start: Codex model "${model.modelId}" is unavailable for ${modality} stages`,
         );
       }
       const effort = pin.params?.reasoningEffort;

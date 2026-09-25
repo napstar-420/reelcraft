@@ -15,7 +15,7 @@ import {
 } from '../db/schema/index';
 import { ulid } from '../common/ulid';
 import { fromUsd } from '../common/money';
-import { renderPrompt } from '../common/prompt-template';
+import { renderStagePrompt } from '../common/prompt-template';
 import { CapabilityRegistry } from '../capability/capability.registry';
 import {
   BindingResolverService,
@@ -42,6 +42,7 @@ import { TimelineCheckService } from '../check/timeline-check.service';
 import { TimelineHandleService } from '../artifact/timeline-handle.service';
 import { TimelineResourceResolverService } from '../artifact/timeline-resource-resolver.service';
 import { FileArtifactService } from '../artifact/file-artifact.service';
+import { ArtifactAttachmentService } from '../artifact/artifact-attachment.service';
 
 export interface StageAttemptContext {
   runId: string;
@@ -128,6 +129,7 @@ export class StageRunnerService {
     private readonly timelineHandles: TimelineHandleService,
     private readonly timelineResources: TimelineResourceResolverService,
     private readonly fileArtifacts: FileArtifactService,
+    private readonly artifactAttachments: ArtifactAttachmentService,
   ) {}
 
   interactionFor(capabilityKey: string): 'form' | 'timeline_editor' | undefined {
@@ -507,9 +509,16 @@ export class StageRunnerService {
       ctx.stageItemId,
     );
     const templateScope = { ...bindings.slots, ...bindings.context, priorCritique };
-    const renderedPrompt = stage.instructions?.template
-      ? renderPrompt(stage.instructions.template, templateScope)
-      : undefined;
+    const outputInstructions =
+      stage.output.kind === 'text' || stage.output.kind === 'data'
+        ? stage.output.instructions
+        : undefined;
+    const renderedPrompt = renderStagePrompt(
+      stage.instructions?.template,
+      outputInstructions,
+      templateScope,
+      stage.output.kind === 'data' ? 'data' : 'text',
+    );
     const resources =
       stage.capability === 'timeline.render' && bindings.slots.timeline
         ? await this.timelineResources.resolve(ctx.runId, bindings.slots.timeline)
@@ -732,6 +741,15 @@ export class StageRunnerService {
       repro: result.repro,
       costUsd: result.costUsd,
     });
+    if (result.attachments?.length) {
+      await this.artifactAttachments.persist({
+        ownerId: channelRow?.ownerId ?? 'local',
+        channelId: runRow.channelId,
+        runId: ctx.runId,
+        artifactId,
+        attachments: result.attachments,
+      });
+    }
 
     // The provider call cost money and the artifact is born stale (§3.9.1)
     // regardless of what checks/QC decide below — both are unconditional.

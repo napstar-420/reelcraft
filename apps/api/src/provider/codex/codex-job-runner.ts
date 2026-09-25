@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { readFile, rename, unlink, writeFile } from 'node:fs/promises';
+import { open, readFile, rename, unlink, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { buildCodexArgs } from './codex-command';
 
@@ -9,6 +9,10 @@ interface Manifest {
   jobDir: string;
   resultPath: string;
   outputSchemaPath?: string;
+  modality: 'text' | 'image' | 'browser';
+  profile: string;
+  timeoutMs: number;
+  browserMaxSteps: number;
   params: Record<string, unknown>;
   prompt: string;
 }
@@ -31,6 +35,15 @@ async function main(): Promise<void> {
   await unlink(manifestPath);
   const manifest = JSON.parse(manifestJson) as Manifest;
   const statusPath = join(manifest.jobDir, 'status.json');
+  const releaseBrowserLock =
+    manifest.modality === 'browser' ? await acquireBrowserLock(manifest) : undefined;
+  const releaseOnSignal = () => {
+    void releaseBrowserLock?.().finally(() => process.exit(143));
+  };
+  if (releaseBrowserLock) {
+    process.once('SIGTERM', releaseOnSignal);
+    process.once('SIGINT', releaseOnSignal);
+  }
   await atomicJson(statusPath, {
     state: 'running',
     pid: process.pid,
@@ -43,19 +56,47 @@ async function main(): Promise<void> {
   });
   let events = '';
   let stderr = '';
+  let eventBuffer = '';
+  let browserSteps = 0;
+  let browserStepLimitExceeded = false;
   child.stdout.on('data', (chunk) => {
     events = appendBounded(events, chunk, 1024 * 1024);
+    eventBuffer += String(chunk);
+    const lines = eventBuffer.split('\n');
+    eventBuffer = lines.pop() ?? '';
+    for (const line of lines) {
+      if (
+        manifest.modality === 'browser' &&
+        /browseros-neo/i.test(line) &&
+        /(mcp_tool_call|tool_call|tool\.started)/i.test(line)
+      ) {
+        browserSteps += 1;
+        if (browserSteps > manifest.browserMaxSteps) {
+          browserStepLimitExceeded = true;
+          child.kill('SIGTERM');
+        }
+      }
+    }
   });
   child.stderr.on('data', (chunk) => {
     stderr = appendBounded(stderr, chunk, 64 * 1024);
   });
   child.stdin.end(manifest.prompt);
+  let timedOut = false;
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    child.kill('SIGTERM');
+  }, manifest.timeoutMs);
   const exit = await new Promise<{ code: number | null; signal: NodeJS.Signals | null }>(
     (resolve, reject) => {
       child.once('error', reject);
       child.once('exit', (code, signal) => resolve({ code, signal }));
     },
   ).catch((error: Error) => ({ code: -1, signal: null, error }));
+  clearTimeout(timeout);
+  await releaseBrowserLock?.();
+  process.removeListener('SIGTERM', releaseOnSignal);
+  process.removeListener('SIGINT', releaseOnSignal);
   await atomicJson(join(manifest.jobDir, 'events-summary.json'), summarizeEvents(events));
   await writeFile(join(manifest.jobDir, 'stderr.log'), redact(stderr), { mode: 0o600 });
   if (exit.code === 0) {
@@ -65,8 +106,13 @@ async function main(): Promise<void> {
       finishedAt: new Date().toISOString(),
     });
   } else {
-    const reason =
-      'error' in exit ? exit.error.message : `Codex exited with ${exit.code ?? exit.signal}`;
+    const reason = timedOut
+      ? `Codex job exceeded the ${manifest.timeoutMs}ms timeout`
+      : browserStepLimitExceeded
+        ? `BrowserOS Neo exceeded the ${manifest.browserMaxSteps} step limit`
+        : 'error' in exit
+          ? exit.error.message
+          : `Codex exited with ${exit.code ?? exit.signal}`;
     await atomicJson(statusPath, {
       state: 'failed',
       exitCode: exit.code,
@@ -74,6 +120,32 @@ async function main(): Promise<void> {
       finishedAt: new Date().toISOString(),
     });
   }
+}
+
+async function acquireBrowserLock(manifest: Manifest): Promise<() => Promise<void>> {
+  const lockPath = join(dirname(manifest.jobDir), 'browseros-neo.lock');
+  const deadline = Date.now() + manifest.timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const handle = await open(lockPath, 'wx', 0o600);
+      await handle.writeFile(JSON.stringify({ pid: process.pid, jobDir: manifest.jobDir }));
+      await handle.close();
+      return async () => unlink(lockPath).catch(() => undefined);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+      try {
+        const lock = JSON.parse(await readFile(lockPath, 'utf8')) as { pid?: number };
+        if (lock.pid) process.kill(lock.pid, 0);
+      } catch (lockError) {
+        if ((lockError as NodeJS.ErrnoException).code === 'ESRCH') {
+          await unlink(lockPath).catch(() => undefined);
+          continue;
+        }
+      }
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+  }
+  throw new Error('BrowserOS Neo job waited too long for the shared browser session');
 }
 
 void main().catch(async (error) => {

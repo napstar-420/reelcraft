@@ -30,6 +30,14 @@ export const EnvSchema = z
     DEEPGRAM_CALLBACK_SECRET: z.string().min(32).optional(),
 
     WORKSPACE_ROOT: z.string().default('./.workspace'),
+    CODEX_PROFILE: z.string().min(1).optional(),
+    CODEX_IMAGE_EXTENSION: z.string().min(1).optional(),
+    CODEX_BROWSER_EXTENSION: z.string().min(1).optional(),
+    CODEX_BROWSER_OS_URL: z.string().url().optional(),
+    CODEX_READINESS_TIMEOUT_MS: z.coerce.number().int().positive().optional(),
+    CODEX_JOB_TIMEOUT_MS: z.coerce.number().int().positive().optional(),
+    CODEX_BROWSER_MAX_STEPS: z.coerce.number().int().positive().max(500).optional(),
+    CODEX_OUTPUT_MAX_BYTES: z.coerce.number().int().positive().optional(),
     COMPUTE_MIN_FREE_BYTES: z.coerce
       .number()
       .int()

@@ -11,6 +11,7 @@ import { ConfigResolverService } from '../run-config/config-resolver.service';
 import { EngineConfig } from '../config/engine-config';
 import { engineDefaults } from '../run-config/engine-defaults';
 import { ProviderRegistry } from '../provider/provider.registry';
+import { modalityForCapability } from '../capability/modality-for-capability';
 import type { ModelInfo } from '../provider/provider-adapter.interface';
 
 @Injectable()
@@ -114,7 +115,7 @@ export class BlueprintService {
       charactersById,
     });
     issues.push(...(await this.validateReferenceLimits(dto, blueprintRow.defaults as ConfigLayer)));
-    issues.push(...(await this.validateCodexPins(dto, blueprintRow.defaults as ConfigLayer)));
+    issues.push(...(await this.validateProviderPins(dto, blueprintRow.defaults as ConfigLayer)));
     const runnable = issues.every((i) => i.severity !== 'error');
     return { issues, runnable };
   }
@@ -195,7 +196,7 @@ export class BlueprintService {
     );
   }
 
-  private async validateCodexPins(
+  private async validateProviderPins(
     dto: CreateBlueprintVersionDto,
     channelDefaults: ConfigLayer,
   ): Promise<ValidationIssue[]> {
@@ -208,16 +209,35 @@ export class BlueprintService {
     const issues: ValidationIssue[] = [];
     for (const stage of dto.graph) {
       const pin = config[stage.key]?.model;
-      if (stage.capability !== 'text.generate' || pin?.provider !== 'codex') continue;
+      if (!pin?.provider) continue;
+      const modality = modalityForCapability(stage.capability);
+      if (pin.provider === 'openrouter' && stage.output.kind !== 'data') continue;
+      if (pin.provider !== 'codex' && pin.provider !== 'openrouter') continue;
       try {
-        const model = (await this.providers.get('codex').listModels()).find(
+        const model = (await this.providers.get(pin.provider).listModels()).find(
           (candidate) => candidate.modelId === pin.modelId,
         );
+        if (pin.provider === 'openrouter') {
+          if (!model?.capabilities.supportsStructuredOutput) {
+            issues.push({
+              path: `stages.${stage.key}.model.modelId`,
+              message: `OpenRouter model "${String(pin.modelId)}" does not support structured output`,
+              severity: 'error',
+            });
+          }
+          continue;
+        }
         const effort = pin.params?.reasoningEffort;
         if (!model) {
           issues.push({
             path: `stages.${stage.key}.model.modelId`,
             message: `Codex model "${String(pin.modelId)}" is not available for the authenticated CLI`,
+            severity: 'error',
+          });
+        } else if (!model.modalities?.includes(modality)) {
+          issues.push({
+            path: `stages.${stage.key}.model.modelId`,
+            message: `Codex model "${model.modelId}" is unavailable for ${modality} stages`,
             severity: 'error',
           });
         } else if (
@@ -233,7 +253,7 @@ export class BlueprintService {
       } catch (error) {
         issues.push({
           path: `stages.${stage.key}.model`,
-          message: `Codex model discovery failed: ${(error as Error).message}`,
+          message: `${pin.provider === 'codex' ? 'Codex' : 'OpenRouter'} model discovery failed: ${(error as Error).message}`,
           severity: 'error',
         });
       }

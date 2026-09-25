@@ -9,6 +9,7 @@ describe('Codex command construction', () => {
       jobDir: '/tmp/job',
       resultPath: '/tmp/job/result.txt',
       outputSchemaPath: '/tmp/job/schema.json',
+      profile: 'reelcraft',
       params: {
         reasoningEffort: 'high',
         personality: 'concise',
@@ -19,6 +20,7 @@ describe('Codex command construction', () => {
     });
 
     expect(args).toContain('--model');
+    expect(args).toContain('--profile');
     expect(args).toContain('gpt-example');
     expect(args).toContain('model_reasoning_effort="high"');
     expect(args).toContain('personality="concise"');
@@ -40,6 +42,7 @@ describe('Codex command construction', () => {
 
   it('delimits system, user, and output requirements', () => {
     const prompt = buildCodexPrompt({
+      modality: 'text',
       system: 'Research carefully.',
       renderedPrompt: 'Find the answer.',
       output: { kind: 'data', schema: { type: 'object' }, schemaName: 'answer' },
