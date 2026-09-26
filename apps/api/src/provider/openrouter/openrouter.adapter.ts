@@ -82,16 +82,17 @@ export class OpenRouterAdapter implements ProviderAdapter {
       const expectedUsd = Number(req.params.priceUsd ?? 0.04);
       return { expectedUsd, ceilingUsd: expectedUsd, basis: 'configured_ceiling' };
     }
-    // §16.5 — max_tokens is required in effective params for an honest
-    // ceiling; without it there is no real reservation to make.
     const maxTokens = req.params.max_tokens;
-    if (typeof maxTokens !== 'number') {
-      throw new Error('OpenRouterAdapter.estimate: max_tokens is required in model params');
-    }
     const promptTokens = (req.renderedPrompt ?? '').length / 4;
     // Placeholder per-token rate until listModels() pricing is wired through;
     // basis is honestly reported as an estimate either way.
     const ratePerToken = 0.000_002;
+    if (typeof maxTokens !== 'number') {
+      // No output bound — nothing honest to reserve up front; the real cost
+      // is recorded after the call completes (settleSuccess), same as the
+      // Codex adapter's ceilingUsd: 0.
+      return { expectedUsd: promptTokens * ratePerToken, ceilingUsd: 0, basis: 'token_estimate' };
+    }
     const expectedUsd = (promptTokens + maxTokens) * ratePerToken;
     return { expectedUsd, ceilingUsd: expectedUsd * 1.5, basis: 'token_estimate' };
   }

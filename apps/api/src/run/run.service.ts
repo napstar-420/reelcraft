@@ -108,7 +108,6 @@ export class RunService {
     if (options?.dryRun) {
       resolvedConfig = this.applyDryRunOverride(graph, resolvedConfig);
     }
-    this.assertTextStagesHaveMaxTokens(graph, resolvedConfig);
 
     await this.db.transaction(async (tx) => {
       await tx.insert(run).values({
@@ -356,30 +355,6 @@ export class RunService {
     return bindings;
   }
 
-  /** §16.5 — the validator only warns (it can't see the channel layer where
-   * `max_tokens` usually lives, `blueprint-validator.service.ts`'s own
-   * comment on that warning). Once the full layer stack has resolved, an
-   * unbounded text reservation is a real bug, not a warning: `ceilingUsd`
-   * can't be honest without it (§16.5's "input is boundable but output is
-   * not unless max_tokens is set"). Thrown loudly here rather than
-   * discovered later as a budget-reservation failure with a confusing cause. */
-  private assertTextStagesHaveMaxTokens(
-    graph: StageDef[],
-    resolvedConfig: Record<string, ConfigLayer>,
-  ): void {
-    for (const stage of graph) {
-      const impl = this.capabilities.get(stage.capability);
-      if (impl.modality !== 'text') continue;
-      const maxTokens = resolvedConfig[stage.key]?.model?.params?.['max_tokens'];
-      if (typeof maxTokens !== 'number') {
-        throw new Error(
-          `RunService.create: stage "${stage.key}" is text-modality with no effective ` +
-            'model.params.max_tokens (§16.5) — cannot compute an honest cost ceiling',
-        );
-      }
-    }
-  }
-
   /** Chunk 5 — a dry run is a real `run` row driven through the unchanged
    * async pipeline (locked product decision #1), not a bespoke synchronous
    * path. `startDryRun` just resolves `(blueprintId, version)` to the
@@ -422,9 +397,7 @@ export class RunService {
    * `qc.model` on any stage declaring `stage.qc`, so a QC judge call never
    * reaches a real provider either. A modality with no fake model (`human`/
    * `publish`/`compute`, and `media.analyze`'s `probe` path, which never
-   * consumes a model pin at all) is left completely untouched. `text`'s
-   * injected `max_tokens: 256` is what makes `assertTextStagesHaveMaxTokens`
-   * pass for a dry run without that assertion itself needing to change. */
+   * consumes a model pin at all) is left completely untouched. */
   private applyDryRunOverride(
     graph: StageDef[],
     resolvedConfig: Record<string, ConfigLayer>,
@@ -446,7 +419,7 @@ export class RunService {
           model: {
             provider: 'fake',
             modelId: fakeModelId,
-            params: modality === 'text' ? { max_tokens: 256 } : {},
+            params: {},
           },
         }),
         ...(stage.qc && {

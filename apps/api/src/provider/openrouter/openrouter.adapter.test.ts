@@ -234,4 +234,54 @@ describe('OpenRouterAdapter structured output', () => {
       prompt: 'Engine prompt',
     });
   });
+
+  it('omits max_tokens from the request body when it is absent from params', async () => {
+    const fetch = vi
+      .fn()
+      .mockResolvedValue(response({ choices: [{ message: { content: 'reply' } }] }));
+    vi.stubGlobal('fetch', fetch);
+    const { adapter } = fixture();
+    const handle = await adapter.submit(
+      {
+        modelId: 'text-model',
+        params: { temperature: 0.2 },
+        output: { kind: 'text' },
+      },
+      'no-max-tokens-job',
+    );
+    await adapter.fetch(handle);
+
+    const request = fetch.mock.calls[0]?.[1] as RequestInit;
+    const body = JSON.parse(String(request.body));
+    expect(body).not.toHaveProperty('max_tokens');
+    expect(body.temperature).toBe(0.2);
+  });
+});
+
+describe('OpenRouterAdapter estimate', () => {
+  it('reserves nothing and skips the ceiling when max_tokens is absent', async () => {
+    const { adapter } = fixture();
+
+    const estimate = await adapter.estimate({
+      modelId: 'text-model',
+      params: {},
+      renderedPrompt: 'Composed prompt',
+    });
+
+    expect(estimate.ceilingUsd).toBe(0);
+    expect(estimate.expectedUsd).toBeGreaterThan(0);
+  });
+
+  it('still computes a real ceiling when max_tokens is set', async () => {
+    const { adapter } = fixture();
+
+    const estimate = await adapter.estimate({
+      modelId: 'text-model',
+      params: { max_tokens: 100 },
+      renderedPrompt: 'Composed prompt',
+    });
+
+    expect(estimate.ceilingUsd).toBeGreaterThan(0);
+    expect(estimate.ceilingUsd).toBeCloseTo(estimate.expectedUsd * 1.5);
+  });
 });

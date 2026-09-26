@@ -28,12 +28,11 @@ function textStage(overrides: Partial<StageDef> = {}): StageDef {
 }
 
 /**
- * §16.5 — `blueprint-validator.service.ts` can only WARN about a missing
- * `max_tokens` at save time (it can't see the channel layer, where
- * `max_tokens` usually lives). `RunService.create()` is where the full
- * layer stack has actually resolved, so an unbounded text reservation
- * becomes a hard error there instead — `estimateCost`/`reserve` (§11)
- * can't produce an honest ceiling without it.
+ * `max_tokens` is optional model-pin data. When it's absent for a
+ * text-modality stage, `RunService.create()` still succeeds —
+ * `OpenRouterAdapter.estimate()` reserves `ceilingUsd: 0` for that stage and
+ * the real cost is recorded post-hoc via `settleSuccess` once the call
+ * completes (§11).
  */
 describe('RunService.create budget preconditions (e2e)', () => {
   let testDb: TestDb;
@@ -72,21 +71,24 @@ describe('RunService.create budget preconditions (e2e)', () => {
     return { channel, version };
   }
 
-  it('throws, naming the stage, when a text stage has no effective max_tokens anywhere in the layer stack', async () => {
+  it('creates a run when a text stage has no effective max_tokens anywhere in the layer stack', async () => {
     const runs = testApp.app.get(RunService);
     const { channel, version } = await createVersion([
       textStage({ model: { provider: 'fake', modelId: 'fake-text-1', params: {} } }),
     ]);
 
-    await expect(
-      runs.create({
-        channelId: channel.id,
-        blueprintVersionId: version.id,
-        inputs: {},
-        roleBindings: {},
-        budgetCapUsd: 10,
-      }),
-    ).rejects.toThrow(/"outline".*max_tokens/);
+    const created = await runs.create({
+      channelId: channel.id,
+      blueprintVersionId: version.id,
+      inputs: {},
+      roleBindings: {},
+      budgetCapUsd: 10,
+    });
+    expect(created).toBeDefined();
+
+    const [row] = await testDb.db.select().from(run).where(eq(run.id, created.id));
+    const resolvedConfig = row?.resolvedConfig as Record<string, { model?: { params?: object } }>;
+    expect(resolvedConfig.outline?.model?.params).not.toHaveProperty('max_tokens');
   });
 
   it('rejects a blueprint version from another channel before creating a run', async () => {
@@ -115,50 +117,6 @@ describe('RunService.create budget preconditions (e2e)', () => {
     expect(await testDb.db.select().from(run).where(eq(run.channelId, other.id))).toHaveLength(0);
   });
 
-  it('succeeds when max_tokens is set on the channel layer, not just the stage', async () => {
-    const runs = testApp.app.get(RunService);
-    const { channel, version } = await createVersion(
-      [textStage({ model: { provider: 'fake', modelId: 'fake-text-1', params: {} } })],
-      { model: { params: { max_tokens: 256 } } },
-    );
-
-    await expect(
-      runs.create({
-        channelId: channel.id,
-        blueprintVersionId: version.id,
-        inputs: {},
-        roleBindings: {},
-        budgetCapUsd: 10,
-      }),
-    ).resolves.toBeDefined();
-  });
-
-  it('does not require max_tokens for a non-text capability', async () => {
-    const runs = testApp.app.get(RunService);
-    const { channel, version } = await createVersion([
-      {
-        key: 'publish',
-        label: 'Publish',
-        capability: 'publish.stub',
-        config: {},
-        slots: {},
-        context: {},
-        output: { kind: 'data', schema: { type: 'object' } },
-        checks: [],
-        retryLimit: 0,
-      },
-    ]);
-
-    await expect(
-      runs.create({
-        channelId: channel.id,
-        blueprintVersionId: version.id,
-        inputs: {},
-        roleBindings: {},
-        budgetCapUsd: 10,
-      }),
-    ).resolves.toBeDefined();
-  });
 });
 
 /**
