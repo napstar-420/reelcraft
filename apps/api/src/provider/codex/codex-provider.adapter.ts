@@ -61,7 +61,13 @@ export class CodexProviderAdapter implements ProviderAdapter {
     private readonly readiness?: CodexRuntimeReadiness,
     private readonly inputMaterializer?: CodexInputMaterializer,
   ) {
-    this.jobsRoot = join(config.workspaceRoot, 'codex-jobs');
+    // Must be absolute: the launcher spawns the runner with `cwd` set to
+    // the job's own directory, so any relative path here (from a relative
+    // WORKSPACE_ROOT, e.g. `./.workspace`) gets re-resolved against that
+    // child cwd instead of this process's — the runner then tries to read
+    // its own manifest from a doubly-nested, nonexistent path and dies
+    // silently before it can log anything.
+    this.jobsRoot = resolve(config.workspaceRoot, 'codex-jobs');
     this.profile = config.codexProfile ?? 'reelcraft';
     this.resultLimit = config.codexOutputMaxBytes ?? 16 * 1024 * 1024;
     this.jobTimeoutMs = config.codexJobTimeoutMs ?? 900_000;
