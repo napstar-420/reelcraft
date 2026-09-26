@@ -149,12 +149,23 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  listChannels: () => request<ChannelDto[]>('/channels'),
+  listChannels: (params?: { includeArchived?: boolean }) => {
+    const qs = new URLSearchParams();
+    if (params?.includeArchived) qs.set('includeArchived', 'true');
+    const suffix = qs.toString();
+    return request<ChannelDto[]>(`/channels${suffix ? `?${suffix}` : ''}`);
+  },
   createChannel: (dto: CreateChannelDto) =>
     request<ChannelDto>('/channels', { method: 'POST', body: JSON.stringify(dto) }),
   getChannel: (id: string) => request<ChannelDto>(`/channels/${id}`),
   updateChannel: (id: string, dto: UpdateChannelDto) =>
     request<ChannelDto>(`/channels/${id}`, { method: 'PATCH', body: JSON.stringify(dto) }),
+  archiveChannel: (id: string, archived: boolean) =>
+    request<ChannelDto>(`/channels/${id}/archive`, {
+      method: 'PATCH',
+      body: JSON.stringify({ archived }),
+    }),
+  deleteChannel: (id: string) => request<void>(`/channels/${id}`, { method: 'DELETE' }),
 
   createBlueprint: (channelId: string, name: string) =>
     request<{ blueprintId: string }>('/blueprints', {

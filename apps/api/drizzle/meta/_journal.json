@@ -113,6 +113,13 @@
       "when": 1790436799625,
       "tag": "0015_familiar_steel_serpent",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1790447651701,
+      "tag": "0016_hesitant_mentor",
+      "breakpoints": true
     }
   ]
 }

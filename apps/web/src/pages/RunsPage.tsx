@@ -62,7 +62,7 @@ export function RunsPage() {
   const filters = parseRunsListSearchParams(searchParams);
   const [cancelTarget, setCancelTarget] = useState<RunSummaryDto | null>(null);
 
-  const channels = useQuery({ queryKey: ['channels'], queryFn: api.listChannels });
+  const channels = useQuery({ queryKey: ['channels'], queryFn: () => api.listChannels() });
   const blueprints = useQuery({
     queryKey: ['blueprints', filters.channelId],
     queryFn: () => api.listBlueprints(filters.channelId!),

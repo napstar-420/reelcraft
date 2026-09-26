@@ -1,0 +1,1 @@
+ALTER TABLE "channel" ADD COLUMN "archived" boolean DEFAULT false NOT NULL;

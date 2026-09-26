@@ -16,6 +16,18 @@ export const UpdateChannelDto = z.object({
 });
 export type UpdateChannelDto = z.infer<typeof UpdateChannelDto>;
 
+export const ArchiveChannelDto = z.object({
+  archived: z.boolean(),
+});
+export type ArchiveChannelDto = z.infer<typeof ArchiveChannelDto>;
+
+/** `includeArchived` mirrors `ListRunsQueryDto.includeDryRuns` (run.dto.ts) —
+ * `z.coerce` because query params arrive as strings over HTTP. */
+export const ListChannelsQueryDto = z.object({
+  includeArchived: z.coerce.boolean().optional().default(false),
+});
+export type ListChannelsQueryDto = z.infer<typeof ListChannelsQueryDto>;
+
 export const ChannelDto = z.object({
   id: z.string(),
   ownerId: z.string(),
@@ -23,6 +35,7 @@ export const ChannelDto = z.object({
   description: z.string().nullable(),
   theme: z.record(z.string(), z.unknown()),
   defaults: ConfigLayer,
+  archived: z.boolean(),
   createdAt: z.string(),
 });
 export type ChannelDto = z.infer<typeof ChannelDto>;

@@ -1,5 +1,10 @@
-import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
-import { CreateChannelDto, UpdateChannelDto } from '@reelcraft/shared';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import {
+  ArchiveChannelDto,
+  CreateChannelDto,
+  ListChannelsQueryDto,
+  UpdateChannelDto,
+} from '@reelcraft/shared';
 import { Owner } from '../common/owner.decorator';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { ChannelService } from './channel.service';
@@ -19,8 +24,8 @@ export class ChannelController {
   }
 
   @Get()
-  list() {
-    return this.channels.list();
+  list(@Query(new ZodValidationPipe(ListChannelsQueryDto)) query: ListChannelsQueryDto) {
+    return this.channels.list(query);
   }
 
   @Get(':id')
@@ -34,5 +39,18 @@ export class ChannelController {
     @Body(new ZodValidationPipe(UpdateChannelDto)) dto: UpdateChannelDto,
   ) {
     return this.channels.update(id, dto);
+  }
+
+  @Patch(':id/archive')
+  archive(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(ArchiveChannelDto)) dto: ArchiveChannelDto,
+  ) {
+    return this.channels.setArchived(id, dto.archived);
+  }
+
+  @Delete(':id')
+  delete(@Param('id') id: string) {
+    return this.channels.delete(id);
   }
 }
