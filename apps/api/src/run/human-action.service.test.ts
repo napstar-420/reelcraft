@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 import { HumanActionService } from './human-action.service';
 
@@ -12,6 +13,7 @@ describe('HumanActionService', () => {
     };
     const service = Object.assign(Object.create(HumanActionService.prototype) as object, {
       mutation,
+      logger: new Logger(HumanActionService.name),
       dispatcher: { dispatch: vi.fn().mockResolvedValue(true) },
       approveInTransaction: vi.fn().mockResolvedValue(undefined),
     }) as unknown as HumanActionService;

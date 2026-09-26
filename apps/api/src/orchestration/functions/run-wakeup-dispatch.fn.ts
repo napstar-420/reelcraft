@@ -6,6 +6,14 @@ export function buildRunWakeupDispatchFunction(client: Inngest, dispatcher: RunW
   return client.createFunction(
     { id: 'run.wakeup-dispatch' },
     { cron: '* * * * *' },
-    async ({ step }) => step.run('dispatch-pending-wakeups', () => dispatcher.dispatchPending()),
+    async ({ step, logger }) => {
+      const result = await step.run('dispatch-pending-wakeups', () => dispatcher.dispatchPending());
+      if (result.failed > 0) {
+        logger.warn({ ...result }, 'pending run wakeups dispatch had failures');
+      } else if (result.dispatched > 0) {
+        logger.info({ ...result }, 'pending run wakeups dispatched');
+      }
+      return result;
+    },
   );
 }

@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { and, eq } from 'drizzle-orm';
 import { DRIZZLE, type Db } from '../../db/drizzle.provider';
 import { providerJob } from '../../db/schema';
@@ -7,6 +7,8 @@ import { ulid } from '../../common/ulid';
 
 @Injectable()
 export class DeepgramInboxService {
+  private readonly logger = new Logger(DeepgramInboxService.name);
+
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async createOrGet(idempotencyKey: string, payload: unknown) {
@@ -28,7 +30,11 @@ export class DeepgramInboxService {
     };
     try {
       await this.db.insert(providerJob).values(row);
-    } catch {
+    } catch (error) {
+      this.logger.warn(
+        { providerId: 'deepgram', jobId: row.id, err: error },
+        'deepgram inbox insert conflicted',
+      );
       const [again] = await this.db
         .select()
         .from(providerJob)
@@ -58,12 +64,22 @@ export class DeepgramInboxService {
       .from(providerJob)
       .where(and(eq(providerJob.provider, 'deepgram'), eq(providerJob.callbackToken, token)))
       .limit(1);
-    if (!job) return false;
-    if (job.state === 'completed') return true;
+    if (!job) {
+      this.logger.warn({ providerId: 'deepgram' }, 'deepgram callback token not recognized');
+      return false;
+    }
+    if (job.state === 'completed') {
+      this.logger.debug({ providerId: 'deepgram', jobId: job.id }, 'deepgram callback duplicate');
+      return true;
+    }
     await this.db
       .update(providerJob)
       .set({ state: 'completed', result: payload, completedAt: new Date().toISOString() })
       .where(eq(providerJob.id, job.id));
+    this.logger.log(
+      { providerId: 'deepgram', jobId: job.id, externalId: job.externalId },
+      'deepgram callback accepted',
+    );
     return true;
   }
 }

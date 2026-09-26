@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
 import type { RunState } from '@reelcraft/shared';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
@@ -7,6 +7,8 @@ import { InProcessRunEvents } from './run-events';
 
 @Injectable()
 export class RunStateService {
+  private readonly logger = new Logger(RunStateService.name);
+
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly events: InProcessRunEvents,
@@ -24,6 +26,7 @@ export class RunStateService {
       .update(run)
       .set({ state, ...timestamps })
       .where(eq(run.id, runId));
+    this.logger.log({ runId, toState: state }, 'run state changed');
     this.events.publish({ runId, type: 'state_changed', state });
   }
 

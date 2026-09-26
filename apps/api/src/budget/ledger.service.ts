@@ -64,12 +64,26 @@ export class LedgerService {
       const runRow = await this.lockRunRow(tx, params.runId);
 
       if (runRow.state !== 'RUNNING') {
+        this.logger.log(
+          { runId: params.runId, stageKey: params.stageKey, reason: 'run_not_running' },
+          'budget reservation rejected',
+        );
         return { ok: false, reason: 'run_not_running' };
       }
 
       const runAvailable =
         toUsd(runRow.budgetCapUsd) - toUsd(runRow.reservedUsd) - toUsd(runRow.spentUsd);
       if (params.ceilingUsd > runAvailable) {
+        this.logger.log(
+          {
+            runId: params.runId,
+            stageKey: params.stageKey,
+            reason: 'run_cap_exceeded',
+            ceilingUsd: params.ceilingUsd,
+            availableUsd: runAvailable,
+          },
+          'budget reservation rejected',
+        );
         return { ok: false, reason: 'run_cap_exceeded' };
       }
 
@@ -81,6 +95,16 @@ export class LedgerService {
         });
         const stageAvailable = params.stageCapUsd - stageCommitted;
         if (params.ceilingUsd > stageAvailable) {
+          this.logger.log(
+            {
+              runId: params.runId,
+              stageKey: params.stageKey,
+              reason: 'stage_cap_exceeded',
+              ceilingUsd: params.ceilingUsd,
+              availableUsd: stageAvailable,
+            },
+            'budget reservation rejected',
+          );
           return { ok: false, reason: 'stage_cap_exceeded' };
         }
       }
@@ -121,6 +145,10 @@ export class LedgerService {
           )
           .limit(1);
         if (!existing) throw err;
+        this.logger.debug(
+          { runId: params.runId, stageKey: params.stageKey, reservationId: existing.id },
+          'budget reservation already exists for attempt',
+        );
         return { ok: true, reservationId: existing.id };
       }
 
@@ -129,6 +157,15 @@ export class LedgerService {
         .set({ reservedUsd: sql`${run.reservedUsd} + ${fromUsd(params.ceilingUsd)}` })
         .where(eq(run.id, params.runId));
 
+      this.logger.log(
+        {
+          runId: params.runId,
+          stageKey: params.stageKey,
+          reservationId,
+          ceilingUsd: params.ceilingUsd,
+        },
+        'budget reserved',
+      );
       return { ok: true, reservationId };
     });
   }
@@ -176,7 +213,10 @@ export class LedgerService {
       await this.lockRunRow(tx, params.runId);
       const reservation = await this.lockReservation(tx, params.reservationId);
       if (await this.alreadySettled(tx, params.reservationId)) {
-        this.logger.warn(`settleSuccess: reservation ${params.reservationId} already settled`);
+        this.logger.warn(
+          { runId: params.runId, reservationId: params.reservationId, settlement: 'success' },
+          'budget reservation already settled',
+        );
         return;
       }
       const ceilingUsd = toUsd(reservation.amountUsd);
@@ -210,6 +250,17 @@ export class LedgerService {
           spentUsd: sql`${run.spentUsd} + ${fromUsd(params.actualUsd)}`,
         })
         .where(eq(run.id, params.runId));
+      this.logger.log(
+        {
+          runId: params.runId,
+          stageKey: params.stageKey,
+          reservationId: params.reservationId,
+          settlement: 'success',
+          ceilingUsd,
+          actualUsd: params.actualUsd,
+        },
+        'budget reservation settled',
+      );
     });
   }
 
@@ -229,7 +280,10 @@ export class LedgerService {
       await this.lockRunRow(tx, params.runId);
       const reservation = await this.lockReservation(tx, params.reservationId);
       if (await this.alreadySettled(tx, params.reservationId)) {
-        this.logger.warn(`settleProvisional: reservation ${params.reservationId} already settled`);
+        this.logger.warn(
+          { runId: params.runId, reservationId: params.reservationId, settlement: 'provisional' },
+          'budget reservation already settled',
+        );
         return;
       }
       const ceilingUsd = toUsd(reservation.amountUsd);
@@ -252,6 +306,16 @@ export class LedgerService {
           spentUsd: sql`${run.spentUsd} + ${fromUsd(ceilingUsd)}`,
         })
         .where(eq(run.id, params.runId));
+      this.logger.log(
+        {
+          runId: params.runId,
+          stageKey: params.stageKey,
+          reservationId: params.reservationId,
+          settlement: 'provisional',
+          ceilingUsd,
+        },
+        'budget reservation settled',
+      );
     });
   }
 
@@ -267,7 +331,10 @@ export class LedgerService {
       await this.lockRunRow(tx, params.runId);
       const reservation = await this.lockReservation(tx, params.reservationId);
       if (await this.alreadySettled(tx, params.reservationId)) {
-        this.logger.warn(`settleRelease: reservation ${params.reservationId} already settled`);
+        this.logger.warn(
+          { runId: params.runId, reservationId: params.reservationId, settlement: 'release' },
+          'budget reservation already settled',
+        );
         return;
       }
       const ceilingUsd = toUsd(reservation.amountUsd);
@@ -287,6 +354,16 @@ export class LedgerService {
         .update(run)
         .set({ reservedUsd: sql`${run.reservedUsd} - ${fromUsd(ceilingUsd)}` })
         .where(eq(run.id, params.runId));
+      this.logger.log(
+        {
+          runId: params.runId,
+          stageKey: params.stageKey,
+          reservationId: params.reservationId,
+          settlement: 'release',
+          ceilingUsd,
+        },
+        'budget reservation settled',
+      );
     });
   }
 
@@ -314,6 +391,10 @@ export class LedgerService {
         .update(run)
         .set({ budgetCapUsd: fromUsd(params.newCapUsd) })
         .where(eq(run.id, params.runId));
+      this.logger.log(
+        { runId: params.runId, fromCapUsd: currentCapUsd, toCapUsd: params.newCapUsd },
+        'run budget raised',
+      );
       return { budgetCapUsd: params.newCapUsd };
     });
   }
@@ -407,6 +488,15 @@ export class LedgerService {
         stageAttemptId: row.stageAttemptId,
         reservationId: row.reservationId,
       };
+      this.logger.warn(
+        {
+          runId: row.runId,
+          stageKey: row.stageKey,
+          reservationId: row.reservationId,
+          phase: row.phase,
+        },
+        'expired budget reservation swept',
+      );
       // §11.4's table: created/reserved -> nothing reached a provider, a
       // plain release; submitting/submitted -> a job may be billing, the
       // same provisional-actual treatment `recordProviderTimeout` already
@@ -426,6 +516,7 @@ export class LedgerService {
       }
       swept += 1;
     }
+    if (swept > 0) this.logger.log({ swept }, 'expired budget reservations swept');
     return { swept };
   }
 

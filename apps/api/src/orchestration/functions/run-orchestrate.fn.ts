@@ -73,7 +73,7 @@ export function buildRunOrchestrateFunction(
       cancelOn: [{ event: 'run/cancelled', match: 'data.runId' }],
     },
     [{ event: 'run/started' }, { event: 'run/resumed' }],
-    async ({ event, step }) => {
+    async ({ event, step, logger }) => {
       const data = event.data as RunStartedEventData;
       const { runId } = data;
 
@@ -87,7 +87,13 @@ export function buildRunOrchestrateFunction(
         const claim = await step.run('claim-wakeup', () =>
           wakeupClaim.claim(data as RunWakeupEventData),
         );
-        if (!claim.claimed) return { ignored: true as const, reason: claim.reason };
+        if (!claim.claimed) {
+          logger.info(
+            { runId, wakeupId: data.wakeupId, action: data.action, reason: claim.reason },
+            'run wakeup ignored',
+          );
+          return { ignored: true as const, reason: claim.reason };
+        }
       } else {
         // Backward compatibility for already-enqueued events from before the
         // durable wakeup envelope was introduced.
@@ -135,6 +141,11 @@ export function buildRunOrchestrateFunction(
         }));
       });
 
+      logger.info(
+        { runId, wakeupId: data.wakeupId, action: data.action, stageCount: executions.length },
+        'run orchestration started',
+      );
+
       for (const execution of executions) {
         if (execution.state === 'passed' && !execution.needsItemWork) continue;
 
@@ -146,6 +157,10 @@ export function buildRunOrchestrateFunction(
           runState.getState(runId),
         );
         if (runnableState !== 'RUNNING') {
+          logger.info(
+            { runId, stageKey: execution.stageKey, state: runnableState },
+            'run orchestration stopped: run not running',
+          );
           return { state: runnableState ?? ('CANCELLED' as const) };
         }
 
@@ -173,6 +188,10 @@ export function buildRunOrchestrateFunction(
           // reported (and left) as PAUSED_MANUAL, not mislabeled.
           const stateAfter = await step.run(`state-after-${execution.stageKey}`, () =>
             runState.getState(runId),
+          );
+          logger.info(
+            { runId, stageKey: execution.stageKey, state: stateAfter },
+            'run orchestration stopped: run left running mid-stage',
           );
           return { state: stateAfter ?? ('CANCELLED' as const) };
         }

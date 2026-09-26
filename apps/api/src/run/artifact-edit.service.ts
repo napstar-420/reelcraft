@@ -154,13 +154,22 @@ export class ArtifactEditService {
       },
       'run/resumed',
     );
+    this.logger.log(
+      {
+        runId,
+        stageKey,
+        sourceArtifactId: context.sourceArtifactId,
+        wakeupId: result.wakeupId,
+        revision: result.revision,
+      },
+      'artifact edited',
+    );
     try {
       await this.dispatcher.dispatch(result.wakeupId);
     } catch (error) {
       this.logger.warn(
-        `Run wakeup ${result.wakeupId} will be retried: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
+        { runId, wakeupId: result.wakeupId, err: error },
+        'run wakeup dispatch deferred to retry',
       );
     }
     return { accepted: true, revision: result.revision };

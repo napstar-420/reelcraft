@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { and, desc, eq, isNull } from 'drizzle-orm';
 import type { ArtifactKind, Ref } from '@reelcraft/shared';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
@@ -98,6 +98,8 @@ export interface RefEnvelope {
  */
 @Injectable()
 export class BindingResolverService {
+  private readonly logger = new Logger(BindingResolverService.name);
+
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly memory: MemoryService,
@@ -343,8 +345,17 @@ export class BindingResolverService {
     let scope = ctx;
     const provenance: Record<string, RefProvenance> = {};
     if (stage.iterate) {
-      const { value, provenance: iterateProvenance } = await this.resolve(stage.iterate.over, ctx);
+      const { value, provenance: iterateProvenance } = await this.resolveLogged(
+        stage.iterate.over,
+        ctx,
+        stage.key,
+        'iterate.over',
+      );
       if (!Array.isArray(value)) {
+        this.logger.warn(
+          { runId: ctx.runId, stageKey: stage.key },
+          'iterate.over did not resolve to an array',
+        );
         throw new Error(
           `BindingResolverService: stage "${stage.key}" iterate.over did not resolve to an array`,
         );
@@ -362,16 +373,28 @@ export class BindingResolverService {
     const context: Record<string, unknown> = {};
 
     for (const [key, ref] of Object.entries(stage.slots)) {
-      const resolved = await this.resolve(ref, scope);
+      const resolved = await this.resolveLogged(ref, scope, stage.key, `slots.${key}`);
       slots[key] = resolved.value;
       provenance[`slots.${key}`] = resolved.provenance;
     }
     for (const [key, ref] of Object.entries(stage.context)) {
-      const resolved = await this.resolve(ref, scope);
+      const resolved = await this.resolveLogged(ref, scope, stage.key, `context.${key}`);
       context[key] = resolved.value;
       provenance[`context.${key}`] = resolved.provenance;
     }
     return { slots, context, provenance, iterateOverValue: scope.iterateOverValue };
+  }
+
+  private async resolveLogged(ref: Ref, ctx: BindingScope, stageKey: string, bindingKey: string) {
+    try {
+      return await this.resolve(ref, ctx);
+    } catch (error) {
+      this.logger.warn(
+        { runId: ctx.runId, stageKey, bindingKey, from: ref.from, err: error },
+        'binding resolution failed',
+      );
+      throw error;
+    }
   }
 
   /** §9.2 — resolves `CheckDef.refs` (script checks) into `{kind, data,
@@ -384,7 +407,16 @@ export class BindingResolverService {
     const envelopes: Record<string, RefEnvelope> = {};
     const provenance: Record<string, RefProvenance> = {};
     for (const [key, ref] of Object.entries(refs)) {
-      const resolved = await this.resolveEnvelope(ref, ctx);
+      let resolved: Awaited<ReturnType<typeof this.resolveEnvelope>>;
+      try {
+        resolved = await this.resolveEnvelope(ref, ctx);
+      } catch (error) {
+        this.logger.warn(
+          { runId: ctx.runId, bindingKey: key, from: ref.from, err: error },
+          'check ref resolution failed',
+        );
+        throw error;
+      }
       envelopes[key] = resolved.envelope;
       provenance[key] = resolved.provenance;
     }
@@ -580,7 +612,13 @@ export class BindingResolverService {
 
     const groupRows = await this.memory
       .listGroupCurrent(this.db, ctx.runId, ref.key)
-      .catch(() => undefined);
+      .catch((error: unknown) => {
+        this.logger.debug(
+          { runId: ctx.runId, memKey: ref.key, err: error },
+          'memory group lookup found nothing',
+        );
+        return undefined;
+      });
     if (groupRows) return { rows: groupRows, group: true };
 
     throw new Error(

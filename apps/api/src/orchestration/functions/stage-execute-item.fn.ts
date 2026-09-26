@@ -29,7 +29,7 @@ export function buildStageExecuteItemFunction(client: Inngest, runner: StageRunn
   return client.createFunction(
     { id: 'stage.execute.item', retries: 3 },
     { event: 'stage/execute.item.requested' },
-    async ({ event, step }) => {
+    async ({ event, step, logger }) => {
       const data = event.data as StageExecuteItemEventData;
       const { stage, effective, prevStageKey } = await step.run('load-stage-context', () =>
         runner.loadStageContext(data.runId, data.stageKey),
@@ -40,6 +40,7 @@ export function buildStageExecuteItemFunction(client: Inngest, runner: StageRunn
 
       return runStageAttemptLoop({
         step,
+        logger,
         runner,
         stage,
         effective,

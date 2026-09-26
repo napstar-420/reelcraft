@@ -134,6 +134,15 @@ export class RunService {
 
       await this.runInputs.recordProvidedInputs(tx, runId, inputDefs, dto.inputs);
     });
+    this.logger.log(
+      {
+        runId,
+        channelId: dto.channelId,
+        blueprintVersionId: dto.blueprintVersionId,
+        dryRun: options?.dryRun ?? false,
+      },
+      'run created',
+    );
 
     return this.get(runId);
   }
@@ -182,6 +191,10 @@ export class RunService {
           .where(eq(run.id, runId));
       },
       'run/started',
+    );
+    this.logger.log(
+      { runId, wakeupId: mutation.wakeupId, revision: mutation.revision },
+      'run started',
     );
 
     await this.dispatchBestEffort(mutation.wakeupId);
@@ -436,6 +449,7 @@ export class RunService {
    * the cap but doesn't resume the orchestrator. */
   async raiseBudget(runId: string, capUsd: number) {
     await this.ledger.raiseBudget({ runId, newCapUsd: capUsd });
+    this.logger.log({ runId, capUsd }, 'run budget raised');
     return this.get(runId);
   }
 
@@ -469,6 +483,10 @@ export class RunService {
       async () => undefined,
       'run/resumed',
     );
+    this.logger.log(
+      { runId, wakeupId: mutation.wakeupId, fromState: current.state },
+      'run resumed',
+    );
     await this.dispatchBestEffort(mutation.wakeupId);
     return this.get(runId);
   }
@@ -491,6 +509,7 @@ export class RunService {
       },
       'run/paused',
     );
+    this.logger.log({ runId, wakeupId: mutation.wakeupId }, 'run paused');
     await this.dispatchBestEffort(mutation.wakeupId);
     return this.get(runId);
   }
@@ -501,11 +520,7 @@ export class RunService {
     } catch (error) {
       // The committed outbox row is the source of truth. The periodic
       // dispatcher will retry this delivery, so the HTTP mutation succeeds.
-      this.logger?.warn(
-        `Run wakeup ${wakeupId} was committed but could not be dispatched immediately: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
+      this.logger?.warn({ wakeupId, err: error }, 'run wakeup dispatch deferred to retry');
     }
   }
 
@@ -899,6 +914,10 @@ export class RunService {
           (candidate) => candidate.modelId === pin.modelId,
         );
       } catch (error) {
+        this.logger.warn(
+          { providerId: pin.provider, modelId: pin.modelId, err: error },
+          'provider model discovery failed',
+        );
         throw new ConflictException(
           `RunService.start: ${pin.provider === 'codex' ? 'Codex' : 'OpenRouter'} model discovery failed: ${(error as Error).message}`,
         );

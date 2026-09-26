@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { CostEstimate, JobHandle, JobStatus } from '@reelcraft/shared';
 import { EngineConfig } from '../../config/engine-config';
 import { STORAGE_ADAPTER, type StorageAdapter } from '../../storage/storage.adapter';
@@ -18,6 +18,7 @@ import { eq } from 'drizzle-orm';
 export class DeepgramAdapter implements ProviderAdapter {
   readonly id = 'deepgram';
   readonly modalities = ['media'] as const;
+  private readonly logger = new Logger(DeepgramAdapter.name);
   constructor(
     @Inject(KEY_PROVIDER) private readonly keys: KeyProvider,
     @Inject(STORAGE_ADAPTER) private readonly storage: StorageAdapter,
@@ -48,12 +49,18 @@ export class DeepgramAdapter implements ProviderAdapter {
       .limit(1);
     if (!sourceBlob) throw new Error('Deepgram: source media blob no longer exists');
     const job = await this.inbox.createOrGet(key, req);
-    if ('externalId' in job && job.externalId)
+    if ('externalId' in job && job.externalId) {
+      this.logger.debug(
+        { providerId: this.id, jobId: job.id, model: req.modelId },
+        'provider job already submitted',
+      );
       return { providerId: this.id, externalId: job.id, payload: { jobId: job.id } };
+    }
     const apiKey = await this.keys.get(this.id);
     if (!apiKey) throw new Error('Deepgram: no API key configured');
     const callback = `${this.config.publicApiBaseUrl}/api/providers/deepgram/callback?token=${job.callbackToken}`;
     const url = await this.storage.presignGet(sourceBlob.objectKey, 900);
+    const startedAt = Date.now();
     const response = await fetch(
       `https://api.deepgram.com/v1/listen?model=${encodeURIComponent(req.modelId)}&smart_format=true&utterances=true&callback=${encodeURIComponent(callback)}`,
       {
@@ -62,23 +69,60 @@ export class DeepgramAdapter implements ProviderAdapter {
         body: JSON.stringify({ url }),
       },
     );
-    if (!response.ok) throw new Error(`Deepgram submit: ${response.status} ${response.statusText}`);
+    if (!response.ok) {
+      this.logger.warn(
+        { providerId: this.id, jobId: job.id, model: req.modelId, statusCode: response.status },
+        'provider job submit failed',
+      );
+      throw new Error(`Deepgram submit: ${response.status} ${response.statusText}`);
+    }
     const body = (await response.json()) as { request_id?: string };
     await this.inbox.markSubmitted(job.id, body.request_id ?? job.id);
+    this.logger.log(
+      {
+        providerId: this.id,
+        jobId: job.id,
+        externalId: body.request_id,
+        model: req.modelId,
+        durationMs: Date.now() - startedAt,
+      },
+      'provider job submitted',
+    );
     return { providerId: this.id, externalId: job.id, payload: { jobId: job.id } };
   }
   async poll(handle: JobHandle): Promise<JobStatus> {
     const job = await this.inbox.get(handle.externalId);
-    if (!job)
+    if (!job) {
+      this.logger.error({ providerId: this.id, jobId: handle.externalId }, 'provider job unknown');
       return { done: true, outcome: 'failed', reason: 'unknown Deepgram job', retryable: false };
+    }
+    this.logger.debug(
+      { providerId: this.id, jobId: handle.externalId, state: job.state },
+      'provider job polled',
+    );
     return job.state === 'completed'
       ? { done: true, outcome: 'succeeded' }
       : { done: false, phase: 'running' };
   }
   async fetch(handle: JobHandle): Promise<ProviderResult> {
     const job = await this.inbox.get(handle.externalId);
-    if (!job?.result) throw new Error('Deepgram: callback result unavailable');
+    if (!job?.result) {
+      this.logger.warn(
+        { providerId: this.id, jobId: handle.externalId },
+        'provider result unavailable',
+      );
+      throw new Error('Deepgram: callback result unavailable');
+    }
     const output = normalize(job.result);
+    this.logger.log(
+      {
+        providerId: this.id,
+        jobId: handle.externalId,
+        wordCount: output.words.length,
+        durationSec: output.durationSec,
+      },
+      'provider job completed',
+    );
     return {
       output,
       costUsd: Number((job.payload as ProviderRequest).params.pricePerMinuteUsd ?? 0.0043),

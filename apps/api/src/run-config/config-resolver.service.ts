@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
 import { ConfigLayer } from '@reelcraft/shared';
 import type { ModelPin, QcDef, StageDef } from '@reelcraft/shared';
@@ -42,6 +42,8 @@ export interface EffectiveStageConfig {
  */
 @Injectable()
 export class ConfigResolverService {
+  private readonly logger = new Logger(ConfigResolverService.name);
+
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly engineConfig: EngineConfig,
@@ -100,6 +102,17 @@ export class ConfigResolverService {
             layer.iterate?.maxItems ?? stage.iterate.maxItems ?? this.engineConfig.iterateMaxItems,
         }
       : undefined;
+    this.logger.debug(
+      {
+        runId,
+        stageKey,
+        providerId: model?.provider,
+        modelId: model?.modelId,
+        retryLimit: layer.retryLimit ?? stage.retryLimit,
+        hasOverride: Object.keys(override).length > 0,
+      },
+      'stage config resolved',
+    );
     return {
       layer,
       ...(model !== undefined && { model }),

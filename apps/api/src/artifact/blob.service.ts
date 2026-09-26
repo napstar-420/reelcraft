@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { and, eq, isNull, lte, or } from 'drizzle-orm';
 import { STORAGE_ADAPTER, type StorageAdapter } from '../storage/storage.adapter';
 import { ulid } from '../common/ulid';
@@ -13,6 +13,8 @@ import { EngineConfig } from '../config/engine-config';
  * redactSecrets() before being written. */
 @Injectable()
 export class BlobService {
+  private readonly logger = new Logger(BlobService.name);
+
   constructor(
     @Inject(STORAGE_ADAPTER) private readonly storage: StorageAdapter,
     @Inject(DRIZZLE) private readonly db: Db,
@@ -32,13 +34,17 @@ export class BlobService {
       .from(blob)
       .where(and(eq(blob.id, blobId), eq(blob.ownerId, ownerId)))
       .limit(1);
-    if (!row) return undefined;
-    if (row.deletedAt)
+    if (!row) {
+      this.logger.debug({ blobId }, 'blob lookup missed');
+      return undefined;
+    }
+    if (row.deletedAt) {
+      this.logger.debug({ blobId }, 'blob lookup found collected blob');
       return { status: 'gone', blob: { id: row.id, mime: row.mime, bytes: row.bytes } };
-    return {
-      status: 'live',
-      url: await this.storage.presignGet(row.objectKey, this.config.presignTtlSec),
-    };
+    }
+    const url = await this.storage.presignGet(row.objectKey, this.config.presignTtlSec);
+    this.logger.debug({ blobId, ttlSec: this.config.presignTtlSec }, 'blob presigned');
+    return { status: 'live', url };
   }
 
   /** Bounded/idempotent retention sweep. Deleting an already-removed object
@@ -64,6 +70,7 @@ export class BlobService {
         .set({ deletedAt: new Date().toISOString() })
         .where(and(eq(blob.id, row.id), isNull(blob.deletedAt)));
     }
+    if (rows.length) this.logger.log({ collected: rows.length }, 'blobs collected');
     return rows.length;
   }
 
@@ -82,6 +89,10 @@ export class BlobService {
     );
     const body = Buffer.from(JSON.stringify(redactSecrets(stripMediaPayloads(params.payload))));
     await this.storage.put(key, body, { mime: 'application/json' });
+    this.logger.debug(
+      { runId: params.runId, attemptId: params.attemptId, storageKey: key, bytes: body.length },
+      'raw response stored',
+    );
     return key;
   }
 

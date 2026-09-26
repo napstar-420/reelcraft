@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process';
+import path from 'node:path';
 import { promisify } from 'node:util';
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import type { Probe } from '@reelcraft/shared';
 
 const execFileAsync = promisify(execFile);
@@ -9,7 +10,10 @@ const execFileAsync = promisify(execFile);
  * stored by the engine. No shell is involved: paths are always argv values. */
 @Injectable()
 export class MediaProbeService {
+  private readonly logger = new Logger(MediaProbeService.name);
+
   async probe(file: string): Promise<Probe> {
+    const startedAt = Date.now();
     let stdout: string;
     try {
       ({ stdout } = await execFileAsync('ffprobe', [
@@ -22,21 +26,33 @@ export class MediaProbeService {
         file,
       ]));
     } catch (error) {
+      this.logger.warn(
+        { file: path.basename(file), durationMs: Date.now() - startedAt, err: error },
+        'ffprobe failed',
+      );
       throw new Error(`MediaProbeService: ffprobe rejected media (${String(error)})`);
     }
     const parsed = JSON.parse(stdout) as {
       format?: { format_name?: string; duration?: string };
       streams?: Array<Record<string, string | number | undefined>>;
     };
-    if (!parsed.format?.format_name) throw new Error('MediaProbeService: corrupt media');
+    if (!parsed.format?.format_name) {
+      this.logger.warn({ file: path.basename(file) }, 'ffprobe reported no format');
+      throw new Error('MediaProbeService: corrupt media');
+    }
     // Still images (png_pipe/jpeg_pipe/…) never report `format.duration` at
     // all — that's normal, not corruption, so an absent duration becomes 0
     // rather than failing the probe. A duration that *is* present but
     // negative or non-finite is a genuine corruption signal.
     const rawDuration = parsed.format?.duration;
     const durationSec = rawDuration === undefined ? 0 : Number(rawDuration);
-    if (!Number.isFinite(durationSec) || durationSec < 0)
+    if (!Number.isFinite(durationSec) || durationSec < 0) {
+      this.logger.warn(
+        { file: path.basename(file), rawDuration },
+        'ffprobe reported invalid duration',
+      );
       throw new Error('MediaProbeService: corrupt or duration-less media');
+    }
     const streams = (parsed.streams ?? []).flatMap((stream) => {
       if (stream.codec_type !== 'video' && stream.codec_type !== 'audio') return [];
       const rate = typeof stream.r_frame_rate === 'string' ? stream.r_frame_rate.split('/') : [];
@@ -53,7 +69,20 @@ export class MediaProbeService {
         },
       ] as Probe['streams'];
     });
-    if (!streams.length) throw new Error('MediaProbeService: media has no audio or video streams');
+    if (!streams.length) {
+      this.logger.warn({ file: path.basename(file) }, 'ffprobe found no audio or video streams');
+      throw new Error('MediaProbeService: media has no audio or video streams');
+    }
+    this.logger.debug(
+      {
+        file: path.basename(file),
+        container: parsed.format.format_name,
+        durationSec,
+        streamCount: streams.length,
+        durationMs: Date.now() - startedAt,
+      },
+      'media probed',
+    );
     return { container: parsed.format.format_name, durationSec, streams };
   }
 

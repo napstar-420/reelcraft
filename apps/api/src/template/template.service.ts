@@ -3,6 +3,7 @@ import {
   ConflictException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { and, desc, eq, inArray, or } from 'drizzle-orm';
@@ -32,6 +33,8 @@ function isUniqueViolation(err: unknown): boolean {
  * made from it. */
 @Injectable()
 export class TemplateService {
+  private readonly logger = new Logger(TemplateService.name);
+
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly blueprints: BlueprintService,
@@ -82,6 +85,10 @@ export class TemplateService {
         budget: { runCapUsd },
       },
       templateId,
+    );
+    this.logger.log(
+      { templateId, channelId, blueprintId, blueprintVersionId: version.id },
+      'template instantiated',
     );
     return { ...version, requires: latest.requires };
   }
@@ -197,6 +204,7 @@ export class TemplateService {
       throw err;
     }
 
+    this.logger.log({ templateId, kind: dto.kind, ownerId }, 'template saved');
     const [created] = await this.db
       .select()
       .from(templateVersion)

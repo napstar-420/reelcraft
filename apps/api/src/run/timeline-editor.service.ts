@@ -1,4 +1,4 @@
-import { ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { and, desc, eq, isNull } from 'drizzle-orm';
 import {
   Probe,
@@ -44,6 +44,8 @@ type SourceRow = {
 
 @Injectable()
 export class TimelineEditorService {
+  private readonly logger = new Logger(TimelineEditorService.name);
+
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly blobs: BlobService,
@@ -119,6 +121,10 @@ export class TimelineEditorService {
         draftRevision: latest.wait.draftRevision,
       });
     }
+    this.logger.debug(
+      { runId, stageKey, draftRevision: rows[0]!.draftRevision, forced: input.force === true },
+      'timeline draft saved',
+    );
     return { draftRevision: rows[0]!.draftRevision };
   }
 

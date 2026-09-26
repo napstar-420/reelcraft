@@ -1,4 +1,4 @@
-import { ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { and, eq, inArray, isNull } from 'drizzle-orm';
 import type { CreateChannelDto, ListChannelsQueryDto, UpdateChannelDto } from '@reelcraft/shared';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
@@ -25,6 +25,8 @@ import { ulid } from '../common/ulid';
 
 @Injectable()
 export class ChannelService {
+  private readonly logger = new Logger(ChannelService.name);
+
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async create(ownerId: string, dto: CreateChannelDto) {
@@ -37,6 +39,7 @@ export class ChannelService {
       theme: dto.theme,
       defaults: dto.defaults,
     });
+    this.logger.log({ channelId: id }, 'channel created');
     return this.get(id);
   }
 
@@ -54,12 +57,14 @@ export class ChannelService {
   async update(id: string, dto: UpdateChannelDto) {
     await this.get(id);
     await this.db.update(channel).set(dto).where(eq(channel.id, id));
+    this.logger.log({ channelId: id, fields: Object.keys(dto) }, 'channel updated');
     return this.get(id);
   }
 
   async setArchived(id: string, archived: boolean) {
     await this.get(id);
     await this.db.update(channel).set({ archived }).where(eq(channel.id, id));
+    this.logger.log({ channelId: id }, archived ? 'channel archived' : 'channel unarchived');
     return this.get(id);
   }
 
@@ -100,12 +105,17 @@ export class ChannelService {
       .from(run)
       .where(and(eq(run.channelId, id), isNull(run.endedAt)));
     if (openRuns.length > 0) {
+      this.logger.warn(
+        { channelId: id, openRunCount: openRuns.length },
+        'channel delete blocked by open runs',
+      );
       throw new ConflictException(
         `Channel ${id} has ${openRuns.length} run(s) still in progress; cancel or wait for them to finish before deleting.`,
       );
     }
 
-    await this.db.transaction(async (tx) => {
+    const startedAt = Date.now();
+    const counts = await this.db.transaction(async (tx) => {
       const runIds = (await tx.select({ id: run.id }).from(run).where(eq(run.channelId, id))).map(
         (r) => r.id,
       );
@@ -188,6 +198,18 @@ export class ChannelService {
       }
 
       await tx.delete(channel).where(eq(channel.id, id));
+      return {
+        runCount: runIds.length,
+        blueprintCount: blueprintIds.length,
+        characterCount: characterIds.length,
+        artifactCount: artifactIds.length,
+        stageExecutionCount: stageExecutionIds.length,
+        assetCount: assetBlobIds.length,
+      };
     });
+    this.logger.log(
+      { channelId: id, ...counts, durationMs: Date.now() - startedAt },
+      'channel deleted',
+    );
   }
 }

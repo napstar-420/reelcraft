@@ -42,7 +42,7 @@ export function buildStageExecuteFunction(
     // provider job. `0` strands a submitted attempt after a callback EOF.
     { id: 'stage.execute', retries: 3 },
     { event: 'stage/execute.requested' },
-    async ({ event, step }) => {
+    async ({ event, step, logger }) => {
       const data = event.data as StageExecuteEventData;
       const { stage, effective, prevStageKey } = await step.run('load-stage-context', () =>
         runner.loadStageContext(data.runId, data.stageKey),
@@ -115,6 +115,7 @@ export function buildStageExecuteFunction(
 
       return runStageAttemptLoop({
         step,
+        logger,
         runner,
         stage,
         effective,

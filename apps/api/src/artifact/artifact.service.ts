@@ -1,4 +1,4 @@
-import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import type { ArtifactKind } from '@reelcraft/shared';
 import { ulid } from '../common/ulid';
@@ -58,6 +58,8 @@ export interface RecordInputArtifactInput {
  */
 @Injectable()
 export class ArtifactService {
+  private readonly logger = new Logger(ArtifactService.name);
+
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   /** Chunk 2 (§editor) — loads a single artifact row for `POST
@@ -98,6 +100,17 @@ export class ArtifactService {
       repro: input.repro,
       costUsd: fromUsd(input.costUsd),
     });
+    this.logger.debug(
+      {
+        runId: input.runId,
+        stageKey: input.producerStageKey,
+        itemIndex: input.itemIndex,
+        artifactId: id,
+        kind: input.kind,
+        blobId: input.blobId,
+      },
+      'attempt artifact recorded',
+    );
     return id;
   }
 
@@ -133,6 +146,10 @@ export class ArtifactService {
       userAuthored: true,
       reproLevel: 'exact',
     });
+    this.logger.log(
+      { runId: input.runId, inputKey: input.key, artifactId: id, kind: input.kind },
+      'input artifact created',
+    );
     return id;
   }
 
@@ -168,8 +185,9 @@ export class ArtifactService {
     },
     executor?: Tx,
   ): Promise<void> {
+    let staledArtifactIds: string[] = [];
     const apply = async (tx: Tx) => {
-      await tx
+      const staled = await tx
         .update(artifact)
         .set({ stale: true })
         .where(
@@ -181,7 +199,9 @@ export class ArtifactService {
               : eq(artifact.itemIndex, params.itemIndex),
             eq(artifact.stale, false),
           ),
-        );
+        )
+        .returning({ id: artifact.id });
+      staledArtifactIds = staled.map((row) => row.id);
 
       await tx.update(artifact).set({ stale: false }).where(eq(artifact.id, params.newArtifactId));
 
@@ -212,5 +232,17 @@ export class ArtifactService {
     } else {
       await this.db.transaction(apply);
     }
+    this.logger.log(
+      {
+        runId: params.runId,
+        stageKey: params.producerStageKey,
+        itemIndex: params.itemIndex,
+        stageExecutionId: params.stageExecutionId,
+        stageItemId: params.stageItemId,
+        artifactId: params.newArtifactId,
+        staledArtifactIds,
+      },
+      staledArtifactIds.length ? 'artifact replaced' : 'artifact finalized',
+    );
   }
 }

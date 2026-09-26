@@ -1,4 +1,4 @@
-import type { Context } from 'inngest';
+import type { Context, Logger } from 'inngest';
 import type { StageDef } from '@reelcraft/shared';
 import type { StageAttemptContext, StageRunnerService } from '../stage-runner.service';
 import type { EffectiveStageConfig } from '../../run-config/config-resolver.service';
@@ -25,6 +25,7 @@ export type StageAttemptOutcome =
 
 export interface StageAttemptLoopParams {
   step: StepTools;
+  logger: Logger;
   runner: StageRunnerService;
   stage: StageDef;
   effective: EffectiveStageConfig;
@@ -64,6 +65,7 @@ export async function runStageAttemptLoop(
 ): Promise<StageAttemptOutcome> {
   const {
     step,
+    logger,
     runner,
     stage,
     effective,
@@ -199,6 +201,10 @@ export async function runStageAttemptLoop(
       }
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
+      logger.warn(
+        { runId, stageKey, attemptNo: attemptCtx.attemptNo, itemIndex, isLastAttempt, err },
+        'stage attempt threw',
+      );
       if (isLastAttempt) {
         await step.run(`record-failure-${stageKey}`, () =>
           runner.recordFailure(attemptCtx, reason),

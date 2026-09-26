@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 import { RunService } from './run.service';
 
@@ -58,6 +59,7 @@ function makeService() {
     runInputs,
     runMutation,
     wakeupDispatcher,
+    logger: new Logger(RunService.name),
   }) as unknown as RunService;
 
   return {

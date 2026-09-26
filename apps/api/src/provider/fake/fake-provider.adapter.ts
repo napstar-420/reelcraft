@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import type { CostEstimate, JobHandle, JobStatus } from '@reelcraft/shared';
 import type {
   ModelInfo,
@@ -57,6 +57,7 @@ interface FakeJobPayload {
 export class FakeProviderAdapter implements ProviderAdapter {
   readonly id = 'fake';
   readonly modalities = ['text', 'image', 'video', 'audio', 'media'] as const;
+  private readonly logger = new Logger(FakeProviderAdapter.name);
 
   /** idempotency key -> job, so a transport retry submitting twice is
    * observable in tests as "one job per key". */
@@ -173,6 +174,10 @@ export class FakeProviderAdapter implements ProviderAdapter {
     const handle: JobHandle = { providerId: this.id, externalId, payload };
     this.jobs.set(externalId, payload);
     this.submittedKeys.set(idempotencyKey, handle);
+    this.logger.debug(
+      { providerId: this.id, jobId: externalId, model: req.modelId, failureMode: parsed?.mode },
+      'provider job submitted',
+    );
     return handle;
   }
 
@@ -205,6 +210,10 @@ export class FakeProviderAdapter implements ProviderAdapter {
     if (job.failureMode === 'transport') {
       if (job.failuresRemaining === undefined || job.failuresRemaining > 0) {
         if (job.failuresRemaining !== undefined) job.failuresRemaining -= 1;
+        this.logger.debug(
+          { providerId: this.id, jobId: handle.externalId, model: job.modelId },
+          'fake transport failure injected',
+        );
         throw new Error('fake transport error');
       }
       // Bounded failure exhausted — fall through to a normal success below,

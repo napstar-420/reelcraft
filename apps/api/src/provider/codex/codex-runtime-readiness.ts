@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import type { Modality } from '@reelcraft/shared';
 import { EngineConfig } from '../../config/engine-config';
 
@@ -13,7 +13,9 @@ export interface CodexRuntimeStatus {
 
 @Injectable()
 export class CodexRuntimeReadiness {
+  private readonly logger = new Logger(CodexRuntimeReadiness.name);
   private cached?: { expiresAt: number; status: CodexRuntimeStatus };
+  private lastModalities?: string;
 
   constructor(private readonly config: EngineConfig) {}
 
@@ -22,8 +24,14 @@ export class CodexRuntimeReadiness {
     const modalities: Modality[] = ['text'];
     const unavailable: CodexRuntimeStatus['unavailable'] = {};
     const [plugins, mcp] = await Promise.all([
-      this.codex(['plugin', 'list']).catch(() => ''),
-      this.codex(['mcp', 'list']).catch(() => ''),
+      this.codex(['plugin', 'list']).catch((error: unknown) => {
+        this.logger.warn({ err: error }, 'codex plugin list failed');
+        return '';
+      }),
+      this.codex(['mcp', 'list']).catch((error: unknown) => {
+        this.logger.warn({ err: error }, 'codex mcp list failed');
+        return '';
+      }),
     ]);
 
     if (this.enabledLine(plugins, this.config.codexImageExtension)) modalities.push('image');
@@ -40,6 +48,14 @@ export class CodexRuntimeReadiness {
     }
 
     const status = { modalities, unavailable };
+    const signature = modalities.join(',');
+    if (signature !== this.lastModalities) {
+      this.lastModalities = signature;
+      this.logger.log(
+        { modalities, unavailable: Object.keys(unavailable) },
+        'codex runtime readiness changed',
+      );
+    }
     this.cached = { expiresAt: Date.now() + 5_000, status };
     return status;
   }
@@ -73,8 +89,11 @@ export class CodexRuntimeReadiness {
         method: 'GET',
         signal: AbortSignal.timeout(this.config.codexReadinessTimeoutMs),
       });
+      if (response.status >= 500)
+        this.logger.warn({ statusCode: response.status }, 'browseros health check failed');
       return response.status < 500;
-    } catch {
+    } catch (error) {
+      this.logger.warn({ err: error }, 'browseros unreachable');
       return false;
     }
   }

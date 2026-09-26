@@ -7,6 +7,7 @@ import { loadRootEnv } from './common/load-dotenv';
 loadRootEnv();
 
 import { json } from 'express';
+import { pino } from 'pino';
 import { NestFactory } from '@nestjs/core';
 import { Logger } from 'nestjs-pino';
 import { withQuietFrameworkBoot } from './common/logging.module';
@@ -35,6 +36,7 @@ async function bootstrap(): Promise<void> {
 }
 
 bootstrap().catch((err: unknown) => {
-  console.error(err);
+  // The Nest logger may not exist yet; a bare pino line keeps the output JSON.
+  pino().fatal({ err }, 'API failed to start');
   process.exit(1);
 });

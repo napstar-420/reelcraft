@@ -64,5 +64,11 @@ export default tseslint.config(
       '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
     },
   },
+  {
+    // API logs go through pino (nestjs-pino). db/migrate.ts is a standalone CLI.
+    files: ['apps/api/src/**/*.ts'],
+    ignores: ['apps/api/src/db/migrate.ts'],
+    rules: { 'no-console': 'error' },
+  },
   prettierConfig,
 );

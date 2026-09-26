@@ -29,8 +29,9 @@ export class BucketBootstrapService implements OnApplicationBootstrap {
     try {
       try {
         await client.send(new HeadBucketCommand({ Bucket: s3.bucket }));
-      } catch {
-        this.logger.log(`Creating bucket ${s3.bucket}`);
+      } catch (err) {
+        this.logger.debug({ bucket: s3.bucket, err }, 'bucket head failed; creating bucket');
+        this.logger.log({ bucket: s3.bucket }, 'creating bucket');
         await client.send(new CreateBucketCommand({ Bucket: s3.bucket }));
       }
 
@@ -50,12 +51,11 @@ export class BucketBootstrapService implements OnApplicationBootstrap {
         }),
       );
 
-      this.logger.log(`Bucket ${s3.bucket} ready (CORS applied)`);
+      this.logger.log({ bucket: s3.bucket }, 'bucket ready');
     } catch (err) {
       this.logger.warn(
-        `Bucket bootstrap did not fully complete (relying on the docker-compose mc sidecar instead): ${
-          err instanceof Error ? err.message : String(err)
-        }`,
+        { bucket: s3.bucket, err },
+        'bucket bootstrap incomplete; relying on docker-compose mc sidecar',
       );
     }
   }

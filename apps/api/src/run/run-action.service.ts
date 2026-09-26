@@ -85,6 +85,17 @@ export class RunActionService {
       },
       'run/resumed',
     );
+    this.logger.log(
+      {
+        runId,
+        stageKey,
+        itemIndex,
+        wakeupId: result.wakeupId,
+        revision: result.revision,
+        invalidatedStageCount: preview.closure.affectedStageKeys.length,
+      },
+      'stage retry applied',
+    );
     await this.dispatchBestEffort(result.wakeupId);
     return { accepted: true, revision: result.revision };
   }
@@ -223,6 +234,16 @@ export class RunActionService {
       },
       hasActiveOutputs ? 'run/resumed' : 'run/config-updated',
     );
+    this.logger.log(
+      {
+        runId,
+        stageKeys: changedStageKeys,
+        wakeupId: result.wakeupId,
+        revision: result.revision,
+        resumes: hasActiveOutputs,
+      },
+      'run overrides patched',
+    );
     await this.dispatchBestEffort(result.wakeupId);
     return { applied: true, revision: result.revision, resumes: hasActiveOutputs };
   }
@@ -303,11 +324,7 @@ export class RunActionService {
     try {
       await this.dispatcher.dispatch(wakeupId);
     } catch (error) {
-      this.logger.warn(
-        `Run wakeup ${wakeupId} will be retried: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
+      this.logger.warn({ wakeupId, err: error }, 'run wakeup dispatch deferred to retry');
     }
   }
 }

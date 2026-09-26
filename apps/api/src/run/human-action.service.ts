@@ -63,6 +63,10 @@ export class HumanActionService {
       (tx, lockedRun) => this.approveInTransaction(tx, runId, stageKey, lockedRun, itemIndex),
       'run/resumed',
     );
+    this.logger.log(
+      { runId, stageKey, itemIndex, wakeupId: result.wakeupId, revision: result.revision },
+      'stage approved',
+    );
     await this.dispatchBestEffort(result.wakeupId);
     return { accepted: true, revision: result.revision };
   }
@@ -400,6 +404,18 @@ export class HumanActionService {
       },
       exhausted ? 'run/rejection-exhausted' : 'run/resumed',
     );
+    this.logger.log(
+      {
+        runId,
+        stageKey,
+        itemIndex: resolvedItemIndex,
+        targetStageKey,
+        exhausted,
+        wakeupId: result.wakeupId,
+        revision: result.revision,
+      },
+      'stage rejected',
+    );
     await this.dispatchBestEffort(result.wakeupId);
     return { accepted: true, revision: result.revision, state: exhausted ? 'FAILED' : 'PENDING' };
   }
@@ -429,6 +445,14 @@ export class HumanActionService {
     );
 
     if (!evaluated.checkResults.every((result) => result.pass)) {
+      this.logger.warn(
+        {
+          runId,
+          stageKey,
+          failedCheckCount: evaluated.checkResults.filter((result) => !result.pass).length,
+        },
+        'human input failed checks',
+      );
       await this.persistFailedHumanSubmission(
         context.run,
         context.stage,
@@ -479,6 +503,10 @@ export class HumanActionService {
         );
       },
       'run/resumed',
+    );
+    this.logger.log(
+      { runId, stageKey, wakeupId: result.wakeupId, revision: result.revision },
+      'human input submitted',
     );
     await this.dispatchBestEffort(result.wakeupId);
     return { accepted: true, revision: result.revision };
@@ -812,11 +840,7 @@ export class HumanActionService {
     try {
       await this.dispatcher.dispatch(wakeupId);
     } catch (error) {
-      this.logger.warn(
-        `Run wakeup ${wakeupId} will be retried: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
+      this.logger.warn({ wakeupId, err: error }, 'run wakeup dispatch deferred to retry');
     }
   }
 }

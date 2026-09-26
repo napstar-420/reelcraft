@@ -1,5 +1,5 @@
 import type { Readable } from 'node:stream';
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import {
   CopyObjectCommand,
   DeleteObjectsCommand,
@@ -25,6 +25,7 @@ import { createS3Client } from './s3-client.factory';
  */
 @Injectable()
 export class S3StorageAdapter implements StorageAdapter {
+  private readonly logger = new Logger(S3StorageAdapter.name);
   private readonly client: S3Client;
   private readonly bucket: string;
 
@@ -34,25 +35,35 @@ export class S3StorageAdapter implements StorageAdapter {
   }
 
   async put(key: string, body: Buffer | Readable, meta: { mime: string }): Promise<PutResult> {
-    const upload = new Upload({
-      client: this.client,
-      params: { Bucket: this.bucket, Key: key, Body: body, ContentType: meta.mime },
+    const startedAt = Date.now();
+    return this.logged('put', { storageKey: key, contentType: meta.mime }, async () => {
+      const upload = new Upload({
+        client: this.client,
+        params: { Bucket: this.bucket, Key: key, Body: body, ContentType: meta.mime },
+      });
+      const result = await upload.done();
+      const head = await this.client.send(new HeadObjectCommand({ Bucket: this.bucket, Key: key }));
+      const bytes = head.ContentLength ?? 0;
+      this.logger.debug(
+        { storageKey: key, bytes, contentType: meta.mime, durationMs: Date.now() - startedAt },
+        'storage object put',
+      );
+      return { key, etag: result.ETag ?? '', bytes };
     });
-    const result = await upload.done();
-    const head = await this.client.send(new HeadObjectCommand({ Bucket: this.bucket, Key: key }));
-    return { key, etag: result.ETag ?? '', bytes: head.ContentLength ?? 0 };
   }
 
   async getStream(key: string, range?: ByteRange): Promise<Readable> {
     const rangeHeader = range ? `bytes=${range.start}-${range.end ?? ''}` : undefined;
-    const res = await this.client.send(
-      new GetObjectCommand({ Bucket: this.bucket, Key: key, Range: rangeHeader }),
+    const res = await this.logged('get', { storageKey: key, range: rangeHeader }, () =>
+      this.client.send(new GetObjectCommand({ Bucket: this.bucket, Key: key, Range: rangeHeader })),
     );
     return res.Body as Readable;
   }
 
   async stat(key: string): Promise<{ bytes: number; etag: string; mime: string }> {
-    const head = await this.client.send(new HeadObjectCommand({ Bucket: this.bucket, Key: key }));
+    const head = await this.logged('stat', { storageKey: key }, () =>
+      this.client.send(new HeadObjectCommand({ Bucket: this.bucket, Key: key })),
+    );
     return {
       bytes: head.ContentLength ?? 0,
       etag: head.ETag ?? '',
@@ -61,12 +72,14 @@ export class S3StorageAdapter implements StorageAdapter {
   }
 
   async copy(srcKey: string, destKey: string): Promise<PutResult> {
-    const res = await this.client.send(
-      new CopyObjectCommand({
-        Bucket: this.bucket,
-        Key: destKey,
-        CopySource: `${this.bucket}/${srcKey}`,
-      }),
+    const res = await this.logged('copy', { storageKey: destKey, sourceKey: srcKey }, () =>
+      this.client.send(
+        new CopyObjectCommand({
+          Bucket: this.bucket,
+          Key: destKey,
+          CopySource: `${this.bucket}/${srcKey}`,
+        }),
+      ),
     );
     const head = await this.stat(destKey);
     return { key: destKey, etag: res.CopyObjectResult?.ETag ?? '', bytes: head.bytes };
@@ -74,23 +87,53 @@ export class S3StorageAdapter implements StorageAdapter {
 
   async delete(keys: string[]): Promise<void> {
     if (keys.length === 0) return;
-    await this.client.send(
-      new DeleteObjectsCommand({
-        Bucket: this.bucket,
-        Delete: { Objects: keys.map((Key) => ({ Key })) },
+    const res = await this.logged('delete', { keys: keys.length }, () =>
+      this.client.send(
+        new DeleteObjectsCommand({
+          Bucket: this.bucket,
+          Delete: { Objects: keys.map((Key) => ({ Key })) },
+        }),
+      ),
+    );
+    if (res.Errors?.length) {
+      this.logger.warn(
+        {
+          keys: keys.length,
+          failed: res.Errors.map((entry) => ({ storageKey: entry.Key, code: entry.Code })),
+        },
+        'storage delete partially failed',
+      );
+    } else {
+      this.logger.debug({ keys: keys.length }, 'storage objects deleted');
+    }
+  }
+
+  async presignGet(key: string, ttlSec: number): Promise<string> {
+    return this.logged('presign get', { storageKey: key, ttlSec }, () =>
+      getSignedUrl(this.client, new GetObjectCommand({ Bucket: this.bucket, Key: key }), {
+        expiresIn: ttlSec,
       }),
     );
   }
 
-  async presignGet(key: string, ttlSec: number): Promise<string> {
-    return getSignedUrl(this.client, new GetObjectCommand({ Bucket: this.bucket, Key: key }), {
-      expiresIn: ttlSec,
-    });
+  async presignPut(key: string, ttlSec: number): Promise<string> {
+    return this.logged('presign put', { storageKey: key, ttlSec }, () =>
+      getSignedUrl(this.client, new PutObjectCommand({ Bucket: this.bucket, Key: key }), {
+        expiresIn: ttlSec,
+      }),
+    );
   }
 
-  async presignPut(key: string, ttlSec: number): Promise<string> {
-    return getSignedUrl(this.client, new PutObjectCommand({ Bucket: this.bucket, Key: key }), {
-      expiresIn: ttlSec,
-    });
+  private async logged<T>(
+    op: string,
+    fields: Record<string, unknown>,
+    fn: () => Promise<T>,
+  ): Promise<T> {
+    try {
+      return await fn();
+    } catch (err) {
+      this.logger.error({ op, bucket: this.bucket, ...fields, err }, 'storage operation failed');
+      throw err;
+    }
   }
 }

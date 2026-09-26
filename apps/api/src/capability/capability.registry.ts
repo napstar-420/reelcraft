@@ -1,4 +1,4 @@
-import { Injectable, type OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, type OnModuleInit } from '@nestjs/common';
 import { DiscoveryService } from '@nestjs/core';
 import { CAPABILITY_KEY_METADATA } from './capability.decorator';
 import type { CapabilityImpl } from './capability.interface';
@@ -10,6 +10,7 @@ import type { CapabilityImpl } from './capability.interface';
  */
 @Injectable()
 export class CapabilityRegistry implements OnModuleInit {
+  private readonly logger = new Logger(CapabilityRegistry.name);
   private readonly capabilities = new Map<string, CapabilityImpl>();
 
   constructor(private readonly discovery: DiscoveryService) {}
@@ -26,11 +27,16 @@ export class CapabilityRegistry implements OnModuleInit {
       }
       this.capabilities.set(key, instance as CapabilityImpl);
     }
+    this.logger.log(
+      { capabilityCount: this.capabilities.size, capabilities: [...this.capabilities.keys()] },
+      'capabilities registered',
+    );
   }
 
   get(key: string): CapabilityImpl {
     const capability = this.capabilities.get(key);
     if (!capability) {
+      this.logger.warn({ capabilityKey: key }, 'unknown capability requested');
       throw new Error(`CapabilityRegistry: unknown capability "${key}"`);
     }
     return capability;

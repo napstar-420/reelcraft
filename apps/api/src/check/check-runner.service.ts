@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { z } from 'zod';
 import type { CheckDef } from '@reelcraft/shared';
 import { SchemaValidatorService } from '../json-schema/schema-validator.service';
@@ -43,6 +43,8 @@ function authoringFault(name: string, kind: CheckResult['kind'], message: string
  */
 @Injectable()
 export class CheckRunner {
+  private readonly logger = new Logger(CheckRunner.name);
+
   constructor(
     private readonly schemaValidator: SchemaValidatorService,
     private readonly sandbox: ScriptSandboxService,
@@ -55,6 +57,30 @@ export class CheckRunner {
       );
     }
 
+    const startedAt = Date.now();
+    const results = this.runAll(input);
+    const failed = results.filter((r) => !r.pass);
+    const summary = {
+      kind: input.artifact.kind,
+      checkCount: results.length,
+      failCount: failed.length,
+      durationMs: Date.now() - startedAt,
+    };
+    if (failed.length > 0) {
+      this.logger.warn(
+        {
+          ...summary,
+          failed: failed.map((r) => ({ checkId: r.name, kind: r.kind, fault: r.fault })),
+        },
+        'checks failed',
+      );
+    } else {
+      this.logger.debug(summary, 'checks passed');
+    }
+    return results;
+  }
+
+  private runAll(input: CheckRunInput): CheckResult[] {
     if (input.outputSchema) {
       const violations = this.schemaValidator.validate(input.outputSchema, input.artifact.data);
       if (violations.length > 0) {
@@ -101,6 +127,7 @@ export class CheckRunner {
     try {
       return toCheckResult(check.key, 'builtin', builtin.run(parsed.data, artifact));
     } catch (err) {
+      this.logger.warn({ checkId: check.key, err }, 'builtin check threw');
       return authoringFault(
         check.key,
         'builtin',

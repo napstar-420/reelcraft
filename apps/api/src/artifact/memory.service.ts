@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { and, asc, desc, eq } from 'drizzle-orm';
 import type { ArtifactKind, StageDef } from '@reelcraft/shared';
 import type { Db, Tx } from '../db/drizzle.provider';
@@ -34,6 +34,8 @@ type MemoryRow = typeof runMemory.$inferSelect;
  */
 @Injectable()
 export class MemoryService {
+  private readonly logger = new Logger(MemoryService.name);
+
   /**
    * Returns the latest visible row per key. Visibility is determined only
    * after selecting the highest version: when that row is a tombstone the
@@ -108,8 +110,18 @@ export class MemoryService {
           break;
         } catch (error) {
           if (!isUniqueViolation(error) || retry === 2) throw error;
+          this.logger.debug(
+            { runId, memKey: row.memKey, retry },
+            'memory tombstone version conflict; retrying',
+          );
         }
       }
+    }
+    if (appended > 0) {
+      this.logger.log(
+        { runId, tombstones: appended, writers: invalidatedWriters.length },
+        'memory tombstones appended',
+      );
     }
     return appended;
   }
@@ -163,6 +175,17 @@ export class MemoryService {
           kind: source.kind,
           ...(isMedia ? { artifactId: source.artifactId } : { data: value }),
         });
+        this.logger.debug(
+          {
+            runId: source.runId,
+            stageKey: stage.key,
+            itemIndex: source.itemIndex,
+            memKey: writtenKey,
+            version,
+            artifactId: source.artifactId,
+          },
+          'memory written',
+        );
       }
     };
   }

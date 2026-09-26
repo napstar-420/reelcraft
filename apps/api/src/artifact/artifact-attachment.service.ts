@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { readFile, stat } from 'node:fs/promises';
 import { basename } from 'node:path';
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
 import { artifactAttachment, blob } from '../db/schema';
 import { STORAGE_ADAPTER, type StorageAdapter } from '../storage/storage.adapter';
@@ -18,6 +18,8 @@ export interface SupportingAttachmentInput {
 
 @Injectable()
 export class ArtifactAttachmentService {
+  private readonly logger = new Logger(ArtifactAttachmentService.name);
+
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     @Inject(STORAGE_ADAPTER) private readonly storage: StorageAdapter,
@@ -71,9 +73,24 @@ export class ArtifactAttachmentService {
           });
         });
       } catch (error) {
+        this.logger.error(
+          { runId: input.runId, artifactId: input.artifactId, blobId, storageKey: key, err: error },
+          'attachment record failed; deleting uploaded object',
+        );
         await this.storage.delete([key]);
         throw error;
       }
+      this.logger.log(
+        {
+          runId: input.runId,
+          artifactId: input.artifactId,
+          blobId,
+          role: attachment.role,
+          bytes: put.bytes,
+          contentType: attachment.mime,
+        },
+        'artifact attachment stored',
+      );
     }
   }
 }

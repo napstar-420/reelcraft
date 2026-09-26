@@ -1,4 +1,4 @@
-import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { and, eq, isNull } from 'drizzle-orm';
 import type {
   ConfirmCharacterReferenceDto,
@@ -20,6 +20,8 @@ import { STORAGE_ADAPTER, type StorageAdapter } from '../storage/storage.adapter
  * copies durable objects and maintains the Character snapshot metadata. */
 @Injectable()
 export class CharacterService {
+  private readonly logger = new Logger(CharacterService.name);
+
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     @Inject(STORAGE_ADAPTER) private readonly storage: StorageAdapter,
@@ -53,12 +55,14 @@ export class CharacterService {
       referenceSet: [],
       readiness: 'draft',
     });
+    this.logger.log({ channelId, characterId: id }, 'character created');
     return this.get(id);
   }
 
   async update(id: string, dto: UpdateCharacterDto) {
     await this.get(id);
     await this.db.update(character).set(dto).where(eq(character.id, id));
+    this.logger.log({ characterId: id, fields: Object.keys(dto) }, 'character updated');
     return this.get(id);
   }
 
@@ -113,6 +117,10 @@ export class CharacterService {
         .set(this.referencePatch(refs, row.primaryRefId))
         .where(eq(character.id, id));
     });
+    this.logger.log(
+      { characterId: id, blobId: dto.blobId, referenceCount: refs.length },
+      'character reference added',
+    );
     return this.get(id);
   }
 
@@ -142,6 +150,7 @@ export class CharacterService {
       .update(character)
       .set(this.referencePatch(this.references(row), blobId))
       .where(eq(character.id, id));
+    this.logger.log({ characterId: id, blobId }, 'character primary reference set');
     return this.get(id);
   }
 
@@ -161,6 +170,10 @@ export class CharacterService {
         .set(this.referencePatch(remaining, row.primaryRefId === blobId ? null : row.primaryRefId))
         .where(eq(character.id, id));
     });
+    this.logger.log(
+      { characterId: id, blobId, referenceCount: remaining.length },
+      'character reference deleted',
+    );
   }
 
   async promoteReference(id: string, dto: PromoteCharacterReferenceDto) {
@@ -211,6 +224,10 @@ export class CharacterService {
         .set(this.referencePatch(refs, target.primaryRefId))
         .where(eq(character.id, id));
     });
+    this.logger.log(
+      { characterId: id, blobId, artifactId: dto.artifactId, referenceCount: refs.length },
+      'character reference promoted',
+    );
     return this.get(id);
   }
 

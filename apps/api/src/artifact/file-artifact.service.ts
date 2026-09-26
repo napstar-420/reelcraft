@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { FileSource } from '@reelcraft/shared';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
 import { blob } from '../db/schema';
@@ -13,6 +13,8 @@ import { WorkspaceService } from '../storage/workspace.service';
 
 @Injectable()
 export class FileArtifactService {
+  private readonly logger = new Logger(FileArtifactService.name);
+
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     @Inject(STORAGE_ADAPTER) private readonly storage: StorageAdapter,
@@ -65,9 +67,17 @@ export class FileArtifactService {
           sha256: createHash('sha256').update(bytes).digest('hex'),
         });
       } catch (error) {
+        this.logger.error(
+          { runId: input.runId, blobId, storageKey: key, err: error },
+          'file blob record failed; deleting uploaded object',
+        );
         await this.storage.delete([key]);
         throw error;
       }
+      this.logger.log(
+        { runId: input.runId, blobId, bytes: put.bytes, contentType: mime },
+        'file blob stored',
+      );
       return { blobId };
     });
   }

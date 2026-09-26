@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { Inngest } from 'inngest';
 import { eq, isNull, sql } from 'drizzle-orm';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
@@ -9,6 +9,8 @@ import { INNGEST_CLIENT } from '../orchestration/inngest.client';
  * fails is safe to retry because the outbox id is reused as the Inngest id. */
 @Injectable()
 export class RunWakeupDispatcher {
+  private readonly logger = new Logger(RunWakeupDispatcher.name);
+
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     @Inject(INNGEST_CLIENT) private readonly inngest: Inngest,
@@ -54,6 +56,10 @@ export class RunWakeupDispatcher {
       .update(runWakeup)
       .set({ dispatchedAt: new Date().toISOString(), lastError: null })
       .where(eq(runWakeup.id, wakeupId));
+    this.logger.debug(
+      { wakeupId, runId: wakeup.runId, eventName: wakeup.eventName },
+      'run wakeup dispatched',
+    );
     return true;
   }
 
@@ -69,9 +75,13 @@ export class RunWakeupDispatcher {
     for (const row of pending) {
       try {
         if (await this.dispatch(row.id)) dispatched += 1;
-      } catch {
+      } catch (error) {
         failed += 1;
+        this.logger.warn({ wakeupId: row.id, err: error }, 'pending run wakeup dispatch failed');
       }
+    }
+    if (dispatched > 0 || failed > 0) {
+      this.logger.log({ dispatched, failed }, 'pending run wakeups swept');
     }
     return { dispatched, failed };
   }

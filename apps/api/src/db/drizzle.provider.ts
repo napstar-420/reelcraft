@@ -1,4 +1,4 @@
-import type { Provider } from '@nestjs/common';
+import { Logger, type Provider } from '@nestjs/common';
 import { drizzle, type PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import { EngineConfig } from '../config/engine-config';
@@ -15,7 +15,21 @@ export const drizzleProvider: Provider = {
   provide: DRIZZLE,
   inject: [EngineConfig],
   useFactory: (config: EngineConfig): Db => {
-    const client = postgres(config.databaseUrl);
+    const logger = new Logger('Database');
+    const client = postgres(config.databaseUrl, {
+      onnotice: (notice) =>
+        logger.debug({ severity: notice.severity, code: notice.code }, 'postgres notice'),
+    });
+    const { hostname, port, pathname } = new URL(config.databaseUrl);
+    logger.log(
+      {
+        host: hostname,
+        port: port || undefined,
+        database: pathname.slice(1),
+        poolMax: client.options.max,
+      },
+      'database client created',
+    );
     return drizzle(client, { schema });
   },
 };

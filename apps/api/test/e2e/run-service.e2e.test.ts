@@ -116,7 +116,6 @@ describe('RunService.create budget preconditions (e2e)', () => {
     ).rejects.toThrow('does not belong to the requested channel');
     expect(await testDb.db.select().from(run).where(eq(run.channelId, other.id))).toHaveLength(0);
   });
-
 });
 
 /**

@@ -3,10 +3,27 @@ import { LoggerModule } from 'nestjs-pino';
 import type { IncomingMessage } from 'node:http';
 import { EngineConfig } from '../config/engine-config';
 
+// Inngest step calls, long-lived SSE streams and presigned-blob redirects
+// would drown the access log.
+const QUIET_PATHS = [
+  /^\/api\/inngest(\/|\?|$)/,
+  /^\/api\/runs\/[^/]+\/events(\?|$)/,
+  /^\/api\/blobs\//,
+];
+
+export function isQuietRequest(url: string | undefined): boolean {
+  return QUIET_PATHS.some((pattern) => pattern.test(url ?? ''));
+}
+
+export function accessLogLevel(statusCode: number, err?: Error): 'info' | 'warn' | 'error' {
+  if (err || statusCode >= 500) return 'error';
+  return statusCode >= 400 ? 'warn' : 'info';
+}
+
 /** Structured logging via pino. Level comes from LOG_LEVEL (default info,
- * warn under test). No per-request access logs: unhandled errors are logged
- * by Nest's exception handler, and every log line written while serving a
- * request carries that request's id/method/url. */
+ * warn under test). One access line per request (minus QUIET_PATHS) with
+ * status and responseTime; every log line written while serving a request
+ * carries that request's id/method/url. */
 @Module({
   imports: [
     LoggerModule.forRootAsync({
@@ -14,7 +31,8 @@ import { EngineConfig } from '../config/engine-config';
       useFactory: (config: EngineConfig) => ({
         pinoHttp: {
           level: config.logLevel,
-          autoLogging: false,
+          autoLogging: { ignore: (req: IncomingMessage) => isQuietRequest(req.url) },
+          customLogLevel: (_req, res, err) => accessLogLevel(res.statusCode, err),
           quietReqLogger: true,
           serializers: {
             req: (req: IncomingMessage & { id?: unknown }) => ({
@@ -22,6 +40,7 @@ import { EngineConfig } from '../config/engine-config';
               method: req.method,
               url: req.url,
             }),
+            res: (res: { statusCode: number }) => ({ statusCode: res.statusCode }),
           },
           redact: {
             paths: [

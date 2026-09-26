@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { RunState } from '@reelcraft/shared';
 import { eq } from 'drizzle-orm';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
@@ -35,12 +35,24 @@ function isRunAction(value: string): value is RunAction {
  * event and current run still satisfy the original revision/state contract. */
 @Injectable()
 export class RunWakeupClaimService {
+  private readonly logger = new Logger(RunWakeupClaimService.name);
+
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly policy: RunActionPolicy,
   ) {}
 
   async claim(event: RunWakeupEventData): Promise<RunWakeupClaimResult> {
+    const result = await this.claimInTransaction(event);
+    const ids = { runId: event.runId, wakeupId: event.wakeupId, action: event.action };
+    if (result.claimed) this.logger.debug(ids, 'run wakeup claimed');
+    else if (result.reason === 'already_claimed')
+      this.logger.debug(ids, 'run wakeup already claimed');
+    else this.logger.warn({ ...ids, reason: result.reason }, 'run wakeup claim rejected');
+    return result;
+  }
+
+  private claimInTransaction(event: RunWakeupEventData): Promise<RunWakeupClaimResult> {
     return this.db.transaction(async (tx) => {
       const [wakeup] = await tx
         .select()

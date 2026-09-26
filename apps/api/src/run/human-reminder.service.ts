@@ -69,10 +69,11 @@ export class HumanReminderService {
       try {
         await this.dispatcher.dispatch(id);
       } catch (error) {
-        this.logger.warn(
-          `Reminder ${id} will be retried: ${error instanceof Error ? error.message : String(error)}`,
-        );
+        this.logger.warn({ wakeupId: id, err: error }, 'reminder dispatch deferred to retry');
       }
+    }
+    if (wakeupIds.length > 0) {
+      this.logger.log({ reminded: wakeupIds.length }, 'human wait reminders sent');
     }
     return { reminded: wakeupIds.length };
   }
