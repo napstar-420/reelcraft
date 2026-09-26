@@ -28,7 +28,15 @@ import type {
   RequestInputUploadResultDto,
   RunInputStatusDto,
   ApprovalCandidateDto,
+  StageOutputDto,
+  StageEventDto,
   ApprovalActionDto,
+  RunState,
+  ListRunsResultDto,
+  ConfirmRunActionDto,
+  InvalidationPreviewDto,
+  HumanInputSubmissionDto,
+  StageAttemptDto,
 } from '@reelcraft/shared';
 
 /** `blueprint.service.ts#getBlueprint()`'s row shape — the whole `blueprint`
@@ -143,12 +151,23 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  listChannels: () => request<ChannelDto[]>('/channels'),
+  listChannels: (params?: { includeArchived?: boolean }) => {
+    const qs = new URLSearchParams();
+    if (params?.includeArchived) qs.set('includeArchived', 'true');
+    const suffix = qs.toString();
+    return request<ChannelDto[]>(`/channels${suffix ? `?${suffix}` : ''}`);
+  },
   createChannel: (dto: CreateChannelDto) =>
     request<ChannelDto>('/channels', { method: 'POST', body: JSON.stringify(dto) }),
   getChannel: (id: string) => request<ChannelDto>(`/channels/${id}`),
   updateChannel: (id: string, dto: UpdateChannelDto) =>
     request<ChannelDto>(`/channels/${id}`, { method: 'PATCH', body: JSON.stringify(dto) }),
+  archiveChannel: (id: string, archived: boolean) =>
+    request<ChannelDto>(`/channels/${id}/archive`, {
+      method: 'PATCH',
+      body: JSON.stringify({ archived }),
+    }),
+  deleteChannel: (id: string) => request<void>(`/channels/${id}`, { method: 'DELETE' }),
 
   createBlueprint: (channelId: string, name: string) =>
     request<{ blueprintId: string }>('/blueprints', {
@@ -259,8 +278,59 @@ export const api = {
       body: JSON.stringify(budgetCapUsd !== undefined ? { budgetCapUsd } : {}),
     }),
 
-  listRuns: () => request<RunDetailDto[]>('/runs'),
+  listRuns: (params?: {
+    channelId?: string | undefined;
+    blueprintId?: string | undefined;
+    state?: RunState | undefined;
+    includeDryRuns?: boolean;
+    limit?: number;
+    offset?: number;
+  }) => {
+    const qs = new URLSearchParams();
+    if (params?.channelId) qs.set('channelId', params.channelId);
+    if (params?.blueprintId) qs.set('blueprintId', params.blueprintId);
+    if (params?.state) qs.set('state', params.state);
+    if (params?.includeDryRuns) qs.set('includeDryRuns', 'true');
+    if (params?.limit !== undefined) qs.set('limit', String(params.limit));
+    if (params?.offset !== undefined) qs.set('offset', String(params.offset));
+    const suffix = qs.toString();
+    return request<ListRunsResultDto>(`/runs${suffix ? `?${suffix}` : ''}`);
+  },
   getRun: (id: string) => request<RunDetailDto>(`/runs/${id}`),
+  cancelRun: (runId: string) =>
+    request<{ state: 'CANCELLED'; revision: number }>(`/runs/${runId}/cancel`, {
+      method: 'POST',
+    }),
+  pauseRun: (runId: string) => request<RunDetailDto>(`/runs/${runId}/pause`, { method: 'POST' }),
+  resumeRun: (runId: string) => request<RunDetailDto>(`/runs/${runId}/resume`, { method: 'POST' }),
+  raiseRunBudget: (runId: string, capUsd: number) =>
+    request<RunDetailDto>(`/runs/${runId}/budget`, {
+      method: 'POST',
+      body: JSON.stringify({ capUsd }),
+    }),
+  previewStageRetry: (runId: string, stageKey: string, itemIndex?: number) =>
+    request<InvalidationPreviewDto>(
+      `/runs/${runId}/stages/${encodeURIComponent(stageKey)}/retry${
+        itemIndex !== undefined ? `?itemIndex=${itemIndex}` : ''
+      }`,
+      { method: 'POST' },
+    ),
+  confirmStageRetry: (runId: string, stageKey: string, dto: ConfirmRunActionDto) =>
+    request<{ accepted: true; revision: number }>(
+      `/runs/${runId}/stages/${encodeURIComponent(stageKey)}/retry/confirm`,
+      { method: 'POST', body: JSON.stringify(dto) },
+    ),
+  listStageAttempts: (runId: string, stageKey: string) =>
+    request<StageAttemptDto[]>(`/runs/${runId}/stages/${encodeURIComponent(stageKey)}/attempts`),
+  submitHumanInput: (runId: string, stageKey: string, dto: HumanInputSubmissionDto) =>
+    request<{ accepted: true; revision: number }>(
+      `/runs/${runId}/stages/${encodeURIComponent(stageKey)}/input`,
+      { method: 'POST', body: JSON.stringify(dto) },
+    ),
+  listStageLogs: (runId: string, stageKey: string) =>
+    request<StageEventDto[]>(`/runs/${runId}/stages/${encodeURIComponent(stageKey)}/logs`),
+  getStageOutput: (runId: string, stageKey: string) =>
+    request<StageOutputDto>(`/runs/${runId}/stages/${encodeURIComponent(stageKey)}/output`),
   getApprovalCandidate: (runId: string, stageKey: string) =>
     request<ApprovalCandidateDto>(
       `/runs/${runId}/stages/${encodeURIComponent(stageKey)}/approval-candidate`,

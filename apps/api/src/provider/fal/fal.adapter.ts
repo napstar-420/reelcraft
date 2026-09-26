@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { CostEstimate, JobHandle, JobStatus } from '@reelcraft/shared';
 import { KEY_PROVIDER, type KeyProvider } from '../key-provider';
 import type {
@@ -18,6 +18,7 @@ interface FalHandle {
 export class FalAdapter implements ProviderAdapter {
   readonly id = 'fal';
   readonly modalities = ['video'] as const;
+  private readonly logger = new Logger(FalAdapter.name);
   constructor(@Inject(KEY_PROVIDER) private readonly keys: KeyProvider) {}
   async listModels(): Promise<ModelInfo[]> {
     return [
@@ -54,6 +55,7 @@ export class FalAdapter implements ProviderAdapter {
       enable_audio: req.params.enable_audio ?? true,
     };
     delete (payload as Record<string, unknown>).__mediaKind;
+    const startedAt = Date.now();
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: {
@@ -63,13 +65,28 @@ export class FalAdapter implements ProviderAdapter {
       },
       body: JSON.stringify(payload),
     });
-    if (!response.ok) throw new Error(`fal submit: ${response.status} ${response.statusText}`);
+    if (!response.ok) {
+      this.logger.warn(
+        { providerId: this.id, model: req.modelId, statusCode: response.status },
+        'provider job submit failed',
+      );
+      throw new Error(`fal submit: ${response.status} ${response.statusText}`);
+    }
     const body = (await response.json()) as {
       request_id: string;
       status_url: string;
       response_url: string;
       cancel_url: string;
     };
+    this.logger.log(
+      {
+        providerId: this.id,
+        jobId: body.request_id,
+        model: req.modelId,
+        durationMs: Date.now() - startedAt,
+      },
+      'provider job submitted',
+    );
     return {
       providerId: this.id,
       externalId: body.request_id,
@@ -85,24 +102,42 @@ export class FalAdapter implements ProviderAdapter {
     const h = handle.payload as FalHandle;
     const key = await this.keys.get(this.id);
     const response = await fetch(h.statusUrl, { headers: { Authorization: `Key ${key}` } });
-    if (!response.ok) throw new Error(`fal poll: ${response.status}`);
+    const ids = { providerId: this.id, jobId: handle.externalId, model: h.modelId };
+    if (!response.ok) {
+      this.logger.warn({ ...ids, statusCode: response.status }, 'provider job poll failed');
+      throw new Error(`fal poll: ${response.status}`);
+    }
     const body = (await response.json()) as { status: string };
-    if (body.status === 'COMPLETED') return { done: true, outcome: 'succeeded' };
-    if (['FAILED', 'CANCELLED'].includes(body.status))
+    this.logger.debug({ ...ids, state: body.status }, 'provider job polled');
+    if (body.status === 'COMPLETED') {
+      this.logger.log(ids, 'provider job succeeded');
+      return { done: true, outcome: 'succeeded' };
+    }
+    if (['FAILED', 'CANCELLED'].includes(body.status)) {
+      this.logger.error({ ...ids, state: body.status }, 'provider job failed');
       return { done: true, outcome: 'failed', reason: `fal ${body.status}`, retryable: false };
+    }
     return { done: false, phase: body.status === 'IN_QUEUE' ? 'queued' : 'running' };
   }
   async fetch(handle: JobHandle): Promise<ProviderResult> {
     const h = handle.payload as FalHandle;
     const key = await this.keys.get(this.id);
     const response = await fetch(h.responseUrl, { headers: { Authorization: `Key ${key}` } });
-    if (!response.ok) throw new Error(`fal fetch: ${response.status}`);
+    const ids = { providerId: this.id, jobId: handle.externalId, model: h.modelId };
+    if (!response.ok) {
+      this.logger.warn({ ...ids, statusCode: response.status }, 'provider result fetch failed');
+      throw new Error(`fal fetch: ${response.status}`);
+    }
     const body = (await response.json()) as {
       video?: { url?: string };
       data?: { video?: { url?: string } };
     };
     const sourceUrl = body.video?.url ?? body.data?.video?.url;
-    if (!sourceUrl) throw new Error('fal fetch: missing video url');
+    if (!sourceUrl) {
+      this.logger.warn(ids, 'provider result missing video url');
+      throw new Error('fal fetch: missing video url');
+    }
+    this.logger.log(ids, 'provider job completed');
     return {
       output: { kind: 'media.video', sourceUrl, mime: 'video/mp4', filename: 'video.mp4' },
       costUsd: 0,
@@ -117,6 +152,13 @@ export class FalAdapter implements ProviderAdapter {
       method: 'PUT',
       headers: { Authorization: `Key ${key}` },
     });
+    if (!response.ok)
+      this.logger.warn(
+        { providerId: this.id, jobId: handle.externalId, statusCode: response.status },
+        'provider job cancel failed',
+      );
+    else
+      this.logger.log({ providerId: this.id, jobId: handle.externalId }, 'provider job cancelled');
     return { confirmed: response.ok, billed: !response.ok };
   }
 }

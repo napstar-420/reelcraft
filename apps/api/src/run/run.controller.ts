@@ -24,6 +24,7 @@ import {
   PutRunInputDto,
   SaveTimelineDraftDto,
   SubmitTimelineDraftDto,
+  ListRunsQueryDto,
 } from '@reelcraft/shared';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { InProcessRunEvents, type RunEvent } from '../orchestration/run-events';
@@ -57,8 +58,8 @@ export class RunController {
   }
 
   @Get()
-  list(@Query('includeDryRuns') includeDryRuns?: string) {
-    return this.runs.list(includeDryRuns === 'true');
+  list(@Query(new ZodValidationPipe(ListRunsQueryDto)) query: ListRunsQueryDto) {
+    return this.runs.list(query);
   }
 
   @Get(':id')
@@ -100,6 +101,11 @@ export class RunController {
     return this.runs.raiseBudget(id, dto.capUsd);
   }
 
+  @Post(':id/pause')
+  pause(@Param('id') id: string) {
+    return this.runs.pause(id);
+  }
+
   @Post(':id/resume')
   resume(@Param('id') id: string) {
     return this.runs.resume(id);
@@ -132,6 +138,20 @@ export class RunController {
   @Get(':id/stages/:key/attempts')
   stageAttempts(@Param('id') id: string, @Param('key') key: string) {
     return this.runs.listStageAttempts(id, key);
+  }
+
+  @Get(':id/stages/:key/logs')
+  stageLogs(
+    @Param('id') id: string,
+    @Param('key') key: string,
+    @Query('attemptId') attemptId?: string,
+  ) {
+    return this.runs.listStageEvents(id, key, attemptId);
+  }
+
+  @Get(':id/stages/:key/output')
+  stageOutput(@Param('id') id: string, @Param('key') key: string) {
+    return this.runs.stageOutput(id, key);
   }
 
   @Get(':id/stages/:key/approval-candidate')

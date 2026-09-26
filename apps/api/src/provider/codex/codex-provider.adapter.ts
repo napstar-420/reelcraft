@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, realpath, rename, stat, writeFile } from 'node:fs/promises';
 import { basename, join, relative, resolve } from 'node:path';
+import { Logger } from '@nestjs/common';
 import type { JobHandle, JobStatus, JsonSchema, Modality } from '@reelcraft/shared';
 import type {
   CancelResult,
@@ -48,6 +49,7 @@ async function atomicJson(path: string, value: unknown): Promise<void> {
 export class CodexProviderAdapter implements ProviderAdapter {
   readonly id = 'codex';
   readonly modalities: Modality[] = ['text', 'image', 'browser'];
+  private readonly logger = new Logger(CodexProviderAdapter.name);
   private readonly jobsRoot: string;
   private readonly profile: string;
   private readonly resultLimit: number;
@@ -61,7 +63,13 @@ export class CodexProviderAdapter implements ProviderAdapter {
     private readonly readiness?: CodexRuntimeReadiness,
     private readonly inputMaterializer?: CodexInputMaterializer,
   ) {
-    this.jobsRoot = join(config.workspaceRoot, 'codex-jobs');
+    // Must be absolute: the launcher spawns the runner with `cwd` set to
+    // the job's own directory, so any relative path here (from a relative
+    // WORKSPACE_ROOT, e.g. `./.workspace`) gets re-resolved against that
+    // child cwd instead of this process's — the runner then tries to read
+    // its own manifest from a doubly-nested, nonexistent path and dies
+    // silently before it can log anything.
+    this.jobsRoot = resolve(config.workspaceRoot, 'codex-jobs');
     this.profile = config.codexProfile ?? 'reelcraft';
     this.resultLimit = config.codexOutputMaxBytes ?? 16 * 1024 * 1024;
     this.jobTimeoutMs = config.codexJobTimeoutMs ?? 900_000;
@@ -119,7 +127,13 @@ export class CodexProviderAdapter implements ProviderAdapter {
     try {
       await mkdir(jobDir, { mode: 0o700 });
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'EEXIST') return handle;
+      if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
+        this.logger.debug(
+          { providerId: this.id, jobId: externalId, model: req.modelId },
+          'provider job already submitted',
+        );
+        return handle;
+      }
       throw error;
     }
 
@@ -176,7 +190,15 @@ export class CodexProviderAdapter implements ProviderAdapter {
     try {
       const pid = await this.launcher.launch({ jobDir, manifestPath: runnerRequestPath });
       await atomicJson(join(jobDir, 'process.json'), { pid });
+      this.logger.log(
+        { providerId: this.id, jobId: externalId, model: req.modelId, modality, pid },
+        'provider job submitted',
+      );
     } catch (error) {
+      this.logger.error(
+        { providerId: this.id, jobId: externalId, model: req.modelId, modality, err: error },
+        'codex runner launch failed',
+      );
       await atomicJson(join(jobDir, 'status.json'), { state: 'failed', reason: String(error) });
       throw error;
     }
@@ -185,9 +207,12 @@ export class CodexProviderAdapter implements ProviderAdapter {
 
   async poll(handle: JobHandle): Promise<JobStatus> {
     const status = await this.readStatus(handle);
+    const ids = { providerId: this.id, jobId: handle.externalId };
+    this.logger.debug({ ...ids, state: status.state }, 'provider job polled');
     if (status.state === 'queued') {
       const queuedAt = status.createdAt ? Date.parse(status.createdAt) : Number.NaN;
       if (Number.isFinite(queuedAt) && Date.now() - queuedAt > 30_000) {
+        this.logger.warn(ids, 'codex runner never started');
         return {
           done: true,
           outcome: 'failed',
@@ -200,6 +225,7 @@ export class CodexProviderAdapter implements ProviderAdapter {
     }
     if (status.state === 'running') {
       if (status.pid && !this.isAlive(status.pid)) {
+        this.logger.warn({ ...ids, pid: status.pid }, 'codex runner process lost');
         return {
           done: true,
           outcome: 'failed',
@@ -210,7 +236,14 @@ export class CodexProviderAdapter implements ProviderAdapter {
       }
       return { done: false, phase: 'running' };
     }
-    if (status.state === 'succeeded') return { done: true, outcome: 'succeeded' };
+    if (status.state === 'succeeded') {
+      this.logger.log(ids, 'provider job succeeded');
+      return { done: true, outcome: 'succeeded' };
+    }
+    this.logger.error(
+      { ...ids, state: status.state, exitCode: status.exitCode, reason: status.reason },
+      'provider job failed',
+    );
     return {
       done: true,
       outcome: 'failed',
@@ -303,6 +336,10 @@ export class CodexProviderAdapter implements ProviderAdapter {
       };
     }
     const confirmed = await this.launcher.cancel(jobDir);
+    this.logger.log(
+      { providerId: this.id, jobId: handle.externalId, confirmed },
+      'provider job cancel requested',
+    );
     if (confirmed)
       await atomicJson(join(jobDir, 'status.json'), {
         state: 'cancelled',
@@ -448,10 +485,23 @@ export class CodexProviderAdapter implements ProviderAdapter {
       eventTypes = JSON.parse(
         await readFile(join(jobDir, 'events-summary.json'), 'utf8'),
       ) as Record<string, number>;
-    } catch {
+    } catch (error) {
+      this.logger.debug({ jobDir, err: error }, 'codex events summary unavailable');
       eventTypes = {};
     }
-    return { provider: 'codex', exitCode: status.exitCode ?? 0, eventTypes };
+    // The runner already redacts stderr.log before writing it.
+    const stderrTail = await readFile(join(jobDir, 'stderr.log'), 'utf8')
+      .then((text) => text.slice(-4096).trim())
+      .catch((error: unknown) => {
+        this.logger.debug({ jobDir, err: error }, 'codex stderr log unavailable');
+        return '';
+      });
+    return {
+      provider: 'codex',
+      exitCode: status.exitCode ?? 0,
+      eventTypes,
+      ...(stderrTail && { stderrTail }),
+    };
   }
 
   private sanitizeParams(params: Record<string, unknown>): Record<string, unknown> {

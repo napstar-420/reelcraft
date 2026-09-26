@@ -1,15 +1,50 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger, type OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { Env } from './env.schema';
 
 /** §23 — typed accessors over validated env, so nothing in the app reads
  * `process.env` directly. */
 @Injectable()
-export class EngineConfig {
+export class EngineConfig implements OnModuleInit {
+  private readonly logger = new Logger(EngineConfig.name);
+
   constructor(private readonly config: ConfigService<Env, true>) {}
+
+  onModuleInit(): void {
+    const has = (key: keyof Env) => this.config.get(key, { infer: true }) !== undefined;
+    this.logger.log(
+      {
+        nodeEnv: this.nodeEnv,
+        logLevel: this.logLevel,
+        apiPort: this.apiPort,
+        s3Bucket: this.s3.bucket,
+        hasOpenrouterKey: has('OPENROUTER_API_KEY'),
+        hasFalKey: has('FAL_KEY'),
+        hasElevenlabsKey: has('ELEVENLABS_API_KEY'),
+        hasDeepgramKey: has('DEEPGRAM_API_KEY'),
+        hasPublicApiBaseUrl: has('PUBLIC_API_BASE_URL'),
+        hasRemotionBrowser: has('REMOTION_BROWSER_EXECUTABLE'),
+        infraRetries: this.infraRetries,
+        qcErrorRetries: this.qcErrorRetries,
+        iterateMaxItems: this.iterateMaxItems,
+        blobRetentionDays: this.blobRetentionDays,
+      },
+      'engine config loaded',
+    );
+  }
 
   get apiPort(): number {
     return this.config.get('API_PORT', { infer: true });
+  }
+
+  get nodeEnv(): Env['NODE_ENV'] {
+    return this.config.get('NODE_ENV', { infer: true });
+  }
+
+  get logLevel(): NonNullable<Env['LOG_LEVEL']> {
+    return (
+      this.config.get('LOG_LEVEL', { infer: true }) ?? (this.nodeEnv === 'test' ? 'warn' : 'info')
+    );
   }
 
   get databaseUrl(): string {

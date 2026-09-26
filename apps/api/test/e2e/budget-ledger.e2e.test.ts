@@ -235,6 +235,26 @@ describe('LedgerService (e2e)', () => {
       expect(second.ok).toBe(true);
     });
 
+    it('a zero ceiling (unbounded max_tokens) still succeeds even at exactly $0 remaining', async () => {
+      const runId = await seedRun(3);
+      const a1 = await seedAttempt(runId, 'outline');
+      await reserveOrThrow({ runId, stageAttemptId: a1, stageKey: 'outline', ceilingUsd: 3 });
+
+      const a2 = await seedAttempt(runId, 'unbounded');
+      const result = await ledger.reserve({
+        runId,
+        stageKey: 'unbounded',
+        stageAttemptId: a2,
+        category: 'stage_output',
+        ceilingUsd: 0,
+        preSubmitTtlSec: 600,
+      });
+
+      expect(result.ok).toBe(true);
+      const after = await runRow(runId);
+      expect(toUsd(after.reservedUsd)).toBe(3);
+    });
+
     it('replaying the same stageAttemptId returns the same reservationId and increments reservedUsd only once', async () => {
       const runId = await seedRun(10);
       const stageAttemptId = await seedAttempt(runId, 'outline');
@@ -304,6 +324,51 @@ describe('LedgerService (e2e)', () => {
       const after = await runRow(runId);
       expect(toUsd(after.reservedUsd)).toBe(0);
       expect(toUsd(after.spentUsd)).toBe(2);
+    });
+
+    it('settleSuccess on a zero-ceiling reservation records the real cost as spend, with no reservation to release', async () => {
+      const runId = await seedRun(10);
+      const stageAttemptId = await seedAttempt(runId, 'unbounded');
+      const reservationId = await reserveOrThrow({
+        runId,
+        stageAttemptId,
+        stageKey: 'unbounded',
+        ceilingUsd: 0,
+      });
+
+      await ledger.settleSuccess({
+        runId,
+        stageKey: 'unbounded',
+        stageAttemptId,
+        reservationId,
+        actualUsd: 0.5,
+      });
+
+      const rows = await testDb.db
+        .select()
+        .from(ledgerEntry)
+        .where(eq(ledgerEntry.reservationId, reservationId));
+      const actual = rows.find((r) => r.kind === 'actual');
+      const release = rows.find((r) => r.kind === 'release');
+      expect(toUsd(actual!.amountUsd)).toBe(0.5);
+      expect(toUsd(release!.amountUsd)).toBe(0);
+
+      const after = await runRow(runId);
+      expect(toUsd(after.reservedUsd)).toBe(0);
+      expect(toUsd(after.spentUsd)).toBe(0.5);
+
+      // The cap is enforced after the fact: once spend meets the cap, the
+      // next reservation attempt on this run is rejected.
+      const nextAttempt = await seedAttempt(runId, 'outline');
+      const blocked = await ledger.reserve({
+        runId,
+        stageKey: 'outline',
+        stageAttemptId: nextAttempt,
+        category: 'stage_output',
+        ceilingUsd: 9.6,
+        preSubmitTtlSec: 600,
+      });
+      expect(blocked).toEqual({ ok: false, reason: 'run_cap_exceeded' });
     });
 
     it('settleProvisional books the full ceiling as spend, unconfirmed', async () => {

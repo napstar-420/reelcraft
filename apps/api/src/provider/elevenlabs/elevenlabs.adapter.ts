@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { CostEstimate, JobHandle, JobStatus } from '@reelcraft/shared';
 import { KEY_PROVIDER, type KeyProvider } from '../key-provider';
 import type {
@@ -12,6 +12,7 @@ import type {
 export class ElevenLabsAdapter implements ProviderAdapter {
   readonly id = 'elevenlabs';
   readonly modalities = ['audio'] as const;
+  private readonly logger = new Logger(ElevenLabsAdapter.name);
   private readonly jobs = new Map<string, ProviderRequest>();
   constructor(@Inject(KEY_PROVIDER) private readonly keys: KeyProvider) {}
   async listModels(): Promise<ModelInfo[]> {
@@ -32,6 +33,10 @@ export class ElevenLabsAdapter implements ProviderAdapter {
   }
   async submit(req: ProviderRequest, key: string): Promise<JobHandle> {
     this.jobs.set(key, req);
+    this.logger.log(
+      { providerId: this.id, jobId: key, model: req.modelId },
+      'provider job submitted',
+    );
     return { providerId: this.id, externalId: key, payload: req };
   }
   async poll(): Promise<JobStatus> {
@@ -45,6 +50,8 @@ export class ElevenLabsAdapter implements ProviderAdapter {
     const slots = req.params.slots as Record<string, unknown> | undefined;
     const text = String(slots?.text ?? req.renderedPrompt ?? '');
     const voiceId = String(req.params.voiceId ?? '21m00Tcm4TlvDq8ikWAM');
+    const ids = { providerId: this.id, jobId: handle.externalId, model: req.modelId };
+    const startedAt = Date.now();
     const response = await fetch(
       `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}`,
       {
@@ -57,8 +64,18 @@ export class ElevenLabsAdapter implements ProviderAdapter {
         }),
       },
     );
-    if (!response.ok) throw new Error(`ElevenLabs: ${response.status} ${response.statusText}`);
+    if (!response.ok) {
+      this.logger.warn(
+        { ...ids, statusCode: response.status, durationMs: Date.now() - startedAt },
+        'provider http request failed',
+      );
+      throw new Error(`ElevenLabs: ${response.status} ${response.statusText}`);
+    }
     const bytes = Buffer.from(await response.arrayBuffer());
+    this.logger.log(
+      { ...ids, characters: text.length, bytes: bytes.length, durationMs: Date.now() - startedAt },
+      'provider job completed',
+    );
     return {
       output: {
         kind: 'media.audio',

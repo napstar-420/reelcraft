@@ -1,7 +1,15 @@
 import { ConflictException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { and, asc, desc, eq, inArray, isNull } from 'drizzle-orm';
-import type { CreateRunDto, ConfigLayer, ReferenceImage, Ref, RoleDef } from '@reelcraft/shared';
+import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import type {
+  CreateRunDto,
+  ConfigLayer,
+  ReferenceImage,
+  Ref,
+  RoleDef,
+  ListRunsQueryDto,
+} from '@reelcraft/shared';
 import { InputDef, RoleDef as RoleDefSchema, StageDef } from '@reelcraft/shared';
+import { RUN_ACTION_ALLOWED_STATES } from './run-action-policy';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
 import {
   asset,
@@ -15,6 +23,7 @@ import {
   humanWait,
   run,
   stageAttempt,
+  stageEvent,
   stageExecution,
   stageItem,
 } from '../db/schema/index';
@@ -100,7 +109,6 @@ export class RunService {
     if (options?.dryRun) {
       resolvedConfig = this.applyDryRunOverride(graph, resolvedConfig);
     }
-    this.assertTextStagesHaveMaxTokens(graph, resolvedConfig);
 
     await this.db.transaction(async (tx) => {
       await tx.insert(run).values({
@@ -126,6 +134,15 @@ export class RunService {
 
       await this.runInputs.recordProvidedInputs(tx, runId, inputDefs, dto.inputs);
     });
+    this.logger.log(
+      {
+        runId,
+        channelId: dto.channelId,
+        blueprintVersionId: dto.blueprintVersionId,
+        dryRun: options?.dryRun ?? false,
+      },
+      'run created',
+    );
 
     return this.get(runId);
   }
@@ -174,6 +191,10 @@ export class RunService {
           .where(eq(run.id, runId));
       },
       'run/started',
+    );
+    this.logger.log(
+      { runId, wakeupId: mutation.wakeupId, revision: mutation.revision },
+      'run started',
     );
 
     await this.dispatchBestEffort(mutation.wakeupId);
@@ -348,30 +369,6 @@ export class RunService {
     return bindings;
   }
 
-  /** §16.5 — the validator only warns (it can't see the channel layer where
-   * `max_tokens` usually lives, `blueprint-validator.service.ts`'s own
-   * comment on that warning). Once the full layer stack has resolved, an
-   * unbounded text reservation is a real bug, not a warning: `ceilingUsd`
-   * can't be honest without it (§16.5's "input is boundable but output is
-   * not unless max_tokens is set"). Thrown loudly here rather than
-   * discovered later as a budget-reservation failure with a confusing cause. */
-  private assertTextStagesHaveMaxTokens(
-    graph: StageDef[],
-    resolvedConfig: Record<string, ConfigLayer>,
-  ): void {
-    for (const stage of graph) {
-      const impl = this.capabilities.get(stage.capability);
-      if (impl.modality !== 'text') continue;
-      const maxTokens = resolvedConfig[stage.key]?.model?.params?.['max_tokens'];
-      if (typeof maxTokens !== 'number') {
-        throw new Error(
-          `RunService.create: stage "${stage.key}" is text-modality with no effective ` +
-            'model.params.max_tokens (§16.5) — cannot compute an honest cost ceiling',
-        );
-      }
-    }
-  }
-
   /** Chunk 5 — a dry run is a real `run` row driven through the unchanged
    * async pipeline (locked product decision #1), not a bespoke synchronous
    * path. `startDryRun` just resolves `(blueprintId, version)` to the
@@ -414,9 +411,7 @@ export class RunService {
    * `qc.model` on any stage declaring `stage.qc`, so a QC judge call never
    * reaches a real provider either. A modality with no fake model (`human`/
    * `publish`/`compute`, and `media.analyze`'s `probe` path, which never
-   * consumes a model pin at all) is left completely untouched. `text`'s
-   * injected `max_tokens: 256` is what makes `assertTextStagesHaveMaxTokens`
-   * pass for a dry run without that assertion itself needing to change. */
+   * consumes a model pin at all) is left completely untouched. */
   private applyDryRunOverride(
     graph: StageDef[],
     resolvedConfig: Record<string, ConfigLayer>,
@@ -438,7 +433,7 @@ export class RunService {
           model: {
             provider: 'fake',
             modelId: fakeModelId,
-            params: modality === 'text' ? { max_tokens: 256 } : {},
+            params: {},
           },
         }),
         ...(stage.qc && {
@@ -454,12 +449,18 @@ export class RunService {
    * the cap but doesn't resume the orchestrator. */
   async raiseBudget(runId: string, capUsd: number) {
     await this.ledger.raiseBudget({ runId, newCapUsd: capUsd });
+    this.logger.log({ runId, capUsd }, 'run budget raised');
     return this.get(runId);
   }
 
-  /** §12.4 — both budget pauses and failed runs are explicit recovery
-   * points. The durable wakeup claim performs the actual transition only if
-   * the persisted source state and revision are still current. */
+  /** §12.4 — budget pauses and failed runs are explicit recovery points
+   * with a cursor precondition (the cursor execution must actually still be
+   * mid-flight). A manual pause (`PAUSED_MANUAL`) skips that precondition:
+   * the cursor can legitimately be `passed` (paused right after a stage
+   * finished) or `running` (paused while the current attempt was still
+   * being allowed to finish) — the orchestrator re-derives what to do next
+   * either way. The durable wakeup claim performs the actual transition
+   * only if the persisted source state and revision are still current. */
   async resume(runId: string) {
     const current = await this.get(runId);
     if (current.state === 'PAUSED_BUDGET' || current.state === 'FAILED') {
@@ -478,10 +479,37 @@ export class RunService {
     const mutation = await this.runMutation.withLockedRun(
       runId,
       'resume',
-      ['PAUSED_BUDGET', 'FAILED'],
+      RUN_ACTION_ALLOWED_STATES.resume,
       async () => undefined,
       'run/resumed',
     );
+    this.logger.log(
+      { runId, wakeupId: mutation.wakeupId, fromState: current.state },
+      'run resumed',
+    );
+    await this.dispatchBestEffort(mutation.wakeupId);
+    return this.get(runId);
+  }
+
+  /** §12.4 — manual pause. Unlike cancel, this must stay resumable: it flips
+   * `run.state` to `PAUSED_MANUAL` synchronously (so the API reflects it
+   * immediately) but does NOT hard-cancel the in-flight Inngest function —
+   * the orchestrator's own runnable checks (before the next stage/item) are
+   * what actually halt progress, letting whatever attempt is already
+   * in-flight finish and commit normally. No listener exists for
+   * `run/paused` (the state flip alone is sufficient); this mirrors other
+   * unlistened outbox events like `run/config-updated`. */
+  async pause(runId: string) {
+    const mutation = await this.runMutation.withLockedRun(
+      runId,
+      'pause',
+      RUN_ACTION_ALLOWED_STATES.pause,
+      async (tx) => {
+        await tx.update(run).set({ state: 'PAUSED_MANUAL' }).where(eq(run.id, runId));
+      },
+      'run/paused',
+    );
+    this.logger.log({ runId, wakeupId: mutation.wakeupId }, 'run paused');
     await this.dispatchBestEffort(mutation.wakeupId);
     return this.get(runId);
   }
@@ -492,11 +520,7 @@ export class RunService {
     } catch (error) {
       // The committed outbox row is the source of truth. The periodic
       // dispatcher will retry this delivery, so the HTTP mutation succeeds.
-      this.logger?.warn(
-        `Run wakeup ${wakeupId} was committed but could not be dispatched immediately: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
+      this.logger?.warn({ wakeupId, err: error }, 'run wakeup dispatch deferred to retry');
     }
   }
 
@@ -678,10 +702,6 @@ export class RunService {
       .limit(1);
     if (!candidate) throw new ConflictException('The approval candidate is no longer available');
 
-    const attachments = await this.db
-      .select()
-      .from(artifactAttachment)
-      .where(eq(artifactAttachment.artifactId, candidate.id));
     const [stillOpen] = await this.db
       .select({ id: humanWait.id })
       .from(humanWait)
@@ -689,26 +709,6 @@ export class RunService {
       .limit(1);
     if (!stillOpen)
       throw new ConflictException('The approval was resolved while loading its candidate');
-
-    const preview = candidate.blobId
-      ? await this.blobs.readUrl(runRow.ownerId, candidate.blobId)
-      : undefined;
-    const safeAttachments = (
-      await Promise.all(
-        attachments.map(async (attachment) => {
-          const access = await this.blobs.readUrl(runRow.ownerId, attachment.blobId);
-          if (access?.status !== 'live') return undefined;
-          if (attachment.role !== 'evidence' && attachment.role !== 'download') return undefined;
-          return {
-            id: attachment.id,
-            role: attachment.role,
-            filename: attachment.filename,
-            mime: attachment.mime,
-            url: access.url,
-          };
-        }),
-      )
-    ).filter((value) => value !== undefined);
 
     return {
       stageKey,
@@ -721,22 +721,158 @@ export class RunService {
         costUsd: toUsd(attempt.costUsd),
         createdAt: attempt.createdAt,
       },
-      artifact: {
-        id: candidate.id,
-        kind: candidate.kind,
-        data: candidate.data,
-        previewUrl: preview?.status === 'live' ? preview.url : null,
-        attachments: safeAttachments,
-      },
+      artifact: await this.toArtifactView(runRow.ownerId, candidate),
+    };
+  }
+
+  /** The current (non-stale) output of a stage, one entry per item for an
+   * iterating stage. Works in any run state, unlike `approvalCandidate`. */
+  async stageOutput(runId: string, stageKey: string) {
+    const [runRow] = await this.db
+      .select({ ownerId: channel.ownerId })
+      .from(run)
+      .innerJoin(channel, eq(channel.id, run.channelId))
+      .where(eq(run.id, runId))
+      .limit(1);
+    if (!runRow) throw new NotFoundException(`Run ${runId} not found`);
+    const rows = await this.db
+      .select()
+      .from(artifact)
+      .where(
+        and(
+          eq(artifact.runId, runId),
+          eq(artifact.producerStageKey, stageKey),
+          eq(artifact.stale, false),
+        ),
+      )
+      .orderBy(asc(artifact.itemIndex));
+    return {
+      stageKey,
+      items: await Promise.all(
+        rows.map(async (row) => ({
+          itemIndex: row.itemIndex,
+          artifact: await this.toArtifactView(runRow.ownerId, row),
+        })),
+      ),
+    };
+  }
+
+  private async toArtifactView(ownerId: string, row: typeof artifact.$inferSelect) {
+    const attachments = await this.db
+      .select()
+      .from(artifactAttachment)
+      .where(eq(artifactAttachment.artifactId, row.id));
+    const preview = row.blobId ? await this.blobs.readUrl(ownerId, row.blobId) : undefined;
+    const safeAttachments = (
+      await Promise.all(
+        attachments.map(async (attachment) => {
+          const access = await this.blobs.readUrl(ownerId, attachment.blobId);
+          if (access?.status !== 'live') return undefined;
+          if (attachment.role !== 'evidence' && attachment.role !== 'download') return undefined;
+          return {
+            id: attachment.id,
+            role: attachment.role,
+            filename: attachment.filename,
+            mime: attachment.mime,
+            url: access.url,
+          };
+        }),
+      )
+    ).filter((value) => value !== undefined);
+    return {
+      id: row.id,
+      kind: row.kind,
+      data: row.data,
+      previewUrl: preview?.status === 'live' ? preview.url : null,
+      attachments: safeAttachments,
     };
   }
 
   /** §21/Chunk 5 — dry runs write real ledger rows (locked product decision
    * #1's accepted consequence), so the default listing excludes them; an
-   * explicit `includeDryRuns` opts back in. */
-  async list(includeDryRuns = false) {
-    if (includeDryRuns) return this.db.select().from(run);
-    return this.db.select().from(run).where(eq(run.dryRun, false));
+   * explicit `includeDryRuns` opts back in. Backs the Runs tab's list page:
+   * joins in channel/blueprint display names so the UI never needs N+1
+   * lookups per row. `innerJoin` is safe because `run.channelId`,
+   * `run.blueprintVersionId`, and `blueprintVersion.blueprintId` are all
+   * NOT NULL FKs today — if that invariant ever changes (e.g. hard deletes),
+   * this would silently drop affected runs from the list instead of erroring. */
+  async list(query: ListRunsQueryDto) {
+    const conditions = [
+      query.includeDryRuns ? undefined : eq(run.dryRun, false),
+      query.channelId ? eq(run.channelId, query.channelId) : undefined,
+      query.state ? eq(run.state, query.state) : undefined,
+      query.blueprintId ? eq(blueprintVersion.blueprintId, query.blueprintId) : undefined,
+    ].filter((condition): condition is NonNullable<typeof condition> => condition !== undefined);
+    const where = conditions.length ? and(...conditions) : undefined;
+
+    const baseQuery = this.db
+      .select({
+        id: run.id,
+        channelId: run.channelId,
+        channelName: channel.name,
+        blueprintId: blueprint.id,
+        blueprintName: blueprint.name,
+        blueprintVersionId: run.blueprintVersionId,
+        blueprintVersion: blueprintVersion.version,
+        state: run.state,
+        dryRun: run.dryRun,
+        budgetCapUsd: run.budgetCapUsd,
+        spentUsd: run.spentUsd,
+        startedAt: run.startedAt,
+        endedAt: run.endedAt,
+      })
+      .from(run)
+      .innerJoin(channel, eq(channel.id, run.channelId))
+      .innerJoin(blueprintVersion, eq(blueprintVersion.id, run.blueprintVersionId))
+      .innerJoin(blueprint, eq(blueprint.id, blueprintVersion.blueprintId));
+    const countQuery = this.db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(run)
+      .innerJoin(blueprintVersion, eq(blueprintVersion.id, run.blueprintVersionId));
+
+    const [rows, countRows] = await Promise.all([
+      (where ? baseQuery.where(where) : baseQuery)
+        .orderBy(desc(run.startedAt))
+        .limit(query.limit)
+        .offset(query.offset),
+      where ? countQuery.where(where) : countQuery,
+    ]);
+    const total = countRows[0]?.count ?? 0;
+
+    return {
+      items: rows.map((row) => ({
+        ...row,
+        budgetCapUsd: toUsd(row.budgetCapUsd),
+        spentUsd: toUsd(row.spentUsd),
+      })),
+      total,
+      limit: query.limit,
+      offset: query.offset,
+    };
+  }
+
+  async listStageEvents(runId: string, stageKey: string, attemptId?: string) {
+    return this.db
+      .select({
+        id: stageEvent.id,
+        stageAttemptId: stageEvent.stageAttemptId,
+        itemIndex: stageEvent.itemIndex,
+        level: stageEvent.level,
+        type: stageEvent.type,
+        message: stageEvent.message,
+        data: stageEvent.data,
+        createdAt: stageEvent.createdAt,
+      })
+      .from(stageEvent)
+      .innerJoin(stageExecution, eq(stageEvent.stageExecutionId, stageExecution.id))
+      .where(
+        and(
+          eq(stageExecution.runId, runId),
+          eq(stageExecution.stageKey, stageKey),
+          attemptId ? eq(stageEvent.stageAttemptId, attemptId) : undefined,
+        ),
+      )
+      .orderBy(asc(stageEvent.id));
   }
 
   async listStageAttempts(runId: string, stageKey: string) {
@@ -778,6 +914,10 @@ export class RunService {
           (candidate) => candidate.modelId === pin.modelId,
         );
       } catch (error) {
+        this.logger.warn(
+          { providerId: pin.provider, modelId: pin.modelId, err: error },
+          'provider model discovery failed',
+        );
         throw new ConflictException(
           `RunService.start: ${pin.provider === 'codex' ? 'Codex' : 'OpenRouter'} model discovery failed: ${(error as Error).message}`,
         );

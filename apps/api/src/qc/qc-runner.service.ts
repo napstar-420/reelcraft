@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import type { ModelPin } from '@reelcraft/shared';
 import { ProviderRegistry } from '../provider/provider.registry';
 import type { QcEnvelope } from './qc-envelope';
@@ -29,6 +29,8 @@ const POLL_INTERVAL_MS = 20;
  */
 @Injectable()
 export class QcRunner {
+  private readonly logger = new Logger(QcRunner.name);
+
   constructor(private readonly providers: ProviderRegistry) {}
 
   async run(args: {
@@ -44,6 +46,26 @@ export class QcRunner {
      * and fail with a message pointing nowhere near the real cause. */
     idempotencyKey: string;
   }): Promise<QcOutcome> {
+    const startedAt = Date.now();
+    const outcome = await this.judge(args);
+    const fields = {
+      provider: args.judge.provider,
+      modelId: args.judge.modelId,
+      threshold: args.threshold,
+      costUsd: outcome.costUsd,
+      durationMs: Date.now() - startedAt,
+    };
+    if (outcome.status === 'error') {
+      this.logger.warn({ ...fields, reason: outcome.reason }, 'qc judge errored');
+    } else if (outcome.status === 'failed') {
+      this.logger.log({ ...fields, score: outcome.verdict.score }, 'qc verdict failed');
+    } else {
+      this.logger.debug({ ...fields, score: outcome.verdict.score }, 'qc verdict passed');
+    }
+    return outcome;
+  }
+
+  private async judge(args: Parameters<QcRunner['run']>[0]): Promise<QcOutcome> {
     const adapter = this.providers.get(args.judge.provider);
     const prompt = buildQcPrompt(args.envelope);
     // §10 — pinned model, temperature forced to 0: a judge's determinism

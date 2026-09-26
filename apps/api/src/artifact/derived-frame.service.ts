@@ -4,7 +4,7 @@ import { createReadStream } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { eq, sql } from 'drizzle-orm';
 import type { Probe } from '@reelcraft/shared';
 import { DRIZZLE, type Db, type Tx } from '../db/drizzle.provider';
@@ -49,6 +49,8 @@ type Executor = Db | Tx;
  */
 @Injectable()
 export class DerivedFrameService {
+  private readonly logger = new Logger(DerivedFrameService.name);
+
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly workspaces: WorkspaceService,
@@ -74,6 +76,7 @@ export class DerivedFrameService {
       const already = (locked.derived as Record<string, string> | null)?.[which];
       if (already) return this.manifestFor(already, which, tx);
 
+      const startedAt = Date.now();
       const blobId = await this.extractAndStore(tx, locked, which);
       await tx
         .update(artifact)
@@ -81,6 +84,10 @@ export class DerivedFrameService {
           derived: sql`coalesce(${artifact.derived}, '{}'::jsonb) || ${JSON.stringify({ [which]: blobId })}::jsonb`,
         })
         .where(eq(artifact.id, row.id));
+      this.logger.log(
+        { runId: row.runId, artifactId: row.id, blobId, which, durationMs: Date.now() - startedAt },
+        'derived frame extracted',
+      );
       return this.manifestFor(blobId, which, tx);
     });
   }
@@ -137,7 +144,11 @@ export class DerivedFrameService {
       let probe: Probe | undefined;
       try {
         probe = await this.probes.probe(framePath);
-      } catch {
+      } catch (error) {
+        this.logger.warn(
+          { runId: row.runId, artifactId: row.id, which, err: error },
+          'derived frame probe failed; storing without probe',
+        );
         // A frame PNG has no audio/duration for ffprobe to report on some
         // builds — the manifest degrades gracefully to no width/height
         // rather than failing the whole extraction over a probe quirk.

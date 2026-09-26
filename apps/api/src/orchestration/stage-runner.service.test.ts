@@ -11,6 +11,7 @@ describe('StageRunnerService output-instruction prompt delivery', () => {
       basis: 'token_estimate',
     });
     const submit = vi.fn().mockResolvedValue({ providerId: 'fake', externalId: 'job-1' });
+    const record = vi.fn().mockResolvedValue(undefined);
     const persisted: Array<Record<string, unknown>> = [];
     const db = {
       update: vi.fn().mockReturnValue({
@@ -29,6 +30,7 @@ describe('StageRunnerService output-instruction prompt delivery', () => {
       },
       engineConfig: { preSubmitTtlSec: 60, fetchAllowanceSec: 10 },
       timelineResources: { resolve: vi.fn() },
+      events: { record },
     }) as unknown as StageRunnerService;
     vi.spyOn(service as never, 'resolveBindings').mockResolvedValue({
       slots: { topic: 'reefs' },
@@ -72,5 +74,12 @@ describe('StageRunnerService output-instruction prompt delivery', () => {
     expect(estimatedContext.renderedPrompt).toContain('Use a stronger ending.');
     expect(submittedContext.renderedPrompt).toBe(estimatedContext.renderedPrompt);
     expect(persistedPrompt).toBe(estimatedContext.renderedPrompt);
+    expect(record).toHaveBeenCalledWith(
+      ctx,
+      'info',
+      'prompt.rendered',
+      expect.any(String),
+      expect.objectContaining({ prompt: estimatedContext.renderedPrompt }),
+    );
   });
 });

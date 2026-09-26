@@ -32,6 +32,7 @@ const runStateTones: Record<RunState, StatusTone> = {
   PAUSED_BUDGET: 'warning',
   PAUSED_APPROVAL: 'warning',
   PAUSED_INPUT: 'warning',
+  PAUSED_MANUAL: 'warning',
   FAILED: 'error',
   COMPLETED: 'success',
   CANCELLED: 'neutral',

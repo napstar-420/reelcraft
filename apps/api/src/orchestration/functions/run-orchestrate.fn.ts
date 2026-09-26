@@ -73,7 +73,7 @@ export function buildRunOrchestrateFunction(
       cancelOn: [{ event: 'run/cancelled', match: 'data.runId' }],
     },
     [{ event: 'run/started' }, { event: 'run/resumed' }],
-    async ({ event, step }) => {
+    async ({ event, step, logger }) => {
       const data = event.data as RunStartedEventData;
       const { runId } = data;
 
@@ -87,7 +87,13 @@ export function buildRunOrchestrateFunction(
         const claim = await step.run('claim-wakeup', () =>
           wakeupClaim.claim(data as RunWakeupEventData),
         );
-        if (!claim.claimed) return { ignored: true as const, reason: claim.reason };
+        if (!claim.claimed) {
+          logger.info(
+            { runId, wakeupId: data.wakeupId, action: data.action, reason: claim.reason },
+            'run wakeup ignored',
+          );
+          return { ignored: true as const, reason: claim.reason };
+        }
       } else {
         // Backward compatibility for already-enqueued events from before the
         // durable wakeup envelope was introduced.
@@ -135,8 +141,28 @@ export function buildRunOrchestrateFunction(
         }));
       });
 
+      logger.info(
+        { runId, wakeupId: data.wakeupId, action: data.action, stageCount: executions.length },
+        'run orchestration started',
+      );
+
       for (const execution of executions) {
         if (execution.state === 'passed' && !execution.needsItemWork) continue;
+
+        // §12.4 manual pause — checked before starting the next stage, not
+        // by killing the durable function (that's cancel's job via
+        // `cancelOn`). Leaves the cursor untouched so a later `run/resumed`
+        // naturally re-enters at this same stage.
+        const runnableState = await step.run(`check-runnable-${execution.stageKey}`, () =>
+          runState.getState(runId),
+        );
+        if (runnableState !== 'RUNNING') {
+          logger.info(
+            { runId, stageKey: execution.stageKey, state: runnableState },
+            'run orchestration stopped: run not running',
+          );
+          return { state: runnableState ?? ('CANCELLED' as const) };
+        }
 
         await step.run(`set-cursor-${execution.stageKey}`, () =>
           runState.setCursor(runId, execution.stageKey),
@@ -156,7 +182,18 @@ export function buildRunOrchestrateFunction(
         }
 
         if (result.outcome === 'run_not_running') {
-          return { state: 'CANCELLED' as const };
+          // The run stopped being RUNNING while this stage's attempt was
+          // in flight (manual pause or cancel raced it). Re-read the actual
+          // state rather than assuming CANCELLED — a paused run should be
+          // reported (and left) as PAUSED_MANUAL, not mislabeled.
+          const stateAfter = await step.run(`state-after-${execution.stageKey}`, () =>
+            runState.getState(runId),
+          );
+          logger.info(
+            { runId, stageKey: execution.stageKey, state: stateAfter },
+            'run orchestration stopped: run left running mid-stage',
+          );
+          return { state: stateAfter ?? ('CANCELLED' as const) };
         }
 
         if (result.outcome === 'approval_required') {

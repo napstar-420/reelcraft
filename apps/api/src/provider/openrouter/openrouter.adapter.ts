@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { CostEstimate, JobHandle, JobStatus } from '@reelcraft/shared';
 import { KEY_PROVIDER, type KeyProvider } from '../key-provider';
 import type {
@@ -40,6 +40,7 @@ export class OpenRouterAdapter implements ProviderAdapter {
   readonly id = 'openrouter';
   readonly modalities = ['text', 'image'] as const;
 
+  private readonly logger = new Logger(OpenRouterAdapter.name);
   private readonly jobs = new Map<string, OpenRouterJob>();
 
   constructor(
@@ -55,10 +56,15 @@ export class OpenRouterAdapter implements ProviderAdapter {
     if (!apiKey) {
       throw new Error('OpenRouterAdapter.listModels: no API key configured');
     }
+    const startedAt = Date.now();
     const res = await fetch('https://openrouter.ai/api/v1/models', {
       headers: { Authorization: `Bearer ${apiKey}` },
     });
     if (!res.ok) {
+      this.logger.warn(
+        { providerId: this.id, statusCode: res.status, durationMs: Date.now() - startedAt },
+        'provider model list request failed',
+      );
       throw new Error(`OpenRouterAdapter.listModels: ${res.status} ${res.statusText}`);
     }
     const body = (await res.json()) as {
@@ -74,6 +80,10 @@ export class OpenRouterAdapter implements ProviderAdapter {
       },
     }));
     this.modelCache.set(models);
+    this.logger.log(
+      { providerId: this.id, modelCount: models.length, durationMs: Date.now() - startedAt },
+      'provider models refreshed',
+    );
     return models;
   }
 
@@ -82,16 +92,17 @@ export class OpenRouterAdapter implements ProviderAdapter {
       const expectedUsd = Number(req.params.priceUsd ?? 0.04);
       return { expectedUsd, ceilingUsd: expectedUsd, basis: 'configured_ceiling' };
     }
-    // §16.5 — max_tokens is required in effective params for an honest
-    // ceiling; without it there is no real reservation to make.
     const maxTokens = req.params.max_tokens;
-    if (typeof maxTokens !== 'number') {
-      throw new Error('OpenRouterAdapter.estimate: max_tokens is required in model params');
-    }
     const promptTokens = (req.renderedPrompt ?? '').length / 4;
     // Placeholder per-token rate until listModels() pricing is wired through;
     // basis is honestly reported as an estimate either way.
     const ratePerToken = 0.000_002;
+    if (typeof maxTokens !== 'number') {
+      // No output bound — nothing honest to reserve up front; the real cost
+      // is recorded after the call completes (settleSuccess), same as the
+      // Codex adapter's ceilingUsd: 0.
+      return { expectedUsd: promptTokens * ratePerToken, ceilingUsd: 0, basis: 'token_estimate' };
+    }
     const expectedUsd = (promptTokens + maxTokens) * ratePerToken;
     return { expectedUsd, ceilingUsd: expectedUsd * 1.5, basis: 'token_estimate' };
   }
@@ -109,6 +120,10 @@ export class OpenRouterAdapter implements ProviderAdapter {
       }
     }
     this.jobs.set(idempotencyKey, { req });
+    this.logger.log(
+      { providerId: this.id, jobId: idempotencyKey, model: req.modelId },
+      'provider job submitted',
+    );
     return { providerId: this.id, externalId: idempotencyKey };
   }
 
@@ -120,6 +135,7 @@ export class OpenRouterAdapter implements ProviderAdapter {
   async fetch(handle: JobHandle): Promise<ProviderResult> {
     const job = this.jobs.get(handle.externalId);
     if (!job) {
+      this.logger.error({ providerId: this.id, jobId: handle.externalId }, 'provider job unknown');
       throw new Error(`OpenRouterAdapter.fetch: unknown job ${handle.externalId}`);
     }
     const apiKey = await this.keyProvider.get('openrouter');
@@ -138,6 +154,8 @@ export class OpenRouterAdapter implements ProviderAdapter {
             },
           }
         : undefined;
+    const ids = { providerId: this.id, jobId: handle.externalId, model: job.req.modelId };
+    const startedAt = Date.now();
     const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
@@ -154,6 +172,10 @@ export class OpenRouterAdapter implements ProviderAdapter {
       }),
     });
     if (!res.ok) {
+      this.logger.warn(
+        { ...ids, statusCode: res.status, durationMs: Date.now() - startedAt },
+        'provider http request failed',
+      );
       throw new Error(`OpenRouterAdapter.fetch: ${res.status} ${res.statusText}`);
     }
     const body = (await res.json()) as {
@@ -166,10 +188,15 @@ export class OpenRouterAdapter implements ProviderAdapter {
       try {
         output = JSON.parse(text);
       } catch {
+        this.logger.warn({ ...ids, outputLength: text.length }, 'provider returned malformed json');
         throw new Error('OpenRouter returned malformed structured JSON');
       }
     }
     const totalTokens = body.usage?.total_tokens ?? 0;
+    this.logger.log(
+      { ...ids, totalTokens, durationMs: Date.now() - startedAt },
+      'provider job completed',
+    );
     return {
       output,
       costUsd: totalTokens * 0.000_002,
@@ -180,20 +207,30 @@ export class OpenRouterAdapter implements ProviderAdapter {
 
   private async fetchImage(req: ProviderRequest, apiKey: string): Promise<ProviderResult> {
     const params = forwardedParams(req.params);
+    const ids = { providerId: this.id, model: req.modelId };
+    const startedAt = Date.now();
     const response = await fetch('https://openrouter.ai/api/v1/images/generations', {
       method: 'POST',
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...params, model: req.modelId, prompt: req.renderedPrompt ?? '' }),
     });
-    if (!response.ok)
+    if (!response.ok) {
+      this.logger.warn(
+        { ...ids, statusCode: response.status, durationMs: Date.now() - startedAt },
+        'provider http request failed',
+      );
       throw new Error(`OpenRouter image: ${response.status} ${response.statusText}`);
+    }
     const body = (await response.json()) as {
       data?: Array<{ b64_json?: string; url?: string }>;
       usage?: { total_cost?: number };
     };
     const image = body.data?.[0];
-    if (!image?.b64_json && !image?.url)
+    if (!image?.b64_json && !image?.url) {
+      this.logger.warn(ids, 'provider returned no image');
       throw new Error('OpenRouter image: missing generated image');
+    }
+    this.logger.log({ ...ids, durationMs: Date.now() - startedAt }, 'provider job completed');
     return {
       output: {
         kind: 'media.image',

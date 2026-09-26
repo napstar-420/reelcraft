@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from './config/config.module';
+import { LoggingModule } from './common/logging.module';
 import { ChannelModule } from './channel/channel.module';
 import { BlueprintModule } from './blueprint/blueprint.module';
 import { TemplateModule } from './template/template.module';
@@ -11,6 +12,7 @@ import { RunModule } from './run/run.module';
 @Module({
   imports: [
     ConfigModule,
+    LoggingModule,
     ChannelModule,
     BlueprintModule,
     TemplateModule,

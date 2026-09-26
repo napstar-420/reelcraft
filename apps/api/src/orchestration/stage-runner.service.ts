@@ -43,6 +43,7 @@ import { TimelineHandleService } from '../artifact/timeline-handle.service';
 import { TimelineResourceResolverService } from '../artifact/timeline-resource-resolver.service';
 import { FileArtifactService } from '../artifact/file-artifact.service';
 import { ArtifactAttachmentService } from '../artifact/artifact-attachment.service';
+import { StageEventService, type StageEventLevel } from './stage-event.service';
 
 export interface StageAttemptContext {
   runId: string;
@@ -130,6 +131,7 @@ export class StageRunnerService {
     private readonly timelineResources: TimelineResourceResolverService,
     private readonly fileArtifacts: FileArtifactService,
     private readonly artifactAttachments: ArtifactAttachmentService,
+    private readonly events: StageEventService,
   ) {}
 
   interactionFor(capabilityKey: string): 'form' | 'timeline_editor' | undefined {
@@ -225,7 +227,12 @@ export class StageRunnerService {
         phase: 'created',
         actor: 'engine',
       });
-      return { ...ctx, attemptNo, stageAttemptId };
+      const started = { ...ctx, attemptNo, stageAttemptId };
+      await this.events.record(started, 'info', 'attempt.started', `Attempt ${attemptNo} started`, {
+        attemptNo,
+        ...(ctx.itemIndex !== undefined && { item: ctx.itemIndex + 1 }),
+      });
+      return started;
     } catch (err) {
       if (!isUniqueViolation(err)) throw err;
       const [existing] = await this.db
@@ -477,7 +484,13 @@ export class StageRunnerService {
       systemPrompt,
       output: stage.output,
       idempotencyKey: this.idempotencyKey(ctx, ctx.itemIndex),
-      logger: { log: () => {}, error: () => {} },
+      logger: {
+        log: (msg: string) => void this.events.record(ctx, 'info', 'capability.log', msg),
+        error: (msg: string, err?: unknown) =>
+          void this.events.record(ctx, 'error', 'capability.log', msg, {
+            error: err instanceof Error ? err.message : err,
+          }),
+      },
       ...(resources && { resources }),
     };
   }
@@ -534,6 +547,33 @@ export class StageRunnerService {
     );
     const execCtx = capability.prepare?.(unpreparedExecCtx) ?? unpreparedExecCtx;
 
+    // Persisted before submit so a failed submit still shows what was sent.
+    await this.db
+      .update(stageAttempt)
+      .set({ renderedPrompt: execCtx.renderedPrompt, resolvedInputs: bindings.provenance })
+      .where(eq(stageAttempt.id, ctx.stageAttemptId));
+    await this.events.record(ctx, 'debug', 'inputs.resolved', 'Inputs resolved', {
+      provenance: bindings.provenance,
+    });
+    if (execCtx.renderedPrompt !== undefined || execCtx.systemPrompt !== undefined) {
+      await this.events.record(
+        ctx,
+        'info',
+        'prompt.rendered',
+        `Prompt rendered (${execCtx.renderedPrompt?.length ?? 0} chars)`,
+        { system: execCtx.systemPrompt, prompt: execCtx.renderedPrompt },
+      );
+    }
+    if (effective.model) {
+      await this.events.record(
+        ctx,
+        'info',
+        'model.selected',
+        `Using ${effective.model.provider}/${effective.model.modelId}`,
+        effective.model,
+      );
+    }
+
     const costEstimate = await capability.estimateCost(execCtx);
     const reserved = await this.ledger.reserve({
       runId: ctx.runId,
@@ -552,9 +592,26 @@ export class StageRunnerService {
         .update(stageAttempt)
         .set({ outcome: reserved.reason === 'run_not_running' ? 'cancelled' : 'budget_blocked' })
         .where(eq(stageAttempt.id, ctx.stageAttemptId));
-      if (reserved.reason === 'run_not_running') return { outcome: 'run_not_running' };
+      if (reserved.reason === 'run_not_running') {
+        await this.finishAttempt(ctx, 'info', 'cancelled', 'Run is no longer running');
+        return { outcome: 'run_not_running' };
+      }
+      await this.finishAttempt(
+        ctx,
+        'warn',
+        'budget_blocked',
+        `Budget blocked (${reserved.reason === 'stage_cap_exceeded' ? 'stage' : 'run'} cap)`,
+        { reason: reserved.reason, costEstimate },
+      );
       return { outcome: 'budget_blocked', reason: reserved.reason };
     }
+    await this.events.record(
+      ctx,
+      'debug',
+      'budget.reserved',
+      `Reserved up to $${costEstimate.ceilingUsd.toFixed(4)}`,
+      costEstimate,
+    );
 
     await this.db
       .update(stageAttempt)
@@ -582,6 +639,9 @@ export class StageRunnerService {
         resolvedInputs: bindings.provenance,
       })
       .where(eq(stageAttempt.id, ctx.stageAttemptId));
+    await this.events.record(ctx, 'info', 'job.submitted', `Submitted to ${handle.providerId}`, {
+      handle,
+    });
 
     return { outcome: 'submitted', handle };
   }
@@ -619,6 +679,12 @@ export class StageRunnerService {
       .update(stageAttempt)
       .set({ outcome: 'provider_timeout', phase: 'settled' })
       .where(eq(stageAttempt.id, ctx.stageAttemptId));
+    await this.finishAttempt(
+      ctx,
+      'warn',
+      'provider_timeout',
+      'Provider did not finish within the polling window; job cancelled',
+    );
   }
 
   /** §11.3 — a provider-reported job failure before any billed work: a
@@ -640,6 +706,9 @@ export class StageRunnerService {
       .update(stageAttempt)
       .set({ outcome: 'infra_error', phase: 'settled', reviewNote: reason })
       .where(eq(stageAttempt.id, ctx.stageAttemptId));
+    await this.finishAttempt(ctx, 'error', 'infra_error', `Infrastructure error: ${reason}`, {
+      reason,
+    });
   }
 
   async fetchAndFinalize(
@@ -657,6 +726,18 @@ export class StageRunnerService {
         : undefined;
     const execCtx = this.buildExecCtx(stage, ctx, effective, bindings, undefined, resources);
     const result = await capability.fetch(handle, execCtx);
+    await this.events.record(
+      ctx,
+      'info',
+      'job.completed',
+      `Provider finished ($${result.costUsd.toFixed(4)})`,
+      {
+        costUsd: result.costUsd,
+        repro: result.repro,
+        ...(result.attachments?.length && { attachments: result.attachments.length }),
+        ...(result.providerMeta && { provider: result.providerMeta }),
+      },
+    );
     const output =
       stage.output.kind === 'timeline'
         ? this.timelineHandles.canonicalize(result.output, bindings.provenance)
@@ -837,11 +918,28 @@ export class StageRunnerService {
       }
     }
 
-    if (!checkResults.every((r) => r.pass)) {
+    const failedChecks = checkResults.filter((r) => !r.pass);
+    if (checkResults.length > 0) {
+      await this.events.record(
+        ctx,
+        failedChecks.length ? 'warn' : 'info',
+        'checks.result',
+        `${checkResults.length - failedChecks.length}/${checkResults.length} checks passed`,
+        { checks: checkResults },
+      );
+    }
+    if (failedChecks.length) {
       await this.db
         .update(stageAttempt)
         .set({ outcome: 'check_failed', checkResults })
         .where(eq(stageAttempt.id, ctx.stageAttemptId));
+      await this.finishAttempt(
+        ctx,
+        'warn',
+        'check_failed',
+        `Checks failed: ${failedChecks.map((r) => r.name).join(', ')}`,
+        { failed: failedChecks },
+      );
       return { outcome: 'check_failed', checkResults };
     }
 
@@ -859,6 +957,10 @@ export class StageRunnerService {
             .update(stageAttempt)
             .set({ outcome: 'qc_budget_exhausted', checkResults })
             .where(eq(stageAttempt.id, ctx.stageAttemptId));
+          await this.finishAttempt(ctx, 'warn', 'qc_budget_exhausted', 'QC budget exhausted', {
+            qcSpentUsd: qcSpent,
+            capUsd: effective.qc.capUsd,
+          });
           return { outcome: 'qc_budget_exhausted', checkResults };
         }
       }
@@ -876,6 +978,7 @@ export class StageRunnerService {
           .update(stageAttempt)
           .set({ outcome: 'qc_error', checkResults, reviewNote: qcOutcome.reason })
           .where(eq(stageAttempt.id, ctx.stageAttemptId));
+        await this.finishAttempt(ctx, 'error', 'qc_error', `QC could not run: ${qcOutcome.reason}`);
         return { outcome: 'qc_error', reason: qcOutcome.reason };
       }
 
@@ -892,6 +995,12 @@ export class StageRunnerService {
           .update(stageAttempt)
           .set({ outcome: 'qc_failed', checkResults, qcVerdict: qcOutcome.verdict })
           .where(eq(stageAttempt.id, ctx.stageAttemptId));
+        await this.finishAttempt(
+          ctx,
+          'warn',
+          'qc_failed',
+          `QC rejected the output: ${qcOutcome.verdict.critique}`,
+        );
         return { outcome: 'qc_failed', checkResults, qcVerdict: qcOutcome.verdict };
       }
 
@@ -901,13 +1010,18 @@ export class StageRunnerService {
         .where(eq(stageAttempt.id, ctx.stageAttemptId));
     }
 
-    return this.db.transaction(async (tx) => {
+    const finalized = await this.db.transaction(async (tx) => {
       const [lockedRun] = await tx
         .select({ state: run.state })
         .from(run)
         .where(eq(run.id, ctx.runId))
         .for('update');
-      if (!lockedRun || lockedRun.state !== 'RUNNING') {
+      // Manual pause is soft: the run flips to `PAUSED_MANUAL` immediately,
+      // but an attempt that was already mid-flight when that happened is
+      // allowed to finish and commit here rather than being thrown away —
+      // it's already been paid for. Every other non-RUNNING state (in
+      // particular CANCELLED) still discards the output.
+      if (!lockedRun || (lockedRun.state !== 'RUNNING' && lockedRun.state !== 'PAUSED_MANUAL')) {
         await tx
           .update(stageAttempt)
           .set({ outcome: 'cancelled', phase: 'settled', checkResults })
@@ -1000,6 +1114,14 @@ export class StageRunnerService {
 
       return { outcome: 'success' as const, artifactId };
     });
+    if (finalized.outcome === 'run_not_running') {
+      await this.finishAttempt(ctx, 'info', 'cancelled', 'Run stopped; output discarded');
+    } else if (finalized.outcome === 'approval_required') {
+      await this.finishAttempt(ctx, 'info', 'awaiting_approval', 'Output ready for review');
+    } else {
+      await this.finishAttempt(ctx, 'info', 'success', 'Attempt succeeded');
+    }
+    return finalized;
   }
 
   /** §10.4 — retried up to `qcErrorRetries` times on `status:'error'` (the
@@ -1035,6 +1157,15 @@ export class StageRunnerService {
         threshold: effectiveQc.threshold,
         idempotencyKey: `${ctx.stageAttemptId}:qc:${n}`,
       });
+      await this.events.record(
+        ctx,
+        last.status === 'passed' ? 'info' : last.status === 'failed' ? 'warn' : 'error',
+        'qc.result',
+        last.status === 'error'
+          ? `QC call ${n}/${maxAttempts} errored: ${last.reason}`
+          : `QC ${last.status}`,
+        last,
+      );
       if (last.status !== 'error') return last;
     }
     return last;
@@ -1055,6 +1186,20 @@ export class StageRunnerService {
     reason: string,
     stageItemId?: string,
   ): Promise<void> {
+    const [execution] = await this.db
+      .select({ runId: stageExecution.runId, stageKey: stageExecution.stageKey })
+      .from(stageExecution)
+      .where(eq(stageExecution.id, stageExecutionId))
+      .limit(1);
+    if (execution) {
+      await this.events.record(
+        { ...execution, stageExecutionId },
+        'error',
+        'stage.failed',
+        `${stageItemId ? 'Item' : 'Stage'} failed: ${reason}`,
+        { reason },
+      );
+    }
     if (stageItemId) {
       await this.db
         .update(stageItem)
@@ -1082,6 +1227,38 @@ export class StageRunnerService {
       .update(stageAttempt)
       .set({ outcome: 'provider_error', phase: 'settled', reviewNote: reason })
       .where(eq(stageAttempt.id, ctx.stageAttemptId));
+    await this.finishAttempt(ctx, 'error', 'provider_error', `Attempt failed: ${reason}`, {
+      reason,
+    });
+  }
+
+  /** Closes an attempt in the stage log: one `attempt.finished` event with
+   * the outcome and wall-clock duration, which is also written to
+   * `stage_attempt.duration_ms`. */
+  private async finishAttempt(
+    ctx: StageAttemptContext,
+    level: StageEventLevel,
+    outcome: string,
+    message: string,
+    data?: Record<string, unknown>,
+  ): Promise<void> {
+    const [row] = await this.db
+      .select({ createdAt: stageAttempt.createdAt })
+      .from(stageAttempt)
+      .where(eq(stageAttempt.id, ctx.stageAttemptId))
+      .limit(1);
+    const durationMs = row ? Date.now() - Date.parse(row.createdAt) : undefined;
+    if (durationMs !== undefined) {
+      await this.db
+        .update(stageAttempt)
+        .set({ durationMs })
+        .where(eq(stageAttempt.id, ctx.stageAttemptId));
+    }
+    await this.events.record(ctx, level, 'attempt.finished', message, {
+      outcome,
+      durationMs,
+      ...data,
+    });
   }
 
   /** For a thrown exception on the LAST attempt — writes both halves: the
@@ -1305,6 +1482,17 @@ export class StageRunnerService {
       );
     }
     return row;
+  }
+
+  /** §12.4 manual pause — the per-item outer loop in `stage.execute` checks
+   * this before invoking each item, mirroring `run.orchestrate`'s own
+   * between-stage check, so a paused run stops after the current item
+   * instead of running an iterating stage to completion. Unlocked read (no
+   * `for('update')`): this is a runnability check, not a mutation
+   * precondition. */
+  async getRunState(runId: string) {
+    const [row] = await this.db.select({ state: run.state }).from(run).where(eq(run.id, runId));
+    return row?.state;
   }
 
   /** Locked Decision 6 — once every item has passed, the stage_execution

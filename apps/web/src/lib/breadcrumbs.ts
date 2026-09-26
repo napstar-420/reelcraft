@@ -21,8 +21,10 @@ export function breadcrumbsForPath(pathname: string): Crumb[] {
     case 'blueprints':
       return [{ label: 'Channels', to: '/' }, { label: 'Blueprint canvas' }];
     case 'runs':
-      if (rest[0] === 'stages') return [{ label: 'Runs' }, { label: 'Timeline editor' }];
-      return [{ label: 'Runs' }, { label: id ? `Run ${id.slice(0, 8)}` : 'Run' }];
+      if (!id) return [{ label: 'Runs' }];
+      if (rest[0] === 'stages')
+        return [{ label: 'Runs', to: '/runs' }, { label: 'Timeline editor' }];
+      return [{ label: 'Runs', to: '/runs' }, { label: `Run ${id.slice(0, 8)}` }];
     default:
       return [{ label: 'Channels', to: '/' }];
   }

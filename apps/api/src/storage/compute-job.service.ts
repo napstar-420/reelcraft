@@ -3,7 +3,7 @@ import { createWriteStream } from 'node:fs';
 import { access, mkdir, readFile, readdir, rm, stat, statfs, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { pipeline } from 'node:stream/promises';
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { ComputeSpec, JobStatus } from '@reelcraft/shared';
 import { EngineConfig } from '../config/engine-config';
 import { STORAGE_ADAPTER, type StorageAdapter } from './storage.adapter';
@@ -26,6 +26,8 @@ type PersistedStatus =
 
 @Injectable()
 export class ComputeJobService {
+  private readonly logger = new Logger(ComputeJobService.name);
+
   constructor(
     private readonly config: EngineConfig,
     @Inject(STORAGE_ADAPTER) private readonly storage: StorageAdapter,
@@ -94,6 +96,10 @@ export class ComputeJobService {
         { detached: true, stdio: 'ignore' },
       );
       child.unref();
+      this.logger.log(
+        { jobId, pid: child.pid, command: spec.command, inputs: spec.inputs.length },
+        'compute job spawned',
+      );
       const handle: ComputeHandle = {
         jobId,
         pid: child.pid ?? 0,
@@ -114,6 +120,10 @@ export class ComputeJobService {
     const status = await this.readStatus(handle.jobId);
     if (status?.done && status.outcome === 'succeeded') return { done: true, outcome: 'succeeded' };
     if (status?.done && status.outcome === 'failed') {
+      this.logger.warn(
+        { jobId: handle.jobId, exitCode: status.exitCode, reason: status.reason },
+        'compute job failed',
+      );
       return {
         done: true,
         outcome: 'failed',
@@ -123,6 +133,10 @@ export class ComputeJobService {
       };
     }
     if (this.isAlive(handle.pid)) return { done: false, phase: 'running' };
+    this.logger.warn(
+      { jobId: handle.jobId, pid: handle.pid },
+      'compute supervisor exited without terminal status',
+    );
     return {
       done: true,
       outcome: 'failed',
@@ -150,6 +164,7 @@ export class ComputeJobService {
 
   async cancel(handle: ComputeHandle): Promise<void> {
     if (!this.isAlive(handle.pid)) return;
+    this.logger.log({ jobId: handle.jobId, pid: handle.pid }, 'compute job cancelled');
     this.signal(handle.pid, 'SIGTERM');
     await new Promise((resolve) => setTimeout(resolve, 750));
     if (this.isAlive(handle.pid)) this.signal(handle.pid, 'SIGKILL');
@@ -176,6 +191,7 @@ export class ComputeJobService {
       await rm(dir, { recursive: true, force: true });
       removed += 1;
     }
+    if (removed) this.logger.log({ removed }, 'compute job dirs reaped');
     return removed;
   }
 
@@ -190,6 +206,10 @@ export class ComputeJobService {
     const fs = await statfs(this.config.workspaceRoot);
     const free = fs.bavail * fs.bsize;
     if (free < this.config.computeMinFreeBytes) {
+      this.logger.error(
+        { freeBytes: free, requiredBytes: this.config.computeMinFreeBytes },
+        'compute workspace low on disk space',
+      );
       throw new Error(
         `ComputeJobService: ${free} bytes free; ${this.config.computeMinFreeBytes} required`,
       );

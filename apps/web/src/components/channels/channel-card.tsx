@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { Info, Pencil } from 'lucide-react';
+import { Archive, ArchiveRestore, Info, Pencil, Trash2 } from 'lucide-react';
 import type { ChannelDto } from '@reelcraft/shared';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -18,10 +18,14 @@ export function ChannelCard({
   channel,
   onEdit,
   onView,
+  onArchive,
+  onDelete,
 }: {
   channel: ChannelDto;
   onEdit: (channel: ChannelDto) => void;
   onView: (channel: ChannelDto) => void;
+  onArchive: (channel: ChannelDto) => void;
+  onDelete: (channel: ChannelDto) => void;
 }) {
   const themes = themeLabels(channel.theme);
   const createdAt = new Date(channel.createdAt).toLocaleDateString(undefined, {
@@ -31,7 +35,10 @@ export function ChannelCard({
   });
 
   return (
-    <Link to={`/channels/${channel.id}`} className="flex h-full">
+    <Link
+      to={`/channels/${channel.id}`}
+      className={`flex h-full ${channel.archived ? 'opacity-60' : ''}`}
+    >
       <Card className="h-full w-full transition-colors hover:bg-muted/50">
         <CardHeader>
           <div className="flex min-w-0 items-start justify-between gap-2">
@@ -61,6 +68,31 @@ export function ChannelCard({
               >
                 <Pencil />
               </Button>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label={channel.archived ? 'Unarchive channel' : 'Archive channel'}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onArchive(channel);
+                }}
+              >
+                {channel.archived ? <ArchiveRestore /> : <Archive />}
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Delete channel"
+                className="text-destructive hover:text-destructive"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onDelete(channel);
+                }}
+              >
+                <Trash2 />
+              </Button>
             </div>
           </div>
           <CardDescription className="line-clamp-2">
@@ -69,6 +101,7 @@ export function ChannelCard({
         </CardHeader>
         <CardFooter className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
           <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+            {channel.archived ? <Badge variant="outline">Archived</Badge> : null}
             {themes.map((t) => (
               <Badge key={t} variant="secondary">
                 {t}

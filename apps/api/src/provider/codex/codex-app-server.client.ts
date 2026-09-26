@@ -1,5 +1,6 @@
 import { spawn as nodeSpawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { createInterface } from 'node:readline';
+import { Logger } from '@nestjs/common';
 
 export interface CodexModel {
   modelId: string;
@@ -16,6 +17,7 @@ type SpawnCodex = (
 type RpcResponse = { id?: number; result?: unknown; error?: { message?: string } };
 
 export class CodexAppServerClient {
+  private readonly logger = new Logger(CodexAppServerClient.name);
   private cached?: { expiresAt: number; models: CodexModel[] };
 
   constructor(
@@ -32,12 +34,14 @@ export class CodexAppServerClient {
   }
 
   private async queryModels(): Promise<CodexModel[]> {
+    const startedAt = Date.now();
     let proc: ChildProcessWithoutNullStreams;
     try {
       proc = this.spawnCodex('codex', ['app-server', '--stdio'], {
         stdio: ['pipe', 'pipe', 'pipe'],
       });
     } catch (error) {
+      this.logger.warn({ err: error }, 'codex app-server spawn failed');
       throw new Error(`Codex CLI is unavailable: ${String(error)}`);
     }
     const pending = new Map<
@@ -55,6 +59,7 @@ export class CodexAppServerClient {
       try {
         message = JSON.parse(line) as RpcResponse;
       } catch {
+        this.logger.debug({ lineLength: line.length }, 'codex app-server emitted non-json line');
         return;
       }
       if (message.id === undefined) return;
@@ -70,11 +75,16 @@ export class CodexAppServerClient {
       pending.clear();
     };
     proc.on('error', (error) => rejectPending(`Codex CLI is unavailable: ${error.message}`));
-    proc.on('exit', (code) =>
+    proc.on('exit', (code, signal) => {
+      if (pending.size > 0)
+        this.logger.warn(
+          { exitCode: code, signal },
+          'codex app-server exited with pending requests',
+        );
       rejectPending(
         `Codex app-server exited (${code ?? 'signal'}): ${stderr || 'check Codex authentication'}`,
-      ),
-    );
+      );
+    });
     const request = (method: string, params: Record<string, unknown>) => {
       const id = nextId++;
       return new Promise<unknown>((resolve, reject) => {
@@ -131,8 +141,16 @@ export class CodexAppServerClient {
         }
         cursor = result.nextCursor;
       } while (cursor);
+      this.logger.debug(
+        { modelCount: models.length, durationMs: Date.now() - startedAt },
+        'codex models listed',
+      );
       return models;
     } catch (error) {
+      this.logger.warn(
+        { durationMs: Date.now() - startedAt, err: error },
+        'codex model query failed',
+      );
       throw new Error(`Unable to query Codex models: ${(error as Error).message}`);
     } finally {
       lines.close();

@@ -43,13 +43,12 @@ describe('dry-run execution (e2e)', () => {
     }
   });
 
-  // `draft` is text-modality with NO `model.params.max_tokens` — a real run
-  // would fail `RunService.assertTextStagesHaveMaxTokens` (proven below by
-  // test 4); a dry run's override injects `max_tokens: 256` so it passes.
-  // `illustration` is media-modality, authored with a real-provider-shaped
-  // pin ({provider:'openai',...}) that must never actually be called — the
-  // override replaces it with the fake provider before it ever reaches
-  // `ProviderRegistry`.
+  // `draft` is text-modality with NO `model.params.max_tokens` — that's a
+  // valid, unbounded stage now, not a save/run-time error. `illustration` is
+  // media-modality, authored with a real-provider-shaped pin
+  // ({provider:'openai',...}) that must never actually be called — the dry
+  // run's override replaces it with the fake provider before it ever
+  // reaches `ProviderRegistry` (proven below by the leak-regression test).
   const GRAPH: StageDef[] = [
     {
       key: 'draft',
@@ -169,10 +168,10 @@ describe('dry-run execution (e2e)', () => {
     }
 
     // includeDryRuns default (false) excludes it; explicit true includes it.
-    const defaultList = await runs.list();
-    expect(defaultList.some((r) => r.id === dryRun.id)).toBe(false);
-    const withDryRuns = await runs.list(true);
-    expect(withDryRuns.some((r) => r.id === dryRun.id)).toBe(true);
+    const defaultList = await runs.list({ includeDryRuns: false, limit: 20, offset: 0 });
+    expect(defaultList.items.some((r) => r.id === dryRun.id)).toBe(false);
+    const withDryRuns = await runs.list({ includeDryRuns: true, limit: 20, offset: 0 });
+    expect(withDryRuns.items.some((r) => r.id === dryRun.id)).toBe(true);
   });
 
   it('throws cleanly for a nonexistent blueprint or version', async () => {
@@ -193,7 +192,7 @@ describe('dry-run execution (e2e)', () => {
     await expect(runs.startDryRun(blueprintId, 999)).rejects.toThrow(/not found/);
   });
 
-  it('does not leak the fake-provider override into a real run: the same graph still fails assertTextStagesHaveMaxTokens', async () => {
+  it('does not leak the fake-provider override into a real run', async () => {
     const channels = testApp.app.get(ChannelService);
     const blueprints = testApp.app.get(BlueprintService);
     const runs = testApp.app.get(RunService);
@@ -216,14 +215,20 @@ describe('dry-run execution (e2e)', () => {
     });
     expect(version.runnable).toBe(true);
 
-    await expect(
-      runs.create({
-        channelId: channel.id,
-        blueprintVersionId: version.id,
-        inputs: {},
-        roleBindings: {},
-        budgetCapUsd: 10,
-      }),
-    ).rejects.toThrow(/max_tokens/);
+    const created = await runs.create({
+      channelId: channel.id,
+      blueprintVersionId: version.id,
+      inputs: {},
+      roleBindings: {},
+      budgetCapUsd: 10,
+    });
+
+    const [row] = await testDb.db.select().from(run).where(eq(run.id, created.id));
+    const resolvedConfig = row?.resolvedConfig as Record<
+      string,
+      { model?: { provider?: string; params?: object } }
+    >;
+    expect(resolvedConfig.draft?.model?.params).not.toHaveProperty('max_tokens');
+    expect(resolvedConfig.illustration?.model?.provider).toBe('openai');
   });
 });

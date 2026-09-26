@@ -3,7 +3,7 @@ import { createReadStream, createWriteStream } from 'node:fs';
 import { mkdir, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { pipeline } from 'node:stream/promises';
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { EngineConfig } from '../config/engine-config';
 import { Inject } from '@nestjs/common';
 import { STORAGE_ADAPTER, type StorageAdapter } from './storage.adapter';
@@ -21,6 +21,8 @@ export interface Workspace {
  */
 @Injectable()
 export class WorkspaceService {
+  private readonly logger = new Logger(WorkspaceService.name);
+
   constructor(
     private readonly config: EngineConfig,
     @Inject(STORAGE_ADAPTER) private readonly storage: StorageAdapter,
@@ -43,7 +45,9 @@ export class WorkspaceService {
       };
       return await fn(ws);
     } finally {
-      await rm(dir, { recursive: true, force: true });
+      await rm(dir, { recursive: true, force: true }).catch((err: unknown) =>
+        this.logger.warn({ runId, err }, 'workspace cleanup failed'),
+      );
     }
   }
 }

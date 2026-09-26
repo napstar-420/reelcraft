@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { and, eq, isNull } from 'drizzle-orm';
 import type { CreateAssetDto } from '@reelcraft/shared';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
@@ -19,6 +19,8 @@ import { MediaProbeService } from '../artifact/media-probe.service';
  */
 @Injectable()
 export class AssetService {
+  private readonly logger = new Logger(AssetService.name);
+
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     @Inject(STORAGE_ADAPTER) private readonly storage: StorageAdapter,
@@ -70,6 +72,10 @@ export class AssetService {
       blobId: dto.blobId,
       tags: dto.tags,
     });
+    this.logger.log(
+      { channelId, assetId: id, blobId: dto.blobId, kind: dto.kind, bytes: stat.bytes },
+      'asset created',
+    );
     return this.get(id);
   }
 
@@ -105,6 +111,7 @@ export class AssetService {
       .update(blob)
       .set({ deletedAt: new Date().toISOString() })
       .where(eq(blob.id, row.blobId));
+    this.logger.log({ channelId: row.channelId, assetId: id, blobId: row.blobId }, 'asset deleted');
   }
 
   private async requireChannelOwner(channelId: string): Promise<string> {

@@ -168,13 +168,22 @@ export class RunInputService {
       },
       'run/resumed',
     );
+    this.logger.log(
+      {
+        runId,
+        inputKey,
+        blobCount: 'blobs' in dto ? dto.blobs.length : 0,
+        wakeupId: result.wakeupId,
+        revision: result.revision,
+      },
+      'run input replaced',
+    );
     try {
       await this.dispatcher.dispatch(result.wakeupId);
     } catch (error) {
       this.logger.warn(
-        `Run wakeup ${result.wakeupId} will be retried: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
+        { runId, wakeupId: result.wakeupId, err: error },
+        'run wakeup dispatch deferred to retry',
       );
     }
     return { accepted: true, revision: result.revision };
@@ -350,13 +359,16 @@ export class RunInputService {
       },
       'run/input-attached',
     );
+    this.logger.log(
+      { runId, inputKey, blobCount: blobs.length, wakeupId: mutation.wakeupId },
+      'run media input attached',
+    );
     try {
       await this.dispatcher.dispatch(mutation.wakeupId);
     } catch (error) {
       this.logger.warn(
-        `Input attachment ${mutation.wakeupId} will be retried: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
+        { runId, wakeupId: mutation.wakeupId, err: error },
+        'run wakeup dispatch deferred to retry',
       );
     }
   }

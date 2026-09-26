@@ -64,7 +64,7 @@ const fakeProbes: MediaProbeService = {
     streams: [{ type: 'video', codec: 'png', width: 64, height: 48 }],
   }),
   hasAudio: () => false,
-} as MediaProbeService;
+} as unknown as MediaProbeService;
 
 /** Overrides the actual ffmpeg invocation so this suite never shells out to
  * a real binary — writes a small deterministic buffer to the expected

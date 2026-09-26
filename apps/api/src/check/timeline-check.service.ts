@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { and, eq } from 'drizzle-orm';
 import { Timeline, type Probe } from '@reelcraft/shared';
 import { StyleRegistry } from '../capability/style.registry';
@@ -8,6 +8,8 @@ import type { CheckResult } from './check.types';
 
 @Injectable()
 export class TimelineCheckService {
+  private readonly logger = new Logger(TimelineCheckService.name);
+
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly styles: StyleRegistry,
@@ -22,6 +24,10 @@ export class TimelineCheckService {
   }): Promise<CheckResult[]> {
     const parsed = Timeline.safeParse(input.timeline);
     if (!parsed.success) {
+      this.logger.warn(
+        { runId: input.runId, issueCount: parsed.error.issues.length },
+        'timeline failed schema check',
+      );
       return [
         failed(
           'timeline.schema',
@@ -162,6 +168,23 @@ export class TimelineCheckService {
           )
         : passed('timeline.canvas_match'),
     );
+    const failures = results.filter((r) => !r.pass);
+    if (failures.length > 0) {
+      this.logger.warn(
+        {
+          runId: input.runId,
+          checkCount: results.length,
+          failCount: failures.length,
+          failedCheckIds: [...new Set(failures.map((r) => r.name))],
+        },
+        'timeline checks failed',
+      );
+    } else {
+      this.logger.debug(
+        { runId: input.runId, checkCount: results.length },
+        'timeline checks passed',
+      );
+    }
     return results;
   }
 }

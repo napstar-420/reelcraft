@@ -476,19 +476,6 @@ export class BlueprintValidatorService {
       }
     }
 
-    // §16.5 — save time can only see the stage's own model pin; the channel
-    // layer (the usual place max_tokens actually lives) is invisible to a
-    // pure validator, so this stays a warning. The hard error is enforced
-    // once the effective config is known, at run start.
-    if (impl?.modality === 'text' && stage.model?.params?.max_tokens === undefined) {
-      issues.push({
-        path: `${base}.model.params.max_tokens`,
-        message:
-          "max_tokens is not visible at save time — required once the run's config resolves (§16.5)",
-        severity: 'warning',
-      });
-    }
-
     for (const [index, check] of stage.checks.entries()) {
       const checkBase = `${base}.checks[${index}]`;
       issues.push(...this.validateCheckDef(check, checkBase));

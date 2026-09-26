@@ -49,7 +49,10 @@ export class TemplateSeedService implements OnApplicationBootstrap {
       )
       .limit(1);
 
-    if (existing) return;
+    if (existing) {
+      this.logger.debug({ templateId: existing.id }, 'builtin template already seeded');
+      return;
+    }
 
     const templateId = ulid();
     await this.db.transaction(async (tx) => {
@@ -70,6 +73,6 @@ export class TemplateSeedService implements OnApplicationBootstrap {
       });
     });
 
-    this.logger.log('Seeded builtin template "Hello Stage"');
+    this.logger.log({ templateId, templateName: 'Hello Stage' }, 'builtin template seeded');
   }
 }

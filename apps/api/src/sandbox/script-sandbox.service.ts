@@ -1,4 +1,4 @@
-import { Injectable, type OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, type OnModuleInit } from '@nestjs/common';
 import {
   newQuickJSWASMModuleFromVariant,
   shouldInterruptAfterDeadline,
@@ -15,6 +15,8 @@ import {
 // at `nest build`/`node dist/main.js`. Never swap this import.
 import variant from '@jitl/quickjs-singlefile-cjs-release-sync';
 import { EngineConfig } from '../config/engine-config';
+
+const logger = new Logger('ScriptSandbox');
 
 export interface SandboxCompileOutcome {
   ok: boolean;
@@ -59,8 +61,10 @@ export class ScriptSandboxService implements OnModuleInit {
    * app serves traffic; unit tests call this directly in `beforeAll`. */
   async ready(): Promise<void> {
     if (this.module) return;
+    const startedAt = Date.now();
     this.modulePromise ??= newQuickJSWASMModuleFromVariant(variant);
     this.module = await this.modulePromise;
+    logger.log({ durationMs: Date.now() - startedAt }, 'script sandbox ready');
   }
 
   /** §16.2 — save-time "script check fails to compile". Compiles without
@@ -91,6 +95,16 @@ export class ScriptSandboxService implements OnModuleInit {
    * `finally` regardless of outcome — a poisoned runtime (OOM/timeout) must
    * never contaminate the shared `QuickJSWASMModule`. */
   evaluate(code: string, scope: Record<string, unknown>): SandboxOutcome {
+    const startedAt = Date.now();
+    const outcome = this.evaluateInRuntime(code, scope);
+    const fields = { status: outcome.status, durationMs: Date.now() - startedAt };
+    if (outcome.status === 'timeout' || outcome.status === 'memory')
+      logger.warn(fields, 'script sandbox limit exceeded');
+    else logger.debug(fields, 'script sandbox evaluated');
+    return outcome;
+  }
+
+  private evaluateInRuntime(code: string, scope: Record<string, unknown>): SandboxOutcome {
     const quickjs = this.requireModule();
     const runtime = quickjs.newRuntime();
     try {
@@ -157,7 +171,8 @@ function describeError(context: QuickJSContext, error: QuickJSHandle): string {
       return String((dumped as { message: unknown }).message);
     }
     return String(dumped);
-  } catch {
+  } catch (error) {
+    logger.debug({ err: error }, 'script sandbox error dump failed');
     return 'unknown script error';
   }
 }

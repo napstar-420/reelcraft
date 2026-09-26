@@ -8,15 +8,7 @@ import { blueprintVersion, run, stageAttempt, stageExecution } from '../db/schem
 import { HumanWaitService } from './human-wait.service';
 import { RunMutationService } from './run-mutation.service';
 import { RunWakeupDispatcher } from './run-wakeup-dispatcher.service';
-
-const CANCELLABLE_STATES = [
-  'CREATED',
-  'RUNNING',
-  'PAUSED_BUDGET',
-  'PAUSED_APPROVAL',
-  'PAUSED_INPUT',
-  'FAILED',
-] as const;
+import { RUN_ACTION_ALLOWED_STATES } from './run-action-policy';
 
 @Injectable()
 export class RunCancellationService {
@@ -35,7 +27,7 @@ export class RunCancellationService {
     const result = await this.mutation.withLockedRun(
       runId,
       'cancel',
-      CANCELLABLE_STATES,
+      RUN_ACTION_ALLOWED_STATES.cancel,
       async (tx) => {
         await tx
           .update(run)
@@ -45,14 +37,17 @@ export class RunCancellationService {
       },
       'run/cancelled',
     );
+    this.logger.log(
+      { runId, wakeupId: result.wakeupId, revision: result.revision },
+      'run cancelled',
+    );
     await this.settleOutstanding(runId);
     try {
       await this.dispatcher.dispatch(result.wakeupId);
     } catch (error) {
       this.logger.warn(
-        `Cancellation ${result.wakeupId} will be retried: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
+        { runId, wakeupId: result.wakeupId, err: error },
+        'run wakeup dispatch deferred to retry',
       );
     }
     return { state: 'CANCELLED' as const, revision: result.revision };
@@ -101,6 +96,10 @@ export class RunCancellationService {
             )
           : { confirmed: false, reason: 'capability does not support cancellation' };
       } catch (error) {
+        this.logger.warn(
+          { runId, stageKey: attempt.stageKey, stageAttemptId: attempt.id, err: error },
+          'provider job cancellation failed',
+        );
         cancellation = {
           confirmed: false,
           reason: error instanceof Error ? error.message : String(error),
@@ -108,6 +107,17 @@ export class RunCancellationService {
       }
 
       const reservationId = await this.ledger.reservationIdFor(attempt.id);
+      this.logger.log(
+        {
+          runId,
+          stageKey: attempt.stageKey,
+          stageAttemptId: attempt.id,
+          reservationId,
+          confirmed: cancellation.confirmed,
+          billed: cancellation.billed === true,
+        },
+        'in-flight attempt cancelled',
+      );
       if (cancellation.confirmed && cancellation.billed !== true) {
         await this.ledger.settleRelease({
           runId,

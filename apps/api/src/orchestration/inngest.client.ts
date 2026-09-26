@@ -1,5 +1,6 @@
 import type { Provider } from '@nestjs/common';
-import { Inngest } from 'inngest';
+import { Inngest, type ClientOptions } from 'inngest';
+import { PinoLogger } from 'nestjs-pino';
 import { EngineConfig } from '../config/engine-config';
 
 export const INNGEST_CLIENT = Symbol('INNGEST_CLIENT');
@@ -8,8 +9,17 @@ export const INNGEST_CLIENT = Symbol('INNGEST_CLIENT');
  * singleton, so tests can swap configuration. */
 export const inngestClientProvider: Provider = {
   provide: INNGEST_CLIENT,
-  inject: [EngineConfig],
-  useFactory: (config: EngineConfig): Inngest => {
-    return new Inngest({ id: 'reelcraft', eventKey: config.inngest.eventKey, isDev: false });
+  inject: [EngineConfig, PinoLogger],
+  useFactory: (config: EngineConfig, logger: PinoLogger): Inngest => {
+    return new Inngest({
+      id: 'reelcraft',
+      eventKey: config.inngest.eventKey,
+      isDev: false,
+      // pino has the info/warn/error/debug methods Inngest expects; its
+      // overloads just don't line up with Inngest's `unknown[]` signature.
+      logger: logger.logger.child({ component: 'inngest' }) as unknown as NonNullable<
+        ClientOptions['logger']
+      >,
+    });
   },
 };

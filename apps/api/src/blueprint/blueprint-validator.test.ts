@@ -586,22 +586,10 @@ describe('BlueprintValidatorService', () => {
     expect(hasError(issues, 'stages.a.output.instructions')).toBe(true);
   });
 
-  it('warns when max_tokens is not visible at save time for a text-modality stage', () => {
+  it('does not warn about max_tokens when it is absent from a text-modality stage', () => {
     const validator = makeValidator();
     const graph = [
       stage({ key: 'a', model: { provider: 'fake', modelId: 'fake-text-1', params: {} } }),
-    ];
-    const issues = validator.validate({ graph, inputs: [], roles: [] });
-    expect(hasWarning(issues, 'stages.a.model.params.max_tokens')).toBe(true);
-  });
-
-  it('does not warn about max_tokens when it is present', () => {
-    const validator = makeValidator();
-    const graph = [
-      stage({
-        key: 'a',
-        model: { provider: 'fake', modelId: 'fake-text-1', params: { max_tokens: 256 } },
-      }),
     ];
     const issues = validator.validate({ graph, inputs: [], roles: [] });
     expect(hasWarning(issues, 'stages.a.model.params.max_tokens')).toBe(false);

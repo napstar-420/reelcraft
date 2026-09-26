@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { CreateRunDto, StartDryRunDto } from './run.dto';
+import {
+  CreateRunDto,
+  StartDryRunDto,
+  ListRunsQueryDto,
+  RunSummaryDto,
+  ListRunsResultDto,
+} from './run.dto';
 
 describe('CreateRunDto', () => {
   const validRun = {
@@ -30,5 +36,72 @@ describe('StartDryRunDto', () => {
   it('rejects a non-positive budgetCapUsd', () => {
     expect(() => StartDryRunDto.parse({ budgetCapUsd: 0 })).toThrow();
     expect(() => StartDryRunDto.parse({ budgetCapUsd: -1 })).toThrow();
+  });
+});
+
+describe('ListRunsQueryDto', () => {
+  it('defaults includeDryRuns/limit/offset when omitted', () => {
+    expect(ListRunsQueryDto.parse({})).toEqual({
+      includeDryRuns: false,
+      limit: 20,
+      offset: 0,
+    });
+  });
+
+  it('coerces string query-param values into their typed forms', () => {
+    expect(
+      ListRunsQueryDto.parse({ includeDryRuns: 'true', limit: '5', offset: '10' }),
+    ).toMatchObject({ includeDryRuns: true, limit: 5, offset: 10 });
+  });
+
+  it('rejects a limit over the 100 max', () => {
+    expect(() => ListRunsQueryDto.parse({ limit: '101' })).toThrow();
+  });
+
+  it('rejects a state value outside RunState', () => {
+    expect(() => ListRunsQueryDto.parse({ state: 'NOT_A_STATE' })).toThrow();
+  });
+
+  it('accepts channelId/blueprintId/state filters', () => {
+    expect(
+      ListRunsQueryDto.parse({
+        channelId: 'channel-1',
+        blueprintId: 'blueprint-1',
+        state: 'RUNNING',
+      }),
+    ).toMatchObject({ channelId: 'channel-1', blueprintId: 'blueprint-1', state: 'RUNNING' });
+  });
+
+  it('accepts the manual pause state', () => {
+    expect(ListRunsQueryDto.parse({ state: 'PAUSED_MANUAL' })).toMatchObject({
+      state: 'PAUSED_MANUAL',
+    });
+  });
+});
+
+describe('RunSummaryDto / ListRunsResultDto', () => {
+  const summary = {
+    id: 'run-1',
+    channelId: 'channel-1',
+    channelName: 'My Channel',
+    blueprintId: 'blueprint-1',
+    blueprintName: 'My Blueprint',
+    blueprintVersionId: 'version-1',
+    blueprintVersion: 2,
+    state: 'RUNNING',
+    dryRun: false,
+    budgetCapUsd: 10,
+    spentUsd: 2.5,
+    startedAt: '2026-01-01T00:00:00.000Z',
+    endedAt: null,
+  };
+
+  it('parses a representative run summary row', () => {
+    expect(RunSummaryDto.parse(summary)).toEqual(summary);
+  });
+
+  it('parses a representative list result', () => {
+    const result = { items: [summary], total: 1, limit: 20, offset: 0 };
+    expect(ListRunsResultDto.parse(result)).toEqual(result);
   });
 });

@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { and, eq } from 'drizzle-orm';
 import { Timeline } from '@reelcraft/shared';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
@@ -14,6 +14,8 @@ export type ResolvedTimelineResource = {
 
 @Injectable()
 export class TimelineResourceResolverService {
+  private readonly logger = new Logger(TimelineResourceResolverService.name);
+
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async resolve(runId: string, value: unknown): Promise<Record<string, ResolvedTimelineResource>> {
@@ -45,7 +47,13 @@ export class TimelineResourceResolverService {
             ),
           )
           .limit(1);
-        if (!row || row.blob?.deletedAt) continue;
+        if (!row || row.blob?.deletedAt) {
+          this.logger.warn(
+            { runId, handle, reason: row ? 'blob deleted' : 'artifact not active' },
+            'timeline handle unresolved',
+          );
+          continue;
+        }
         result[handle] = {
           handle,
           kind: row.artifact.kind,
@@ -58,9 +66,26 @@ export class TimelineResourceResolverService {
         const binding = (
           runRow?.assets as Record<string, { blobId: string; kind: string }> | undefined
         )?.[assetId];
-        if (!binding) continue;
+        if (!binding) {
+          this.logger.warn(
+            { runId, handle, reason: 'asset not bound' },
+            'timeline handle unresolved',
+          );
+          continue;
+        }
         const [row] = await this.db.select().from(blob).where(eq(blob.id, binding.blobId)).limit(1);
-        if (!row || row.deletedAt) continue;
+        if (!row || row.deletedAt) {
+          this.logger.warn(
+            {
+              runId,
+              handle,
+              blobId: binding.blobId,
+              reason: row ? 'blob deleted' : 'blob missing',
+            },
+            'timeline handle unresolved',
+          );
+          continue;
+        }
         result[handle] = {
           handle,
           kind: binding.kind,
@@ -69,6 +94,10 @@ export class TimelineResourceResolverService {
         };
       }
     }
+    this.logger.debug(
+      { runId, handles: handles.size, resolved: Object.keys(result).length },
+      'timeline resources resolved',
+    );
     return result;
   }
 }

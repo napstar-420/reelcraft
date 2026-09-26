@@ -1,26 +1,66 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { Eye } from 'lucide-react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { Ban, Eye, FileText, History, Loader2, Pause, Play, RefreshCw, Wallet } from 'lucide-react';
+import { api } from '../api/client';
 import { useRun } from '../hooks/useRun';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { runStateTone, stageExecutionStateTone } from '@/lib/status';
+import { isRunActionAllowed } from '@/lib/run-action-policy';
+import { describeRunActionError } from '@/lib/describe-run-action-error';
 import { ApprovalReviewSheet } from '@/components/runs/approval-review-sheet';
+import { RaiseBudgetDialog } from '@/components/runs/raise-budget-dialog';
+import { StageRetryDialog } from '@/components/runs/stage-retry-dialog';
+import { SubmitFormInputDialog } from '@/components/runs/submit-form-input-dialog';
+import { StageAttemptsSheet } from '@/components/runs/stage-attempts-sheet';
+import { StageOutputSheet } from '@/components/runs/stage-output-sheet';
 import { isApprovalStillOpen } from './approval-review.logic';
 
 export function RunPage() {
   const { runId } = useParams<{ runId: string }>();
   const { data: run, isLoading } = useRun(runId);
+  const queryClient = useQueryClient();
   const [reviewStageKey, setReviewStageKey] = useState<string | null>(null);
+  const [retryStageKey, setRetryStageKey] = useState<string | null>(null);
+  const [formInputStageKey, setFormInputStageKey] = useState<string | null>(null);
+  const [attemptsStageKey, setAttemptsStageKey] = useState<string | null>(null);
+  const [outputStageKey, setOutputStageKey] = useState<string | null>(null);
+  const [raiseBudgetOpen, setRaiseBudgetOpen] = useState(false);
 
   useEffect(() => {
     if (reviewStageKey && run && !isApprovalStillOpen(reviewStageKey, run)) {
       setReviewStageKey(null);
     }
   }, [reviewStageKey, run]);
+
+  const cancelRun = useMutation({
+    mutationFn: () => api.cancelRun(runId!),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['run', runId] }),
+  });
+  const pauseRun = useMutation({
+    mutationFn: () => api.pauseRun(runId!),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['run', runId] }),
+  });
+  const resumeRun = useMutation({
+    mutationFn: () => api.resumeRun(runId!),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['run', runId] }),
+  });
 
   if (isLoading || !run) {
     return (
@@ -40,6 +80,14 @@ export function RunPage() {
   const budgetCapUsd = Number(run.budgetCapUsd);
   const spentPct = budgetCapUsd > 0 ? Math.min(100, (spentUsd / budgetCapUsd) * 100) : 0;
 
+  const canCancel = isRunActionAllowed('cancel', run.state);
+  const canPause = isRunActionAllowed('pause', run.state);
+  const canResume = isRunActionAllowed('resume', run.state);
+  const canRaiseBudget = isRunActionAllowed('raise_budget', run.state);
+  const canRetry = isRunActionAllowed('retry', run.state);
+  const isStageRunning = (stageKey: string | null) =>
+    run.stageExecutions.some((se) => se.stageKey === stageKey && se.state === 'running');
+
   return (
     <section className="flex flex-col gap-6">
       <ApprovalReviewSheet
@@ -48,16 +96,117 @@ export function RunPage() {
         open={reviewStageKey !== null}
         onOpenChange={(open) => !open && setReviewStageKey(null)}
       />
+      <RaiseBudgetDialog
+        runId={run.id}
+        currentBudgetCapUsd={budgetCapUsd}
+        open={raiseBudgetOpen}
+        onOpenChange={setRaiseBudgetOpen}
+      />
+      <StageRetryDialog
+        runId={run.id}
+        stageKey={retryStageKey}
+        open={retryStageKey !== null}
+        onOpenChange={(open) => !open && setRetryStageKey(null)}
+      />
+      <SubmitFormInputDialog
+        runId={run.id}
+        stageKey={formInputStageKey}
+        open={formInputStageKey !== null}
+        onOpenChange={(open) => !open && setFormInputStageKey(null)}
+      />
+      <StageAttemptsSheet
+        runId={run.id}
+        stageKey={attemptsStageKey}
+        stageRunning={isStageRunning(attemptsStageKey)}
+        open={attemptsStageKey !== null}
+        onOpenChange={(open) => !open && setAttemptsStageKey(null)}
+      />
+      <StageOutputSheet
+        runId={run.id}
+        stageKey={outputStageKey}
+        stageRunning={isStageRunning(outputStageKey)}
+        open={outputStageKey !== null}
+        onOpenChange={(open) => !open && setOutputStageKey(null)}
+      />
 
       <div className="flex flex-col gap-3">
-        <div className="flex flex-wrap items-center gap-3">
-          <h1 className="font-mono text-2xl font-semibold tracking-tight" title={run.id}>
-            Run {run.id}
-          </h1>
-          <StatusBadge tone={runStateTone(run.state)} label={run.state} />
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <h1 className="font-mono text-2xl font-semibold tracking-tight" title={run.id}>
+              Run {run.id}
+            </h1>
+            <StatusBadge tone={runStateTone(run.state)} label={run.state} />
+          </div>
+          <div className="flex items-center gap-2">
+            {canPause ? (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={pauseRun.isPending}
+                onClick={() => pauseRun.mutate()}
+              >
+                {pauseRun.isPending ? <Loader2 className="animate-spin" /> : <Pause />}
+                Pause
+              </Button>
+            ) : null}
+            {canResume ? (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={resumeRun.isPending}
+                onClick={() => resumeRun.mutate()}
+              >
+                {resumeRun.isPending ? <Loader2 className="animate-spin" /> : <Play />}
+                Resume
+              </Button>
+            ) : null}
+            {canCancel ? (
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button size="sm" variant="destructive" disabled={cancelRun.isPending}>
+                    <Ban /> Cancel run
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Cancel this run?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      This stops the run permanently and can&apos;t be undone.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Keep running</AlertDialogCancel>
+                    <AlertDialogAction onClick={() => cancelRun.mutate()}>
+                      Yes, cancel run
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            ) : null}
+          </div>
         </div>
+
+        {cancelRun.isError || pauseRun.isError || resumeRun.isError ? (
+          <Alert variant="destructive">
+            <AlertTitle>Action failed</AlertTitle>
+            <AlertDescription>
+              {describeRunActionError(
+                cancelRun.error ?? pauseRun.error ?? resumeRun.error,
+                'The action could not be completed.',
+              )}
+            </AlertDescription>
+          </Alert>
+        ) : null}
+
         <div className="flex flex-col gap-1.5">
-          <Progress value={spentPct} className="max-w-md" />
+          <div className="flex max-w-md items-center gap-2">
+            <Progress value={spentPct} className="flex-1" />
+            {canRaiseBudget ? (
+              <Button size="sm" variant="ghost" onClick={() => setRaiseBudgetOpen(true)}>
+                <Wallet /> Raise budget
+              </Button>
+            ) : null}
+          </div>
           <p className="text-sm text-muted-foreground">
             ${spentUsd.toFixed(2)} spent of ${budgetCapUsd.toFixed(2)} budget
           </p>
@@ -82,9 +231,35 @@ export function RunPage() {
                     <Eye /> Review output
                   </Button>
                 ) : null}
+                {se.interaction === 'form' &&
+                run.state === 'PAUSED_INPUT' &&
+                run.cursorStageKey === se.stageKey ? (
+                  <Button size="sm" onClick={() => setFormInputStageKey(se.stageKey)}>
+                    Provide input
+                  </Button>
+                ) : null}
                 {se.interaction === 'timeline_editor' && se.state === 'awaiting_input' ? (
                   <Button size="sm" asChild>
                     <Link to={`/runs/${run.id}/stages/${se.stageKey}/edit`}>Open editor</Link>
+                  </Button>
+                ) : null}
+                {canRetry && (se.state === 'failed' || se.state === 'stale') ? (
+                  <Button size="sm" variant="outline" onClick={() => setRetryStageKey(se.stageKey)}>
+                    <RefreshCw /> Retry
+                  </Button>
+                ) : null}
+                {se.outputArtifactId !== null || (se.isIterating && se.state !== 'pending') ? (
+                  <Button size="sm" variant="ghost" onClick={() => setOutputStageKey(se.stageKey)}>
+                    <FileText /> View output
+                  </Button>
+                ) : null}
+                {se.attemptCount > 0 ? (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setAttemptsStageKey(se.stageKey)}
+                  >
+                    <History /> Attempts
                   </Button>
                 ) : null}
               </div>

@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { MediaSource, Probe } from '@reelcraft/shared';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
 import { blob } from '../db/schema';
@@ -29,6 +29,8 @@ const extensionFor = (mime: string, fallback: string | undefined) => {
 
 @Injectable()
 export class MediaArtifactService {
+  private readonly logger = new Logger(MediaArtifactService.name);
+
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     @Inject(STORAGE_ADAPTER) private readonly storage: StorageAdapter,
@@ -53,8 +55,13 @@ export class MediaArtifactService {
         await writeFile(file, Buffer.from(input.source.base64, 'base64'));
       } else if (input.source.sourceUrl) {
         const response = await fetch(input.source.sourceUrl);
-        if (!response.ok || !response.body)
+        if (!response.ok || !response.body) {
+          this.logger.error(
+            { runId: input.runId, blobId, status: response.status },
+            'media download failed',
+          );
           throw new Error(`Media download failed: ${response.status}`);
+        }
         await writeFile(file, Buffer.from(await response.arrayBuffer()));
       } else {
         throw new Error('Media result has neither localPath, base64 nor sourceUrl');
@@ -85,9 +92,24 @@ export class MediaArtifactService {
           probe,
         });
       } catch (error) {
+        this.logger.error(
+          { runId: input.runId, blobId, storageKey: key, err: error },
+          'media blob record failed; deleting uploaded object',
+        );
         await this.storage.delete([key]);
         throw error;
       }
+      this.logger.log(
+        {
+          runId: input.runId,
+          blobId,
+          kind: input.source.kind,
+          bytes: put.bytes,
+          contentType: mime,
+          durationSec: probe.durationSec,
+        },
+        'media blob stored',
+      );
       return { blobId, probe };
     });
   }
@@ -101,7 +123,12 @@ export class MediaArtifactService {
   }
   private validateKind(kind: MediaSource['kind'], probe: Probe) {
     const needs = kind === 'media.image' ? 'video' : kind === 'media.audio' ? 'audio' : 'video';
-    if (!probe.streams.some((stream) => stream.type === needs))
+    if (!probe.streams.some((stream) => stream.type === needs)) {
+      this.logger.warn(
+        { kind, needs, streams: probe.streams.map((stream) => stream.type) },
+        'media missing required stream',
+      );
       throw new Error(`MediaProbeService: ${kind} does not contain its required ${needs} stream`);
+    }
   }
 }

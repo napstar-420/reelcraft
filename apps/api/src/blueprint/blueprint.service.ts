@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { and, eq, inArray, isNull, max } from 'drizzle-orm';
 import type { ConfigLayer, CreateBlueprintVersionDto, ValidationIssue } from '@reelcraft/shared';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
@@ -16,6 +16,8 @@ import type { ModelInfo } from '../provider/provider-adapter.interface';
 
 @Injectable()
 export class BlueprintService {
+  private readonly logger = new Logger(BlueprintService.name);
+
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly validator: BlueprintValidatorService,
@@ -34,6 +36,7 @@ export class BlueprintService {
 
     const id = ulid();
     await this.db.insert(blueprint).values({ id, channelId, name });
+    this.logger.log({ blueprintId: id, channelId }, 'blueprint created');
     return id;
   }
 
@@ -80,6 +83,18 @@ export class BlueprintService {
       await tx.update(blueprint).set({ currentVersionId: id }).where(eq(blueprint.id, blueprintId));
     });
 
+    this.logger.log(
+      {
+        blueprintId,
+        blueprintVersionId: id,
+        version: nextVersion,
+        runnable,
+        issues: issues.length,
+        stages: dto.graph.length,
+        sourceTemplateId,
+      },
+      'blueprint version created',
+    );
     return this.getVersion(id);
   }
 
@@ -251,6 +266,10 @@ export class BlueprintService {
           });
         }
       } catch (error) {
+        this.logger.warn(
+          { stageKey: stage.key, provider: pin.provider, modelId: pin.modelId, err: error },
+          'model discovery failed during blueprint validation',
+        );
         issues.push({
           path: `stages.${stage.key}.model`,
           message: `${pin.provider === 'codex' ? 'Codex' : 'OpenRouter'} model discovery failed: ${(error as Error).message}`,
@@ -298,7 +317,11 @@ export class BlueprintService {
         info = (await this.providers.get(model.provider).listModels()).find(
           (candidate) => candidate.modelId === model.modelId,
         );
-      } catch {
+      } catch (error) {
+        this.logger.warn(
+          { stageKey: stage.key, provider: model.provider, err: error },
+          'provider lookup failed during blueprint validation',
+        );
         issues.push({
           path: `stages.${stage.key}`,
           message: `unknown provider "${model.provider}" for a role-consuming stage`,

@@ -38,6 +38,7 @@ export const RunState = z.enum([
   'PAUSED_BUDGET',
   'PAUSED_APPROVAL',
   'PAUSED_INPUT',
+  'PAUSED_MANUAL',
   'FAILED',
   'COMPLETED',
   'CANCELLED',

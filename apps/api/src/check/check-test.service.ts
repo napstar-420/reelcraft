@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
 import type { CheckDef } from '@reelcraft/shared';
 import { StageDef } from '@reelcraft/shared';
@@ -24,6 +24,8 @@ import type { CheckResult } from './check.types';
  */
 @Injectable()
 export class CheckTestService {
+  private readonly logger = new Logger(CheckTestService.name);
+
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly artifacts: ArtifactService,
@@ -46,7 +48,18 @@ export class CheckTestService {
       artifact: { kind: artifactRow.kind, data: artifactRow.data, probe: artifactRow.probe },
       resolvedRefs,
     });
-    return results[0]!;
+    const result = results[0]!;
+    this.logger.debug(
+      {
+        artifactId,
+        runId: artifactRow.runId,
+        checkId: result.name,
+        pass: result.pass,
+        fault: result.fault,
+      },
+      'check test evaluated',
+    );
+    return result;
   }
 
   private async buildScope(artifactRow: ArtifactRecord): Promise<BindingScope> {

@@ -34,6 +34,20 @@ describe('RunActionPolicy', () => {
     expect(policy.isAllowed('CREATED', 'resume', ['CREATED'])).toBe(false);
   });
 
+  it('allows manual pause only from RUNNING', () => {
+    expect(policy.isAllowed('RUNNING', 'pause')).toBe(true);
+    expect(policy.isAllowed('CREATED', 'pause')).toBe(false);
+    expect(policy.isAllowed('PAUSED_BUDGET', 'pause')).toBe(false);
+  });
+
+  it('lets resume and cancel (but not retry) recover a manually paused run', () => {
+    expect(policy.isAllowed('PAUSED_MANUAL', 'resume')).toBe(true);
+    expect(policy.isAllowed('PAUSED_MANUAL', 'cancel')).toBe(true);
+    // Deliberate narrowing (plan D3): retry/edit/patch-overrides must not
+    // silently resume a run the operator paused on purpose.
+    expect(policy.isAllowed('PAUSED_MANUAL', 'retry')).toBe(false);
+  });
+
   it('matches every state in the published Phase 4 action matrix', () => {
     const states = [
       'CREATED',
@@ -41,6 +55,7 @@ describe('RunActionPolicy', () => {
       'PAUSED_BUDGET',
       'PAUSED_APPROVAL',
       'PAUSED_INPUT',
+      'PAUSED_MANUAL',
       'FAILED',
       'COMPLETED',
       'CANCELLED',
