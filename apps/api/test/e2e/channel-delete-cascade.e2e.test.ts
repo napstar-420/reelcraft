@@ -19,6 +19,7 @@ import {
   ledgerEntry,
   run,
   stageAttempt,
+  stageEvent,
   stageExecution,
 } from '../../src/db/schema/index';
 import { buildTestApp, type TestApp } from '../support/build-app';
@@ -172,6 +173,11 @@ describe('channel delete cascade (e2e)', () => {
       .from(ledgerEntry)
       .where(eq(ledgerEntry.runId, dryRun.id));
     expect(ledgerBefore.length).toBeGreaterThan(0);
+    const eventsBefore = await testDb.db
+      .select()
+      .from(stageEvent)
+      .where(eq(stageEvent.runId, dryRun.id));
+    expect(eventsBefore.length).toBeGreaterThan(0);
     const assetBlobBefore = await testDb.db
       .select()
       .from(blob)
@@ -214,6 +220,11 @@ describe('channel delete cascade (e2e)', () => {
       .from(ledgerEntry)
       .where(eq(ledgerEntry.runId, dryRun.id));
     expect(ledgerAfter).toHaveLength(0);
+    const eventsAfter = await testDb.db
+      .select()
+      .from(stageEvent)
+      .where(eq(stageEvent.runId, dryRun.id));
+    expect(eventsAfter).toHaveLength(0);
     const [characterRowAfter] = await testDb.db
       .select()
       .from(character)

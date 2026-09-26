@@ -23,6 +23,7 @@ import {
   humanWait,
   run,
   stageAttempt,
+  stageEvent,
   stageExecution,
   stageItem,
 } from '../db/schema/index';
@@ -686,10 +687,6 @@ export class RunService {
       .limit(1);
     if (!candidate) throw new ConflictException('The approval candidate is no longer available');
 
-    const attachments = await this.db
-      .select()
-      .from(artifactAttachment)
-      .where(eq(artifactAttachment.artifactId, candidate.id));
     const [stillOpen] = await this.db
       .select({ id: humanWait.id })
       .from(humanWait)
@@ -697,26 +694,6 @@ export class RunService {
       .limit(1);
     if (!stillOpen)
       throw new ConflictException('The approval was resolved while loading its candidate');
-
-    const preview = candidate.blobId
-      ? await this.blobs.readUrl(runRow.ownerId, candidate.blobId)
-      : undefined;
-    const safeAttachments = (
-      await Promise.all(
-        attachments.map(async (attachment) => {
-          const access = await this.blobs.readUrl(runRow.ownerId, attachment.blobId);
-          if (access?.status !== 'live') return undefined;
-          if (attachment.role !== 'evidence' && attachment.role !== 'download') return undefined;
-          return {
-            id: attachment.id,
-            role: attachment.role,
-            filename: attachment.filename,
-            mime: attachment.mime,
-            url: access.url,
-          };
-        }),
-      )
-    ).filter((value) => value !== undefined);
 
     return {
       stageKey,
@@ -729,13 +706,70 @@ export class RunService {
         costUsd: toUsd(attempt.costUsd),
         createdAt: attempt.createdAt,
       },
-      artifact: {
-        id: candidate.id,
-        kind: candidate.kind,
-        data: candidate.data,
-        previewUrl: preview?.status === 'live' ? preview.url : null,
-        attachments: safeAttachments,
-      },
+      artifact: await this.toArtifactView(runRow.ownerId, candidate),
+    };
+  }
+
+  /** The current (non-stale) output of a stage, one entry per item for an
+   * iterating stage. Works in any run state, unlike `approvalCandidate`. */
+  async stageOutput(runId: string, stageKey: string) {
+    const [runRow] = await this.db
+      .select({ ownerId: channel.ownerId })
+      .from(run)
+      .innerJoin(channel, eq(channel.id, run.channelId))
+      .where(eq(run.id, runId))
+      .limit(1);
+    if (!runRow) throw new NotFoundException(`Run ${runId} not found`);
+    const rows = await this.db
+      .select()
+      .from(artifact)
+      .where(
+        and(
+          eq(artifact.runId, runId),
+          eq(artifact.producerStageKey, stageKey),
+          eq(artifact.stale, false),
+        ),
+      )
+      .orderBy(asc(artifact.itemIndex));
+    return {
+      stageKey,
+      items: await Promise.all(
+        rows.map(async (row) => ({
+          itemIndex: row.itemIndex,
+          artifact: await this.toArtifactView(runRow.ownerId, row),
+        })),
+      ),
+    };
+  }
+
+  private async toArtifactView(ownerId: string, row: typeof artifact.$inferSelect) {
+    const attachments = await this.db
+      .select()
+      .from(artifactAttachment)
+      .where(eq(artifactAttachment.artifactId, row.id));
+    const preview = row.blobId ? await this.blobs.readUrl(ownerId, row.blobId) : undefined;
+    const safeAttachments = (
+      await Promise.all(
+        attachments.map(async (attachment) => {
+          const access = await this.blobs.readUrl(ownerId, attachment.blobId);
+          if (access?.status !== 'live') return undefined;
+          if (attachment.role !== 'evidence' && attachment.role !== 'download') return undefined;
+          return {
+            id: attachment.id,
+            role: attachment.role,
+            filename: attachment.filename,
+            mime: attachment.mime,
+            url: access.url,
+          };
+        }),
+      )
+    ).filter((value) => value !== undefined);
+    return {
+      id: row.id,
+      kind: row.kind,
+      data: row.data,
+      previewUrl: preview?.status === 'live' ? preview.url : null,
+      attachments: safeAttachments,
     };
   }
 
@@ -800,6 +834,30 @@ export class RunService {
       limit: query.limit,
       offset: query.offset,
     };
+  }
+
+  async listStageEvents(runId: string, stageKey: string, attemptId?: string) {
+    return this.db
+      .select({
+        id: stageEvent.id,
+        stageAttemptId: stageEvent.stageAttemptId,
+        itemIndex: stageEvent.itemIndex,
+        level: stageEvent.level,
+        type: stageEvent.type,
+        message: stageEvent.message,
+        data: stageEvent.data,
+        createdAt: stageEvent.createdAt,
+      })
+      .from(stageEvent)
+      .innerJoin(stageExecution, eq(stageEvent.stageExecutionId, stageExecution.id))
+      .where(
+        and(
+          eq(stageExecution.runId, runId),
+          eq(stageExecution.stageKey, stageKey),
+          attemptId ? eq(stageEvent.stageAttemptId, attemptId) : undefined,
+        ),
+      )
+      .orderBy(asc(stageEvent.id));
   }
 
   async listStageAttempts(runId: string, stageKey: string) {

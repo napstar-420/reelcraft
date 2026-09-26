@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertCircle, Download, Loader2 } from 'lucide-react';
+import { AlertCircle, Loader2 } from 'lucide-react';
 import { api } from '@/api/client';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -15,11 +15,8 @@ import {
 } from '@/components/ui/sheet';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
-import {
-  approvalCandidateView,
-  describeApiFailure,
-  rejectionPreviewSummary,
-} from '@/pages/approval-review.logic';
+import { describeApiFailure, rejectionPreviewSummary } from '@/pages/approval-review.logic';
+import { ArtifactPreview } from './artifact-preview';
 
 type RejectionPreview = Awaited<ReturnType<typeof api.previewStageRejection>>;
 
@@ -212,11 +209,6 @@ function ApprovalCandidate({
 }: {
   candidate: Awaited<ReturnType<typeof api.getApprovalCandidate>>;
 }) {
-  const view = approvalCandidateView(
-    candidate.artifact.kind,
-    candidate.artifact.data,
-    candidate.artifact.previewUrl,
-  );
   return (
     <div className="flex flex-col gap-4 py-4">
       <dl className="grid grid-cols-2 gap-3 text-sm">
@@ -240,50 +232,7 @@ function ApprovalCandidate({
         </div>
       </dl>
 
-      <div className="overflow-hidden rounded-lg border bg-muted/20">
-        {view.kind === 'text' || view.kind === 'json' ? (
-          <pre className="max-h-[50vh] overflow-auto whitespace-pre-wrap break-words p-4 text-sm">
-            {view.text}
-          </pre>
-        ) : view.kind === 'image' ? (
-          <img
-            src={view.url}
-            alt="Candidate output"
-            className="max-h-[50vh] w-full object-contain"
-          />
-        ) : view.kind === 'video' ? (
-          <video src={view.url} controls className="max-h-[50vh] w-full" />
-        ) : view.kind === 'audio' ? (
-          <audio src={view.url} controls className="m-4 w-[calc(100%-2rem)]" />
-        ) : view.kind === 'download' ? (
-          <Button variant="link" asChild className="m-2">
-            <a href={view.url} target="_blank" rel="noreferrer">
-              <Download /> Download output
-            </a>
-          </Button>
-        ) : (
-          <p className="p-4 text-sm text-muted-foreground">No inline preview is available.</p>
-        )}
-      </div>
-
-      {candidate.artifact.attachments.length > 0 ? (
-        <div className="flex flex-col gap-2">
-          <h3 className="text-sm font-medium">Attachments</h3>
-          {candidate.artifact.attachments.map((attachment) => (
-            <a
-              key={attachment.id}
-              href={attachment.url}
-              target="_blank"
-              rel="noreferrer"
-              className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm hover:bg-muted"
-            >
-              <Download className="size-4" />
-              <span className="min-w-0 flex-1 truncate">{attachment.filename}</span>
-              <span className="text-xs text-muted-foreground">{attachment.role}</span>
-            </a>
-          ))}
-        </div>
-      ) : null}
+      <ArtifactPreview artifact={candidate.artifact} />
 
       {candidate.attempt.checkResults !== null || candidate.attempt.qcVerdict !== null ? (
         <details className="rounded-lg border p-3">

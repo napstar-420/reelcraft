@@ -9,6 +9,7 @@ import { CheckModule } from '../check/check.module';
 import { QcModule } from '../qc/qc.module';
 import { inngestClientProvider } from './inngest.client';
 import { StageRunnerService } from './stage-runner.service';
+import { StageEventService } from './stage-event.service';
 import { RunStateService } from './run-state.service';
 import { InProcessRunEvents } from './run-events';
 import { HumanWaitService } from '../run/human-wait.service';
@@ -27,6 +28,7 @@ import { HumanWaitService } from '../run/human-wait.service';
   providers: [
     inngestClientProvider,
     StageRunnerService,
+    StageEventService,
     RunStateService,
     InProcessRunEvents,
     HumanWaitService,
@@ -34,6 +36,7 @@ import { HumanWaitService } from '../run/human-wait.service';
   exports: [
     inngestClientProvider,
     StageRunnerService,
+    StageEventService,
     RunStateService,
     InProcessRunEvents,
     HumanWaitService,

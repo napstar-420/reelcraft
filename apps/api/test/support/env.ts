@@ -7,6 +7,7 @@ import { loadRootEnv } from '../../src/common/load-dotenv';
  * still pass at test-app boot. */
 const PLACEHOLDER_DEFAULTS: Record<string, string> = {
   NODE_ENV: 'test',
+  LOG_LEVEL: 'warn',
   DATABASE_URL: 'postgres://reelcraft:reelcraft@localhost:5432/reelcraft_test_placeholder',
   S3_ENDPOINT: 'http://localhost:9000',
   S3_ACCESS_KEY_ID: 'test',

@@ -101,6 +101,31 @@ export const StageAttemptDto = z.object({
 });
 export type StageAttemptDto = z.infer<typeof StageAttemptDto>;
 
+export const ArtifactViewDto = z.object({
+  id: z.string(),
+  kind: z.enum([
+    'data',
+    'text',
+    'media.image',
+    'media.video',
+    'media.audio',
+    'file.subtitles',
+    'timeline',
+  ]),
+  data: z.unknown().nullable(),
+  previewUrl: z.string().url().nullable(),
+  attachments: z.array(
+    z.object({
+      id: z.string(),
+      role: z.enum(['evidence', 'download']),
+      filename: z.string(),
+      mime: z.string(),
+      url: z.string().url(),
+    }),
+  ),
+});
+export type ArtifactViewDto = z.infer<typeof ArtifactViewDto>;
+
 export const ApprovalCandidateDto = z.object({
   stageKey: z.string(),
   itemIndex: z.number().int().nonnegative().nullable(),
@@ -112,31 +137,35 @@ export const ApprovalCandidateDto = z.object({
     costUsd: z.number(),
     createdAt: z.string(),
   }),
-  artifact: z.object({
-    id: z.string(),
-    kind: z.enum([
-      'data',
-      'text',
-      'media.image',
-      'media.video',
-      'media.audio',
-      'file.subtitles',
-      'timeline',
-    ]),
-    data: z.unknown().nullable(),
-    previewUrl: z.string().url().nullable(),
-    attachments: z.array(
-      z.object({
-        id: z.string(),
-        role: z.enum(['evidence', 'download']),
-        filename: z.string(),
-        mime: z.string(),
-        url: z.string().url(),
-      }),
-    ),
-  }),
+  artifact: ArtifactViewDto,
 });
 export type ApprovalCandidateDto = z.infer<typeof ApprovalCandidateDto>;
+
+export const StageEventLevel = z.enum(['debug', 'info', 'warn', 'error']);
+export type StageEventLevel = z.infer<typeof StageEventLevel>;
+
+export const StageEventDto = z.object({
+  id: z.string(),
+  stageAttemptId: z.string().nullable(),
+  itemIndex: z.number().int().nonnegative().nullable(),
+  level: StageEventLevel,
+  type: z.string(),
+  message: z.string(),
+  data: z.unknown().nullable(),
+  createdAt: z.string(),
+});
+export type StageEventDto = z.infer<typeof StageEventDto>;
+
+export const StageOutputDto = z.object({
+  stageKey: z.string(),
+  items: z.array(
+    z.object({
+      itemIndex: z.number().int().nonnegative().nullable(),
+      artifact: ArtifactViewDto,
+    }),
+  ),
+});
+export type StageOutputDto = z.infer<typeof StageOutputDto>;
 
 export const StageExecutionDto = z.object({
   id: z.string(),

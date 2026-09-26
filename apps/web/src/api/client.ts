@@ -28,6 +28,8 @@ import type {
   RequestInputUploadResultDto,
   RunInputStatusDto,
   ApprovalCandidateDto,
+  StageOutputDto,
+  StageEventDto,
   ApprovalActionDto,
   RunState,
   ListRunsResultDto,
@@ -325,6 +327,10 @@ export const api = {
       `/runs/${runId}/stages/${encodeURIComponent(stageKey)}/input`,
       { method: 'POST', body: JSON.stringify(dto) },
     ),
+  listStageLogs: (runId: string, stageKey: string) =>
+    request<StageEventDto[]>(`/runs/${runId}/stages/${encodeURIComponent(stageKey)}/logs`),
+  getStageOutput: (runId: string, stageKey: string) =>
+    request<StageOutputDto>(`/runs/${runId}/stages/${encodeURIComponent(stageKey)}/output`),
   getApprovalCandidate: (runId: string, stageKey: string) =>
     request<ApprovalCandidateDto>(
       `/runs/${runId}/stages/${encodeURIComponent(stageKey)}/approval-candidate`,

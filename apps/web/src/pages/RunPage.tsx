@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Ban, Eye, History, Loader2, Pause, Play, RefreshCw, Wallet } from 'lucide-react';
+import { Ban, Eye, FileText, History, Loader2, Pause, Play, RefreshCw, Wallet } from 'lucide-react';
 import { api } from '../api/client';
 import { useRun } from '../hooks/useRun';
 import {
@@ -29,6 +29,7 @@ import { RaiseBudgetDialog } from '@/components/runs/raise-budget-dialog';
 import { StageRetryDialog } from '@/components/runs/stage-retry-dialog';
 import { SubmitFormInputDialog } from '@/components/runs/submit-form-input-dialog';
 import { StageAttemptsSheet } from '@/components/runs/stage-attempts-sheet';
+import { StageOutputSheet } from '@/components/runs/stage-output-sheet';
 import { isApprovalStillOpen } from './approval-review.logic';
 
 export function RunPage() {
@@ -39,6 +40,7 @@ export function RunPage() {
   const [retryStageKey, setRetryStageKey] = useState<string | null>(null);
   const [formInputStageKey, setFormInputStageKey] = useState<string | null>(null);
   const [attemptsStageKey, setAttemptsStageKey] = useState<string | null>(null);
+  const [outputStageKey, setOutputStageKey] = useState<string | null>(null);
   const [raiseBudgetOpen, setRaiseBudgetOpen] = useState(false);
 
   useEffect(() => {
@@ -83,6 +85,8 @@ export function RunPage() {
   const canResume = isRunActionAllowed('resume', run.state);
   const canRaiseBudget = isRunActionAllowed('raise_budget', run.state);
   const canRetry = isRunActionAllowed('retry', run.state);
+  const isStageRunning = (stageKey: string | null) =>
+    run.stageExecutions.some((se) => se.stageKey === stageKey && se.state === 'running');
 
   return (
     <section className="flex flex-col gap-6">
@@ -113,8 +117,16 @@ export function RunPage() {
       <StageAttemptsSheet
         runId={run.id}
         stageKey={attemptsStageKey}
+        stageRunning={isStageRunning(attemptsStageKey)}
         open={attemptsStageKey !== null}
         onOpenChange={(open) => !open && setAttemptsStageKey(null)}
+      />
+      <StageOutputSheet
+        runId={run.id}
+        stageKey={outputStageKey}
+        stageRunning={isStageRunning(outputStageKey)}
+        open={outputStageKey !== null}
+        onOpenChange={(open) => !open && setOutputStageKey(null)}
       />
 
       <div className="flex flex-col gap-3">
@@ -234,6 +246,11 @@ export function RunPage() {
                 {canRetry && (se.state === 'failed' || se.state === 'stale') ? (
                   <Button size="sm" variant="outline" onClick={() => setRetryStageKey(se.stageKey)}>
                     <RefreshCw /> Retry
+                  </Button>
+                ) : null}
+                {se.outputArtifactId !== null || (se.isIterating && se.state !== 'pending') ? (
+                  <Button size="sm" variant="ghost" onClick={() => setOutputStageKey(se.stageKey)}>
+                    <FileText /> View output
                   </Button>
                 ) : null}
                 {se.attemptCount > 0 ? (

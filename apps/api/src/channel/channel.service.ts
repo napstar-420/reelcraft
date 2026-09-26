@@ -17,6 +17,7 @@ import {
   runMemory,
   runWakeup,
   stageAttempt,
+  stageEvent,
   stageExecution,
   stageItem,
 } from '../db/schema/index';
@@ -143,6 +144,7 @@ export class ChannelService {
         await tx.select({ blobId: asset.blobId }).from(asset).where(eq(asset.channelId, id))
       ).map((a) => a.blobId);
 
+      if (runIds.length) await tx.delete(stageEvent).where(inArray(stageEvent.runId, runIds));
       if (runIds.length) await tx.delete(ledgerEntry).where(inArray(ledgerEntry.runId, runIds));
       if (runIds.length) await tx.delete(humanWait).where(inArray(humanWait.runId, runIds));
       if (runIds.length) await tx.delete(runWakeup).where(inArray(runWakeup.runId, runIds));

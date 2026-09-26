@@ -12,6 +12,16 @@ export class EngineConfig {
     return this.config.get('API_PORT', { infer: true });
   }
 
+  get nodeEnv(): Env['NODE_ENV'] {
+    return this.config.get('NODE_ENV', { infer: true });
+  }
+
+  get logLevel(): NonNullable<Env['LOG_LEVEL']> {
+    return (
+      this.config.get('LOG_LEVEL', { infer: true }) ?? (this.nodeEnv === 'test' ? 'warn' : 'info')
+    );
+  }
+
   get databaseUrl(): string {
     return this.config.get('DATABASE_URL', { infer: true });
   }

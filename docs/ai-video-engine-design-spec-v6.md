@@ -1399,7 +1399,6 @@ The engine does not reorder stages or judge sequencing. It only refuses orders t
 - Requested aspect ratio unsupported by the pinned model
 - Requested duration unsupported by the pinned model, **when it is a constant**. A `durationFrom` Ref is only known at runtime (§17.5); it is snapped to a supported value, and a result still outside range fails the attempt as `check_failed` before submit, so no spend occurs
 - `vision: true` on a model without vision support
-- Text stage without `max_tokens` in effective model params (§16.5)
 - Model pinned to a floating alias such as `latest`
 
 **QC and checks**
@@ -1439,7 +1438,7 @@ The same introspection backs the editor's generated forms. Budget it as a multi-
 
 ### 16.5 Cost ceilings for text
 
-`ceilingUsd` is what gets reserved. For token-priced calls, input is boundable but output is not unless `max_tokens` is set — an unbounded reservation is not a reservation. `max_tokens` is required in effective `model.params` for text modality, enforced at save time.
+`ceilingUsd` is what gets reserved. For token-priced calls, input is boundable but output is not unless `max_tokens` is set. `max_tokens` is optional in effective `model.params` for text modality: when absent, the stage is allowed to generate without a token cap, `ceilingUsd` for that reservation is `0` (nothing reserved up front), and the real cost is recorded after the call completes via the normal settlement path — the run's budget cap is still enforced, just after the fact for that stage instead of before it starts.
 
 ### 16.6 Conditional stages
 

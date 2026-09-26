@@ -80,10 +80,17 @@ export class TextGenerateCapability implements CapabilityImpl<TextGenerateConfig
   async fetch(handle: JobHandle, _ctx: ExecCtx<TextGenerateConfig>): Promise<ExecResult> {
     const adapter = this.providers.get(handle.providerId);
     const result = await adapter.fetch(handle);
+    const raw = result.rawResponse;
+    // OpenRouter's body repeats the output under `choices`; keep the rest.
+    const providerMeta =
+      raw && typeof raw === 'object' && !Array.isArray(raw)
+        ? Object.fromEntries(Object.entries(raw).filter(([key]) => key !== 'choices'))
+        : undefined;
     return {
       output: result.output,
       costUsd: result.costUsd,
       repro: result.repro,
+      ...(providerMeta && { providerMeta }),
     };
   }
 

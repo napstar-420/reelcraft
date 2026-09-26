@@ -140,6 +140,20 @@ export class RunController {
     return this.runs.listStageAttempts(id, key);
   }
 
+  @Get(':id/stages/:key/logs')
+  stageLogs(
+    @Param('id') id: string,
+    @Param('key') key: string,
+    @Query('attemptId') attemptId?: string,
+  ) {
+    return this.runs.listStageEvents(id, key, attemptId);
+  }
+
+  @Get(':id/stages/:key/output')
+  stageOutput(@Param('id') id: string, @Param('key') key: string) {
+    return this.runs.stageOutput(id, key);
+  }
+
   @Get(':id/stages/:key/approval-candidate')
   approvalCandidate(@Param('id') id: string, @Param('key') key: string) {
     return this.runs.approvalCandidate(id, key);

@@ -457,7 +457,16 @@ export class CodexProviderAdapter implements ProviderAdapter {
     } catch {
       eventTypes = {};
     }
-    return { provider: 'codex', exitCode: status.exitCode ?? 0, eventTypes };
+    // The runner already redacts stderr.log before writing it.
+    const stderrTail = await readFile(join(jobDir, 'stderr.log'), 'utf8')
+      .then((text) => text.slice(-4096).trim())
+      .catch(() => '');
+    return {
+      provider: 'codex',
+      exitCode: status.exitCode ?? 0,
+      eventTypes,
+      ...(stderrTail && { stderrTail }),
+    };
   }
 
   private sanitizeParams(params: Record<string, unknown>): Record<string, unknown> {

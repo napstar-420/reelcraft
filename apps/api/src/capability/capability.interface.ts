@@ -39,6 +39,9 @@ export interface ExecResult<Out = unknown> {
   costUsd: number;
   repro: { level: 'exact' | 'approximate' | 'none'; seed?: string; providerVersion?: string };
   rawResponseRef?: string;
+  /** Provider-side diagnostics (token usage, exit code, stderr tail…) shown
+   * in the stage log. Never the output itself. */
+  providerMeta?: Record<string, unknown>;
   attachments?: Array<{
     role: 'evidence' | 'download';
     localPath?: string;
