@@ -1,4 +1,6 @@
+import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import { Eye } from 'lucide-react';
 import { useRun } from '../hooks/useRun';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Progress } from '@/components/ui/progress';
@@ -6,10 +8,19 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { runStateTone, stageExecutionStateTone } from '@/lib/status';
+import { ApprovalReviewSheet } from '@/components/runs/approval-review-sheet';
+import { isApprovalStillOpen } from './approval-review.logic';
 
 export function RunPage() {
   const { runId } = useParams<{ runId: string }>();
   const { data: run, isLoading } = useRun(runId);
+  const [reviewStageKey, setReviewStageKey] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (reviewStageKey && run && !isApprovalStillOpen(reviewStageKey, run)) {
+      setReviewStageKey(null);
+    }
+  }, [reviewStageKey, run]);
 
   if (isLoading || !run) {
     return (
@@ -31,6 +42,13 @@ export function RunPage() {
 
   return (
     <section className="flex flex-col gap-6">
+      <ApprovalReviewSheet
+        runId={run.id}
+        stageKey={reviewStageKey}
+        open={reviewStageKey !== null}
+        onOpenChange={(open) => !open && setReviewStageKey(null)}
+      />
+
       <div className="flex flex-col gap-3">
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="font-mono text-2xl font-semibold tracking-tight" title={run.id}>
@@ -58,11 +76,18 @@ export function RunPage() {
                   {se.attemptCount} attempt{se.attemptCount === 1 ? '' : 's'}
                 </span>
               </div>
-              {se.interaction === 'timeline_editor' && se.state === 'awaiting_input' ? (
-                <Button size="sm" asChild>
-                  <Link to={`/runs/${run.id}/stages/${se.stageKey}/edit`}>Open editor</Link>
-                </Button>
-              ) : null}
+              <div className="flex items-center gap-2">
+                {run.state === 'PAUSED_APPROVAL' && run.cursorStageKey === se.stageKey ? (
+                  <Button size="sm" onClick={() => setReviewStageKey(se.stageKey)}>
+                    <Eye /> Review output
+                  </Button>
+                ) : null}
+                {se.interaction === 'timeline_editor' && se.state === 'awaiting_input' ? (
+                  <Button size="sm" asChild>
+                    <Link to={`/runs/${run.id}/stages/${se.stageKey}/edit`}>Open editor</Link>
+                  </Button>
+                ) : null}
+              </div>
             </Card>
           ))}
         </div>

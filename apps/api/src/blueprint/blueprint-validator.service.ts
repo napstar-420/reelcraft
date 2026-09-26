@@ -41,6 +41,7 @@ export class BlueprintValidatorService {
     const { graph, inputs, roles } = input;
     const issues: ValidationIssue[] = [];
 
+    // a blueprint with no stages is invalid, and the rest of the validation logic assumes at least one stage exists (e.g. the first-stage prev check).
     if (graph.length === 0) {
       issues.push({
         path: 'graph',
@@ -50,10 +51,15 @@ export class BlueprintValidatorService {
       return issues;
     }
 
+    // the first stage cannot bind {from:'prev'} (there is no previous stage).
     this.checkFirstStagePrev(graph, issues);
+    // duplicate stage keys are a save-time error, not a run-time
     this.checkDuplicateKeys(graph, issues);
+    // multiple roles are not yet supported, and a role must select a
     this.checkRoleCount(roles, issues);
+    // a role must select a channel Character, and that Character must be ready and belong to the same channel as the blueprint
     this.checkRoleCharacters(roles, input, issues);
+    // validate every input schema for dialect and compilability
     this.checkInputSchemas(inputs, issues);
 
     const ctx = buildValidationContext(input);
@@ -102,7 +108,8 @@ export class BlueprintValidatorService {
     if (roles.length > 1) {
       issues.push({
         path: 'roles',
-        message: 'a blueprint may declare at most one role (§18.5)',
+        message:
+          'A blueprint may declare at most one Character role (multiple roles are not yet supported)',
         severity: 'error',
       });
     }

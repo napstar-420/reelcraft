@@ -23,7 +23,14 @@ export function BlueprintsTab({ channelId }: { channelId?: string | undefined })
       if (!('id' in version)) {
         throw new Error('template is not a blueprint-kind template');
       }
-      return api.startRun({ channelId, blueprintVersionId: version.id, budgetCapUsd: 5 });
+      const run = await api.createRun({
+        channelId,
+        blueprintVersionId: version.id,
+        budgetCapUsd: 5,
+        inputs: {},
+        roleBindings: {},
+      });
+      return api.startRun(run.id);
     },
     onSuccess: (run) => navigate(`/runs/${run.id}`),
   });

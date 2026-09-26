@@ -365,6 +365,13 @@ describe('phase 7 chunk 6 — item-mode approval (e2e)', () => {
     expect(paused).toEqual({ outcome: 'approval_required', itemIndex: 0 });
 
     await pauseRunForApproval(created.id, 'broll');
+    const candidate = await testApp.app.get(RunService).approvalCandidate(created.id, 'broll');
+    expect(candidate).toMatchObject({
+      stageKey: 'broll',
+      itemIndex: 0,
+      attempt: { attemptNo: 1 },
+      artifact: { kind: 'data' },
+    });
     await testApp.app.get(HumanActionService).approve(created.id, 'broll');
 
     const item0 = await runner.itemState(brollExecution.id, 0);

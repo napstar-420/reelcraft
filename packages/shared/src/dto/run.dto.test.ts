@@ -1,5 +1,22 @@
 import { describe, expect, it } from 'vitest';
-import { StartDryRunDto } from './run.dto';
+import { CreateRunDto, StartDryRunDto } from './run.dto';
+
+describe('CreateRunDto', () => {
+  const validRun = {
+    channelId: 'channel-1',
+    blueprintVersionId: 'version-1',
+    budgetCapUsd: 1,
+  };
+
+  it('accepts a positive budget cap', () => {
+    expect(CreateRunDto.parse(validRun)).toMatchObject(validRun);
+  });
+
+  it('rejects a non-positive budget cap', () => {
+    expect(() => CreateRunDto.parse({ ...validRun, budgetCapUsd: 0 })).toThrow();
+    expect(() => CreateRunDto.parse({ ...validRun, budgetCapUsd: -1 })).toThrow();
+  });
+});
 
 describe('StartDryRunDto', () => {
   it('defaults budgetCapUsd to 1 when omitted', () => {

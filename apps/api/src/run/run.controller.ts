@@ -80,6 +80,11 @@ export class RunController {
     return this.runInputs.requestMediaUpload(id, key, dto.ext);
   }
 
+  @Get(':id/inputs/:key/status')
+  inputStatus(@Param('id') id: string, @Param('key') key: string) {
+    return this.runInputs.inputStatus(id, key);
+  }
+
   @Put(':id/inputs/:key')
   attachInput(
     @Param('id') id: string,
@@ -127,6 +132,11 @@ export class RunController {
   @Get(':id/stages/:key/attempts')
   stageAttempts(@Param('id') id: string, @Param('key') key: string) {
     return this.runs.listStageAttempts(id, key);
+  }
+
+  @Get(':id/stages/:key/approval-candidate')
+  approvalCandidate(@Param('id') id: string, @Param('key') key: string) {
+    return this.runs.approvalCandidate(id, key);
   }
 
   @Post(':id/stages/:key/retry/confirm')

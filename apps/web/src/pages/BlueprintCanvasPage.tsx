@@ -14,6 +14,7 @@ import { api, ApiError } from '../api/client';
 import { AddStageMenu } from '../components/canvas/AddStageMenu';
 import { StageInspector } from '../components/canvas/StageInspector';
 import { BlueprintSettingsPanel } from '../components/canvas/BlueprintSettingsPanel';
+import { RunLaunchDialog } from './RunLaunchDialog';
 import { deriveMemoryWriters } from '../lib/memory-writers';
 import { parseValidationPath } from '../lib/parse-validation-path';
 import { cn } from 'cn';
@@ -425,31 +426,56 @@ function CreateBlueprintForm({
   );
 }
 
-/** Chunk 8 — save/dry-run wiring. */
+/** Save, fake-provider dry run, and configured-provider run wiring. */
 function SaveAndDryRun({
   blueprintId,
+  channelId,
   draft,
   runnable,
 }: {
   blueprintId: string;
+  channelId: string;
   draft: BlueprintDraft;
   runnable: boolean | undefined;
 }) {
   const navigate = useNavigate();
-  const [savedVersion, setSavedVersion] = useState<number | null>(null);
+  const draftKey = JSON.stringify(draft);
+  const [savedVersion, setSavedVersion] = useState<{
+    id: string;
+    version: number;
+    draftKey: string;
+  } | null>(null);
 
   const save = useMutation({
     mutationFn: () => api.createBlueprintVersion(blueprintId, draft),
-    onSuccess: (version) => setSavedVersion(version.version),
+    onSuccess: (version) => setSavedVersion({ id: version.id, version: version.version, draftKey }),
   });
 
   const dryRun = useMutation({
     mutationFn: () => {
-      if (savedVersion === null) throw new Error('save a version before dry-running');
-      return api.startDryRun(blueprintId, savedVersion);
+      if (savedVersion === null || savedVersion.draftKey !== draftKey) {
+        throw new Error('Save the current draft before dry-running.');
+      }
+      return api.startDryRun(blueprintId, savedVersion.version);
     },
     onSuccess: (run) => navigate(`/runs/${run.id}`),
   });
+
+  async function prepareRunnableVersion() {
+    const validation = await api.validateBlueprint(blueprintId, draft);
+    if (!validation.runnable) {
+      const summary = validation.issues
+        .filter((issue) => issue.severity === 'error')
+        .slice(0, 3)
+        .map((issue) => `${issue.path}: ${issue.message}`)
+        .join(' ');
+      throw new Error(`Blueprint is not runnable.${summary ? ` ${summary}` : ''}`);
+    }
+    if (savedVersion?.draftKey === draftKey) return savedVersion.id;
+    const version = await api.createBlueprintVersion(blueprintId, draft);
+    setSavedVersion({ id: version.id, version: version.version, draftKey });
+    return version.id;
+  }
 
   const saveIssues =
     save.error instanceof ApiError ? (save.error.issues as ValidationIssue[]) : undefined;
@@ -457,13 +483,9 @@ function SaveAndDryRun({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Save &amp; dry-run</CardTitle>
+        <CardTitle>Save &amp; run</CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
-        {/* `POST /blueprints/:id/versions` saves a non-runnable draft anyway
-         * (`BlueprintService.createVersion` never rejects on `runnable:
-         * false` — it just stores the issues) — so this is a warning, not a
-         * disabled button; Save itself is only disabled while pending. */}
         {runnable === false && (
           <Alert className="border-amber-500/30 bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400 [&>svg]:text-current">
             <AlertDescription className="text-current">
@@ -475,15 +497,27 @@ function SaveAndDryRun({
           <Button type="button" onClick={() => save.mutate()} disabled={save.isPending}>
             {save.isPending ? 'Saving…' : 'Save'}
           </Button>
+          <RunLaunchDialog
+            key={draftKey}
+            channelId={channelId}
+            inputs={draft.inputs}
+            defaultBudgetCapUsd={draft.budget.runCapUsd}
+            prepareVersion={prepareRunnableVersion}
+          />
           <Button
             type="button"
             variant="outline"
             onClick={() => dryRun.mutate()}
-            disabled={savedVersion === null || dryRun.isPending}
+            disabled={
+              savedVersion === null || savedVersion.draftKey !== draftKey || dryRun.isPending
+            }
           >
-            {dryRun.isPending ? 'Starting…' : 'Dry run'}
+            {dryRun.isPending ? 'Starting…' : 'Dry run (fake provider)'}
           </Button>
         </div>
+        <p className="text-xs text-muted-foreground">
+          Run uses configured providers. Dry run is deterministic and always uses the fake provider.
+        </p>
         {save.isSuccess && (
           <p className="text-sm text-muted-foreground">
             Saved as version {save.data.version} ({save.data.runnable ? 'runnable' : 'not runnable'}
@@ -751,7 +785,12 @@ function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
         </SheetContent>
       </Sheet>
 
-      <SaveAndDryRun blueprintId={blueprintId} draft={draft} runnable={validation?.runnable} />
+      <SaveAndDryRun
+        blueprintId={blueprintId}
+        channelId={channelId ?? ''}
+        draft={draft}
+        runnable={validation?.runnable}
+      />
       <SaveAsTemplate graph={draft.graph} />
     </div>
   );

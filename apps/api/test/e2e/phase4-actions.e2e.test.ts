@@ -109,7 +109,24 @@ describe('Phase 4 approval, human input, and cancellation (e2e)', () => {
       .update(run)
       .set({ state: 'PAUSED_APPROVAL', cursorStageKey: 'draft' })
       .where(eq(run.id, created.id));
+
+    const runs = testApp.app.get(RunService);
+    const candidate = await runs.approvalCandidate(created.id, 'draft');
+    expect(candidate).toMatchObject({
+      stageKey: 'draft',
+      itemIndex: null,
+      attempt: {
+        id: attempt.stageAttemptId,
+        attemptNo: 1,
+      },
+      artifact: { id: artifactId, kind: 'text', previewUrl: null, attachments: [] },
+    });
+    expect((await runs.get(created.id)).stageExecutions[0]?.attemptCount).toBe(1);
+
     await testApp.app.get(HumanActionService).approve(created.id, 'draft');
+    await expect(runs.approvalCandidate(created.id, 'draft')).rejects.toThrow(
+      'No open approval wait exists',
+    );
 
     expect(
       await testDb.db
