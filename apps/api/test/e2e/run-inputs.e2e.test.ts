@@ -195,6 +195,50 @@ describe('run inputs as artifacts (e2e)', () => {
     expect(started.id).toBe(created.id);
   });
 
+  it('reports attachment status and rejects foreign keys or incompatible MIME before probing', async () => {
+    const { runs, version, channel } = await setup([PHOTO_INPUT]);
+    const created = await runs.create({
+      channelId: channel.id,
+      blueprintVersionId: version.id,
+      inputs: {},
+      roleBindings: {},
+      budgetCapUsd: 10,
+    });
+    const runInputs = testApp.app.get(RunInputService);
+    const storage = testApp.app.get<StorageAdapter>(STORAGE_ADAPTER);
+    expect(await runInputs.inputStatus(created.id, 'photo')).toEqual({
+      key: 'photo',
+      count: 0,
+      satisfied: false,
+    });
+
+    const upload = await runInputs.requestMediaUpload(created.id, 'photo', 'jpg');
+    const foreignKey = upload.objectKey.replace(`/${created.id}/`, '/another-run/');
+    await storage.put(foreignKey, Buffer.from('bytes'), { mime: 'image/jpeg' });
+    await expect(
+      runInputs.attachMediaInput(created.id, 'photo', [
+        { blobId: upload.blobId, objectKey: foreignKey, sha256: 'deadbeef' },
+      ]),
+    ).rejects.toThrow('does not belong to this run');
+
+    await storage.put(upload.objectKey, Buffer.from('bytes'), { mime: 'audio/mpeg' });
+    await expect(
+      runInputs.attachMediaInput(created.id, 'photo', [
+        { blobId: upload.blobId, objectKey: upload.objectKey, sha256: 'deadbeef' },
+      ]),
+    ).rejects.toThrow('requires image media');
+
+    await storage.put(upload.objectKey, Buffer.from('bytes'), { mime: 'image/jpeg' });
+    await runInputs.attachMediaInput(created.id, 'photo', [
+      { blobId: upload.blobId, objectKey: upload.objectKey, sha256: 'deadbeef' },
+    ]);
+    expect(await runInputs.inputStatus(created.id, 'photo')).toEqual({
+      key: 'photo',
+      count: 1,
+      satisfied: true,
+    });
+  });
+
   it('attaches a "many"-cardinality media input with correct item_index per blob', async () => {
     const { runs, version, channel } = await setup([GALLERY_INPUT]);
     const created = await runs.create({

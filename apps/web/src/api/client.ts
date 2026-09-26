@@ -23,6 +23,12 @@ import type {
   UpdateCharacterReferenceDto,
   RequestAssetUploadResultDto,
   CreateAssetDto,
+  CreateRunDto,
+  AttachInputDto,
+  RequestInputUploadResultDto,
+  RunInputStatusDto,
+  ApprovalCandidateDto,
+  ApprovalActionDto,
 } from '@reelcraft/shared';
 
 /** `blueprint.service.ts#getBlueprint()`'s row shape — the whole `blueprint`
@@ -132,7 +138,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       issues,
     );
   }
-  return res.json() as Promise<T>;
+  const text = await res.text();
+  return (text ? JSON.parse(text) : undefined) as T;
 }
 
 export const api = {
@@ -254,6 +261,56 @@ export const api = {
 
   listRuns: () => request<RunDetailDto[]>('/runs'),
   getRun: (id: string) => request<RunDetailDto>(`/runs/${id}`),
+  getApprovalCandidate: (runId: string, stageKey: string) =>
+    request<ApprovalCandidateDto>(
+      `/runs/${runId}/stages/${encodeURIComponent(stageKey)}/approval-candidate`,
+    ),
+  approveStage: (runId: string, stageKey: string, itemIndex?: number) =>
+    request<{ accepted: true; revision: number }>(
+      `/runs/${runId}/stages/${encodeURIComponent(stageKey)}/approve`,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'approve',
+          ...(itemIndex !== undefined ? { itemIndex } : {}),
+        } satisfies ApprovalActionDto),
+      },
+    ),
+  previewStageRejection: (runId: string, stageKey: string, note?: string, itemIndex?: number) =>
+    request<{
+      previewToken: string;
+      expiresAt: string;
+      targetStageKey: string;
+      affectedStageKeys: string[];
+      spentUsd: number;
+      estimatedRerunUsd: number;
+    }>(`/runs/${runId}/stages/${encodeURIComponent(stageKey)}/approve`, {
+      method: 'POST',
+      body: JSON.stringify({
+        action: 'reject',
+        ...(note !== undefined ? { note } : {}),
+        ...(itemIndex !== undefined ? { itemIndex } : {}),
+      } satisfies ApprovalActionDto),
+    }),
+  confirmStageRejection: (
+    runId: string,
+    stageKey: string,
+    previewToken: string,
+    note?: string,
+    itemIndex?: number,
+  ) =>
+    request<{ accepted: true; revision: number }>(
+      `/runs/${runId}/stages/${encodeURIComponent(stageKey)}/approve`,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'reject',
+          previewToken,
+          ...(note !== undefined ? { note } : {}),
+          ...(itemIndex !== undefined ? { itemIndex } : {}),
+        } satisfies ApprovalActionDto),
+      },
+    ),
   getTimelineEditor: (runId: string, stageKey: string) =>
     request<TimelineEditorSessionDto>(`/runs/${runId}/stages/${stageKey}/timeline-editor`),
   saveTimelineDraft: (runId: string, stageKey: string, dto: SaveTimelineDraftDto) =>
@@ -266,9 +323,19 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ draftRevision }),
     }),
-  startRun: (params: { channelId: string; blueprintVersionId: string; budgetCapUsd: number }) =>
-    request<RunDetailDto>('/runs', {
-      method: 'POST',
-      body: JSON.stringify({ ...params, inputs: {}, roleBindings: {} }),
+  createRun: (dto: CreateRunDto) =>
+    request<RunDetailDto>('/runs', { method: 'POST', body: JSON.stringify(dto) }),
+  requestRunInputUpload: (runId: string, inputKey: string, ext: string) =>
+    request<RequestInputUploadResultDto>(
+      `/runs/${runId}/inputs/${encodeURIComponent(inputKey)}/upload`,
+      { method: 'POST', body: JSON.stringify({ ext }) },
+    ),
+  attachRunInput: (runId: string, inputKey: string, dto: AttachInputDto) =>
+    request<void>(`/runs/${runId}/inputs/${encodeURIComponent(inputKey)}`, {
+      method: 'PUT',
+      body: JSON.stringify(dto),
     }),
+  getRunInputStatus: (runId: string, inputKey: string) =>
+    request<RunInputStatusDto>(`/runs/${runId}/inputs/${encodeURIComponent(inputKey)}/status`),
+  startRun: (runId: string) => request<RunDetailDto>(`/runs/${runId}/start`, { method: 'POST' }),
 };

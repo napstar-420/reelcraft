@@ -264,7 +264,7 @@ export class RunInputService {
    * replacing an input afterward is an invalidation trigger (§6.2), which
    * lands in phase 4 chunk 2. */
   async attachMediaInput(runId: string, inputKey: string, blobs: AttachMediaBlob[]): Promise<void> {
-    const { state, ownerId, inputDefs } = await this.loadContext(runId);
+    const { state, ownerId, channelId, inputDefs } = await this.loadContext(runId);
     if (state !== 'CREATED') {
       throw new Error(
         `RunInputService: run ${runId} is ${state} — replacing an input outside CREATED ` +
@@ -288,7 +288,26 @@ export class RunInputService {
 
     const kind = def.accepts.kind;
     const many = def.accepts.cardinality === 'many';
+    for (const item of blobs) {
+      const expectedPrefix = `${ownerId}/${channelId}/${runId}/inputs/${item.blobId}.`;
+      if (
+        !item.objectKey.startsWith(expectedPrefix) ||
+        item.objectKey.slice(expectedPrefix.length).includes('/')
+      ) {
+        throw new ConflictException('Uploaded blob does not belong to this run');
+      }
+    }
     const stats = await Promise.all(blobs.map((item) => this.storage.stat(item.objectKey)));
+    for (const stat of stats) {
+      const mime = stat.mime.toLowerCase();
+      const expectedMimePrefix =
+        kind === 'media.image' ? 'image/' : kind === 'media.video' ? 'video/' : 'audio/';
+      if (!mime.startsWith(expectedMimePrefix)) {
+        throw new ConflictException(
+          `Input "${inputKey}" requires ${expectedMimePrefix.slice(0, -1)} media`,
+        );
+      }
+    }
     const probes = await Promise.all(
       blobs.map((item) =>
         this.workspaces.withWorkspace(runId, async (workspace) =>
@@ -340,6 +359,29 @@ export class RunInputService {
         }`,
       );
     }
+  }
+
+  async inputStatus(runId: string, inputKey: string) {
+    const { state, inputDefs } = await this.loadContext(runId);
+    if (state !== 'CREATED') {
+      throw new ConflictException(
+        'Input attachment status is only available while the run is CREATED',
+      );
+    }
+    const def = inputDefs.find((candidate) => candidate.key === inputKey);
+    if (!def) throw new ConflictException(`No declared input "${inputKey}"`);
+    const rows = await this.db
+      .select({ id: artifact.id })
+      .from(artifact)
+      .where(
+        and(
+          eq(artifact.runId, runId),
+          eq(artifact.producerStageKey, `$input:${inputKey}`),
+          eq(artifact.stale, false),
+        ),
+      );
+    const count = rows.length;
+    return { key: inputKey, count, satisfied: count > 0 };
   }
 
   /** Called from `RunService.start()` — every required `InputDef` must have

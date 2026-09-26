@@ -1,22 +1,25 @@
 import { ConflictException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull } from 'drizzle-orm';
 import type { CreateRunDto, ConfigLayer, ReferenceImage, Ref, RoleDef } from '@reelcraft/shared';
 import { InputDef, RoleDef as RoleDefSchema, StageDef } from '@reelcraft/shared';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
 import {
   asset,
+  artifact,
   artifactAttachment,
   blob,
   blueprint,
   blueprintVersion,
   channel,
   character,
+  humanWait,
   run,
   stageAttempt,
   stageExecution,
+  stageItem,
 } from '../db/schema/index';
 import { ulid } from '../common/ulid';
-import { fromUsd } from '../common/money';
+import { fromUsd, toUsd } from '../common/money';
 import { EngineConfig } from '../config/engine-config';
 import { CapabilityRegistry } from '../capability/capability.registry';
 import { ConfigResolverService } from '../run-config/config-resolver.service';
@@ -68,6 +71,14 @@ export class RunService {
     if (!version) throw new Error(`BlueprintVersion ${dto.blueprintVersionId} not found`);
     if (!version.runnable)
       throw new Error(`BlueprintVersion ${dto.blueprintVersionId} failed validation`);
+    const [versionBlueprint] = await this.db
+      .select({ channelId: blueprint.channelId })
+      .from(blueprint)
+      .where(eq(blueprint.id, version.blueprintId))
+      .limit(1);
+    if (!versionBlueprint || versionBlueprint.channelId !== dto.channelId) {
+      throw new ConflictException('Blueprint version does not belong to the requested channel');
+    }
 
     const [channelRow] = await this.db
       .select({ defaults: channel.defaults })
@@ -503,6 +514,24 @@ export class RunService {
       .limit(1);
     const graph = StageDef.array().parse(version?.graph ?? []);
     const definitions = new Map(graph.map((stage) => [stage.key, stage]));
+    const attemptRows = executions.length
+      ? await this.db
+          .select({ stageExecutionId: stageAttempt.stageExecutionId })
+          .from(stageAttempt)
+          .where(
+            inArray(
+              stageAttempt.stageExecutionId,
+              executions.map((execution) => execution.id),
+            ),
+          )
+      : [];
+    const attemptCounts = new Map<string, number>();
+    for (const attempt of attemptRows) {
+      attemptCounts.set(
+        attempt.stageExecutionId,
+        (attemptCounts.get(attempt.stageExecutionId) ?? 0) + 1,
+      );
+    }
     const outputArtifactIds = executions
       .map((execution) => execution.outputArtifactId)
       .filter((id): id is string => id !== null);
@@ -531,6 +560,7 @@ export class RunService {
           const capability = definition?.capability ?? 'unknown';
           return {
             ...execution,
+            attemptCount: attemptCounts.get(execution.id) ?? 0,
             capability,
             interaction: this.capabilities.get(capability).interaction?.kind ?? null,
             attachments: (
@@ -560,6 +590,147 @@ export class RunService {
     };
   }
 
+  async approvalCandidate(runId: string, stageKey: string) {
+    const [runRow] = await this.db
+      .select({ state: run.state, cursorStageKey: run.cursorStageKey, ownerId: channel.ownerId })
+      .from(run)
+      .innerJoin(channel, eq(channel.id, run.channelId))
+      .where(eq(run.id, runId))
+      .limit(1);
+    if (!runRow) throw new NotFoundException(`Run ${runId} not found`);
+    if (runRow.state !== 'PAUSED_APPROVAL' || runRow.cursorStageKey !== stageKey) {
+      throw new ConflictException(`Run ${runId} is not awaiting approval at ${stageKey}`);
+    }
+
+    const [execution] = await this.db
+      .select()
+      .from(stageExecution)
+      .where(and(eq(stageExecution.runId, runId), eq(stageExecution.stageKey, stageKey)))
+      .limit(1);
+    if (!execution) throw new NotFoundException(`Stage ${stageKey} not found in run ${runId}`);
+
+    const [wait] = await this.db
+      .select()
+      .from(humanWait)
+      .where(
+        and(
+          eq(humanWait.runId, runId),
+          eq(humanWait.stageExecutionId, execution.id),
+          eq(humanWait.kind, 'approval'),
+          isNull(humanWait.resolvedAt),
+        ),
+      )
+      .limit(1);
+    if (!wait) throw new ConflictException('No open approval wait exists for this stage');
+
+    let itemIndex: number | null = null;
+    if (wait.stageItemId) {
+      const [item] = await this.db
+        .select()
+        .from(stageItem)
+        .where(
+          and(
+            eq(stageItem.id, wait.stageItemId),
+            eq(stageItem.stageExecutionId, execution.id),
+            eq(stageItem.state, 'awaiting_approval'),
+          ),
+        )
+        .limit(1);
+      if (!item)
+        throw new ConflictException('The approval wait no longer matches an open stage item');
+      itemIndex = item.itemIndex;
+    } else if (execution.state !== 'awaiting_approval') {
+      throw new ConflictException('The stage is no longer awaiting approval');
+    }
+
+    const attemptWhere = wait.stageItemId
+      ? eq(stageAttempt.stageItemId, wait.stageItemId)
+      : isNull(stageAttempt.stageItemId);
+    const [attempt] = await this.db
+      .select()
+      .from(stageAttempt)
+      .where(
+        and(
+          eq(stageAttempt.stageExecutionId, execution.id),
+          attemptWhere,
+          eq(stageAttempt.phase, 'awaiting_approval'),
+          eq(stageAttempt.outcome, 'awaiting_approval'),
+        ),
+      )
+      .orderBy(desc(stageAttempt.attemptNo))
+      .limit(1);
+    if (!attempt?.artifactId) throw new ConflictException('No pending approval candidate exists');
+
+    const artifactWhere =
+      itemIndex === null ? isNull(artifact.itemIndex) : eq(artifact.itemIndex, itemIndex);
+    const [candidate] = await this.db
+      .select()
+      .from(artifact)
+      .where(
+        and(
+          eq(artifact.id, attempt.artifactId),
+          eq(artifact.runId, runId),
+          eq(artifact.producerStageKey, stageKey),
+          artifactWhere,
+          eq(artifact.stale, true),
+        ),
+      )
+      .limit(1);
+    if (!candidate) throw new ConflictException('The approval candidate is no longer available');
+
+    const attachments = await this.db
+      .select()
+      .from(artifactAttachment)
+      .where(eq(artifactAttachment.artifactId, candidate.id));
+    const [stillOpen] = await this.db
+      .select({ id: humanWait.id })
+      .from(humanWait)
+      .where(and(eq(humanWait.id, wait.id), isNull(humanWait.resolvedAt)))
+      .limit(1);
+    if (!stillOpen)
+      throw new ConflictException('The approval was resolved while loading its candidate');
+
+    const preview = candidate.blobId
+      ? await this.blobs.readUrl(runRow.ownerId, candidate.blobId)
+      : undefined;
+    const safeAttachments = (
+      await Promise.all(
+        attachments.map(async (attachment) => {
+          const access = await this.blobs.readUrl(runRow.ownerId, attachment.blobId);
+          if (access?.status !== 'live') return undefined;
+          if (attachment.role !== 'evidence' && attachment.role !== 'download') return undefined;
+          return {
+            id: attachment.id,
+            role: attachment.role,
+            filename: attachment.filename,
+            mime: attachment.mime,
+            url: access.url,
+          };
+        }),
+      )
+    ).filter((value) => value !== undefined);
+
+    return {
+      stageKey,
+      itemIndex,
+      attempt: {
+        id: attempt.id,
+        attemptNo: attempt.attemptNo,
+        checkResults: attempt.checkResults,
+        qcVerdict: attempt.qcVerdict,
+        costUsd: toUsd(attempt.costUsd),
+        createdAt: attempt.createdAt,
+      },
+      artifact: {
+        id: candidate.id,
+        kind: candidate.kind,
+        data: candidate.data,
+        previewUrl: preview?.status === 'live' ? preview.url : null,
+        attachments: safeAttachments,
+      },
+    };
+  }
+
   /** §21/Chunk 5 — dry runs write real ledger rows (locked product decision
    * #1's accepted consequence), so the default listing excludes them; an
    * explicit `includeDryRuns` opts back in. */
@@ -569,11 +740,12 @@ export class RunService {
   }
 
   async listStageAttempts(runId: string, stageKey: string) {
-    return this.db
+    const rows = await this.db
       .select({
         id: stageAttempt.id,
         attemptNo: stageAttempt.attemptNo,
         outcome: stageAttempt.outcome,
+        renderedPrompt: stageAttempt.renderedPrompt,
         phase: stageAttempt.phase,
         actor: stageAttempt.actor,
         artifactId: stageAttempt.artifactId,
@@ -588,6 +760,7 @@ export class RunService {
       .innerJoin(stageExecution, eq(stageAttempt.stageExecutionId, stageExecution.id))
       .where(and(eq(stageExecution.runId, runId), eq(stageExecution.stageKey, stageKey)))
       .orderBy(asc(stageAttempt.attemptNo));
+    return rows.map((attempt) => ({ ...attempt, costUsd: toUsd(attempt.costUsd) }));
   }
   private async assertProviderPins(
     graph: StageDef[],

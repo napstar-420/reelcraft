@@ -7,7 +7,7 @@ export const CreateRunDto = z.object({
   blueprintVersionId: z.string(),
   inputs: z.record(z.string(), z.unknown()).default({}),
   roleBindings: z.record(z.string(), z.string()).default({}),
-  budgetCapUsd: z.number(),
+  budgetCapUsd: z.number().positive(),
 });
 export type CreateRunDto = z.infer<typeof CreateRunDto>;
 
@@ -77,16 +77,66 @@ export const PutRunInputDto = z.union([
 ]);
 export type PutRunInputDto = z.infer<typeof PutRunInputDto>;
 
+export const RunInputStatusDto = z.object({
+  key: z.string(),
+  count: z.number().int().nonnegative(),
+  satisfied: z.boolean(),
+});
+export type RunInputStatusDto = z.infer<typeof RunInputStatusDto>;
+
 export const StageAttemptDto = z.object({
   id: z.string(),
   attemptNo: z.number(),
   outcome: AttemptOutcome,
+  phase: z.enum(['created', 'reserved', 'submitting', 'submitted', 'settled', 'awaiting_approval']),
+  actor: z.enum(['engine', 'user']),
   renderedPrompt: z.string().nullable(),
   artifactId: z.string().nullable(),
+  reviewNote: z.string().nullable(),
+  critiqueTargetStageKey: z.string().nullable(),
+  checkResults: z.unknown().nullable(),
+  qcVerdict: z.unknown().nullable(),
   costUsd: z.number(),
   createdAt: z.string(),
 });
 export type StageAttemptDto = z.infer<typeof StageAttemptDto>;
+
+export const ApprovalCandidateDto = z.object({
+  stageKey: z.string(),
+  itemIndex: z.number().int().nonnegative().nullable(),
+  attempt: z.object({
+    id: z.string(),
+    attemptNo: z.number(),
+    checkResults: z.unknown().nullable(),
+    qcVerdict: z.unknown().nullable(),
+    costUsd: z.number(),
+    createdAt: z.string(),
+  }),
+  artifact: z.object({
+    id: z.string(),
+    kind: z.enum([
+      'data',
+      'text',
+      'media.image',
+      'media.video',
+      'media.audio',
+      'file.subtitles',
+      'timeline',
+    ]),
+    data: z.unknown().nullable(),
+    previewUrl: z.string().url().nullable(),
+    attachments: z.array(
+      z.object({
+        id: z.string(),
+        role: z.enum(['evidence', 'download']),
+        filename: z.string(),
+        mime: z.string(),
+        url: z.string().url(),
+      }),
+    ),
+  }),
+});
+export type ApprovalCandidateDto = z.infer<typeof ApprovalCandidateDto>;
 
 export const StageExecutionDto = z.object({
   id: z.string(),

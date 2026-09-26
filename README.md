@@ -246,6 +246,25 @@ local-only; CI covers deterministic HTTP action and race tests with Postgres alo
   made during setup (not in the original plan) after `drizzle-kit generate` couldn't resolve
   the NodeNext-style `.js`-suffixed relative imports across the schema files. `apps/web` is
   unaffected (Vite handles its own module resolution for the browser).
+- **Inngest client-ID rename cleanup:** changing the SDK client ID registers a new app but does not
+  rename or delete the old app or its unfinished runs. After a rename, use the supported Inngest
+  management surface for the deployed version:
+  1. Stop sending events to the old client ID, then cancel unfinished old-app runs through an
+     official Inngest API, CLI, MCP integration, or management UI.
+  2. Archive the obsolete app in the Inngest management UI when that control is available. Keep its
+     completed run history unless there is an explicit retention reason to remove it.
+  3. Resync the current API endpoint, confirm the `reelcraft` app and functions are registered, and
+     start a new test run. Verify that only `reelcraft` receives new events and that no obsolete
+     client-ID function keeps retrying callbacks.
+
+  The locally installed `inngest-cli` package is currently **1.44.0**. Its self-hosted server UI does
+  not expose the cloud app-archive control or a supported app-archive endpoint. If the official
+  API/CLI/MCP available for that installation also cannot archive the old app or cancel its runs,
+  leave the persisted history intact and upgrade to a version with the required management support
+  before completing the cleanup. **Never edit Inngest's private PostgreSQL tables and never reset
+  either the Inngest or Reelcraft database to remove an old registration.** Those shortcuts can
+  corrupt durable run state or delete unrelated history.
+
 - **Inngest + Redis**: resolved — the pinned `inngest/inngest` image logs
   `"starting event stream","backend":"redis"` on boot, using an embedded Redis-compatible
   store automatically. No separate `redis` compose service needed.

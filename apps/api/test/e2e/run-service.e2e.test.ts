@@ -89,6 +89,32 @@ describe('RunService.create budget preconditions (e2e)', () => {
     ).rejects.toThrow(/"outline".*max_tokens/);
   });
 
+  it('rejects a blueprint version from another channel before creating a run', async () => {
+    const runs = testApp.app.get(RunService);
+    const channels = testApp.app.get(ChannelService);
+    const { version } = await createVersion([
+      textStage({
+        model: { provider: 'fake', modelId: 'fake-text-1', params: { max_tokens: 64 } },
+      }),
+    ]);
+    const other = await channels.create('local', {
+      name: `Other Channel ${Date.now()}-${Math.random()}`,
+      theme: {},
+      defaults: {},
+    });
+
+    await expect(
+      runs.create({
+        channelId: other.id,
+        blueprintVersionId: version.id,
+        inputs: {},
+        roleBindings: {},
+        budgetCapUsd: 10,
+      }),
+    ).rejects.toThrow('does not belong to the requested channel');
+    expect(await testDb.db.select().from(run).where(eq(run.channelId, other.id))).toHaveLength(0);
+  });
+
   it('succeeds when max_tokens is set on the channel layer, not just the stage', async () => {
     const runs = testApp.app.get(RunService);
     const { channel, version } = await createVersion(
