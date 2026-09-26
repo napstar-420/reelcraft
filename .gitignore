@@ -16,3 +16,4 @@ coverage/
 # Runtime / local infra data
 docker/data/
 apps/api/.workspace/
+graphify-out/
