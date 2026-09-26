@@ -30,4 +30,15 @@ export class RunStateService {
   async setCursor(runId: string, stageKey: string | null): Promise<void> {
     await this.db.update(run).set({ cursorStageKey: stageKey }).where(eq(run.id, runId));
   }
+
+  /** §12.4 — manual-pause runnability check: read without locking, since the
+   * orchestrator only needs "should I start the next unit of work" here,
+   * not a mutation precondition (that's `withLockedRun`'s job on the write
+   * side). A `PAUSED_MANUAL` (or any other non-RUNNING) state means the
+   * caller should stop before starting new work, leaving the cursor where
+   * it is so a future resume re-enters at the same point. */
+  async getState(runId: string): Promise<RunState | undefined> {
+    const [row] = await this.db.select({ state: run.state }).from(run).where(eq(run.id, runId));
+    return row?.state;
+  }
 }

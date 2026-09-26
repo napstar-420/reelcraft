@@ -907,7 +907,12 @@ export class StageRunnerService {
         .from(run)
         .where(eq(run.id, ctx.runId))
         .for('update');
-      if (!lockedRun || lockedRun.state !== 'RUNNING') {
+      // Manual pause is soft: the run flips to `PAUSED_MANUAL` immediately,
+      // but an attempt that was already mid-flight when that happened is
+      // allowed to finish and commit here rather than being thrown away —
+      // it's already been paid for. Every other non-RUNNING state (in
+      // particular CANCELLED) still discards the output.
+      if (!lockedRun || (lockedRun.state !== 'RUNNING' && lockedRun.state !== 'PAUSED_MANUAL')) {
         await tx
           .update(stageAttempt)
           .set({ outcome: 'cancelled', phase: 'settled', checkResults })
@@ -1305,6 +1310,17 @@ export class StageRunnerService {
       );
     }
     return row;
+  }
+
+  /** §12.4 manual pause — the per-item outer loop in `stage.execute` checks
+   * this before invoking each item, mirroring `run.orchestrate`'s own
+   * between-stage check, so a paused run stops after the current item
+   * instead of running an iterating stage to completion. Unlocked read (no
+   * `for('update')`): this is a runnability check, not a mutation
+   * precondition. */
+  async getRunState(runId: string) {
+    const [row] = await this.db.select({ state: run.state }).from(run).where(eq(run.id, runId));
+    return row?.state;
   }
 
   /** Locked Decision 6 — once every item has passed, the stage_execution

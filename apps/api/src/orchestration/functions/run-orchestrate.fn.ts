@@ -138,6 +138,17 @@ export function buildRunOrchestrateFunction(
       for (const execution of executions) {
         if (execution.state === 'passed' && !execution.needsItemWork) continue;
 
+        // §12.4 manual pause — checked before starting the next stage, not
+        // by killing the durable function (that's cancel's job via
+        // `cancelOn`). Leaves the cursor untouched so a later `run/resumed`
+        // naturally re-enters at this same stage.
+        const runnableState = await step.run(`check-runnable-${execution.stageKey}`, () =>
+          runState.getState(runId),
+        );
+        if (runnableState !== 'RUNNING') {
+          return { state: runnableState ?? ('CANCELLED' as const) };
+        }
+
         await step.run(`set-cursor-${execution.stageKey}`, () =>
           runState.setCursor(runId, execution.stageKey),
         );
@@ -156,7 +167,14 @@ export function buildRunOrchestrateFunction(
         }
 
         if (result.outcome === 'run_not_running') {
-          return { state: 'CANCELLED' as const };
+          // The run stopped being RUNNING while this stage's attempt was
+          // in flight (manual pause or cancel raced it). Re-read the actual
+          // state rather than assuming CANCELLED — a paused run should be
+          // reported (and left) as PAUSED_MANUAL, not mislabeled.
+          const stateAfter = await step.run(`state-after-${execution.stageKey}`, () =>
+            runState.getState(runId),
+          );
+          return { state: stateAfter ?? ('CANCELLED' as const) };
         }
 
         if (result.outcome === 'approval_required') {

@@ -8,15 +8,7 @@ import { blueprintVersion, run, stageAttempt, stageExecution } from '../db/schem
 import { HumanWaitService } from './human-wait.service';
 import { RunMutationService } from './run-mutation.service';
 import { RunWakeupDispatcher } from './run-wakeup-dispatcher.service';
-
-const CANCELLABLE_STATES = [
-  'CREATED',
-  'RUNNING',
-  'PAUSED_BUDGET',
-  'PAUSED_APPROVAL',
-  'PAUSED_INPUT',
-  'FAILED',
-] as const;
+import { RUN_ACTION_ALLOWED_STATES } from './run-action-policy';
 
 @Injectable()
 export class RunCancellationService {
@@ -35,7 +27,7 @@ export class RunCancellationService {
     const result = await this.mutation.withLockedRun(
       runId,
       'cancel',
-      CANCELLABLE_STATES,
+      RUN_ACTION_ALLOWED_STATES.cancel,
       async (tx) => {
         await tx
           .update(run)

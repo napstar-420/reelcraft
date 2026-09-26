@@ -4,6 +4,7 @@ import type { RunState } from '@reelcraft/shared';
 export type RunAction =
   | 'attach'
   | 'start'
+  | 'pause'
   | 'raise_budget'
   | 'retry'
   | 'edit_artifact'
@@ -15,13 +16,24 @@ export type RunAction =
   | 'resume'
   | 'cancel';
 
+/** States the run enters *automatically* (budget exhaustion, an approval or
+ * form-input gate). Deliberately excludes `PAUSED_MANUAL` — retry/edit/
+ * patch-overrides reading from this array would otherwise silently accept
+ * an operator-paused run and implicitly resume it via `run/resumed`,
+ * defeating the point of a manual pause. If a future change needs one of
+ * those actions to also work from `PAUSED_MANUAL`, add it to that action's
+ * entry explicitly rather than to this shared array. */
 const PAUSED_STATES = ['PAUSED_BUDGET', 'PAUSED_APPROVAL', 'PAUSED_INPUT'] as const;
 
-/** The single source of truth for the Phase 4 run action matrix (§12.4). */
+/** The single source of truth for the Phase 4 run action matrix (§12.4).
+ * `apps/web/src/lib/run-action-policy.ts` keeps an intentionally-duplicated
+ * client-side mirror of the actions RunPage/RunsPage gate buttons on (UX
+ * only, not enforcement) — if you change this table, check that one too. */
 export const RUN_ACTION_ALLOWED_STATES = {
   attach: ['CREATED'],
   start: ['CREATED'],
-  raise_budget: ['RUNNING', ...PAUSED_STATES, 'FAILED'],
+  pause: ['RUNNING'],
+  raise_budget: ['RUNNING', ...PAUSED_STATES, 'PAUSED_MANUAL', 'FAILED'],
   retry: [...PAUSED_STATES, 'FAILED', 'COMPLETED'],
   edit_artifact: [...PAUSED_STATES, 'FAILED', 'COMPLETED'],
   replace_input: [...PAUSED_STATES, 'FAILED', 'COMPLETED'],
@@ -29,8 +41,8 @@ export const RUN_ACTION_ALLOWED_STATES = {
   approve: ['PAUSED_APPROVAL'],
   reject: ['PAUSED_APPROVAL'],
   submit_input: ['PAUSED_INPUT'],
-  resume: ['PAUSED_BUDGET', 'FAILED'],
-  cancel: ['CREATED', 'RUNNING', ...PAUSED_STATES, 'FAILED'],
+  resume: ['PAUSED_BUDGET', 'PAUSED_MANUAL', 'FAILED'],
+  cancel: ['CREATED', 'RUNNING', ...PAUSED_STATES, 'PAUSED_MANUAL', 'FAILED'],
 } as const satisfies Record<RunAction, readonly RunState[]>;
 
 @Injectable()

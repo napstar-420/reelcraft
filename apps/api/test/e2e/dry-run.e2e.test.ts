@@ -169,10 +169,10 @@ describe('dry-run execution (e2e)', () => {
     }
 
     // includeDryRuns default (false) excludes it; explicit true includes it.
-    const defaultList = await runs.list();
-    expect(defaultList.some((r) => r.id === dryRun.id)).toBe(false);
-    const withDryRuns = await runs.list(true);
-    expect(withDryRuns.some((r) => r.id === dryRun.id)).toBe(true);
+    const defaultList = await runs.list({ includeDryRuns: false, limit: 20, offset: 0 });
+    expect(defaultList.items.some((r) => r.id === dryRun.id)).toBe(false);
+    const withDryRuns = await runs.list({ includeDryRuns: true, limit: 20, offset: 0 });
+    expect(withDryRuns.items.some((r) => r.id === dryRun.id)).toBe(true);
   });
 
   it('throws cleanly for a nonexistent blueprint or version', async () => {

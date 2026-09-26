@@ -29,6 +29,12 @@ import type {
   RunInputStatusDto,
   ApprovalCandidateDto,
   ApprovalActionDto,
+  RunState,
+  ListRunsResultDto,
+  ConfirmRunActionDto,
+  InvalidationPreviewDto,
+  HumanInputSubmissionDto,
+  StageAttemptDto,
 } from '@reelcraft/shared';
 
 /** `blueprint.service.ts#getBlueprint()`'s row shape — the whole `blueprint`
@@ -259,8 +265,55 @@ export const api = {
       body: JSON.stringify(budgetCapUsd !== undefined ? { budgetCapUsd } : {}),
     }),
 
-  listRuns: () => request<RunDetailDto[]>('/runs'),
+  listRuns: (params?: {
+    channelId?: string | undefined;
+    blueprintId?: string | undefined;
+    state?: RunState | undefined;
+    includeDryRuns?: boolean;
+    limit?: number;
+    offset?: number;
+  }) => {
+    const qs = new URLSearchParams();
+    if (params?.channelId) qs.set('channelId', params.channelId);
+    if (params?.blueprintId) qs.set('blueprintId', params.blueprintId);
+    if (params?.state) qs.set('state', params.state);
+    if (params?.includeDryRuns) qs.set('includeDryRuns', 'true');
+    if (params?.limit !== undefined) qs.set('limit', String(params.limit));
+    if (params?.offset !== undefined) qs.set('offset', String(params.offset));
+    const suffix = qs.toString();
+    return request<ListRunsResultDto>(`/runs${suffix ? `?${suffix}` : ''}`);
+  },
   getRun: (id: string) => request<RunDetailDto>(`/runs/${id}`),
+  cancelRun: (runId: string) =>
+    request<{ state: 'CANCELLED'; revision: number }>(`/runs/${runId}/cancel`, {
+      method: 'POST',
+    }),
+  pauseRun: (runId: string) => request<RunDetailDto>(`/runs/${runId}/pause`, { method: 'POST' }),
+  resumeRun: (runId: string) => request<RunDetailDto>(`/runs/${runId}/resume`, { method: 'POST' }),
+  raiseRunBudget: (runId: string, capUsd: number) =>
+    request<RunDetailDto>(`/runs/${runId}/budget`, {
+      method: 'POST',
+      body: JSON.stringify({ capUsd }),
+    }),
+  previewStageRetry: (runId: string, stageKey: string, itemIndex?: number) =>
+    request<InvalidationPreviewDto>(
+      `/runs/${runId}/stages/${encodeURIComponent(stageKey)}/retry${
+        itemIndex !== undefined ? `?itemIndex=${itemIndex}` : ''
+      }`,
+      { method: 'POST' },
+    ),
+  confirmStageRetry: (runId: string, stageKey: string, dto: ConfirmRunActionDto) =>
+    request<{ accepted: true; revision: number }>(
+      `/runs/${runId}/stages/${encodeURIComponent(stageKey)}/retry/confirm`,
+      { method: 'POST', body: JSON.stringify(dto) },
+    ),
+  listStageAttempts: (runId: string, stageKey: string) =>
+    request<StageAttemptDto[]>(`/runs/${runId}/stages/${encodeURIComponent(stageKey)}/attempts`),
+  submitHumanInput: (runId: string, stageKey: string, dto: HumanInputSubmissionDto) =>
+    request<{ accepted: true; revision: number }>(
+      `/runs/${runId}/stages/${encodeURIComponent(stageKey)}/input`,
+      { method: 'POST', body: JSON.stringify(dto) },
+    ),
   getApprovalCandidate: (runId: string, stageKey: string) =>
     request<ApprovalCandidateDto>(
       `/runs/${runId}/stages/${encodeURIComponent(stageKey)}/approval-candidate`,

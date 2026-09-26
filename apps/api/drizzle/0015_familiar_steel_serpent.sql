@@ -1,0 +1,1 @@
+ALTER TYPE "public"."run_state" ADD VALUE 'PAUSED_MANUAL' BEFORE 'FAILED';

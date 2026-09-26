@@ -1,7 +1,15 @@
 import { ConflictException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { and, asc, desc, eq, inArray, isNull } from 'drizzle-orm';
-import type { CreateRunDto, ConfigLayer, ReferenceImage, Ref, RoleDef } from '@reelcraft/shared';
+import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import type {
+  CreateRunDto,
+  ConfigLayer,
+  ReferenceImage,
+  Ref,
+  RoleDef,
+  ListRunsQueryDto,
+} from '@reelcraft/shared';
 import { InputDef, RoleDef as RoleDefSchema, StageDef } from '@reelcraft/shared';
+import { RUN_ACTION_ALLOWED_STATES } from './run-action-policy';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
 import {
   asset,
@@ -457,9 +465,14 @@ export class RunService {
     return this.get(runId);
   }
 
-  /** §12.4 — both budget pauses and failed runs are explicit recovery
-   * points. The durable wakeup claim performs the actual transition only if
-   * the persisted source state and revision are still current. */
+  /** §12.4 — budget pauses and failed runs are explicit recovery points
+   * with a cursor precondition (the cursor execution must actually still be
+   * mid-flight). A manual pause (`PAUSED_MANUAL`) skips that precondition:
+   * the cursor can legitimately be `passed` (paused right after a stage
+   * finished) or `running` (paused while the current attempt was still
+   * being allowed to finish) — the orchestrator re-derives what to do next
+   * either way. The durable wakeup claim performs the actual transition
+   * only if the persisted source state and revision are still current. */
   async resume(runId: string) {
     const current = await this.get(runId);
     if (current.state === 'PAUSED_BUDGET' || current.state === 'FAILED') {
@@ -478,9 +491,31 @@ export class RunService {
     const mutation = await this.runMutation.withLockedRun(
       runId,
       'resume',
-      ['PAUSED_BUDGET', 'FAILED'],
+      RUN_ACTION_ALLOWED_STATES.resume,
       async () => undefined,
       'run/resumed',
+    );
+    await this.dispatchBestEffort(mutation.wakeupId);
+    return this.get(runId);
+  }
+
+  /** §12.4 — manual pause. Unlike cancel, this must stay resumable: it flips
+   * `run.state` to `PAUSED_MANUAL` synchronously (so the API reflects it
+   * immediately) but does NOT hard-cancel the in-flight Inngest function —
+   * the orchestrator's own runnable checks (before the next stage/item) are
+   * what actually halt progress, letting whatever attempt is already
+   * in-flight finish and commit normally. No listener exists for
+   * `run/paused` (the state flip alone is sufficient); this mirrors other
+   * unlistened outbox events like `run/config-updated`. */
+  async pause(runId: string) {
+    const mutation = await this.runMutation.withLockedRun(
+      runId,
+      'pause',
+      RUN_ACTION_ALLOWED_STATES.pause,
+      async (tx) => {
+        await tx.update(run).set({ state: 'PAUSED_MANUAL' }).where(eq(run.id, runId));
+      },
+      'run/paused',
     );
     await this.dispatchBestEffort(mutation.wakeupId);
     return this.get(runId);
@@ -733,10 +768,65 @@ export class RunService {
 
   /** §21/Chunk 5 — dry runs write real ledger rows (locked product decision
    * #1's accepted consequence), so the default listing excludes them; an
-   * explicit `includeDryRuns` opts back in. */
-  async list(includeDryRuns = false) {
-    if (includeDryRuns) return this.db.select().from(run);
-    return this.db.select().from(run).where(eq(run.dryRun, false));
+   * explicit `includeDryRuns` opts back in. Backs the Runs tab's list page:
+   * joins in channel/blueprint display names so the UI never needs N+1
+   * lookups per row. `innerJoin` is safe because `run.channelId`,
+   * `run.blueprintVersionId`, and `blueprintVersion.blueprintId` are all
+   * NOT NULL FKs today — if that invariant ever changes (e.g. hard deletes),
+   * this would silently drop affected runs from the list instead of erroring. */
+  async list(query: ListRunsQueryDto) {
+    const conditions = [
+      query.includeDryRuns ? undefined : eq(run.dryRun, false),
+      query.channelId ? eq(run.channelId, query.channelId) : undefined,
+      query.state ? eq(run.state, query.state) : undefined,
+      query.blueprintId ? eq(blueprintVersion.blueprintId, query.blueprintId) : undefined,
+    ].filter((condition): condition is NonNullable<typeof condition> => condition !== undefined);
+    const where = conditions.length ? and(...conditions) : undefined;
+
+    const baseQuery = this.db
+      .select({
+        id: run.id,
+        channelId: run.channelId,
+        channelName: channel.name,
+        blueprintId: blueprint.id,
+        blueprintName: blueprint.name,
+        blueprintVersionId: run.blueprintVersionId,
+        blueprintVersion: blueprintVersion.version,
+        state: run.state,
+        dryRun: run.dryRun,
+        budgetCapUsd: run.budgetCapUsd,
+        spentUsd: run.spentUsd,
+        startedAt: run.startedAt,
+        endedAt: run.endedAt,
+      })
+      .from(run)
+      .innerJoin(channel, eq(channel.id, run.channelId))
+      .innerJoin(blueprintVersion, eq(blueprintVersion.id, run.blueprintVersionId))
+      .innerJoin(blueprint, eq(blueprint.id, blueprintVersion.blueprintId));
+    const countQuery = this.db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(run)
+      .innerJoin(blueprintVersion, eq(blueprintVersion.id, run.blueprintVersionId));
+
+    const [rows, countRows] = await Promise.all([
+      (where ? baseQuery.where(where) : baseQuery)
+        .orderBy(desc(run.startedAt))
+        .limit(query.limit)
+        .offset(query.offset),
+      where ? countQuery.where(where) : countQuery,
+    ]);
+    const total = countRows[0]?.count ?? 0;
+
+    return {
+      items: rows.map((row) => ({
+        ...row,
+        budgetCapUsd: toUsd(row.budgetCapUsd),
+        spentUsd: toUsd(row.spentUsd),
+      })),
+      total,
+      limit: query.limit,
+      offset: query.offset,
+    };
   }
 
   async listStageAttempts(runId: string, stageKey: string) {

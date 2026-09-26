@@ -178,4 +178,103 @@ describe('Phase 4 approval, human input, and cancellation (e2e)', () => {
         .where(and(eq(humanWait.runId, waitingRun.id), isNull(humanWait.resolvedAt))),
     ).toHaveLength(0);
   });
+
+  it('lets an in-flight attempt commit through a manual pause, but still discards it on cancel', async () => {
+    // This is the riskiest change in the manual pause/resume feature: the
+    // fetchAndFinalize commit guard was loosened from `state === 'RUNNING'`
+    // to `state === 'RUNNING' || 'PAUSED_MANUAL'`. Prove both halves: an
+    // attempt paused mid-flight still commits (money already spent, don't
+    // throw the output away), while every other non-RUNNING state — in
+    // particular CANCELLED — still discards it exactly as before.
+    const graph = [stage({ key: 'draft', writes: { draft: '$' } })];
+    const runner = testApp.app.get(StageRunnerService);
+
+    const paused = await createRun(graph);
+    const pausedExecution = paused.stageExecutions[0]!;
+    const {
+      stage: pausedDef,
+      effective: pausedEffective,
+      prevStageKey: pausedPrev,
+    } = await runner.loadStageContext(paused.id, 'draft');
+    const pausedAttempt = await runner.beginAttempt({
+      runId: paused.id,
+      stageExecutionId: pausedExecution.id,
+      stageKey: 'draft',
+    });
+    const pausedSubmitted = await runner.reserveAndSubmit(
+      pausedDef,
+      pausedAttempt,
+      pausedPrev,
+      pausedEffective,
+    );
+    if (pausedSubmitted.outcome !== 'submitted') throw new Error('expected submission');
+    await testDb.db.update(run).set({ state: 'PAUSED_MANUAL' }).where(eq(run.id, paused.id));
+    const pausedResult = await runner.fetchAndFinalize(
+      pausedDef,
+      pausedAttempt,
+      pausedSubmitted.handle,
+      pausedPrev,
+      pausedEffective,
+    );
+    expect(pausedResult.outcome).not.toBe('run_not_running');
+    const [pausedAttemptRow] = await testDb.db
+      .select()
+      .from(stageAttempt)
+      .where(eq(stageAttempt.id, pausedAttempt.stageAttemptId));
+    expect(pausedAttemptRow?.outcome).not.toBe('cancelled');
+
+    const cancelled = await createRun(graph);
+    const cancelledExecution = cancelled.stageExecutions[0]!;
+    const {
+      stage: cancelledDef,
+      effective: cancelledEffective,
+      prevStageKey: cancelledPrev,
+    } = await runner.loadStageContext(cancelled.id, 'draft');
+    const cancelledAttempt = await runner.beginAttempt({
+      runId: cancelled.id,
+      stageExecutionId: cancelledExecution.id,
+      stageKey: 'draft',
+    });
+    const cancelledSubmitted = await runner.reserveAndSubmit(
+      cancelledDef,
+      cancelledAttempt,
+      cancelledPrev,
+      cancelledEffective,
+    );
+    if (cancelledSubmitted.outcome !== 'submitted') throw new Error('expected submission');
+    await testDb.db.update(run).set({ state: 'CANCELLED' }).where(eq(run.id, cancelled.id));
+    const cancelledResult = await runner.fetchAndFinalize(
+      cancelledDef,
+      cancelledAttempt,
+      cancelledSubmitted.handle,
+      cancelledPrev,
+      cancelledEffective,
+    );
+    expect(cancelledResult.outcome).toBe('run_not_running');
+    const [cancelledAttemptRow] = await testDb.db
+      .select()
+      .from(stageAttempt)
+      .where(eq(stageAttempt.id, cancelledAttempt.stageAttemptId));
+    expect(cancelledAttemptRow?.outcome).toBe('cancelled');
+  });
+
+  it('pauses a RUNNING run, then resumes and cancels it through the same policy table', async () => {
+    const graph = [stage({ key: 'draft', writes: { draft: '$' } })];
+    const created = await createRun(graph);
+    const runs = testApp.app.get(RunService);
+
+    const paused = await runs.pause(created.id);
+    expect(paused.state).toBe('PAUSED_MANUAL');
+
+    // resume() only enqueues a `run/resumed` wakeup — the actual RUNNING
+    // transition happens later, asynchronously, when the orchestrator's
+    // durable function claims that wakeup (not exercised by this test,
+    // which never runs the Inngest engine). Immediately after resume()
+    // returns, the persisted state is therefore still PAUSED_MANUAL.
+    const resumed = await runs.resume(created.id);
+    expect(resumed.state).toBe('PAUSED_MANUAL');
+
+    const cancelResult = await testApp.app.get(RunCancellationService).cancel(created.id);
+    expect(cancelResult.state).toBe('CANCELLED');
+  });
 });

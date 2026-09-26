@@ -82,6 +82,13 @@ export function buildStageExecuteFunction(
         );
 
         for (let i = 0; i < itemCount; i += 1) {
+          // §12.4 manual pause — stop after the current item rather than
+          // running the whole iterating stage to completion.
+          const runState = await step.run(`check-runnable-item-${i}`, () =>
+            runner.getRunState(data.runId),
+          );
+          if (runState !== 'RUNNING') return { outcome: 'run_not_running' as const };
+
           const item = await step.run(`check-item-${i}`, () =>
             runner.itemState(data.stageExecutionId, i),
           );

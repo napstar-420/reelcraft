@@ -3,6 +3,7 @@ import { Routes, Route, useLocation } from 'react-router-dom';
 import { ChannelsPage } from './pages/ChannelsPage';
 import { BlueprintsPage } from './pages/BlueprintsPage';
 import { BlueprintCanvasPage } from './pages/BlueprintCanvasPage';
+import { RunsPage } from './pages/RunsPage';
 import { RunPage } from './pages/RunPage';
 import { EditorPage } from './pages/EditorPage';
 import { AppShell } from './components/app-shell';
@@ -30,6 +31,7 @@ export function App() {
         <Route path="/channels/:channelId" element={<BlueprintsPage />} />
         <Route path="/channels/:channelId/build" element={<BlueprintCanvasPage />} />
         <Route path="/blueprints/:blueprintId/build" element={<BlueprintCanvasPage />} />
+        <Route path="/runs" element={<RunsPage />} />
         <Route path="/runs/:runId" element={<RunPage />} />
         <Route
           path="/runs/:runId/stages/:stageKey/edit"

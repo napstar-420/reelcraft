@@ -182,3 +182,46 @@ export const RunDetailDto = z.object({
   endedAt: z.string().nullable(),
 });
 export type RunDetailDto = z.infer<typeof RunDetailDto>;
+
+/** Lightweight row for the runs list page (Runs tab) — deliberately excludes
+ * `stageExecutions`/`resolvedConfig`/`overrides`/`roleBindings`/`inputs` since
+ * a list row never needs them, and includes channel/blueprint display names
+ * (joined server-side) so the list page never needs N+1 lookups per row. */
+export const RunSummaryDto = z.object({
+  id: z.string(),
+  channelId: z.string(),
+  channelName: z.string(),
+  blueprintId: z.string(),
+  blueprintName: z.string(),
+  blueprintVersionId: z.string(),
+  blueprintVersion: z.number().int(),
+  state: RunState,
+  dryRun: z.boolean(),
+  budgetCapUsd: z.number(),
+  spentUsd: z.number(),
+  startedAt: z.string(),
+  endedAt: z.string().nullable(),
+});
+export type RunSummaryDto = z.infer<typeof RunSummaryDto>;
+
+export const ListRunsResultDto = z.object({
+  items: z.array(RunSummaryDto),
+  total: z.number().int().nonnegative(),
+  limit: z.number().int().positive(),
+  offset: z.number().int().nonnegative(),
+});
+export type ListRunsResultDto = z.infer<typeof ListRunsResultDto>;
+
+/** Query params arrive as strings over HTTP; `z.coerce` turns `"20"`/`"true"`
+ * into number/boolean before `ZodValidationPipe` hands the controller a typed
+ * object. `state` is single-value (not a multi-select) to avoid inventing
+ * repeated-query-param array parsing for a first cut of run filtering. */
+export const ListRunsQueryDto = z.object({
+  channelId: z.string().optional(),
+  blueprintId: z.string().optional(),
+  state: RunState.optional(),
+  includeDryRuns: z.coerce.boolean().optional().default(false),
+  limit: z.coerce.number().int().positive().max(100).optional().default(20),
+  offset: z.coerce.number().int().nonnegative().optional().default(0),
+});
+export type ListRunsQueryDto = z.infer<typeof ListRunsQueryDto>;

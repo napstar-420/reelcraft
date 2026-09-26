@@ -24,6 +24,7 @@ import {
   PutRunInputDto,
   SaveTimelineDraftDto,
   SubmitTimelineDraftDto,
+  ListRunsQueryDto,
 } from '@reelcraft/shared';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { InProcessRunEvents, type RunEvent } from '../orchestration/run-events';
@@ -57,8 +58,8 @@ export class RunController {
   }
 
   @Get()
-  list(@Query('includeDryRuns') includeDryRuns?: string) {
-    return this.runs.list(includeDryRuns === 'true');
+  list(@Query(new ZodValidationPipe(ListRunsQueryDto)) query: ListRunsQueryDto) {
+    return this.runs.list(query);
   }
 
   @Get(':id')
@@ -98,6 +99,11 @@ export class RunController {
   @UsePipes(new ZodValidationPipe(RaiseBudgetDto))
   raiseBudget(@Param('id') id: string, @Body() dto: RaiseBudgetDto) {
     return this.runs.raiseBudget(id, dto.capUsd);
+  }
+
+  @Post(':id/pause')
+  pause(@Param('id') id: string) {
+    return this.runs.pause(id);
   }
 
   @Post(':id/resume')

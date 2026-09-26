@@ -1,4 +1,4 @@
-import { Clapperboard, LayoutGrid, Wrench } from 'lucide-react';
+import { Clapperboard, LayoutGrid, ListVideo, Wrench } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import {
   Sidebar,
@@ -14,6 +14,7 @@ import {
 
 const navItems = [
   { to: '/', label: 'Channels', icon: LayoutGrid },
+  { to: '/runs', label: 'Runs', icon: ListVideo },
   { to: '/editor', label: 'Editor', icon: Wrench },
 ];
 
