@@ -28,6 +28,14 @@ export const ListChannelsQueryDto = z.object({
 });
 export type ListChannelsQueryDto = z.infer<typeof ListChannelsQueryDto>;
 
+export const ChannelCountsDto = z.object({
+  blueprints: z.number(),
+  characters: z.number(),
+  assets: z.number(),
+  runs: z.number(),
+});
+export type ChannelCountsDto = z.infer<typeof ChannelCountsDto>;
+
 export const ChannelDto = z.object({
   id: z.string(),
   ownerId: z.string(),
@@ -37,5 +45,6 @@ export const ChannelDto = z.object({
   defaults: ConfigLayer,
   archived: z.boolean(),
   createdAt: z.string(),
+  counts: ChannelCountsDto,
 });
 export type ChannelDto = z.infer<typeof ChannelDto>;

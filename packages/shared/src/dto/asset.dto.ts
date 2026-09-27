@@ -28,6 +28,15 @@ export const CreateAssetDto = z.object({
 });
 export type CreateAssetDto = z.infer<typeof CreateAssetDto>;
 
+export const AssetFileDto = z.object({
+  bytes: z.number(),
+  mime: z.string(),
+  width: z.number().optional(),
+  height: z.number().optional(),
+  durationSec: z.number().optional(),
+});
+export type AssetFileDto = z.infer<typeof AssetFileDto>;
+
 export const AssetDto = z.object({
   id: z.string(),
   ownerId: z.string(),
@@ -37,5 +46,6 @@ export const AssetDto = z.object({
   blobId: z.string(),
   tags: z.array(z.string()),
   createdAt: z.string(),
+  file: AssetFileDto,
 });
 export type AssetDto = z.infer<typeof AssetDto>;

@@ -2,10 +2,12 @@ import type { Inngest } from 'inngest';
 import { and, eq, inArray, ne } from 'drizzle-orm';
 import { StageDef } from '@reelcraft/shared';
 import type { Db } from '../../db/drizzle.provider';
-import { blueprintVersion, run, stageExecution, stageItem } from '../../db/schema/index';
+import { artifact, blueprintVersion, run, stageExecution, stageItem } from '../../db/schema/index';
 import type { RunStateService } from '../run-state.service';
 import { buildStageExecuteFunction } from './stage-execute.fn';
 import type { RunWakeupClaimService, RunWakeupEventData } from '../../run/run-wakeup-claim.service';
+import type { DerivedFrameService } from '../../artifact/derived-frame.service';
+import { findFinalVideo } from '../../artifact/final-video';
 
 /** Shared shape for both triggers below — `run/resumed` (§12.4, sent by
  * `RunService.resume()`) carries the identical `{runId}` payload. */
@@ -65,6 +67,7 @@ export function buildRunOrchestrateFunction(
   runState: RunStateService,
   stageExecuteFn: ReturnType<typeof buildStageExecuteFunction>,
   wakeupClaim?: RunWakeupClaimService,
+  derivedFrames?: DerivedFrameService,
 ) {
   return client.createFunction(
     {
@@ -216,6 +219,28 @@ export function buildRunOrchestrateFunction(
 
       await step.run('mark-completed', () => runState.transition(runId, 'COMPLETED'));
       await step.run('clear-cursor', () => runState.setCursor(runId, null));
+
+      if (derivedFrames) {
+        await step
+          .run('extract-poster', async () => {
+            const final = await findFinalVideo(db, runId);
+            if (!final) return { extracted: false as const };
+            const [artifactRow] = await db
+              .select()
+              .from(artifact)
+              .where(eq(artifact.id, final.artifactId))
+              .limit(1);
+            if (!artifactRow) return { extracted: false as const };
+            await derivedFrames.extract(artifactRow, 'poster');
+            return { extracted: true as const };
+          })
+          .catch((err: unknown) => {
+            // A poster is a thumbnail nicety, not part of the run's actual
+            // output — never fail an otherwise-completed run over it.
+            logger.warn({ runId, err }, 'extract-poster step failed; run stays COMPLETED');
+          });
+      }
+
       return { state: 'COMPLETED' as const };
     },
   );

@@ -5,6 +5,9 @@ import type { StageDef } from '@reelcraft/shared';
 import { ChannelService } from '../../src/channel/channel.service';
 import { BlueprintService } from '../../src/blueprint/blueprint.service';
 import { RunService } from '../../src/run/run.service';
+import { CharacterService } from '../../src/channel/character.service';
+import { AssetService } from '../../src/channel/asset.service';
+import { STORAGE_ADAPTER, type StorageAdapter } from '../../src/storage/storage.adapter';
 import { run } from '../../src/db/schema/index';
 import { buildTestApp, type TestApp } from '../support/build-app';
 import { createTestDb, type TestDb } from '../support/test-db';
@@ -162,5 +165,55 @@ describe('channel create/list/get/update (e2e)', () => {
       .where(eq(run.id, dryRun.id));
     await channels.delete(created.id);
     await expect(channels.get(created.id)).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('reports counts of blueprints, characters, assets, and non-dry runs', async () => {
+    const channels = testApp.app.get(ChannelService);
+    const blueprints = testApp.app.get(BlueprintService);
+    const runs = testApp.app.get(RunService);
+    const characters = testApp.app.get(CharacterService);
+    const assets = testApp.app.get(AssetService);
+    const storage = testApp.app.get<StorageAdapter>(STORAGE_ADAPTER);
+
+    const created = await channels.create('local', {
+      name: `Channel CRUD Counts ${Date.now()}-${Math.random()}`,
+      theme: {},
+      defaults: {},
+    });
+    expect(created.counts).toEqual({ blueprints: 0, characters: 0, assets: 0, runs: 0 });
+
+    const blueprintId = await blueprints.ensureBlueprint(created.id, 'Counts Blueprint');
+    const version = await blueprints.createVersion(blueprintId, {
+      graph: MINIMAL_GRAPH,
+      inputs: [],
+      roles: [],
+      defaults: {},
+      budget: { runCapUsd: 10 },
+    });
+    await characters.create(created.id, { name: 'Counts Character', description: '' });
+    const upload = await assets.requestUpload(created.id, 'png');
+    await storage.put(upload.objectKey, Buffer.from('fake-png-bytes'), { mime: 'image/png' });
+    await assets.create(created.id, {
+      name: 'counts-asset',
+      kind: 'media.image',
+      blobId: upload.blobId,
+      objectKey: upload.objectKey,
+      sha256: 'deadbeef',
+      tags: [],
+    });
+    await runs.startDryRun(blueprintId, version.version);
+    await runs.create({
+      channelId: created.id,
+      blueprintVersionId: version.id,
+      inputs: {},
+      roleBindings: {},
+      budgetCapUsd: 10,
+    });
+
+    const withCounts = await channels.get(created.id);
+    expect(withCounts.counts).toEqual({ blueprints: 1, characters: 1, assets: 1, runs: 1 });
+
+    const listed = await channels.list({ includeArchived: false });
+    expect(listed.find((c) => c.id === created.id)?.counts).toEqual(withCounts.counts);
   });
 });

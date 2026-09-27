@@ -157,9 +157,13 @@ export function ChannelsPage() {
       )}
 
       {!channels.isLoading && channels.data?.length === 0 && (
-        <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-border py-16 text-center text-muted-foreground">
+        <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-border py-16 text-center text-muted-foreground">
           <Radio className="size-8" />
           <p className="text-sm">No channels yet. Create one to get started.</p>
+          <Button size="sm" onClick={() => setDialog({ mode: 'create' })}>
+            <Plus />
+            New channel
+          </Button>
         </div>
       )}
 

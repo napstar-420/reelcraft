@@ -199,6 +199,14 @@ export class StageRunnerService {
       ? eq(stageAttempt.stageItemId, ctx.stageItemId)
       : isNull(stageAttempt.stageItemId);
 
+    // First attempt of the stage (any item) marks when it actually started
+    // running, for display in the run timeline. Coalesce so a replayed step
+    // or a retry of an already-started stage doesn't push the time forward.
+    await this.db
+      .update(stageExecution)
+      .set({ startedAt: sql`coalesce(${stageExecution.startedAt}, now())` })
+      .where(eq(stageExecution.id, ctx.stageExecutionId));
+
     // phase 7 chunk 4 — an item's first attempt (and every retry of it)
     // marks the stage_item 'running'. Idempotent to repeat on a replayed
     // step or a resumed retry of a previously-'failed' item.

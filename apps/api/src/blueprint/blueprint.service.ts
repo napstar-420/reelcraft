@@ -1,6 +1,11 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { and, eq, inArray, isNull, max } from 'drizzle-orm';
-import type { ConfigLayer, CreateBlueprintVersionDto, ValidationIssue } from '@reelcraft/shared';
+import { and, eq, inArray, isNull, max, sql } from 'drizzle-orm';
+import type {
+  ConfigLayer,
+  CreateBlueprintVersionDto,
+  UpdateBlueprintDto,
+  ValidationIssue,
+} from '@reelcraft/shared';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
 import { asset, blob, blueprint, blueprintVersion, character, channel } from '../db/schema/index';
 import { ulid } from '../common/ulid';
@@ -26,7 +31,11 @@ export class BlueprintService {
     private readonly providers: ProviderRegistry,
   ) {}
 
-  async ensureBlueprint(channelId: string, name: string): Promise<string> {
+  async ensureBlueprint(
+    channelId: string,
+    name: string,
+    dto?: { description?: string | undefined; tags?: string[] | undefined },
+  ): Promise<string> {
     const [existing] = await this.db
       .select()
       .from(blueprint)
@@ -35,19 +44,69 @@ export class BlueprintService {
     if (existing) return existing.id;
 
     const id = ulid();
-    await this.db.insert(blueprint).values({ id, channelId, name });
+    await this.db.insert(blueprint).values({
+      id,
+      channelId,
+      name,
+      description: dto?.description,
+      tags: dto?.tags,
+    });
     this.logger.log({ blueprintId: id, channelId }, 'blueprint created');
     return id;
   }
 
+  // Raw, fully-qualified identifiers (not interpolated Column objects) —
+  // see ChannelService.countsSelection for why: an interpolated Column
+  // renders unqualified in a `sql` template and collides with a same-named
+  // column from the subquery's own tables.
+  private runStatsSelection() {
+    return {
+      runCount: sql<number>`(
+        select count(*)::int from run r
+        inner join blueprint_version bv on bv.id = r.blueprint_version_id
+        where bv.blueprint_id = blueprint.id and not r.dry_run
+      )`.as('run_count'),
+      latestPosterBlobId: sql<string | null>`(
+        select a.derived->>'poster' from run r
+        inner join blueprint_version bv on bv.id = r.blueprint_version_id
+        inner join artifact a on a.run_id = r.id
+        where bv.blueprint_id = blueprint.id
+          and r.state = 'COMPLETED'
+          and a.stale = false
+          and a.derived->>'poster' is not null
+        order by r.ended_at desc
+        limit 1
+      )`.as('latest_poster_blob_id'),
+    };
+  }
+
   async listByChannel(channelId: string) {
-    return this.db.select().from(blueprint).where(eq(blueprint.channelId, channelId));
+    const rows = await this.db
+      .select({ blueprint, ...this.runStatsSelection() })
+      .from(blueprint)
+      .where(eq(blueprint.channelId, channelId));
+    return rows.map((r) => ({
+      ...r.blueprint,
+      runCount: r.runCount,
+      latestPosterBlobId: r.latestPosterBlobId,
+    }));
+  }
+
+  async update(id: string, dto: UpdateBlueprintDto) {
+    await this.getBlueprint(id);
+    await this.db.update(blueprint).set(dto).where(eq(blueprint.id, id));
+    this.logger.log({ blueprintId: id, fields: Object.keys(dto) }, 'blueprint updated');
+    return this.getBlueprint(id);
   }
 
   async getBlueprint(id: string) {
-    const [row] = await this.db.select().from(blueprint).where(eq(blueprint.id, id)).limit(1);
+    const [row] = await this.db
+      .select({ blueprint, ...this.runStatsSelection() })
+      .from(blueprint)
+      .where(eq(blueprint.id, id))
+      .limit(1);
     if (!row) throw new Error(`Blueprint ${id} not found`);
-    return row;
+    return { ...row.blueprint, runCount: row.runCount, latestPosterBlobId: row.latestPosterBlobId };
   }
 
   async createVersion(

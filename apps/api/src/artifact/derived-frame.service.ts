@@ -17,7 +17,15 @@ import { MediaProbeService } from './media-probe.service';
 
 const execFileAsync = promisify(execFile);
 
-export type DerivedFrameKind = 'firstFrame' | 'lastFrame';
+export type DerivedFrameKind = 'firstFrame' | 'lastFrame' | 'poster';
+
+/** A3 — seeks roughly a third into the clip for a representative thumbnail
+ * frame, clamped so it never lands past (duration - 0.1s) or before 0.
+ * Exported for direct unit testing of the edge cases. */
+export function posterSeekSec(durationSec: number | undefined): number {
+  if (!durationSec || durationSec <= 0) return 0;
+  return Math.min(durationSec / 3, Math.max(durationSec - 0.1, 0));
+}
 
 /** Shape matches the compact descriptor `mediaManifest()`/`blobManifest()`
  * return in `binding-resolver.service.ts` — a derived frame has no artifact
@@ -138,7 +146,18 @@ export class DerivedFrameService {
       const args =
         which === 'firstFrame'
           ? ['-y', '-i', source, '-frames:v', '1', framePath]
-          : ['-y', '-sseof', '-0.1', '-i', source, '-frames:v', '1', framePath];
+          : which === 'lastFrame'
+            ? ['-y', '-sseof', '-0.1', '-i', source, '-frames:v', '1', framePath]
+            : [
+                '-y',
+                '-ss',
+                String(posterSeekSec((row.probe as Probe | null)?.durationSec)),
+                '-i',
+                source,
+                '-frames:v',
+                '1',
+                framePath,
+              ];
       await this.runFfmpeg(args);
       const bytes = await readFile(framePath);
       let probe: Probe | undefined;

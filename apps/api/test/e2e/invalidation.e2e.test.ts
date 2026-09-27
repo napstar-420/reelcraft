@@ -184,6 +184,8 @@ describe('InvalidationService (e2e)', () => {
         state: 'passed',
         outputArtifactId: ids.sourceArtifact!,
         generation: 2,
+        startedAt: new Date().toISOString(),
+        endedAt: new Date().toISOString(),
       },
       {
         id: ids.dependentExecution!,
@@ -192,6 +194,8 @@ describe('InvalidationService (e2e)', () => {
         state: 'passed',
         outputArtifactId: ids.dependentArtifact!,
         generation: 2,
+        startedAt: new Date().toISOString(),
+        endedAt: new Date().toISOString(),
       },
       {
         id: ids.inputReaderExecution!,
@@ -392,17 +396,22 @@ describe('InvalidationService (e2e)', () => {
       state: 'stale',
       outputArtifactId: null,
       generation: 3,
+      startedAt: null,
+      endedAt: null,
     });
     expect(executions.find((row) => row.stageKey === 'dependent')).toMatchObject({
       state: 'stale',
       outputArtifactId: null,
       generation: 2,
+      startedAt: null,
+      endedAt: null,
     });
     expect(executions.find((row) => row.stageKey === 'unrelated')).toMatchObject({
       state: 'passed',
       outputArtifactId: ids.unrelatedArtifact,
       generation: 2,
     });
+    expect(executions.find((row) => row.stageKey === 'unrelated')?.startedAt).toBeNull();
 
     const memory = await service.listMemory(runId);
     expect(memory.current).toEqual({});

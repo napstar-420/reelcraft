@@ -177,6 +177,8 @@ export const StageExecutionDto = z.object({
   outputArtifactId: z.string().nullable(),
   costUsd: z.number(),
   capability: z.string(),
+  startedAt: z.string().nullable(),
+  endedAt: z.string().nullable(),
   interaction: z.enum(['form', 'timeline_editor']).nullable(),
   attachments: z.array(
     z.object({
@@ -209,6 +211,14 @@ export const RunDetailDto = z.object({
   stageExecutions: z.array(StageExecutionDto),
   startedAt: z.string(),
   endedAt: z.string().nullable(),
+  finalVideo: z
+    .object({
+      artifactId: z.string(),
+      blobId: z.string(),
+      durationSec: z.number().optional(),
+      posterBlobId: z.string().optional(),
+    })
+    .nullable(),
 });
 export type RunDetailDto = z.infer<typeof RunDetailDto>;
 
@@ -230,6 +240,7 @@ export const RunSummaryDto = z.object({
   spentUsd: z.number(),
   startedAt: z.string(),
   endedAt: z.string().nullable(),
+  posterBlobId: z.string().nullable(),
 });
 export type RunSummaryDto = z.infer<typeof RunSummaryDto>;
 

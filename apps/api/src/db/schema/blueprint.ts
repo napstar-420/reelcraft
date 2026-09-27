@@ -15,6 +15,8 @@ export const blueprint = pgTable('blueprint', {
     .notNull()
     .references(() => channel.id), // channel this blueprint belongs to
   name: text('name').notNull(), // display name of the blueprint
+  description: text('description'), // freeform description shown on the blueprint card
+  tags: text('tags').array().notNull().default([]), // freeform labels for search/filtering
   currentVersionId: text('current_version_id'), // id of the blueprint_version currently active (see FK note above)
   archived: boolean('archived').notNull().default(false), // whether the blueprint is archived/hidden from active use
 });
