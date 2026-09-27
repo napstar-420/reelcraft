@@ -15,6 +15,7 @@ import { RunWakeupDispatcher } from '../../run/run-wakeup-dispatcher.service';
 import { buildRunWakeupDispatchFunction } from './run-wakeup-dispatch.fn';
 import { HumanReminderService } from '../../run/human-reminder.service';
 import { BlobService } from '../../artifact/blob.service';
+import { DerivedFrameService } from '../../artifact/derived-frame.service';
 import { buildHumanReminderSweepFunction } from './human-reminder-sweep.fn';
 import { ComputeJobService } from '../../storage/compute-job.service';
 
@@ -34,6 +35,7 @@ export function buildInngestFunctions(app: INestApplicationContext) {
   const reminders = app.get(HumanReminderService);
   const blobs = app.get(BlobService);
   const computeJobs = app.get(ComputeJobService);
+  const derivedFrames = app.get(DerivedFrameService);
 
   const stageExecuteItem = buildStageExecuteItemFunction(client, runner);
   const stageExecute = buildStageExecuteFunction(client, runner, stageExecuteItem);
@@ -43,6 +45,7 @@ export function buildInngestFunctions(app: INestApplicationContext) {
     runState,
     stageExecute,
     wakeupClaim,
+    derivedFrames,
   );
   const runWakeupDispatch = buildRunWakeupDispatchFunction(client, wakeupDispatcher);
   const humanReminderSweep = buildHumanReminderSweepFunction(client, reminders);

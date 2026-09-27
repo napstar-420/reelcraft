@@ -11,6 +11,7 @@ describe('ChannelDto', () => {
       theme: {},
       defaults: {},
       createdAt: '2026-01-01T00:00:00.000Z',
+      counts: { blueprints: 0, characters: 0, assets: 0, runs: 0 },
     };
     expect(() => ChannelDto.parse(base)).toThrow();
     expect(ChannelDto.parse({ ...base, archived: false }).archived).toBe(false);

@@ -1,5 +1,5 @@
 import { ConflictException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { and, eq, inArray, isNull } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { CreateChannelDto, ListChannelsQueryDto, UpdateChannelDto } from '@reelcraft/shared';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
 import {
@@ -43,15 +43,66 @@ export class ChannelService {
     return this.get(id);
   }
 
+  // Raw, fully-qualified identifiers (not interpolated Column objects):
+  // drizzle's `sql` tag renders an interpolated Column unqualified (e.g.
+  // bare "id"), which is ambiguous once the subquery's own table also has
+  // an "id" column. Every identifier below is a static, compile-time-known
+  // lowercase snake_case name from db/schema, not user input.
+  private countsSelection() {
+    return {
+      blueprints: sql<number>`(
+        select count(*)::int from blueprint
+        where blueprint.channel_id = channel.id and not blueprint.archived
+      )`.as('blueprint_count'),
+      characters: sql<number>`(
+        select count(*)::int from character
+        where character.channel_id = channel.id and character.scope = 'channel'
+      )`.as('character_count'),
+      assets: sql<number>`(
+        select count(*)::int from asset
+        inner join blob on blob.id = asset.blob_id
+        where asset.channel_id = channel.id and blob.deleted_at is null
+      )`.as('asset_count'),
+      runs: sql<number>`(
+        select count(*)::int from run
+        where run.channel_id = channel.id and not run.dry_run
+      )`.as('run_count'),
+    };
+  }
+
+  private toView<T extends { id: string }>(
+    row: T,
+    counts: { blueprints: number; characters: number; assets: number; runs: number },
+  ) {
+    return { ...row, counts };
+  }
+
   async list(query: ListChannelsQueryDto) {
-    const base = this.db.select().from(channel);
-    return query.includeArchived ? base : base.where(eq(channel.archived, false));
+    const base = this.db.select({ channel, ...this.countsSelection() }).from(channel);
+    const rows = await (query.includeArchived ? base : base.where(eq(channel.archived, false)));
+    return rows.map((r) =>
+      this.toView(r.channel, {
+        blueprints: r.blueprints,
+        characters: r.characters,
+        assets: r.assets,
+        runs: r.runs,
+      }),
+    );
   }
 
   async get(id: string) {
-    const [row] = await this.db.select().from(channel).where(eq(channel.id, id)).limit(1);
+    const [row] = await this.db
+      .select({ channel, ...this.countsSelection() })
+      .from(channel)
+      .where(eq(channel.id, id))
+      .limit(1);
     if (!row) throw new NotFoundException(`Channel ${id} not found`);
-    return row;
+    return this.toView(row.channel, {
+      blueprints: row.blueprints,
+      characters: row.characters,
+      assets: row.assets,
+      runs: row.runs,
+    });
   }
 
   async update(id: string, dto: UpdateChannelDto) {

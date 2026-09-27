@@ -1,5 +1,10 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Post, Query } from '@nestjs/common';
-import { CreateBlueprintDto, CreateBlueprintVersionDto, StartDryRunDto } from '@reelcraft/shared';
+import { Body, Controller, Get, Param, ParseIntPipe, Patch, Post, Query } from '@nestjs/common';
+import {
+  CreateBlueprintDto,
+  CreateBlueprintVersionDto,
+  StartDryRunDto,
+  UpdateBlueprintDto,
+} from '@reelcraft/shared';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { BlueprintService } from './blueprint.service';
 import { RunService } from '../run/run.service';
@@ -13,7 +18,10 @@ export class BlueprintController {
 
   @Post()
   async create(@Body(new ZodValidationPipe(CreateBlueprintDto)) dto: CreateBlueprintDto) {
-    const blueprintId = await this.blueprints.ensureBlueprint(dto.channelId, dto.name);
+    const blueprintId = await this.blueprints.ensureBlueprint(dto.channelId, dto.name, {
+      description: dto.description,
+      tags: dto.tags,
+    });
     return { blueprintId };
   }
 
@@ -25,6 +33,14 @@ export class BlueprintController {
   @Get(':id')
   getBlueprint(@Param('id') id: string) {
     return this.blueprints.getBlueprint(id);
+  }
+
+  @Patch(':id')
+  update(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(UpdateBlueprintDto)) dto: UpdateBlueprintDto,
+  ) {
+    return this.blueprints.update(id, dto);
   }
 
   @Post(':id/versions')

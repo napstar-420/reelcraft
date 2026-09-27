@@ -358,36 +358,38 @@ export function BlueprintSettingsPanel({
     <section className="flex flex-col gap-4">
       <h2 className="text-lg font-semibold">Blueprint settings</h2>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Budget</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <BudgetEditor budget={budget} onChange={(next) => onChange({ budget: next })} />
-        </CardContent>
-      </Card>
+      <div className="grid items-start gap-4 sm:grid-cols-3">
+        <Card>
+          <CardHeader>
+            <CardTitle>Budget</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <BudgetEditor budget={budget} onChange={(next) => onChange({ budget: next })} />
+          </CardContent>
+        </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Inputs</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <InputsEditor inputs={inputs} onChange={(next) => onChange({ inputs: next })} />
-        </CardContent>
-      </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Inputs</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <InputsEditor inputs={inputs} onChange={(next) => onChange({ inputs: next })} />
+          </CardContent>
+        </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Role</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <RoleEditor
-            roles={roles}
-            channelId={channelId}
-            onChange={(next) => onChange({ roles: next })}
-          />
-        </CardContent>
-      </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Role</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <RoleEditor
+              roles={roles}
+              channelId={channelId}
+              onChange={(next) => onChange({ roles: next })}
+            />
+          </CardContent>
+        </Card>
+      </div>
     </section>
   );
 }

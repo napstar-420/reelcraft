@@ -208,4 +208,24 @@ describe('channel assets (e2e)', () => {
 
     await expect(runs.start(created.id)).rejects.toThrow(/no longer exists/);
   });
+
+  it('list() and get() include file metadata derived from the backing blob', async () => {
+    const channels = testApp.app.get(ChannelService);
+    const assets = testApp.app.get(AssetService);
+
+    const channel = await channels.create('local', {
+      name: `Channel Assets File Metadata ${Date.now()}-${Math.random()}`,
+      theme: {},
+      defaults: {},
+    });
+    const created = await uploadAsset(channel.id, `metadata-${Date.now()}`);
+    expect(created.file.bytes).toBe(Buffer.byteLength('fake-png-bytes'));
+    expect(created.file.mime).toBe('image/png');
+
+    const fetched = await assets.get(created.id);
+    expect(fetched.file).toEqual(created.file);
+
+    const [listed] = await assets.list(channel.id);
+    expect(listed?.file).toEqual(created.file);
+  });
 });

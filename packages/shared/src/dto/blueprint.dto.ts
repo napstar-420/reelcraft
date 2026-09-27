@@ -25,8 +25,33 @@ export type RoleDef = z.infer<typeof RoleDef>;
 export const CreateBlueprintDto = z.object({
   channelId: z.string().min(1),
   name: z.string().min(1),
+  description: z.string().max(500).optional(),
+  tags: z.array(z.string().trim().min(1).max(32)).max(20).optional(),
 });
 export type CreateBlueprintDto = z.infer<typeof CreateBlueprintDto>;
+
+export const UpdateBlueprintDto = z.object({
+  name: z.string().min(1).max(120).optional(),
+  description: z.string().max(500).nullable().optional(),
+  tags: z.array(z.string().trim().min(1).max(32)).max(20).optional(),
+});
+export type UpdateBlueprintDto = z.infer<typeof UpdateBlueprintDto>;
+
+/** `blueprint.service.ts`'s row shape — the whole `blueprint` table row.
+ * Moved here from `apps/web/src/api/client.ts` (A2) so the DTO carries the
+ * new `description`/`tags` fields as the single source of truth. */
+export const BlueprintDto = z.object({
+  id: z.string(),
+  channelId: z.string(),
+  name: z.string(),
+  description: z.string().nullable(),
+  tags: z.array(z.string()),
+  currentVersionId: z.string().nullable(),
+  archived: z.boolean(),
+  runCount: z.number(),
+  latestPosterBlobId: z.string().nullable(),
+});
+export type BlueprintDto = z.infer<typeof BlueprintDto>;
 
 export const CreateBlueprintVersionDto = z.object({
   graph: z.array(StageDef),

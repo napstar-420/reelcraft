@@ -37,18 +37,9 @@ import type {
   InvalidationPreviewDto,
   HumanInputSubmissionDto,
   StageAttemptDto,
+  BlueprintDto,
+  UpdateBlueprintDto,
 } from '@reelcraft/shared';
-
-/** `blueprint.service.ts#getBlueprint()`'s row shape — the whole `blueprint`
- * table row (Chunk 3, Phase 9.5's binding-picker asset step needs the
- * blueprint's `channelId`, which no existing endpoint exposed). */
-export type BlueprintDto = {
-  id: string;
-  channelId: string;
-  name: string;
-  currentVersionId: string | null;
-  archived: boolean;
-};
 
 /** `character.service.ts#list()`'s row shape, narrowed to the fields the
  * canvas's role `characterId` picker actually needs — the full row (Phase 8)
@@ -175,6 +166,11 @@ export const api = {
       body: JSON.stringify({ channelId, name }),
     }),
   getBlueprint: (blueprintId: string) => request<BlueprintDto>(`/blueprints/${blueprintId}`),
+  updateBlueprint: (blueprintId: string, dto: UpdateBlueprintDto) =>
+    request<BlueprintDto>(`/blueprints/${blueprintId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(dto),
+    }),
   listBlueprints: (channelId: string) =>
     request<BlueprintDto[]>(`/blueprints?channelId=${encodeURIComponent(channelId)}`),
   createBlueprintVersion: (blueprintId: string, dto: CreateBlueprintVersionDto) =>

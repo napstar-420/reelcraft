@@ -5,11 +5,25 @@ import {
   ReactFlow,
   ReactFlowProvider,
   Background,
+  Controls,
   type Node,
   type Edge,
   type NodeProps,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
+import {
+  ArrowDownToLine,
+  ArrowUpFromLine,
+  Clapperboard,
+  FileOutput,
+  FileText,
+  Globe,
+  Image as ImageIcon,
+  Music,
+  Sparkles,
+  UserRound,
+  type LucideIcon,
+} from 'lucide-react';
 import { api, ApiError } from '../api/client';
 import { AddStageMenu } from '../components/canvas/AddStageMenu';
 import { StageInspector } from '../components/canvas/StageInspector';
@@ -62,10 +76,37 @@ function stageNodes(graph: StageDef[], issuesByStage: Map<string, ValidationIssu
   return graph.map((stage, index) => ({
     id: stage.key,
     type: 'stage',
-    position: { x: index * 250, y: 100 },
-    data: { label: stage.label || stage.key, issues: issuesByStage.get(stage.key) },
+    position: { x: index * 320, y: 80 },
+    data: {
+      label: stage.label || stage.key,
+      key: stage.key,
+      capability: stage.capability,
+      instructionSnippet: stage.instructions?.template,
+      inputs: Object.keys(stage.slots),
+      output: stage.output.kind,
+      issues: issuesByStage.get(stage.key),
+    },
   }));
 }
+
+/** A muted accent per capability family (its dot on the header, in the node
+ * card, and the icon) — not a status color, so it never reads as
+ * passed/failed the way the run-state palette does. */
+const CAPABILITY_STYLES: Record<string, { icon: LucideIcon; dot: string }> = {
+  'text.generate': { icon: FileText, dot: 'bg-emerald-500' },
+  'image.generate': { icon: ImageIcon, dot: 'bg-pink-500' },
+  'video.generate': { icon: Clapperboard, dot: 'bg-orange-500' },
+  'video.concat': { icon: Clapperboard, dot: 'bg-orange-500' },
+  'timeline.render': { icon: Clapperboard, dot: 'bg-orange-500' },
+  'audio.speech': { icon: Music, dot: 'bg-blue-500' },
+  'media.analyze': { icon: Sparkles, dot: 'bg-cyan-500' },
+  'human.input': { icon: UserRound, dot: 'bg-amber-500' },
+  'human.timeline_edit': { icon: UserRound, dot: 'bg-amber-500' },
+  'browser.automate': { icon: Globe, dot: 'bg-slate-500' },
+  'subtitles.export': { icon: FileOutput, dot: 'bg-violet-500' },
+  'publish.stub': { icon: FileOutput, dot: 'bg-violet-500' },
+};
+const DEFAULT_CAPABILITY_STYLE = { icon: Sparkles, dot: 'bg-muted-foreground' };
 
 function prevEdges(graph: StageDef[]): Edge[] {
   const edges: Edge[] = [];
@@ -164,22 +205,83 @@ function moveStage(graph: StageDef[], fromIndex: number, toIndex: number): Stage
 /** Custom React Flow node — a mini card showing the stage label plus an
  * error/warning badge derived from that stage's validation issues. Purely
  * presentational: click/drag handling stays on the `<ReactFlow>` instance. */
-function StageNode({ data }: NodeProps) {
-  const label = (data as { label: string }).label;
-  const issues = (data as { issues?: ValidationIssue[] }).issues;
+function StageNode({ data, selected }: NodeProps) {
+  const { label, key, capability, instructionSnippet, inputs, output, issues } = data as {
+    label: string;
+    key: string;
+    capability: string;
+    instructionSnippet?: string;
+    inputs: string[];
+    output: string;
+    issues?: ValidationIssue[];
+  };
   const errors = issues?.filter((i) => i.severity === 'error').length ?? 0;
   const warnings = issues?.filter((i) => i.severity === 'warning').length ?? 0;
+  const style = CAPABILITY_STYLES[capability] ?? DEFAULT_CAPABILITY_STYLE;
+  const Icon = style.icon;
 
   return (
-    <div className="min-w-36 rounded-lg border bg-card px-3 py-2 text-card-foreground shadow-sm ring-1 ring-foreground/10">
-      <p className="text-sm font-medium">{label}</p>
-      {(errors > 0 || warnings > 0) && (
-        <div className="mt-1 flex gap-1">
-          {errors > 0 && (
-            <Badge
-              variant="outline"
-              className={cn(errors > 0 && 'border-destructive/30 text-destructive')}
+    <div
+      className={cn(
+        'flex w-60 flex-col gap-3 rounded-lg border bg-card p-3 text-card-foreground shadow-sm ring-1 ring-foreground/10',
+        selected && 'border-primary ring-2 ring-primary/40',
+        errors > 0 && 'border-destructive/50',
+      )}
+    >
+      <div className="flex items-center gap-2">
+        <span
+          className={cn(
+            'flex size-7 shrink-0 items-center justify-center rounded-md text-white',
+            style.dot,
+          )}
+        >
+          <Icon className="size-4" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium" title={label}>
+            {label}
+          </p>
+          <p className="truncate font-mono text-xs text-muted-foreground">{key}</p>
+        </div>
+      </div>
+
+      {instructionSnippet && (
+        <p className="line-clamp-2 text-xs text-muted-foreground">{instructionSnippet}</p>
+      )}
+
+      {inputs.length > 0 && (
+        <div className="flex flex-col gap-1">
+          <p className="text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
+            Input
+          </p>
+          {inputs.map((slot) => (
+            <span
+              key={slot}
+              className="flex items-center gap-1.5 rounded-md border bg-muted/40 px-2 py-1 text-xs"
             >
+              <ArrowDownToLine className="size-3 shrink-0 text-muted-foreground" />
+              <span className="truncate">{slot}</span>
+            </span>
+          ))}
+        </div>
+      )}
+
+      {output && (
+        <div className="flex flex-col gap-1">
+          <p className="text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
+            Output
+          </p>
+          <span className="flex items-center gap-1.5 rounded-md border bg-muted/40 px-2 py-1 text-xs">
+            <ArrowUpFromLine className="size-3 shrink-0 text-muted-foreground" />
+            <span className="truncate">{output}</span>
+          </span>
+        </div>
+      )}
+
+      {(errors > 0 || warnings > 0) && (
+        <div className="flex gap-1">
+          {errors > 0 && (
+            <Badge variant="outline" className="border-destructive/30 text-destructive">
               ✗ {errors}
             </Badge>
           )}
@@ -272,7 +374,7 @@ function StageGraphCanvas({
           );
         })}
       </ul>
-      <div className="h-[480px] overflow-hidden rounded-lg border bg-card">
+      <div className="h-[min(70dvh,720px)] min-h-[420px] overflow-hidden rounded-lg border bg-card">
         <ReactFlowProvider>
           <ReactFlow
             nodes={nodes}
@@ -286,6 +388,7 @@ function StageGraphCanvas({
             onNodeClick={handleNodeClick}
           >
             <Background />
+            <Controls showInteractive={false} />
           </ReactFlow>
         </ReactFlowProvider>
       </div>
@@ -737,7 +840,6 @@ function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
       <IssueList issues={bannerIssues} />
 
       <section className="space-y-2">
-        <h2 className="text-lg font-medium">Settings</h2>
         <BlueprintSettingsPanel
           inputs={draft.inputs}
           roles={draft.roles}

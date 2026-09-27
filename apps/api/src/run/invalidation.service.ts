@@ -347,6 +347,7 @@ export class InvalidationService {
               state: 'stale',
               outputArtifactId: null,
               failure: null,
+              startedAt: null,
               endedAt: null,
               ...(row.stageKey === params.targetStageKey
                 ? { generation: sql`${stageExecution.generation} + 1` }

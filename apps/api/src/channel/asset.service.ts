@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { and, eq, isNull } from 'drizzle-orm';
-import type { CreateAssetDto } from '@reelcraft/shared';
+import { Probe, type AssetFileDto, type CreateAssetDto } from '@reelcraft/shared';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
 import { asset, blob, channel } from '../db/schema/index';
 import { ulid } from '../common/ulid';
@@ -85,17 +85,35 @@ export class AssetService {
    * the run-scoped retention sweep it was written for). */
   async list(channelId: string) {
     const rows = await this.db
-      .select({ asset })
+      .select({ asset, bytes: blob.bytes, mime: blob.mime, probe: blob.probe })
       .from(asset)
       .innerJoin(blob, eq(asset.blobId, blob.id))
       .where(and(eq(asset.channelId, channelId), isNull(blob.deletedAt)));
-    return rows.map((r) => r.asset);
+    return rows.map((r) => ({ ...r.asset, file: this.toFileDto(r.bytes, r.mime, r.probe) }));
   }
 
   async get(id: string) {
-    const [row] = await this.db.select().from(asset).where(eq(asset.id, id)).limit(1);
+    const [row] = await this.db
+      .select({ asset, bytes: blob.bytes, mime: blob.mime, probe: blob.probe })
+      .from(asset)
+      .innerJoin(blob, eq(asset.blobId, blob.id))
+      .where(eq(asset.id, id))
+      .limit(1);
     if (!row) throw new Error(`Asset ${id} not found`);
-    return row;
+    return { ...row.asset, file: this.toFileDto(row.bytes, row.mime, row.probe) };
+  }
+
+  private toFileDto(bytes: number, mime: string, probe: unknown): AssetFileDto {
+    const parsed = Probe.safeParse(probe);
+    if (!parsed.success) return { bytes, mime };
+    const videoStream = parsed.data.streams.find((s) => s.type === 'video');
+    return {
+      bytes,
+      mime,
+      width: videoStream?.width,
+      height: videoStream?.height,
+      durationSec: parsed.data.durationSec,
+    };
   }
 
   /** Soft-delete via `blob.deletedAt` rather than removing the `asset` row —

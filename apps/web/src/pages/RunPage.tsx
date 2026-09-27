@@ -1,9 +1,21 @@
 import { useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Ban, Eye, FileText, History, Loader2, Pause, Play, RefreshCw, Wallet } from 'lucide-react';
+import {
+  Ban,
+  Eye,
+  FileText,
+  History,
+  Loader2,
+  Pause,
+  Play,
+  RefreshCw,
+  RotateCcw,
+  Wallet,
+} from 'lucide-react';
 import { api } from '../api/client';
 import { useRun } from '../hooks/useRun';
+import { formatRunDuration } from './runs-page.logic';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -34,6 +46,7 @@ import { isApprovalStillOpen } from './approval-review.logic';
 
 export function RunPage() {
   const { runId } = useParams<{ runId: string }>();
+  const navigate = useNavigate();
   const { data: run, isLoading } = useRun(runId);
   const queryClient = useQueryClient();
   const [reviewStageKey, setReviewStageKey] = useState<string | null>(null);
@@ -61,6 +74,19 @@ export function RunPage() {
     mutationFn: () => api.resumeRun(runId!),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['run', runId] }),
   });
+  const rerun = useMutation({
+    mutationFn: async () => {
+      const created = await api.createRun({
+        channelId: run!.channelId,
+        blueprintVersionId: run!.blueprintVersionId,
+        budgetCapUsd: Number(run!.budgetCapUsd),
+        inputs: run!.inputs,
+        roleBindings: {},
+      });
+      return api.startRun(created.id);
+    },
+    onSuccess: (created) => navigate(`/runs/${created.id}`),
+  });
 
   if (isLoading || !run) {
     return (
@@ -87,6 +113,11 @@ export function RunPage() {
   const canRetry = isRunActionAllowed('retry', run.state);
   const isStageRunning = (stageKey: string | null) =>
     run.stageExecutions.some((se) => se.stageKey === stageKey && se.state === 'running');
+  const isTerminal = ['COMPLETED', 'FAILED', 'CANCELLED'].includes(run.state);
+  // Role bindings become immutable Character snapshots once a run starts —
+  // reusing them for a new run isn't safe, so rerun is only offered when
+  // the blueprint has none to begin with.
+  const canRerun = isTerminal && Object.keys(run.roleBindings).length === 0;
 
   return (
     <section className="flex flex-col gap-6">
@@ -138,6 +169,17 @@ export function RunPage() {
             <StatusBadge tone={runStateTone(run.state)} label={run.state} />
           </div>
           <div className="flex items-center gap-2">
+            {canRerun ? (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={rerun.isPending}
+                onClick={() => rerun.mutate()}
+              >
+                {rerun.isPending ? <Loader2 className="animate-spin" /> : <RotateCcw />}
+                Rerun
+              </Button>
+            ) : null}
             {canPause ? (
               <Button
                 size="sm"
@@ -213,6 +255,20 @@ export function RunPage() {
         </div>
       </div>
 
+      {run.finalVideo ? (
+        <div className="flex flex-col gap-3">
+          <h2 className="text-lg font-semibold tracking-tight">Final video</h2>
+          <video
+            controls
+            className="max-w-2xl rounded-lg border bg-black"
+            src={`/api/blobs/${run.finalVideo.blobId}`}
+            {...(run.finalVideo.posterBlobId && {
+              poster: `/api/blobs/${run.finalVideo.posterBlobId}`,
+            })}
+          />
+        </div>
+      ) : null}
+
       <div className="flex flex-col gap-3">
         <h2 className="text-lg font-semibold tracking-tight">Stages</h2>
         <div className="flex flex-col gap-3">
@@ -224,6 +280,11 @@ export function RunPage() {
                 <span className="text-sm text-muted-foreground">
                   {se.attemptCount} attempt{se.attemptCount === 1 ? '' : 's'}
                 </span>
+                {se.startedAt && (
+                  <span className="text-sm text-muted-foreground tabular-nums">
+                    {formatRunDuration(se.startedAt, se.endedAt)}
+                  </span>
+                )}
               </div>
               <div className="flex items-center gap-2">
                 {run.state === 'PAUSED_APPROVAL' && run.cursorStageKey === se.stageKey ? (

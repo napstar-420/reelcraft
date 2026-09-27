@@ -1,8 +1,9 @@
-import { Pencil, UserRound } from 'lucide-react';
+import { ImageIcon, Pencil } from 'lucide-react';
 import type { CharacterDto } from '@reelcraft/shared';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
+import { PlaceholderArt } from '@/components/placeholder-art';
 
 export function CharacterCard({
   character,
@@ -15,45 +16,51 @@ export function CharacterCard({
 }) {
   return (
     <Card
-      className="h-full w-full cursor-pointer transition-colors hover:bg-muted/50"
+      className="flex h-full w-full cursor-pointer flex-col overflow-hidden transition-colors hover:bg-muted/50"
       onClick={() => onOpen(character)}
     >
+      <div className="relative">
+        {character.primaryRefId ? (
+          <img
+            src={`/api/blobs/${character.primaryRefId}`}
+            alt=""
+            className="aspect-square w-full object-cover"
+          />
+        ) : (
+          <PlaceholderArt
+            seed={character.id}
+            icon={ImageIcon}
+            className="aspect-square w-full rounded-none"
+          />
+        )}
+        <Button
+          variant="secondary"
+          size="icon-sm"
+          aria-label="Edit character"
+          className="absolute top-2 right-2 bg-black/40 text-white hover:bg-black/60 hover:text-white"
+          onClick={(e) => {
+            e.stopPropagation();
+            onEdit(character);
+          }}
+        >
+          <Pencil />
+        </Button>
+      </div>
       <CardHeader>
-        <div className="flex min-w-0 items-start justify-between gap-2">
-          <div className="flex min-w-0 flex-1 items-center gap-3">
-            {character.primaryRefId ? (
-              <img
-                src={`/api/blobs/${character.primaryRefId}`}
-                alt=""
-                className="size-10 shrink-0 rounded-full object-cover"
-              />
-            ) : (
-              <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
-                <UserRound className="size-5" />
-              </div>
-            )}
-            <CardTitle className="min-w-0 flex-1 truncate">{character.name}</CardTitle>
-          </div>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label="Edit character"
-            onClick={(e) => {
-              e.stopPropagation();
-              onEdit(character);
-            }}
-          >
-            <Pencil />
-          </Button>
-        </div>
+        <CardTitle className="truncate" title={character.name}>
+          {character.name}
+        </CardTitle>
         <CardDescription className="line-clamp-2">
           {character.description || 'No description'}
         </CardDescription>
       </CardHeader>
-      <CardFooter>
+      <CardFooter className="mt-auto flex items-center justify-between">
         <Badge variant={character.readiness === 'ready' ? 'default' : 'secondary'}>
           {character.readiness === 'ready' ? 'Ready' : 'Draft'}
         </Badge>
+        <span className="text-xs text-muted-foreground">
+          {character.referenceSet.length} {character.referenceSet.length === 1 ? 'image' : 'images'}
+        </span>
       </CardFooter>
     </Card>
   );

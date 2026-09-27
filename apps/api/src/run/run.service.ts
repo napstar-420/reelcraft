@@ -10,6 +10,7 @@ import type {
 } from '@reelcraft/shared';
 import { InputDef, RoleDef as RoleDefSchema, StageDef } from '@reelcraft/shared';
 import { RUN_ACTION_ALLOWED_STATES } from './run-action-policy';
+import { findFinalVideo } from '../artifact/final-video';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
 import {
   asset,
@@ -576,8 +577,17 @@ export class RunService {
       values.push(attachment);
       attachmentsByArtifact.set(attachment.artifactId, values);
     }
+    const final = await findFinalVideo(this.db, runId);
     return {
       ...row,
+      finalVideo: final
+        ? {
+            artifactId: final.artifactId,
+            blobId: final.blobId,
+            ...(final.probe?.durationSec !== undefined && { durationSec: final.probe.durationSec }),
+            ...(final.posterBlobId && { posterBlobId: final.posterBlobId }),
+          }
+        : null,
       stageExecutions: await Promise.all(
         executions.map(async (execution) => {
           const definition = definitions.get(execution.stageKey);
@@ -820,6 +830,15 @@ export class RunService {
         spentUsd: run.spentUsd,
         startedAt: run.startedAt,
         endedAt: run.endedAt,
+        // Raw, fully-qualified SQL (not interpolated Column objects): see
+        // ChannelService.countsSelection for why — an interpolated Column
+        // renders unqualified and collides with the outer query's own
+        // columns of the same name in a correlated subquery.
+        posterBlobId: sql<string | null>`(
+          select a.derived->>'poster' from artifact a
+          where a.run_id = run.id and a.stale = false and a.derived->>'poster' is not null
+          order by a.created_at desc limit 1
+        )`,
       })
       .from(run)
       .innerJoin(channel, eq(channel.id, run.channelId))

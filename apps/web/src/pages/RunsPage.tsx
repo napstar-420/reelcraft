@@ -55,14 +55,21 @@ const CLEARED_FILTERS: RunsListFilters = {
   page: 0,
 };
 
-export function RunsPage() {
+export function RunsPage({ channelId: fixedChannelId }: { channelId?: string } = {}) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
-  const filters = parseRunsListSearchParams(searchParams);
+  const filters = {
+    ...parseRunsListSearchParams(searchParams),
+    ...(fixedChannelId && { channelId: fixedChannelId }),
+  };
   const [cancelTarget, setCancelTarget] = useState<RunSummaryDto | null>(null);
 
-  const channels = useQuery({ queryKey: ['channels'], queryFn: () => api.listChannels() });
+  const channels = useQuery({
+    queryKey: ['channels'],
+    queryFn: () => api.listChannels(),
+    enabled: !fixedChannelId,
+  });
   const blueprints = useQuery({
     queryKey: ['blueprints', filters.channelId],
     queryFn: () => api.listBlueprints(filters.channelId!),
@@ -128,7 +135,10 @@ export function RunsPage() {
   }
 
   const hasActiveFilters =
-    !!filters.channelId || !!filters.blueprintId || !!filters.state || filters.includeDryRuns;
+    (!fixedChannelId && !!filters.channelId) ||
+    !!filters.blueprintId ||
+    !!filters.state ||
+    filters.includeDryRuns;
 
   const total = runs.data?.total ?? 0;
   const showingFrom = total === 0 ? 0 : offset + 1;
@@ -136,32 +146,36 @@ export function RunsPage() {
 
   return (
     <section className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Runs</h1>
-        <p className="text-sm text-muted-foreground">
-          Every run across your channels, with live status and quick access to each one.
-        </p>
-      </div>
+      {!fixedChannelId && (
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Runs</h1>
+          <p className="text-sm text-muted-foreground">
+            Every run across your channels, with live status and quick access to each one.
+          </p>
+        </div>
+      )}
 
       <div className="flex flex-wrap items-center gap-3">
-        <Select
-          value={filters.channelId ?? ALL}
-          onValueChange={(v) =>
-            updateFilters({ channelId: v === ALL ? undefined : v, blueprintId: undefined })
-          }
-        >
-          <SelectTrigger className="w-48">
-            <SelectValue placeholder="All channels" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL}>All channels</SelectItem>
-            {channels.data?.map((c) => (
-              <SelectItem key={c.id} value={c.id}>
-                {c.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        {!fixedChannelId && (
+          <Select
+            value={filters.channelId ?? ALL}
+            onValueChange={(v) =>
+              updateFilters({ channelId: v === ALL ? undefined : v, blueprintId: undefined })
+            }
+          >
+            <SelectTrigger className="w-48">
+              <SelectValue placeholder="All channels" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL}>All channels</SelectItem>
+              {channels.data?.map((c) => (
+                <SelectItem key={c.id} value={c.id}>
+                  {c.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
 
         <Select
           value={filters.blueprintId ?? ALL}
@@ -244,9 +258,9 @@ export function RunsPage() {
                 <TableHead>Channel</TableHead>
                 <TableHead>Blueprint</TableHead>
                 <TableHead>State</TableHead>
-                <TableHead>Spent / Budget</TableHead>
+                <TableHead className="text-right">Spent / Budget</TableHead>
                 <TableHead>Started</TableHead>
-                <TableHead>Duration</TableHead>
+                <TableHead className="text-right">Duration</TableHead>
                 <TableHead className="text-right">
                   <span className="sr-only">Actions</span>
                 </TableHead>
@@ -282,11 +296,15 @@ export function RunsPage() {
                     <TableCell>
                       <StatusBadge tone={runStateTone(run.state)} label={run.state} />
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="text-right tabular-nums">
                       ${run.spentUsd.toFixed(2)} / ${run.budgetCapUsd.toFixed(2)}
                     </TableCell>
-                    <TableCell>{new Date(run.startedAt).toLocaleString()}</TableCell>
-                    <TableCell>{formatRunDuration(run.startedAt, run.endedAt)}</TableCell>
+                    <TableCell className="tabular-nums">
+                      {new Date(run.startedAt).toLocaleString()}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {formatRunDuration(run.startedAt, run.endedAt)}
+                    </TableCell>
                     <TableCell
                       className="text-right"
                       onClick={(event) => event.stopPropagation()}
