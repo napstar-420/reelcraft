@@ -55,6 +55,16 @@ function defaultRefFor(kind: Ref['from']): Ref {
       return { from: 'prevItem' };
     case 'const':
       return { from: 'const', value: '' };
+    case 'coalesce':
+      // Not offered in `ALL_REF_KINDS` — the canvas UI has no editor for it
+      // yet, so this default is never actually reached from the picker.
+      return {
+        from: 'coalesce',
+        refs: [
+          { from: 'const', value: '' },
+          { from: 'const', value: '' },
+        ],
+      };
   }
 }
 

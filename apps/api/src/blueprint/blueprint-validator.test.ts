@@ -114,6 +114,13 @@ const videoGen: CapabilityImpl = {
   allowedOutputs: () => ['media.video'],
 };
 
+const videoGenWithStartFrameSlot: CapabilityImpl = {
+  ...videoGen,
+  slots: () => [
+    { name: 'startFrame', accepts: ['media.image'], required: false, cardinality: 'one' },
+  ],
+};
+
 function fakeRegistry(capabilities: Record<string, CapabilityImpl>): CapabilityRegistry {
   return {
     get: (key: string) => {
@@ -785,6 +792,111 @@ describe('BlueprintValidatorService — iterate (Phase 7, §14/§16.2)', () => {
     ];
     const issues = validator.validate({ graph, inputs: [], roles: [] });
     expect(issues.filter((i) => i.severity === 'error')).toEqual([]);
+  });
+
+  it('a coalesce({from:"prevItem", path:"lastFrame"}, {from:"input"}) passes on a matching media.image slot', () => {
+    const validator = makeValidator({ 'video.generate': videoGenWithStartFrameSlot });
+    const imageInput: InputDef = {
+      key: 'canonical',
+      label: 'Canonical image',
+      required: true,
+      accepts: { kind: 'media.image', cardinality: 'one' },
+    };
+    const graph = [
+      stage({
+        key: 'clips',
+        capability: 'video.generate',
+        output: { kind: 'media.video' },
+        iterate: { over: { from: 'input', inputKey: 'list' }, itemAlias: 'x', itemRetryLimit: 1 },
+        slots: {
+          startFrame: {
+            from: 'coalesce',
+            refs: [
+              { from: 'prevItem', path: 'lastFrame' },
+              { from: 'input', inputKey: 'canonical' },
+            ],
+          },
+        },
+      }),
+    ];
+    const issues = validator.validate({ graph, inputs: [listInput, imageInput], roles: [] });
+    expect(issues.filter((i) => i.severity === 'error')).toEqual([]);
+  });
+
+  it('a coalesce({from:"prevItem"}, {from:"const"}) fallback does not trigger the "prevItem on a required slot" error', () => {
+    const validator = makeValidator({ 'text.generate': withRequiredSlot });
+    const graph = [
+      stage({
+        key: 'a',
+        iterate: { over: { from: 'input', inputKey: 'list' }, itemAlias: 'x', itemRetryLimit: 1 },
+        slots: {
+          topic: {
+            from: 'coalesce',
+            refs: [{ from: 'prevItem' }, { from: 'const', value: 'seed topic' }],
+          },
+        },
+      }),
+    ];
+    expect(
+      hasError(
+        validator.validate({ graph, inputs: [listInput], roles: [] }),
+        'stages.a.slots.topic',
+      ),
+    ).toBe(false);
+  });
+
+  it('errors when coalesce branches resolve to different non-literal kinds', () => {
+    const validator = makeValidator({ 'video.generate': videoGenWithStartFrameSlot });
+    const graph = [
+      stage({
+        key: 'clips',
+        capability: 'video.generate',
+        output: { kind: 'media.video' },
+        iterate: { over: { from: 'input', inputKey: 'list' }, itemAlias: 'x', itemRetryLimit: 1 },
+        slots: {
+          startFrame: {
+            from: 'coalesce',
+            refs: [
+              { from: 'prevItem', path: 'lastFrame' },
+              { from: 'input', inputKey: 'list' },
+            ],
+          },
+        },
+      }),
+    ];
+    expect(
+      hasError(
+        validator.validate({ graph, inputs: [listInput], roles: [] }),
+        'stages.clips.slots.startFrame',
+      ),
+    ).toBe(true);
+  });
+
+  it('still enforces the Character-role cardinality rule for a role wrapped in coalesce', () => {
+    const validator = makeValidator({ 'video.generate': videoGenWithStartFrameSlot });
+    const graph = [
+      stage({
+        key: 'clips',
+        capability: 'video.generate',
+        output: { kind: 'media.video' },
+        iterate: { over: { from: 'input', inputKey: 'list' }, itemAlias: 'x', itemRetryLimit: 1 },
+        slots: {
+          startFrame: {
+            from: 'coalesce',
+            refs: [
+              { from: 'prevItem', path: 'lastFrame' },
+              { from: 'role', roleKey: 'host' },
+            ],
+          },
+        },
+      }),
+    ];
+    expect(
+      hasError(
+        validator.validate({ graph, inputs: [listInput], roles: [] }),
+        'stages.clips.slots.startFrame',
+      ),
+    ).toBe(true);
   });
 
   it('errors when iterate.over does not narrow to an array schema', () => {

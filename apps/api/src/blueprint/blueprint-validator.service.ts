@@ -80,12 +80,14 @@ export class BlueprintValidatorService {
       ...Object.entries(firstStage.slots),
       ...Object.entries(firstStage.context),
     ]) {
-      if (ref.from === 'prev') {
-        issues.push({
-          path: `stages.${firstStage.key}.${name}`,
-          message: '{from: "prev"} is invalid on the first stage in a blueprint',
-          severity: 'error',
-        });
+      for (const leaf of flattenCoalesce(ref)) {
+        if (leaf.from === 'prev') {
+          issues.push({
+            path: `stages.${firstStage.key}.${name}`,
+            message: '{from: "prev"} is invalid on the first stage in a blueprint',
+            severity: 'error',
+          });
+        }
       }
     }
   }
@@ -511,7 +513,7 @@ export class BlueprintValidatorService {
   ): void {
     const slotsByName = new Map(impl.slots(stage.config).map((slot) => [slot.name, slot]));
     for (const [name, ref] of Object.entries(stage.slots)) {
-      if (ref.from !== 'role') continue;
+      if (!flattenCoalesce(ref).some((leaf) => leaf.from === 'role')) continue;
       const slot = slotsByName.get(name);
       const acceptsImages = slot?.accepts.some((accepted) => accepted === 'media.image') ?? false;
       if (!slot || slot.cardinality !== 'many' || !acceptsImages) {
@@ -524,7 +526,7 @@ export class BlueprintValidatorService {
       }
     }
     for (const [name, ref] of Object.entries(stage.context)) {
-      if (ref.from === 'role') {
+      if (flattenCoalesce(ref).some((leaf) => leaf.from === 'role')) {
         issues.push({
           path: `${base}.context.${name}`,
           message: 'a Character role may only bind to a reference slot',
@@ -535,7 +537,7 @@ export class BlueprintValidatorService {
     for (const [checkIndex, check] of stage.checks.entries()) {
       if (check.type !== 'script') continue;
       for (const [name, ref] of Object.entries(check.refs ?? {})) {
-        if (ref.from === 'role') {
+        if (flattenCoalesce(ref).some((leaf) => leaf.from === 'role')) {
           issues.push({
             path: `${base}.checks[${checkIndex}].refs.${name}`,
             message: 'a Character role may only bind to a reference slot',
@@ -651,35 +653,40 @@ export class BlueprintValidatorService {
       entries.push({ path: `${base}.context.${name}`, ref });
     }
 
-    for (const { path, ref } of entries) {
-      if (ref.from === 'prev') {
-        const prevStage = stageIndex > 0 ? ctx.graph[stageIndex - 1] : undefined;
-        if (prevStage?.enabledWhen && !sameEnabledWhen(stage.enabledWhen, prevStage.enabledWhen)) {
-          issues.push({
-            path,
-            message:
-              `binds {from:'prev'} to "${prevStage.key}", which is conditionally enabled — ` +
-              'this stage must carry the same enabledWhen condition or the binding may find no artifact',
-            severity: 'error',
-          });
-        }
-      } else if (ref.from === 'memory') {
-        const writers = ctx.memoryWriters.get(ref.key) ?? [];
-        if (writers.length === 1) {
-          const writerIndex = ctx.stageIndexByKey.get(writers[0]!.stageKey);
-          const writerStage = writerIndex === undefined ? undefined : ctx.graph[writerIndex];
+    for (const { path, ref: topRef } of entries) {
+      for (const ref of flattenCoalesce(topRef)) {
+        if (ref.from === 'prev') {
+          const prevStage = stageIndex > 0 ? ctx.graph[stageIndex - 1] : undefined;
           if (
-            writerStage?.enabledWhen &&
-            !sameEnabledWhen(stage.enabledWhen, writerStage.enabledWhen)
+            prevStage?.enabledWhen &&
+            !sameEnabledWhen(stage.enabledWhen, prevStage.enabledWhen)
           ) {
             issues.push({
               path,
               message:
-                `reads memory key "${ref.key}", written only by conditionally-enabled stage ` +
-                `"${writerStage.key}" — this stage must carry the same enabledWhen condition or ` +
-                'the read may find nothing',
+                `binds {from:'prev'} to "${prevStage.key}", which is conditionally enabled — ` +
+                'this stage must carry the same enabledWhen condition or the binding may find no artifact',
               severity: 'error',
             });
+          }
+        } else if (ref.from === 'memory') {
+          const writers = ctx.memoryWriters.get(ref.key) ?? [];
+          if (writers.length === 1) {
+            const writerIndex = ctx.stageIndexByKey.get(writers[0]!.stageKey);
+            const writerStage = writerIndex === undefined ? undefined : ctx.graph[writerIndex];
+            if (
+              writerStage?.enabledWhen &&
+              !sameEnabledWhen(stage.enabledWhen, writerStage.enabledWhen)
+            ) {
+              issues.push({
+                path,
+                message:
+                  `reads memory key "${ref.key}", written only by conditionally-enabled stage ` +
+                  `"${writerStage.key}" — this stage must carry the same enabledWhen condition or ` +
+                  'the read may find nothing',
+                severity: 'error',
+              });
+            }
           }
         }
       }
@@ -754,9 +761,26 @@ export class BlueprintValidatorService {
     ctx: ValidationContext,
     issues: ValidationIssue[],
   ): void {
+    // A `coalesce` fans out to every branch for the `prev`/`alignWith`
+    // checks below (whichever branch actually fires at a given item must
+    // still be internally valid) — but NOT for the bare "prevItem on a
+    // required slot" rule just below: coalesce exists precisely to give
+    // `{from:'prevItem'}` a real fallback for item 0, so a *wrapped*
+    // `prevItem` with a guaranteed-defined sibling branch is no longer the
+    // "always undefined at item 0" case that rule guards against.
+    if (ref.from === 'coalesce') {
+      for (const inner of ref.refs) {
+        if (inner.from === 'prevItem') continue;
+        this.checkIterateRefKinds(inner, path, opts, stage, stageIndex, ctx, issues);
+      }
+      return;
+    }
+
     // §14.4, strict reading (Resolved Decision 2) — no config-level fallback
-    // escape hatch. A required binding to prevItem is always an error; the
-    // capability itself must declare the slot optional and default it.
+    // escape hatch. A required binding to a BARE prevItem is always an
+    // error; the capability itself must declare the slot optional and
+    // default it (or the blueprint must wrap it in `coalesce` with a real
+    // fallback — see above).
     if (ref.from === 'prevItem' && opts.prevItemRequired) {
       issues.push({
         path,
@@ -876,6 +900,14 @@ export class BlueprintValidatorService {
       }
     }
   }
+}
+
+/** Every leaf ref a `coalesce` could actually resolve to, recursively —
+ * `[ref]` for any non-coalesce ref. Used by checks (role-slot compatibility,
+ * first-stage `prev`) that need to see every branch a coalesce could pick,
+ * not just its own `{from:'coalesce'}` tag. */
+function flattenCoalesce(ref: Ref): Ref[] {
+  return ref.from === 'coalesce' ? ref.refs.flatMap(flattenCoalesce) : [ref];
 }
 
 function sameEnabledWhen(a: EnabledWhen | undefined, b: EnabledWhen | undefined): boolean {

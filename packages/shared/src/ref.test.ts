@@ -21,4 +21,21 @@ describe('Ref', () => {
   it('rejects an unknown discriminator', () => {
     expect(() => Ref.parse({ from: 'stage', stageKey: 'x' })).toThrow();
   });
+
+  it('parses a coalesce of nested refs', () => {
+    const ref = Ref.parse({
+      from: 'coalesce',
+      refs: [
+        { from: 'prevItem', path: 'lastFrame' },
+        { from: 'const', value: 'x' },
+      ],
+    });
+    if (ref.from !== 'coalesce') throw new Error('expected coalesce variant');
+    expect(ref.refs).toHaveLength(2);
+    expect(ref.refs[0]).toEqual({ from: 'prevItem', path: 'lastFrame' });
+  });
+
+  it('rejects a coalesce with fewer than two refs', () => {
+    expect(() => Ref.parse({ from: 'coalesce', refs: [{ from: 'const', value: 'x' }] })).toThrow();
+  });
 });

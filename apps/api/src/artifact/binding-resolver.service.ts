@@ -334,6 +334,14 @@ export class BindingResolverService {
         const value = await this.valueForArtifactRow(row, ref.path, 'prevItem');
         return { value, provenance: { ref, artifactId: row.id } };
       }
+
+      case 'coalesce': {
+        for (const inner of ref.refs) {
+          const resolved = await this.resolve(inner, ctx);
+          if (resolved.value !== undefined) return resolved;
+        }
+        return { value: undefined, provenance: { ref } };
+      }
     }
   }
 
@@ -500,6 +508,13 @@ export class BindingResolverService {
             })),
           },
         };
+      }
+      case 'coalesce': {
+        for (const inner of ref.refs) {
+          const resolved = await this.resolveEnvelope(inner, ctx);
+          if (resolved.envelope.data !== undefined) return resolved;
+        }
+        return { envelope: { kind: 'literal', data: undefined }, provenance: { ref } };
       }
       default: {
         const resolved = await this.resolve(ref, ctx);

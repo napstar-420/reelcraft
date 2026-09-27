@@ -50,7 +50,12 @@ export interface InvalidationPreview {
  * provenance-only inference would silently under-invalidate item 0's
  * dependents whenever item 0 is the only item that has run so far. */
 function stageBindsPrevItem(stage: StageDef): boolean {
-  const isPrevItem = (ref: Ref): boolean => ref.from === 'prevItem';
+  // A `coalesce`-wrapped `{from:'prevItem'}` (e.g. falling back to another
+  // source for item 0) still makes this stage depend on its own previous
+  // item whenever that branch is the one that actually resolves — walk into
+  // every coalesce branch, not just a bare top-level `prevItem`.
+  const isPrevItem = (ref: Ref): boolean =>
+    ref.from === 'prevItem' || (ref.from === 'coalesce' && ref.refs.some(isPrevItem));
   if (Object.values(stage.slots).some(isPrevItem)) return true;
   if (Object.values(stage.context).some(isPrevItem)) return true;
   for (const check of stage.checks) {
