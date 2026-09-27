@@ -61,6 +61,8 @@ export function accessLogLevel(statusCode: number, err?: Error): 'info' | 'warn'
                 singleLine: true,
                 translateTime: 'SYS:HH:MM:ss.l',
                 ignore: 'pid,hostname',
+                colorize: true,
+                messageFormat: '{if context}[{context}] {end}{msg}',
               },
             },
           }),
