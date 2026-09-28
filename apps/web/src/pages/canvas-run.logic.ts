@@ -61,22 +61,6 @@ export function buildRunStageDto(
   };
 }
 
-/** "Run to here" — reuse everything reusable, re-run only what actually
- * changed on the way to `stageKey`, and stop right after it. */
-export function buildRunToStageDto(
-  source: CanvasRunSource,
-  blueprintVersionId: string,
-  stageKey: string,
-): CreateRunDto {
-  return {
-    ...fromSource(source, blueprintVersionId),
-    inputs: {},
-    seedFromRunId: source.id,
-    rerunStageKeys: [],
-    untilStageKey: stageKey,
-  };
-}
-
 /** "Run all" — reuse everything reusable, run every stage after that. */
 export function buildRunAllDto(source: CanvasRunSource, blueprintVersionId: string): CreateRunDto {
   return {

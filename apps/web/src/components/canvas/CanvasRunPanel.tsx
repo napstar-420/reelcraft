@@ -1,25 +1,18 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { MoreHorizontal } from 'lucide-react';
+import { Eye, History, Play } from 'lucide-react';
 import { toast } from 'sonner';
 import type { InputDef, RunDetailDto, StageDef } from '@reelcraft/shared';
 import { api } from '@/api/client';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { ArtifactPreview } from '@/components/runs/artifact-preview';
 import { StageOutputSheet } from '@/components/runs/stage-output-sheet';
 import { StageAttemptsSheet } from '@/components/runs/stage-attempts-sheet';
-import { StageRetryDialog } from '@/components/runs/stage-retry-dialog';
 import { RunLaunchDialog } from '@/pages/RunLaunchDialog';
-import { buildRunAllDto, buildRunStageDto, buildRunToStageDto } from '@/pages/canvas-run.logic';
+import { buildRunAllDto, buildRunStageDto } from '@/pages/canvas-run.logic';
 import { describeRunActionError } from '@/lib/describe-run-action-error';
 import { isRunActionAllowed } from '@/lib/run-action-policy';
 import { runStateTone, stageExecutionStateTone, toneDotClassName } from '@/lib/status';
@@ -67,18 +60,14 @@ export function CanvasRunPanel({
   const queryClient = useQueryClient();
   const [outputSheetKey, setOutputSheetKey] = useState<string | null>(null);
   const [attemptsSheetKey, setAttemptsSheetKey] = useState<string | null>(null);
-  const [retryDialogKey, setRetryDialogKey] = useState<string | null>(null);
   const reusedKeys = useReusedStageKeys(run?.id, run?.stageExecutions.map((e) => e.stageKey) ?? []);
   const stageLabel = (stageKey: string) => graph.find((s) => s.key === stageKey)?.label ?? stageKey;
 
   const runStage = useMutation({
-    mutationFn: async ({ stageKey, toHere }: { stageKey: string; toHere: boolean }) => {
+    mutationFn: async (stageKey: string) => {
       const blueprintVersionId = await prepareRunnableVersion();
       if (!run) throw new Error('No previous run to build on yet.');
-      const dto = toHere
-        ? buildRunToStageDto(run, blueprintVersionId, stageKey)
-        : buildRunStageDto(run, blueprintVersionId, stageKey);
-      const created = await api.createRun(dto);
+      const created = await api.createRun(buildRunStageDto(run, blueprintVersionId, stageKey));
       await api.startRun(created.id);
       return created.id;
     },
@@ -189,6 +178,16 @@ export function CanvasRunPanel({
           const tone = execution ? stageExecutionStateTone(execution.state) : 'neutral';
           return (
             <div key={stage.key} className="flex items-center gap-2 px-3 py-2 text-sm">
+              <Button
+                size="icon"
+                variant="ghost"
+                className="size-6 shrink-0"
+                title="Run"
+                aria-label="Run"
+                onClick={() => runStage.mutate(stage.key)}
+              >
+                <Play className="size-3.5" />
+              </Button>
               <span className={`size-2 shrink-0 rounded-full ${toneDotClassName[tone]}`} />
               <span className="min-w-0 flex-1 truncate text-xs" title={stage.key}>
                 {stage.label}
@@ -198,36 +197,26 @@ export function CanvasRunPanel({
                   Reused
                 </Badge>
               )}
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button size="icon" variant="ghost" className="size-6 shrink-0">
-                    <MoreHorizontal className="size-3.5" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem onSelect={() => setOutputSheetKey(stage.key)}>
-                    View output
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onSelect={() => setAttemptsSheetKey(stage.key)}>
-                    Attempts
-                  </DropdownMenuItem>
-                  {isRunActionAllowed('retry', run.state) && (
-                    <DropdownMenuItem onSelect={() => setRetryDialogKey(stage.key)}>
-                      Retry in place
-                    </DropdownMenuItem>
-                  )}
-                  <DropdownMenuItem
-                    onSelect={() => runStage.mutate({ stageKey: stage.key, toHere: false })}
-                  >
-                    Run this stage
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onSelect={() => runStage.mutate({ stageKey: stage.key, toHere: true })}
-                  >
-                    Run to here
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+              <Button
+                size="icon"
+                variant="ghost"
+                className="size-6 shrink-0"
+                title="View output"
+                aria-label="View output"
+                onClick={() => setOutputSheetKey(stage.key)}
+              >
+                <Eye className="size-3.5" />
+              </Button>
+              <Button
+                size="icon"
+                variant="ghost"
+                className="size-6 shrink-0"
+                title="Attempts"
+                aria-label="Attempts"
+                onClick={() => setAttemptsSheetKey(stage.key)}
+              >
+                <History className="size-3.5" />
+              </Button>
             </div>
           );
         })}
@@ -267,13 +256,6 @@ export function CanvasRunPanel({
         )}
         open={attemptsSheetKey !== null}
         onOpenChange={(open) => !open && setAttemptsSheetKey(null)}
-      />
-      <StageRetryDialog
-        runId={run.id}
-        stageKey={retryDialogKey}
-        stageLabel={retryDialogKey && stageLabel(retryDialogKey)}
-        open={retryDialogKey !== null}
-        onOpenChange={(open) => !open && setRetryDialogKey(null)}
       />
     </div>
   );

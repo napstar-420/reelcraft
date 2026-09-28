@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildCodexArgs, buildCodexPrompt, toTomlValue } from './codex-command';
+import { buildCodexArgs, buildCodexPrompt, strictJsonSchema, toTomlValue } from './codex-command';
 
 describe('Codex command construction', () => {
   it('pins model and effort while forwarding raw dotted config values', () => {
@@ -38,6 +38,49 @@ describe('Codex command construction', () => {
     expect(toTomlValue(4)).toBe('4');
     expect(toTomlValue(['a', 2])).toBe('["a", 2]');
     expect(toTomlValue({ nested: 'value' })).toBe('{ nested = "value" }');
+  });
+
+  it('adds additionalProperties: false to every object subschema, recursively', () => {
+    const result = strictJsonSchema({
+      type: 'object',
+      properties: {
+        items: { type: 'array', items: { type: 'object', properties: { name: { type: 'string' } } } },
+        count: { type: 'number' },
+      },
+    });
+
+    expect(result).toMatchObject({
+      additionalProperties: false,
+      properties: {
+        items: {
+          items: { additionalProperties: false, properties: { name: { type: 'string' } } },
+        },
+        count: { type: 'number' },
+      },
+    });
+  });
+
+  it('leaves scalar schemas untouched', () => {
+    expect(strictJsonSchema({ type: 'string' })).toEqual({ type: 'string' });
+  });
+
+  it('returns undefined for a property-less object schema (free-form JSON, unenforceable in strict mode)', () => {
+    expect(strictJsonSchema({ type: 'object' })).toBeUndefined();
+  });
+
+  it('returns undefined when a free-form object appears nested anywhere in the schema', () => {
+    expect(
+      strictJsonSchema({
+        type: 'object',
+        properties: { metadata: { type: 'object' } },
+      }),
+    ).toBeUndefined();
+    expect(
+      strictJsonSchema({
+        type: 'array',
+        items: { type: 'object' },
+      }),
+    ).toBeUndefined();
   });
 
   it('delimits system, user, and output requirements', () => {

@@ -1,4 +1,47 @@
-import type { Modality, OutputDef } from '@reelcraft/shared';
+import type { JsonSchema, Modality, OutputDef } from '@reelcraft/shared';
+
+/** A property-less `{ type: 'object' }` is this codebase's idiom for
+ * "free-form JSON" (the canvas UI's own default for a new data-output
+ * stage). OpenAI strict mode has no way to express "arbitrary object" —
+ * every object node must list its properties — so a schema containing one
+ * anywhere in its tree can't be strictly enforced without forcing the model
+ * to return `{}`. */
+function hasFreeformObject(schema: JsonSchema): boolean {
+  if (schema.type === 'object') {
+    if (!schema.properties || Object.keys(schema.properties).length === 0) return true;
+    return Object.values(schema.properties).some(hasFreeformObject);
+  }
+  if (schema.type === 'array' && schema.items) return hasFreeformObject(schema.items);
+  return false;
+}
+
+/** OpenAI's structured-output ("strict") mode requires every object
+ * subschema to declare `additionalProperties: false` and a `properties` key
+ * (even empty) — fields the shared `JsonSchema` dialect deliberately omits
+ * (§4.2: blueprint authors don't need to know about this provider-specific
+ * quirk). Recursing here, only at the wire boundary to Codex, keeps that
+ * omission intact. Returns `undefined` when the schema can't be strictly
+ * enforced (see `hasFreeformObject`); the caller should skip
+ * `--output-schema` entirely in that case and rely on the prompt instead. */
+export function strictJsonSchema(schema: JsonSchema): unknown | undefined {
+  if (hasFreeformObject(schema)) return undefined;
+  if (schema.type === 'object') {
+    return {
+      ...schema,
+      additionalProperties: false,
+      properties: Object.fromEntries(
+        Object.entries(schema.properties ?? {}).map(([key, value]) => [
+          key,
+          strictJsonSchema(value),
+        ]),
+      ),
+    };
+  }
+  if (schema.type === 'array' && schema.items) {
+    return { ...schema, items: strictJsonSchema(schema.items) };
+  }
+  return schema;
+}
 
 const RESERVED_CONFIG_KEYS = new Set([
   'reasoningEffort',

@@ -11,7 +11,7 @@ import type {
   ProviderResult,
 } from '../provider-adapter.interface';
 import type { EngineConfig } from '../../config/engine-config';
-import { buildCodexPrompt } from './codex-command';
+import { buildCodexPrompt, strictJsonSchema } from './codex-command';
 import type { CodexAppServerClient, CodexModel } from './codex-app-server.client';
 import type { CodexJobLauncher } from './codex-job-launcher';
 import { timelineOutputSchema } from './codex-output-schema';
@@ -146,9 +146,12 @@ export class CodexProviderAdapter implements ProviderAdapter {
         ? await this.inputMaterializer.materialize(jobDir, req.params.slots)
         : [];
     const schema = this.outputSchema(req);
-    const outputSchemaPath = schema ? join(jobDir, 'schema.json') : undefined;
+    const strictSchema = schema ? strictJsonSchema(schema) : undefined;
+    const outputSchemaPath = strictSchema ? join(jobDir, 'schema.json') : undefined;
     if (outputSchemaPath)
-      await writeFile(outputSchemaPath, JSON.stringify(schema), { mode: 0o600 });
+      await writeFile(outputSchemaPath, JSON.stringify(strictSchema), {
+        mode: 0o600,
+      });
     const manifestPath = join(jobDir, 'manifest.json');
     await atomicJson(manifestPath, {
       modelId: req.modelId,

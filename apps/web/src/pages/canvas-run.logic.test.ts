@@ -1,10 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  buildRunAllDto,
-  buildRunStageDto,
-  buildRunToStageDto,
-  type CanvasRunSource,
-} from './canvas-run.logic';
+import { buildRunAllDto, buildRunStageDto, type CanvasRunSource } from './canvas-run.logic';
 
 const source: CanvasRunSource = {
   id: 'run-1',
@@ -25,13 +20,6 @@ describe('canvas-run.logic', () => {
       untilStageKey: 'script',
       roleBindings: { host: 'char-1' },
     });
-  });
-
-  it('buildRunToStageDto seeds and stops at the target stage without forcing a rerun', () => {
-    const dto = buildRunToStageDto(source, 'version-2', 'selector');
-    expect(dto.rerunStageKeys).toEqual([]);
-    expect(dto.untilStageKey).toBe('selector');
-    expect(dto.seedFromRunId).toBe('run-1');
   });
 
   it('buildRunAllDto seeds with no stop point and no forced rerun', () => {
