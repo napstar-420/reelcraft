@@ -4,6 +4,7 @@ import type {
   UpdateChannelDto,
   BlueprintVersionDto,
   CreateBlueprintVersionDto,
+  VersionBump,
   RunDetailDto,
   CapabilityDto,
   ResolveCapabilityResponseDto,
@@ -34,6 +35,7 @@ import type {
   RunState,
   ListRunsResultDto,
   ConfirmRunActionDto,
+  RetryScope,
   InvalidationPreviewDto,
   HumanInputSubmissionDto,
   StageAttemptDto,
@@ -173,8 +175,12 @@ export const api = {
     }),
   listBlueprints: (channelId: string) =>
     request<BlueprintDto[]>(`/blueprints?channelId=${encodeURIComponent(channelId)}`),
-  createBlueprintVersion: (blueprintId: string, dto: CreateBlueprintVersionDto) =>
-    request<BlueprintVersionDto>(`/blueprints/${blueprintId}/versions`, {
+  createBlueprintVersion: (
+    blueprintId: string,
+    dto: CreateBlueprintVersionDto,
+    bump: VersionBump = 'minor',
+  ) =>
+    request<BlueprintVersionDto>(`/blueprints/${blueprintId}/versions?bump=${bump}`, {
       method: 'POST',
       body: JSON.stringify(dto),
     }),
@@ -278,7 +284,8 @@ export const api = {
       body: JSON.stringify({ check, artifactId }),
     }),
 
-  startDryRun: (blueprintId: string, version: number, budgetCapUsd?: number) =>
+  /** `version` is `major.minor`, e.g. "1.5". */
+  startDryRun: (blueprintId: string, version: string, budgetCapUsd?: number) =>
     request<RunDetailDto>(`/blueprints/${blueprintId}/versions/${version}/dry-run`, {
       method: 'POST',
       body: JSON.stringify(budgetCapUsd !== undefined ? { budgetCapUsd } : {}),
@@ -316,13 +323,20 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ capUsd }),
     }),
-  previewStageRetry: (runId: string, stageKey: string, itemIndex?: number) =>
-    request<InvalidationPreviewDto>(
-      `/runs/${runId}/stages/${encodeURIComponent(stageKey)}/retry${
-        itemIndex !== undefined ? `?itemIndex=${itemIndex}` : ''
-      }`,
+  previewStageRetry: (
+    runId: string,
+    stageKey: string,
+    { itemIndex, scope }: { itemIndex?: number; scope?: RetryScope } = {},
+  ) => {
+    const qs = new URLSearchParams();
+    if (itemIndex !== undefined) qs.set('itemIndex', String(itemIndex));
+    if (scope) qs.set('scope', scope);
+    const query = qs.toString();
+    return request<InvalidationPreviewDto>(
+      `/runs/${runId}/stages/${encodeURIComponent(stageKey)}/retry${query ? `?${query}` : ''}`,
       { method: 'POST' },
-    ),
+    );
+  },
   confirmStageRetry: (runId: string, stageKey: string, dto: ConfirmRunActionDto) =>
     request<{ accepted: true; revision: number }>(
       `/runs/${runId}/stages/${encodeURIComponent(stageKey)}/retry/confirm`,

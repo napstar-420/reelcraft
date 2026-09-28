@@ -28,6 +28,9 @@ export interface MemoryVersionWriter {
 export interface InvalidationSeed {
   stageKeys?: string[];
   forcedStageKeys?: string[];
+  /** `false` invalidates only the seeded nodes, leaving stages that read
+   * their outputs passed (a "re-run only this stage" retry). */
+  cascade?: boolean;
   /** phase 7 chunk 5 — item-precise seed: invalidate exactly this
    * `(stageKey, itemIndex)` pair, as opposed to `stageKeys`, which invalidates
    * every item of an iterating stage. Not yet produced by any caller (that's
@@ -155,8 +158,9 @@ export function computeInvalidationClosure(params: {
   // backward. One ordered pass over each stage's node group (itself in
   // ascending item order) therefore computes the transitive closure:
   // adding a node also adds its artifact before any later reader is
-  // visited, including a later item of the same stage.
-  for (const stageKey of params.graphOrder) {
+  // visited, including a later item of the same stage. `cascade: false`
+  // skips the pass: only the seeded nodes re-run.
+  for (const stageKey of params.seed.cascade === false ? [] : params.graphOrder) {
     for (const node of nodesByStage.get(stageKey) ?? []) {
       const key = nodeKey(node.stageKey, node.itemIndex);
       if (invalidKeys.has(key)) continue;

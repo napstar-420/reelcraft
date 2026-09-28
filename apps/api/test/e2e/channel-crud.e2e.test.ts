@@ -152,7 +152,7 @@ describe('channel create/list/get/update (e2e)', () => {
       defaults: {},
       budget: { runCapUsd: 10 },
     });
-    const dryRun = await runs.startDryRun(blueprintId, version.version);
+    const dryRun = await runs.startDryRun(blueprintId, version);
     expect(dryRun.state).toBe('CREATED');
 
     await expect(channels.delete(created.id)).rejects.toBeInstanceOf(ConflictException);
@@ -201,7 +201,7 @@ describe('channel create/list/get/update (e2e)', () => {
       sha256: 'deadbeef',
       tags: [],
     });
-    await runs.startDryRun(blueprintId, version.version);
+    await runs.startDryRun(blueprintId, version);
     await runs.create({
       channelId: created.id,
       blueprintVersionId: version.id,

@@ -148,6 +148,13 @@
       "when": 1790581627540,
       "tag": "0020_tough_wildside",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1790583065582,
+      "tag": "0021_powerful_lethal_legion",
+      "breakpoints": true
     }
   ]
 }

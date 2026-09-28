@@ -88,7 +88,7 @@ describe('RunSummaryDto / ListRunsResultDto', () => {
     blueprintId: 'blueprint-1',
     blueprintName: 'My Blueprint',
     blueprintVersionId: 'version-1',
-    blueprintVersion: 2,
+    blueprintVersion: '1.2',
     state: 'RUNNING',
     dryRun: false,
     draft: false,

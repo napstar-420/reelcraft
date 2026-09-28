@@ -224,7 +224,7 @@ describe('RunService.list', () => {
     blueprintId: 'blueprint-1',
     blueprintName: 'My Blueprint',
     blueprintVersionId: 'version-1',
-    blueprintVersion: 3,
+    blueprintVersion: '1.2',
     state: 'COMPLETED',
     dryRun: false,
     budgetCapUsd: '12.0000',

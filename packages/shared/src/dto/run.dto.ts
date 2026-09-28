@@ -244,7 +244,8 @@ export const RunSummaryDto = z.object({
   blueprintId: z.string(),
   blueprintName: z.string(),
   blueprintVersionId: z.string(),
-  blueprintVersion: z.number().int(),
+  /** `major.minor`, e.g. "1.5". */
+  blueprintVersion: z.string(),
   state: RunState,
   dryRun: z.boolean(),
   /** Run of a canvas draft snapshot (unsaved edits), not a saved version. */

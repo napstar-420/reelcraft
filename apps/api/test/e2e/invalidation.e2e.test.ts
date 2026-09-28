@@ -51,7 +51,8 @@ describe('InvalidationService (e2e)', () => {
     await testDb.db.insert(blueprintVersion).values({
       id: versionId,
       blueprintId,
-      version: 1,
+      major: 1,
+      minor: 0,
       graph,
       defaults: {},
       budget: { runCapUsd: 10 },

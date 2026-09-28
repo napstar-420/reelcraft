@@ -69,10 +69,18 @@ export const SetWorkingDraftDto = z.object({
 });
 export type SetWorkingDraftDto = z.infer<typeof SetWorkingDraftDto>;
 
+/** Save bumps minor (1.5 → 1.6); "Bump version" bumps major (1.6 → 2.0). */
+export const VersionBump = z.enum(['minor', 'major']);
+export type VersionBump = z.infer<typeof VersionBump>;
+
+export const CreateVersionQueryDto = z.object({ bump: VersionBump.default('minor') });
+export type CreateVersionQueryDto = z.infer<typeof CreateVersionQueryDto>;
+
 export const BlueprintVersionDto = z.object({
   id: z.string(),
   blueprintId: z.string(),
-  version: z.number(),
+  major: z.number().int(),
+  minor: z.number().int(),
   graph: z.array(StageDef),
   inputs: z.array(InputDef),
   roles: z.array(RoleDef),

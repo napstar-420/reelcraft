@@ -17,7 +17,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 export function DryRunTrigger() {
   const navigate = useNavigate();
   const [blueprintId, setBlueprintId] = useState('');
-  const [version, setVersion] = useState(1);
+  const [version, setVersion] = useState('1.0');
   const [budgetCapUsd, setBudgetCapUsd] = useState(1);
 
   const dryRun = useMutation({
@@ -38,9 +38,9 @@ export function DryRunTrigger() {
         <div className="space-y-1.5">
           <Label>Version</Label>
           <Input
-            type="number"
             value={version}
-            onChange={(e) => setVersion(Number(e.target.value))}
+            placeholder="1.5"
+            onChange={(e) => setVersion(e.target.value.trim())}
           />
         </div>
         <div className="space-y-1.5">

@@ -1,10 +1,11 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { and, eq, inArray, isNull, max, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type {
   ConfigLayer,
   CreateBlueprintVersionDto,
   UpdateBlueprintDto,
   ValidationIssue,
+  VersionBump,
 } from '@reelcraft/shared';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
 import { asset, blob, blueprint, blueprintVersion, character, channel } from '../db/schema/index';
@@ -110,31 +111,39 @@ export class BlueprintService {
     return { ...row.blueprint, runCount: row.runCount, latestPosterBlobId: row.latestPosterBlobId };
   }
 
-  /** `draft: true` stores an immutable snapshot for a canvas run of unsaved
-   * edits: it reuses the latest saved version number, never becomes
-   * `currentVersionId`, and is hidden from `listVersions`. Only a saved
-   * version advances the number, and saving clears `workingDraft`. */
+  /** Saves are numbered major.minor: the first is 1.0, a save bumps minor,
+   * `bump: 'major'` goes to (major + 1).0. `draft: true` stores an immutable
+   * snapshot for a canvas run of unsaved edits: it reuses the latest saved
+   * number (0.0 if none), never becomes `currentVersionId`, and is hidden
+   * from `listVersions`. Saving clears `workingDraft`. */
   async createVersion(
     blueprintId: string,
     dto: CreateBlueprintVersionDto,
     sourceTemplateId?: string,
-    { draft = false }: { draft?: boolean } = {},
+    { draft = false, bump = 'minor' }: { draft?: boolean; bump?: VersionBump } = {},
   ) {
     const { issues, runnable } = await this.computeValidation(blueprintId, dto);
 
-    const [row] = await this.db
-      .select({ maxVersion: max(blueprintVersion.version) })
+    const [latest] = await this.db
+      .select({ major: blueprintVersion.major, minor: blueprintVersion.minor })
       .from(blueprintVersion)
-      .where(and(eq(blueprintVersion.blueprintId, blueprintId), eq(blueprintVersion.draft, false)));
-    const latestSaved = row?.maxVersion ?? 0;
-    const nextVersion = draft ? latestSaved : latestSaved + 1;
+      .where(and(eq(blueprintVersion.blueprintId, blueprintId), eq(blueprintVersion.draft, false)))
+      .orderBy(desc(blueprintVersion.major), desc(blueprintVersion.minor))
+      .limit(1);
+    const next = draft
+      ? (latest ?? { major: 0, minor: 0 })
+      : !latest
+        ? { major: 1, minor: 0 }
+        : bump === 'major'
+          ? { major: latest.major + 1, minor: 0 }
+          : { major: latest.major, minor: latest.minor + 1 };
 
     const id = ulid();
     await this.db.transaction(async (tx) => {
       await tx.insert(blueprintVersion).values({
         id,
         blueprintId,
-        version: nextVersion,
+        ...next,
         graph: dto.graph,
         inputs: dto.inputs,
         roles: dto.roles,
@@ -158,7 +167,7 @@ export class BlueprintService {
       {
         blueprintId,
         blueprintVersionId: id,
-        version: nextVersion,
+        version: `${next.major}.${next.minor}`,
         draft,
         runnable,
         issues: issues.length,
@@ -228,7 +237,8 @@ export class BlueprintService {
     return this.db
       .select()
       .from(blueprintVersion)
-      .where(and(eq(blueprintVersion.blueprintId, blueprintId), eq(blueprintVersion.draft, false)));
+      .where(and(eq(blueprintVersion.blueprintId, blueprintId), eq(blueprintVersion.draft, false)))
+      .orderBy(desc(blueprintVersion.major), desc(blueprintVersion.minor));
   }
 
   async setWorkingDraft(id: string, workingDraft: CreateBlueprintVersionDto | null) {

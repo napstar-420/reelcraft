@@ -30,7 +30,8 @@ export const blueprintVersion = pgTable(
     blueprintId: text('blueprint_id')
       .notNull()
       .references(() => blueprint.id), // blueprint this version belongs to
-    version: integer('version').notNull(), // monotonically increasing version number for the blueprint
+    major: integer('major').notNull(), // major version: bumped by an explicit "Bump version"
+    minor: integer('minor').notNull(), // minor version: bumped by every Save, reset to 0 on a major bump
     graph: jsonb('graph').notNull(), // StageDef[]: the pipeline stage graph for this version
     inputs: jsonb('inputs').notNull().default([]), // InputDef[]: input parameters a run of this version accepts
     roles: jsonb('roles').notNull().default([]), // RoleDef[]; v1 permits 0 or 1 (§18.5)
@@ -40,11 +41,11 @@ export const blueprintVersion = pgTable(
     runnable: boolean('runnable').notNull().default(false), // whether this version has passed validation and can be run
     sourceTemplateId: text('source_template_id'), // template this version was generated from, if any
     createdAt: timestamptz('created_at').notNull().defaultNow(), // when this version was created
-    draft: boolean('draft').notNull().default(false), // canvas run snapshot of unsaved edits: not in version history, never current; `version` = the saved version it was edited from
+    draft: boolean('draft').notNull().default(false), // canvas run snapshot of unsaved edits: not in version history, never current; major/minor = the saved version it was edited from
   },
   (t) => [
-    uniqueIndex('blueprint_version_blueprint_id_version_uq')
-      .on(t.blueprintId, t.version)
+    uniqueIndex('blueprint_version_blueprint_id_major_minor_uq')
+      .on(t.blueprintId, t.major, t.minor)
       .where(sql`draft = false`),
   ],
 );

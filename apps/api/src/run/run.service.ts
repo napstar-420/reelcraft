@@ -487,7 +487,11 @@ export class RunService {
    * path. `startDryRun` just resolves `(blueprintId, version)` to the
    * `channelId`/`blueprintVersionId` pair `create()` needs, then reuses
    * `create()`/`start()` verbatim with `{dryRun: true}`. */
-  async startDryRun(blueprintId: string, version: number, budgetCapUsd = 1) {
+  async startDryRun(
+    blueprintId: string,
+    version: { major: number; minor: number },
+    budgetCapUsd = 1,
+  ) {
     const [blueprintRow] = await this.db
       .select({ channelId: blueprint.channelId })
       .from(blueprint)
@@ -501,13 +505,16 @@ export class RunService {
       .where(
         and(
           eq(blueprintVersion.blueprintId, blueprintId),
-          eq(blueprintVersion.version, version),
+          eq(blueprintVersion.major, version.major),
+          eq(blueprintVersion.minor, version.minor),
           eq(blueprintVersion.draft, false),
         ),
       )
       .limit(1);
     if (!versionRow) {
-      throw new NotFoundException(`Blueprint ${blueprintId} version ${version} not found`);
+      throw new NotFoundException(
+        `Blueprint ${blueprintId} version ${version.major}.${version.minor} not found`,
+      );
     }
 
     const created = await this.create(
@@ -941,7 +948,7 @@ export class RunService {
         blueprintId: blueprint.id,
         blueprintName: blueprint.name,
         blueprintVersionId: run.blueprintVersionId,
-        blueprintVersion: blueprintVersion.version,
+        blueprintVersion: sql<string>`${blueprintVersion.major} || '.' || ${blueprintVersion.minor}`,
         state: run.state,
         dryRun: run.dryRun,
         draft: blueprintVersion.draft,

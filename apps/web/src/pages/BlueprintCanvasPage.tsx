@@ -59,7 +59,9 @@ import type {
   ConfigLayer,
   Ref,
   ValidationIssue,
+  VersionBump,
 } from '@reelcraft/shared';
+import { formatBlueprintVersion } from '../lib/format-blueprint-version';
 
 type BlueprintDraft = {
   graph: StageDef[];
@@ -532,7 +534,7 @@ function CreateBlueprintForm({
   );
 }
 
-type SavedVersion = { id: string; version: number; contentKey: string };
+type SavedVersion = { id: string; major: number; minor: number; contentKey: string };
 
 function draftOf(v: BlueprintDraft): BlueprintDraft {
   return {
@@ -582,13 +584,13 @@ function SaveAndDryRun({
   const save = useMutation({
     // Capture what was sent: edits made while the save is in flight must
     // stay "unsaved".
-    mutationFn: async () => {
+    mutationFn: async (bump: VersionBump) => {
       const sent = { draft, contentKey: draftKey };
-      const version = await api.createBlueprintVersion(blueprintId, sent.draft);
+      const version = await api.createBlueprintVersion(blueprintId, sent.draft, bump);
       return { version, ...sent };
     },
     onSuccess: ({ version, draft: sent, contentKey }) =>
-      onSaved({ id: version.id, version: version.version, contentKey }, sent),
+      onSaved({ id: version.id, major: version.major, minor: version.minor, contentKey }, sent),
   });
 
   const runBlocked = isDirty || latestSaved === null;
@@ -602,7 +604,7 @@ function SaveAndDryRun({
   const dryRun = useMutation({
     mutationFn: () => {
       if (runBlocked || !latestSaved) throw new Error('Save to run your changes.');
-      return api.startDryRun(blueprintId, latestSaved.version);
+      return api.startDryRun(blueprintId, `${latestSaved.major}.${latestSaved.minor}`);
     },
     onSuccess: (run) => navigate(`/runs/${run.id}`),
   });
@@ -624,9 +626,24 @@ function SaveAndDryRun({
           </Alert>
         )}
         <div className="flex flex-wrap items-center gap-2">
-          <Button type="button" onClick={() => save.mutate()} disabled={save.isPending || !isDirty}>
+          <Button
+            type="button"
+            onClick={() => save.mutate('minor')}
+            disabled={save.isPending || !isDirty}
+          >
             {save.isPending ? 'Saving…' : 'Save'}
           </Button>
+          {latestSaved && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => save.mutate('major')}
+              disabled={save.isPending}
+              title="Save the current canvas as a new major version"
+            >
+              Bump to {formatBlueprintVersion({ major: latestSaved.major + 1, minor: 0 })}
+            </Button>
+          )}
           <RunLaunchDialog
             key={draftKey}
             channelId={channelId}
@@ -647,11 +664,11 @@ function SaveAndDryRun({
         <p className="text-xs text-muted-foreground">
           {runBlocked
             ? 'Save to run your changes. Use the run panel to try stages without saving.'
-            : `Run executes every stage of v${latestSaved?.version} with configured providers. Dry run always uses the fake provider.`}
+            : `Run executes every stage of ${latestSaved ? formatBlueprintVersion(latestSaved) : ''} with configured providers. Dry run always uses the fake provider.`}
         </p>
         {save.isSuccess && (
           <p className="text-sm text-muted-foreground">
-            Saved as version {save.data.version.version} (
+            Saved as {formatBlueprintVersion(save.data.version)} (
             {save.data.version.runnable ? 'runnable' : 'not runnable'})
           </p>
         )}
@@ -788,16 +805,16 @@ function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
   // saved version. `latestSaved` is what Run/Dry run execute.
   useEffect(() => {
     if (draft || !versions.data || !blueprintMeta.data) return;
-    const latest = versions.data.length
-      ? versions.data.reduce((a, b) => (b.version > a.version ? b : a))
-      : null;
+    // The API lists saved versions newest first (major, then minor).
+    const latest = versions.data[0] ?? null;
     const saved = latest ? draftOf(latest) : emptyDraft();
     const working = blueprintMeta.data.workingDraft;
     setSavedDraft(saved);
     if (latest) {
       setLatestSaved({
         id: latest.id,
-        version: latest.version,
+        major: latest.major,
+        minor: latest.minor,
         contentKey: stableStringify(saved),
       });
     }
@@ -912,7 +929,9 @@ function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
         <h1 className="text-2xl font-semibold tracking-tight">Blueprint canvas</h1>
         <div className="flex flex-wrap items-center gap-2">
           {latestSaved && (
-            <span className="font-mono text-xs text-muted-foreground">v{latestSaved.version}</span>
+            <span className="font-mono text-xs text-muted-foreground">
+              {formatBlueprintVersion(latestSaved)}
+            </span>
           )}
           {isDirty && <StatusBadge tone="warning" label="Unsaved changes" />}
           {isDirty && latestSaved && (

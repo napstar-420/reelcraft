@@ -57,8 +57,8 @@ describe('blueprint draft versions (e2e)', () => {
 
   it('draft snapshots never take a version number or become current; only save advances', async () => {
     const { blueprintId, blueprints } = await setup();
-    await blueprints.createVersion(blueprintId, content('v1'));
-    const v2 = await blueprints.createVersion(blueprintId, content('v2'));
+    await blueprints.createVersion(blueprintId, content('v1.0'));
+    const v11 = await blueprints.createVersion(blueprintId, content('v1.1'));
 
     const draftA = await blueprints.createVersion(blueprintId, content('edit a'), undefined, {
       draft: true,
@@ -66,17 +66,43 @@ describe('blueprint draft versions (e2e)', () => {
     const draftB = await blueprints.createVersion(blueprintId, content('edit b'), undefined, {
       draft: true,
     });
-    expect(draftA).toMatchObject({ version: 2, draft: true });
-    expect(draftB).toMatchObject({ version: 2, draft: true });
+    expect(draftA).toMatchObject({ major: 1, minor: 1, draft: true });
+    expect(draftB).toMatchObject({ major: 1, minor: 1, draft: true });
 
-    expect((await blueprints.getBlueprint(blueprintId)).currentVersionId).toBe(v2.id);
+    expect((await blueprints.getBlueprint(blueprintId)).currentVersionId).toBe(v11.id);
     const listed = await blueprints.listVersions(blueprintId);
-    expect(listed.map((v) => v.version).sort()).toEqual([1, 2]);
+    expect(listed.map((v) => [v.major, v.minor])).toEqual([
+      [1, 1],
+      [1, 0],
+    ]);
     expect(listed.every((v) => !v.draft)).toBe(true);
 
-    const v3 = await blueprints.createVersion(blueprintId, content('v3'));
-    expect(v3).toMatchObject({ version: 3, draft: false });
-    expect((await blueprints.getBlueprint(blueprintId)).currentVersionId).toBe(v3.id);
+    const v12 = await blueprints.createVersion(blueprintId, content('v1.2'));
+    expect(v12).toMatchObject({ major: 1, minor: 2, draft: false });
+    expect((await blueprints.getBlueprint(blueprintId)).currentVersionId).toBe(v12.id);
+  });
+
+  it('save bumps minor, "Bump version" bumps major and resets minor', async () => {
+    const { blueprintId, blueprints } = await setup();
+    const first = await blueprints.createVersion(blueprintId, content('a'), undefined, {
+      bump: 'major',
+    });
+    expect(first).toMatchObject({ major: 1, minor: 0 });
+    await blueprints.createVersion(blueprintId, content('b'));
+    const v2 = await blueprints.createVersion(blueprintId, content('c'), undefined, {
+      bump: 'major',
+    });
+    expect(v2).toMatchObject({ major: 2, minor: 0 });
+    const v21 = await blueprints.createVersion(blueprintId, content('d'));
+    expect(v21).toMatchObject({ major: 2, minor: 1 });
+    const draft = await blueprints.createVersion(blueprintId, content('e'), undefined, {
+      draft: true,
+      bump: 'major',
+    });
+    expect(draft).toMatchObject({ major: 2, minor: 1, draft: true });
+
+    const listed = await blueprints.listVersions(blueprintId);
+    expect(listed.map((v) => `${v.major}.${v.minor}`)).toEqual(['2.1', '2.0', '1.1', '1.0']);
   });
 
   it('keeps the autosaved working copy until the next save clears it', async () => {
@@ -102,7 +128,7 @@ describe('blueprint draft versions (e2e)', () => {
     const v1 = await blueprints.createVersion(blueprintId, content('v1'));
     await blueprints.createVersion(blueprintId, content('edit'), undefined, { draft: true });
 
-    const dryRun = await runs.startDryRun(blueprintId, 1);
+    const dryRun = await runs.startDryRun(blueprintId, { major: 1, minor: 0 });
     expect(dryRun.blueprintVersionId).toBe(v1.id);
   });
 
