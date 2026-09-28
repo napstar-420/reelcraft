@@ -3,7 +3,9 @@ import {
   buildStageOutput,
   inferSchemaFromValue,
   isOutputInstructionsIssue,
+  parseSchemaJson,
   retypeSchema,
+  summarizeSchema,
   supportsOutputInstructions,
   updateDataOutputSchema,
 } from './stage-inspector.logic';
@@ -124,6 +126,33 @@ describe('stage inspector output logic', () => {
 
   it('infers an empty array item schema as string when the sample array is empty', () => {
     expect(inferSchemaFromValue([])).toEqual({ type: 'array', items: { type: 'string' } });
+  });
+
+  it('summarizes a schema for a collapsed property row', () => {
+    expect(summarizeSchema({ type: 'string' })).toBe('string');
+    expect(summarizeSchema({ type: 'array', items: { type: 'string' } })).toBe('array of string');
+    expect(
+      summarizeSchema({
+        type: 'object',
+        properties: { a: { type: 'string' }, b: { type: 'number' } },
+      }),
+    ).toBe('object · 2 properties');
+    expect(summarizeSchema({ type: 'object' })).toBe('object · 0 properties');
+  });
+
+  it('parses valid raw JSON into a schema', () => {
+    expect(parseSchemaJson('{"type":"string"}')).toEqual({ ok: true, schema: { type: 'string' } });
+  });
+
+  it('rejects invalid JSON in raw mode without touching the schema', () => {
+    const result = parseSchemaJson('{not-json');
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/not valid JSON/i);
+  });
+
+  it('rejects JSON that does not match the schema dialect', () => {
+    const result = parseSchemaJson('{"type":"object","extraKey":true}');
+    expect(result.ok).toBe(false);
   });
 
   it('recognizes the precise output-instructions validation path', () => {

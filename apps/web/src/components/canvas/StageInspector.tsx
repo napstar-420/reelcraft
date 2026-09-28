@@ -4,7 +4,7 @@ import { cn } from 'cn';
 import { api } from '../../api/client';
 import { BindingPicker } from './BindingPicker';
 import { CapabilityPicker } from './CapabilityPicker';
-import { OutputSchemaEditor } from './OutputSchemaEditor';
+import { OutputSchemaField } from './OutputSchemaEditor';
 import { SchemaForm } from './SchemaForm';
 import { ChecksEditor } from './ChecksEditor';
 import { InfoHeading, InfoLabel } from './info-label';
@@ -1058,7 +1058,7 @@ export function StageInspector({
               <IssueList issues={outputKindIssues} />
               <IssueList issues={outputIssues} />
               {output.kind === 'data' && (
-                <OutputSchemaEditor
+                <OutputSchemaField
                   schema={output.schema}
                   onChange={(next) =>
                     onChange({

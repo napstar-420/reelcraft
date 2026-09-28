@@ -57,6 +57,95 @@ export function retypeSchema(schema: JsonSchema, type: JsonSchema['type']): Json
   return base;
 }
 
+/** A one-line description of a schema's shape, for a collapsed property
+ * row's summary — not used for anything but display. */
+export function summarizeSchema(schema: JsonSchema): string {
+  if (schema.type === 'array')
+    return `array of ${summarizeSchema(schema.items ?? { type: 'string' })}`;
+  if (schema.type === 'object') {
+    const count = Object.keys(schema.properties ?? {}).length;
+    return `object · ${count} ${count === 1 ? 'property' : 'properties'}`;
+  }
+  return schema.type;
+}
+
+const SCHEMA_KEYS = new Set([
+  'type',
+  'enum',
+  'description',
+  'properties',
+  'required',
+  'items',
+  'minItems',
+  'maxItems',
+  'minimum',
+  'maximum',
+  'minLength',
+  'maxLength',
+]);
+const SCHEMA_TYPES = new Set(['object', 'array', 'string', 'number', 'integer', 'boolean']);
+const NUMERIC_KEYS = [
+  'minItems',
+  'maxItems',
+  'minimum',
+  'maximum',
+  'minLength',
+  'maxLength',
+] as const;
+
+/** A structural check against the restricted `JsonSchema` dialect (§4.2),
+ * written locally rather than importing the shared package's Zod schema as a
+ * runtime value — Vite's dev-time CJS interop doesn't reliably pick up
+ * runtime exports re-exported through `packages/shared`'s `__exportStar`
+ * barrel (the same limitation `formatBlueprintVersion` hit earlier), so
+ * every value from `@reelcraft/shared` used in `apps/web` today is a
+ * compile-time type import only; this keeps that true. */
+function isJsonSchemaShape(value: unknown): value is JsonSchema {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+  const obj = value as Record<string, unknown>;
+  if (!Object.keys(obj).every((key) => SCHEMA_KEYS.has(key))) return false;
+  if (typeof obj.type !== 'string' || !SCHEMA_TYPES.has(obj.type)) return false;
+  if (obj.description !== undefined && typeof obj.description !== 'string') return false;
+  if (
+    obj.enum !== undefined &&
+    (!Array.isArray(obj.enum) ||
+      !obj.enum.every((v) => typeof v === 'string' || typeof v === 'number'))
+  )
+    return false;
+  if (
+    obj.required !== undefined &&
+    (!Array.isArray(obj.required) || !obj.required.every((v) => typeof v === 'string'))
+  )
+    return false;
+  if (obj.properties !== undefined) {
+    if (typeof obj.properties !== 'object' || obj.properties === null) return false;
+    if (!Object.values(obj.properties).every(isJsonSchemaShape)) return false;
+  }
+  if (obj.items !== undefined && !isJsonSchemaShape(obj.items)) return false;
+  for (const key of NUMERIC_KEYS) {
+    if (obj[key] !== undefined && typeof obj[key] !== 'number') return false;
+  }
+  return true;
+}
+
+/** Parses and validates a raw-JSON edit of an output schema (the "Raw JSON"
+ * tab), rejecting anything that isn't valid JSON or doesn't match the
+ * restricted `JsonSchema` dialect (§4.2) — e.g. an unknown key. */
+export function parseSchemaJson(
+  text: string,
+): { ok: true; schema: JsonSchema } | { ok: false; error: string } {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return { ok: false, error: 'That is not valid JSON.' };
+  }
+  if (!isJsonSchemaShape(parsed)) {
+    return { ok: false, error: 'That is not a valid schema.' };
+  }
+  return { ok: true, schema: parsed };
+}
+
 /** Infers an output schema from a sample JSON value (from a pasted object),
  * so authors can build a schema by example instead of field-by-field. The
  * dialect (§4.2) has no null type, so `null`/`undefined` fall back to

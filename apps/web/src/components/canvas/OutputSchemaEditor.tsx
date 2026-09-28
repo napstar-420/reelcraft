@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { ChevronDown, ChevronRight } from 'lucide-react';
 import type { JsonSchema } from '@reelcraft/shared';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -20,8 +21,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
-import { inferSchemaFromValue, retypeSchema } from './stage-inspector.logic';
+import {
+  inferSchemaFromValue,
+  parseSchemaJson,
+  retypeSchema,
+  summarizeSchema,
+} from './stage-inspector.logic';
 
 const SCHEMA_TYPES: JsonSchema['type'][] = [
   'object',
@@ -77,12 +84,22 @@ function PropertiesEditor({
 }) {
   const properties = schema.properties ?? {};
   const required = new Set(schema.required ?? []);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   function updateProperties(nextProperties: Record<string, JsonSchema>, nextRequired: Set<string>) {
     onChange({
       ...schema,
       properties: nextProperties,
       required: [...nextRequired].filter((key) => nextProperties[key] !== undefined),
+    });
+  }
+
+  function toggleExpanded(key: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
     });
   }
 
@@ -95,6 +112,13 @@ function PropertiesEditor({
     const nextRequired = new Set(required);
     if (nextRequired.delete(oldKey)) nextRequired.add(newKey);
     updateProperties(nextProperties, nextRequired);
+    setExpanded((prev) => {
+      if (!prev.has(oldKey)) return prev;
+      const next = new Set(prev);
+      next.delete(oldKey);
+      next.add(newKey);
+      return next;
+    });
   }
 
   function updatePropertySchema(key: string, propSchema: JsonSchema) {
@@ -117,46 +141,67 @@ function PropertiesEditor({
   }
 
   function addProperty() {
-    updateProperties({ ...properties, [nextFreeKey(properties)]: { type: 'string' } }, required);
+    const key = nextFreeKey(properties);
+    updateProperties({ ...properties, [key]: { type: 'string' } }, required);
+    setExpanded((prev) => new Set(prev).add(key));
   }
 
   return (
     <div className="flex flex-col gap-2">
       <Label>Properties</Label>
-      {Object.entries(properties).map(([key, propSchema]) => (
-        <Card key={key} size="sm">
-          <CardContent className="flex flex-col gap-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <Input
-                type="text"
-                className="w-40"
-                defaultValue={key}
-                onBlur={(e) => renameKey(key, e.target.value.trim())}
-              />
-              <label className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                <Checkbox
-                  checked={required.has(key)}
-                  onCheckedChange={(checked) => toggleRequired(key, checked === true)}
+      {Object.entries(properties).map(([key, propSchema]) => {
+        const isExpanded = expanded.has(key);
+        return (
+          <Card key={key} size="sm">
+            <CardContent className="flex flex-col gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  onClick={() => toggleExpanded(key)}
+                  aria-label={isExpanded ? 'Collapse property' : 'Expand property'}
+                >
+                  {isExpanded ? <ChevronDown /> : <ChevronRight />}
+                </Button>
+                <Input
+                  type="text"
+                  className="w-40"
+                  defaultValue={key}
+                  onBlur={(e) => renameKey(key, e.target.value.trim())}
                 />
-                Required
-              </label>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="ml-auto"
-                onClick={() => removeKey(key)}
-              >
-                Remove
-              </Button>
-            </div>
-            <OutputSchemaEditor
-              schema={propSchema}
-              onChange={(next) => updatePropertySchema(key, next)}
-            />
-          </CardContent>
-        </Card>
-      ))}
+                {!isExpanded && (
+                  <span className="text-xs text-muted-foreground">
+                    {summarizeSchema(propSchema)}
+                  </span>
+                )}
+                <label className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                  <Checkbox
+                    checked={required.has(key)}
+                    onCheckedChange={(checked) => toggleRequired(key, checked === true)}
+                  />
+                  Required
+                </label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="ml-auto"
+                  onClick={() => removeKey(key)}
+                >
+                  Remove
+                </Button>
+              </div>
+              {isExpanded && (
+                <OutputSchemaEditor
+                  schema={propSchema}
+                  onChange={(next) => updatePropertySchema(key, next)}
+                />
+              )}
+            </CardContent>
+          </Card>
+        );
+      })}
       <Button
         type="button"
         variant="outline"
@@ -380,5 +425,61 @@ export function OutputSchemaEditor({
 
       {schema.type === 'object' && <PropertiesEditor schema={schema} onChange={onChange} />}
     </div>
+  );
+}
+
+/** Wraps `OutputSchemaEditor` with a Postman-style Visual/Raw JSON toggle —
+ * only at the top level, not recursively: like Postman's request-body
+ * toggle, there is one raw view for the whole schema, not one per field. */
+export function OutputSchemaField({
+  schema,
+  onChange,
+}: {
+  schema: JsonSchema;
+  onChange: (schema: JsonSchema) => void;
+}) {
+  const [rawText, setRawText] = useState(() => JSON.stringify(schema, null, 2));
+  const [rawError, setRawError] = useState<string | undefined>(undefined);
+
+  function applyRaw(text: string) {
+    const result = parseSchemaJson(text);
+    if (!result.ok) {
+      setRawError(result.error);
+      return;
+    }
+    setRawError(undefined);
+    onChange(result.schema);
+  }
+
+  return (
+    <Tabs
+      defaultValue="visual"
+      onValueChange={(tab) => {
+        if (tab === 'raw') setRawText(JSON.stringify(schema, null, 2));
+      }}
+    >
+      <TabsList variant="line">
+        <TabsTrigger value="visual">Visual</TabsTrigger>
+        <TabsTrigger value="raw">Raw JSON</TabsTrigger>
+      </TabsList>
+      <TabsContent value="visual">
+        <OutputSchemaEditor schema={schema} onChange={onChange} />
+      </TabsContent>
+      <TabsContent value="raw">
+        <div className="flex flex-col gap-1.5">
+          <Textarea
+            rows={12}
+            className="max-h-87.5 overflow-y-auto font-mono text-xs"
+            value={rawText}
+            onChange={(e) => {
+              setRawText(e.target.value);
+              setRawError(undefined);
+            }}
+            onBlur={(e) => applyRaw(e.target.value)}
+          />
+          {rawError && <p className="text-sm text-destructive">{rawError}</p>}
+        </div>
+      </TabsContent>
+    </Tabs>
   );
 }
