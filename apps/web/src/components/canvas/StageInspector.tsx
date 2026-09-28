@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { cn } from 'cn';
 import { api } from '../../api/client';
 import { BindingPicker } from './BindingPicker';
 import { CapabilityPicker } from './CapabilityPicker';
@@ -149,6 +150,49 @@ function WritesEditor({
   );
 }
 
+/** Prompt-style `Textarea`s use `field-sizing-content` (see `ui/textarea.tsx`)
+ * to grow with pasted content instead of scrolling internally, which can
+ * balloon to hundreds of lines and push the rest of the inspector out of
+ * view. This caps them at 350px with a toggle back to full auto-height. */
+function CollapsibleTextarea({
+  value,
+  onChange,
+  rows,
+  maxLength,
+  placeholder,
+  className,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  rows?: number;
+  maxLength?: number;
+  placeholder?: string;
+  className?: string;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <div className="flex flex-col gap-1">
+      <Textarea
+        rows={rows}
+        maxLength={maxLength}
+        placeholder={placeholder}
+        className={cn(className, !expanded && 'max-h-87.5 overflow-y-auto')}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="self-start text-xs text-muted-foreground"
+        onClick={() => setExpanded((e) => !e)}
+      >
+        {expanded ? 'Collapse' : 'Expand'}
+      </Button>
+    </div>
+  );
+}
+
 /** `system` is optional even when `instructions` is present; an empty
  * `template` (the only genuinely required field of the pair) clears the
  * whole `instructions` block back to `undefined` rather than leaving behind
@@ -183,24 +227,24 @@ function InstructionsEditor({
         <InfoLabel info="Optional system-role prompt sent before the template on every call — sets tone, persona, or constraints that shouldn't change per-run. Leave blank to use the capability's own default system prompt, if it has one.">
           System
         </InfoLabel>
-        <Textarea
+        <CollapsibleTextarea
           rows={3}
           className="font-mono text-xs"
           placeholder="e.g. You are a meticulous video-production assistant."
           value={instructions?.system ?? ''}
-          onChange={(e) => set({ system: e.target.value })}
+          onChange={(v) => set({ system: v })}
         />
       </div>
       <div className="flex flex-col gap-1.5">
         <InfoLabel info="The user-role prompt sent to the model. Supports {{ }} interpolation: reference this stage's Slots or Context values by name, e.g. {{ myContextKey }}, plus {{ priorCritique }} when a stage is re-run after a failed quality control check. Required for capabilities that read a prompt (e.g. text/LLM generation) — leave blank for capabilities that don't.">
           Template
         </InfoLabel>
-        <Textarea
+        <CollapsibleTextarea
           rows={6}
           className="font-mono text-xs"
           placeholder={'e.g. Write a title for {{ topic }}.'}
           value={instructions?.template ?? ''}
-          onChange={(e) => set({ template: e.target.value })}
+          onChange={(v) => set({ template: v })}
         />
       </div>
     </div>
@@ -1064,16 +1108,16 @@ export function StageInspector({
                   >
                     Output instructions
                   </InfoLabel>
-                  <Textarea
+                  <CollapsibleTextarea
                     rows={5}
                     maxLength={4_000}
                     className="font-mono text-xs"
                     placeholder="e.g. Use a concise, professional tone."
                     value={output.instructions ?? ''}
-                    onChange={(event) =>
+                    onChange={(v) =>
                       onChange({
                         ...stage,
-                        output: { ...output, instructions: event.target.value },
+                        output: { ...output, instructions: v },
                       })
                     }
                   />

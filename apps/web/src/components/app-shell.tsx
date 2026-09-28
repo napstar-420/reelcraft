@@ -35,12 +35,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const fullWidth = FULL_WIDTH_PATH.test(location.pathname);
 
   return (
-    <SidebarProvider>
+    <SidebarProvider className="h-svh">
       <a href="#main-content" className="skip-link">
         Skip to content
       </a>
       <AppSidebar />
-      <SidebarInset className="min-w-0">
+      <SidebarInset className="min-h-0 min-w-0">
         <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
           <SidebarTrigger className="-ml-1" />
           <Separator orientation="vertical" className="mr-2 h-4" />
@@ -66,7 +66,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <ModeToggle />
           </div>
         </header>
-        <main id="main-content" className="min-w-0 flex-1 overflow-auto p-6">
+        <main id="main-content" className="min-h-0 min-w-0 flex-1 overflow-auto p-6">
           <div className={fullWidth ? undefined : 'mx-auto w-full max-w-7xl'}>{children}</div>
         </main>
       </SidebarInset>
