@@ -24,6 +24,7 @@ type DurableStatus = {
   exitCode?: number | null;
   reason?: string;
   createdAt?: string;
+  startedAt?: string;
 };
 
 type ToolResultManifest = {
@@ -234,16 +235,27 @@ export class CodexProviderAdapter implements ProviderAdapter {
           failureClass: 'infrastructure',
         };
       }
-      return { done: false, phase: 'running' };
+      const deadlineMs = status.startedAt
+        ? Date.parse(status.startedAt) + this.jobTimeoutMs
+        : undefined;
+      return {
+        done: false,
+        phase: 'running',
+        ...(deadlineMs !== undefined && !Number.isNaN(deadlineMs) && { deadlineMs }),
+      };
     }
     if (status.state === 'succeeded') {
       this.logger.log(ids, 'provider job succeeded');
       return { done: true, outcome: 'succeeded' };
     }
-    this.logger.error(
-      { ...ids, state: status.state, exitCode: status.exitCode, reason: status.reason },
-      'provider job failed',
-    );
+    if (status.state === 'cancelled') {
+      this.logger.warn({ ...ids, reason: status.reason }, 'provider job cancelled');
+    } else {
+      this.logger.error(
+        { ...ids, state: status.state, exitCode: status.exitCode, reason: status.reason },
+        'provider job failed',
+      );
+    }
     return {
       done: true,
       outcome: 'failed',

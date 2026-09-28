@@ -134,6 +134,13 @@
       "when": 1790474665897,
       "tag": "0018_sloppy_madripoor",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1790569820031,
+      "tag": "0019_good_bishop",
+      "breakpoints": true
     }
   ]
 }

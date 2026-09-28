@@ -83,3 +83,46 @@ describe('StageRunnerService output-instruction prompt delivery', () => {
     );
   });
 });
+
+describe('StageRunnerService.stopIfRunNotRunning', () => {
+  function makeService(runState: string) {
+    const persisted: Array<Record<string, unknown>> = [];
+    const db = {
+      select: vi.fn().mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue([{ state: runState }]),
+        }),
+      }),
+      update: vi.fn().mockReturnValue({
+        set: vi.fn((value: Record<string, unknown>) => {
+          persisted.push(value);
+          return { where: vi.fn().mockResolvedValue(undefined) };
+        }),
+      }),
+    };
+    const service = Object.assign(Object.create(StageRunnerService.prototype) as object, {
+      db,
+    }) as unknown as StageRunnerService;
+    return { service, persisted };
+  }
+
+  const ctx: StageAttemptContext = {
+    runId: 'run-1',
+    stageExecutionId: 'execution-1',
+    stageKey: 'draft',
+    attemptNo: 2,
+    stageAttemptId: 'attempt-2',
+  };
+
+  it('leaves a still-running attempt alone', async () => {
+    const { service, persisted } = makeService('RUNNING');
+    await expect(service.stopIfRunNotRunning(ctx)).resolves.toBe(false);
+    expect(persisted).toHaveLength(0);
+  });
+
+  it('marks the attempt cancelled once a cancel raced its own poll', async () => {
+    const { service, persisted } = makeService('CANCELLED');
+    await expect(service.stopIfRunNotRunning(ctx)).resolves.toBe(true);
+    expect(persisted).toEqual([{ outcome: 'cancelled', phase: 'settled' }]);
+  });
+});

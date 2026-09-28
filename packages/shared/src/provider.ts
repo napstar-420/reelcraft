@@ -16,6 +16,13 @@ export const JobStatus = z.union([
     done: z.literal(false),
     phase: z.enum(['queued', 'running']),
     progress: z.number().optional(),
+    // Absolute epoch-ms the provider itself will give up by, when it knows
+    // one (e.g. Codex's own job watchdog). The orchestration poll loop keeps
+    // waiting past its own generic `polling.maxWaitSec` until this deadline,
+    // instead of declaring `provider_timeout` on a job that's still alive
+    // and within its provider's own real budget. Providers that don't set
+    // this keep today's exact behavior — only `maxWaitSec` bounds them.
+    deadlineMs: z.number().optional(),
   }),
   z.object({ done: z.literal(true), outcome: z.literal('succeeded') }),
   z.object({

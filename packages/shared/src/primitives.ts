@@ -54,6 +54,7 @@ export const StageExecutionState = z.enum([
   'failed',
   'stale',
   'skipped',
+  'cancelled',
 ]);
 export type StageExecutionState = z.infer<typeof StageExecutionState>;
 

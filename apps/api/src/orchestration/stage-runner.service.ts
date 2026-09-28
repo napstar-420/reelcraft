@@ -709,6 +709,24 @@ export class StageRunnerService {
     });
   }
 
+  /** A poll can come back `failed` because the run was cancelled out from
+   * under it — `RunCancellationService.settleOutstanding` cancels the
+   * provider job directly, racing this same attempt's own poll loop. That
+   * race must not read as a genuine provider failure: mirrors
+   * `fetchAndFinalize`'s own not-running check (§11's "every non-RUNNING
+   * state still discards the output"), marking this attempt `cancelled`
+   * (idempotent — `settleOutstanding` may have already done so) instead of
+   * letting the caller fail the stage over what is really just a cancel. */
+  async stopIfRunNotRunning(ctx: StageAttemptContext): Promise<boolean> {
+    const state = await this.getRunState(ctx.runId);
+    if (state === 'RUNNING' || state === 'PAUSED_MANUAL') return false;
+    await this.db
+      .update(stageAttempt)
+      .set({ outcome: 'cancelled', phase: 'settled' })
+      .where(eq(stageAttempt.id, ctx.stageAttemptId));
+    return true;
+  }
+
   async recordInfraError(ctx: StageAttemptContext, reason: string): Promise<void> {
     await this.db
       .update(stageAttempt)
