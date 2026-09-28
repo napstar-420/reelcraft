@@ -16,12 +16,14 @@ import { ArtifactPreview } from './artifact-preview';
 export function StageOutputSheet({
   runId,
   stageKey,
+  stageLabel,
   stageRunning,
   open,
   onOpenChange,
 }: {
   runId: string;
   stageKey: string | null;
+  stageLabel?: string | null;
   stageRunning: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -38,7 +40,7 @@ export function StageOutputSheet({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent className="w-full sm:max-w-2xl">
         <SheetHeader className="border-b pr-12">
-          <SheetTitle>Output of {stageKey}</SheetTitle>
+          <SheetTitle>Output of {stageLabel ?? stageKey}</SheetTitle>
           <SheetDescription>The current output this stage produced.</SheetDescription>
         </SheetHeader>
 

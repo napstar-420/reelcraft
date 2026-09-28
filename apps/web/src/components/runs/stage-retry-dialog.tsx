@@ -33,12 +33,14 @@ const SCOPE_COPY: Record<RetryScope, { title: string; description: string }> = {
 export function StageRetryDialog({
   runId,
   stageKey,
+  stageLabel,
   scope = 'dependents',
   open,
   onOpenChange,
 }: {
   runId: string;
   stageKey: string | null;
+  stageLabel?: string | null;
   scope?: RetryScope;
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -72,7 +74,7 @@ export function StageRetryDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>
-            {SCOPE_COPY[scope].title} {stageKey}
+            {SCOPE_COPY[scope].title} {stageLabel ?? stageKey}
           </DialogTitle>
           <DialogDescription>{SCOPE_COPY[scope].description}</DialogDescription>
         </DialogHeader>

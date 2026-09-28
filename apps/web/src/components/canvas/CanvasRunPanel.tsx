@@ -69,6 +69,7 @@ export function CanvasRunPanel({
   const [attemptsSheetKey, setAttemptsSheetKey] = useState<string | null>(null);
   const [retryDialogKey, setRetryDialogKey] = useState<string | null>(null);
   const reusedKeys = useReusedStageKeys(run?.id, run?.stageExecutions.map((e) => e.stageKey) ?? []);
+  const stageLabel = (stageKey: string) => graph.find((s) => s.key === stageKey)?.label ?? stageKey;
 
   const runStage = useMutation({
     mutationFn: async ({ stageKey, toHere }: { stageKey: string; toHere: boolean }) => {
@@ -189,7 +190,9 @@ export function CanvasRunPanel({
           return (
             <div key={stage.key} className="flex items-center gap-2 px-3 py-2 text-sm">
               <span className={`size-2 shrink-0 rounded-full ${toneDotClassName[tone]}`} />
-              <span className="min-w-0 flex-1 truncate font-mono text-xs">{stage.key}</span>
+              <span className="min-w-0 flex-1 truncate text-xs" title={stage.key}>
+                {stage.label}
+              </span>
               {reusedKeys.has(stage.key) && (
                 <Badge variant="outline" className="text-[10px] tracking-wide uppercase">
                   Reused
@@ -248,6 +251,7 @@ export function CanvasRunPanel({
       <StageOutputSheet
         runId={run.id}
         stageKey={outputSheetKey}
+        stageLabel={outputSheetKey && stageLabel(outputSheetKey)}
         stageRunning={run.stageExecutions.some(
           (e) => e.stageKey === outputSheetKey && e.state === 'running',
         )}
@@ -257,6 +261,7 @@ export function CanvasRunPanel({
       <StageAttemptsSheet
         runId={run.id}
         stageKey={attemptsSheetKey}
+        stageLabel={attemptsSheetKey && stageLabel(attemptsSheetKey)}
         stageRunning={run.stageExecutions.some(
           (e) => e.stageKey === attemptsSheetKey && e.state === 'running',
         )}
@@ -266,6 +271,7 @@ export function CanvasRunPanel({
       <StageRetryDialog
         runId={run.id}
         stageKey={retryDialogKey}
+        stageLabel={retryDialogKey && stageLabel(retryDialogKey)}
         open={retryDialogKey !== null}
         onOpenChange={(open) => !open && setRetryDialogKey(null)}
       />
