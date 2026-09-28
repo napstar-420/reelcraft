@@ -66,6 +66,7 @@ describe('timeline editor HTTP workflow (e2e)', () => {
       blueprintVersionId: version.id,
       inputs: {},
       roleBindings: {},
+      rerunStageKeys: [],
       budgetCapUsd: 1,
     });
     const execution = created.stageExecutions[0]!;

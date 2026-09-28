@@ -82,6 +82,7 @@ export function RunPage() {
         budgetCapUsd: Number(run!.budgetCapUsd),
         inputs: run!.inputs,
         roleBindings: {},
+        rerunStageKeys: [],
       });
       return api.startRun(created.id);
     },

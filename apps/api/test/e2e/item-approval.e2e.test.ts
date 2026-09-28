@@ -147,6 +147,7 @@ describe('phase 7 chunk 6 — item-mode approval (e2e)', () => {
       blueprintVersionId: version.id,
       inputs: {},
       roleBindings: {},
+      rerunStageKeys: [],
       budgetCapUsd: 10,
     });
     await testDb.db.update(run).set({ state: 'RUNNING' }).where(eq(run.id, created.id));

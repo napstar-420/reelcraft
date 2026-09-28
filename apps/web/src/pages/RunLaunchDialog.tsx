@@ -61,11 +61,16 @@ export function RunLaunchDialog({
   inputs,
   defaultBudgetCapUsd,
   prepareVersion,
+  onLaunched,
 }: {
   channelId: string;
   inputs: InputDef[];
   defaultBudgetCapUsd: number;
   prepareVersion: () => Promise<string>;
+  /** The canvas's run dock passes this to stay on the canvas and switch its
+   * active run instead of navigating to `/runs/:id` (the default, used by
+   * every other launch site). */
+  onLaunched?: (runId: string) => void;
 }) {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
@@ -128,7 +133,14 @@ export function RunLaunchDialog({
         throw error;
       }
     },
-    onSuccess: (run) => navigate(`/runs/${run.id}`),
+    onSuccess: (run) => {
+      if (onLaunched) {
+        setOpen(false);
+        onLaunched(run.id);
+      } else {
+        navigate(`/runs/${run.id}`);
+      }
+    },
   });
 
   const retryLabel = recoverable?.phase === 'start' ? 'Retry start' : 'Retry upload & run';

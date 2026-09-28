@@ -139,6 +139,7 @@ describe('stage.execute.item (real Inngest steps, e2e)', () => {
       blueprintVersionId: version.id,
       inputs: {},
       roleBindings: {},
+      rerunStageKeys: [],
       budgetCapUsd: 10,
     });
     await testDb.db.update(runTable).set({ state: 'RUNNING' }).where(eq(runTable.id, created.id));
@@ -258,6 +259,7 @@ describe("stage.execute's outer per-item loop (real Inngest steps, mocked stage.
       blueprintVersionId: version.id,
       inputs: {},
       roleBindings: {},
+      rerunStageKeys: [],
       budgetCapUsd: 10,
     });
     await testDb.db.update(runTable).set({ state: 'RUNNING' }).where(eq(runTable.id, created.id));

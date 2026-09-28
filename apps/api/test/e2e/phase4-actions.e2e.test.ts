@@ -66,6 +66,7 @@ describe('Phase 4 approval, human input, and cancellation (e2e)', () => {
       blueprintVersionId: version.id,
       inputs: {},
       roleBindings: {},
+      rerunStageKeys: [],
       budgetCapUsd: 10,
     });
     await testDb.db.update(run).set({ state: 'RUNNING' }).where(eq(run.id, created.id));

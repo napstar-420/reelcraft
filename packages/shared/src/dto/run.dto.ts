@@ -8,6 +8,17 @@ export const CreateRunDto = z.object({
   inputs: z.record(z.string(), z.unknown()).default({}),
   roleBindings: z.record(z.string(), z.string()).default({}),
   budgetCapUsd: z.number().positive(),
+  // Canvas "run a stage without re-running upstream" — an existing run whose
+  // still-valid prefix of stages should be copied into this new run instead
+  // of re-executed. See RunService.create's seed-run path.
+  seedFromRunId: z.string().optional(),
+  // Forces these stage keys (and everything at/after the earliest one, per
+  // `reusableStageKeys`) to re-run even if they'd otherwise be reusable —
+  // e.g. the user edited stage 3's prompt.
+  rerunStageKeys: z.array(z.string()).default([]),
+  // Stop the run after this stage; later stages are created 'skipped'
+  // rather than 'pending', so the run completes without executing them.
+  untilStageKey: z.string().optional(),
 });
 export type CreateRunDto = z.infer<typeof CreateRunDto>;
 

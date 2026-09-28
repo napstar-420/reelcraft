@@ -77,6 +77,7 @@ describe('budget.sweep (real Inngest function, e2e)', () => {
       blueprintVersionId: version.id,
       inputs: {},
       roleBindings: {},
+      rerunStageKeys: [],
       budgetCapUsd: 10,
     });
     const execution = createdRun.stageExecutions.find((e) => e.stageKey === 'outline');

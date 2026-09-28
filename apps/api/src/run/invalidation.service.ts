@@ -305,10 +305,19 @@ export class InvalidationService {
 
       const blobIds = affected.map((row) => row.blobId).filter((id): id is string => id !== null);
       if (blobIds.length > 0) {
+        // Seeded runs (run-seed.ts's `copyReusedStages`) share a `blobId`
+        // across runs instead of copying the object — so a blob is only
+        // GC-eligible once no run's active artifact still points at it.
         await tx
           .update(blob)
           .set({ gcEligible: true, gcEligibleAt: new Date().toISOString() })
-          .where(and(inArray(blob.id, blobIds), eq(blob.scope, 'run')));
+          .where(
+            and(
+              inArray(blob.id, blobIds),
+              eq(blob.scope, 'run'),
+              sql`not exists (select 1 from ${artifact} a where a.blob_id = ${blob.id} and a.stale = false)`,
+            ),
+          );
       }
     }
 

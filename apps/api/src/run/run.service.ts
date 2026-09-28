@@ -42,6 +42,13 @@ import { RunWakeupDispatcher } from './run-wakeup-dispatcher.service';
 import { ProviderRegistry } from '../provider/provider.registry';
 import { modalityForCapability } from '../capability/modality-for-capability';
 import { BlobService } from '../artifact/blob.service';
+import { canonicalJson } from '../json-schema/schema-hash';
+import {
+  copyReusedStages,
+  reusableStageKeys,
+  untilStageIndex,
+  type SourceExecutionSummary,
+} from './run-seed';
 
 /**
  * §5/§12/§21 — run start resolves and snapshots resolved_config, keyed per
@@ -111,29 +118,134 @@ export class RunService {
       resolvedConfig = this.applyDryRunOverride(graph, resolvedConfig);
     }
 
+    const graphKeys = new Set(graph.map((s) => s.key));
+    for (const key of [...dto.rerunStageKeys, ...(dto.untilStageKey ? [dto.untilStageKey] : [])]) {
+      if (!graphKeys.has(key)) {
+        throw new ConflictException(`Stage "${key}" is not part of this blueprint version`);
+      }
+    }
+    const stopIndex = untilStageIndex(graph, dto.untilStageKey);
+
+    // Canvas "run this stage" / "run to here" — see run-seed.ts and the
+    // run-stages-from-canvas plan. Copies a still-valid prefix of a previous
+    // run's finished stages into this new run instead of re-executing them.
+    let seed: { sourceRunId: string; stageKeys: string[] } | undefined;
+    let mergedInputs = dto.inputs;
+    if (dto.seedFromRunId) {
+      const source = await this.get(dto.seedFromRunId);
+      if (source.channelId !== dto.channelId) {
+        throw new ConflictException('seedFromRunId belongs to a different channel');
+      }
+      const [sourceVersion] = await this.db
+        .select()
+        .from(blueprintVersion)
+        .where(eq(blueprintVersion.id, source.blueprintVersionId))
+        .limit(1);
+      if (!sourceVersion || sourceVersion.blueprintId !== version.blueprintId) {
+        throw new ConflictException('seedFromRunId belongs to a different blueprint');
+      }
+      const sourceGraph = StageDef.array().parse(sourceVersion.graph);
+      const sourceInputDefs = InputDef.array().parse(sourceVersion.inputs);
+      const newInputByKey = new Map(inputDefs.map((d) => [d.key, d]));
+      for (const def of sourceInputDefs) {
+        const newDef = newInputByKey.get(def.key);
+        if (!newDef || canonicalJson(def) !== canonicalJson(newDef)) {
+          throw new ConflictException(
+            `Input "${def.key}" changed shape since the seed run — cannot reuse it`,
+          );
+        }
+      }
+      for (const [key, value] of Object.entries(dto.inputs)) {
+        if (
+          key in (source.inputs as Record<string, unknown>) &&
+          canonicalJson(value) !== canonicalJson((source.inputs as Record<string, unknown>)[key])
+        ) {
+          throw new ConflictException(`Input "${key}" conflicts with the seed run's value`);
+        }
+      }
+      mergedInputs = { ...(source.inputs as Record<string, unknown>), ...dto.inputs };
+
+      const sourceRoles = RoleDefSchema.array().parse(sourceVersion.roles ?? []);
+      const newRoles = RoleDefSchema.array().parse(version.roles ?? []);
+      const newAssetBindings = await this.resolveAssetBindings(graph, dto.channelId);
+
+      const iteratingExecutionIds = source.stageExecutions
+        .filter((e) => e.isIterating)
+        .map((e) => e.id);
+      const nonPassedItemExecutionIds = new Set<string>();
+      if (iteratingExecutionIds.length > 0) {
+        const rows = await this.db
+          .select({ stageExecutionId: stageItem.stageExecutionId })
+          .from(stageItem)
+          .where(
+            and(
+              inArray(stageItem.stageExecutionId, iteratingExecutionIds),
+              sql`${stageItem.state} != 'passed'`,
+            ),
+          );
+        for (const row of rows) nonPassedItemExecutionIds.add(row.stageExecutionId);
+      }
+      const sourceExecutions: SourceExecutionSummary[] = source.stageExecutions.map((e) => ({
+        stageKey: e.stageKey,
+        state: e.state,
+        needsItemWork: nonPassedItemExecutionIds.has(e.id),
+      }));
+
+      const stageKeys = reusableStageKeys({
+        sourceGraph,
+        newGraph: graph,
+        sourceResolvedConfig: source.resolvedConfig as Record<string, ConfigLayer>,
+        sourceOverrides: (source.overrides ?? {}) as Record<string, ConfigLayer>,
+        newResolvedConfig: resolvedConfig,
+        sourceAssetBindings: source.assetBindings as Record<
+          string,
+          { blobId: string; kind: string }
+        >,
+        newAssetBindings,
+        sourceRoles,
+        newRoles,
+        sourceExecutions,
+        rerunStageKeys: dto.rerunStageKeys,
+      });
+      if (stageKeys.length > 0) seed = { sourceRunId: dto.seedFromRunId, stageKeys };
+    }
+
     await this.db.transaction(async (tx) => {
       await tx.insert(run).values({
         id: runId,
         channelId: dto.channelId,
         blueprintVersionId: dto.blueprintVersionId,
         state: 'CREATED',
-        inputs: dto.inputs,
+        inputs: mergedInputs,
         roleBindings: dto.roleBindings,
         resolvedConfig,
         dryRun: options?.dryRun ?? false,
         budgetCapUsd: fromUsd(dto.budgetCapUsd),
       });
 
-      for (const stage of graph) {
-        await tx.insert(stageExecution).values({
-          id: ulid(),
+      const newExecutionIdByKey = new Map<string, string>();
+      const reusedKeys = new Set(seed?.stageKeys ?? []);
+      for (const [index, stage] of graph.entries()) {
+        const id = ulid();
+        newExecutionIdByKey.set(stage.key, id);
+        const state = reusedKeys.has(stage.key)
+          ? 'passed'
+          : stopIndex !== undefined && index > stopIndex
+            ? 'skipped'
+            : 'pending';
+        await tx.insert(stageExecution).values({ id, runId, stageKey: stage.key, state });
+      }
+
+      if (seed) {
+        await copyReusedStages(tx, {
+          sourceRunId: seed.sourceRunId,
           runId,
-          stageKey: stage.key,
-          state: 'pending',
+          stageKeys: seed.stageKeys,
+          newExecutionIdByKey,
         });
       }
 
-      await this.runInputs.recordProvidedInputs(tx, runId, inputDefs, dto.inputs);
+      await this.runInputs.recordProvidedInputs(tx, runId, inputDefs, mergedInputs);
     });
     this.logger.log(
       {
@@ -401,6 +513,7 @@ export class RunService {
         inputs: {},
         roleBindings: {},
         budgetCapUsd,
+        rerunStageKeys: [],
       },
       { dryRun: true },
     );

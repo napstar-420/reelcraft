@@ -105,6 +105,7 @@ describe('run inputs as artifacts (e2e)', () => {
       blueprintVersionId: version.id,
       inputs: { topic: 'coral reefs' },
       roleBindings: {},
+      rerunStageKeys: [],
       budgetCapUsd: 10,
     });
 
@@ -125,6 +126,7 @@ describe('run inputs as artifacts (e2e)', () => {
       blueprintVersionId: version.id,
       inputs: { outline: { title: 'Coral Reefs' } },
       roleBindings: {},
+      rerunStageKeys: [],
       budgetCapUsd: 10,
     });
 
@@ -144,6 +146,7 @@ describe('run inputs as artifacts (e2e)', () => {
         blueprintVersionId: version.id,
         inputs: { outline: { wrongField: true } },
         roleBindings: {},
+        rerunStageKeys: [],
         budgetCapUsd: 10,
       }),
     ).rejects.toThrow(/does not match its declared schema/);
@@ -156,6 +159,7 @@ describe('run inputs as artifacts (e2e)', () => {
       blueprintVersionId: version.id,
       inputs: {},
       roleBindings: {},
+      rerunStageKeys: [],
       budgetCapUsd: 10,
     });
     await expect(runs.start(created.id)).rejects.toThrow(/required input "topic"/);
@@ -168,6 +172,7 @@ describe('run inputs as artifacts (e2e)', () => {
       blueprintVersionId: version.id,
       inputs: {},
       roleBindings: {},
+      rerunStageKeys: [],
       budgetCapUsd: 10,
     });
 
@@ -202,6 +207,7 @@ describe('run inputs as artifacts (e2e)', () => {
       blueprintVersionId: version.id,
       inputs: {},
       roleBindings: {},
+      rerunStageKeys: [],
       budgetCapUsd: 10,
     });
     const runInputs = testApp.app.get(RunInputService);
@@ -246,6 +252,7 @@ describe('run inputs as artifacts (e2e)', () => {
       blueprintVersionId: version.id,
       inputs: {},
       roleBindings: {},
+      rerunStageKeys: [],
       budgetCapUsd: 10,
     });
 
@@ -282,6 +289,7 @@ describe('run inputs as artifacts (e2e)', () => {
       blueprintVersionId: version.id,
       inputs: {},
       roleBindings: {},
+      rerunStageKeys: [],
       budgetCapUsd: 10,
     });
 
@@ -320,6 +328,7 @@ describe('run inputs as artifacts (e2e)', () => {
       blueprintVersionId: version.id,
       inputs: {},
       roleBindings: {},
+      rerunStageKeys: [],
       budgetCapUsd: 10,
     });
 

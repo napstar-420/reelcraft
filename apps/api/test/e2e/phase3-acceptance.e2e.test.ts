@@ -141,6 +141,7 @@ describe('phase 3 acceptance: reserve, cap-hit, PAUSED_BUDGET, raise, resume, se
       blueprintVersionId: version.id,
       inputs: {},
       roleBindings: {},
+      rerunStageKeys: [],
       budgetCapUsd: 1,
     });
     const cheapExecution = createdRun.stageExecutions.find((e) => e.stageKey === 'cheap');

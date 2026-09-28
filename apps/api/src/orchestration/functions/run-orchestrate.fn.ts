@@ -151,6 +151,9 @@ export function buildRunOrchestrateFunction(
 
       for (const execution of executions) {
         if (execution.state === 'passed' && !execution.needsItemWork) continue;
+        // Seeded runs (RunService.create's `untilStageKey`) mark stages past
+        // the stop point 'skipped' up front — never re-checked, never run.
+        if (execution.state === 'skipped') continue;
 
         // §12.4 manual pause — checked before starting the next stage, not
         // by killing the durable function (that's cancel's job via

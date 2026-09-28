@@ -29,6 +29,8 @@ import { AddStageMenu } from '../components/canvas/AddStageMenu';
 import { StageInspector } from '../components/canvas/StageInspector';
 import { BlueprintSettingsPanel } from '../components/canvas/BlueprintSettingsPanel';
 import { RunLaunchDialog } from './RunLaunchDialog';
+import { CanvasRunPanel } from '../components/canvas/CanvasRunPanel';
+import { useCanvasRun } from '../hooks/useCanvasRun';
 import { deriveMemoryWriters } from '../lib/memory-writers';
 import { parseValidationPath } from '../lib/parse-validation-path';
 import { cn } from 'cn';
@@ -530,39 +532,17 @@ function CreateBlueprintForm({
 }
 
 /** Save, fake-provider dry run, and configured-provider run wiring. */
-function SaveAndDryRun({
-  blueprintId,
-  channelId,
-  draft,
-  runnable,
-}: {
-  blueprintId: string;
-  channelId: string;
-  draft: BlueprintDraft;
-  runnable: boolean | undefined;
-}) {
-  const navigate = useNavigate();
+/** Shared by `SaveAndDryRun` and `CanvasRunPanel` (via `EditBlueprintCanvas`)
+ * so a stage run triggered from the run dock reuses the exact same "already
+ * saved this draft" cache as the Save button instead of creating a second,
+ * redundant blueprint version. */
+function useSavedVersion(blueprintId: string, draft: BlueprintDraft) {
   const draftKey = JSON.stringify(draft);
   const [savedVersion, setSavedVersion] = useState<{
     id: string;
     version: number;
     draftKey: string;
   } | null>(null);
-
-  const save = useMutation({
-    mutationFn: () => api.createBlueprintVersion(blueprintId, draft),
-    onSuccess: (version) => setSavedVersion({ id: version.id, version: version.version, draftKey }),
-  });
-
-  const dryRun = useMutation({
-    mutationFn: () => {
-      if (savedVersion === null || savedVersion.draftKey !== draftKey) {
-        throw new Error('Save the current draft before dry-running.');
-      }
-      return api.startDryRun(blueprintId, savedVersion.version);
-    },
-    onSuccess: (run) => navigate(`/runs/${run.id}`),
-  });
 
   async function prepareRunnableVersion() {
     const validation = await api.validateBlueprint(blueprintId, draft);
@@ -579,6 +559,45 @@ function SaveAndDryRun({
     setSavedVersion({ id: version.id, version: version.version, draftKey });
     return version.id;
   }
+
+  return { savedVersion, setSavedVersion, draftKey, prepareRunnableVersion };
+}
+
+function SaveAndDryRun({
+  blueprintId,
+  channelId,
+  draft,
+  runnable,
+  savedVersion,
+  setSavedVersion,
+  draftKey,
+  prepareRunnableVersion,
+}: {
+  blueprintId: string;
+  channelId: string;
+  draft: BlueprintDraft;
+  runnable: boolean | undefined;
+  savedVersion: { id: string; version: number; draftKey: string } | null;
+  setSavedVersion: (version: { id: string; version: number; draftKey: string }) => void;
+  draftKey: string;
+  prepareRunnableVersion: () => Promise<string>;
+}) {
+  const navigate = useNavigate();
+
+  const save = useMutation({
+    mutationFn: () => api.createBlueprintVersion(blueprintId, draft),
+    onSuccess: (version) => setSavedVersion({ id: version.id, version: version.version, draftKey }),
+  });
+
+  const dryRun = useMutation({
+    mutationFn: () => {
+      if (savedVersion === null || savedVersion.draftKey !== draftKey) {
+        throw new Error('Save the current draft before dry-running.');
+      }
+      return api.startDryRun(blueprintId, savedVersion.version);
+    },
+    onSuccess: (run) => navigate(`/runs/${run.id}`),
+  });
 
   const saveIssues =
     save.error instanceof ApiError ? (save.error.issues as ValidationIssue[]) : undefined;
@@ -770,6 +789,17 @@ function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
    * mirrors `StageInspector`'s `configKey` idiom (Chunk 4). */
   const draftKey = draft ? JSON.stringify(draft) : '';
 
+  // Called unconditionally (rules-of-hooks) even while `draft` is still
+  // null on the very first render — `emptyDraft()` is a harmless stand-in
+  // since nothing downstream reads its output before `draft` resolves.
+  const {
+    savedVersion,
+    setSavedVersion,
+    draftKey: savedDraftKey,
+    prepareRunnableVersion,
+  } = useSavedVersion(blueprintId, draft ?? emptyDraft());
+  const canvasRun = useCanvasRun(blueprintId);
+
   useEffect(() => {
     if (!draft) return;
     window.clearTimeout(validateTimer.current);
@@ -851,14 +881,28 @@ function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
 
       <section className="space-y-2">
         <h2 className="text-lg font-medium">Stages</h2>
-        <StageGraphCanvas
-          graph={draft.graph}
-          issuesByStage={issuesByStage}
-          onDeleteStage={deleteStage}
-          onReorder={reorderStage}
-          onSelectStage={setSelectedStageKey}
-        />
-        <AddStageMenu graph={draft.graph} onAdd={addStage} />
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
+          <div className="min-w-0 flex-1 space-y-2">
+            <StageGraphCanvas
+              graph={draft.graph}
+              issuesByStage={issuesByStage}
+              onDeleteStage={deleteStage}
+              onReorder={reorderStage}
+              onSelectStage={setSelectedStageKey}
+            />
+            <AddStageMenu graph={draft.graph} onAdd={addStage} />
+          </div>
+          <CanvasRunPanel
+            channelId={channelId ?? ''}
+            blueprintId={blueprintId}
+            graph={draft.graph}
+            inputs={draft.inputs}
+            budgetCapUsd={draft.budget.runCapUsd}
+            run={canvasRun.run}
+            onSwitchRun={canvasRun.setActiveRunId}
+            prepareRunnableVersion={prepareRunnableVersion}
+          />
+        </div>
       </section>
 
       <Sheet
@@ -892,6 +936,10 @@ function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
         channelId={channelId ?? ''}
         draft={draft}
         runnable={validation?.runnable}
+        savedVersion={savedVersion}
+        setSavedVersion={setSavedVersion}
+        draftKey={savedDraftKey}
+        prepareRunnableVersion={prepareRunnableVersion}
       />
       <SaveAsTemplate graph={draft.graph} />
     </div>

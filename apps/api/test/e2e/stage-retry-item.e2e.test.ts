@@ -109,6 +109,7 @@ describe('phase 7 MEDIUM #3 — item-scoped stage retry preview/confirm (e2e)', 
       blueprintVersionId: version.id,
       inputs: {},
       roleBindings: {},
+      rerunStageKeys: [],
       budgetCapUsd: 10,
     });
     await testDb.db.update(run).set({ state: 'RUNNING' }).where(eq(run.id, created.id));

@@ -118,6 +118,7 @@ export async function executeRunLaunch<TStarted extends StartedRun>(
         budgetCapUsd: request.budgetCapUsd,
         inputs: buildLaunchInputs(request.inputDefs, request.values),
         roleBindings: {},
+        rerunStageKeys: [],
       })
     ).id;
 
