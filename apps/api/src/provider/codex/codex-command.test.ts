@@ -44,7 +44,10 @@ describe('Codex command construction', () => {
     const result = strictJsonSchema({
       type: 'object',
       properties: {
-        items: { type: 'array', items: { type: 'object', properties: { name: { type: 'string' } } } },
+        items: {
+          type: 'array',
+          items: { type: 'object', properties: { name: { type: 'string' } } },
+        },
         count: { type: 'number' },
       },
     });

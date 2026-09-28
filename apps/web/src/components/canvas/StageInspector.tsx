@@ -4,6 +4,7 @@ import { cn } from 'cn';
 import { api } from '../../api/client';
 import { BindingPicker } from './BindingPicker';
 import { CapabilityPicker } from './CapabilityPicker';
+import { OutputSchemaEditor } from './OutputSchemaEditor';
 import { SchemaForm } from './SchemaForm';
 import { ChecksEditor } from './ChecksEditor';
 import { InfoHeading, InfoLabel } from './info-label';
@@ -28,7 +29,6 @@ import type {
   Ref,
   OutputKind,
   SlotDef,
-  JsonSchema,
   EnabledWhen,
   QcDef,
   ModelPin,
@@ -55,33 +55,6 @@ import {
 } from '@/components/ui/select';
 
 const UNSET = '__unset__';
-
-/** A shallow, non-recursive view of the `JsonSchema` dialect (§4.2) used only
- * to build `output.schema` via `SchemaForm` itself — the dialect has no
- * `$ref`, so a schema describing "a `JsonSchema` value" can't recurse into
- * its own `properties`/`items` without one. Nested object/array output
- * schemas therefore aren't authorable through this chunk's UI (top-level
- * `type`/`enum`/`required`/min-max constraints only); deferred rather than
- * building a self-referential meta-schema hack for a field most capabilities
- * don't even use. */
-const OUTPUT_SCHEMA_META: JsonSchema = {
-  type: 'object',
-  properties: {
-    type: {
-      type: 'string',
-      enum: ['object', 'array', 'string', 'number', 'integer', 'boolean'],
-    },
-    description: { type: 'string' },
-    enum: { type: 'array', items: { type: 'string' } },
-    required: { type: 'array', items: { type: 'string' } },
-    minItems: { type: 'number' },
-    maxItems: { type: 'number' },
-    minimum: { type: 'number' },
-    maximum: { type: 'number' },
-    minLength: { type: 'number' },
-    maxLength: { type: 'number' },
-  },
-};
 
 function nextFreeKey(existing: Record<string, unknown>, prefix: string): string {
   let n = 1;
@@ -1085,13 +1058,12 @@ export function StageInspector({
               <IssueList issues={outputKindIssues} />
               <IssueList issues={outputIssues} />
               {output.kind === 'data' && (
-                <SchemaForm
-                  schema={OUTPUT_SCHEMA_META}
-                  value={output.schema}
+                <OutputSchemaEditor
+                  schema={output.schema}
                   onChange={(next) =>
                     onChange({
                       ...stage,
-                      output: updateDataOutputSchema(output, next as JsonSchema | undefined),
+                      output: updateDataOutputSchema(output, next),
                     })
                   }
                 />

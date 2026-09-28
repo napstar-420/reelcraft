@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildStageOutput,
+  inferSchemaFromValue,
   isOutputInstructionsIssue,
+  retypeSchema,
   supportsOutputInstructions,
   updateDataOutputSchema,
 } from './stage-inspector.logic';
@@ -67,6 +69,61 @@ describe('stage inspector output logic', () => {
       schemaName: 'Answer',
       instructions: 'Use the requested language.',
     });
+  });
+
+  it('retypes a schema, keeping description but resetting stale fields', () => {
+    expect(
+      retypeSchema({ type: 'array', description: 'Tags', items: { type: 'number' } }, 'string'),
+    ).toEqual({ type: 'string', description: 'Tags' });
+    expect(retypeSchema({ type: 'string' }, 'object')).toEqual({
+      type: 'object',
+      description: undefined,
+      properties: {},
+    });
+    expect(retypeSchema({ type: 'string' }, 'array')).toEqual({
+      type: 'array',
+      description: undefined,
+      items: { type: 'string' },
+    });
+  });
+
+  it('infers a schema from a sample scalar value', () => {
+    expect(inferSchemaFromValue('hello')).toEqual({ type: 'string' });
+    expect(inferSchemaFromValue(42)).toEqual({ type: 'integer' });
+    expect(inferSchemaFromValue(4.2)).toEqual({ type: 'number' });
+    expect(inferSchemaFromValue(true)).toEqual({ type: 'boolean' });
+    expect(inferSchemaFromValue(null)).toEqual({ type: 'string' });
+  });
+
+  it('infers a nested object/array schema from a sample value', () => {
+    expect(
+      inferSchemaFromValue({
+        title: 'Best topic',
+        topicId: 18,
+        tags: ['news', 'finance'],
+        segments: [{ purpose: 'Explain', segment: 'Intro' }],
+      }),
+    ).toEqual({
+      type: 'object',
+      properties: {
+        title: { type: 'string' },
+        topicId: { type: 'integer' },
+        tags: { type: 'array', items: { type: 'string' } },
+        segments: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: { purpose: { type: 'string' }, segment: { type: 'string' } },
+            required: ['purpose', 'segment'],
+          },
+        },
+      },
+      required: ['title', 'topicId', 'tags', 'segments'],
+    });
+  });
+
+  it('infers an empty array item schema as string when the sample array is empty', () => {
+    expect(inferSchemaFromValue([])).toEqual({ type: 'array', items: { type: 'string' } });
   });
 
   it('recognizes the precise output-instructions validation path', () => {
