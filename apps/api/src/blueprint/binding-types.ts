@@ -129,6 +129,31 @@ export function sourceTypeOfRef(
       }
       return { type: sourceTypeOfOutput(stage.output) };
     }
+
+    case 'coalesce': {
+      // Each branch is resolved via `resolveBoundType`, not `sourceTypeOfRef`
+      // directly, so a branch's own `.path` (including the `lastFrame`/
+      // `firstFrame` derived-frame shortcut on a nested `{from:'prevItem'}`)
+      // is narrowed exactly as it would be if that branch were bound alone.
+      const results = ref.refs.map((inner) => resolveBoundType(inner, ctx, stageIndex, issuePath));
+      const firstIssue = results.find((result) => result.issue);
+      if (firstIssue) return firstIssue;
+      // A `literal` branch (`{from:'const'}`) is a wildcard for this check —
+      // `isCompatible` already treats a literal source as compatible with
+      // any non-schema accept regardless of kind (§16.4), so a `const`
+      // fallback branch must not force a kind mismatch against its
+      // non-literal siblings. Only the real artifact kinds need to agree.
+      const nonLiteral = results.filter((result) => result.type.kind !== 'literal');
+      const kinds = new Set(nonLiteral.map((result) => result.type.kind));
+      if (kinds.size > 1) {
+        return unresolved(
+          `coalesce branches resolve to different kinds (${[...kinds].join(', ')}) — every ` +
+            'non-literal branch must resolve to the same kind',
+          issuePath,
+        );
+      }
+      return nonLiteral[0] ?? results[0]!;
+    }
   }
 }
 
