@@ -1,7 +1,18 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Patch, Post, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  ParseIntPipe,
+  Patch,
+  Post,
+  Put,
+  Query,
+} from '@nestjs/common';
 import {
   CreateBlueprintDto,
   CreateBlueprintVersionDto,
+  SetWorkingDraftDto,
   StartDryRunDto,
   UpdateBlueprintDto,
 } from '@reelcraft/shared';
@@ -49,6 +60,23 @@ export class BlueprintController {
     @Body(new ZodValidationPipe(CreateBlueprintVersionDto)) dto: CreateBlueprintVersionDto,
   ) {
     return this.blueprints.createVersion(id, dto);
+  }
+
+  /** Canvas runs of unsaved edits — a snapshot that never enters version history. */
+  @Post(':id/versions/draft')
+  createDraftVersion(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(CreateBlueprintVersionDto)) dto: CreateBlueprintVersionDto,
+  ) {
+    return this.blueprints.createVersion(id, dto, undefined, { draft: true });
+  }
+
+  @Put(':id/working-draft')
+  setWorkingDraft(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(SetWorkingDraftDto)) dto: SetWorkingDraftDto,
+  ) {
+    return this.blueprints.setWorkingDraft(id, dto.workingDraft);
   }
 
   @Get(':id/versions')

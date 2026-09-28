@@ -62,11 +62,13 @@ export function RunLaunchDialog({
   defaultBudgetCapUsd,
   prepareVersion,
   onLaunched,
+  disabled = false,
 }: {
   channelId: string;
   inputs: InputDef[];
   defaultBudgetCapUsd: number;
   prepareVersion: () => Promise<string>;
+  disabled?: boolean;
   /** The canvas's run dock passes this to stay on the canvas and switch its
    * active run instead of navigating to `/runs/:id` (the default, used by
    * every other launch site). */
@@ -159,7 +161,7 @@ export function RunLaunchDialog({
       }}
     >
       <DialogTrigger asChild>
-        <Button type="button" disabled={!channelId}>
+        <Button type="button" disabled={!channelId || disabled}>
           Run
         </Button>
       </DialogTrigger>

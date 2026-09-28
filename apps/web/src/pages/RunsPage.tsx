@@ -5,6 +5,7 @@ import { Ban, ListVideo, Loader2, Pause, Play } from 'lucide-react';
 import { toast } from 'sonner';
 import type { RunState, RunSummaryDto } from '@reelcraft/shared';
 import { api } from '../api/client';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { StatusBadge } from '@/components/ui/status-badge';
@@ -92,6 +93,7 @@ export function RunsPage({ channelId: fixedChannelId }: { channelId?: string } =
         blueprintId: filters.blueprintId,
         state: filters.state,
         includeDryRuns: filters.includeDryRuns,
+        includeDrafts: filters.includeDryRuns,
         limit: RUNS_PAGE_LIMIT,
         offset,
       }),
@@ -217,7 +219,7 @@ export function RunsPage({ channelId: fixedChannelId }: { channelId?: string } =
             checked={filters.includeDryRuns}
             onCheckedChange={(checked) => updateFilters({ includeDryRuns: checked })}
           />
-          Include dry runs
+          Show test runs
         </label>
 
         {hasActiveFilters && (
@@ -292,6 +294,14 @@ export function RunsPage({ channelId: fixedChannelId }: { channelId?: string } =
                     <TableCell>{run.channelName}</TableCell>
                     <TableCell>
                       {run.blueprintName} v{run.blueprintVersion}
+                      {(run.draft || run.dryRun) && (
+                        <Badge
+                          variant="outline"
+                          className="ml-2 text-[10px] tracking-wide uppercase"
+                        >
+                          {run.draft ? 'draft' : 'dry run'}
+                        </Badge>
+                      )}
                     </TableCell>
                     <TableCell>
                       <StatusBadge tone={runStateTone(run.state)} label={run.state} />

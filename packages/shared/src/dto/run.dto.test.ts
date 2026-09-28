@@ -40,9 +40,10 @@ describe('StartDryRunDto', () => {
 });
 
 describe('ListRunsQueryDto', () => {
-  it('defaults includeDryRuns/limit/offset when omitted', () => {
+  it('defaults includeDryRuns/includeDrafts/limit/offset when omitted', () => {
     expect(ListRunsQueryDto.parse({})).toEqual({
       includeDryRuns: false,
+      includeDrafts: false,
       limit: 20,
       offset: 0,
     });
@@ -90,6 +91,7 @@ describe('RunSummaryDto / ListRunsResultDto', () => {
     blueprintVersion: 2,
     state: 'RUNNING',
     dryRun: false,
+    draft: false,
     budgetCapUsd: 10,
     spentUsd: 2.5,
     startedAt: '2026-01-01T00:00:00.000Z',

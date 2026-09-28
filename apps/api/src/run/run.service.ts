@@ -499,7 +499,11 @@ export class RunService {
       .select({ id: blueprintVersion.id })
       .from(blueprintVersion)
       .where(
-        and(eq(blueprintVersion.blueprintId, blueprintId), eq(blueprintVersion.version, version)),
+        and(
+          eq(blueprintVersion.blueprintId, blueprintId),
+          eq(blueprintVersion.version, version),
+          eq(blueprintVersion.draft, false),
+        ),
       )
       .limit(1);
     if (!versionRow) {
@@ -922,6 +926,7 @@ export class RunService {
   async list(query: ListRunsQueryDto) {
     const conditions = [
       query.includeDryRuns ? undefined : eq(run.dryRun, false),
+      query.includeDrafts ? undefined : eq(blueprintVersion.draft, false),
       query.channelId ? eq(run.channelId, query.channelId) : undefined,
       query.state ? eq(run.state, query.state) : undefined,
       query.blueprintId ? eq(blueprintVersion.blueprintId, query.blueprintId) : undefined,
@@ -939,6 +944,7 @@ export class RunService {
         blueprintVersion: blueprintVersion.version,
         state: run.state,
         dryRun: run.dryRun,
+        draft: blueprintVersion.draft,
         budgetCapUsd: run.budgetCapUsd,
         spentUsd: run.spentUsd,
         startedAt: run.startedAt,

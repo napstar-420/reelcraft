@@ -12,7 +12,8 @@ export function useCanvasRun(blueprintId: string | undefined) {
 
   const latestRuns = useQuery({
     queryKey: ['runs', { blueprintId, limit: 1 }],
-    queryFn: () => api.listRuns({ blueprintId, includeDryRuns: true, limit: 1 }),
+    queryFn: () =>
+      api.listRuns({ blueprintId, includeDryRuns: true, includeDrafts: true, limit: 1 }),
     enabled: Boolean(blueprintId) && activeRunId === undefined,
   });
 

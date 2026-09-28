@@ -247,6 +247,8 @@ export const RunSummaryDto = z.object({
   blueprintVersion: z.number().int(),
   state: RunState,
   dryRun: z.boolean(),
+  /** Run of a canvas draft snapshot (unsaved edits), not a saved version. */
+  draft: z.boolean(),
   budgetCapUsd: z.number(),
   spentUsd: z.number(),
   startedAt: z.string(),
@@ -272,6 +274,7 @@ export const ListRunsQueryDto = z.object({
   blueprintId: z.string().optional(),
   state: RunState.optional(),
   includeDryRuns: z.coerce.boolean().optional().default(false),
+  includeDrafts: z.coerce.boolean().optional().default(false),
   limit: z.coerce.number().int().positive().max(100).optional().default(20),
   offset: z.coerce.number().int().nonnegative().optional().default(0),
 });

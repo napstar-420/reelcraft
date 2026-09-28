@@ -141,6 +141,13 @@
       "when": 1790569820031,
       "tag": "0019_good_bishop",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1790581627540,
+      "tag": "0020_tough_wildside",
+      "breakpoints": true
     }
   ]
 }

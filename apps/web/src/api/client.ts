@@ -178,6 +178,16 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(dto),
     }),
+  createDraftVersion: (blueprintId: string, dto: CreateBlueprintVersionDto) =>
+    request<BlueprintVersionDto>(`/blueprints/${blueprintId}/versions/draft`, {
+      method: 'POST',
+      body: JSON.stringify(dto),
+    }),
+  setWorkingDraft: (blueprintId: string, workingDraft: CreateBlueprintVersionDto | null) =>
+    request<BlueprintDto>(`/blueprints/${blueprintId}/working-draft`, {
+      method: 'PUT',
+      body: JSON.stringify({ workingDraft }),
+    }),
   listBlueprintVersions: (blueprintId: string) =>
     request<BlueprintVersionDto[]>(`/blueprints/${blueprintId}/versions`),
   validateBlueprint: (blueprintId: string, dto: CreateBlueprintVersionDto) =>
@@ -279,6 +289,7 @@ export const api = {
     blueprintId?: string | undefined;
     state?: RunState | undefined;
     includeDryRuns?: boolean;
+    includeDrafts?: boolean;
     limit?: number;
     offset?: number;
   }) => {
@@ -287,6 +298,7 @@ export const api = {
     if (params?.blueprintId) qs.set('blueprintId', params.blueprintId);
     if (params?.state) qs.set('state', params.state);
     if (params?.includeDryRuns) qs.set('includeDryRuns', 'true');
+    if (params?.includeDrafts) qs.set('includeDrafts', 'true');
     if (params?.limit !== undefined) qs.set('limit', String(params.limit));
     if (params?.offset !== undefined) qs.set('offset', String(params.offset));
     const suffix = qs.toString();

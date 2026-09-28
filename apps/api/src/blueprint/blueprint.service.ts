@@ -64,13 +64,14 @@ export class BlueprintService {
       runCount: sql<number>`(
         select count(*)::int from run r
         inner join blueprint_version bv on bv.id = r.blueprint_version_id
-        where bv.blueprint_id = blueprint.id and not r.dry_run
+        where bv.blueprint_id = blueprint.id and not r.dry_run and not bv.draft
       )`.as('run_count'),
       latestPosterBlobId: sql<string | null>`(
         select a.derived->>'poster' from run r
         inner join blueprint_version bv on bv.id = r.blueprint_version_id
         inner join artifact a on a.run_id = r.id
         where bv.blueprint_id = blueprint.id
+          and not bv.draft
           and r.state = 'COMPLETED'
           and a.stale = false
           and a.derived->>'poster' is not null
@@ -109,18 +110,24 @@ export class BlueprintService {
     return { ...row.blueprint, runCount: row.runCount, latestPosterBlobId: row.latestPosterBlobId };
   }
 
+  /** `draft: true` stores an immutable snapshot for a canvas run of unsaved
+   * edits: it reuses the latest saved version number, never becomes
+   * `currentVersionId`, and is hidden from `listVersions`. Only a saved
+   * version advances the number, and saving clears `workingDraft`. */
   async createVersion(
     blueprintId: string,
     dto: CreateBlueprintVersionDto,
     sourceTemplateId?: string,
+    { draft = false }: { draft?: boolean } = {},
   ) {
     const { issues, runnable } = await this.computeValidation(blueprintId, dto);
 
     const [row] = await this.db
       .select({ maxVersion: max(blueprintVersion.version) })
       .from(blueprintVersion)
-      .where(eq(blueprintVersion.blueprintId, blueprintId));
-    const nextVersion = (row?.maxVersion ?? 0) + 1;
+      .where(and(eq(blueprintVersion.blueprintId, blueprintId), eq(blueprintVersion.draft, false)));
+    const latestSaved = row?.maxVersion ?? 0;
+    const nextVersion = draft ? latestSaved : latestSaved + 1;
 
     const id = ulid();
     await this.db.transaction(async (tx) => {
@@ -136,10 +143,15 @@ export class BlueprintService {
         validation: issues,
         runnable,
         sourceTemplateId,
+        draft,
       });
+      if (draft) return;
       // §3.4 — insert blueprint, insert version, THEN update the pointer;
       // current_version_id has no FK in the schema (see db/schema/blueprint.ts).
-      await tx.update(blueprint).set({ currentVersionId: id }).where(eq(blueprint.id, blueprintId));
+      await tx
+        .update(blueprint)
+        .set({ currentVersionId: id, workingDraft: null })
+        .where(eq(blueprint.id, blueprintId));
     });
 
     this.logger.log(
@@ -147,6 +159,7 @@ export class BlueprintService {
         blueprintId,
         blueprintVersionId: id,
         version: nextVersion,
+        draft,
         runnable,
         issues: issues.length,
         stages: dto.graph.length,
@@ -215,7 +228,13 @@ export class BlueprintService {
     return this.db
       .select()
       .from(blueprintVersion)
-      .where(eq(blueprintVersion.blueprintId, blueprintId));
+      .where(and(eq(blueprintVersion.blueprintId, blueprintId), eq(blueprintVersion.draft, false)));
+  }
+
+  async setWorkingDraft(id: string, workingDraft: CreateBlueprintVersionDto | null) {
+    await this.getBlueprint(id);
+    await this.db.update(blueprint).set({ workingDraft }).where(eq(blueprint.id, id));
+    return this.getBlueprint(id);
   }
 
   /** loads every asset referenced by a `{from:'asset'}` ref in the
