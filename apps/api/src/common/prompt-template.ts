@@ -53,9 +53,16 @@ const OUTPUT_CONTRACT = `Produce only the requested stage output.
 Follow the stage-specific output instructions exactly.
 Do not add commentary, labels, or formatting unless requested.`;
 
+const FEEDBACK_PREAMBLE = `Your previous output for this task was rejected. Produce a new output that fixes every issue below while still meeting all of the original requirements.`;
+
 /** Renders the task and its optional output instructions with the same scope,
  * then appends the engine-owned response contract. Providers still receive
- * structured-output schemas separately through their native APIs. */
+ * structured-output schemas separately through their native APIs.
+ *
+ * A non-empty `scope.priorCritique` (why earlier attempts were rejected — QC,
+ * checks, or a human) is injected automatically between the task and the
+ * contract, unless the author already placed `{{ priorCritique }}` in the
+ * template or output instructions themselves. */
 export function renderStagePrompt(
   template: string | undefined,
   outputInstructions: string | undefined,
@@ -66,11 +73,23 @@ export function renderStagePrompt(
   const renderedInstructions = outputInstructions
     ? renderPrompt(outputInstructions, scope)
     : undefined;
-  if (!renderedInstructions?.trim()) return renderedTask;
+  const critique = typeof scope.priorCritique === 'string' ? scope.priorCritique.trim() : '';
+  const authorPlacedCritique = [template, outputInstructions].some((text) =>
+    text ? parseTemplatePaths(text).includes('priorCritique') : false,
+  );
+  const feedback =
+    critique && !authorPlacedCritique
+      ? `<previous_attempt_feedback>\n${FEEDBACK_PREAMBLE}\n\n${critique}\n</previous_attempt_feedback>`
+      : undefined;
   const dataRule =
     outputKind === 'data' ? "\nFor data output, the provider's JSON Schema is authoritative." : '';
-  const contract = `<output_contract>\n${OUTPUT_CONTRACT}${dataRule}\n\n<stage_output_instructions>\n${renderedInstructions}\n</stage_output_instructions>\n</output_contract>`;
-  return renderedTask ? `${renderedTask.replace(/\n+$/, '')}\n\n${contract}` : contract;
+  const contract = renderedInstructions?.trim()
+    ? `<output_contract>\n${OUTPUT_CONTRACT}${dataRule}\n\n<stage_output_instructions>\n${renderedInstructions}\n</stage_output_instructions>\n</output_contract>`
+    : undefined;
+  if (!feedback && !contract) return renderedTask;
+  return [renderedTask?.replace(/\n+$/, ''), feedback, contract]
+    .filter((part): part is string => !!part)
+    .join('\n\n');
 }
 
 /** Every distinct `{{ ... }}` path referenced by the template, in first-seen

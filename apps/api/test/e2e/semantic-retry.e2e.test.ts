@@ -548,7 +548,7 @@ describe('semantic retry loop (e2e)', () => {
     expect(qcEntries).toHaveLength(1); // just the pre-seeded one
   });
 
-  it('a budget_blocked attempt does not consume a semantic retry — countSemanticAttemptsUsed excludes it', async () => {
+  it('a budget_blocked attempt is not counted as a check failure — countRoundAttempts excludes it', async () => {
     const graph: StageDef[] = [
       {
         key: 'tight',
@@ -559,7 +559,11 @@ describe('semantic retry loop (e2e)', () => {
         context: {},
         output: { kind: 'text' },
         checks: [
-          { type: 'builtin', key: 'regex_match', params: { pattern: 'nonexistent', path: 'text' } },
+          {
+            type: 'builtin',
+            key: 'regex_match',
+            params: { pattern: '^never-matches$', path: 'text' },
+          },
         ],
         retryLimit: 1,
         model: { provider: 'fake', modelId: 'fake-text-1', params: { max_tokens: 256 } },
@@ -581,7 +585,7 @@ describe('semantic retry loop (e2e)', () => {
     });
     const submission1 = await stageRunner.reserveAndSubmit(stage, ctx1, prevStageKey, effective);
     expect(submission1).toEqual({ outcome: 'budget_blocked', reason: 'run_cap_exceeded' });
-    expect(await stageRunner.countSemanticAttemptsUsed(execution.id)).toBe(0);
+    expect(await stageRunner.countRoundAttempts(execution.id, ['check_failed'])).toBe(0);
 
     // Raise the cap directly (PAUSED_BUDGET/raiseBudget itself is phase-3
     // chunk 2 — this test only needs the ledger-visible effect: room to
@@ -607,7 +611,7 @@ describe('semantic retry loop (e2e)', () => {
     );
     expect(result2.outcome).toBe('check_failed');
     // Only the check_failed attempt counts — the budget_blocked one didn't.
-    expect(await stageRunner.countSemanticAttemptsUsed(execution.id)).toBe(1);
+    expect(await stageRunner.countRoundAttempts(execution.id, ['check_failed'])).toBe(1);
 
     const ctx3 = await stageRunner.beginAttempt({
       runId: run.id,
@@ -617,12 +621,8 @@ describe('semantic retry loop (e2e)', () => {
     expect(ctx3.attemptNo).toBe(3); // attemptNo IS 3 — proves it's NOT what retry accounting uses
     const handle3 = await submitOrThrow(stageRunner, stage, ctx3, prevStageKey, effective);
     await stageRunner.pollOnce(stage, handle3);
-    // Checks still fail deterministically — the point here is proving this
-    // is still WITHIN the one retry `retryLimit: 1` allows (semantic
-    // attempts used before this one is 1, matching stage-execute.fn.ts's
-    // `semanticAttemptsUsed + 1 >= retryLimit + 1` => `1 + 1 >= 2` => true,
-    // i.e. this correctly reads as the last allowed attempt), not that a
-    // 3rd physical attempt was silently free.
+    // Checks still fail deterministically — the count tracks check failures
+    // only (2), not the physical attempt number (3).
     const result3 = await stageRunner.fetchAndFinalize(
       stage,
       ctx3,
@@ -631,6 +631,79 @@ describe('semantic retry loop (e2e)', () => {
       effective,
     );
     expect(result3.outcome).toBe('check_failed');
-    expect(await stageRunner.countSemanticAttemptsUsed(execution.id)).toBe(2);
+    expect(await stageRunner.countRoundAttempts(execution.id, ['check_failed'])).toBe(2);
+  });
+
+  it('countRoundAttempts starts a new round after a human rejection and after an invalidation', async () => {
+    const graph: StageDef[] = [
+      {
+        key: 'looping',
+        label: 'Looping',
+        capability: 'text.generate',
+        config: {},
+        slots: {},
+        context: {},
+        output: { kind: 'text' },
+        checks: [
+          {
+            type: 'builtin',
+            key: 'regex_match',
+            params: { pattern: '^never-matches$', path: 'text' },
+          },
+        ],
+        retryLimit: 0,
+        model: { provider: 'fake', modelId: 'fake-text-1', params: { max_tokens: 256 } },
+      },
+    ];
+    const stageRunner = testApp.app.get(StageRunnerService);
+    const { run } = await setupRun(graph);
+    const execution = run.stageExecutions.find((e) => e.stageKey === 'looping');
+    if (!execution) throw new Error('stage execution not found');
+    const { stage, effective, prevStageKey } = await stageRunner.loadStageContext(
+      run.id,
+      'looping',
+    );
+    const failOnce = async () => {
+      const ctx = await stageRunner.beginAttempt({
+        runId: run.id,
+        stageExecutionId: execution.id,
+        stageKey: 'looping',
+      });
+      const handle = await submitOrThrow(stageRunner, stage, ctx, prevStageKey, effective);
+      await stageRunner.pollOnce(stage, handle);
+      const result = await stageRunner.fetchAndFinalize(
+        stage,
+        ctx,
+        handle,
+        prevStageKey,
+        effective,
+      );
+      expect(result.outcome).toBe('check_failed');
+      return ctx;
+    };
+    const count = () => stageRunner.countRoundAttempts(execution.id, ['check_failed']);
+
+    await failOnce();
+    const second = await failOnce();
+    expect(await count()).toBe(2);
+
+    // A human rejected attempt 2's output: attempts up to it belong to the
+    // previous round.
+    await testDb.db
+      .update(stageAttempt)
+      .set({ outcome: 'rejected' })
+      .where(eq(stageAttempt.id, second.stageAttemptId));
+    expect(await count()).toBe(0);
+    await failOnce();
+    expect(await count()).toBe(1);
+
+    // Invalidation (manual retry) clears startedAt; the next beginAttempt
+    // restamps it, so earlier failures no longer count.
+    await testDb.db
+      .update(stageExecution)
+      .set({ startedAt: null })
+      .where(eq(stageExecution.id, execution.id));
+    await failOnce();
+    expect(await count()).toBe(1);
   });
 });

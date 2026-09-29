@@ -37,7 +37,12 @@ export const StageDef = z.object({
     })
     .optional(),
   checks: z.array(CheckDef),
+  /** Failed check rounds allowed before the stage fails; each failure
+   * regenerates with the failing checks' messages as feedback. */
+  checkMaxAttempts: z.number().int().min(1).optional(),
   qc: QcDef.optional(),
+  /** Retries for crashes only (provider error, timeout, thrown bug) — never
+   * consumed by check/QC failures or human rejections. */
   retryLimit: z.number(),
   approval: z
     .object({
@@ -52,3 +57,10 @@ export const StageDef = z.object({
   enabledWhen: EnabledWhen.optional(),
 });
 export type StageDef = z.infer<typeof StageDef>;
+
+/** Approval granularity for a stage's review gate — its own `approval.mode`,
+ * or (for a gate opened by `qc.onExhausted: 'human_review'` on a stage with
+ * no `approval`) per item when it iterates, per stage otherwise. */
+export function approvalModeOf(stage: StageDef): 'stage' | 'item' {
+  return stage.approval?.mode ?? (stage.iterate ? 'item' : 'stage');
+}

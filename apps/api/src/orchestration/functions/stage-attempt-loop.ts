@@ -1,5 +1,7 @@
 import type { Context, Logger } from 'inngest';
+import { DEFAULT_FEEDBACK_MAX_ATTEMPTS } from '@reelcraft/shared';
 import type { JobStatus, StageDef } from '@reelcraft/shared';
+import { CONSUMES_RETRY_LIMIT } from '../attempt-outcome';
 import type { StageAttemptContext, StageRunnerService } from '../stage-runner.service';
 import type { EffectiveStageConfig } from '../../run-config/config-resolver.service';
 
@@ -44,7 +46,8 @@ export interface StageAttemptLoopParams {
   stageExecutionId: string;
   stageKey: string;
   /** `effective.retryLimit` for the non-iterating path, or
-   * `effective.iterate!.itemRetryLimit` for one item's own loop. */
+   * `effective.iterate!.itemRetryLimit` for one item's own loop — crash
+   * retries only; check/QC feedback loops have their own caps. */
   retryLimit: number;
   /** phase 7 chunk 4 — set only by `stage.execute.item`'s caller. */
   itemIndex?: number;
@@ -94,17 +97,17 @@ export async function runStageAttemptLoop(
     const attemptCtx: StageAttemptContext = await step.run(`begin-attempt-${iteration}`, () =>
       runner.beginAttempt({ runId, stageExecutionId, stageKey, itemIndex, stageItemId }),
     );
-    // §11 — DB-derived, not `attemptCtx.attemptNo` itself: a
-    // `budget_blocked` attempt loops (after a resume) without consuming a
-    // semantic retry. `countSemanticAttemptsUsed` counts only attempts
-    // STRICTLY BEFORE this one; the `+1` below accounts for the current
-    // attempt itself becoming a semantic use if it fails.
-    const semanticAttemptsUsed = await step.run(`count-semantic-attempts-${iteration}`, () =>
-      runner.countSemanticAttemptsUsed(stageExecutionId, stageItemId),
+    // DB-derived, not `attemptCtx.attemptNo` itself: only crashes spend
+    // `retryLimit` — check/QC failures, human rejections and
+    // `budget_blocked` all loop without consuming it. Counts attempts
+    // STRICTLY BEFORE this one; `isLastAttempt` means this attempt crashing
+    // would exhaust the limit.
+    const crashAttemptsUsed = await step.run(`count-crash-attempts-${iteration}`, () =>
+      runner.countRoundAttempts(stageExecutionId, [...CONSUMES_RETRY_LIMIT], stageItemId),
     );
-    const isLastAttempt = semanticAttemptsUsed + 1 >= retryLimit + 1;
+    const isLastAttempt = crashAttemptsUsed >= retryLimit;
     const infraAttemptsUsed = await step.run(`count-infra-attempts-${iteration}`, () =>
-      runner.countInfraAttemptsUsed(stageExecutionId, stageItemId),
+      runner.countRoundAttempts(stageExecutionId, ['infra_error'], stageItemId),
     );
 
     try {
@@ -216,12 +219,33 @@ export async function runStageAttemptLoop(
         return { outcome: 'failed' as const, reason: 'qc_budget_exhausted' };
       }
 
-      // check_failed | qc_failed — semantic, consumes a retry.
-      if (isLastAttempt) {
+      // check_failed | qc_failed — not a stage failure: loop to a fresh
+      // attempt (the critique is spliced into its prompt) until this
+      // feedback kind's own cap is spent. This attempt's outcome is already
+      // recorded, so the count includes it.
+      const failedOutcome = fetched.outcome;
+      const failuresUsed = await step.run(`count-${failedOutcome}-${iteration}`, () =>
+        runner.countRoundAttempts(stageExecutionId, [failedOutcome], stageItemId),
+      );
+      const maxAttempts =
+        (failedOutcome === 'qc_failed' ? stage.qc?.maxAttempts : stage.checkMaxAttempts) ??
+        DEFAULT_FEEDBACK_MAX_ATTEMPTS;
+      if (failuresUsed >= maxAttempts) {
+        if (failedOutcome === 'qc_failed' && stage.qc?.onExhausted === 'human_review') {
+          const handedOff = await step.run(`qc-handoff-${stageKey}-${iteration}`, () =>
+            runner.handOffForReview(stage, attemptCtx),
+          );
+          return handedOff.outcome === 'approval_required'
+            ? { outcome: 'approval_required' as const, artifactId: handedOff.artifactId }
+            : { outcome: 'run_not_running' as const };
+        }
         const reason =
           fetched.outcome === 'check_failed'
-            ? 'check_failed'
-            : `qc_failed: ${fetched.qcVerdict.critique}`;
+            ? `check_failed after ${failuresUsed} attempts: ${fetched.checkResults
+                .filter((r) => !r.pass)
+                .map((r) => r.name)
+                .join(', ')}`
+            : `qc_failed after ${failuresUsed} attempts: ${fetched.qcVerdict.critique}`;
         await step.run(`fail-stage-${stageKey}`, () =>
           runner.failStageExecution(stageExecutionId, reason, stageItemId),
         );

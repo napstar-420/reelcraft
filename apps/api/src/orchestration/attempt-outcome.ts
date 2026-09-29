@@ -1,22 +1,14 @@
 import type { AttemptOutcome } from '@reelcraft/shared';
 
 /**
- * §3.8.1 — outcomes that consume a semantic retry (count against
- * `retryLimit`), as opposed to a "free" retry (`qc_error`/`infra_error`,
- * which don't). Every outcome phase 2 can actually produce
- * (`check_failed`/`qc_failed`/`provider_error`/`provider_timeout`) belongs
- * here, so `stage_attempt.attemptNo` itself already equals the count of
- * semantic attempts used — no separate counting query is needed today.
- *
- * `infra_error` is deliberately absent: it's a durable-compute-job outcome
- * (phase 4/5) that phase 2's engine loop never produces. Named and exported
- * now so that when it becomes reachable, whatever reads `attemptNo` as a
- * proxy for "attempts used" has one obvious place to fix instead of an
- * implicit assumption nobody remembers to revisit.
+ * Outcomes that count against a stage's `retryLimit` — genuine crashes only
+ * (the provider errored or timed out, or the attempt threw). Quality
+ * rejections are NOT stage failures and never consume it: `check_failed`
+ * and `qc_failed` have their own caps (`checkMaxAttempts`/`qc.maxAttempts`),
+ * a human `rejected` is uncapped, and `qc_error`/`infra_error`/
+ * `budget_blocked` are handled separately by the attempt loop.
  */
-export const CONSUMES_SEMANTIC_ATTEMPT: ReadonlySet<AttemptOutcome> = new Set([
-  'check_failed',
-  'qc_failed',
+export const CONSUMES_RETRY_LIMIT: ReadonlySet<AttemptOutcome> = new Set([
   'provider_error',
   'provider_timeout',
 ]);
