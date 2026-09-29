@@ -59,7 +59,13 @@ export function StageOutputSheet({
               {stageRunning ? 'No output yet. This stage is still running.' : 'No output.'}
             </p>
           ) : (
-            <div className="flex flex-col gap-6 py-4">
+            <div
+              className={
+                items.length > 1 && items.every((item) => item.artifact.kind === 'media.image')
+                  ? 'grid grid-cols-2 gap-4 py-4'
+                  : 'flex flex-col gap-6 py-4'
+              }
+            >
               {items.map((item) => (
                 <section key={item.artifact.id} className="flex flex-col gap-2">
                   {item.itemIndex !== null ? (

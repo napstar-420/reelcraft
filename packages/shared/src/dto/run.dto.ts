@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { RunState, StageExecutionState, AttemptOutcome } from '../primitives';
 import { ConfigLayer } from '../config-layer';
+import { Probe } from '../probe';
 
 export const CreateRunDto = z.object({
   channelId: z.string(),
@@ -125,6 +126,8 @@ export const ArtifactViewDto = z.object({
   ]),
   data: z.unknown().nullable(),
   previewUrl: z.string().url().nullable(),
+  /** Media metadata (duration, resolution, fps, audio) for `media.*` kinds. */
+  probe: Probe.nullable(),
   attachments: z.array(
     z.object({
       id: z.string(),

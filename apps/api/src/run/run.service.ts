@@ -7,6 +7,7 @@ import type {
   Ref,
   RoleDef,
   ListRunsQueryDto,
+  Probe,
 } from '@reelcraft/shared';
 import { InputDef, RoleDef as RoleDefSchema, StageDef } from '@reelcraft/shared';
 import { RUN_ACTION_ALLOWED_STATES } from './run-action-policy';
@@ -916,8 +917,17 @@ export class RunService {
     return {
       id: row.id,
       kind: row.kind,
-      data: row.data,
+      // Subtitle cues are shown inline, so their (small) text rides along
+      // with the view rather than the browser fetching the presigned URL.
+      data:
+        row.kind === 'file.subtitles' && row.blobId
+          ? {
+              ...(row.data as object),
+              text: (await this.blobs.readText(ownerId, row.blobId, 256 * 1024)) ?? null,
+            }
+          : row.data,
       previewUrl: preview?.status === 'live' ? preview.url : null,
+      probe: (row.probe as Probe | null) ?? null,
       attachments: safeAttachments,
     };
   }
