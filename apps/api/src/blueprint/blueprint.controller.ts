@@ -1,7 +1,19 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Patch, Post, Query } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Put,
+  Query,
+} from '@nestjs/common';
 import {
   CreateBlueprintDto,
   CreateBlueprintVersionDto,
+  CreateVersionQueryDto,
+  SetWorkingDraftDto,
   StartDryRunDto,
   UpdateBlueprintDto,
 } from '@reelcraft/shared';
@@ -47,8 +59,26 @@ export class BlueprintController {
   createVersion(
     @Param('id') id: string,
     @Body(new ZodValidationPipe(CreateBlueprintVersionDto)) dto: CreateBlueprintVersionDto,
+    @Query(new ZodValidationPipe(CreateVersionQueryDto)) query: CreateVersionQueryDto,
   ) {
-    return this.blueprints.createVersion(id, dto);
+    return this.blueprints.createVersion(id, dto, undefined, { bump: query.bump });
+  }
+
+  /** Canvas runs of unsaved edits — a snapshot that never enters version history. */
+  @Post(':id/versions/draft')
+  createDraftVersion(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(CreateBlueprintVersionDto)) dto: CreateBlueprintVersionDto,
+  ) {
+    return this.blueprints.createVersion(id, dto, undefined, { draft: true });
+  }
+
+  @Put(':id/working-draft')
+  setWorkingDraft(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(SetWorkingDraftDto)) dto: SetWorkingDraftDto,
+  ) {
+    return this.blueprints.setWorkingDraft(id, dto.workingDraft);
   }
 
   @Get(':id/versions')
@@ -69,9 +99,13 @@ export class BlueprintController {
   @Post(':id/versions/:v/dry-run')
   dryRun(
     @Param('id') id: string,
-    @Param('v', ParseIntPipe) version: number,
+    @Param('v') v: string,
     @Body(new ZodValidationPipe(StartDryRunDto)) dto: StartDryRunDto,
   ) {
+    // `major.minor`; a bare "2" means 2.0.
+    const match = /^(\d+)(?:\.(\d+))?$/.exec(v);
+    if (!match) throw new BadRequestException(`Invalid version "${v}", expected e.g. 1.5`);
+    const version = { major: Number(match[1]), minor: Number(match[2] ?? 0) };
     return this.runs.startDryRun(id, version, dto.budgetCapUsd);
   }
 }

@@ -91,6 +91,7 @@ describe('executeRunLaunch', () => {
       budgetCapUsd: 5,
       inputs: { topic: 'Space', settings: { duration: 60 } },
       roleBindings: {},
+      rerunStageKeys: [],
     });
     expect(deps.attachRunInput).toHaveBeenCalledWith('run-1', 'cover', {
       blobs: [{ blobId: 'blob-1', objectKey: 'inputs/cover.png', sha256: 'sha' }],

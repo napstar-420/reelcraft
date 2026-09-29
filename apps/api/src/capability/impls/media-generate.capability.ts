@@ -68,7 +68,12 @@ abstract class ProviderMediaCapability implements CapabilityImpl<MediaConfig> {
   }
   async fetch(handle: JobHandle, _ctx: ExecCtx<MediaConfig>): Promise<ExecResult<unknown>> {
     const result = await this.providers.get(handle.providerId).fetch(handle);
-    return { output: result.output as MediaSource, costUsd: result.costUsd, repro: result.repro };
+    return {
+      output: result.output as MediaSource,
+      costUsd: result.costUsd,
+      repro: result.repro,
+      ...(result.attachments && { attachments: result.attachments }),
+    };
   }
   async cancel(handle: JobHandle) {
     return this.providers.get(handle.providerId).cancel(handle);
@@ -80,6 +85,7 @@ abstract class ProviderMediaCapability implements CapabilityImpl<MediaConfig> {
       modelId: ctx.config.modelId,
       params: { ...ctx.config.params, slots: ctx.slots, __mediaKind: this.outputKind },
       renderedPrompt: ctx.renderedPrompt,
+      system: ctx.systemPrompt,
     };
   }
 }

@@ -1,5 +1,5 @@
 import type { Context, Logger } from 'inngest';
-import type { StageDef } from '@reelcraft/shared';
+import type { JobStatus, StageDef } from '@reelcraft/shared';
 import type { StageAttemptContext, StageRunnerService } from '../stage-runner.service';
 import type { EffectiveStageConfig } from '../../run-config/config-resolver.service';
 
@@ -12,6 +12,16 @@ type StepTools = Context.Any['step'];
 
 /** §13's backoff poll sequence, capped. */
 const POLL_BACKOFF_SEC = [5, 15, 30];
+
+/** A job whose provider reports its own `deadlineMs` (e.g. Codex's own
+ * job-runner watchdog) is still worth polling past this loop's generic
+ * `polling.maxWaitSec` as long as that provider-declared deadline hasn't
+ * passed — it's demonstrably still alive and within its own real budget,
+ * not hung. Providers that never set `deadlineMs` get exactly today's
+ * behavior: only `maxWaitSec` bounds them. */
+export function withinProviderDeadline(status: JobStatus): boolean {
+  return !status.done && status.deadlineMs !== undefined && Date.now() < status.deadlineMs;
+}
 
 /** The outcome union `stage.execute` and `stage.execute.item` both return —
  * `run.orchestrate` (non-iterating) and `stage.execute`'s own outer loop
@@ -115,7 +125,10 @@ export async function runStageAttemptLoop(
       );
       let pollCount = 0;
       let elapsedSec = 0;
-      while (!status.done && elapsedSec < effective.polling.maxWaitSec) {
+      while (
+        !status.done &&
+        (elapsedSec < effective.polling.maxWaitSec || withinProviderDeadline(status))
+      ) {
         const waitSec = POLL_BACKOFF_SEC[Math.min(pollCount, POLL_BACKOFF_SEC.length - 1)]!;
         pollCount += 1;
         elapsedSec += waitSec;
@@ -143,6 +156,21 @@ export async function runStageAttemptLoop(
         await step.run(`settle-failed-poll-${stageKey}-${iteration}`, () =>
           runner.settleFailedPoll(attemptCtx),
         );
+        // A run cancellation settles the provider job directly, racing this
+        // same poll — that race must exit quietly as `run_not_running`,
+        // not fail the stage over what is really just a cancel.
+        const stoppedByCancel = await step.run(`check-cancelled-${stageKey}-${iteration}`, () =>
+          runner.stopIfRunNotRunning(attemptCtx),
+        );
+        if (stoppedByCancel) return { outcome: 'run_not_running' as const };
+        if (status.failureClass === 'user_action') {
+          // Retrying can't help until the user acts (e.g. signs in) — fail
+          // now with the provider's message so it's the one they see.
+          await step.run(`fail-stage-user-action-${stageKey}`, () =>
+            runner.failStageExecution(stageExecutionId, status.reason, stageItemId),
+          );
+          return { outcome: 'failed' as const, reason: status.reason };
+        }
         if (status.failureClass === 'infrastructure') {
           await step.run(`record-infra-error-${stageKey}-${iteration}`, () =>
             runner.recordInfraError(attemptCtx, status.reason),

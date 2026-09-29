@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Loader2 } from 'lucide-react';
+import type { RetryScope } from '@reelcraft/shared';
 import { api } from '@/api/client';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -14,21 +15,40 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { describeRunActionError } from '@/lib/describe-run-action-error';
 
+const SCOPE_COPY: Record<RetryScope, { title: string; description: string }> = {
+  dependents: {
+    title: 'Re-run',
+    description: 'Re-runs this stage and the later stages that use its output.',
+  },
+  stage: {
+    title: 'Re-run only',
+    description: 'Re-runs just this stage. Later stages keep their current outputs.',
+  },
+  downstream: {
+    title: 'Re-run from',
+    description: 'Re-runs this stage and every stage after it.',
+  },
+};
+
 export function StageRetryDialog({
   runId,
   stageKey,
+  stageLabel,
+  scope = 'dependents',
   open,
   onOpenChange,
 }: {
   runId: string;
   stageKey: string | null;
+  stageLabel?: string | null;
+  scope?: RetryScope;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
   const queryClient = useQueryClient();
   const preview = useQuery({
-    queryKey: ['stage-retry-preview', runId, stageKey],
-    queryFn: () => api.previewStageRetry(runId, stageKey as string),
+    queryKey: ['stage-retry-preview', runId, stageKey, scope],
+    queryFn: () => api.previewStageRetry(runId, stageKey as string, { scope }),
     enabled: open && Boolean(stageKey),
     retry: false,
   });
@@ -37,6 +57,7 @@ export function StageRetryDialog({
     mutationFn: () =>
       api.confirmStageRetry(runId, stageKey as string, {
         previewToken: preview.data!.previewToken,
+        scope,
       }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['run', runId] });
@@ -52,10 +73,10 @@ export function StageRetryDialog({
     <Dialog open={open} onOpenChange={(next) => !confirm.isPending && onOpenChange(next)}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Retry {stageKey}</DialogTitle>
-          <DialogDescription>
-            Reruns this stage and invalidates anything downstream that depends on it.
-          </DialogDescription>
+          <DialogTitle>
+            {SCOPE_COPY[scope].title} {stageLabel ?? stageKey}
+          </DialogTitle>
+          <DialogDescription>{SCOPE_COPY[scope].description}</DialogDescription>
         </DialogHeader>
 
         {preview.isLoading ? (
@@ -110,7 +131,7 @@ export function StageRetryDialog({
             onClick={() => confirm.mutate()}
           >
             {confirm.isPending ? <Loader2 className="animate-spin" /> : null}
-            Confirm retry
+            Confirm re-run
           </Button>
         </DialogFooter>
       </DialogContent>

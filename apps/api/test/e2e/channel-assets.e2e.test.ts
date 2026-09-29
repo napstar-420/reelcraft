@@ -128,6 +128,7 @@ describe('channel assets (e2e)', () => {
       blueprintVersionId: version.id,
       inputs: {},
       roleBindings: {},
+      rerunStageKeys: [],
       budgetCapUsd: 10,
     });
     await runs.start(created.id);
@@ -201,6 +202,7 @@ describe('channel assets (e2e)', () => {
       blueprintVersionId: version.id,
       inputs: {},
       roleBindings: {},
+      rerunStageKeys: [],
       budgetCapUsd: 10,
     });
 

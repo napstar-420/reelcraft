@@ -47,6 +47,7 @@ const stageExecutionStateTones: Record<StageExecutionState, StatusTone> = {
   failed: 'error',
   stale: 'warning',
   skipped: 'neutral',
+  cancelled: 'neutral',
 };
 
 const attemptOutcomeTones: Record<AttemptOutcome, StatusTone> = {

@@ -224,7 +224,7 @@ describe('RunService.list', () => {
     blueprintId: 'blueprint-1',
     blueprintName: 'My Blueprint',
     blueprintVersionId: 'version-1',
-    blueprintVersion: 3,
+    blueprintVersion: '1.2',
     state: 'COMPLETED',
     dryRun: false,
     budgetCapUsd: '12.0000',
@@ -236,17 +236,22 @@ describe('RunService.list', () => {
   it('excludes dry runs by default and applies no filter when no other criteria are given', async () => {
     const { service, rowChain } = makeListService([baseRow], [{ count: 1 }]);
 
-    const result = await service.list({ includeDryRuns: false, limit: 20, offset: 0 });
+    const result = await service.list({
+      includeDryRuns: false,
+      includeDrafts: false,
+      limit: 20,
+      offset: 0,
+    });
 
     expect(rowChain.where).toHaveBeenCalledTimes(1);
     expect(result.items).toEqual([{ ...baseRow, budgetCapUsd: 12, spentUsd: 4.5 }]);
     expect(result.total).toBe(1);
   });
 
-  it('skips the where clause entirely when dry runs are included and no other filters are set', async () => {
+  it('skips the where clause entirely when dry and draft runs are included and no other filters are set', async () => {
     const { rowChain, countChain, service } = makeListService([baseRow], [{ count: 1 }]);
 
-    await service.list({ includeDryRuns: true, limit: 20, offset: 0 });
+    await service.list({ includeDryRuns: true, includeDrafts: true, limit: 20, offset: 0 });
 
     expect(rowChain.where).not.toHaveBeenCalled();
     expect(countChain.where).not.toHaveBeenCalled();
@@ -259,6 +264,7 @@ describe('RunService.list', () => {
 
       await service.list({
         includeDryRuns: true,
+        includeDrafts: false,
         limit: 20,
         offset: 0,
         [key]: key === 'state' ? 'COMPLETED' : 'some-id',
@@ -271,7 +277,12 @@ describe('RunService.list', () => {
   it('passes limit and offset through to the query and echoes them in the result', async () => {
     const { rowChain, service } = makeListService([], [{ count: 0 }]);
 
-    const result = await service.list({ includeDryRuns: false, limit: 5, offset: 15 });
+    const result = await service.list({
+      includeDryRuns: false,
+      includeDrafts: false,
+      limit: 5,
+      offset: 15,
+    });
 
     expect(rowChain.limit).toHaveBeenCalledWith(5);
     expect(rowChain.offset).toHaveBeenCalledWith(15);
@@ -285,7 +296,12 @@ describe('RunService.list', () => {
       [{ count: 1 }],
     );
 
-    const result = await service.list({ includeDryRuns: false, limit: 20, offset: 0 });
+    const result = await service.list({
+      includeDryRuns: false,
+      includeDrafts: false,
+      limit: 20,
+      offset: 0,
+    });
 
     expect(result.items[0]?.budgetCapUsd).toBe(100);
     expect(result.items[0]?.spentUsd).toBe(33.33);
@@ -294,7 +310,12 @@ describe('RunService.list', () => {
   it('defaults total to 0 when the count query returns no rows', async () => {
     const { service } = makeListService([], []);
 
-    const result = await service.list({ includeDryRuns: false, limit: 20, offset: 0 });
+    const result = await service.list({
+      includeDryRuns: false,
+      includeDrafts: false,
+      limit: 20,
+      offset: 0,
+    });
 
     expect(result.total).toBe(0);
   });

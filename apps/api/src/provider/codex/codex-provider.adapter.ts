@@ -11,10 +11,10 @@ import type {
   ProviderResult,
 } from '../provider-adapter.interface';
 import type { EngineConfig } from '../../config/engine-config';
-import { buildCodexPrompt } from './codex-command';
+import { buildCodexPrompt, strictJsonSchema } from './codex-command';
 import type { CodexAppServerClient, CodexModel } from './codex-app-server.client';
 import type { CodexJobLauncher } from './codex-job-launcher';
-import { timelineOutputSchema } from './codex-output-schema';
+import { timelineOutputSchema } from '../timeline-output-schema';
 import type { CodexRuntimeReadiness } from './codex-runtime-readiness';
 import type { CodexInputMaterializer } from './codex-input-materializer';
 
@@ -24,6 +24,7 @@ type DurableStatus = {
   exitCode?: number | null;
   reason?: string;
   createdAt?: string;
+  startedAt?: string;
 };
 
 type ToolResultManifest = {
@@ -145,9 +146,12 @@ export class CodexProviderAdapter implements ProviderAdapter {
         ? await this.inputMaterializer.materialize(jobDir, req.params.slots)
         : [];
     const schema = this.outputSchema(req);
-    const outputSchemaPath = schema ? join(jobDir, 'schema.json') : undefined;
+    const strictSchema = schema ? strictJsonSchema(schema) : undefined;
+    const outputSchemaPath = strictSchema ? join(jobDir, 'schema.json') : undefined;
     if (outputSchemaPath)
-      await writeFile(outputSchemaPath, JSON.stringify(schema), { mode: 0o600 });
+      await writeFile(outputSchemaPath, JSON.stringify(strictSchema), {
+        mode: 0o600,
+      });
     const manifestPath = join(jobDir, 'manifest.json');
     await atomicJson(manifestPath, {
       modelId: req.modelId,
@@ -234,16 +238,27 @@ export class CodexProviderAdapter implements ProviderAdapter {
           failureClass: 'infrastructure',
         };
       }
-      return { done: false, phase: 'running' };
+      const deadlineMs = status.startedAt
+        ? Date.parse(status.startedAt) + this.jobTimeoutMs
+        : undefined;
+      return {
+        done: false,
+        phase: 'running',
+        ...(deadlineMs !== undefined && !Number.isNaN(deadlineMs) && { deadlineMs }),
+      };
     }
     if (status.state === 'succeeded') {
       this.logger.log(ids, 'provider job succeeded');
       return { done: true, outcome: 'succeeded' };
     }
-    this.logger.error(
-      { ...ids, state: status.state, exitCode: status.exitCode, reason: status.reason },
-      'provider job failed',
-    );
+    if (status.state === 'cancelled') {
+      this.logger.warn({ ...ids, reason: status.reason }, 'provider job cancelled');
+    } else {
+      this.logger.error(
+        { ...ids, state: status.state, exitCode: status.exitCode, reason: status.reason },
+        'provider job failed',
+      );
+    }
     return {
       done: true,
       outcome: 'failed',

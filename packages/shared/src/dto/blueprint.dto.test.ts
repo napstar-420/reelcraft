@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { UpdateBlueprintDto } from './blueprint.dto';
+import { CreateVersionQueryDto, UpdateBlueprintDto } from './blueprint.dto';
+
+describe('blueprint version numbering', () => {
+  it('defaults a save to a minor bump and rejects unknown bumps', () => {
+    expect(CreateVersionQueryDto.parse({})).toEqual({ bump: 'minor' });
+    expect(CreateVersionQueryDto.parse({ bump: 'major' })).toEqual({ bump: 'major' });
+    expect(() => CreateVersionQueryDto.parse({ bump: 'patch' })).toThrow();
+  });
+});
 
 describe('UpdateBlueprintDto', () => {
   it('accepts an empty patch and each field on its own', () => {

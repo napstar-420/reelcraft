@@ -98,7 +98,7 @@ describe('stage output and stage logs (e2e)', () => {
       defaults: {},
       budget: { runCapUsd: 10 },
     });
-    const dryRun = await runs.startDryRun(blueprintId, version.version);
+    const dryRun = await runs.startDryRun(blueprintId, version);
     const { error } = await runThroughRealPipeline(dryRun.id, dryRun.stageExecutions);
     expect(error).toBeUndefined();
 
@@ -156,7 +156,7 @@ describe('stage output and stage logs (e2e)', () => {
       defaults: {},
       budget: { runCapUsd: 10 },
     });
-    const dryRun = await runs.startDryRun(blueprintId, version.version);
+    const dryRun = await runs.startDryRun(blueprintId, version);
     const output = await runs.stageOutput(dryRun.id, 'draft');
     expect(output.items).toEqual([]);
     expect(await runs.listStageEvents(dryRun.id, 'draft')).toEqual([]);

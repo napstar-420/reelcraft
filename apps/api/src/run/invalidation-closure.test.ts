@@ -115,6 +115,23 @@ describe('computeInvalidationClosure', () => {
 
     expect(result.affectedStageKeys).toEqual(['prompt', 'approval-gate']);
   });
+
+  it('with cascade: false invalidates only the seeded stage, leaving its readers valid', () => {
+    const result = computeInvalidationClosure({
+      graphOrder: ['script', 'broll'],
+      executions: [
+        execution('script', 'artifact-script'),
+        execution('broll', 'artifact-broll', {
+          'slots.script': { ref: { from: 'prev' }, artifactId: 'artifact-script' },
+        }),
+      ],
+      seed: { stageKeys: ['script'], cascade: false },
+      memoryVersionWriters: [],
+    });
+
+    expect(result.affectedStageKeys).toEqual(['script']);
+    expect(result.affectedArtifactIds).toEqual(['artifact-script']);
+  });
 });
 
 // phase 7 chunk 5 — item-level invalidation (§15.2).

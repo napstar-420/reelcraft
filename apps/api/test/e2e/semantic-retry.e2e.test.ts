@@ -84,6 +84,7 @@ describe('semantic retry loop (e2e)', () => {
       blueprintVersionId: version.id,
       inputs: {},
       roleBindings: {},
+      rerunStageKeys: [],
       budgetCapUsd,
     });
     await testDb.db.update(runTable).set({ state: 'RUNNING' }).where(eq(runTable.id, run.id));
@@ -238,7 +239,8 @@ describe('semantic retry loop (e2e)', () => {
       .select()
       .from(stageExecution)
       .where(eq(stageExecution.id, execution.id));
-    expect(executionRow?.state).toBe('pending'); // fetchAndFinalize never touches stage_execution here
+    // beginAttempt already flipped pending -> running; fetchAndFinalize never touches stage_execution on qc_failed
+    expect(executionRow?.state).toBe('running');
 
     const qcEntries = await testDb.db
       .select()

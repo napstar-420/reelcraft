@@ -16,12 +16,14 @@ import { ArtifactPreview } from './artifact-preview';
 export function StageOutputSheet({
   runId,
   stageKey,
+  stageLabel,
   stageRunning,
   open,
   onOpenChange,
 }: {
   runId: string;
   stageKey: string | null;
+  stageLabel?: string | null;
   stageRunning: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -38,7 +40,7 @@ export function StageOutputSheet({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent className="w-full sm:max-w-2xl">
         <SheetHeader className="border-b pr-12">
-          <SheetTitle>Output of {stageKey}</SheetTitle>
+          <SheetTitle>Output of {stageLabel ?? stageKey}</SheetTitle>
           <SheetDescription>The current output this stage produced.</SheetDescription>
         </SheetHeader>
 
@@ -57,7 +59,13 @@ export function StageOutputSheet({
               {stageRunning ? 'No output yet. This stage is still running.' : 'No output.'}
             </p>
           ) : (
-            <div className="flex flex-col gap-6 py-4">
+            <div
+              className={
+                items.length > 1 && items.every((item) => item.artifact.kind === 'media.image')
+                  ? 'grid grid-cols-2 gap-4 py-4'
+                  : 'flex flex-col gap-6 py-4'
+              }
+            >
               {items.map((item) => (
                 <section key={item.artifact.id} className="flex flex-col gap-2">
                   {item.itemIndex !== null ? (

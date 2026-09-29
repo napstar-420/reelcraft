@@ -323,6 +323,31 @@ describe('CodexProviderAdapter', () => {
     await expect(adapter.fetch(malformed)).rejects.toThrow(/malformed structured JSON/i);
   });
 
+  it('reports a deadline derived from startedAt plus the job timeout while running', async () => {
+    const { adapter, launcher } = await fixture();
+    const handle = await adapter.submit(
+      {
+        modelId: 'gpt-example',
+        params: { reasoningEffort: 'low' },
+        output: { kind: 'text' },
+      },
+      'deadline-key',
+    );
+    const jobDir = (launcher.launch.mock.calls[0]?.[0] as { jobDir: string }).jobDir;
+    const startedAt = new Date(Date.now() - 30_000).toISOString();
+    await writeFile(
+      join(jobDir, 'status.json'),
+      JSON.stringify({ state: 'running', pid: process.pid, startedAt }),
+    );
+    const status = await adapter.poll(handle);
+    expect(status).toEqual(
+      expect.objectContaining({ done: false, phase: 'running', deadlineMs: expect.any(Number) }),
+    );
+    if (status.done) throw new Error('expected an in-progress status');
+    // Default jobTimeoutMs is 900_000ms (15 minutes) — see engine-config.ts.
+    expect(status.deadlineMs).toBeCloseTo(Date.parse(startedAt) + 900_000, -2);
+  });
+
   it('rejects final messages above the durable output limit', async () => {
     const { adapter, launcher } = await fixture();
     const handle = await adapter.submit(

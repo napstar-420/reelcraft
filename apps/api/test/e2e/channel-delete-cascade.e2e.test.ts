@@ -145,7 +145,7 @@ describe('channel delete cascade (e2e)', () => {
       tags: [],
     });
 
-    const dryRun = await runs.startDryRun(blueprintId, version.version);
+    const dryRun = await runs.startDryRun(blueprintId, version);
     const { error } = await runThroughRealPipeline(dryRun.id, dryRun.stageExecutions);
     expect(error).toBeUndefined();
 

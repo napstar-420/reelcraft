@@ -1,0 +1,1 @@
+ALTER TYPE "public"."stage_execution_state" ADD VALUE 'cancelled';

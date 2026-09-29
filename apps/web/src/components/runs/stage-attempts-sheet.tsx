@@ -20,12 +20,14 @@ import { cn } from '@/lib/utils';
 export function StageAttemptsSheet({
   runId,
   stageKey,
+  stageLabel,
   stageRunning,
   open,
   onOpenChange,
 }: {
   runId: string;
   stageKey: string | null;
+  stageLabel?: string | null;
   stageRunning: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -50,7 +52,7 @@ export function StageAttemptsSheet({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent className="w-full sm:max-w-2xl">
         <SheetHeader className="border-b pr-12">
-          <SheetTitle>Attempts for {stageKey}</SheetTitle>
+          <SheetTitle>Attempts for {stageLabel ?? stageKey}</SheetTitle>
           <SheetDescription>
             Every attempt this stage has made, most recent first, with its log.
           </SheetDescription>

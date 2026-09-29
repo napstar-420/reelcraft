@@ -132,6 +132,7 @@ describe('fake media output (e2e)', () => {
       blueprintVersionId: version.id,
       inputs: {},
       roleBindings: {},
+      rerunStageKeys: [],
       budgetCapUsd: 10,
     });
     await testDb.db.update(runTable).set({ state: 'RUNNING' }).where(eq(runTable.id, created.id));

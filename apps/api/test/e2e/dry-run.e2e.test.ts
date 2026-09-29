@@ -126,7 +126,7 @@ describe('dry-run execution (e2e)', () => {
     });
     expect(version.runnable).toBe(true);
 
-    const dryRun = await runs.startDryRun(blueprintId, version.version);
+    const dryRun = await runs.startDryRun(blueprintId, version);
     // `RunService.start()` only sends `run/started` — `run.orchestrate`'s
     // `mark-running` step is what actually flips `state` to `RUNNING`
     // (`run.service.ts`'s own doc comment on `start()`), so the state right
@@ -168,15 +168,27 @@ describe('dry-run execution (e2e)', () => {
     }
 
     // includeDryRuns default (false) excludes it; explicit true includes it.
-    const defaultList = await runs.list({ includeDryRuns: false, limit: 20, offset: 0 });
+    const defaultList = await runs.list({
+      includeDryRuns: false,
+      includeDrafts: false,
+      limit: 20,
+      offset: 0,
+    });
     expect(defaultList.items.some((r) => r.id === dryRun.id)).toBe(false);
-    const withDryRuns = await runs.list({ includeDryRuns: true, limit: 20, offset: 0 });
+    const withDryRuns = await runs.list({
+      includeDryRuns: true,
+      includeDrafts: false,
+      limit: 20,
+      offset: 0,
+    });
     expect(withDryRuns.items.some((r) => r.id === dryRun.id)).toBe(true);
   });
 
   it('throws cleanly for a nonexistent blueprint or version', async () => {
     const runs = testApp.app.get(RunService);
-    await expect(runs.startDryRun('nonexistent-blueprint', 1)).rejects.toThrow(/not found/);
+    await expect(runs.startDryRun('nonexistent-blueprint', { major: 1, minor: 0 })).rejects.toThrow(
+      /not found/,
+    );
 
     const channels = testApp.app.get(ChannelService);
     const blueprints = testApp.app.get(BlueprintService);
@@ -189,7 +201,9 @@ describe('dry-run execution (e2e)', () => {
       channel.id,
       'Dry Run Missing Version Blueprint',
     );
-    await expect(runs.startDryRun(blueprintId, 999)).rejects.toThrow(/not found/);
+    await expect(runs.startDryRun(blueprintId, { major: 999, minor: 0 })).rejects.toThrow(
+      /not found/,
+    );
   });
 
   it('does not leak the fake-provider override into a real run', async () => {
@@ -220,6 +234,7 @@ describe('dry-run execution (e2e)', () => {
       blueprintVersionId: version.id,
       inputs: {},
       roleBindings: {},
+      rerunStageKeys: [],
       budgetCapUsd: 10,
     });
 

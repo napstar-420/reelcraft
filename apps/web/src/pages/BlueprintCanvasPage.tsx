@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useQuery, useMutation } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -29,7 +29,10 @@ import { AddStageMenu } from '../components/canvas/AddStageMenu';
 import { StageInspector } from '../components/canvas/StageInspector';
 import { BlueprintSettingsPanel } from '../components/canvas/BlueprintSettingsPanel';
 import { RunLaunchDialog } from './RunLaunchDialog';
+import { CanvasRunPanel } from '../components/canvas/CanvasRunPanel';
+import { useCanvasRun } from '../hooks/useCanvasRun';
 import { deriveMemoryWriters } from '../lib/memory-writers';
+import { stableStringify } from '../lib/stable-stringify';
 import { parseValidationPath } from '../lib/parse-validation-path';
 import { cn } from 'cn';
 import { Button } from '../components/ui/button';
@@ -56,7 +59,9 @@ import type {
   ConfigLayer,
   Ref,
   ValidationIssue,
+  VersionBump,
 } from '@reelcraft/shared';
+import { formatBlueprintVersion } from '../lib/format-blueprint-version';
 
 type BlueprintDraft = {
   graph: StageDef[];
@@ -529,56 +534,80 @@ function CreateBlueprintForm({
   );
 }
 
-/** Save, fake-provider dry run, and configured-provider run wiring. */
+type SavedVersion = { id: string; major: number; minor: number; contentKey: string };
+
+function draftOf(v: BlueprintDraft): BlueprintDraft {
+  return {
+    graph: v.graph,
+    inputs: v.inputs,
+    roles: v.roles,
+    defaults: v.defaults,
+    budget: v.budget,
+  };
+}
+
+async function assertRunnable(blueprintId: string, draft: BlueprintDraft) {
+  const validation = await api.validateBlueprint(blueprintId, draft);
+  if (validation.runnable) return;
+  const summary = validation.issues
+    .filter((issue) => issue.severity === 'error')
+    .slice(0, 3)
+    .map((issue) => `${issue.path}: ${issue.message}`)
+    .join(' ');
+  throw new Error(`Blueprint is not runnable.${summary ? ` ${summary}` : ''}`);
+}
+
+/** Save and the full end-to-end Run/Dry run of the latest *saved* version.
+ * Only Save creates a version; Run is gated on there being no unsaved
+ * changes so it always executes exactly what was saved. */
 function SaveAndDryRun({
   blueprintId,
   channelId,
   draft,
+  draftKey,
   runnable,
+  isDirty,
+  latestSaved,
+  onSaved,
 }: {
   blueprintId: string;
   channelId: string;
   draft: BlueprintDraft;
+  draftKey: string;
   runnable: boolean | undefined;
+  isDirty: boolean;
+  latestSaved: SavedVersion | null;
+  onSaved: (version: SavedVersion, savedDraft: BlueprintDraft) => void;
 }) {
   const navigate = useNavigate();
-  const draftKey = JSON.stringify(draft);
-  const [savedVersion, setSavedVersion] = useState<{
-    id: string;
-    version: number;
-    draftKey: string;
-  } | null>(null);
 
   const save = useMutation({
-    mutationFn: () => api.createBlueprintVersion(blueprintId, draft),
-    onSuccess: (version) => setSavedVersion({ id: version.id, version: version.version, draftKey }),
+    // Capture what was sent: edits made while the save is in flight must
+    // stay "unsaved".
+    mutationFn: async (bump: VersionBump) => {
+      const sent = { draft, contentKey: draftKey };
+      const version = await api.createBlueprintVersion(blueprintId, sent.draft, bump);
+      return { version, ...sent };
+    },
+    onSuccess: ({ version, draft: sent, contentKey }) =>
+      onSaved({ id: version.id, major: version.major, minor: version.minor, contentKey }, sent),
   });
+
+  const runBlocked = isDirty || latestSaved === null;
+
+  async function prepareSavedVersion() {
+    if (runBlocked || !latestSaved) throw new Error('Save to run your changes.');
+    await assertRunnable(blueprintId, draft);
+    return latestSaved.id;
+  }
 
   const dryRun = useMutation({
     mutationFn: () => {
-      if (savedVersion === null || savedVersion.draftKey !== draftKey) {
-        throw new Error('Save the current draft before dry-running.');
-      }
-      return api.startDryRun(blueprintId, savedVersion.version);
+      if (runBlocked || !latestSaved) throw new Error('Save to run your changes.');
+      return api.startDryRun(blueprintId, `${latestSaved.major}.${latestSaved.minor}`);
     },
     onSuccess: (run) => navigate(`/runs/${run.id}`),
   });
-
-  async function prepareRunnableVersion() {
-    const validation = await api.validateBlueprint(blueprintId, draft);
-    if (!validation.runnable) {
-      const summary = validation.issues
-        .filter((issue) => issue.severity === 'error')
-        .slice(0, 3)
-        .map((issue) => `${issue.path}: ${issue.message}`)
-        .join(' ');
-      throw new Error(`Blueprint is not runnable.${summary ? ` ${summary}` : ''}`);
-    }
-    if (savedVersion?.draftKey === draftKey) return savedVersion.id;
-    const version = await api.createBlueprintVersion(blueprintId, draft);
-    setSavedVersion({ id: version.id, version: version.version, draftKey });
-    return version.id;
-  }
 
   const saveIssues =
     save.error instanceof ApiError ? (save.error.issues as ValidationIssue[]) : undefined;
@@ -597,34 +626,50 @@ function SaveAndDryRun({
           </Alert>
         )}
         <div className="flex flex-wrap items-center gap-2">
-          <Button type="button" onClick={() => save.mutate()} disabled={save.isPending}>
+          <Button
+            type="button"
+            onClick={() => save.mutate('minor')}
+            disabled={save.isPending || !isDirty}
+          >
             {save.isPending ? 'Saving…' : 'Save'}
           </Button>
+          {latestSaved && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => save.mutate('major')}
+              disabled={save.isPending}
+              title="Save the current canvas as a new major version"
+            >
+              Bump to {formatBlueprintVersion({ major: latestSaved.major + 1, minor: 0 })}
+            </Button>
+          )}
           <RunLaunchDialog
             key={draftKey}
             channelId={channelId}
             inputs={draft.inputs}
             defaultBudgetCapUsd={draft.budget.runCapUsd}
-            prepareVersion={prepareRunnableVersion}
+            prepareVersion={prepareSavedVersion}
+            disabled={runBlocked}
           />
           <Button
             type="button"
             variant="outline"
             onClick={() => dryRun.mutate()}
-            disabled={
-              savedVersion === null || savedVersion.draftKey !== draftKey || dryRun.isPending
-            }
+            disabled={runBlocked || dryRun.isPending}
           >
             {dryRun.isPending ? 'Starting…' : 'Dry run (fake provider)'}
           </Button>
         </div>
         <p className="text-xs text-muted-foreground">
-          Run uses configured providers. Dry run is deterministic and always uses the fake provider.
+          {runBlocked
+            ? 'Save to run your changes. Use the run panel to try stages without saving.'
+            : `Run executes every stage of ${latestSaved ? formatBlueprintVersion(latestSaved) : ''} with configured providers. Dry run always uses the fake provider.`}
         </p>
         {save.isSuccess && (
           <p className="text-sm text-muted-foreground">
-            Saved as version {save.data.version} ({save.data.runnable ? 'runnable' : 'not runnable'}
-            )
+            Saved as {formatBlueprintVersion(save.data.version)} (
+            {save.data.version.runnable ? 'runnable' : 'not runnable'})
           </p>
         )}
         {save.isError &&
@@ -727,6 +772,7 @@ function SaveAsTemplate({ graph }: { graph: StageDef[] }) {
 }
 
 function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
+  const queryClient = useQueryClient();
   const versions = useQuery({
     queryKey: ['blueprint-versions', blueprintId],
     queryFn: () => api.listBlueprintVersions(blueprintId),
@@ -750,25 +796,80 @@ function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
   const [validationFailed, setValidationFailed] = useState(false);
   const validateTimer = useRef<number>();
 
-  useEffect(() => {
-    if (draft || !versions.data) return;
-    if (versions.data.length === 0) {
-      setDraft(emptyDraft());
-      return;
-    }
-    const latest = versions.data.reduce((a, b) => (b.version > a.version ? b : a));
-    setDraft({
-      graph: latest.graph,
-      inputs: latest.inputs,
-      roles: latest.roles,
-      defaults: latest.defaults,
-      budget: latest.budget,
-    });
-  }, [draft, versions.data]);
+  const [latestSaved, setLatestSaved] = useState<SavedVersion | null>(null);
+  const [savedDraft, setSavedDraft] = useState<BlueprintDraft>(emptyDraft);
+  const [runSnapshot, setRunSnapshot] = useState<{ id: string; contentKey: string } | null>(null);
+  const serverHasWorkingDraft = useRef(false);
 
-  /** Debounce key: content equality, not `draft`'s referential identity —
-   * mirrors `StageInspector`'s `configKey` idiom (Chunk 4). */
-  const draftKey = draft ? JSON.stringify(draft) : '';
+  // Load once: the autosaved working copy if there is one, else the latest
+  // saved version. `latestSaved` is what Run/Dry run execute.
+  useEffect(() => {
+    if (draft || !versions.data || !blueprintMeta.data) return;
+    // The API lists saved versions newest first (major, then minor).
+    const latest = versions.data[0] ?? null;
+    const saved = latest ? draftOf(latest) : emptyDraft();
+    const working = blueprintMeta.data.workingDraft;
+    setSavedDraft(saved);
+    if (latest) {
+      setLatestSaved({
+        id: latest.id,
+        major: latest.major,
+        minor: latest.minor,
+        contentKey: stableStringify(saved),
+      });
+    }
+    serverHasWorkingDraft.current = working !== null;
+    setDraft(working ? draftOf(working) : saved);
+  }, [draft, versions.data, blueprintMeta.data]);
+
+  /** Content equality, not referential identity (and key-order independent,
+   * since both sides may have round-tripped through `jsonb`). */
+  const draftKey = draft ? stableStringify(draft) : '';
+  const isDirty = latestSaved === null || draftKey !== latestSaved.contentKey;
+  const canvasRun = useCanvasRun(blueprintId);
+
+  // Autosave the working copy so unsaved edits survive a reload; clear it
+  // once the canvas matches the latest save again.
+  useEffect(() => {
+    if (!draft) return;
+    const timer = window.setTimeout(() => {
+      if (isDirty) {
+        serverHasWorkingDraft.current = true;
+        void api.setWorkingDraft(blueprintId, draft);
+      } else if (serverHasWorkingDraft.current) {
+        serverHasWorkingDraft.current = false;
+        void api.setWorkingDraft(blueprintId, null);
+      }
+    }, 1000);
+    return () => window.clearTimeout(timer);
+  }, [blueprintId, draftKey, isDirty]);
+
+  /** Canvas-dock runs: the saved version when nothing changed, otherwise a
+   * draft snapshot — never a new version. Reuses the snapshot while the
+   * canvas content is unchanged. */
+  async function prepareCanvasRunVersion() {
+    if (!draft) throw new Error('Blueprint is still loading.');
+    await assertRunnable(blueprintId, draft);
+    if (!isDirty && latestSaved) return latestSaved.id;
+    if (runSnapshot?.contentKey === draftKey) return runSnapshot.id;
+    const snapshot = await api.createDraftVersion(blueprintId, draft);
+    setRunSnapshot({ id: snapshot.id, contentKey: draftKey });
+    return snapshot.id;
+  }
+
+  function handleSaved(version: SavedVersion, saved: BlueprintDraft) {
+    setLatestSaved(version);
+    setSavedDraft(saved);
+    serverHasWorkingDraft.current = false;
+    void queryClient.invalidateQueries({ queryKey: ['blueprint-versions', blueprintId] });
+  }
+
+  function discardChanges() {
+    setDraft(savedDraft);
+    setSelectedStageKey(null);
+    serverHasWorkingDraft.current = false;
+    void api.setWorkingDraft(blueprintId, null);
+  }
 
   useEffect(() => {
     if (!draft) return;
@@ -826,12 +927,25 @@ function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold tracking-tight">Blueprint canvas</h1>
-        {!validationFailed && validation && (
-          <StatusBadge
-            tone={validation.runnable ? 'success' : 'error'}
-            label={validation.runnable ? 'Runnable' : 'Not runnable yet'}
-          />
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          {latestSaved && (
+            <span className="font-mono text-xs text-muted-foreground">
+              {formatBlueprintVersion(latestSaved)}
+            </span>
+          )}
+          {isDirty && <StatusBadge tone="warning" label="Unsaved changes" />}
+          {isDirty && latestSaved && (
+            <Button type="button" variant="ghost" size="sm" onClick={discardChanges}>
+              Discard changes
+            </Button>
+          )}
+          {!validationFailed && validation && (
+            <StatusBadge
+              tone={validation.runnable ? 'success' : 'error'}
+              label={validation.runnable ? 'Runnable' : 'Not runnable yet'}
+            />
+          )}
+        </div>
         {validationFailed && (
           <StatusBadge tone="warning" label="couldn't validate — check your connection" />
         )}
@@ -851,14 +965,28 @@ function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
 
       <section className="space-y-2">
         <h2 className="text-lg font-medium">Stages</h2>
-        <StageGraphCanvas
-          graph={draft.graph}
-          issuesByStage={issuesByStage}
-          onDeleteStage={deleteStage}
-          onReorder={reorderStage}
-          onSelectStage={setSelectedStageKey}
-        />
-        <AddStageMenu graph={draft.graph} onAdd={addStage} />
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
+          <div className="min-w-0 flex-1 space-y-2">
+            <StageGraphCanvas
+              graph={draft.graph}
+              issuesByStage={issuesByStage}
+              onDeleteStage={deleteStage}
+              onReorder={reorderStage}
+              onSelectStage={setSelectedStageKey}
+            />
+            <AddStageMenu graph={draft.graph} onAdd={addStage} />
+          </div>
+          <CanvasRunPanel
+            channelId={channelId ?? ''}
+            blueprintId={blueprintId}
+            graph={draft.graph}
+            inputs={draft.inputs}
+            budgetCapUsd={draft.budget.runCapUsd}
+            run={canvasRun.run}
+            onSwitchRun={canvasRun.setActiveRunId}
+            prepareRunnableVersion={prepareCanvasRunVersion}
+          />
+        </div>
       </section>
 
       <Sheet
@@ -891,7 +1019,11 @@ function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
         blueprintId={blueprintId}
         channelId={channelId ?? ''}
         draft={draft}
+        draftKey={draftKey}
         runnable={validation?.runnable}
+        isDirty={isDirty}
+        latestSaved={latestSaved}
+        onSaved={handleSaved}
       />
       <SaveAsTemplate graph={draft.graph} />
     </div>

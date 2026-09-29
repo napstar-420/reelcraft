@@ -80,6 +80,7 @@ describe('Phase 4 HTTP action races (e2e)', () => {
       blueprintVersionId: version.id,
       inputs: {},
       roleBindings: {},
+      rerunStageKeys: [],
       budgetCapUsd: 10,
     });
   }

@@ -23,6 +23,7 @@ export const stageExecutionStateEnum = pgEnum('stage_execution_state', [
   'failed',
   'stale',
   'skipped',
+  'cancelled',
 ]);
 
 export const stageItemStateEnum = pgEnum('stage_item_state', [

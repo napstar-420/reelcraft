@@ -82,6 +82,7 @@ describe('RunService.create budget preconditions (e2e)', () => {
       blueprintVersionId: version.id,
       inputs: {},
       roleBindings: {},
+      rerunStageKeys: [],
       budgetCapUsd: 10,
     });
     expect(created).toBeDefined();
@@ -111,6 +112,7 @@ describe('RunService.create budget preconditions (e2e)', () => {
         blueprintVersionId: version.id,
         inputs: {},
         roleBindings: {},
+        rerunStageKeys: [],
         budgetCapUsd: 10,
       }),
     ).rejects.toThrow('does not belong to the requested channel');
@@ -170,6 +172,7 @@ describe('RunController raiseBudget & resume (e2e)', () => {
       blueprintVersionId: version.id,
       inputs: {},
       roleBindings: {},
+      rerunStageKeys: [],
       budgetCapUsd: 10,
     });
     return created.id;

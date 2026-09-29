@@ -1,6 +1,11 @@
 import { ConflictException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { and, eq } from 'drizzle-orm';
-import { ConfigLayer, StageDef, type ConfigLayer as ConfigLayerType } from '@reelcraft/shared';
+import {
+  ConfigLayer,
+  StageDef,
+  type ConfigLayer as ConfigLayerType,
+  type RetryScope,
+} from '@reelcraft/shared';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
 import { blueprintVersion, run, stageExecution, stageItem } from '../db/schema/index';
 import { mergeLayer } from '../run-config/layer-merge';
@@ -29,6 +34,16 @@ interface RetryTokenPreview {
   fingerprint: string;
 }
 
+/** The token binds the scope, so a confirm can't swap it after the preview.
+ * The default scope is left out, keeping the pre-scope payload shape. */
+function retryPayload(stageKey: string, itemIndex: number | undefined, scope: RetryScope) {
+  return {
+    stageKey,
+    ...(itemIndex !== undefined ? { itemIndex } : {}),
+    ...(scope !== 'dependents' ? { scope } : {}),
+  };
+}
+
 @Injectable()
 export class RunActionService {
   private readonly logger = new Logger(RunActionService.name);
@@ -45,8 +60,13 @@ export class RunActionService {
     return this.buildStagePreview(runId, stageKey, 'invalidation_preview', itemIndex);
   }
 
-  async previewStageRetry(runId: string, stageKey: string, itemIndex?: number) {
-    return this.buildStagePreview(runId, stageKey, 'retry', itemIndex);
+  async previewStageRetry(
+    runId: string,
+    stageKey: string,
+    itemIndex?: number,
+    scope: RetryScope = 'dependents',
+  ) {
+    return this.buildStagePreview(runId, stageKey, 'retry', itemIndex, scope);
   }
 
   async confirmStageRetry(
@@ -54,8 +74,9 @@ export class RunActionService {
     stageKey: string,
     previewToken: string,
     itemIndex?: number,
+    scope: RetryScope = 'dependents',
   ) {
-    const payload = { stageKey, ...(itemIndex !== undefined ? { itemIndex } : {}) };
+    const payload = retryPayload(stageKey, itemIndex, scope);
     const revision = await this.currentRevision(runId);
     const claims = this.tokens.verify<RetryTokenPreview>(previewToken, {
       action: 'retry',
@@ -63,7 +84,7 @@ export class RunActionService {
       runRevision: revision,
       proposedPayload: payload,
     });
-    const seed = await this.resolveRetrySeed(runId, stageKey, itemIndex);
+    const seed = await this.resolveRetrySeed(runId, stageKey, itemIndex, scope);
     const preview = await this.invalidation.preview({ runId, seed });
     if (claims.preview.fingerprint !== preview.fingerprint) {
       throw new ConflictException('The invalidation preview changed; request a new preview');
@@ -81,6 +102,7 @@ export class RunActionService {
           runId,
           closure: preview.closure,
           targetStageKey: stageKey,
+          gcBlobs: scope !== 'stage',
         });
       },
       'run/resumed',
@@ -90,6 +112,7 @@ export class RunActionService {
         runId,
         stageKey,
         itemIndex,
+        scope,
         wakeupId: result.wakeupId,
         revision: result.revision,
         invalidatedStageCount: preview.closure.affectedStageKeys.length,
@@ -110,9 +133,20 @@ export class RunActionService {
     runId: string,
     stageKey: string,
     itemIndex: number | undefined,
+    scope: RetryScope = 'dependents',
   ): Promise<InvalidationSeed> {
-    if (itemIndex === undefined) return { stageKeys: [stageKey] };
+    const target = await this.resolveRetryTarget(runId, stageKey, itemIndex);
+    if (scope === 'stage') return { ...target, cascade: false };
+    if (scope === 'downstream') {
+      const graph = await this.runGraph(runId);
+      const index = graph.findIndex((stage) => stage.key === stageKey);
+      if (index === -1) throw new ConflictException(`Stage ${stageKey} not found`);
+      return { ...target, forcedStageKeys: graph.slice(index + 1).map((stage) => stage.key) };
+    }
+    return target;
+  }
 
+  private async runGraph(runId: string) {
     const [context] = await this.db
       .select({ graph: blueprintVersion.graph })
       .from(run)
@@ -120,7 +154,17 @@ export class RunActionService {
       .where(eq(run.id, runId))
       .limit(1);
     if (!context) throw new NotFoundException(`Run ${runId} not found`);
-    const graph = StageDef.array().parse(context.graph);
+    return StageDef.array().parse(context.graph);
+  }
+
+  private async resolveRetryTarget(
+    runId: string,
+    stageKey: string,
+    itemIndex: number | undefined,
+  ): Promise<InvalidationSeed> {
+    if (itemIndex === undefined) return { stageKeys: [stageKey] };
+
+    const graph = await this.runGraph(runId);
     const stage = graph.find((candidate) => candidate.key === stageKey);
     if (!stage) throw new ConflictException(`Stage ${stageKey} not found`);
     if (!stage.iterate) {
@@ -253,11 +297,12 @@ export class RunActionService {
     stageKey: string,
     action: string,
     itemIndex?: number,
+    scope: RetryScope = 'dependents',
   ) {
     const revision = await this.currentRevision(runId);
-    const seed = await this.resolveRetrySeed(runId, stageKey, itemIndex);
+    const seed = await this.resolveRetrySeed(runId, stageKey, itemIndex, scope);
     const preview = await this.invalidation.preview({ runId, seed });
-    const payload = { stageKey, ...(itemIndex !== undefined ? { itemIndex } : {}) };
+    const payload = retryPayload(stageKey, itemIndex, scope);
     const issued = this.tokens.issue({
       action,
       runId,

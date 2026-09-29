@@ -17,6 +17,7 @@ import {
   RaiseBudgetDto,
   RequestInputUploadDto,
   ConfirmRunActionDto,
+  RetryScope,
   ApprovalActionDto,
   HumanInputSubmissionDto,
   PatchRunOverridesDto,
@@ -131,8 +132,9 @@ export class RunController {
     @Param('id') id: string,
     @Param('key') key: string,
     @Query('itemIndex') itemIndex?: string,
+    @Query('scope', new ZodValidationPipe(RetryScope.optional())) scope?: RetryScope,
   ) {
-    return this.actions.previewStageRetry(id, key, this.parseItemIndexQuery(itemIndex));
+    return this.actions.previewStageRetry(id, key, this.parseItemIndexQuery(itemIndex), scope);
   }
 
   @Get(':id/stages/:key/attempts')
@@ -165,7 +167,7 @@ export class RunController {
     @Param('key') key: string,
     @Body(new ZodValidationPipe(ConfirmRunActionDto)) dto: ConfirmRunActionDto,
   ) {
-    return this.actions.confirmStageRetry(id, key, dto.previewToken, dto.itemIndex);
+    return this.actions.confirmStageRetry(id, key, dto.previewToken, dto.itemIndex, dto.scope);
   }
 
   /** Shared by `invalidationPreview`/`retryPreview` — both accept an

@@ -128,6 +128,7 @@ export function BlueprintsTab({ channelId }: { channelId?: string | undefined })
         blueprintVersionId: version.id,
         budgetCapUsd: 5,
         inputs: {},
+        rerunStageKeys: [],
         roleBindings: {},
       });
       return api.startRun(run.id);

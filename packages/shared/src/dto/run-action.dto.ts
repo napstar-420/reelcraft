@@ -1,9 +1,17 @@
 import { z } from 'zod';
 import { ConfigLayer } from '../config-layer';
 
+/** What a stage retry re-runs besides the stage itself:
+ * - `dependents`: later stages that read its output (provenance cascade)
+ * - `stage`: nothing else; later stages keep their outputs
+ * - `downstream`: every later stage in the graph */
+export const RetryScope = z.enum(['dependents', 'stage', 'downstream']);
+export type RetryScope = z.infer<typeof RetryScope>;
+
 export const ConfirmRunActionDto = z.object({
   previewToken: z.string().min(1),
   itemIndex: z.number().int().nonnegative().optional(),
+  scope: RetryScope.optional(),
 });
 export type ConfirmRunActionDto = z.infer<typeof ConfirmRunActionDto>;
 

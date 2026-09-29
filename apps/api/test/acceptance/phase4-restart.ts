@@ -132,6 +132,7 @@ async function main() {
       blueprintVersionId: versionId,
       inputs: {},
       roleBindings: {},
+      rerunStageKeys: [],
       budgetCapUsd: 10,
     });
     const runId = String(created.id);

@@ -13,6 +13,7 @@ import {
   RotateCcw,
   Wallet,
 } from 'lucide-react';
+import type { RetryScope } from '@reelcraft/shared';
 import { api } from '../api/client';
 import { useRun } from '../hooks/useRun';
 import { formatRunDuration } from './runs-page.logic';
@@ -33,6 +34,12 @@ import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { runStateTone, stageExecutionStateTone } from '@/lib/status';
 import { isRunActionAllowed } from '@/lib/run-action-policy';
 import { describeRunActionError } from '@/lib/describe-run-action-error';
@@ -50,7 +57,7 @@ export function RunPage() {
   const { data: run, isLoading } = useRun(runId);
   const queryClient = useQueryClient();
   const [reviewStageKey, setReviewStageKey] = useState<string | null>(null);
-  const [retryStageKey, setRetryStageKey] = useState<string | null>(null);
+  const [retry, setRetry] = useState<{ stageKey: string; scope: RetryScope } | null>(null);
   const [formInputStageKey, setFormInputStageKey] = useState<string | null>(null);
   const [attemptsStageKey, setAttemptsStageKey] = useState<string | null>(null);
   const [outputStageKey, setOutputStageKey] = useState<string | null>(null);
@@ -82,6 +89,7 @@ export function RunPage() {
         budgetCapUsd: Number(run!.budgetCapUsd),
         inputs: run!.inputs,
         roleBindings: {},
+        rerunStageKeys: [],
       });
       return api.startRun(created.id);
     },
@@ -135,9 +143,10 @@ export function RunPage() {
       />
       <StageRetryDialog
         runId={run.id}
-        stageKey={retryStageKey}
-        open={retryStageKey !== null}
-        onOpenChange={(open) => !open && setRetryStageKey(null)}
+        stageKey={retry?.stageKey ?? null}
+        scope={retry?.scope ?? 'dependents'}
+        open={retry !== null}
+        onOpenChange={(open) => !open && setRetry(null)}
       />
       <SubmitFormInputDialog
         runId={run.id}
@@ -304,10 +313,31 @@ export function RunPage() {
                     <Link to={`/runs/${run.id}/stages/${se.stageKey}/edit`}>Open editor</Link>
                   </Button>
                 ) : null}
-                {canRetry && (se.state === 'failed' || se.state === 'stale') ? (
-                  <Button size="sm" variant="outline" onClick={() => setRetryStageKey(se.stageKey)}>
-                    <RefreshCw /> Retry
-                  </Button>
+                {canRetry && ['passed', 'failed', 'stale'].includes(se.state) ? (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button size="sm" variant="outline">
+                        <RefreshCw /> {se.state === 'passed' ? 'Re-run' : 'Retry'}
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem
+                        onSelect={() => setRetry({ stageKey: se.stageKey, scope: 'dependents' })}
+                      >
+                        With stages that use its output
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onSelect={() => setRetry({ stageKey: se.stageKey, scope: 'stage' })}
+                      >
+                        Only this stage
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onSelect={() => setRetry({ stageKey: se.stageKey, scope: 'downstream' })}
+                      >
+                        This and all later stages
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 ) : null}
                 {se.outputArtifactId !== null || (se.isIterating && se.state !== 'pending') ? (
                   <Button size="sm" variant="ghost" onClick={() => setOutputStageKey(se.stageKey)}>

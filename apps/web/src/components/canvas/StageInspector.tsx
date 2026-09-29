@@ -4,6 +4,7 @@ import { cn } from 'cn';
 import { api } from '../../api/client';
 import { BindingPicker } from './BindingPicker';
 import { CapabilityPicker } from './CapabilityPicker';
+import { OutputSchemaField } from './OutputSchemaEditor';
 import { SchemaForm } from './SchemaForm';
 import { ChecksEditor } from './ChecksEditor';
 import { InfoHeading, InfoLabel } from './info-label';
@@ -28,7 +29,6 @@ import type {
   Ref,
   OutputKind,
   SlotDef,
-  JsonSchema,
   EnabledWhen,
   QcDef,
   ModelPin,
@@ -40,7 +40,9 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from '@/components/ui/accordion';
+import { Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { IssueList } from '@/components/ui/issue-list';
@@ -55,33 +57,6 @@ import {
 } from '@/components/ui/select';
 
 const UNSET = '__unset__';
-
-/** A shallow, non-recursive view of the `JsonSchema` dialect (§4.2) used only
- * to build `output.schema` via `SchemaForm` itself — the dialect has no
- * `$ref`, so a schema describing "a `JsonSchema` value" can't recurse into
- * its own `properties`/`items` without one. Nested object/array output
- * schemas therefore aren't authorable through this chunk's UI (top-level
- * `type`/`enum`/`required`/min-max constraints only); deferred rather than
- * building a self-referential meta-schema hack for a field most capabilities
- * don't even use. */
-const OUTPUT_SCHEMA_META: JsonSchema = {
-  type: 'object',
-  properties: {
-    type: {
-      type: 'string',
-      enum: ['object', 'array', 'string', 'number', 'integer', 'boolean'],
-    },
-    description: { type: 'string' },
-    enum: { type: 'array', items: { type: 'string' } },
-    required: { type: 'array', items: { type: 'string' } },
-    minItems: { type: 'number' },
-    maxItems: { type: 'number' },
-    minimum: { type: 'number' },
-    maximum: { type: 'number' },
-    minLength: { type: 'number' },
-    maxLength: { type: 'number' },
-  },
-};
 
 function nextFreeKey(existing: Record<string, unknown>, prefix: string): string {
   let n = 1;
@@ -382,38 +357,66 @@ function QcDimensionsEditor({
     onChange([...dimensions, { key: '', description: '', weight: 1 }]);
   }
 
+  const totalWeight = dimensions.reduce((sum, d) => sum + d.weight, 0);
+
   return (
     <div className="flex flex-col gap-2">
+      {dimensions.length === 0 ? (
+        <p className="text-xs text-muted-foreground">
+          No dimensions — the judge gives a single overall score.
+        </p>
+      ) : null}
       {dimensions.map((dim, index) => (
-        <div key={index} className="flex flex-wrap items-center gap-2">
-          <Input
-            type="text"
-            className="w-32"
-            placeholder="key"
-            value={dim.key}
-            onChange={(e) => update(index, { key: e.target.value })}
-          />
-          <Input
-            type="text"
-            className="w-56"
-            placeholder="description"
-            value={dim.description}
-            onChange={(e) => update(index, { description: e.target.value })}
-          />
-          <Input
-            type="number"
-            className="w-24"
-            placeholder="weight"
-            value={dim.weight}
-            onChange={(e) => update(index, { weight: Number(e.target.value) || 0 })}
-          />
-          <Button type="button" variant="outline" size="sm" onClick={() => remove(index)}>
-            Remove
-          </Button>
-        </div>
+        <Card key={index} size="sm">
+          <CardContent className="flex flex-col gap-2">
+            <div className="flex items-center gap-2">
+              <Input
+                type="text"
+                className="min-w-0 flex-1 font-mono text-xs"
+                placeholder="e.g. uk_relevance"
+                aria-label="Dimension key"
+                value={dim.key}
+                onChange={(e) => update(index, { key: e.target.value })}
+              />
+              <label className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
+                Weight
+                <Input
+                  type="number"
+                  min={0}
+                  step={1}
+                  className="w-16"
+                  value={dim.weight}
+                  onChange={(e) => update(index, { weight: Number(e.target.value) || 0 })}
+                />
+              </label>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Remove dimension"
+                onClick={() => remove(index)}
+              >
+                <Trash2 />
+              </Button>
+            </div>
+            <Textarea
+              rows={2}
+              className="text-xs"
+              placeholder="What the judge should look for…"
+              aria-label="Dimension description"
+              value={dim.description}
+              onChange={(e) => update(index, { description: e.target.value })}
+            />
+            {totalWeight > 0 ? (
+              <span className="text-xs text-muted-foreground">
+                {Math.round((dim.weight / totalWeight) * 100)}% of score
+              </span>
+            ) : null}
+          </CardContent>
+        </Card>
       ))}
       <Button type="button" variant="outline" size="sm" onClick={add} className="self-start">
-        + add dimension
+        + Add dimension
       </Button>
     </div>
   );
@@ -456,21 +459,24 @@ function QcEditor({
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-col gap-1.5">
-        <InfoLabel info="Free-text description of what a passing output looks like — sent to the quality control model alongside this stage's output as the judgment prompt.">
+        <InfoLabel info="What a passing output looks like — sent to the quality control model alongside this stage's output. The judge returns a 0–100 score and a critique; on failure the stage retries, and the critique reaches the next attempt only via {{ priorCritique }} in this stage's Template.">
           Criteria
         </InfoLabel>
-        <Input
-          type="text"
+        <CollapsibleTextarea
+          rows={6}
+          className="font-mono text-xs"
           value={qc.criteria}
-          onChange={(e) => set({ criteria: e.target.value })}
+          onChange={(criteria) => set({ criteria })}
         />
       </div>
       <div className="flex flex-col gap-1.5">
-        <InfoLabel info="Minimum score (0–1) the quality control model's judgment must reach for this stage to pass. Below it, the run treats this stage as failed quality control.">
+        <InfoLabel info="Minimum score (0–100) the quality control model's judgment must reach for this stage to pass. When dimensions are set, the score is their weighted average. Below it, the stage retries with the critique.">
           Threshold
         </InfoLabel>
         <Input
           type="number"
+          min={0}
+          max={100}
           className="w-32"
           value={qc.threshold}
           onChange={(e) => set({ threshold: Number(e.target.value) || 0 })}
@@ -1085,13 +1091,12 @@ export function StageInspector({
               <IssueList issues={outputKindIssues} />
               <IssueList issues={outputIssues} />
               {output.kind === 'data' && (
-                <SchemaForm
-                  schema={OUTPUT_SCHEMA_META}
-                  value={output.schema}
+                <OutputSchemaField
+                  schema={output.schema}
                   onChange={(next) =>
                     onChange({
                       ...stage,
-                      output: updateDataOutputSchema(output, next as JsonSchema | undefined),
+                      output: updateDataOutputSchema(output, next),
                     })
                   }
                 />

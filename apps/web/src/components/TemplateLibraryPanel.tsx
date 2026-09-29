@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { formatBlueprintVersion } from '../lib/format-blueprint-version';
 import { api, type TemplateListItem } from '../api/client';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import {
@@ -141,7 +142,7 @@ function TemplateRow({ template }: { template: TemplateListItem }) {
                   <p>
                     Created blueprint version — id: <code>{instantiate.data.id}</code>, blueprintId:{' '}
                     <code>{instantiate.data.blueprintId}</code>, version:{' '}
-                    <code>{instantiate.data.version}</code>
+                    <code>{formatBlueprintVersion(instantiate.data)}</code>
                   </p>
                 ) : (
                   <div>

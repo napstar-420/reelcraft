@@ -98,6 +98,7 @@ async function main(): Promise<void> {
   process.removeListener('SIGTERM', releaseOnSignal);
   process.removeListener('SIGINT', releaseOnSignal);
   await atomicJson(join(manifest.jobDir, 'events-summary.json'), summarizeEvents(events));
+  await writeFile(join(manifest.jobDir, 'events.log'), redact(events), { mode: 0o600 });
   await writeFile(join(manifest.jobDir, 'stderr.log'), redact(stderr), { mode: 0o600 });
   if (exit.code === 0) {
     await atomicJson(statusPath, {

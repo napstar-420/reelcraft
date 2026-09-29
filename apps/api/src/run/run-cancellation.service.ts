@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
-import { and, eq, isNotNull } from 'drizzle-orm';
+import { and, eq, isNotNull, notInArray } from 'drizzle-orm';
 import { StageDef, type JobHandle } from '@reelcraft/shared';
 import { LedgerService } from '../budget/ledger.service';
 import { CapabilityRegistry } from '../capability/capability.registry';
@@ -55,6 +55,21 @@ export class RunCancellationService {
 
   private async settleOutstanding(runId: string): Promise<void> {
     if (!this.db || !this.capabilities || !this.ledger) return;
+    // A stage_execution frozen in a non-terminal state (pending/running/
+    // awaiting_*) when its run is cancelled would otherwise sit there
+    // forever — the Run page reads it straight (`formatRunDuration` treats
+    // a null `endedAt` as still-running), showing "Pending"/"Running…" under
+    // an overall Cancelled run. Mark every one of this run's stages that
+    // hasn't already reached a terminal state as cancelled.
+    await this.db
+      .update(stageExecution)
+      .set({ state: 'cancelled', endedAt: new Date().toISOString() })
+      .where(
+        and(
+          eq(stageExecution.runId, runId),
+          notInArray(stageExecution.state, ['passed', 'failed', 'stale', 'skipped', 'cancelled']),
+        ),
+      );
     const [context] = await this.db
       .select({ graph: blueprintVersion.graph })
       .from(run)

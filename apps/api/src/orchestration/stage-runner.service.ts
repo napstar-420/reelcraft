@@ -207,6 +207,16 @@ export class StageRunnerService {
       .set({ startedAt: sql`coalesce(${stageExecution.startedAt}, now())` })
       .where(eq(stageExecution.id, ctx.stageExecutionId));
 
+    // The UI's only signal that a stage is actively executing (as opposed
+    // to not started yet) — flip 'pending' -> 'running' here, once. Scoped
+    // to 'pending' so a replayed step, a retry, or an item-mode attempt that
+    // finds the stage already in some other state (e.g. 'awaiting_approval'
+    // from a sibling item) never clobbers it.
+    await this.db
+      .update(stageExecution)
+      .set({ state: 'running' })
+      .where(and(eq(stageExecution.id, ctx.stageExecutionId), eq(stageExecution.state, 'pending')));
+
     // phase 7 chunk 4 — an item's first attempt (and every retry of it)
     // marks the stage_item 'running'. Idempotent to repeat on a replayed
     // step or a resumed retry of a previously-'failed' item.
@@ -707,6 +717,24 @@ export class StageRunnerService {
       stageAttemptId: ctx.stageAttemptId,
       reservationId,
     });
+  }
+
+  /** A poll can come back `failed` because the run was cancelled out from
+   * under it — `RunCancellationService.settleOutstanding` cancels the
+   * provider job directly, racing this same attempt's own poll loop. That
+   * race must not read as a genuine provider failure: mirrors
+   * `fetchAndFinalize`'s own not-running check (§11's "every non-RUNNING
+   * state still discards the output"), marking this attempt `cancelled`
+   * (idempotent — `settleOutstanding` may have already done so) instead of
+   * letting the caller fail the stage over what is really just a cancel. */
+  async stopIfRunNotRunning(ctx: StageAttemptContext): Promise<boolean> {
+    const state = await this.getRunState(ctx.runId);
+    if (state === 'RUNNING' || state === 'PAUSED_MANUAL') return false;
+    await this.db
+      .update(stageAttempt)
+      .set({ outcome: 'cancelled', phase: 'settled' })
+      .where(eq(stageAttempt.id, ctx.stageAttemptId));
+    return true;
   }
 
   async recordInfraError(ctx: StageAttemptContext, reason: string): Promise<void> {

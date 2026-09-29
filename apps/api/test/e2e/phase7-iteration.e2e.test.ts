@@ -127,6 +127,7 @@ describe('phase 7 chunk 4 — iterating stage per-item loop (e2e)', () => {
       blueprintVersionId: version.id,
       inputs,
       roleBindings: {},
+      rerunStageKeys: [],
       budgetCapUsd: 10,
     });
     await testDb.db.update(run).set({ state: 'RUNNING' }).where(eq(run.id, created.id));

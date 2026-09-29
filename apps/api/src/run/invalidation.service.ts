@@ -291,7 +291,14 @@ export class InvalidationService {
 
   async apply(
     tx: Tx,
-    params: { runId: string; closure: InvalidationClosure; targetStageKey: string },
+    params: {
+      runId: string;
+      closure: InvalidationClosure;
+      targetStageKey: string;
+      /** `false` for a non-cascading retry: later stages still reference
+       * the old artifacts' blobs, so they must not be collected. */
+      gcBlobs?: boolean;
+    },
   ): Promise<void> {
     if (params.closure.affectedArtifactIds.length > 0) {
       const affected = await tx
@@ -304,11 +311,20 @@ export class InvalidationService {
         .where(inArray(artifact.id, params.closure.affectedArtifactIds));
 
       const blobIds = affected.map((row) => row.blobId).filter((id): id is string => id !== null);
-      if (blobIds.length > 0) {
+      if (blobIds.length > 0 && params.gcBlobs !== false) {
+        // Seeded runs (run-seed.ts's `copyReusedStages`) share a `blobId`
+        // across runs instead of copying the object — so a blob is only
+        // GC-eligible once no run's active artifact still points at it.
         await tx
           .update(blob)
           .set({ gcEligible: true, gcEligibleAt: new Date().toISOString() })
-          .where(and(inArray(blob.id, blobIds), eq(blob.scope, 'run')));
+          .where(
+            and(
+              inArray(blob.id, blobIds),
+              eq(blob.scope, 'run'),
+              sql`not exists (select 1 from ${artifact} a where a.blob_id = ${blob.id} and a.stale = false)`,
+            ),
+          );
       }
     }
 

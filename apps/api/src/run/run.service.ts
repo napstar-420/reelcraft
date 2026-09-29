@@ -7,6 +7,7 @@ import type {
   Ref,
   RoleDef,
   ListRunsQueryDto,
+  Probe,
 } from '@reelcraft/shared';
 import { InputDef, RoleDef as RoleDefSchema, StageDef } from '@reelcraft/shared';
 import { RUN_ACTION_ALLOWED_STATES } from './run-action-policy';
@@ -39,9 +40,16 @@ import { collectAssetIds } from '../blueprint/collect-asset-refs';
 import { RunInputService } from './run-input.service';
 import { RunMutationService } from './run-mutation.service';
 import { RunWakeupDispatcher } from './run-wakeup-dispatcher.service';
-import { ProviderRegistry } from '../provider/provider.registry';
+import { PINNED_PROVIDERS, PROVIDER_LABELS, ProviderRegistry } from '../provider/provider.registry';
 import { modalityForCapability } from '../capability/modality-for-capability';
 import { BlobService } from '../artifact/blob.service';
+import { canonicalJson } from '../json-schema/schema-hash';
+import {
+  copyReusedStages,
+  reusableStageKeys,
+  untilStageIndex,
+  type SourceExecutionSummary,
+} from './run-seed';
 
 /**
  * §5/§12/§21 — run start resolves and snapshots resolved_config, keyed per
@@ -111,29 +119,134 @@ export class RunService {
       resolvedConfig = this.applyDryRunOverride(graph, resolvedConfig);
     }
 
+    const graphKeys = new Set(graph.map((s) => s.key));
+    for (const key of [...dto.rerunStageKeys, ...(dto.untilStageKey ? [dto.untilStageKey] : [])]) {
+      if (!graphKeys.has(key)) {
+        throw new ConflictException(`Stage "${key}" is not part of this blueprint version`);
+      }
+    }
+    const stopIndex = untilStageIndex(graph, dto.untilStageKey);
+
+    // Canvas "run this stage" / "run to here" — see run-seed.ts and the
+    // run-stages-from-canvas plan. Copies a still-valid prefix of a previous
+    // run's finished stages into this new run instead of re-executing them.
+    let seed: { sourceRunId: string; stageKeys: string[] } | undefined;
+    let mergedInputs = dto.inputs;
+    if (dto.seedFromRunId) {
+      const source = await this.get(dto.seedFromRunId);
+      if (source.channelId !== dto.channelId) {
+        throw new ConflictException('seedFromRunId belongs to a different channel');
+      }
+      const [sourceVersion] = await this.db
+        .select()
+        .from(blueprintVersion)
+        .where(eq(blueprintVersion.id, source.blueprintVersionId))
+        .limit(1);
+      if (!sourceVersion || sourceVersion.blueprintId !== version.blueprintId) {
+        throw new ConflictException('seedFromRunId belongs to a different blueprint');
+      }
+      const sourceGraph = StageDef.array().parse(sourceVersion.graph);
+      const sourceInputDefs = InputDef.array().parse(sourceVersion.inputs);
+      const newInputByKey = new Map(inputDefs.map((d) => [d.key, d]));
+      for (const def of sourceInputDefs) {
+        const newDef = newInputByKey.get(def.key);
+        if (!newDef || canonicalJson(def) !== canonicalJson(newDef)) {
+          throw new ConflictException(
+            `Input "${def.key}" changed shape since the seed run — cannot reuse it`,
+          );
+        }
+      }
+      for (const [key, value] of Object.entries(dto.inputs)) {
+        if (
+          key in (source.inputs as Record<string, unknown>) &&
+          canonicalJson(value) !== canonicalJson((source.inputs as Record<string, unknown>)[key])
+        ) {
+          throw new ConflictException(`Input "${key}" conflicts with the seed run's value`);
+        }
+      }
+      mergedInputs = { ...(source.inputs as Record<string, unknown>), ...dto.inputs };
+
+      const sourceRoles = RoleDefSchema.array().parse(sourceVersion.roles ?? []);
+      const newRoles = RoleDefSchema.array().parse(version.roles ?? []);
+      const newAssetBindings = await this.resolveAssetBindings(graph, dto.channelId);
+
+      const iteratingExecutionIds = source.stageExecutions
+        .filter((e) => e.isIterating)
+        .map((e) => e.id);
+      const nonPassedItemExecutionIds = new Set<string>();
+      if (iteratingExecutionIds.length > 0) {
+        const rows = await this.db
+          .select({ stageExecutionId: stageItem.stageExecutionId })
+          .from(stageItem)
+          .where(
+            and(
+              inArray(stageItem.stageExecutionId, iteratingExecutionIds),
+              sql`${stageItem.state} != 'passed'`,
+            ),
+          );
+        for (const row of rows) nonPassedItemExecutionIds.add(row.stageExecutionId);
+      }
+      const sourceExecutions: SourceExecutionSummary[] = source.stageExecutions.map((e) => ({
+        stageKey: e.stageKey,
+        state: e.state,
+        needsItemWork: nonPassedItemExecutionIds.has(e.id),
+      }));
+
+      const stageKeys = reusableStageKeys({
+        sourceGraph,
+        newGraph: graph,
+        sourceResolvedConfig: source.resolvedConfig as Record<string, ConfigLayer>,
+        sourceOverrides: (source.overrides ?? {}) as Record<string, ConfigLayer>,
+        newResolvedConfig: resolvedConfig,
+        sourceAssetBindings: source.assetBindings as Record<
+          string,
+          { blobId: string; kind: string }
+        >,
+        newAssetBindings,
+        sourceRoles,
+        newRoles,
+        sourceExecutions,
+        rerunStageKeys: dto.rerunStageKeys,
+      });
+      if (stageKeys.length > 0) seed = { sourceRunId: dto.seedFromRunId, stageKeys };
+    }
+
     await this.db.transaction(async (tx) => {
       await tx.insert(run).values({
         id: runId,
         channelId: dto.channelId,
         blueprintVersionId: dto.blueprintVersionId,
         state: 'CREATED',
-        inputs: dto.inputs,
+        inputs: mergedInputs,
         roleBindings: dto.roleBindings,
         resolvedConfig,
         dryRun: options?.dryRun ?? false,
         budgetCapUsd: fromUsd(dto.budgetCapUsd),
       });
 
-      for (const stage of graph) {
-        await tx.insert(stageExecution).values({
-          id: ulid(),
+      const newExecutionIdByKey = new Map<string, string>();
+      const reusedKeys = new Set(seed?.stageKeys ?? []);
+      for (const [index, stage] of graph.entries()) {
+        const id = ulid();
+        newExecutionIdByKey.set(stage.key, id);
+        const state = reusedKeys.has(stage.key)
+          ? 'passed'
+          : stopIndex !== undefined && index > stopIndex
+            ? 'skipped'
+            : 'pending';
+        await tx.insert(stageExecution).values({ id, runId, stageKey: stage.key, state });
+      }
+
+      if (seed) {
+        await copyReusedStages(tx, {
+          sourceRunId: seed.sourceRunId,
           runId,
-          stageKey: stage.key,
-          state: 'pending',
+          stageKeys: seed.stageKeys,
+          newExecutionIdByKey,
         });
       }
 
-      await this.runInputs.recordProvidedInputs(tx, runId, inputDefs, dto.inputs);
+      await this.runInputs.recordProvidedInputs(tx, runId, inputDefs, mergedInputs);
     });
     this.logger.log(
       {
@@ -375,7 +488,11 @@ export class RunService {
    * path. `startDryRun` just resolves `(blueprintId, version)` to the
    * `channelId`/`blueprintVersionId` pair `create()` needs, then reuses
    * `create()`/`start()` verbatim with `{dryRun: true}`. */
-  async startDryRun(blueprintId: string, version: number, budgetCapUsd = 1) {
+  async startDryRun(
+    blueprintId: string,
+    version: { major: number; minor: number },
+    budgetCapUsd = 1,
+  ) {
     const [blueprintRow] = await this.db
       .select({ channelId: blueprint.channelId })
       .from(blueprint)
@@ -387,11 +504,18 @@ export class RunService {
       .select({ id: blueprintVersion.id })
       .from(blueprintVersion)
       .where(
-        and(eq(blueprintVersion.blueprintId, blueprintId), eq(blueprintVersion.version, version)),
+        and(
+          eq(blueprintVersion.blueprintId, blueprintId),
+          eq(blueprintVersion.major, version.major),
+          eq(blueprintVersion.minor, version.minor),
+          eq(blueprintVersion.draft, false),
+        ),
       )
       .limit(1);
     if (!versionRow) {
-      throw new NotFoundException(`Blueprint ${blueprintId} version ${version} not found`);
+      throw new NotFoundException(
+        `Blueprint ${blueprintId} version ${version.major}.${version.minor} not found`,
+      );
     }
 
     const created = await this.create(
@@ -401,6 +525,7 @@ export class RunService {
         inputs: {},
         roleBindings: {},
         budgetCapUsd,
+        rerunStageKeys: [],
       },
       { dryRun: true },
     );
@@ -792,8 +917,17 @@ export class RunService {
     return {
       id: row.id,
       kind: row.kind,
-      data: row.data,
+      // Subtitle cues are shown inline, so their (small) text rides along
+      // with the view rather than the browser fetching the presigned URL.
+      data:
+        row.kind === 'file.subtitles' && row.blobId
+          ? {
+              ...(row.data as object),
+              text: (await this.blobs.readText(ownerId, row.blobId, 256 * 1024)) ?? null,
+            }
+          : row.data,
       previewUrl: preview?.status === 'live' ? preview.url : null,
+      probe: (row.probe as Probe | null) ?? null,
       attachments: safeAttachments,
     };
   }
@@ -809,6 +943,7 @@ export class RunService {
   async list(query: ListRunsQueryDto) {
     const conditions = [
       query.includeDryRuns ? undefined : eq(run.dryRun, false),
+      query.includeDrafts ? undefined : eq(blueprintVersion.draft, false),
       query.channelId ? eq(run.channelId, query.channelId) : undefined,
       query.state ? eq(run.state, query.state) : undefined,
       query.blueprintId ? eq(blueprintVersion.blueprintId, query.blueprintId) : undefined,
@@ -823,9 +958,10 @@ export class RunService {
         blueprintId: blueprint.id,
         blueprintName: blueprint.name,
         blueprintVersionId: run.blueprintVersionId,
-        blueprintVersion: blueprintVersion.version,
+        blueprintVersion: sql<string>`${blueprintVersion.major} || '.' || ${blueprintVersion.minor}`,
         state: run.state,
         dryRun: run.dryRun,
+        draft: blueprintVersion.draft,
         budgetCapUsd: run.budgetCapUsd,
         spentUsd: run.spentUsd,
         startedAt: run.startedAt,
@@ -926,7 +1062,8 @@ export class RunService {
       if (!pin?.provider) continue;
       const modality = modalityForCapability(stage.capability);
       if (pin.provider === 'openrouter' && stage.output.kind !== 'data') continue;
-      if (pin.provider !== 'codex' && pin.provider !== 'openrouter') continue;
+      if (!PINNED_PROVIDERS.has(pin.provider)) continue;
+      const label = PROVIDER_LABELS[pin.provider];
       let model;
       try {
         model = (await this.providers.get(pin.provider).listModels()).find(
@@ -938,7 +1075,7 @@ export class RunService {
           'provider model discovery failed',
         );
         throw new ConflictException(
-          `RunService.start: ${pin.provider === 'codex' ? 'Codex' : 'OpenRouter'} model discovery failed: ${(error as Error).message}`,
+          `RunService.start: ${label} model discovery failed: ${(error as Error).message}`,
         );
       }
       if (pin.provider === 'openrouter') {
@@ -951,18 +1088,18 @@ export class RunService {
       }
       if (!model) {
         throw new ConflictException(
-          `RunService.start: Codex model "${String(pin.modelId)}" is unavailable`,
+          `RunService.start: ${label} model "${String(pin.modelId)}" is unavailable`,
         );
       }
       if (!model.modalities?.includes(modality)) {
         throw new ConflictException(
-          `RunService.start: Codex model "${model.modelId}" is unavailable for ${modality} stages`,
+          `RunService.start: ${model.unavailableModalities?.[modality] ?? `${label} model "${model.modelId}" is unavailable for ${modality} stages`}`,
         );
       }
       const effort = pin.params?.reasoningEffort;
       if (typeof effort !== 'string' || !model.supportedReasoningEfforts?.includes(effort)) {
         throw new ConflictException(
-          `RunService.start: reasoning effort "${String(effort)}" is unsupported by Codex model "${model.modelId}"`,
+          `RunService.start: reasoning effort "${String(effort)}" is unsupported by ${label} model "${model.modelId}"`,
         );
       }
     }

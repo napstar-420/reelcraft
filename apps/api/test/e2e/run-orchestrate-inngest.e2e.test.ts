@@ -86,6 +86,7 @@ describe('run.orchestrate (real Inngest steps, mocked stage.execute, e2e)', () =
       blueprintVersionId: version.id,
       inputs: {},
       roleBindings: {},
+      rerunStageKeys: [],
       budgetCapUsd: 10,
     });
   }

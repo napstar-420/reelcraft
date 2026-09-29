@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import { boolean, integer, jsonb, pgTable, text, timestamptz, uniqueIndex } from './pg-helpers';
 import { channel } from './channel';
 
@@ -19,6 +20,7 @@ export const blueprint = pgTable('blueprint', {
   tags: text('tags').array().notNull().default([]), // freeform labels for search/filtering
   currentVersionId: text('current_version_id'), // id of the blueprint_version currently active (see FK note above)
   archived: boolean('archived').notNull().default(false), // whether the blueprint is archived/hidden from active use
+  workingDraft: jsonb('working_draft'), // CreateBlueprintVersionDto: the canvas's autosaved unsaved edits; cleared on save
 });
 
 export const blueprintVersion = pgTable(
@@ -28,7 +30,8 @@ export const blueprintVersion = pgTable(
     blueprintId: text('blueprint_id')
       .notNull()
       .references(() => blueprint.id), // blueprint this version belongs to
-    version: integer('version').notNull(), // monotonically increasing version number for the blueprint
+    major: integer('major').notNull(), // major version: bumped by an explicit "Bump version"
+    minor: integer('minor').notNull(), // minor version: bumped by every Save, reset to 0 on a major bump
     graph: jsonb('graph').notNull(), // StageDef[]: the pipeline stage graph for this version
     inputs: jsonb('inputs').notNull().default([]), // InputDef[]: input parameters a run of this version accepts
     roles: jsonb('roles').notNull().default([]), // RoleDef[]; v1 permits 0 or 1 (§18.5)
@@ -38,6 +41,11 @@ export const blueprintVersion = pgTable(
     runnable: boolean('runnable').notNull().default(false), // whether this version has passed validation and can be run
     sourceTemplateId: text('source_template_id'), // template this version was generated from, if any
     createdAt: timestamptz('created_at').notNull().defaultNow(), // when this version was created
+    draft: boolean('draft').notNull().default(false), // canvas run snapshot of unsaved edits: not in version history, never current; major/minor = the saved version it was edited from
   },
-  (t) => [uniqueIndex('blueprint_version_blueprint_id_version_uq').on(t.blueprintId, t.version)],
+  (t) => [
+    uniqueIndex('blueprint_version_blueprint_id_major_minor_uq')
+      .on(t.blueprintId, t.major, t.minor)
+      .where(sql`draft = false`),
+  ],
 );
