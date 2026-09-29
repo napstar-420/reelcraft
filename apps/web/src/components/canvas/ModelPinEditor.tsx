@@ -2,10 +2,15 @@ import { useQuery } from '@tanstack/react-query';
 import { api } from '../../api/client';
 import { TypedValueInput } from './TypedValueInput';
 import { InfoHeading, InfoLabel } from './info-label';
-import { nextModelPinForModel } from './model-pin-editor.logic';
+import {
+  nextModelPinForModel,
+  nextModelPinForProvider,
+  reservedParams,
+} from './model-pin-editor.logic';
 import type { Modality, PartialModelPin } from '@reelcraft/shared';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Switch } from '@/components/ui/switch';
 import {
   Select,
   SelectContent,
@@ -113,7 +118,16 @@ export function ModelPinEditor({
   const compatibleModels = models.data?.filter(
     (model) => !modality || model.modalities.includes(modality),
   );
-  const selectedModel = compatibleModels?.find((model) => model.modelId === value?.modelId);
+  // Effort options come from the pinned model even while it is unavailable
+  // (e.g. ChatGPT signed out), so the pin stays editable.
+  const pinnedModel = models.data?.find((model) => model.modelId === value?.modelId);
+  const hasEffort = reservedParams(provider).includes('reasoningEffort');
+  const isChatgpt = provider === 'chatgpt';
+  const unavailableReason =
+    !!provider && models.data && compatibleModels?.length === 0
+      ? (models.data[0]?.unavailableModalities?.[modality ?? 'text'] ??
+        `This provider has no available ${modality ?? 'compatible'} models.`)
+      : undefined;
 
   function set(patch: Partial<PartialModelPin>) {
     onChange({ ...value, ...patch });
@@ -128,8 +142,7 @@ export function ModelPinEditor({
         <Select
           value={provider || UNSET}
           onValueChange={(next) => {
-            const nextProvider = next === UNSET ? undefined : next;
-            set({ provider: nextProvider, modelId: undefined, version: undefined });
+            onChange(nextModelPinForProvider(value, next === UNSET ? undefined : next));
           }}
         >
           <SelectTrigger size="sm" className="w-56">
@@ -146,44 +159,51 @@ export function ModelPinEditor({
         </Select>
       </div>
 
-      <div className="flex flex-col gap-1.5">
-        <InfoLabel info="The specific model id offered by the selected provider.">Model</InfoLabel>
-        <Select
-          value={value?.modelId || UNSET}
-          onValueChange={(next) => {
-            if (next === UNSET) return set({ modelId: undefined });
-            const model = compatibleModels?.find((candidate) => candidate.modelId === next);
-            if (model) {
-              onChange(nextModelPinForModel(value ?? { provider }, model));
-            } else {
-              set({ modelId: next });
-            }
-          }}
-          disabled={!provider}
-        >
-          <SelectTrigger size="sm" className="w-56">
-            <SelectValue placeholder="Select a model…" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={UNSET}>Select a model…</SelectItem>
-            {compatibleModels?.map((m) => (
-              <SelectItem key={m.modelId} value={m.modelId}>
-                {m.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        {!!provider && models.data && compatibleModels?.length === 0 && (
-          <p className="text-xs text-destructive">
-            {models.data[0]?.unavailableModalities?.[modality ?? 'text'] ??
-              `This provider has no available ${modality ?? 'compatible'} models.`}
-          </p>
-        )}
-      </div>
-
-      {provider === 'codex' ? (
+      {isChatgpt ? (
+        unavailableReason && <p className="text-xs text-destructive">{unavailableReason}</p>
+      ) : (
         <div className="flex flex-col gap-1.5">
-          <InfoLabel info="Reasoning effort supported by the selected Codex model.">
+          <InfoLabel info="The specific model id offered by the selected provider.">
+            Model
+          </InfoLabel>
+          <Select
+            value={value?.modelId || UNSET}
+            onValueChange={(next) => {
+              if (next === UNSET) return set({ modelId: undefined });
+              const model = compatibleModels?.find((candidate) => candidate.modelId === next);
+              if (model) {
+                onChange(nextModelPinForModel(value ?? { provider }, model));
+              } else {
+                set({ modelId: next });
+              }
+            }}
+            disabled={!provider}
+          >
+            <SelectTrigger size="sm" className="w-56">
+              <SelectValue placeholder="Select a model…" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={UNSET}>Select a model…</SelectItem>
+              {compatibleModels?.map((m) => (
+                <SelectItem key={m.modelId} value={m.modelId}>
+                  {m.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {unavailableReason && <p className="text-xs text-destructive">{unavailableReason}</p>}
+        </div>
+      )}
+
+      {hasEffort ? (
+        <div className="flex flex-col gap-1.5">
+          <InfoLabel
+            info={
+              isChatgpt
+                ? 'ChatGPT thinking effort, as in the ChatGPT model menu.'
+                : 'Reasoning effort supported by the selected Codex model.'
+            }
+          >
             Effort
           </InfoLabel>
           <Select
@@ -195,14 +215,14 @@ export function ModelPinEditor({
             onValueChange={(reasoningEffort) =>
               set({ params: { ...(value?.params ?? {}), reasoningEffort } })
             }
-            disabled={!selectedModel}
+            disabled={!pinnedModel}
           >
             <SelectTrigger size="sm" className="w-56">
               <SelectValue placeholder="Select effort…" />
             </SelectTrigger>
             <SelectContent>
-              {selectedModel?.supportedReasoningEfforts?.map((effort) => (
-                <SelectItem key={effort} value={effort}>
+              {pinnedModel?.supportedReasoningEfforts?.map((effort) => (
+                <SelectItem key={effort} value={effort} className="capitalize">
                   {effort}
                 </SelectItem>
               ))}
@@ -223,13 +243,29 @@ export function ModelPinEditor({
         </div>
       )}
 
+      {isChatgpt && (
+        <div className="flex items-center gap-2">
+          <Switch
+            size="sm"
+            aria-label="Web search"
+            checked={value?.params?.webSearch === true}
+            onCheckedChange={(webSearch) =>
+              set({ params: { ...(value?.params ?? {}), webSearch } })
+            }
+          />
+          <InfoLabel info="Turn on ChatGPT's Web search for this stage's prompt.">
+            Web search
+          </InfoLabel>
+        </div>
+      )}
+
       <div className="flex flex-col gap-1.5">
         <InfoHeading info="Extra provider-specific call parameters (e.g. max_tokens, temperature) merged into every request this stage — or its quality control pass — makes.">
           Params
         </InfoHeading>
         <ParamsEditor
           params={value?.params}
-          hiddenKeys={provider === 'codex' ? ['reasoningEffort'] : []}
+          hiddenKeys={reservedParams(provider)}
           onChange={(params) => set({ params })}
         />
       </div>

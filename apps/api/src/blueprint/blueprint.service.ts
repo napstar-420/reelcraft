@@ -16,7 +16,7 @@ import type { AssetLookup, CharacterLookup } from './validation-context';
 import { ConfigResolverService } from '../run-config/config-resolver.service';
 import { EngineConfig } from '../config/engine-config';
 import { engineDefaults } from '../run-config/engine-defaults';
-import { ProviderRegistry } from '../provider/provider.registry';
+import { PINNED_PROVIDERS, PROVIDER_LABELS, ProviderRegistry } from '../provider/provider.registry';
 import { modalityForCapability } from '../capability/modality-for-capability';
 import type { ModelInfo } from '../provider/provider-adapter.interface';
 
@@ -315,7 +315,8 @@ export class BlueprintService {
       if (!pin?.provider) continue;
       const modality = modalityForCapability(stage.capability);
       if (pin.provider === 'openrouter' && stage.output.kind !== 'data') continue;
-      if (pin.provider !== 'codex' && pin.provider !== 'openrouter') continue;
+      if (!PINNED_PROVIDERS.has(pin.provider)) continue;
+      const label = PROVIDER_LABELS[pin.provider];
       try {
         const model = (await this.providers.get(pin.provider).listModels()).find(
           (candidate) => candidate.modelId === pin.modelId,
@@ -334,13 +335,15 @@ export class BlueprintService {
         if (!model) {
           issues.push({
             path: `stages.${stage.key}.model.modelId`,
-            message: `Codex model "${String(pin.modelId)}" is not available for the authenticated CLI`,
+            message: `${label} model "${String(pin.modelId)}" is not available`,
             severity: 'error',
           });
         } else if (!model.modalities?.includes(modality)) {
           issues.push({
             path: `stages.${stage.key}.model.modelId`,
-            message: `Codex model "${model.modelId}" is unavailable for ${modality} stages`,
+            message:
+              model.unavailableModalities?.[modality] ??
+              `${label} model "${model.modelId}" is unavailable for ${modality} stages`,
             severity: 'error',
           });
         } else if (
@@ -349,7 +352,7 @@ export class BlueprintService {
         ) {
           issues.push({
             path: `stages.${stage.key}.model.params.reasoningEffort`,
-            message: `reasoning effort "${String(effort)}" is not supported by Codex model "${model.modelId}"`,
+            message: `reasoning effort "${String(effort)}" is not supported by ${label} model "${model.modelId}"`,
             severity: 'error',
           });
         }
@@ -360,7 +363,7 @@ export class BlueprintService {
         );
         issues.push({
           path: `stages.${stage.key}.model`,
-          message: `${pin.provider === 'codex' ? 'Codex' : 'OpenRouter'} model discovery failed: ${(error as Error).message}`,
+          message: `${label} model discovery failed: ${(error as Error).message}`,
           severity: 'error',
         });
       }

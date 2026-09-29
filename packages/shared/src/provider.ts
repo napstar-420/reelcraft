@@ -30,7 +30,9 @@ export const JobStatus = z.union([
     outcome: z.literal('failed'),
     reason: z.string(),
     retryable: z.boolean(),
-    failureClass: z.enum(['provider', 'infrastructure']).optional(),
+    // `user_action`: only the user can fix it (e.g. sign in); the engine fails the
+    // stage at once instead of spending retries on it.
+    failureClass: z.enum(['provider', 'infrastructure', 'user_action']).optional(),
   }),
 ]);
 export type JobStatus = z.infer<typeof JobStatus>;
