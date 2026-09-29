@@ -47,4 +47,12 @@ describe('formatOffset', () => {
     expect(formatOffset(250)).toBe('+250ms');
     expect(formatOffset(2500)).toBe('+2.5s');
   });
+
+  it('switches to minutes and hours past a minute, dropping zero units', () => {
+    expect(formatOffset(59_900)).toBe('+59.9s');
+    expect(formatOffset(171_600)).toBe('+2m 52s');
+    expect(formatOffset(120_000)).toBe('+2m');
+    expect(formatOffset(3_900_000)).toBe('+1h 5m');
+    expect(formatOffset(3_661_000)).toBe('+1h 1m 1s');
+  });
 });
