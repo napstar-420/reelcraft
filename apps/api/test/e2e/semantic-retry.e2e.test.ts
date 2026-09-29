@@ -239,7 +239,8 @@ describe('semantic retry loop (e2e)', () => {
       .select()
       .from(stageExecution)
       .where(eq(stageExecution.id, execution.id));
-    expect(executionRow?.state).toBe('pending'); // fetchAndFinalize never touches stage_execution here
+    // beginAttempt already flipped pending -> running; fetchAndFinalize never touches stage_execution on qc_failed
+    expect(executionRow?.state).toBe('running');
 
     const qcEntries = await testDb.db
       .select()
