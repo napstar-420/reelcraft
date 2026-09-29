@@ -30,6 +30,7 @@ describe('approval candidate DTO', () => {
           kind: 'text',
           data: { text: 'hello' },
           previewUrl: null,
+          probe: null,
           attachments: [],
         },
       }).attempt,
