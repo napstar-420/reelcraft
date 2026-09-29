@@ -163,6 +163,14 @@ export async function runStageAttemptLoop(
           runner.stopIfRunNotRunning(attemptCtx),
         );
         if (stoppedByCancel) return { outcome: 'run_not_running' as const };
+        if (status.failureClass === 'user_action') {
+          // Retrying can't help until the user acts (e.g. signs in) — fail
+          // now with the provider's message so it's the one they see.
+          await step.run(`fail-stage-user-action-${stageKey}`, () =>
+            runner.failStageExecution(stageExecutionId, status.reason, stageItemId),
+          );
+          return { outcome: 'failed' as const, reason: status.reason };
+        }
         if (status.failureClass === 'infrastructure') {
           await step.run(`record-infra-error-${stageKey}-${iteration}`, () =>
             runner.recordInfraError(attemptCtx, status.reason),

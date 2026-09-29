@@ -47,6 +47,22 @@ export class BlobService {
     return { status: 'live', url };
   }
 
+  /** Reads a small text blob (a subtitles file) for inline display;
+   * undefined when missing, collected, or larger than `maxBytes`. */
+  async readText(ownerId: string, blobId: string, maxBytes: number): Promise<string | undefined> {
+    const [row] = await this.db
+      .select()
+      .from(blob)
+      .where(and(eq(blob.id, blobId), eq(blob.ownerId, ownerId)))
+      .limit(1);
+    if (!row || row.deletedAt || row.bytes > maxBytes) return undefined;
+    const chunks: Buffer[] = [];
+    for await (const chunk of await this.storage.getStream(row.objectKey)) {
+      chunks.push(Buffer.from(chunk as Buffer));
+    }
+    return Buffer.concat(chunks).toString('utf8');
+  }
+
   /** Bounded/idempotent retention sweep. Deleting an already-removed object
    * is accepted by compatible S3 stores; the DB stamp is the durable truth. */
   async collectEligible(limit = 100): Promise<number> {

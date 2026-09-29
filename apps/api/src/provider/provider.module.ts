@@ -17,6 +17,8 @@ import { CodexJobLauncher } from './codex/codex-job-launcher';
 import { CodexProviderAdapter } from './codex/codex-provider.adapter';
 import { CodexRuntimeReadiness } from './codex/codex-runtime-readiness';
 import { CodexInputMaterializer } from './codex/codex-input-materializer';
+import { NeoClient } from './chatgpt/neo-client';
+import { ChatgptProviderAdapter } from './chatgpt/chatgpt-provider.adapter';
 
 @Module({
   imports: [DbModule, StorageModule],
@@ -34,6 +36,8 @@ import { CodexInputMaterializer } from './codex/codex-input-materializer';
     CodexJobLauncher,
     CodexRuntimeReadiness,
     CodexInputMaterializer,
+    NeoClient,
+    ChatgptProviderAdapter,
     {
       provide: CodexProviderAdapter,
       inject: [
@@ -61,6 +65,7 @@ import { CodexInputMaterializer } from './codex/codex-input-materializer';
     FalAdapter,
     DeepgramAdapter,
     CodexProviderAdapter,
+    ChatgptProviderAdapter,
   ],
 })
 export class ProviderModule implements OnModuleInit {
@@ -72,6 +77,7 @@ export class ProviderModule implements OnModuleInit {
     private readonly fal: FalAdapter,
     private readonly deepgram: DeepgramAdapter,
     private readonly codex: CodexProviderAdapter,
+    private readonly chatgpt: ChatgptProviderAdapter,
   ) {}
 
   onModuleInit(): void {
@@ -81,5 +87,6 @@ export class ProviderModule implements OnModuleInit {
     this.registry.register(this.fal);
     this.registry.register(this.deepgram);
     this.registry.register(this.codex);
+    this.registry.register(this.chatgpt);
   }
 }

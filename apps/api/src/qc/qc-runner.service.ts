@@ -16,10 +16,14 @@ export type QcOutcome =
   | { status: 'failed'; verdict: QcVerdict; costUsd: number }
   | { status: 'error'; reason: string; costUsd: number };
 
-/** Only meaningful in tests against `FakeProviderAdapter`; a real judge
- * call is a fast text completion and should resolve on the first poll. */
-const MAX_POLL_ATTEMPTS = 10;
-const POLL_INTERVAL_MS = 20;
+/** Same backoff sequence as the main attempt loop's `POLL_BACKOFF_SEC`
+ * (`stage-attempt-loop.ts`) — a real judge call goes through the same
+ * submit/poll provider adapter as the stage's own generation call and needs
+ * real round-trip time, not the ~200ms `FakeProviderAdapter` resolves on.
+ * ponytail: still an inline blocking poll (~50s ceiling) rather than
+ * `stage-attempt-loop.ts`'s durable per-poll steps — revisit with that same
+ * step-per-poll treatment if a judge model routinely needs longer. */
+const POLL_BACKOFF_SEC = [5, 15, 30];
 
 /**
  * §10 — runs a QC judge call against `ProviderRegistry` directly (not
@@ -84,15 +88,13 @@ export class QcRunner {
     );
 
     let status = await adapter.poll(handle);
-    let attempts = 0;
     // §13.3-class shortcut, same as stage-runner.service.ts's documented
-    // ExecCtx.config TODO: a QC judge call is a fast text call, so this
-    // polls a bounded number of times inline rather than its own
-    // step-per-poll loop. A slow judge model would need this revisited.
-    while (!status.done && attempts < MAX_POLL_ATTEMPTS) {
-      await sleep(POLL_INTERVAL_MS);
+    // ExecCtx.config TODO: this polls a bounded backoff sequence inline
+    // rather than its own step-per-poll loop (see the ponytail note above).
+    for (const backoffSec of POLL_BACKOFF_SEC) {
+      if (status.done) break;
+      await sleep(backoffSec * 1000);
       status = await adapter.poll(handle);
-      attempts += 1;
     }
 
     if (!status.done) {

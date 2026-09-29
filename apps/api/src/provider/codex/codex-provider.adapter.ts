@@ -14,7 +14,7 @@ import type { EngineConfig } from '../../config/engine-config';
 import { buildCodexPrompt, strictJsonSchema } from './codex-command';
 import type { CodexAppServerClient, CodexModel } from './codex-app-server.client';
 import type { CodexJobLauncher } from './codex-job-launcher';
-import { timelineOutputSchema } from './codex-output-schema';
+import { timelineOutputSchema } from '../timeline-output-schema';
 import type { CodexRuntimeReadiness } from './codex-runtime-readiness';
 import type { CodexInputMaterializer } from './codex-input-materializer';
 

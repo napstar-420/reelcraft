@@ -2,22 +2,39 @@ import type { ArtifactViewDto } from '@reelcraft/shared';
 import { Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { approvalCandidateView } from '@/pages/approval-review.logic';
+import { CopyButton } from './artifact-views/copy-button';
+import { DataView } from './artifact-views/data-view';
+import { MediaView } from './artifact-views/media-view';
+import { SubtitlesView } from './artifact-views/subtitles-view';
+import { TimelineView } from './artifact-views/timeline-view';
+import { isTimeline } from './artifact-views/timeline-view.logic';
 
 export function ArtifactPreview({ artifact }: { artifact: ArtifactViewDto }) {
   const view = approvalCandidateView(artifact.kind, artifact.data, artifact.previewUrl);
   return (
     <div className="flex flex-col gap-4">
       <div className="overflow-hidden rounded-lg border bg-muted/20">
-        {view.kind === 'text' || view.kind === 'json' ? (
-          <pre className="max-h-[50vh] overflow-auto whitespace-pre-wrap break-words p-4 text-sm">
+        {artifact.kind === 'data' ? (
+          <DataView data={artifact.data} />
+        ) : artifact.kind === 'timeline' && isTimeline(artifact.data) ? (
+          <TimelineView timeline={artifact.data} />
+        ) : artifact.kind === 'file.subtitles' ? (
+          <SubtitlesView data={artifact.data} url={artifact.previewUrl} />
+        ) : view.kind === 'text' ? (
+          <div>
+            <div className="flex justify-end border-b px-2 py-1">
+              <CopyButton text={view.text} />
+            </div>
+            <pre className="max-h-[50vh] overflow-auto whitespace-pre-wrap wrap-anywhere p-4 text-sm">
+              {view.text}
+            </pre>
+          </div>
+        ) : view.kind === 'json' ? (
+          <pre className="max-h-[50vh] overflow-auto whitespace-pre-wrap wrap-anywhere p-4 text-sm">
             {view.text}
           </pre>
-        ) : view.kind === 'image' ? (
-          <img src={view.url} alt="Stage output" className="max-h-[50vh] w-full object-contain" />
-        ) : view.kind === 'video' ? (
-          <video src={view.url} controls className="max-h-[50vh] w-full" />
-        ) : view.kind === 'audio' ? (
-          <audio src={view.url} controls className="m-4 w-[calc(100%-2rem)]" />
+        ) : view.kind === 'image' || view.kind === 'video' || view.kind === 'audio' ? (
+          <MediaView artifact={artifact} url={view.url} />
         ) : view.kind === 'download' ? (
           <Button variant="link" asChild className="m-2">
             <a href={view.url} target="_blank" rel="noreferrer">

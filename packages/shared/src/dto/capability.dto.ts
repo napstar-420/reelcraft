@@ -35,7 +35,9 @@ export const ModelInfoDto = z.object({
   providerId: z.string(),
   modelId: z.string(),
   label: z.string(),
-  modalities: z.array(Modality).min(1),
+  // Empty when the provider is temporarily unusable (e.g. ChatGPT signed out);
+  // `unavailableModalities` then says why.
+  modalities: z.array(Modality),
   unavailableModalities: z.record(Modality, z.string()).optional(),
   supportedReasoningEfforts: z.array(z.string()).optional(),
   defaultReasoningEffort: z.string().optional(),

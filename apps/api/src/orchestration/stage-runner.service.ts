@@ -207,6 +207,16 @@ export class StageRunnerService {
       .set({ startedAt: sql`coalesce(${stageExecution.startedAt}, now())` })
       .where(eq(stageExecution.id, ctx.stageExecutionId));
 
+    // The UI's only signal that a stage is actively executing (as opposed
+    // to not started yet) — flip 'pending' -> 'running' here, once. Scoped
+    // to 'pending' so a replayed step, a retry, or an item-mode attempt that
+    // finds the stage already in some other state (e.g. 'awaiting_approval'
+    // from a sibling item) never clobbers it.
+    await this.db
+      .update(stageExecution)
+      .set({ state: 'running' })
+      .where(and(eq(stageExecution.id, ctx.stageExecutionId), eq(stageExecution.state, 'pending')));
+
     // phase 7 chunk 4 — an item's first attempt (and every retry of it)
     // marks the stage_item 'running'. Idempotent to repeat on a replayed
     // step or a resumed retry of a previously-'failed' item.
