@@ -8,6 +8,7 @@ import { api } from '@/api/client';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/components/ui/status-badge';
+import { ApprovalReviewSheet } from '@/components/runs/approval-review-sheet';
 import { ArtifactPreview } from '@/components/runs/artifact-preview';
 import { StageOutputSheet } from '@/components/runs/stage-output-sheet';
 import { StageAttemptsSheet } from '@/components/runs/stage-attempts-sheet';
@@ -60,6 +61,7 @@ export function CanvasRunPanel({
   const queryClient = useQueryClient();
   const [outputSheetKey, setOutputSheetKey] = useState<string | null>(null);
   const [attemptsSheetKey, setAttemptsSheetKey] = useState<string | null>(null);
+  const [approvalStageKey, setApprovalStageKey] = useState<string | null>(null);
   const reusedKeys = useReusedStageKeys(run?.id, run?.stageExecutions.map((e) => e.stageKey) ?? []);
   const stageLabel = (stageKey: string) => graph.find((s) => s.key === stageKey)?.label ?? stageKey;
 
@@ -197,6 +199,11 @@ export function CanvasRunPanel({
                   Reused
                 </Badge>
               )}
+              {run.state === 'PAUSED_APPROVAL' && run.cursorStageKey === stage.key && (
+                <Button size="sm" onClick={() => setApprovalStageKey(stage.key)}>
+                  Review output
+                </Button>
+              )}
               <Button
                 size="icon"
                 variant="ghost"
@@ -256,6 +263,12 @@ export function CanvasRunPanel({
         )}
         open={attemptsSheetKey !== null}
         onOpenChange={(open) => !open && setAttemptsSheetKey(null)}
+      />
+      <ApprovalReviewSheet
+        runId={run.id}
+        stageKey={approvalStageKey}
+        open={approvalStageKey !== null}
+        onOpenChange={(open) => !open && setApprovalStageKey(null)}
       />
     </div>
   );
