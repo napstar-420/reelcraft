@@ -80,7 +80,9 @@ export class QcRunner {
       {
         modality: 'text',
         modelId: args.judge.modelId,
-        params,
+        params: args.envelope.media
+          ? { ...params, slots: { qcArtifact: { sourceKey: args.envelope.media.sourceKey } } }
+          : params,
         renderedPrompt: prompt.user,
         system: prompt.system,
       },

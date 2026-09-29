@@ -79,6 +79,17 @@ describe('buildQcEnvelope', () => {
     expect(envelope.transcript).toBe('SENTINEL_TRANSCRIPT');
   });
 
+  it('includes media only when provided, copied field-by-field', () => {
+    const withoutMedia = buildQcEnvelope(baseSource);
+    expect('media' in withoutMedia).toBe(false);
+
+    const withMedia = buildQcEnvelope({
+      ...baseSource,
+      media: { sourceKey: 'SENTINEL_SOURCE_KEY', mime: 'image/png' },
+    });
+    expect(withMedia.media).toEqual({ sourceKey: 'SENTINEL_SOURCE_KEY', mime: 'image/png' });
+  });
+
   it("defensively copies slots/context rather than aliasing the caller's objects", () => {
     const slots = { topic: 'original' };
     const envelope = buildQcEnvelope({ ...baseSource, includeInputs: true, slots });

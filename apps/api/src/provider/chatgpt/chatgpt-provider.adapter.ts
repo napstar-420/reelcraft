@@ -84,6 +84,13 @@ export class ChatgptProviderAdapter implements ProviderAdapter {
   private readiness?: { expiresAt: number; value: Promise<Readiness> } | undefined;
   /** externalId → when an image reply first looked finished without an image. */
   private readonly imagelessSince = new Map<string, number>();
+  /**
+   * externalId → in-flight/completed fetch(). `fetch()` closes the Neo tab
+   * as a side effect, so a second call for the same handle (an Inngest step
+   * retry after fetchAndFinalize's post-fetch DB/storage writes throw) must
+   * not re-touch the now-closed page — it replays the first call's result.
+   */
+  private readonly fetchResults = new Map<string, Promise<ProviderResult>>();
 
   constructor(
     private readonly neo: NeoClient,
@@ -126,7 +133,11 @@ export class ChatgptProviderAdapter implements ProviderAdapter {
         `Unsupported ChatGPT effort "${String(effort)}"; use one of ${EFFORTS.join(', ')}`,
       );
     }
-    const references = modality === 'image' ? await this.loadReferences(req.params.slots) : [];
+    // Loaded for both modalities: an image-generation stage attaches source
+    // images to steer the result, and a text-modality QC judge attaches the
+    // artifact under review so a vision-capable judge can actually see it
+    // (§10.3 — "Image: the image, to a vision model").
+    const references = await this.loadReferences(req.params.slots);
     const pastedPrompt = buildChatgptPrompt({
       system: req.system,
       renderedPrompt: req.renderedPrompt,
@@ -227,6 +238,15 @@ export class ChatgptProviderAdapter implements ProviderAdapter {
   }
 
   async fetch(handle: JobHandle): Promise<ProviderResult> {
+    const cached = this.fetchResults.get(handle.externalId);
+    if (cached) return cached;
+    const promise = this.doFetch(handle);
+    this.fetchResults.set(handle.externalId, promise);
+    promise.catch(() => this.fetchResults.delete(handle.externalId));
+    return promise;
+  }
+
+  private async doFetch(handle: JobHandle): Promise<ProviderResult> {
     const job = this.job(handle);
     if (!job) throw new Error(CHATGPT_SIGN_IN_MESSAGE);
     try {

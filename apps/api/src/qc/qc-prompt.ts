@@ -12,6 +12,9 @@ export function buildQcPrompt(envelope: QcEnvelope): { system: string; user: str
           .join(', ')}.`
       : 'Provide a single overall score from 0-100.',
     'Respond with JSON only, matching: {"dimensions"?: [{"key": string, "score": number, "critique"?: string}], "score"?: number, "critique": string}.',
+    ...(envelope.media
+      ? ['The artifact image is attached to this message — evaluate it directly.']
+      : []),
   ].join('\n');
 
   const userPayload: Record<string, unknown> = {

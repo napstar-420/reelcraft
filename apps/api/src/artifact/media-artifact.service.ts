@@ -43,7 +43,7 @@ export class MediaArtifactService {
     channelId: string;
     runId: string;
     source: MediaSource;
-  }): Promise<{ blobId: string; probe: Probe }> {
+  }): Promise<{ blobId: string; probe: Probe; storageKey: string }> {
     const blobId = ulid();
     const mime = input.source.mime ?? this.defaultMime(input.source.kind);
     return this.workspaces.withWorkspace(input.runId, async (workspace) => {
@@ -110,7 +110,7 @@ export class MediaArtifactService {
         },
         'media blob stored',
       );
-      return { blobId, probe };
+      return { blobId, probe, storageKey: key };
     });
   }
 

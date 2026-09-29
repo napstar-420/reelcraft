@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import type { ProviderAdapter, ProviderRequest } from '../provider/provider-adapter.interface';
 import { ProviderRegistry } from '../provider/provider.registry';
 import { FakeProviderAdapter } from '../provider/fake/fake-provider.adapter';
 import { QcRunner } from './qc-runner.service';
@@ -149,5 +150,52 @@ describe('QcRunner', () => {
       idempotencyKey: `${stageKey}:qc`,
     });
     expect(correctOutcome.status).toBe('passed');
+  });
+
+  it('attaches the artifact image via params.slots when the envelope carries media (§10.3)', async () => {
+    const registry = new ProviderRegistry();
+    const submit = vi.fn(async (_req: ProviderRequest, _idempotencyKey: string) => ({
+      providerId: 'stub-vision',
+      externalId: 'job-1',
+      payload: {},
+    }));
+    const stub: ProviderAdapter = {
+      id: 'stub-vision',
+      modalities: ['text'],
+      listModels: async () => [],
+      estimate: async () => ({ expectedUsd: 0, ceilingUsd: 0, basis: 'configured_ceiling' }),
+      submit,
+      poll: async () => ({ done: true, outcome: 'succeeded' }),
+      fetch: async () => ({
+        output: JSON.stringify({ score: 90, critique: 'Looks right.' }),
+        costUsd: 0,
+        repro: { level: 'none' },
+        rawResponse: {},
+      }),
+      cancel: async () => ({ confirmed: true }),
+    };
+    registry.register(stub);
+    const runner = new QcRunner(registry);
+
+    const mediaEnvelope = buildQcEnvelope({
+      criteria: 'Is this a lighthouse at sunset?',
+      artifactKind: 'media.image',
+      artifactData: undefined,
+      includeInputs: false,
+      media: { sourceKey: 'run/abc/blob-1.png', mime: 'image/png' },
+    });
+
+    const outcome = await runner.run({
+      envelope: mediaEnvelope,
+      judge: { provider: 'stub-vision', modelId: 'stub', params: {} },
+      threshold: 70,
+      idempotencyKey: 'qc-media-1',
+    });
+
+    expect(outcome.status).toBe('passed');
+    const [request] = submit.mock.calls[0]!;
+    expect(request.params).toMatchObject({
+      slots: { qcArtifact: { sourceKey: 'run/abc/blob-1.png' } },
+    });
   });
 });

@@ -1001,12 +1001,17 @@ export class StageRunnerService {
         }
       }
 
+      const qcMedia =
+        stage.output.kind === 'media.image' && persistedMedia
+          ? { sourceKey: persistedMedia.storageKey, mime: mediaOutput?.mime ?? 'image/png' }
+          : undefined;
       const qcOutcome = await this.runQcWithRetries(
         stage.qc,
         effective.qc,
         ctx,
         checkArtifact,
         bindings,
+        qcMedia,
       );
 
       if (qcOutcome.status === 'error') {
@@ -1172,6 +1177,7 @@ export class StageRunnerService {
     ctx: StageAttemptContext,
     artifact: CheckArtifact,
     bindings: ResolvedBindings,
+    media: { sourceKey: string; mime: string } | undefined,
   ): Promise<QcOutcome> {
     const envelope = buildQcEnvelope({
       criteria: qcDef.criteria,
@@ -1182,6 +1188,7 @@ export class StageRunnerService {
       includeInputs: qcDef.includeInputs,
       slots: bindings.slots,
       context: bindings.context,
+      ...(media !== undefined && { media }),
     });
 
     const maxAttempts = 1 + this.engineConfig.qcErrorRetries;

@@ -226,6 +226,15 @@ describe('ChatgptProviderAdapter.fetch', () => {
     expect(closed()).toBe(1);
   });
 
+  it('replays the same result for a second fetch() on the same handle instead of re-reading the closed tab', async () => {
+    const { adapter, closed } = fixture(['Headline here.\nDONE']);
+    const handle = job();
+    const first = await adapter.fetch(handle);
+    const second = await adapter.fetch(handle);
+    expect(second).toBe(first);
+    expect(closed()).toBe(1);
+  });
+
   it('parses JSON replies for data output, tolerating code fences', async () => {
     const { adapter } = fixture(['```json\n{"title":"x"}\n```']);
     const result = await adapter.fetch(job({ outputKind: 'data' }));

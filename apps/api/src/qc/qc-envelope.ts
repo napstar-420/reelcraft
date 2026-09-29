@@ -15,6 +15,11 @@ export interface QcEnvelope {
   inputs?: { slots: Record<string, unknown>; context: Record<string, unknown> };
   /** Audio only, phase 5 — `qc.media.includeTranscript`. */
   transcript?: string;
+  /** §10.3 — image artifacts only: "the image, to a vision model". The
+   * storage key of the persisted blob, resolved into an actual attachment
+   * by the judge's provider adapter (never inlined as base64 here — the
+   * envelope stays a small, loggable object). */
+  media?: { sourceKey: string; mime: string };
 }
 
 export interface QcEnvelopeSource {
@@ -27,6 +32,7 @@ export interface QcEnvelopeSource {
   slots?: Record<string, unknown>;
   context?: Record<string, unknown>;
   transcript?: string;
+  media?: { sourceKey: string; mime: string };
 }
 
 /**
@@ -59,6 +65,9 @@ export function buildQcEnvelope(source: QcEnvelopeSource): QcEnvelope {
   }
   if (source.transcript !== undefined) {
     envelope.transcript = source.transcript;
+  }
+  if (source.media !== undefined) {
+    envelope.media = { sourceKey: source.media.sourceKey, mime: source.media.mime };
   }
   return envelope;
 }
