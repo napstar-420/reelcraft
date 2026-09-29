@@ -1,10 +1,16 @@
 import { createHash } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
-import { and, asc, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
-import type { HumanWaitKind, JobHandle, JobStatus, QcDef, Ref } from '@reelcraft/shared';
-import { StageDef } from '@reelcraft/shared';
-import { CONSUMES_SEMANTIC_ATTEMPT } from './attempt-outcome';
-import { DRIZZLE, type Db } from '../db/drizzle.provider';
+import { and, asc, eq, gt, inArray, isNull, lt, sql } from 'drizzle-orm';
+import type {
+  AttemptOutcome,
+  HumanWaitKind,
+  JobHandle,
+  JobStatus,
+  QcDef,
+  Ref,
+} from '@reelcraft/shared';
+import { StageDef, approvalModeOf } from '@reelcraft/shared';
+import { DRIZZLE, type Db, type Tx } from '../db/drizzle.provider';
 import {
   run,
   blueprintVersion,
@@ -57,8 +63,8 @@ export interface StageAttemptContext {
   itemIndex?: number | undefined;
   /** phase 7 chunk 4 — the `stage_item` row this attempt belongs to, set
    * together with `itemIndex`. Threads through to every attempt-scoped
-   * query (`beginAttempt`'s own predicate, `countSemanticAttemptsUsed`,
-   * `countInfraAttemptsUsed`, `loadCritiqueLog`, `failStageExecution` via
+   * query (`beginAttempt`'s own predicate, `countRoundAttempts`,
+   * `loadCritiqueLog`, `failStageExecution` via
    * `recordFailure`) so an item's attempts never mix with the stage's own
    * (non-item) attempts or another item's. */
   stageItemId?: string | undefined;
@@ -71,8 +77,9 @@ export interface StageContext {
 }
 
 /** §7/§9/§10 — everything past the fetch that can end a stage attempt
- * without a thrown exception. `check_failed`/`qc_failed` are semantic
- * (consume a retry, §3.8.1); `qc_error` is terminal regardless of remaining
+ * without a thrown exception. `check_failed`/`qc_failed` regenerate with
+ * feedback, capped by `checkMaxAttempts`/`qc.maxAttempts` (never
+ * `retryLimit`); `qc_error` is terminal regardless of remaining
  * `retryLimit` (an interpretation of §10.4 — a judge that can't produce a
  * verdict after `qcErrorRetries` attempts isn't something re-prompting the
  * generating stage can fix). */
@@ -269,61 +276,44 @@ export class StageRunnerService {
     }
   }
 
-  /** §3.8.1/§11 — replaces a raw `attemptNo` comparison as the source of
-   * "semantic attempts used so far". `budget_blocked` breaks the old
-   * invariant that `attemptNo` itself equals that count (every prior
-   * looping outcome was in `CONSUMES_SEMANTIC_ATTEMPT`; `budget_blocked`
-   * must also loop, after a resume, without consuming a retry). Called
-   * BEFORE the current attempt runs, so it reflects attempts used prior to
-   * this one — the same semantics `stage-execute.fn.ts`'s prior
-   * `attemptNo >= retryLimit + 1` check had for every outcome that isn't
-   * `budget_blocked`. */
-  async countSemanticAttemptsUsed(stageExecutionId: string, stageItemId?: string): Promise<number> {
+  /** Attempts with one of `outcomes` in the stage's (or item's) CURRENT
+   * round — the source for every retry cap (`retryLimit` via
+   * `CONSUMES_RETRY_LIMIT`, `qc.maxAttempts`, `checkMaxAttempts`, infra).
+   * A round starts over after a human rejection of this scope's output
+   * (attempts after the latest `rejected` row) and after any invalidation —
+   * manual retry or a routed rejection — which clears
+   * `stage_execution.startedAt` for `beginAttempt` to restamp. Without that
+   * reset a manually retried stage would inherit an already-spent cap and
+   * fail on its first rejection. */
+  async countRoundAttempts(
+    stageExecutionId: string,
+    outcomes: readonly AttemptOutcome[],
+    stageItemId?: string,
+  ): Promise<number> {
     const scopePredicate = stageItemId
       ? eq(stageAttempt.stageItemId, stageItemId)
       : isNull(stageAttempt.stageItemId);
-    const [execution] = await this.db
-      .select({ runId: stageExecution.runId, stageKey: stageExecution.stageKey })
-      .from(stageExecution)
-      .where(eq(stageExecution.id, stageExecutionId))
-      .limit(1);
-    if (!execution) throw new Error(`Stage execution ${stageExecutionId} not found`);
-    const [row] = await this.db
-      .select({ count: sql<number>`count(*)::int` })
+    const [lastRejection] = await this.db
+      .select({ attemptNo: sql<number>`coalesce(max(${stageAttempt.attemptNo}), 0)::int` })
       .from(stageAttempt)
       .where(
         and(
           eq(stageAttempt.stageExecutionId, stageExecutionId),
           scopePredicate,
-          inArray(stageAttempt.outcome, [...CONSUMES_SEMANTIC_ATTEMPT]),
+          eq(stageAttempt.outcome, 'rejected'),
         ),
       );
-    const [routed] = await this.db
+    const [row] = await this.db
       .select({ count: sql<number>`count(*)::int` })
       .from(stageAttempt)
       .innerJoin(stageExecution, eq(stageAttempt.stageExecutionId, stageExecution.id))
       .where(
         and(
-          eq(stageExecution.runId, execution.runId),
-          eq(stageAttempt.outcome, 'rejected'),
-          eq(stageAttempt.critiqueTargetStageKey, execution.stageKey),
-        ),
-      );
-    return (row?.count ?? 0) + (routed?.count ?? 0);
-  }
-
-  async countInfraAttemptsUsed(stageExecutionId: string, stageItemId?: string): Promise<number> {
-    const scopePredicate = stageItemId
-      ? eq(stageAttempt.stageItemId, stageItemId)
-      : isNull(stageAttempt.stageItemId);
-    const [row] = await this.db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(stageAttempt)
-      .where(
-        and(
           eq(stageAttempt.stageExecutionId, stageExecutionId),
           scopePredicate,
-          eq(stageAttempt.outcome, 'infra_error'),
+          inArray(stageAttempt.outcome, [...outcomes]),
+          gt(stageAttempt.attemptNo, lastRejection?.attemptNo ?? 0),
+          sql`(${stageExecution.startedAt} is null or ${stageAttempt.createdAt} >= ${stageExecution.startedAt})`,
         ),
       );
     return row?.count ?? 0;
@@ -449,14 +439,13 @@ export class StageRunnerService {
     for (const row of rows) {
       if (row.outcome === 'check_failed') {
         const results = (row.checkResults as CheckResult[] | null) ?? [];
-        const summary = results
+        const failed = results
           .filter((r) => !r.pass)
-          .map((r) => r.message ?? r.name)
-          .join('; ');
-        lines.push(`Attempt ${row.attemptNo} failed: ${summary}`);
+          .map((r) => `- ${r.name}${r.message ? `: ${r.message}` : ''}`);
+        lines.push(`Attempt ${row.attemptNo} failed these checks:\n${failed.join('\n')}`);
       } else if (row.outcome === 'qc_failed') {
         const verdict = row.qcVerdict as QcVerdict | null;
-        lines.push(`Attempt ${row.attemptNo} failed QC: ${verdict?.critique ?? ''}`);
+        lines.push(`Attempt ${row.attemptNo} was rejected by QC: ${verdict?.critique ?? ''}`);
       }
     }
     const routed = await this.db
@@ -472,7 +461,9 @@ export class StageRunnerService {
       )
       .orderBy(asc(stageAttempt.createdAt));
     for (const rejection of routed) {
-      lines.push(`Human rejection: ${rejection.reviewNote ?? 'No note provided'}`);
+      lines.push(
+        `A human reviewer rejected the output: ${rejection.reviewNote ?? 'No note provided'}`,
+      );
     }
     return lines.join('\n');
   }
@@ -1071,48 +1062,7 @@ export class StageRunnerService {
       }
 
       if (stage.approval) {
-        await tx
-          .update(stageAttempt)
-          .set({ outcome: 'awaiting_approval', phase: 'awaiting_approval', checkResults })
-          .where(eq(stageAttempt.id, ctx.stageAttemptId));
-
-        if (stage.approval.mode === 'stage') {
-          await tx
-            .update(stageExecution)
-            .set({ state: 'awaiting_approval' })
-            .where(eq(stageExecution.id, ctx.stageExecutionId));
-          await this.humanWaits.open(tx, {
-            runId: ctx.runId,
-            stageExecutionId: ctx.stageExecutionId,
-            kind: 'approval',
-          });
-        } else {
-          // phase 7 chunk 6 — item-mode approval: the pause is scoped to
-          // this ONE item. `stage_execution` is deliberately left alone
-          // (still 'running') — the outer per-item loop only flips it to
-          // 'passed' once every item has, via `finishIteratingStage`
-          // (Locked Decision 5/6), so it must not read `awaiting_approval`
-          // while sibling items may still be pending or already passed.
-          // `stage.execute.item`'s caller always runs this attempt with an
-          // item-scoped `stageItemId` (the blueprint validator already
-          // requires `approval.mode:'item'` to imply `stage.iterate`), so
-          // this is a defensive assertion, not a real branch in practice.
-          if (!ctx.stageItemId) {
-            throw new Error(
-              'StageRunnerService: item-mode approval requires an item-scoped attempt (stageItemId missing)',
-            );
-          }
-          await tx
-            .update(stageItem)
-            .set({ state: 'awaiting_approval' })
-            .where(eq(stageItem.id, ctx.stageItemId));
-          await this.humanWaits.open(tx, {
-            runId: ctx.runId,
-            stageExecutionId: ctx.stageExecutionId,
-            stageItemId: ctx.stageItemId,
-            kind: 'approval',
-          });
-        }
+        await this.openApprovalGate(tx, stage, ctx, checkResults);
         return { outcome: 'approval_required' as const, artifactId };
       }
 
@@ -1163,6 +1113,100 @@ export class StageRunnerService {
       await this.finishAttempt(ctx, 'info', 'success', 'Attempt succeeded');
     }
     return finalized;
+  }
+
+  /** Parks the attempt's (not yet finalized) artifact behind a human
+   * approval gate — for a stage's own `approval`, and for QC hand-off. */
+  private async openApprovalGate(
+    tx: Tx,
+    stage: StageDef,
+    ctx: StageAttemptContext,
+    checkResults?: CheckResult[],
+  ): Promise<void> {
+    await tx
+      .update(stageAttempt)
+      .set({
+        outcome: 'awaiting_approval',
+        phase: 'awaiting_approval',
+        ...(checkResults && { checkResults }),
+      })
+      .where(eq(stageAttempt.id, ctx.stageAttemptId));
+
+    if (approvalModeOf(stage) === 'stage') {
+      await tx
+        .update(stageExecution)
+        .set({ state: 'awaiting_approval' })
+        .where(eq(stageExecution.id, ctx.stageExecutionId));
+      await this.humanWaits.open(tx, {
+        runId: ctx.runId,
+        stageExecutionId: ctx.stageExecutionId,
+        kind: 'approval',
+      });
+      return;
+    }
+    // phase 7 chunk 6 — item-mode approval: the pause is scoped to this ONE
+    // item. `stage_execution` is deliberately left alone (still 'running') —
+    // the outer per-item loop only flips it to 'passed' once every item has,
+    // via `finishIteratingStage` (Locked Decision 5/6), so it must not read
+    // `awaiting_approval` while sibling items may still be pending or
+    // already passed. Item mode implies `stage.iterate`, whose attempts
+    // always carry a `stageItemId` — a defensive assertion, not a real branch.
+    if (!ctx.stageItemId) {
+      throw new Error(
+        'StageRunnerService: item-mode approval requires an item-scoped attempt (stageItemId missing)',
+      );
+    }
+    await tx
+      .update(stageItem)
+      .set({ state: 'awaiting_approval' })
+      .where(eq(stageItem.id, ctx.stageItemId));
+    await this.humanWaits.open(tx, {
+      runId: ctx.runId,
+      stageExecutionId: ctx.stageExecutionId,
+      stageItemId: ctx.stageItemId,
+      kind: 'approval',
+    });
+  }
+
+  /** `qc.onExhausted: 'human_review'` — QC spent `maxAttempts` without a
+   * pass, so instead of failing, the last QC-rejected output goes to a
+   * human who approves it as-is or rejects it (uncapped) with a note that
+   * becomes the next attempt's feedback. */
+  async handOffForReview(
+    stage: StageDef,
+    ctx: StageAttemptContext,
+  ): Promise<
+    { outcome: 'approval_required'; artifactId: string } | { outcome: 'run_not_running' }
+  > {
+    const result = await this.db.transaction(async (tx) => {
+      const [lockedRun] = await tx
+        .select({ state: run.state })
+        .from(run)
+        .where(eq(run.id, ctx.runId))
+        .for('update');
+      if (!lockedRun || (lockedRun.state !== 'RUNNING' && lockedRun.state !== 'PAUSED_MANUAL')) {
+        return { outcome: 'run_not_running' as const };
+      }
+      const [attempt] = await tx
+        .select({ artifactId: stageAttempt.artifactId })
+        .from(stageAttempt)
+        .where(eq(stageAttempt.id, ctx.stageAttemptId))
+        .limit(1);
+      if (!attempt?.artifactId) {
+        throw new Error(`StageRunnerService: attempt ${ctx.stageAttemptId} has no artifact`);
+      }
+      await this.openApprovalGate(tx, stage, ctx);
+      return { outcome: 'approval_required' as const, artifactId: attempt.artifactId };
+    });
+    if (result.outcome === 'approval_required') {
+      await this.events.record(
+        ctx,
+        'warn',
+        'qc.handoff',
+        'QC attempts exhausted; output handed to a human for review',
+      );
+    }
+    return result;
   }
 
   /** §10.4 — retried up to `qcErrorRetries` times on `status:'error'` (the

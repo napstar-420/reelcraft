@@ -20,6 +20,18 @@ export function stageLogLines(
   return scoped.map((event) => ({ ...event, offsetMs: Date.parse(event.createdAt) - start }));
 }
 
+/** `+250ms`, `+2.5s`, then whole units past a minute: `+2m 51s`, `+1h 5m`. */
 export function formatOffset(ms: number): string {
-  return ms < 1000 ? `+${ms}ms` : `+${(ms / 1000).toFixed(1)}s`;
+  if (ms < 1000) return `+${ms}ms`;
+  if (ms < 60_000) return `+${(ms / 1000).toFixed(1)}s`;
+  const total = Math.round(ms / 1000);
+  const parts = [
+    [Math.floor(total / 3600), 'h'],
+    [Math.floor((total % 3600) / 60), 'm'],
+    [total % 60, 's'],
+  ] as const;
+  return `+${parts
+    .filter(([n]) => n > 0)
+    .map(([n, unit]) => `${n}${unit}`)
+    .join(' ')}`;
 }

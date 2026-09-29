@@ -12,6 +12,7 @@ import {
   stageExecution,
   ledgerEntry,
   artifact,
+  humanWait,
   run as runTable,
 } from '../../src/db/schema/index';
 import { buildTestApp, type TestApp } from '../support/build-app';
@@ -215,7 +216,7 @@ describe('stage.execute (real Inngest steps, e2e)', () => {
     expect(byAttempt.get(2)?.renderedPrompt).toContain('Attempt 1 failed');
   });
 
-  it('exhausted semantic retries fails the stage', async () => {
+  it('failed checks regenerate until checkMaxAttempts (not retryLimit) is spent, then fail the stage', async () => {
     const graph: StageDef[] = [
       {
         key: 'unfixable',
@@ -229,9 +230,12 @@ describe('stage.execute (real Inngest steps, e2e)', () => {
           {
             type: 'builtin',
             key: 'regex_match',
-            params: { pattern: 'ZZZ_NEVER_MATCHES_ZZZ', path: 'text' },
+            // Anchored: the fake provider echoes its prompt, which now
+            // carries the failed check's message (and so this pattern).
+            params: { pattern: '^ZZZ_NEVER_MATCHES_ZZZ$', path: 'text' },
           },
         ],
+        checkMaxAttempts: 2,
         retryLimit: 0,
         model: { provider: 'fake', modelId: 'fake-text-1', params: { max_tokens: 256 } },
       },
@@ -246,14 +250,21 @@ describe('stage.execute (real Inngest steps, e2e)', () => {
       stageKey: 'unfixable',
     });
     expect(error).toBeUndefined();
-    expect(result).toEqual({ outcome: 'failed', reason: 'check_failed' });
+    const reason = 'check_failed after 2 attempts: regex_match';
+    expect(result).toEqual({ outcome: 'failed', reason });
+
+    const attempts = await testDb.db
+      .select()
+      .from(stageAttempt)
+      .where(eq(stageAttempt.stageExecutionId, execution.id));
+    expect(attempts.map((a) => a.outcome)).toEqual(['check_failed', 'check_failed']);
 
     const [executionRow] = await testDb.db
       .select()
       .from(stageExecution)
       .where(eq(stageExecution.id, execution.id));
     expect(executionRow?.state).toBe('failed');
-    expect((executionRow?.failure as { reason?: string } | null)?.reason).toBe('check_failed');
+    expect((executionRow?.failure as { reason?: string } | null)?.reason).toBe(reason);
   });
 
   it('provider_timeout on attempt 1 retries, then fails the stage on attempt 2', async () => {
@@ -307,7 +318,7 @@ describe('stage.execute (real Inngest steps, e2e)', () => {
     expect(executionRow?.state).toBe('failed');
   });
 
-  it('a low-scoring QC verdict fails the stage immediately (qc_failed)', async () => {
+  it('a low-scoring QC verdict regenerates with the critique until qc.maxAttempts is spent, then fails', async () => {
     const graph: StageDef[] = [
       {
         key: 'judged',
@@ -327,6 +338,7 @@ describe('stage.execute (real Inngest steps, e2e)', () => {
             modelId: 'fake-text-1',
             params: { fakeOutput: { score: 10, critique: 'not good enough' } },
           },
+          maxAttempts: 2,
         },
         retryLimit: 0,
         model: { provider: 'fake', modelId: 'fake-text-1', params: { max_tokens: 256 } },
@@ -344,8 +356,80 @@ describe('stage.execute (real Inngest steps, e2e)', () => {
     expect(error).toBeUndefined();
     expect(result).toEqual({
       outcome: 'failed',
-      reason: expect.stringContaining('qc_failed:'),
+      reason: 'qc_failed after 2 attempts: not good enough',
     });
+
+    const attempts = await testDb.db
+      .select()
+      .from(stageAttempt)
+      .where(eq(stageAttempt.stageExecutionId, execution.id));
+    const byAttempt = new Map(attempts.map((a) => [a.attemptNo, a]));
+    expect(attempts.map((a) => a.outcome)).toEqual(['qc_failed', 'qc_failed']);
+    // The critique reached the regeneration's prompt with no
+    // `{{ priorCritique }}` in the stage's template.
+    expect(byAttempt.get(1)?.renderedPrompt ?? '').not.toContain('not good enough');
+    expect(byAttempt.get(2)?.renderedPrompt).toContain(
+      'Attempt 1 was rejected by QC: not good enough',
+    );
+  });
+
+  it("qc.onExhausted 'human_review' parks the last QC-rejected output for approval instead of failing", async () => {
+    const graph: StageDef[] = [
+      {
+        key: 'judged',
+        label: 'Judged',
+        capability: 'text.generate',
+        config: {},
+        slots: {},
+        context: {},
+        output: { kind: 'text' },
+        checks: [],
+        qc: {
+          criteria: 'be good',
+          threshold: 70,
+          includeInputs: false,
+          model: {
+            provider: 'fake',
+            modelId: 'fake-text-1',
+            params: { fakeOutput: { score: 10, critique: 'not good enough' } },
+          },
+          maxAttempts: 1,
+          onExhausted: 'human_review',
+        },
+        retryLimit: 0,
+        model: { provider: 'fake', modelId: 'fake-text-1', params: { max_tokens: 256 } },
+      },
+    ];
+    const { run } = await setupRun(graph);
+    const execution = run.stageExecutions.find((e) => e.stageKey === 'judged');
+    if (!execution) throw new Error('stage execution not found');
+
+    const { result, error } = await execute({
+      runId: run.id,
+      stageExecutionId: execution.id,
+      stageKey: 'judged',
+    });
+    expect(error).toBeUndefined();
+    expect(result).toMatchObject({ outcome: 'approval_required' });
+
+    const [attempt] = await testDb.db
+      .select()
+      .from(stageAttempt)
+      .where(eq(stageAttempt.stageExecutionId, execution.id));
+    expect(attempt?.outcome).toBe('awaiting_approval');
+    expect(attempt?.phase).toBe('awaiting_approval');
+    expect((attempt?.qcVerdict as { critique?: string } | null)?.critique).toBe('not good enough');
+
+    const [executionRow] = await testDb.db
+      .select()
+      .from(stageExecution)
+      .where(eq(stageExecution.id, execution.id));
+    expect(executionRow?.state).toBe('awaiting_approval');
+    const waits = await testDb.db
+      .select()
+      .from(humanWait)
+      .where(and(eq(humanWait.stageExecutionId, execution.id), isNull(humanWait.resolvedAt)));
+    expect(waits.map((w) => w.kind)).toEqual(['approval']);
   });
 
   it('a QC judge that keeps erroring is terminal after exactly one generation attempt, regardless of retryLimit', async () => {

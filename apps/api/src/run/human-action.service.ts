@@ -5,8 +5,8 @@ import {
   Logger,
   UnprocessableEntityException,
 } from '@nestjs/common';
-import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
-import { StageDef, Timeline, type HumanWaitKind } from '@reelcraft/shared';
+import { and, desc, eq, isNull, sql } from 'drizzle-orm';
+import { StageDef, Timeline, approvalModeOf, type HumanWaitKind } from '@reelcraft/shared';
 import { ArtifactService } from '../artifact/artifact.service';
 import { BindingResolverService, type RefProvenance } from '../artifact/binding-resolver.service';
 import { MemoryService } from '../artifact/memory.service';
@@ -26,7 +26,6 @@ import {
 } from '../db/schema/index';
 import { SchemaValidatorService } from '../json-schema/schema-validator.service';
 import { ConfigResolverService } from '../run-config/config-resolver.service';
-import { CONSUMES_SEMANTIC_ATTEMPT } from '../orchestration/attempt-outcome';
 import { InvalidationService } from './invalidation.service';
 import type { InvalidationSeed } from './invalidation-closure';
 import { HumanWaitService } from './human-wait.service';
@@ -85,7 +84,7 @@ export class HumanActionService {
     }
     const { stage, execution } = await this.loadStageAndExecution(tx, lockedRun, stageKey);
 
-    if (stage.approval?.mode === 'item') {
+    if (approvalModeOf(stage) === 'item') {
       const item = await this.resolveOpenItem(tx, execution.id, itemIndex);
       await this.approveItemInTransaction(tx, runId, stageKey, stage, execution.id, item);
       return;
@@ -217,7 +216,7 @@ export class HumanActionService {
     itemIndex?: number,
   ) {
     const context = await this.loadRunContext(runId, stageKey);
-    const isItemMode = context.stage.approval?.mode === 'item';
+    const isItemMode = approvalModeOf(context.stage) === 'item';
     // phase 7 chunk 6 — Locked Decision 9: a rejected item, with no
     // `onReject.retryStageKey`, retries that same item by default — the
     // item-mode analogue of stage-mode's existing "retry myself" default.
@@ -238,12 +237,6 @@ export class HumanActionService {
       .where(and(eq(stageExecution.runId, runId), eq(stageExecution.stageKey, targetStageKey)))
       .limit(1);
     if (!targetExecution) throw new ConflictException(`Retry target ${targetStageKey} not found`);
-    const effective = await this.configResolver.effectiveStageConfig(
-      runId,
-      targetStageKey,
-      targetStage,
-    );
-
     // Item-scoping only applies when the rejected stage is itself item-mode
     // AND the retry target also iterates — a routed rejection into a
     // non-iterating earlier stage (or one that doesn't iterate) stays
@@ -271,17 +264,9 @@ export class HumanActionService {
       );
     }
 
-    const retryDebits = await this.retryDebits(
-      runId,
-      targetExecution.id,
-      targetStageKey,
-      targetStageItem?.id,
-    );
-    // phase 7 chunk 6 — an iterating target's own itemRetryLimit gates
-    // exhaustion, not the stage's (non-iterating) retryLimit.
-    const exhausted = targetStage.iterate
-      ? retryDebits + 1 >= effective.iterate!.itemRetryLimit + 1
-      : retryDebits + 1 >= effective.retryLimit + 1;
+    // Human rejections are uncapped — a person decides every round, so the
+    // loop can't run away on its own — and never spend the target's
+    // `retryLimit`, which is for crashes only.
     const payload = {
       stageKey,
       ...(note !== undefined ? { note } : {}),
@@ -369,40 +354,8 @@ export class HumanActionService {
           closure: preview.closure,
           targetStageKey,
         });
-        if (exhausted) {
-          if (targetStageItem) {
-            // phase 7 chunk 6 — item-mode exhaustion fails only the
-            // target's own item, mirroring §14.1's "no continue-and-isolate":
-            // the item still fails the run (below), but sibling items of
-            // the same iterating stage are left completely alone.
-            await tx
-              .update(stageItem)
-              .set({
-                state: 'failed',
-                failure: { reason: 'approval_rejection_retry_exhausted' },
-              })
-              .where(eq(stageItem.id, targetStageItem.id));
-          } else {
-            await tx
-              .update(stageExecution)
-              .set({
-                state: 'failed',
-                failure: { reason: 'approval_rejection_retry_exhausted' },
-                endedAt: new Date().toISOString(),
-              })
-              .where(eq(stageExecution.id, targetExecution.id));
-          }
-          await tx
-            .update(run)
-            .set({
-              state: 'FAILED',
-              cursorStageKey: targetStageKey,
-              endedAt: new Date().toISOString(),
-            })
-            .where(eq(run.id, runId));
-        }
       },
-      exhausted ? 'run/rejection-exhausted' : 'run/resumed',
+      'run/resumed',
     );
     this.logger.log(
       {
@@ -410,14 +363,13 @@ export class HumanActionService {
         stageKey,
         itemIndex: resolvedItemIndex,
         targetStageKey,
-        exhausted,
         wakeupId: result.wakeupId,
         revision: result.revision,
       },
       'stage rejected',
     );
     await this.dispatchBestEffort(result.wakeupId);
-    return { accepted: true, revision: result.revision, state: exhausted ? 'FAILED' : 'PENDING' };
+    return { accepted: true, revision: result.revision, state: 'PENDING' as const };
   }
 
   async submitInput(
@@ -796,44 +748,6 @@ export class HumanActionService {
       .from(stageAttempt)
       .where(eq(stageAttempt.stageExecutionId, executionId));
     return (row?.max ?? 0) + 1;
-  }
-
-  /** phase 7 chunk 6 — `stageItemId` scopes the "own" count to one item's
-   * attempts. The "routed" (cross-stage critique) count deliberately stays
-   * stage-wide regardless: `critiqueTargetStageKey` names a stage, not an
-   * item — there is no item dimension anywhere else in the schema for a
-   * routed rejection to carry, so introducing one here would be inventing
-   * semantics nothing else in the phase has. */
-  private async retryDebits(
-    runId: string,
-    executionId: string,
-    stageKey: string,
-    stageItemId?: string,
-  ) {
-    const [own] = await this.db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(stageAttempt)
-      .where(
-        and(
-          eq(stageAttempt.stageExecutionId, executionId),
-          stageItemId
-            ? eq(stageAttempt.stageItemId, stageItemId)
-            : isNull(stageAttempt.stageItemId),
-          inArray(stageAttempt.outcome, [...CONSUMES_SEMANTIC_ATTEMPT]),
-        ),
-      );
-    const [routed] = await this.db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(stageAttempt)
-      .innerJoin(stageExecution, eq(stageAttempt.stageExecutionId, stageExecution.id))
-      .where(
-        and(
-          eq(stageExecution.runId, runId),
-          eq(stageAttempt.outcome, 'rejected'),
-          eq(stageAttempt.critiqueTargetStageKey, stageKey),
-        ),
-      );
-    return (own?.count ?? 0) + (routed?.count ?? 0);
   }
 
   private async dispatchBestEffort(wakeupId: string) {

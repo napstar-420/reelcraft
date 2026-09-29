@@ -104,4 +104,33 @@ Line three
     expect(result).toContain('Task line.\n\n<output_contract>');
     expect(result).not.toContain('Task line.\n\n\n<output_contract>');
   });
+
+  it('injects prior critique automatically between the task and the contract', () => {
+    const result = renderStagePrompt(
+      'Write about {{ topic }}.',
+      'Be concise.',
+      { topic: 'reefs', priorCritique: 'Attempt 1 was rejected by QC: too long.' },
+      'text',
+    );
+    expect(result).toMatch(
+      /^Write about reefs\.\n\n<previous_attempt_feedback>\n[^\n]+\n\nAttempt 1 was rejected by QC: too long\.\n<\/previous_attempt_feedback>\n\n<output_contract>/,
+    );
+  });
+
+  it('injects prior critique even with no output instructions, and nothing on a first attempt', () => {
+    expect(renderStagePrompt('Task.', undefined, { priorCritique: 'Fix X.' }, 'text')).toContain(
+      '<previous_attempt_feedback>',
+    );
+    expect(renderStagePrompt('Task.', undefined, { priorCritique: '' }, 'text')).toBe('Task.');
+  });
+
+  it('does not inject a second copy when the author placed {{ priorCritique }} themselves', () => {
+    const result = renderStagePrompt(
+      'Task. Feedback: {{ priorCritique }}',
+      undefined,
+      { priorCritique: 'Fix X.' },
+      'text',
+    );
+    expect(result).toBe('Task. Feedback: Fix X.');
+  });
 });

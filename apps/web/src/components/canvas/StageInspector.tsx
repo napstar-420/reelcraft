@@ -211,7 +211,7 @@ function InstructionsEditor({
         />
       </div>
       <div className="flex flex-col gap-1.5">
-        <InfoLabel info="The user-role prompt sent to the model. Supports {{ }} interpolation: reference this stage's Slots or Context values by name, e.g. {{ myContextKey }}, plus {{ priorCritique }} when a stage is re-run after a failed quality control check. Required for capabilities that read a prompt (e.g. text/LLM generation) — leave blank for capabilities that don't.">
+        <InfoLabel info="The user-role prompt sent to the model. Supports {{ }} interpolation: reference this stage's Slots or Context values by name, e.g. {{ myContextKey }}. When the stage regenerates after failed checks, a quality control rejection or a human rejection, the feedback is added to the prompt automatically — use {{ priorCritique }} only to control where it goes. Required for capabilities that read a prompt (e.g. text/LLM generation) — leave blank for capabilities that don't.">
           Template
         </InfoLabel>
         <CollapsibleTextarea
@@ -459,7 +459,7 @@ function QcEditor({
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-col gap-1.5">
-        <InfoLabel info="What a passing output looks like — sent to the quality control model alongside this stage's output. The judge returns a 0–100 score and a critique; on failure the stage retries, and the critique reaches the next attempt only via {{ priorCritique }} in this stage's Template.">
+        <InfoLabel info="What a passing output looks like — sent to the quality control model alongside this stage's output. The judge returns a 0–100 score and a critique; on failure the stage regenerates with the critique added to its prompt automatically.">
           Criteria
         </InfoLabel>
         <CollapsibleTextarea
@@ -481,6 +481,43 @@ function QcEditor({
           value={qc.threshold}
           onChange={(e) => set({ threshold: Number(e.target.value) || 0 })}
         />
+      </div>
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="flex flex-col gap-1.5">
+          <InfoLabel info="How many failed quality control verdicts are allowed before giving up. Each failure regenerates the output with the critique as feedback. Separate from Retry limit, which only covers crashes.">
+            Max attempts
+          </InfoLabel>
+          <Input
+            type="number"
+            min={1}
+            className="w-32"
+            placeholder="3"
+            value={qc.maxAttempts ?? ''}
+            onChange={(e) => {
+              const next = Math.floor(Number(e.target.value));
+              set({ maxAttempts: next >= 1 ? next : undefined });
+            }}
+          />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <InfoLabel info="What happens when Max attempts is used up: fail the stage, or pause the run so a human can approve the last output or reject it with a note that becomes the next attempt's feedback.">
+            When attempts run out
+          </InfoLabel>
+          <Select
+            value={qc.onExhausted ?? 'fail'}
+            onValueChange={(next) =>
+              set({ onExhausted: next === 'human_review' ? 'human_review' : undefined })
+            }
+          >
+            <SelectTrigger size="sm" className="w-48">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="fail">Fail the stage</SelectItem>
+              <SelectItem value="human_review">Hand off to human review</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </div>
       <Label className="font-normal">
         <Checkbox
@@ -1166,10 +1203,28 @@ export function StageInspector({
                 iterating={!!stage.iterate}
                 issues={checksIssues}
               />
+              {stage.checks.length > 0 && (
+                <div className="flex flex-col gap-1.5">
+                  <InfoLabel info="How many times the output may fail its checks before the stage fails. Each failure regenerates the output with the failing checks' messages as feedback. Separate from Retry limit, which only covers crashes.">
+                    Max check attempts
+                  </InfoLabel>
+                  <Input
+                    type="number"
+                    min={1}
+                    className="w-32"
+                    placeholder="3"
+                    value={stage.checkMaxAttempts ?? ''}
+                    onChange={(e) => {
+                      const next = Math.floor(Number(e.target.value));
+                      onChange({ ...stage, checkMaxAttempts: next >= 1 ? next : undefined });
+                    }}
+                  />
+                </div>
+              )}
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <InfoHeading info="Optional model-graded quality review of this stage's output against written criteria. Unlike Checks' pass/fail, quality control produces a score against a threshold and can drive a human approval retry.">
+              <InfoHeading info="Optional model-graded quality review of this stage's output against written criteria. Unlike Checks' pass/fail, quality control produces a score against a threshold; a failing score regenerates the output with the judge's critique, up to Max attempts.">
                 Quality control
               </InfoHeading>
               <QcEditor qc={stage.qc} onChange={(qc) => onChange({ ...stage, qc })} />
@@ -1213,11 +1268,11 @@ export function StageInspector({
           </AccordionTrigger>
           <AccordionContent className={STAGE_SECTION_CONTENT_CLASS}>
             <div className="flex flex-col gap-1.5">
-              <InfoHeading info="How many times this stage automatically retries after a failed run (execution error or failing check) before surfacing as a run failure.">
+              <InfoHeading info="How many times this stage automatically retries after it crashes (provider error, timeout, or an unexpected error) before surfacing as a run failure. Failed checks, quality control rejections and human rejections never use these retries — they have their own limits.">
                 Retry limit
               </InfoHeading>
               <div className="flex flex-col gap-1.5">
-                <InfoLabel info="Number of automatic retries; 0 disables retrying entirely for this stage.">
+                <InfoLabel info="Number of automatic crash retries; 0 disables crash retrying for this stage.">
                   Retries
                 </InfoLabel>
                 <Input
