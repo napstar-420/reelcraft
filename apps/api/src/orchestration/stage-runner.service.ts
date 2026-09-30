@@ -22,11 +22,13 @@ import {
 import { ulid } from '../common/ulid';
 import { fromUsd } from '../common/money';
 import { renderStagePrompt } from '../common/prompt-template';
+import { collectFileInputs, promptScopeWithRoles } from '../common/file-inputs';
 import { CapabilityRegistry } from '../capability/capability.registry';
 import {
   BindingResolverService,
   type RefEnvelope,
   type ResolvedBindings,
+  type RoleBinding,
 } from '../artifact/binding-resolver.service';
 import { ArtifactService } from '../artifact/artifact.service';
 import { BlobService } from '../artifact/blob.service';
@@ -90,6 +92,7 @@ export type FetchAndFinalizeResult =
   | { outcome: 'check_failed'; checkResults: CheckResult[] }
   | { outcome: 'qc_failed'; checkResults: CheckResult[]; qcVerdict: QcVerdict }
   | { outcome: 'qc_error'; reason: string }
+  | { outcome: 'model_error'; reason: string }
   | { outcome: 'qc_budget_exhausted'; checkResults: CheckResult[] };
 
 /** §11 — `reserveAndSubmit`'s outcome: either a reservation was made and
@@ -350,32 +353,14 @@ export class StageRunnerService {
     return row.assetBindings as Record<string, { blobId: string; kind: string }>;
   }
 
-  private async loadRoleBindings(runId: string): Promise<
-    Record<
-      string,
-      {
-        characterId: string;
-        name: string;
-        description: string;
-        references: Array<{ blobId: string; sourceKey: string; mime: string; probe?: unknown }>;
-      }
-    >
-  > {
+  private async loadRoleBindings(runId: string): Promise<Record<string, RoleBinding>> {
     const [row] = await this.db
       .select({ roleBindings: run.roleBindings })
       .from(run)
       .where(eq(run.id, runId))
       .limit(1);
     if (!row) throw new Error(`StageRunnerService: run ${runId} not found`);
-    return row.roleBindings as Record<
-      string,
-      {
-        characterId: string;
-        name: string;
-        description: string;
-        references: Array<{ blobId: string; sourceKey: string; mime: string; probe?: unknown }>;
-      }
-    >;
+    return row.roleBindings as Record<string, RoleBinding>;
   }
 
   private async resolveBindings(
@@ -489,6 +474,7 @@ export class StageRunnerService {
       config: { ...effective.capabilityConfig, ...effective.model },
       slots: bindings.slots,
       context: bindings.context,
+      files: collectFileInputs(bindings.context, stage.attach ?? []),
       renderedPrompt,
       systemPrompt,
       output: stage.output,
@@ -530,16 +516,24 @@ export class StageRunnerService {
       ctx.attemptNo,
       ctx.stageItemId,
     );
-    const templateScope = { ...bindings.slots, ...bindings.context, priorCritique };
+    const templateScope = {
+      ...bindings.slots,
+      ...promptScopeWithRoles(bindings.context, stage.attach ?? []),
+      priorCritique,
+    };
     const outputInstructions =
       stage.output.kind === 'text' || stage.output.kind === 'data'
         ? stage.output.instructions
         : undefined;
+    const isLlmStage = capability.modality === 'text';
     const renderedPrompt = renderStagePrompt(
       stage.instructions?.template,
       outputInstructions,
       templateScope,
       stage.output.kind === 'data' ? 'data' : 'text',
+      isLlmStage
+        ? { errorReply: true, attachments: collectFileInputs(bindings.context, stage.attach ?? []) }
+        : undefined,
     );
     const resources =
       stage.capability === 'timeline.render' && bindings.slots.timeline
@@ -785,6 +779,33 @@ export class StageRunnerService {
       attemptId: ctx.stageAttemptId,
       payload: result,
     });
+
+    if (result.modelError) {
+      // The model declined the task; retrying the same inputs won't change
+      // that, so the stage fails with its message. The call was still billed.
+      const reason = `Model reported ${result.modelError.code}: ${result.modelError.message}`;
+      await this.ledger.settleSuccess({
+        runId: ctx.runId,
+        stageKey: stage.key,
+        stageAttemptId: ctx.stageAttemptId,
+        reservationId: await this.ledger.reservationIdFor(ctx.stageAttemptId),
+        actualUsd: result.costUsd,
+      });
+      await this.db
+        .update(stageAttempt)
+        .set({
+          outcome: 'provider_error',
+          phase: 'settled',
+          rawResponseRef,
+          costUsd: fromUsd(result.costUsd),
+          reviewNote: reason,
+        })
+        .where(eq(stageAttempt.id, ctx.stageAttemptId));
+      await this.finishAttempt(ctx, 'error', 'provider_error', reason, {
+        modelError: result.modelError,
+      });
+      return { outcome: 'model_error', reason };
+    }
 
     const mediaOutput = stage.output.kind.startsWith('media.')
       ? (output as import('@reelcraft/shared').MediaSource)

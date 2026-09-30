@@ -4,7 +4,6 @@ import type {
   CreateRunDto,
   ConfigLayer,
   ReferenceImage,
-  Ref,
   RoleDef,
   ListRunsQueryDto,
   Probe,
@@ -36,13 +35,14 @@ import { CapabilityRegistry } from '../capability/capability.registry';
 import { ConfigResolverService } from '../run-config/config-resolver.service';
 import { engineDefaults } from '../run-config/engine-defaults';
 import { LedgerService } from '../budget/ledger.service';
-import { collectAssetIds } from '../blueprint/collect-asset-refs';
+import { collectAssetIds, roleRefsOf } from '../blueprint/collect-asset-refs';
 import { RunInputService } from './run-input.service';
 import { RunMutationService } from './run-mutation.service';
 import { RunWakeupDispatcher } from './run-wakeup-dispatcher.service';
 import { PINNED_PROVIDERS, PROVIDER_LABELS, ProviderRegistry } from '../provider/provider.registry';
 import { modalityForCapability } from '../capability/modality-for-capability';
 import { BlobService } from '../artifact/blob.service';
+import type { RoleBinding } from '../artifact/binding-resolver.service';
 import { canonicalJson } from '../json-schema/schema-hash';
 import {
   copyReusedStages,
@@ -321,15 +321,7 @@ export class RunService {
    * not change a paid run's identity conditioning. */
   private async resolveRoleBindings(roles: RoleDef[], channelId: string) {
     if (roles.length === 0) return {};
-    const result: Record<
-      string,
-      {
-        characterId: string;
-        name: string;
-        description: string;
-        references: Array<{ blobId: string; sourceKey: string; mime: string; probe?: unknown }>;
-      }
-    > = {};
+    const result: Record<string, RoleBinding> = {};
     for (const role of roles) {
       const referenceBlobIds = role.referenceBlobIds ?? [];
       if (!role.characterId || referenceBlobIds.length === 0) {
@@ -388,6 +380,8 @@ export class RunService {
             blobId: source.id,
             sourceKey: source.objectKey,
             mime: source.mime,
+            view: ref.view,
+            ...(ref.caption && { caption: ref.caption }),
             ...(source.probe != null && { probe: source.probe }),
           };
         }),
@@ -407,10 +401,7 @@ export class RunService {
     const roleKeys = new Set(Object.keys(roleBindings));
     if (roleKeys.size === 0) return;
     for (const stage of graph) {
-      const roles = Object.values(stage.slots).filter(
-        (ref): ref is Extract<Ref, { from: 'role' }> =>
-          ref.from === 'role' && roleKeys.has(ref.roleKey),
-      );
+      const roles = roleRefsOf(stage).filter((ref) => roleKeys.has(ref.roleKey));
       if (roles.length === 0) continue;
       const model = resolvedConfig[stage.key]?.model;
       if (!model?.provider || !model.modelId)

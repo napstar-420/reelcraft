@@ -81,7 +81,18 @@ export class FakeProviderAdapter implements ProviderAdapter {
           supportsSeed: true,
           supportsIdempotency: true,
           supportsStructuredOutput: true,
-          supportsVision: false,
+          inputKinds: [],
+        },
+      },
+      {
+        modelId: 'fake-text-vision',
+        label: 'Fake Text (reads images)',
+        capabilities: {
+          supportsSeed: true,
+          supportsIdempotency: true,
+          supportsStructuredOutput: true,
+          inputKinds: ['media.image'],
+          maxRefs: 3,
         },
       },
       {

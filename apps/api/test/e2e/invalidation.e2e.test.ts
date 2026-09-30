@@ -48,6 +48,7 @@ describe('InvalidationService (e2e)', () => {
     await testDb.db.insert(blueprint).values({ id: blueprintId, channelId, name: 'Blueprint' });
     const versionId = ulid();
     const graph = ['source', 'dependent', 'inputReader', 'unrelated'].map(stage);
+    graph[0]!.writes = { palette: '$' };
     await testDb.db.insert(blueprintVersion).values({
       id: versionId,
       blueprintId,
@@ -369,10 +370,9 @@ describe('InvalidationService (e2e)', () => {
         .from(artifact)
         .where(and(eq(artifact.id, ids.sourceArtifact!), eq(artifact.stale, false))),
     ).toHaveLength(1);
-    expect((await service.listMemory(runId)).current.palette).toMatchObject({
-      memKey: 'palette',
-      version: 1,
-    });
+    const before = await service.listMemory(runId);
+    expect(before.current.palette).toMatchObject({ memKey: 'palette', version: 1 });
+    expect(before.expected).toEqual([]);
 
     await testDb.db.transaction((tx) =>
       service.apply(tx, {
@@ -416,6 +416,10 @@ describe('InvalidationService (e2e)', () => {
 
     const memory = await service.listMemory(runId);
     expect(memory.current).toEqual({});
+    // Tombstoned, so the declared write is expected again.
+    expect(memory.expected).toEqual([
+      { memKey: 'palette', writtenBy: 'source', path: '$', kind: 'text' },
+    ]);
     expect(memory.history).toEqual([
       expect.objectContaining({ memKey: 'palette', version: 2, tombstone: true }),
       expect.objectContaining({ memKey: 'palette', version: 1, tombstone: false }),

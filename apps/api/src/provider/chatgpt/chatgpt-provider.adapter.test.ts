@@ -24,6 +24,8 @@ function fixture(results: unknown[]) {
   };
   const storage = {
     getStream: vi.fn(async () => Readable.from([Buffer.from('png-bytes')])),
+    // Untyped upload: the loader falls back to the key's extension.
+    stat: vi.fn(async () => ({ bytes: 9, etag: 'e', mime: 'application/octet-stream' })),
   };
   const adapter = new ChatgptProviderAdapter(neo as never, storage as never);
   const closed = () => scripts.filter((s) => s.includes('browser.pages.close')).length;
@@ -132,6 +134,7 @@ describe('ChatgptProviderAdapter.submit', () => {
       8,
       signedIn,
       { value: 0 },
+      { length: 12 },
       { ok: true },
       { url: 'https://chatgpt.com/c/img' },
     ]);
@@ -149,8 +152,43 @@ describe('ChatgptProviderAdapter.submit', () => {
     );
     expect(scripts[0]).toContain('"https://chatgpt.com/"');
     expect(storage.getStream).toHaveBeenCalledWith('assets/ref.jpg');
-    expect(scripts[3]).toContain('1-ref.jpg');
-    expect(scripts[3]).toContain('image/jpeg');
+    expect(scripts[3]).toContain(Buffer.from('png-bytes').toString('base64'));
+    expect(scripts[4]).toContain('1-ref.jpg');
+    expect(scripts[4]).toContain('image/jpeg');
+    expect(scripts[4]).not.toContain(Buffer.from('png-bytes').toString('base64'));
+  });
+
+  it('uploads large references in chunks that each fit a Neo request', async () => {
+    const big = Buffer.alloc(3 * 1024 * 1024, 7);
+    const { adapter, scripts, storage } = fixture([
+      8,
+      signedIn,
+      { value: 0 },
+      { length: 0 },
+      { length: 0 },
+      { length: 0 },
+      { ok: true },
+      { url: 'https://chatgpt.com/c/img' },
+    ]);
+    storage.getStream.mockImplementation(async () => Readable.from([big]));
+    await adapter.submit(
+      {
+        modality: 'image',
+        modelId: 'chatgpt',
+        params: { reasoningEffort: 'instant', slots: { ref: { sourceKey: 'assets/big.png' } } },
+        renderedPrompt: 'A red circle',
+      },
+      'k',
+    );
+    const base64 = big.toString('base64');
+    const chunks = scripts.slice(3, 6).map((s) => {
+      const match = /\\"chunk\\":\\"([A-Za-z0-9+/=]*)\\"/.exec(s);
+      if (!match) throw new Error('chunk not found');
+      return match[1];
+    });
+    expect(chunks.join('')).toBe(base64);
+    expect(scripts[6]).toContain(`"length\\":${base64.length}`);
+    expect(Math.max(...scripts.map((s) => s.length))).toBeLessThan(4 * 1024 * 1024);
   });
 });
 

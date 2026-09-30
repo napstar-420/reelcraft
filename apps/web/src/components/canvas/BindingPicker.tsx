@@ -1,5 +1,7 @@
 import type { InputDef, Ref, RoleDef, StageDef } from '@reelcraft/shared';
 import { deriveMemoryKeys } from '../../lib/memory-writers';
+import { pathSuggestions } from '../../lib/ref-paths';
+import { PathInput } from './PathInput';
 import { TypedValueInput } from './TypedValueInput';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
@@ -109,6 +111,14 @@ export function BindingPicker({
   const kinds = availableRefKinds(stageIndex, iterating);
   const prevStageIterates = stageIndex > 0 && !!graph[stageIndex - 1]?.iterate;
   const memoryKeys = deriveMemoryKeys(graph);
+  // Rendered only for the ref kinds that carry a `path`.
+  const pathInput = (
+    <PathInput
+      value={'path' in value ? value.path : undefined}
+      onChange={(path) => onChange({ ...value, path } as Ref)}
+      suggestions={pathSuggestions(value, graph, stageIndex, inputs)}
+    />
+  );
 
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -130,13 +140,7 @@ export function BindingPicker({
 
       {value.from === 'prev' && (
         <span className="flex flex-wrap items-center gap-2">
-          <Input
-            type="text"
-            className="w-40"
-            placeholder="path (optional)"
-            value={value.path ?? ''}
-            onChange={(e) => onChange({ ...value, path: e.target.value || undefined })}
-          />
+          {pathInput}
           {prevStageIterates && (
             <Label className="font-normal">
               <Checkbox
@@ -169,13 +173,7 @@ export function BindingPicker({
               ))}
             </SelectContent>
           </Select>
-          <Input
-            type="text"
-            className="w-40"
-            placeholder="path (optional)"
-            value={value.path ?? ''}
-            onChange={(e) => onChange({ ...value, path: e.target.value || undefined })}
-          />
+          {pathInput}
         </span>
       )}
 
@@ -210,7 +208,7 @@ export function BindingPicker({
             <SelectItem value={UNSET}>Select a role…</SelectItem>
             {roles.map((role) => (
               <SelectItem key={role.key} value={role.key}>
-                {role.label}
+                {role.label || role.key}
               </SelectItem>
             ))}
           </SelectContent>
@@ -251,13 +249,7 @@ export function BindingPicker({
               }
             />
           )}
-          <Input
-            type="text"
-            className="w-40"
-            placeholder="path (optional)"
-            value={value.path ?? ''}
-            onChange={(e) => onChange({ ...value, path: e.target.value || undefined })}
-          />
+          {pathInput}
         </span>
       )}
 
@@ -268,15 +260,7 @@ export function BindingPicker({
         />
       )}
 
-      {(value.from === 'item' || value.from === 'prevItem') && (
-        <Input
-          type="text"
-          className="w-40"
-          placeholder="path (optional)"
-          value={value.path ?? ''}
-          onChange={(e) => onChange({ ...value, path: e.target.value || undefined })}
-        />
-      )}
+      {(value.from === 'item' || value.from === 'prevItem') && pathInput}
     </div>
   );
 }

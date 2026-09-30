@@ -1,6 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import {
+  StreamableHTTPClientTransport,
+  StreamableHTTPError,
+} from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { EngineConfig } from '../../config/engine-config';
 
 const AGENT_NAME = 'reelcraft';
@@ -35,7 +38,11 @@ export class NeoClient {
     return structured.value as T;
   }
 
-  private async call(name: string, args: Record<string, unknown>): Promise<ToolResult> {
+  private async call(
+    name: string,
+    args: Record<string, unknown>,
+    retried = false,
+  ): Promise<ToolResult> {
     try {
       const client = await this.connect();
       return (await client.callTool({
@@ -43,9 +50,14 @@ export class NeoClient {
         arguments: { agentName: AGENT_NAME, ...args },
       })) as ToolResult;
     } catch (error) {
-      // Never replay here: a timed-out call may already have clicked Send.
       // Drop the connection so the next call reconnects (e.g. after a Neo restart).
       this.client = undefined;
+      // Neo expires idle sessions with a 404 before running anything, so that
+      // one case is safe to replay on a fresh session. Never replay otherwise:
+      // a timed-out call may already have clicked Send.
+      if (!retried && error instanceof StreamableHTTPError && error.code === 404) {
+        return this.call(name, args, true);
+      }
       this.logger.warn({ err: error, tool: name }, 'neo call failed');
       throw new Error(`BrowserOS Neo is unavailable: ${(error as Error).message}`);
     }

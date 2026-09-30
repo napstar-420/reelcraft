@@ -1,8 +1,11 @@
+import { useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../api/client';
+import { normalizeRoleReferences } from '../../lib/role-references';
 import { SchemaForm } from './SchemaForm';
 import { SECTION_HEADING_CLASS } from './typography';
-import type { InputDef, RoleDef, JsonSchema } from '@reelcraft/shared';
+import type { CharacterDto, InputDef, RoleDef, JsonSchema } from '@reelcraft/shared';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -235,11 +238,73 @@ function InputsEditor({
   );
 }
 
+/** The role's reference images: every one checked here is attached to each
+ * stage that binds the role, primary first. At least one stays selected. */
+function ReferencePicker({
+  character,
+  selected,
+  onChange,
+}: {
+  character: CharacterDto;
+  selected: string[];
+  onChange: (referenceBlobIds: string[]) => void;
+}) {
+  const references = [...character.referenceSet].sort((a, b) => a.order - b.order);
+  return (
+    <div className="flex flex-col gap-1.5">
+      <Label>Reference images · {selected.length} selected</Label>
+      <div className="grid grid-cols-3 gap-2">
+        {references.map((reference) => {
+          const checked = selected.includes(reference.blobId);
+          const isOnlySelected = checked && selected.length === 1;
+          return (
+            <label
+              key={reference.blobId}
+              className={`flex cursor-pointer flex-col gap-1 rounded-md border p-1.5 text-xs ${
+                checked ? 'border-primary' : 'border-border opacity-70'
+              }`}
+            >
+              <span className="relative">
+                <img
+                  src={`/api/blobs/${reference.blobId}`}
+                  alt={reference.caption ?? reference.view}
+                  className="aspect-square w-full rounded object-cover"
+                />
+                {reference.blobId === character.primaryRefId && (
+                  <Badge variant="secondary" className="absolute top-1 left-1 px-1 text-[10px]">
+                    Primary
+                  </Badge>
+                )}
+              </span>
+              <span className="flex items-center gap-1.5">
+                <Checkbox
+                  checked={checked}
+                  disabled={isOnlySelected}
+                  onCheckedChange={(next) =>
+                    onChange(
+                      next === true
+                        ? [...selected, reference.blobId]
+                        : selected.filter((id) => id !== reference.blobId),
+                    )
+                  }
+                />
+                <span className="truncate" title={reference.caption}>
+                  {reference.view.replace(/_/g, ' ')}
+                </span>
+              </span>
+            </label>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 /** v1 permits 0 or 1 role (`CreateBlueprintVersionDto.roles.max(1)`) — an
  * add/remove toggle over a single-element array, mirroring `StageInspector`'s
- * `QcEditor`/`ApprovalEditor` optional-block idiom. `referenceBlobIds` is
- * deliberately never set by this editor (Phase-8 reference-selection UI is
- * out of scope for this chunk). */
+ * `QcEditor`/`ApprovalEditor` optional-block idiom. Picking a Character
+ * selects its primary reference image; every selected image is sent to each
+ * stage that binds the role. */
 function RoleEditor({
   roles,
   channelId,
@@ -251,10 +316,22 @@ function RoleEditor({
 }) {
   const characters = useQuery({
     queryKey: ['characters', channelId],
-    queryFn: () => api.listCharacters(channelId),
+    queryFn: () => api.listChannelCharacters(channelId),
     enabled: !!channelId,
   });
   const role = roles[0];
+  const character = characters.data?.find((c) => c.id === role?.characterId);
+
+  // Keeps a saved selection valid: drops images the Character lost and
+  // defaults an empty selection to its primary, so the draft stays runnable.
+  useEffect(() => {
+    if (!role || !character) return;
+    const selected = role.referenceBlobIds ?? [];
+    const normalized = normalizeRoleReferences(selected, character);
+    if (normalized.join() !== selected.join()) {
+      onChange([{ ...role, referenceBlobIds: normalized }]);
+    }
+  }, [role, character, onChange]);
 
   if (!role) {
     return (
@@ -303,7 +380,14 @@ function RoleEditor({
           <Label>Character</Label>
           <Select
             value={role.characterId || UNSET}
-            onValueChange={(next) => set({ characterId: next === UNSET ? undefined : next })}
+            onValueChange={(next) => {
+              const picked = characters.data?.find((c) => c.id === next);
+              set({
+                characterId: picked?.id,
+                referenceBlobIds: picked ? normalizeRoleReferences([], picked) : undefined,
+                ...(picked && !role.label && { label: picked.name }),
+              });
+            }}
           >
             <SelectTrigger size="sm" className="w-56">
               <SelectValue />
@@ -311,13 +395,21 @@ function RoleEditor({
             <SelectContent>
               <SelectItem value={UNSET}>None</SelectItem>
               {characters.data?.map((c) => (
-                <SelectItem key={c.id} value={c.id}>
-                  {c.name}
+                <SelectItem key={c.id} value={c.id} disabled={c.referenceSet.length === 0}>
+                  {c.referenceSet.length === 0 ? `${c.name} (no references)` : c.name}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
         </div>
+
+        {character && character.referenceSet.length > 0 && (
+          <ReferencePicker
+            character={character}
+            selected={role.referenceBlobIds ?? []}
+            onChange={(referenceBlobIds) => set({ referenceBlobIds })}
+          />
+        )}
 
         <Button
           type="button"

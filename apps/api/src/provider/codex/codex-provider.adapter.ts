@@ -15,6 +15,7 @@ import { buildCodexPrompt, strictJsonSchema } from './codex-command';
 import type { CodexAppServerClient, CodexModel } from './codex-app-server.client';
 import type { CodexJobLauncher } from './codex-job-launcher';
 import { timelineOutputSchema } from '../timeline-output-schema';
+import { collectSourceKeys } from '../source-keys';
 import type { CodexRuntimeReadiness } from './codex-runtime-readiness';
 import type { CodexInputMaterializer } from './codex-input-materializer';
 
@@ -95,7 +96,7 @@ export class CodexProviderAdapter implements ProviderAdapter {
         supportsSeed: false,
         supportsIdempotency: true,
         supportsStructuredOutput: true,
-        supportsVision: modalities.includes('image'),
+        inputKinds: [],
         ...(modalities.includes('image') && {
           maxRefs: 5,
           image: { formats: ['png', 'jpeg', 'webp'], maxReferences: 5 },
@@ -112,6 +113,9 @@ export class CodexProviderAdapter implements ProviderAdapter {
     const modality = req.modality ?? 'text';
     if (!this.modalities.includes(modality)) {
       throw new Error(`Codex does not support modality "${modality}"`);
+    }
+    if (modality === 'text' && collectSourceKeys(req.params.slots).length > 0) {
+      throw new Error('Codex text generation cannot read attached files; pick another model');
     }
     await this.readiness?.assertAvailable(modality);
     const catalog = await this.models.listModels();

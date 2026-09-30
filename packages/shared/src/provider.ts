@@ -54,7 +54,10 @@ export const ModelCapabilities = z.object({
   supportsSeed: z.boolean(),
   supportsIdempotency: z.boolean(),
   supportsStructuredOutput: z.boolean().optional(),
-  supportsVision: z.boolean().optional(),
+  /** Artifact/asset kinds this model can read as attached files (e.g.
+   * `media.image`). A trailing `.*` matches a kind prefix (`file.*`). Plain
+   * strings, so a new kind needs no schema change — only a provider opt-in. */
+  inputKinds: z.array(z.string()).optional(),
   image: z
     .object({
       formats: z.array(z.string()).optional(),
@@ -73,6 +76,26 @@ export const ModelCapabilities = z.object({
     .optional(),
 });
 export type ModelCapabilities = z.infer<typeof ModelCapabilities>;
+
+/** The structured reply an LLM stage gives instead of an output when it
+ * cannot do its task (see the `<error_reporting>` prompt contract). */
+export const ModelErrorCode = z.enum([
+  'input_missing',
+  'input_unreadable',
+  'input_mismatch',
+  'task_impossible',
+  'refused',
+]);
+export type ModelErrorCode = z.infer<typeof ModelErrorCode>;
+
+export const ModelError = z.object({
+  code: ModelErrorCode,
+  message: z.string().min(1),
+});
+export type ModelError = z.infer<typeof ModelError>;
+
+export const ModelErrorReply = z.object({ reelcraft_error: ModelError });
+export type ModelErrorReply = z.infer<typeof ModelErrorReply>;
 
 export const ReproInfo = z.object({
   level: z.enum(['exact', 'approximate', 'none']),

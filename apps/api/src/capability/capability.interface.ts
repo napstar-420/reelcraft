@@ -1,6 +1,7 @@
 import type {
   JsonSchema,
   ModelCapabilities,
+  ModelError,
   OutputDef,
   OutputKind,
   SlotDef,
@@ -8,6 +9,7 @@ import type {
   ValidationIssue,
 } from '@reelcraft/shared';
 import type { CostEstimate, JobHandle, JobStatus } from '@reelcraft/shared';
+import type { FileInput } from '../common/file-inputs';
 
 /**
  * §7.2/Appendix A — deliberately absent: database access, the run object,
@@ -23,6 +25,8 @@ export interface ExecCtx<Cfg> {
   config: Cfg;
   slots: Record<string, unknown>;
   context: Record<string, unknown>;
+  /** Files from the stage's `attach` context keys, in attachment order. */
+  files?: FileInput[] | undefined;
   renderedPrompt?: string | undefined;
   systemPrompt?: string | undefined;
   output?: OutputDef | undefined;
@@ -42,6 +46,9 @@ export interface ExecResult<Out = unknown> {
   /** Provider-side diagnostics (token usage, exit code, stderr tail…) shown
    * in the stage log. Never the output itself. */
   providerMeta?: Record<string, unknown>;
+  /** The model declined the task with a structured error reply; the stage
+   * fails with this message instead of persisting `output`. */
+  modelError?: ModelError;
   attachments?: Array<{
     role: 'evidence' | 'download';
     localPath?: string;

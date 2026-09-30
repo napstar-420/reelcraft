@@ -14,6 +14,23 @@ type PrevRef = Extract<Ref, { from: 'prev' }>;
 
 type MemoryRow = typeof runMemory.$inferSelect;
 
+/** One role's Character snapshot in `run.roleBindings`, written by
+ * `RunService.start()`. `view`/`caption` are absent on runs started before
+ * they were snapshotted. */
+export interface RoleBinding {
+  characterId: string;
+  name: string;
+  description: string;
+  references: Array<{
+    blobId: string;
+    sourceKey: string;
+    mime: string;
+    view?: string;
+    caption?: string;
+    probe?: unknown;
+  }>;
+}
+
 export interface BindingScope {
   runId: string;
   prevStageKey?: string | undefined;
@@ -24,17 +41,7 @@ export interface BindingScope {
    * run. */
   assetBindings?: Record<string, { blobId: string; kind: string }> | undefined;
   /** Immutable Character snapshots written by RunService.start(). */
-  roleBindings?:
-    | Record<
-        string,
-        {
-          characterId: string;
-          name: string;
-          description: string;
-          references: Array<{ blobId: string; sourceKey: string; mime: string; probe?: unknown }>;
-        }
-      >
-    | undefined;
+  roleBindings?: Record<string, RoleBinding> | undefined;
   /** phase 7 — carried through the interface now so callers don't churn later. */
   itemIndex?: number | undefined;
   /** phase 7 — the CURRENTLY executing stage's own key, distinct from
@@ -286,7 +293,10 @@ export class BindingResolverService {
           kind: 'media.image',
           sourceKey: image.sourceKey,
           characterId: binding.characterId,
+          characterName: binding.name,
           characterDescription: binding.description,
+          ...(image.view && { view: image.view }),
+          ...(image.caption && { caption: image.caption }),
           ...(image.probe != null && { probe: image.probe }),
         }));
         return {

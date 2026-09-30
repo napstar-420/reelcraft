@@ -1,5 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { CostEstimate, JobHandle, JobStatus } from '@reelcraft/shared';
+import { collectFileInputs, modelAcceptsKind } from '../../common/file-inputs';
+import { STORAGE_ADAPTER, type StorageAdapter } from '../../storage/storage.adapter';
 import { KEY_PROVIDER, type KeyProvider } from '../key-provider';
 import type {
   ModelInfo,
@@ -7,7 +9,31 @@ import type {
   ProviderRequest,
   ProviderResult,
 } from '../provider-adapter.interface';
+import { loadReferenceFiles, type ReferenceFile } from '../reference-files';
 import { ModelCacheService } from './model-cache.service';
+
+/** OpenRouter `architecture.input_modalities` → the file kinds we send for
+ * each. A new kind is opted in here once its content-part encoding
+ * (`contentPart`) is verified. */
+const MODALITY_INPUT_KINDS: Record<string, string[]> = {
+  image: ['media.image'],
+  audio: ['media.audio'],
+};
+// ponytail: fixed inline-upload caps; make per-model once pricing/limits come from listModels.
+const MAX_FILES = 5;
+const MAX_FILE_BYTES = 8 * 1024 * 1024;
+
+function contentPart(file: ReferenceFile): Record<string, unknown> {
+  const dataUrl = `data:${file.mime};base64,${file.base64}`;
+  if (file.mime.startsWith('image/')) return { type: 'image_url', image_url: { url: dataUrl } };
+  if (file.mime.startsWith('audio/')) {
+    return {
+      type: 'input_audio',
+      input_audio: { data: file.base64, format: file.mime.split('/')[1]?.replace('mpeg', 'mp3') },
+    };
+  }
+  return { type: 'file', file: { filename: file.name, file_data: dataUrl } };
+}
 
 interface OpenRouterJob {
   req: ProviderRequest;
@@ -46,6 +72,7 @@ export class OpenRouterAdapter implements ProviderAdapter {
   constructor(
     @Inject(KEY_PROVIDER) private readonly keyProvider: KeyProvider,
     private readonly modelCache: ModelCacheService,
+    @Inject(STORAGE_ADAPTER) private readonly storage: StorageAdapter,
   ) {}
 
   async listModels(): Promise<ModelInfo[]> {
@@ -68,7 +95,12 @@ export class OpenRouterAdapter implements ProviderAdapter {
       throw new Error(`OpenRouterAdapter.listModels: ${res.status} ${res.statusText}`);
     }
     const body = (await res.json()) as {
-      data: Array<{ id: string; name: string; supported_parameters?: string[] }>;
+      data: Array<{
+        id: string;
+        name: string;
+        supported_parameters?: string[];
+        architecture?: { input_modalities?: string[] };
+      }>;
     };
     const models: ModelInfo[] = body.data.map((m) => ({
       modelId: m.id,
@@ -77,6 +109,9 @@ export class OpenRouterAdapter implements ProviderAdapter {
         supportsSeed: false,
         supportsIdempotency: false,
         supportsStructuredOutput: m.supported_parameters?.includes('structured_outputs') === true,
+        inputKinds: (m.architecture?.input_modalities ?? []).flatMap(
+          (modality) => MODALITY_INPUT_KINDS[modality] ?? [],
+        ),
       },
     }));
     this.modelCache.set(models);
@@ -108,15 +143,25 @@ export class OpenRouterAdapter implements ProviderAdapter {
   }
 
   async submit(req: ProviderRequest, idempotencyKey: string): Promise<JobHandle> {
-    if (req.output?.kind === 'data') {
+    const files =
+      req.params.__mediaKind === undefined && req.params.slots
+        ? collectFileInputs({ files: req.params.slots }, ['files'])
+        : [];
+    if (req.output?.kind === 'data' || files.length > 0) {
       const model = (await this.listModels()).find(
         (candidate) => candidate.modelId === req.modelId,
       );
       if (!model) {
         throw new Error(`OpenRouter model "${req.modelId}" is not available`);
       }
-      if (!model.capabilities.supportsStructuredOutput) {
+      if (req.output?.kind === 'data' && !model.capabilities.supportsStructuredOutput) {
         throw new Error(`OpenRouter model "${req.modelId}" does not support structured output`);
+      }
+      const unreadable = files.find(
+        (file) => !modelAcceptsKind(model.capabilities.inputKinds ?? [], file.kind),
+      );
+      if (unreadable) {
+        throw new Error(`OpenRouter model "${req.modelId}" can't read ${unreadable.kind} inputs`);
       }
     }
     this.jobs.set(idempotencyKey, { req });
@@ -155,6 +200,14 @@ export class OpenRouterAdapter implements ProviderAdapter {
           }
         : undefined;
     const ids = { providerId: this.id, jobId: handle.externalId, model: job.req.modelId };
+    const files = await loadReferenceFiles(this.storage, job.req.params.slots, {
+      max: MAX_FILES,
+      maxBytes: MAX_FILE_BYTES,
+      label: 'OpenRouter',
+    });
+    const prompt = job.req.renderedPrompt ?? '';
+    const userContent =
+      files.length > 0 ? [{ type: 'text', text: prompt }, ...files.map(contentPart)] : prompt;
     const startedAt = Date.now();
     const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
@@ -164,7 +217,7 @@ export class OpenRouterAdapter implements ProviderAdapter {
         model: job.req.modelId,
         messages: [
           ...(job.req.system ? [{ role: 'system', content: job.req.system }] : []),
-          { role: 'user', content: job.req.renderedPrompt ?? '' },
+          { role: 'user', content: userContent },
         ],
         ...(responseFormat && { response_format: responseFormat }),
         ...(responseFormat && { provider: { require_parameters: true } }),

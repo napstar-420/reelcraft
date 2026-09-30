@@ -21,3 +21,17 @@ export function collectAssetIds(graph: StageDef[]): string[] {
   }
   return [...ids];
 }
+
+/** The role refs whose images a stage sends to its model: reference slots
+ * plus attached Context. Shared by save-time and run-start reference-limit
+ * checks so both count the same bindings. */
+export function roleRefsOf(stage: StageDef): Array<Extract<Ref, { from: 'role' }>> {
+  const attached = new Set(stage.attach ?? []);
+  const refs = [
+    ...Object.values(stage.slots),
+    ...Object.entries(stage.context)
+      .filter(([name]) => attached.has(name))
+      .map(([, ref]) => ref),
+  ];
+  return refs.filter((ref): ref is Extract<Ref, { from: 'role' }> => ref.from === 'role');
+}

@@ -133,4 +133,27 @@ Line three
     );
     expect(result).toBe('Task. Feedback: Fix X.');
   });
+
+  it('lists attached files in order and adds the error contract only when asked', () => {
+    const result = renderStagePrompt('Caption the shoe.', undefined, {}, 'text', {
+      errorReply: true,
+      attachments: [
+        { name: 'shoe', kind: 'media.image' },
+        { name: 'hero[1]', kind: 'media.image' },
+      ],
+    });
+    expect(result).toContain(
+      '<attached_files>\nThe following files are attached to this message, in order:\n1. shoe (media.image)\n2. hero[1] (media.image)\n</attached_files>',
+    );
+    expect(result).toContain('{"reelcraft_error":{"code":"<code>","message":"<message>"}}');
+    expect(result!.startsWith('<error_reporting>')).toBe(true);
+    expect(result!.indexOf('Caption the shoe.')).toBeLessThan(result!.indexOf('<attached_files>'));
+    expect(renderStagePrompt('Task.', undefined, {}, 'text', { attachments: [] })).toBe('Task.');
+  });
+
+  it('uses the status envelope wording for data output', () => {
+    const result = renderStagePrompt('Task.', undefined, {}, 'data', { errorReply: true });
+    expect(result).toContain('set "status" to "ok"');
+    expect(result).not.toContain('reelcraft_error');
+  });
 });

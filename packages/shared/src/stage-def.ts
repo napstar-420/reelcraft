@@ -23,6 +23,10 @@ export const StageDef = z.object({
   config: z.record(z.string(), z.unknown()),
   slots: z.record(z.string(), Ref),
   context: z.record(z.string(), Ref),
+  /** Context keys whose files are attached to the model request (text
+   * generation). Binding a file in `context` alone only passes its JSON
+   * record (handle, kind, …), e.g. for a timeline stage that needs handles. */
+  attach: z.array(z.string()).optional(),
   writes: z.record(z.string(), z.string()).optional(),
   output: OutputDef,
   iterate: z

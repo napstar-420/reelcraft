@@ -205,7 +205,7 @@ export async function runStageAttemptLoop(
         return { outcome: 'run_not_running' as const };
       }
 
-      if (fetched.outcome === 'qc_error') {
+      if (fetched.outcome === 'qc_error' || fetched.outcome === 'model_error') {
         await step.run(`fail-stage-${stageKey}`, () =>
           runner.failStageExecution(stageExecutionId, fetched.reason, stageItemId),
         );

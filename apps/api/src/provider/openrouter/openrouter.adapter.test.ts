@@ -1,3 +1,4 @@
+import { Readable } from 'node:stream';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { OpenRouterAdapter } from './openrouter.adapter';
 import { ModelCacheService } from './model-cache.service';
@@ -14,10 +15,18 @@ function response(
   } as unknown as Response;
 }
 
-function fixture() {
+function fixture(files: Record<string, { bytes: string; mime: string }> = {}) {
   const keyProvider = { get: vi.fn().mockResolvedValue('openrouter-key') };
-  const adapter = new OpenRouterAdapter(keyProvider as never, new ModelCacheService());
-  return { adapter, keyProvider };
+  const storage = {
+    getStream: vi.fn(async (key: string) => Readable.from([Buffer.from(files[key]!.bytes)])),
+    stat: vi.fn(async (key: string) => ({ bytes: 1, etag: 'e', mime: files[key]!.mime })),
+  };
+  const adapter = new OpenRouterAdapter(
+    keyProvider as never,
+    new ModelCacheService(),
+    storage as never,
+  );
+  return { adapter, keyProvider, storage };
 }
 
 afterEach(() => {
@@ -255,6 +264,108 @@ describe('OpenRouterAdapter structured output', () => {
     const body = JSON.parse(String(request.body));
     expect(body).not.toHaveProperty('max_tokens');
     expect(body.temperature).toBe(0.2);
+  });
+});
+
+describe('OpenRouterAdapter file inputs', () => {
+  const catalog = response({
+    data: [
+      {
+        id: 'vision-model',
+        name: 'Vision',
+        architecture: { input_modalities: ['text', 'image', 'file'] },
+      },
+      { id: 'text-model', name: 'Text', architecture: { input_modalities: ['text'] } },
+    ],
+  });
+  const slots = (...sourceKeys: string[]) => ({
+    files: sourceKeys.map((sourceKey, i) => ({
+      name: `f${i}`,
+      kind: sourceKey.endsWith('.pdf') ? 'file.document' : 'media.image',
+      sourceKey,
+    })),
+  });
+
+  it('maps input modalities to the file kinds it can send', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(catalog));
+    const { adapter } = fixture();
+
+    const models = await adapter.listModels();
+
+    expect(models.map((m) => m.capabilities.inputKinds)).toEqual([['media.image'], []]);
+  });
+
+  it('attaches files as content parts chosen by MIME type', async () => {
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(response({ choices: [{ message: { content: 'a red shoe' } }] }));
+    vi.stubGlobal('fetch', fetch);
+    const { adapter } = fixture({
+      'assets/shoe.png': { bytes: 'png', mime: 'image/png' },
+      'assets/brief.pdf': { bytes: 'pdf', mime: 'application/pdf' },
+    });
+    // Bypass the kind guard: only the MIME-based encoding is under test here.
+    vi.spyOn(adapter, 'listModels').mockResolvedValue([
+      {
+        modelId: 'vision-model',
+        label: 'Vision',
+        capabilities: {
+          supportsSeed: false,
+          supportsIdempotency: false,
+          inputKinds: ['media.image', 'file.*'],
+        },
+      },
+    ]);
+
+    const handle = await adapter.submit(
+      {
+        modelId: 'vision-model',
+        params: { slots: slots('assets/shoe.png', 'assets/brief.pdf') },
+        renderedPrompt: 'Describe the shoe',
+        output: { kind: 'text' },
+      },
+      'vision-job',
+    );
+    await expect(adapter.fetch(handle)).resolves.toEqual(
+      expect.objectContaining({ output: 'a red shoe' }),
+    );
+
+    const body = JSON.parse(String((fetch.mock.calls[0]?.[1] as RequestInit).body));
+    expect(body.messages).toEqual([
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'Describe the shoe' },
+          {
+            type: 'image_url',
+            image_url: { url: `data:image/png;base64,${Buffer.from('png').toString('base64')}` },
+          },
+          {
+            type: 'file',
+            file: {
+              filename: '2-brief.pdf',
+              file_data: `data:application/pdf;base64,${Buffer.from('pdf').toString('base64')}`,
+            },
+          },
+        ],
+      },
+    ]);
+    expect(body).not.toHaveProperty('slots');
+  });
+
+  it('rejects files the model cannot read before storing a job', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(catalog));
+    const { adapter } = fixture();
+
+    await expect(
+      adapter.submit(
+        { modelId: 'text-model', params: { slots: slots('assets/shoe.png') } },
+        'blind-job',
+      ),
+    ).rejects.toThrow(/can't read media\.image inputs/);
+    await expect(
+      adapter.fetch({ providerId: 'openrouter', externalId: 'blind-job' }),
+    ).rejects.toThrow(/unknown job/i);
   });
 });
 

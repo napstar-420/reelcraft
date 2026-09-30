@@ -525,11 +525,16 @@ export class BlueprintValidatorService {
         });
       }
     }
+    // An attached Context role sends its images to the model as files; any
+    // other Context use would only interpolate image records into a prompt.
+    const attached = new Set(stage.attach ?? []);
     for (const [name, ref] of Object.entries(stage.context)) {
+      if (attached.has(name)) continue;
       if (flattenCoalesce(ref).some((leaf) => leaf.from === 'role')) {
         issues.push({
           path: `${base}.context.${name}`,
-          message: 'a Character role may only bind to a reference slot',
+          message:
+            'a Character role in Context must be attached as a file (tick Attach file) on a text stage',
           severity: 'error',
         });
       }

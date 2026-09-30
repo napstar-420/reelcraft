@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { Eye, History, Play } from 'lucide-react';
+import { Eye, History, Play, Square } from 'lucide-react';
 import { toast } from 'sonner';
 import type { InputDef, RunDetailDto, StageDef } from '@reelcraft/shared';
 import { api } from '@/api/client';
@@ -11,6 +11,7 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import { ApprovalReviewSheet } from '@/components/runs/approval-review-sheet';
 import { ArtifactPreview } from '@/components/runs/artifact-preview';
 import { StageOutputSheet } from '@/components/runs/stage-output-sheet';
+import { RunMemoryCard } from '@/components/runs/run-memory-card';
 import { StageAttemptsSheet } from '@/components/runs/stage-attempts-sheet';
 import { RunLaunchDialog } from '@/pages/RunLaunchDialog';
 import { buildRunAllDto, buildRunStageDto } from '@/pages/canvas-run.logic';
@@ -178,17 +179,21 @@ export function CanvasRunPanel({
         {graph.map((stage) => {
           const execution = run.stageExecutions.find((e) => e.stageKey === stage.key);
           const tone = execution ? stageExecutionStateTone(execution.state) : 'neutral';
+          // No per-stage cancel API: stopping a running stage cancels its run.
+          const stoppable =
+            execution?.state === 'running' && isRunActionAllowed('cancel', run.state);
           return (
             <div key={stage.key} className="flex items-center gap-2 px-3 py-2 text-sm">
               <Button
                 size="icon"
                 variant="ghost"
                 className="size-6 shrink-0"
-                title="Run"
-                aria-label="Run"
-                onClick={() => runStage.mutate(stage.key)}
+                title={stoppable ? 'Cancel' : 'Run'}
+                aria-label={stoppable ? 'Cancel' : 'Run'}
+                disabled={stoppable ? cancel.isPending : runStage.isPending}
+                onClick={() => (stoppable ? cancel.mutate() : runStage.mutate(stage.key))}
               >
-                <Play className="size-3.5" />
+                {stoppable ? <Square className="size-3.5" /> : <Play className="size-3.5" />}
               </Button>
               <span className={`size-2 shrink-0 rounded-full ${toneDotClassName[tone]}`} />
               <span className="min-w-0 flex-1 truncate text-xs" title={stage.key}>
@@ -242,6 +247,13 @@ export function CanvasRunPanel({
             <ArtifactPreview artifact={blueprintOutput.data.items[0].artifact} />
           )
         )}
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <h3 className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+          Memory
+        </h3>
+        <RunMemoryCard run={run} onOpenStage={setOutputSheetKey} />
       </div>
 
       <StageOutputSheet

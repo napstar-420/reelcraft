@@ -420,13 +420,38 @@ export class InvalidationService {
   }
 
   async listMemory(runId: string) {
-    const [currentRows, history] = await Promise.all([
+    const [currentRows, history, [runRow]] = await Promise.all([
       this.memory.listCurrent(this.db, runId),
       this.memory.listHistory(this.db, runId),
+      this.db
+        .select({ graph: blueprintVersion.graph })
+        .from(run)
+        .innerJoin(blueprintVersion, eq(run.blueprintVersionId, blueprintVersion.id))
+        .where(eq(run.id, runId))
+        .limit(1),
     ]);
+    if (!runRow) throw new NotFoundException(`Run ${runId} not found`);
+
+    // A declared write with no current row — never written yet, or
+    // tombstoned by invalidation — is still to come. An iterating writer's
+    // rows are `key#i`, so any of them counts as written.
+    const written = new Set(currentRows.map((row) => row.memKey.split('#')[0]));
+    const expected = StageDefSchema.array()
+      .parse(runRow.graph)
+      .flatMap((stage) =>
+        Object.entries(stage.writes ?? {})
+          .filter(([memKey]) => !written.has(memKey))
+          .map(([memKey, path]) => ({
+            memKey,
+            writtenBy: stage.key,
+            path,
+            kind: stage.output.kind,
+          })),
+      );
     return {
       current: Object.fromEntries(currentRows.map((row) => [row.memKey, row])),
       history,
+      expected,
     };
   }
 }

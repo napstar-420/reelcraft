@@ -244,6 +244,43 @@ describe('BlueprintValidatorService', () => {
     expect(hasError(issues, 'stages.a.slots.startFrame')).toBe(true);
   });
 
+  it('allows a Character role in Context only when that Context is attached', () => {
+    const validator = makeValidator();
+    const roles: RoleDef[] = [
+      {
+        key: 'host',
+        label: 'Host',
+        required: true,
+        characterId: 'char-1',
+        referenceBlobIds: ['ref-1'],
+      },
+    ];
+    const validate = (graph: StageDef[]) =>
+      validator.validate({
+        graph,
+        inputs: [],
+        roles,
+        blueprintChannelId: 'channel-1',
+        charactersById: new Map([
+          [
+            'char-1',
+            { channelId: 'channel-1', readiness: 'ready', referenceBlobIds: new Set(['ref-1']) },
+          ],
+        ]),
+      });
+    const role = { from: 'role', roleKey: 'host' } as const;
+    const context = { character: role };
+    expect(hasError(validate([stage({ key: 'a', context, attach: ['character'] })]))).toBe(false);
+    expect(hasError(validate([stage({ key: 'a', context })]), 'stages.a.context.character')).toBe(
+      true,
+    );
+    const inCheck = stage({
+      key: 'a',
+      checks: [{ type: 'script', name: 'x', code: 'return { pass: true };', refs: { r: role } }],
+    });
+    expect(hasError(validate([inCheck]), 'stages.a.checks[0].refs.r')).toBe(true);
+  });
+
   it('errors on an unknown capability', () => {
     const validator = makeValidator();
     const graph = [stage({ key: 'a', capability: 'nonexistent.capability' })];
