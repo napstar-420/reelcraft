@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { collectFileInputs, isFileKind, modelAcceptsKind } from './file-inputs';
+import {
+  collectFileInputs,
+  isFileKind,
+  modelAcceptsKind,
+  promptScopeWithRoles,
+} from './file-inputs';
 
 describe('collectFileInputs', () => {
   const context = {
@@ -32,6 +37,42 @@ describe('collectFileInputs', () => {
   it('dedupes a file bound twice, keeping the first binding', () => {
     const shoe = { kind: 'media.image', sourceKey: 'assets/shoe.png' };
     expect(collectFileInputs({ a: shoe, b: shoe }, ['a', 'b']).map((f) => f.name)).toEqual(['a']);
+  });
+});
+
+describe('promptScopeWithRoles', () => {
+  const role = (sourceKey: string, view: string, caption?: string) => ({
+    handle: `character:c1:${sourceKey}`,
+    kind: 'media.image',
+    sourceKey,
+    characterId: 'c1',
+    characterName: 'Maya',
+    characterDescription: 'Late-20s presenter, short dark hair',
+    view,
+    ...(caption && { caption }),
+  });
+
+  it('renders a role as its Character text, naming images as they are attached', () => {
+    const context = {
+      bg: { kind: 'media.image', sourceKey: 'assets/studio.png' },
+      character: [role('chars/1.png', 'front'), role('chars/2.png', 'three_quarter', 'smiling')],
+      brief: 'keep it calm',
+    };
+    const scope = promptScopeWithRoles(context, ['bg', 'character']);
+    expect(scope.character).toBe(
+      'Name: Maya\nDescription: Late-20s presenter, short dark hair\n' +
+        'Reference images (attached): character[1] front, character[2] three quarter (smiling)',
+    );
+    expect(scope.bg).toBe(context.bg);
+    expect(scope.brief).toBe('keep it calm');
+  });
+
+  it('names a single image by its binding and omits images that are not attached', () => {
+    const context = { character: [role('chars/1.png', 'front')] };
+    expect(promptScopeWithRoles(context, ['character']).character).toContain(
+      'Reference images (attached): character front',
+    );
+    expect(promptScopeWithRoles(context, []).character).not.toContain('Reference images');
   });
 });
 

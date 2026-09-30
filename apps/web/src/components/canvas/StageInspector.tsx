@@ -9,7 +9,9 @@ import { SchemaForm } from './SchemaForm';
 import { ChecksEditor } from './ChecksEditor';
 import { InfoHeading, InfoLabel } from './info-label';
 import { ModelPinEditor } from './ModelPinEditor';
+import { PathInput } from './PathInput';
 import { TypedValueInput } from './TypedValueInput';
+import { schemaPaths } from '../../lib/ref-paths';
 import {
   buildStageOutput,
   isOutputInstructionsIssue,
@@ -27,6 +29,7 @@ import type {
   InputDef,
   RoleDef,
   Ref,
+  OutputDef,
   OutputKind,
   SlotDef,
   EnabledWhen,
@@ -66,12 +69,19 @@ function nextFreeKey(existing: Record<string, unknown>, prefix: string): string 
 
 function WritesEditor({
   writes,
+  output,
   onChange,
 }: {
   writes: Record<string, string> | undefined;
+  output: OutputDef;
   onChange: (writes: Record<string, string>) => void;
 }) {
   const entries = Object.entries(writes ?? {});
+  // `$` writes the whole output; only a data output has fields beneath it.
+  const pathOptions = [
+    { path: '$', type: output.kind },
+    ...(output.kind === 'data' ? schemaPaths(output.schema) : []),
+  ];
 
   function updateKey(oldKey: string, newKey: string) {
     const next = { ...(writes ?? {}) };
@@ -106,12 +116,11 @@ function WritesEditor({
             value={key}
             onChange={(e) => updateKey(key, e.target.value)}
           />
-          <Input
-            type="text"
-            className="w-40"
-            placeholder="path"
+          <PathInput
             value={path}
-            onChange={(e) => updatePath(key, e.target.value)}
+            placeholder="path ($ = whole output)"
+            suggestions={pathOptions}
+            onChange={(next) => updatePath(key, next ?? '')}
           />
           <Button type="button" variant="outline" size="sm" onClick={() => remove(key)}>
             Remove
@@ -921,7 +930,12 @@ export function StageInspector({
   }
 
   function handleContextValueChange(key: string, ref: Ref) {
-    onChange({ ...stage, context: { ...stage.context, [key]: ref } });
+    const next = { ...stage, context: { ...stage.context, [key]: ref } };
+    // A role in Context is only valid as attached files, so switching a row
+    // to `role` ticks Attach file for it.
+    const attach = stage.attach ?? [];
+    const attachRole = canAttachFiles && ref.from === 'role' && !attach.includes(key);
+    onChange(attachRole ? withAttach(next, [...attach, key]) : next);
   }
 
   function handleRemoveContext(key: string) {
@@ -1198,6 +1212,7 @@ export function StageInspector({
               </InfoHeading>
               <WritesEditor
                 writes={stage.writes}
+                output={stage.output}
                 onChange={(writes) => onChange({ ...stage, writes })}
               />
             </div>

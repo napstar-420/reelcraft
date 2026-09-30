@@ -49,6 +49,7 @@ import { StageRetryDialog } from '@/components/runs/stage-retry-dialog';
 import { SubmitFormInputDialog } from '@/components/runs/submit-form-input-dialog';
 import { StageAttemptsSheet } from '@/components/runs/stage-attempts-sheet';
 import { StageOutputSheet } from '@/components/runs/stage-output-sheet';
+import { RunMemoryCard } from '@/components/runs/run-memory-card';
 import { isApprovalStillOpen } from './approval-review.logic';
 
 export function RunPage() {
@@ -357,6 +358,11 @@ export function RunPage() {
             </Card>
           ))}
         </div>
+      </div>
+
+      <div className="flex flex-col gap-3">
+        <h2 className="text-lg font-semibold tracking-tight">Memory</h2>
+        <RunMemoryCard run={run} onOpenStage={setOutputStageKey} />
       </div>
     </section>
   );

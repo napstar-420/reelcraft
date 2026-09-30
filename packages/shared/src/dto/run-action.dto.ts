@@ -85,8 +85,19 @@ export const RunMemoryEntryDto = z.object({
 });
 export type RunMemoryEntryDto = z.infer<typeof RunMemoryEntryDto>;
 
+/** A memory write the run's blueprint declares but that has no current
+ * value yet — its writer hasn't run, or invalidation tombstoned it. */
+export const ExpectedMemoryDto = z.object({
+  memKey: z.string(),
+  writtenBy: z.string(),
+  path: z.string(),
+  kind: z.string(),
+});
+export type ExpectedMemoryDto = z.infer<typeof ExpectedMemoryDto>;
+
 export const RunMemoryDto = z.object({
   current: z.record(z.string(), RunMemoryEntryDto),
   history: z.array(RunMemoryEntryDto),
+  expected: z.array(ExpectedMemoryDto),
 });
 export type RunMemoryDto = z.infer<typeof RunMemoryDto>;

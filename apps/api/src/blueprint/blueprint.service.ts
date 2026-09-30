@@ -11,7 +11,7 @@ import { DRIZZLE, type Db } from '../db/drizzle.provider';
 import { asset, blob, blueprint, blueprintVersion, character, channel } from '../db/schema/index';
 import { ulid } from '../common/ulid';
 import { BlueprintValidatorService } from './blueprint-validator.service';
-import { collectAssetIds } from './collect-asset-refs';
+import { collectAssetIds, roleRefsOf } from './collect-asset-refs';
 import {
   buildValidationContext,
   type AssetLookup,
@@ -417,7 +417,15 @@ export class BlueprintService {
           });
           return [];
         }
-        return [{ path, kind: type.kind }];
+        // Files known at save time; prev/memory/input counts are only
+        // known at run time, where `loadReferenceFiles` enforces the cap.
+        const count =
+          ref.from === 'asset'
+            ? 1
+            : ref.from === 'role'
+              ? (dto.roles.find((role) => role.key === ref.roleKey)?.referenceBlobIds?.length ?? 0)
+              : 0;
+        return [{ path, kind: type.kind, count }];
       });
       return files.length > 0 ? [{ stage, files }] : [];
     });
@@ -455,6 +463,18 @@ export class BlueprintService {
           severity: 'error',
         });
       }
+      // A single over-limit role is already reported by
+      // `validateReferenceLimits`; this catches bindings that only exceed
+      // the cap together (e.g. character images + a background asset).
+      const maxFiles = model.capabilities.maxRefs;
+      const total = files.reduce((sum, file) => sum + file.count, 0);
+      if (maxFiles !== undefined && files.length > 1 && total > maxFiles) {
+        issues.push({
+          path: `stages.${stage.key}.attach`,
+          message: `attaches ${total} files but model "${model.modelId}" reads at most ${maxFiles} per request`,
+          severity: 'error',
+        });
+      }
     }
     return issues;
   }
@@ -478,10 +498,7 @@ export class BlueprintService {
     });
     const issues: ValidationIssue[] = [];
     for (const stage of dto.graph) {
-      const used = Object.values(stage.slots).filter(
-        (ref): ref is Extract<(typeof stage.slots)[string], { from: 'role' }> =>
-          ref.from === 'role',
-      );
+      const used = roleRefsOf(stage);
       if (used.length === 0) continue;
       const model = config[stage.key]?.model;
       if (!model?.provider || !model.modelId) {

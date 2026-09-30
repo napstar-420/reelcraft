@@ -6,6 +6,10 @@ import { BlueprintService } from '../../src/blueprint/blueprint.service';
 import { RunService } from '../../src/run/run.service';
 import { StageRunnerService } from '../../src/orchestration/stage-runner.service';
 import { run as runTable, stageAttempt } from '../../src/db/schema/index';
+import { CharacterService } from '../../src/channel/character.service';
+import { AssetService } from '../../src/channel/asset.service';
+import type { RoleBinding } from '../../src/artifact/binding-resolver.service';
+import { STORAGE_ADAPTER, type StorageAdapter } from '../../src/storage/storage.adapter';
 import { buildTestApp, type TestApp } from '../support/build-app';
 import { createTestDb, type TestDb } from '../support/test-db';
 
@@ -94,6 +98,139 @@ describe('text.generate file inputs and model error replies (e2e)', () => {
         severity: 'error',
       }),
     );
+  });
+
+  it('attaches a Character role to a text stage and renders it as Character text', async () => {
+    const { channelId, blueprintId } = await newBlueprint('Role Context');
+    const storage = testApp.app.get<StorageAdapter>(STORAGE_ADAPTER);
+    const characters = testApp.app.get(CharacterService);
+    const host = await characters.create(channelId, {
+      name: 'Maya',
+      description: 'Late-20s presenter, short dark hair',
+    });
+    const reference = async (view: 'front' | 'profile' | 'full_body', caption?: string) => {
+      const upload = await characters.requestReferenceUpload(host.id, 'png');
+      await storage.put(upload.objectKey, Buffer.from('png'), { mime: 'image/png' });
+      await characters.confirmReference(host.id, {
+        blobId: upload.blobId,
+        objectKey: upload.objectKey,
+        sha256: 'deadbeef',
+        view,
+        ...(caption && { caption }),
+      });
+      return upload.blobId;
+    };
+    const front = await reference('front');
+    const profile = await reference('profile', 'looking left');
+    const body = await reference('full_body');
+    await characters.setPrimary(host.id, profile);
+
+    const assetUpload = await testApp.app.get(AssetService).requestUpload(channelId, 'png');
+    await storage.put(assetUpload.objectKey, Buffer.from('png'), { mime: 'image/png' });
+    const studio = await testApp.app.get(AssetService).create(channelId, {
+      name: 'Studio',
+      kind: 'media.image',
+      blobId: assetUpload.blobId,
+      objectKey: assetUpload.objectKey,
+      sha256: 'deadbeef',
+      tags: [],
+    });
+
+    const save = (referenceBlobIds: string[], attach: string[]) =>
+      testApp.app.get(BlueprintService).createVersion(blueprintId, {
+        graph: [
+          textStage({
+            context: {
+              character: { from: 'role', roleKey: 'host' },
+              background: { from: 'asset', assetId: studio.id },
+            },
+            attach,
+            instructions: { template: 'Direct {{ character }} in the studio.' },
+            model: { provider: 'fake', modelId: 'fake-text-vision', params: {} },
+          }),
+        ],
+        inputs: [],
+        roles: [
+          { key: 'host', label: 'Host', required: true, characterId: host.id, referenceBlobIds },
+        ],
+        defaults: {},
+        budget: { runCapUsd: 10 },
+      });
+
+    // Not attached: a role in Context would only interpolate image records.
+    const unattached = await save([front], ['background']);
+    expect(unattached.validation).toContainEqual(
+      expect.objectContaining({
+        path: 'stages.caption.context.character',
+        message: expect.stringMatching(/must be attached as a file/),
+      }),
+    );
+    // 3 character images + the background exceed the model's 3-file cap.
+    const overLimit = await save([front, profile, body], ['character', 'background']);
+    expect(overLimit.validation).toContainEqual(
+      expect.objectContaining({
+        path: 'stages.caption.attach',
+        message: expect.stringMatching(
+          /attaches 4 files but model "fake-text-vision" reads at most 3/,
+        ),
+      }),
+    );
+
+    const version = await save([front, profile], ['character', 'background']);
+    expect(version.runnable).toBe(true);
+
+    const runs = testApp.app.get(RunService);
+    const created = await runs.create({
+      channelId,
+      blueprintVersionId: version.id,
+      inputs: {},
+      roleBindings: {},
+      rerunStageKeys: [],
+      budgetCapUsd: 10,
+    });
+    await runs.start(created.id);
+    const [started] = await testDb.db
+      .select({ roleBindings: runTable.roleBindings })
+      .from(runTable)
+      .where(eq(runTable.id, created.id));
+    const snapshot = (started?.roleBindings as Record<string, RoleBinding>).host!;
+    // Primary first, each image keeping its view and caption.
+    expect(
+      snapshot.references.map(({ blobId, view, caption }) => ({ blobId, view, caption })),
+    ).toEqual([
+      { blobId: profile, view: 'profile', caption: 'looking left' },
+      { blobId: front, view: 'front', caption: undefined },
+    ]);
+
+    await testDb.db.update(runTable).set({ state: 'RUNNING' }).where(eq(runTable.id, created.id));
+    const execution = created.stageExecutions.find((e) => e.stageKey === 'caption')!;
+    const stageRunner = testApp.app.get(StageRunnerService);
+    const { stage, effective, prevStageKey } = await stageRunner.loadStageContext(
+      created.id,
+      'caption',
+    );
+    const attemptCtx = await stageRunner.beginAttempt({
+      runId: created.id,
+      stageExecutionId: execution.id,
+      stageKey: 'caption',
+    });
+    const submission = await stageRunner.reserveAndSubmit(
+      stage,
+      attemptCtx,
+      prevStageKey,
+      effective,
+    );
+    expect(submission.outcome).toBe('submitted');
+    const [attempt] = await testDb.db
+      .select({ renderedPrompt: stageAttempt.renderedPrompt })
+      .from(stageAttempt)
+      .where(eq(stageAttempt.id, attemptCtx.stageAttemptId));
+    expect(attempt?.renderedPrompt).toContain(
+      'Direct Name: Maya\nDescription: Late-20s presenter, short dark hair\n' +
+        'Reference images (attached): character[1] profile (looking left), character[2] front in the studio.',
+    );
+    expect(attempt?.renderedPrompt).toContain('1. character[1] (media.image)');
+    expect(attempt?.renderedPrompt).toContain('3. background (media.image)');
   });
 
   it('fails the stage with the model message when it replies with a structured error', async () => {

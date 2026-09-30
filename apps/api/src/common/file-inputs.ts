@@ -52,6 +52,59 @@ export function collectFileInputs(
   return files;
 }
 
+type RoleImage = {
+  sourceKey: string;
+  characterName?: string;
+  characterDescription?: string;
+  view?: string;
+  caption?: string;
+};
+
+function isRoleImages(value: unknown): value is RoleImage[] {
+  return (
+    Array.isArray(value) &&
+    value.length > 0 &&
+    value.every(
+      (item) =>
+        isFileValue(item) && typeof (item as Record<string, unknown>).characterId === 'string',
+    )
+  );
+}
+
+/** The prompt text for a role binding: the Character's name and description,
+ * then its reference images under the names the model sees them attached as
+ * (`fileNames`, keyed by sourceKey), so `{{ role }}` never interpolates raw
+ * image records. */
+export function describeRole(images: RoleImage[], fileNames: ReadonlyMap<string, string>): string {
+  const [first] = images;
+  const lines = [`Name: ${first?.characterName ?? ''}`];
+  if (first?.characterDescription) lines.push(`Description: ${first.characterDescription}`);
+  const attached = images.flatMap((image) => {
+    const name = fileNames.get(image.sourceKey);
+    if (!name) return [];
+    const view = image.view ? ` ${image.view.replace(/_/g, ' ')}` : '';
+    return [`${name}${view}${image.caption ? ` (${image.caption})` : ''}`];
+  });
+  if (attached.length > 0) lines.push(`Reference images (attached): ${attached.join(', ')}`);
+  return lines.join('\n');
+}
+
+/** `context` for prompt templating: every role binding becomes its
+ * `describeRole` text. The images themselves still reach the model through
+ * `collectFileInputs`. */
+export function promptScopeWithRoles(
+  context: Record<string, unknown>,
+  keys: readonly string[],
+): Record<string, unknown> {
+  const fileNames = new Map(collectFileInputs(context, keys).map((f) => [f.sourceKey, f.name]));
+  return Object.fromEntries(
+    Object.entries(context).map(([name, value]) => [
+      name,
+      isRoleImages(value) ? describeRole(value, fileNames) : value,
+    ]),
+  );
+}
+
 const NON_FILE_KINDS = new Set(['text', 'data', 'timeline', 'literal', 'unknown']);
 
 /** Save-time counterpart of `collectFileInputs`: any bound kind that isn't

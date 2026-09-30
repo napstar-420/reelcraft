@@ -22,12 +22,13 @@ import {
 import { ulid } from '../common/ulid';
 import { fromUsd } from '../common/money';
 import { renderStagePrompt } from '../common/prompt-template';
-import { collectFileInputs } from '../common/file-inputs';
+import { collectFileInputs, promptScopeWithRoles } from '../common/file-inputs';
 import { CapabilityRegistry } from '../capability/capability.registry';
 import {
   BindingResolverService,
   type RefEnvelope,
   type ResolvedBindings,
+  type RoleBinding,
 } from '../artifact/binding-resolver.service';
 import { ArtifactService } from '../artifact/artifact.service';
 import { BlobService } from '../artifact/blob.service';
@@ -352,32 +353,14 @@ export class StageRunnerService {
     return row.assetBindings as Record<string, { blobId: string; kind: string }>;
   }
 
-  private async loadRoleBindings(runId: string): Promise<
-    Record<
-      string,
-      {
-        characterId: string;
-        name: string;
-        description: string;
-        references: Array<{ blobId: string; sourceKey: string; mime: string; probe?: unknown }>;
-      }
-    >
-  > {
+  private async loadRoleBindings(runId: string): Promise<Record<string, RoleBinding>> {
     const [row] = await this.db
       .select({ roleBindings: run.roleBindings })
       .from(run)
       .where(eq(run.id, runId))
       .limit(1);
     if (!row) throw new Error(`StageRunnerService: run ${runId} not found`);
-    return row.roleBindings as Record<
-      string,
-      {
-        characterId: string;
-        name: string;
-        description: string;
-        references: Array<{ blobId: string; sourceKey: string; mime: string; probe?: unknown }>;
-      }
-    >;
+    return row.roleBindings as Record<string, RoleBinding>;
   }
 
   private async resolveBindings(
@@ -533,7 +516,11 @@ export class StageRunnerService {
       ctx.attemptNo,
       ctx.stageItemId,
     );
-    const templateScope = { ...bindings.slots, ...bindings.context, priorCritique };
+    const templateScope = {
+      ...bindings.slots,
+      ...promptScopeWithRoles(bindings.context, stage.attach ?? []),
+      priorCritique,
+    };
     const outputInstructions =
       stage.output.kind === 'text' || stage.output.kind === 'data'
         ? stage.output.instructions

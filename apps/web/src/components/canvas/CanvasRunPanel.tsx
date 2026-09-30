@@ -11,6 +11,7 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import { ApprovalReviewSheet } from '@/components/runs/approval-review-sheet';
 import { ArtifactPreview } from '@/components/runs/artifact-preview';
 import { StageOutputSheet } from '@/components/runs/stage-output-sheet';
+import { RunMemoryCard } from '@/components/runs/run-memory-card';
 import { StageAttemptsSheet } from '@/components/runs/stage-attempts-sheet';
 import { RunLaunchDialog } from '@/pages/RunLaunchDialog';
 import { buildRunAllDto, buildRunStageDto } from '@/pages/canvas-run.logic';
@@ -246,6 +247,13 @@ export function CanvasRunPanel({
             <ArtifactPreview artifact={blueprintOutput.data.items[0].artifact} />
           )
         )}
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <h3 className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+          Memory
+        </h3>
+        <RunMemoryCard run={run} onOpenStage={setOutputSheetKey} />
       </div>
 
       <StageOutputSheet
