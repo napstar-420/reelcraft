@@ -1,3 +1,5 @@
+import type { ReferenceFile } from '../reference-files';
+
 /**
  * Everything that knows chatgpt.com's DOM lives here, so a ChatGPT UI change
  * is a one-file fix. Selectors and flows were verified live on 2026-09-29
@@ -148,8 +150,6 @@ export function webSearchOnScript(id: number): string {
     `return !!(await waitFor(() => document.querySelector(S.webSearchChip), 8000));`,
   );
 }
-
-export type ReferenceFile = { name: string; mime: string; base64: string };
 
 export function attachFilesScript(id: number, files: ReferenceFile[]): string {
   return inPage(

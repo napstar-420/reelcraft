@@ -905,10 +905,19 @@ export function StageInspector({
     return issuesFor((p) => (p.region === 'context' || p.region === undefined) && p.name === key);
   }
 
+  const canAttachFiles = stage.capability.startsWith('text.');
+
+  function withAttach(next: StageDef, attach: string[]): StageDef {
+    const copy: StageDef = { ...next, attach };
+    if (attach.length === 0) delete copy.attach;
+    return copy;
+  }
+
   function handleContextKeyChange(oldKey: string, newKey: string) {
     const { [oldKey]: refValue, ...rest } = stage.context;
     if (refValue === undefined) return;
-    onChange({ ...stage, context: { ...rest, [newKey]: refValue } });
+    const attach = (stage.attach ?? []).map((key) => (key === oldKey ? newKey : key));
+    onChange(withAttach({ ...stage, context: { ...rest, [newKey]: refValue } }, attach));
   }
 
   function handleContextValueChange(key: string, ref: Ref) {
@@ -918,7 +927,13 @@ export function StageInspector({
   function handleRemoveContext(key: string) {
     const next = { ...stage.context };
     delete next[key];
-    onChange({ ...stage, context: next });
+    const attach = (stage.attach ?? []).filter((attached) => attached !== key);
+    onChange(withAttach({ ...stage, context: next }, attach));
+  }
+
+  function handleAttachToggle(key: string, attached: boolean) {
+    const others = (stage.attach ?? []).filter((existing) => existing !== key);
+    onChange(withAttach(stage, attached ? [...others, key] : others));
   }
 
   function handleAddContext() {
@@ -1042,7 +1057,7 @@ export function StageInspector({
             </div>
 
             <div className="flex flex-col gap-3">
-              <InfoHeading info="Free-form key/value bindings interpolated into this stage's Instructions template ({{ key }}). Unlike Slots, any capability can read Context regardless of what it declares.">
+              <InfoHeading info="Free-form key/value bindings interpolated into this stage's Instructions template ({{ key }}). Unlike Slots, any capability can read Context regardless of what it declares. On text generation stages, tick Attach file to send a bound file (e.g. an image) to the model so it can see it — refer to it by name in the prompt rather than with {{ }}. Unticked, the model only gets the file's details (handle, kind), e.g. for building a timeline.">
                 Context
               </InfoHeading>
               {Object.entries(stage.context).map(([key, ref]) => (
@@ -1065,6 +1080,15 @@ export function StageInspector({
                       assets={assets}
                       iterating={!!stage.iterate}
                     />
+                    {canAttachFiles && (
+                      <Label className="font-normal">
+                        <Checkbox
+                          checked={stage.attach?.includes(key) ?? false}
+                          onCheckedChange={(checked) => handleAttachToggle(key, checked === true)}
+                        />
+                        Attach file
+                      </Label>
+                    )}
                     <Button
                       type="button"
                       variant="outline"

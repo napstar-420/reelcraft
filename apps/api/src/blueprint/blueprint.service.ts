@@ -12,7 +12,14 @@ import { asset, blob, blueprint, blueprintVersion, character, channel } from '..
 import { ulid } from '../common/ulid';
 import { BlueprintValidatorService } from './blueprint-validator.service';
 import { collectAssetIds } from './collect-asset-refs';
-import type { AssetLookup, CharacterLookup } from './validation-context';
+import {
+  buildValidationContext,
+  type AssetLookup,
+  type BlueprintValidationInput,
+  type CharacterLookup,
+} from './validation-context';
+import { resolveBoundType } from './binding-types';
+import { isFileKind, modelAcceptsKind } from '../common/file-inputs';
 import { ConfigResolverService } from '../run-config/config-resolver.service';
 import { EngineConfig } from '../config/engine-config';
 import { engineDefaults } from '../run-config/engine-defaults';
@@ -202,16 +209,24 @@ export class BlueprintService {
       this.loadCharactersById(dto.roles),
     ]);
 
-    const issues = this.validator.validate({
+    const validationInput: BlueprintValidationInput = {
       graph: dto.graph,
       inputs: dto.inputs,
       roles: dto.roles,
       assetsById,
       blueprintChannelId: blueprintRow.channelId,
       charactersById,
-    });
+    };
+    const issues = this.validator.validate(validationInput);
     issues.push(...(await this.validateReferenceLimits(dto, blueprintRow.defaults as ConfigLayer)));
     issues.push(...(await this.validateProviderPins(dto, blueprintRow.defaults as ConfigLayer)));
+    issues.push(
+      ...(await this.validateFileInputs(
+        dto,
+        blueprintRow.defaults as ConfigLayer,
+        validationInput,
+      )),
+    );
     const runnable = issues.every((i) => i.severity !== 'error');
     return { issues, runnable };
   }
@@ -370,6 +385,80 @@ export class BlueprintService {
     }
     return issues;
   }
+  /** A stage's `attach` keys must name Context bindings that resolve to files
+   * its model can read. Kind-agnostic: any non-JSON bound kind is a file
+   * (`isFileKind`), checked against the model's declared `inputKinds`. */
+  private async validateFileInputs(
+    dto: CreateBlueprintVersionDto,
+    channelDefaults: ConfigLayer,
+    validationInput: BlueprintValidationInput,
+  ): Promise<ValidationIssue[]> {
+    const ctx = buildValidationContext(validationInput);
+    const issues: ValidationIssue[] = [];
+    const stagesWithFiles = dto.graph.flatMap((stage, index) => {
+      const files = (stage.attach ?? []).flatMap((name) => {
+        const path = `stages.${stage.key}.context.${name}`;
+        const ref = stage.context[name];
+        if (!ref) {
+          issues.push({
+            path: `stages.${stage.key}.attach`,
+            message: `"${name}" is not a Context binding of this stage`,
+            severity: 'error',
+          });
+          return [];
+        }
+        const { type, issue } = resolveBoundType(ref, ctx, index, path);
+        if (issue) return []; // already reported by the synchronous validator
+        if (!isFileKind(type.kind)) {
+          issues.push({
+            path,
+            message: `"${name}" is ${type.kind}, not a file, so it can't be attached`,
+            severity: 'error',
+          });
+          return [];
+        }
+        return [{ path, kind: type.kind }];
+      });
+      return files.length > 0 ? [{ stage, files }] : [];
+    });
+    if (stagesWithFiles.length === 0) return issues;
+
+    const config = this.configResolver.resolveRunConfig({
+      graph: dto.graph,
+      engine: engineDefaults(this.engineConfig),
+      channelDefaults,
+      blueprintDefaults: dto.defaults,
+    });
+    for (const { stage, files } of stagesWithFiles) {
+      const pin = config[stage.key]?.model;
+      if (!pin?.provider) continue;
+      let model: ModelInfo | undefined;
+      try {
+        model = (await this.providers.get(pin.provider).listModels()).find(
+          (candidate) => candidate.modelId === pin.modelId,
+        );
+      } catch (error) {
+        this.logger.warn(
+          { stageKey: stage.key, provider: pin.provider, modelId: pin.modelId, err: error },
+          'model discovery failed during file-input validation',
+        );
+        continue;
+      }
+      // An unknown model is already reported by `validateProviderPins`.
+      if (!model) continue;
+      const accepted = model.capabilities.inputKinds ?? [];
+      for (const file of files) {
+        if (modelAcceptsKind(accepted, file.kind)) continue;
+        issues.push({
+          path: file.path,
+          message: `Model "${model.modelId}" can't read ${file.kind} inputs — pick a model that supports them or remove this binding`,
+          severity: 'error',
+        });
+      }
+    }
+    return issues;
+  }
+
   /** Validate the authored selection against the same merged model pins a
    * run will use. This rejects over-limit blueprints at save time instead of
    * letting providers silently drop identity references. */

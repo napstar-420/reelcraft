@@ -53,6 +53,41 @@ const OUTPUT_CONTRACT = `Produce only the requested stage output.
 Follow the stage-specific output instructions exactly.
 Do not add commentary, labels, or formatting unless requested.`;
 
+const ERROR_REPORTING_WHEN = `If you cannot complete this task, do not guess and do not return partial output.
+This applies only when:
+- a required input or attached file is missing, empty or unreadable;
+- the inputs do not contain what the task needs; or
+- the instructions are contradictory or impossible to satisfy.`;
+
+const ERROR_REPORTING_CODES = `Allowed codes: input_missing, input_unreadable, input_mismatch, task_impossible, refused.
+The message must be one or two sentences naming the specific input or problem, so the user can fix it.
+Minor ambiguity is not an error: make a reasonable assumption and complete the task.`;
+
+const TEXT_ERROR_REPLY = `In those cases, reply with ONLY this JSON object and nothing else:
+{"reelcraft_error":{"code":"<code>","message":"<message>"}}`;
+
+const DATA_ERROR_REPLY = `Your response is a JSON object with "status", "message" and "result" fields.
+Normally, set "status" to "ok", "message" to "" and put your output in "result".
+In those cases instead, set "status" to the error code, "message" to the explanation, and fill "result" with the smallest placeholder values its schema allows (they are discarded).`;
+
+export interface StagePromptOptions {
+  /** Append the `<error_reporting>` contract (LLM text/data stages only). */
+  errorReply?: boolean;
+  /** Files attached to the request, in attachment order. */
+  attachments?: ReadonlyArray<{ name: string; kind: string }>;
+}
+
+function attachedFilesBlock(attachments: StagePromptOptions['attachments']): string | undefined {
+  if (!attachments?.length) return undefined;
+  const lines = attachments.map((file, index) => `${index + 1}. ${file.name} (${file.kind})`);
+  return `<attached_files>\nThe following files are attached to this message, in order:\n${lines.join('\n')}\n</attached_files>`;
+}
+
+function errorReportingBlock(outputKind: 'text' | 'data'): string {
+  const reply = outputKind === 'data' ? DATA_ERROR_REPLY : TEXT_ERROR_REPLY;
+  return `<error_reporting>\n${ERROR_REPORTING_WHEN}\n${reply}\n${ERROR_REPORTING_CODES}\n</error_reporting>`;
+}
+
 const FEEDBACK_PREAMBLE = `Your previous output for this task was rejected. Produce a new output that fixes every issue below while still meeting all of the original requirements.`;
 
 /** Renders the task and its optional output instructions with the same scope,
@@ -68,6 +103,7 @@ export function renderStagePrompt(
   outputInstructions: string | undefined,
   scope: Record<string, unknown>,
   outputKind: 'text' | 'data',
+  options: StagePromptOptions = {},
 ): string | undefined {
   const renderedTask = template === undefined ? undefined : renderPrompt(template, scope);
   const renderedInstructions = outputInstructions
@@ -86,8 +122,10 @@ export function renderStagePrompt(
   const contract = renderedInstructions?.trim()
     ? `<output_contract>\n${OUTPUT_CONTRACT}${dataRule}\n\n<stage_output_instructions>\n${renderedInstructions}\n</stage_output_instructions>\n</output_contract>`
     : undefined;
-  if (!feedback && !contract) return renderedTask;
-  return [renderedTask?.replace(/\n+$/, ''), feedback, contract]
+  const attached = attachedFilesBlock(options.attachments);
+  const errorReporting = options.errorReply ? errorReportingBlock(outputKind) : undefined;
+  if (!feedback && !contract && !attached && !errorReporting) return renderedTask;
+  return [renderedTask?.replace(/\n+$/, ''), feedback, contract, attached, errorReporting]
     .filter((part): part is string => !!part)
     .join('\n\n');
 }

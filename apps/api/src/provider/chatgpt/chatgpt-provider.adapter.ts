@@ -1,4 +1,3 @@
-import { basename, extname } from 'node:path';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { JobHandle, JobStatus, Modality } from '@reelcraft/shared';
 import type {
@@ -10,7 +9,7 @@ import type {
   ProviderResult,
 } from '../provider-adapter.interface';
 import { STORAGE_ADAPTER, type StorageAdapter } from '../../storage/storage.adapter';
-import { collectSourceKeys } from '../source-keys';
+import { loadReferenceFiles } from '../reference-files';
 import { buildChatgptPrompt } from './chatgpt-prompt';
 import {
   EFFORT_STOPS,
@@ -31,7 +30,6 @@ import {
   webSearchOnScript,
   type ChatgptEffort,
   type PageState,
-  type ReferenceFile,
   type SignInState,
 } from './chatgpt-page';
 import { NeoClient } from './neo-client';
@@ -110,7 +108,7 @@ export class ChatgptProviderAdapter implements ProviderAdapter {
         capabilities: {
           supportsSeed: false,
           supportsIdempotency: false,
-          supportsVision: true,
+          inputKinds: ['media.image'],
           maxRefs: MAX_REFERENCES,
           image: { formats: ['png'], maxReferences: MAX_REFERENCES },
         },
@@ -137,7 +135,11 @@ export class ChatgptProviderAdapter implements ProviderAdapter {
     // images to steer the result, and a text-modality QC judge attaches the
     // artifact under review so a vision-capable judge can actually see it
     // (§10.3 — "Image: the image, to a vision model").
-    const references = await this.loadReferences(req.params.slots);
+    const references = await loadReferenceFiles(this.storage, req.params.slots, {
+      max: MAX_REFERENCES,
+      maxBytes: MAX_REFERENCE_BYTES,
+      label: 'ChatGPT',
+    });
     const pastedPrompt = buildChatgptPrompt({
       system: req.system,
       renderedPrompt: req.renderedPrompt,
@@ -318,32 +320,6 @@ export class ChatgptProviderAdapter implements ProviderAdapter {
     }
   }
 
-  private async loadReferences(slots: unknown): Promise<ReferenceFile[]> {
-    const keys = collectSourceKeys(slots);
-    if (keys.length > MAX_REFERENCES) {
-      throw new Error(`ChatGPT image generation accepts at most ${MAX_REFERENCES} references`);
-    }
-    return Promise.all(
-      keys.map(async (key, index) => {
-        const chunks: Buffer[] = [];
-        let bytes = 0;
-        for await (const chunk of await this.storage.getStream(key)) {
-          const buffer = Buffer.from(chunk as Buffer);
-          bytes += buffer.length;
-          if (bytes > MAX_REFERENCE_BYTES) {
-            throw new Error(`Reference image "${basename(key)}" exceeds 8 MiB`);
-          }
-          chunks.push(buffer);
-        }
-        return {
-          name: `${index + 1}-${basename(key)}`,
-          mime: referenceMime(key),
-          base64: Buffer.concat(chunks).toString('base64'),
-        };
-      }),
-    );
-  }
-
   private inspectReadiness(): Promise<Readiness> {
     if (this.readiness && this.readiness.expiresAt > Date.now()) return this.readiness.value;
     const value = this.probeReadiness();
@@ -467,13 +443,6 @@ export function parseJsonReply(reply: string): unknown {
   } catch {
     throw new Error(`ChatGPT reply was not valid JSON: ${reply.slice(0, 200)}`);
   }
-}
-
-function referenceMime(key: string): string {
-  const ext = extname(key).toLowerCase();
-  if (ext === '.jpg' || ext === '.jpeg') return 'image/jpeg';
-  if (ext === '.webp') return 'image/webp';
-  return 'image/png';
 }
 
 function imageExtension(mime: string): string {

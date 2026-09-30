@@ -81,7 +81,7 @@ export class FakeProviderAdapter implements ProviderAdapter {
           supportsSeed: true,
           supportsIdempotency: true,
           supportsStructuredOutput: true,
-          supportsVision: false,
+          inputKinds: [],
         },
       },
       {

@@ -24,6 +24,8 @@ function fixture(results: unknown[]) {
   };
   const storage = {
     getStream: vi.fn(async () => Readable.from([Buffer.from('png-bytes')])),
+    // Untyped upload: the loader falls back to the key's extension.
+    stat: vi.fn(async () => ({ bytes: 9, etag: 'e', mime: 'application/octet-stream' })),
   };
   const adapter = new ChatgptProviderAdapter(neo as never, storage as never);
   const closed = () => scripts.filter((s) => s.includes('browser.pages.close')).length;
