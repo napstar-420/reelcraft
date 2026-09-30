@@ -151,15 +151,54 @@ export function webSearchOnScript(id: number): string {
   );
 }
 
-export function attachFilesScript(id: number, files: ReferenceFile[]): string {
+/** Base64 characters per upload `run`: Neo rejects request bodies over 4 MB. */
+export const UPLOAD_CHUNK = 2_000_000;
+const UPLOAD_NODE = '__reelcraft_upload_';
+
+/**
+ * Appends one slice of reference file `index`'s base64 to a hidden node
+ * (`from === 0` starts it afresh) and returns the stored length;
+ * `attachFilesScript` then attaches every parked file.
+ */
+export function stageUploadChunkScript(
+  id: number,
+  index: number,
+  from: number,
+  chunk: string,
+): string {
+  if (!Number.isInteger(index) || index < 0 || !Number.isInteger(from) || from < 0) {
+    throw new Error(`Invalid upload chunk ${index}@${from}`);
+  }
+  if (chunk.length > UPLOAD_CHUNK) throw new Error('Upload chunk exceeds UPLOAD_CHUNK');
+  return inPage(
+    id,
+    `const nodeId = '${UPLOAD_NODE}' + args.index;
+let node = document.getElementById(nodeId);
+if (!node) { node = document.createElement('template'); node.id = nodeId; document.body.appendChild(node); }
+if (args.from === 0) node.textContent = '';
+if (node.textContent.length !== args.from) return { error: 'ChatGPT upload chunk out of order' };
+node.textContent += args.chunk;
+return { length: node.textContent.length };`,
+    { index, from, chunk },
+  );
+}
+
+export function attachFilesScript(
+  id: number,
+  files: Array<Pick<ReferenceFile, 'name' | 'mime'> & { length: number }>,
+): string {
   return inPage(
     id,
     `const inputs = [...document.querySelectorAll('input[type=file]')];
 const input = inputs.find((i) => i.accept === 'image/*') || inputs.find((i) => /image/.test(i.accept)) || inputs[0];
 if (!input) return { error: 'ChatGPT file input not found' };
 const dt = new DataTransfer();
-for (const f of args.files) {
-  const bin = atob(f.base64); const bytes = new Uint8Array(bin.length);
+for (const [index, f] of args.files.entries()) {
+  const node = document.getElementById('${UPLOAD_NODE}' + index);
+  const base64 = node ? node.textContent : '';
+  if (node) node.remove();
+  if (base64.length !== f.length) return { error: 'ChatGPT upload was incomplete' };
+  const bin = atob(base64); const bytes = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
   dt.items.add(new File([bytes], f.name, { type: f.mime }));
 }

@@ -9,7 +9,7 @@ import type {
   ProviderResult,
 } from '../provider-adapter.interface';
 import { STORAGE_ADAPTER, type StorageAdapter } from '../../storage/storage.adapter';
-import { loadReferenceFiles } from '../reference-files';
+import { loadReferenceFiles, type ReferenceFile } from '../reference-files';
 import { buildChatgptPrompt } from './chatgpt-prompt';
 import {
   EFFORT_STOPS,
@@ -25,7 +25,9 @@ import {
   sendPromptScript,
   setEffortScript,
   signInStateScript,
+  stageUploadChunkScript,
   stopGeneratingScript,
+  UPLOAD_CHUNK,
   stripCitations,
   webSearchOnScript,
   type ChatgptEffort,
@@ -173,11 +175,7 @@ export class ChatgptProviderAdapter implements ProviderAdapter {
       if (webSearch && !(await this.neo.run<boolean>(webSearchOnScript(pageId)))) {
         throw new ChatgptPageError('Could not turn on ChatGPT web search');
       }
-      if (references.length > 0) {
-        this.pageResult(
-          await this.neo.run<{ error?: string }>(attachFilesScript(pageId, references)),
-        );
-      }
+      if (references.length > 0) await this.uploadReferences(pageId, references);
       const sent = this.pageResult(
         await this.neo.run<{ url?: string; error?: string }>(
           sendPromptScript(pageId, pastedPrompt),
@@ -301,6 +299,29 @@ export class ChatgptProviderAdapter implements ProviderAdapter {
   private async copyReply(pageId: number): Promise<string | undefined> {
     const copied = await this.neo.run<string | null>(copyLastReplyScript(pageId));
     return copied === null ? undefined : stripCitations(copied);
+  }
+
+  /** Files go to the page in `UPLOAD_CHUNK` slices (Neo caps a request at
+   * 4 MB), then are attached together from there. */
+  private async uploadReferences(pageId: number, references: ReferenceFile[]): Promise<void> {
+    for (const [index, file] of references.entries()) {
+      for (let from = 0; from === 0 || from < file.base64.length; from += UPLOAD_CHUNK) {
+        const chunk = file.base64.slice(from, from + UPLOAD_CHUNK);
+        this.pageResult(
+          await this.neo.run<{ error?: string }>(
+            stageUploadChunkScript(pageId, index, from, chunk),
+          ),
+        );
+      }
+    }
+    this.pageResult(
+      await this.neo.run<{ error?: string }>(
+        attachFilesScript(
+          pageId,
+          references.map(({ name, mime, base64 }) => ({ name, mime, length: base64.length })),
+        ),
+      ),
+    );
   }
 
   private async downloadImages(pageId: number): Promise<Array<{ mime: string; base64: string }>> {

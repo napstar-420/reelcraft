@@ -53,7 +53,7 @@ const OUTPUT_CONTRACT = `Produce only the requested stage output.
 Follow the stage-specific output instructions exactly.
 Do not add commentary, labels, or formatting unless requested.`;
 
-const ERROR_REPORTING_WHEN = `If you cannot complete this task, do not guess and do not return partial output.
+const ERROR_REPORTING_WHEN = `If you cannot complete the task below, do not guess and do not return partial output.
 This applies only when:
 - a required input or attached file is missing, empty or unreadable;
 - the inputs do not contain what the task needs; or
@@ -125,7 +125,8 @@ export function renderStagePrompt(
   const attached = attachedFilesBlock(options.attachments);
   const errorReporting = options.errorReply ? errorReportingBlock(outputKind) : undefined;
   if (!feedback && !contract && !attached && !errorReporting) return renderedTask;
-  return [renderedTask?.replace(/\n+$/, ''), feedback, contract, attached, errorReporting]
+  // The error contract leads, so the model reads it before any (possibly empty) inputs.
+  return [errorReporting, renderedTask?.replace(/\n+$/, ''), feedback, contract, attached]
     .filter((part): part is string => !!part)
     .join('\n\n');
 }

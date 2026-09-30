@@ -146,7 +146,8 @@ Line three
       '<attached_files>\nThe following files are attached to this message, in order:\n1. shoe (media.image)\n2. hero[1] (media.image)\n</attached_files>',
     );
     expect(result).toContain('{"reelcraft_error":{"code":"<code>","message":"<message>"}}');
-    expect(result!.indexOf('<attached_files>')).toBeLessThan(result!.indexOf('<error_reporting>'));
+    expect(result!.startsWith('<error_reporting>')).toBe(true);
+    expect(result!.indexOf('Caption the shoe.')).toBeLessThan(result!.indexOf('<attached_files>'));
     expect(renderStagePrompt('Task.', undefined, {}, 'text', { attachments: [] })).toBe('Task.');
   });
 
