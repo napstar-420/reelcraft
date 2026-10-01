@@ -12,8 +12,15 @@ export interface StorageAdapter {
   stat(key: string): Promise<{ bytes: number; etag: string; mime: string }>;
   copy(srcKey: string, destKey: string): Promise<PutResult>;
   delete(keys: string[]): Promise<void>;
-  presignGet(key: string, ttlSec: number): Promise<string>;
+  /** Browser-facing by default, so the URL may be relative to this app's
+   * origin (see `S3_BROWSER_PATH_PREFIX`). Pass `external` when a third
+   * party fetches the URL and needs it absolute. */
+  presignGet(key: string, ttlSec: number, options?: PresignOptions): Promise<string>;
   presignPut(key: string, ttlSec: number): Promise<string>;
+}
+
+export interface PresignOptions {
+  external?: boolean;
 }
 
 export const STORAGE_ADAPTER = Symbol('STORAGE_ADAPTER');

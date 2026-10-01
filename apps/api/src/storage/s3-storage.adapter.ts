@@ -12,7 +12,7 @@ import { Upload } from '@aws-sdk/lib-storage';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import type { ByteRange, PutResult } from '@reelcraft/shared';
 import { EngineConfig } from '../config/engine-config';
-import type { StorageAdapter } from './storage.adapter';
+import type { PresignOptions, StorageAdapter } from './storage.adapter';
 import { createS3Client } from './s3-client.factory';
 
 /**
@@ -28,10 +28,12 @@ export class S3StorageAdapter implements StorageAdapter {
   private readonly logger = new Logger(S3StorageAdapter.name);
   private readonly client: S3Client;
   private readonly bucket: string;
+  private readonly browserPathPrefix: string | undefined;
 
   constructor(config: EngineConfig) {
     this.bucket = config.s3.bucket;
     this.client = createS3Client(config);
+    this.browserPathPrefix = config.s3BrowserPathPrefix;
   }
 
   async put(key: string, body: Buffer | Readable, meta: { mime: string }): Promise<PutResult> {
@@ -108,20 +110,31 @@ export class S3StorageAdapter implements StorageAdapter {
     }
   }
 
-  async presignGet(key: string, ttlSec: number): Promise<string> {
-    return this.logged('presign get', { storageKey: key, ttlSec }, () =>
+  async presignGet(key: string, ttlSec: number, options: PresignOptions = {}): Promise<string> {
+    const url = await this.logged('presign get', { storageKey: key, ttlSec }, () =>
       getSignedUrl(this.client, new GetObjectCommand({ Bucket: this.bucket, Key: key }), {
         expiresIn: ttlSec,
       }),
     );
+    return options.external ? url : this.forBrowser(url);
   }
 
   async presignPut(key: string, ttlSec: number): Promise<string> {
-    return this.logged('presign put', { storageKey: key, ttlSec }, () =>
+    const url = await this.logged('presign put', { storageKey: key, ttlSec }, () =>
       getSignedUrl(this.client, new PutObjectCommand({ Bucket: this.bucket, Key: key }), {
         expiresIn: ttlSec,
       }),
     );
+    return this.forBrowser(url);
+  }
+
+  /** Swaps the private S3 origin for the app-relative proxy prefix. The
+   * signature stays valid because the proxy forwards the original path to
+   * S3_ENDPOINT with that endpoint's Host header (see `mountStorageProxy`). */
+  private forBrowser(signedUrl: string): string {
+    if (!this.browserPathPrefix) return signedUrl;
+    const url = new URL(signedUrl);
+    return `${this.browserPathPrefix}${url.pathname}${url.search}`;
   }
 
   private async logged<T>(

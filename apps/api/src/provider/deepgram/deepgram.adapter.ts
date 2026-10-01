@@ -59,7 +59,7 @@ export class DeepgramAdapter implements ProviderAdapter {
     const apiKey = await this.keys.get(this.id);
     if (!apiKey) throw new Error('Deepgram: no API key configured');
     const callback = `${this.config.publicApiBaseUrl}/api/providers/deepgram/callback?token=${job.callbackToken}`;
-    const url = await this.storage.presignGet(sourceBlob.objectKey, 900);
+    const url = await this.storage.presignGet(sourceBlob.objectKey, 900, { external: true });
     const startedAt = Date.now();
     const response = await fetch(
       `https://api.deepgram.com/v1/listen?model=${encodeURIComponent(req.modelId)}&smart_format=true&utterances=true&callback=${encodeURIComponent(callback)}`,

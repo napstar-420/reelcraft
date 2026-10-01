@@ -7,6 +7,10 @@ export const EnvSchema = z
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
     LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error', 'silent']).optional(),
     API_PORT: z.coerce.number().default(3000),
+    /** Shown by the health endpoint; set by the self-hosted image build. */
+    REELCRAFT_VERSION: z.string().min(1).optional(),
+    /** When set, the API serves the built web app from this directory. */
+    WEB_DIST_DIR: z.string().min(1).optional(),
 
     DATABASE_URL: z.string().url(),
 
@@ -16,6 +20,13 @@ export const EnvSchema = z
     S3_ACCESS_KEY_ID: z.string(),
     S3_SECRET_ACCESS_KEY: z.string(),
     S3_FORCE_PATH_STYLE: z.coerce.boolean().default(true),
+    /** When set (e.g. `/storage`), browser-facing presigned URLs become
+     * relative to this path, which the API proxies to S3_ENDPOINT. Lets a
+     * single-port deployment keep MinIO private. */
+    S3_BROWSER_PATH_PREFIX: z
+      .string()
+      .regex(/^\/[A-Za-z0-9._~-]+(\/[A-Za-z0-9._~-]+)*$/, 'must be a path like /storage')
+      .optional(),
 
     PRESIGN_TTL_SEC: z.coerce.number().default(900),
 

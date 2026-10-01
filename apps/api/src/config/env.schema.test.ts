@@ -38,3 +38,30 @@ describe('preview-token environment configuration', () => {
     );
   });
 });
+
+describe('self-hosted environment configuration', () => {
+  it('leaves single-port mode off by default', () => {
+    const env = validateEnv(requiredEnv());
+
+    expect(env.WEB_DIST_DIR).toBeUndefined();
+    expect(env.S3_BROWSER_PATH_PREFIX).toBeUndefined();
+  });
+
+  it('accepts a path-shaped S3_BROWSER_PATH_PREFIX', () => {
+    expect(
+      validateEnv(requiredEnv({ S3_BROWSER_PATH_PREFIX: '/storage' })).S3_BROWSER_PATH_PREFIX,
+    ).toBe('/storage');
+    expect(
+      validateEnv(requiredEnv({ S3_BROWSER_PATH_PREFIX: '/media/s3' })).S3_BROWSER_PATH_PREFIX,
+    ).toBe('/media/s3');
+  });
+
+  it.each(['storage', '/storage/', 'http://localhost/storage', '/', '//evil'])(
+    'rejects S3_BROWSER_PATH_PREFIX=%s',
+    (value) => {
+      expect(() => validateEnv(requiredEnv({ S3_BROWSER_PATH_PREFIX: value }))).toThrow(
+        'S3_BROWSER_PATH_PREFIX',
+      );
+    },
+  );
+});

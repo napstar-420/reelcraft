@@ -6,7 +6,7 @@ import { loadRootEnv } from './common/load-dotenv';
 // needs the root .env loaded before that import line is reached.
 loadRootEnv();
 
-import { json } from 'express';
+import { json, type Express } from 'express';
 import { pino } from 'pino';
 import { NestFactory } from '@nestjs/core';
 import { Logger } from 'nestjs-pino';
@@ -16,12 +16,18 @@ import { AppModule } from './app.module';
 import { EngineConfig } from './config/engine-config';
 import { INNGEST_CLIENT } from './orchestration/inngest.client';
 import { buildInngestFunctions } from './orchestration/functions/index';
+import { mountStorageProxy, mountWebApp } from './system/http-mounts';
 
 /** §1.4/§13.1 — CORS stays off; Vite proxies /api in dev, Nest serves the
- * SPA in prod. MinIO is the deliberate second origin (§21.3). */
+ * SPA in prod. MinIO is the deliberate second origin (§21.3) in dev; the
+ * self-hosted image proxies it under one origin instead (`/storage`). */
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
   app.useLogger(withQuietFrameworkBoot(app.get(Logger)));
+  const config = app.get(EngineConfig);
+  const http = app.getHttpAdapter().getInstance() as Express;
+
+  mountStorageProxy(http, config); // before any body parser
   app.use(json({ limit: '10mb' })); // memoized step state grows with the run
 
   app.setGlobalPrefix('api');
@@ -30,8 +36,8 @@ async function bootstrap(): Promise<void> {
   const functions = buildInngestFunctions(app);
   // Inngest's serve endpoint is chatty at info (every step call).
   app.use('/api/inngest', serve({ client, functions, logLevel: 'warn' }));
+  mountWebApp(http, config);
 
-  const config = app.get(EngineConfig);
   await app.listen(config.apiPort);
 }
 

@@ -14,6 +14,7 @@ export class EngineConfig implements OnModuleInit {
     const has = (key: keyof Env) => this.config.get(key, { infer: true }) !== undefined;
     this.logger.log(
       {
+        version: this.version,
         nodeEnv: this.nodeEnv,
         logLevel: this.logLevel,
         apiPort: this.apiPort,
@@ -35,6 +36,14 @@ export class EngineConfig implements OnModuleInit {
 
   get apiPort(): number {
     return this.config.get('API_PORT', { infer: true });
+  }
+
+  get version(): string {
+    return this.config.get('REELCRAFT_VERSION', { infer: true }) ?? 'dev';
+  }
+
+  get webDistDir(): string | undefined {
+    return this.config.get('WEB_DIST_DIR', { infer: true });
   }
 
   get nodeEnv(): Env['NODE_ENV'] {
@@ -67,6 +76,11 @@ export class EngineConfig implements OnModuleInit {
       secretAccessKey: this.config.get('S3_SECRET_ACCESS_KEY', { infer: true }),
       forcePathStyle: this.config.get('S3_FORCE_PATH_STYLE', { infer: true }),
     };
+  }
+
+  /** See `S3_BROWSER_PATH_PREFIX` in env.schema.ts. */
+  get s3BrowserPathPrefix(): string | undefined {
+    return this.config.get('S3_BROWSER_PATH_PREFIX', { infer: true });
   }
 
   get presignTtlSec(): number {

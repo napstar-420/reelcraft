@@ -1,0 +1,11 @@
+#!/command/with-contenv bash
+set -euo pipefail
+# shellcheck source=/dev/null
+source /usr/local/lib/reelcraft/env.sh
+reelcraft_wait postgres 120 pg_isready -q
+exec s6-setuidgid reelcraft inngest start \
+  --host 127.0.0.1 --port 8288 --no-ui --json \
+  --postgres-uri "$INNGEST_DATABASE_URL" \
+  --sdk-url "http://127.0.0.1:${API_PORT}/api/inngest" \
+  --event-key "$INNGEST_EVENT_KEY" \
+  --signing-key "$INNGEST_SIGNING_KEY"

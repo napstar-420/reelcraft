@@ -1,0 +1,7 @@
+#!/command/with-contenv bash
+set -euo pipefail
+# shellcheck source=/dev/null
+source /usr/local/lib/reelcraft/env.sh
+exec s6-setuidgid reelcraft postgres -D /data/postgres \
+  -c listen_addresses=127.0.0.1 \
+  -c unix_socket_directories=/run/postgresql
