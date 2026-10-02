@@ -4,6 +4,7 @@
 set -euo pipefail
 # shellcheck source=/dev/null
 source /usr/local/lib/reelcraft/env.sh
+reelcraft_select_app
 
 reelcraft_wait postgres 120 pg_isready -q
 cd "$REELCRAFT_APP_DIR/apps/api"

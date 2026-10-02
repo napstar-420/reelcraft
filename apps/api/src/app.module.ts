@@ -9,6 +9,7 @@ import { CheckModule } from './check/check.module';
 import { QcModule } from './qc/qc.module';
 import { RunModule } from './run/run.module';
 import { SystemModule } from './system/system.module';
+import { UpdateModule } from './update/update.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { SystemModule } from './system/system.module';
     QcModule,
     RunModule,
     SystemModule,
+    UpdateModule,
   ],
 })
 export class AppModule {}

@@ -14,3 +14,7 @@ graphify-out
 .claude
 .tours
 docs
+
+# Updater unit tests stay out of the image.
+docker/app/rootfs/**/*.test.mjs
+docker/app/rootfs/**/testing.mjs

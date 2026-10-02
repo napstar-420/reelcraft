@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-/** `GET /api/system/health` — the container healthcheck and, later, the
+/** `GET /api/system/health` — the container healthcheck and the
  * updater's post-switch probe. */
 export const SystemHealthDto = z.object({
   status: z.literal('ok'),

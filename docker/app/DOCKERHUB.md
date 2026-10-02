@@ -35,11 +35,18 @@ keys as **Environment variables** in the same Optional settings:
 
 ## Update
 
+When a new version is out, Reelcraft shows **Update to …** at the bottom of its sidebar. Click
+it, then **Update**. Reelcraft backs up your data, installs the update and restarts itself. If
+the new version doesn't start, it goes back to the previous one on its own.
+
+Some releases need a newer image. The app tells you when, and the steps are:
+
 1. In Docker Desktop, open **Images**, find Reelcraft and pull the newest version.
 2. Stop and delete the old Reelcraft container. Your data is in the volume, not the container.
 3. Run the new image with the **same port and the same volume** (`reelcraft-data` → `/data`).
 
-Database updates run automatically when it starts. Each release's notes are on
+Database updates run automatically when it starts. Versions before 0.2.0 can't update
+themselves, so update those this way once. Each release's notes are on
 [GitHub Releases](https://github.com/napstar-420/reelcraft/releases).
 
 ## Keep it private

@@ -1,0 +1,10 @@
+#!/command/with-contenv bash
+# The in-app updater: checks GitHub Releases and installs verified updates
+# when the app asks. Runs as root so the installed app stays read-only to it.
+set -euo pipefail
+# shellcheck source=/dev/null
+source /usr/local/lib/reelcraft/env.sh
+REELCRAFT_UID="$(id -u reelcraft)"
+REELCRAFT_GID="$(id -g reelcraft)"
+export REELCRAFT_UID REELCRAFT_GID
+exec node /usr/local/lib/reelcraft/updater/agent.mjs
