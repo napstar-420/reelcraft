@@ -13,6 +13,14 @@ for dir in "$DATA/postgres" "$DATA/minio" "$DATA/workspace" "$DATA/codex" /run/p
   if [ "$(stat -c %U "$dir")" != reelcraft ]; then chown -R reelcraft:reelcraft "$dir"; fi
 done
 chmod 700 "$PGDATA"
+# In-app updates (root-owned, read-only to the app) and database backups
+# taken before each update. The updater's socket lives in /run/reelcraft.
+mkdir -p "$DATA/app" "$DATA/backups" /run/reelcraft
+chown root:root "$DATA/app" "$DATA/backups"
+chmod 755 "$DATA/app"
+chmod 700 "$DATA/backups"
+chown root:reelcraft /run/reelcraft
+chmod 750 /run/reelcraft
 
 if [ ! -f "$DATA/secrets.env" ]; then
   echo "reelcraft: generating secrets in $DATA/secrets.env"

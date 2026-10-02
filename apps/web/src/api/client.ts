@@ -42,6 +42,7 @@ import type {
   StageAttemptDto,
   BlueprintDto,
   UpdateBlueprintDto,
+  UpdateStatusDto,
 } from '@reelcraft/shared';
 
 /** `template.service.ts#list()`'s row shape: every builtin plus the
@@ -422,4 +423,12 @@ export const api = {
   getRunInputStatus: (runId: string, inputKey: string) =>
     request<RunInputStatusDto>(`/runs/${runId}/inputs/${encodeURIComponent(inputKey)}/status`),
   startRun: (runId: string) => request<RunDetailDto>(`/runs/${runId}/start`, { method: 'POST' }),
+
+  getUpdateStatus: () => request<UpdateStatusDto>('/system/update'),
+  checkForUpdate: () => request<UpdateStatusDto>('/system/update/check', { method: 'POST' }),
+  installUpdate: (version: string) =>
+    request<UpdateStatusDto>('/system/update/install', {
+      method: 'POST',
+      body: JSON.stringify({ version }),
+    }),
 };

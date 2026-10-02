@@ -33,3 +33,12 @@ reelcraft_wait() {
   echo "reelcraft: ${name} did not become ready within ${seconds}s" >&2
   return 1
 }
+
+# Points REELCRAFT_APP_DIR, REELCRAFT_VERSION and WEB_DIST_DIR at the app
+# bundle to run: an in-app update when one is installed, otherwise the
+# image's own. The image's version stays in REELCRAFT_IMAGE_VERSION.
+reelcraft_select_app() {
+  local exports
+  exports="$(node /usr/local/lib/reelcraft/updater/select-app.mjs)"
+  eval "$exports"
+}

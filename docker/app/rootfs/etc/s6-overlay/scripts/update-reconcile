@@ -1,0 +1,10 @@
+#!/command/with-contenv bash
+# Runs before migrations on every start: if the container stopped in the
+# middle of an in-app update, that update is rolled back (database restored
+# from its backup) so a half-finished update never stays live.
+set -euo pipefail
+# shellcheck source=/dev/null
+source /usr/local/lib/reelcraft/env.sh
+
+reelcraft_wait postgres 120 pg_isready -q
+exec node /usr/local/lib/reelcraft/updater/agent.mjs --reconcile

@@ -2,7 +2,15 @@
 set -euo pipefail
 # shellcheck source=/dev/null
 source /usr/local/lib/reelcraft/env.sh
+# The updater restarts only this service to switch versions, so it picks the
+# app bundle and applies that bundle's migrations itself.
+reelcraft_select_app
 # The API creates the bucket at boot, so MinIO must be answering first.
 reelcraft_wait minio 120 curl -fsS http://127.0.0.1:9000/minio/health/live
 cd "$REELCRAFT_APP_DIR/apps/api"
+if ! s6-setuidgid reelcraft node dist/db/migrate.js; then
+  echo "reelcraft: migrations failed for ${REELCRAFT_VERSION}" >&2
+  sleep 5
+  exit 1
+fi
 exec s6-setuidgid reelcraft node dist/main.js

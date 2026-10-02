@@ -11,6 +11,8 @@ export const EnvSchema = z
     REELCRAFT_VERSION: z.string().min(1).optional(),
     /** When set, the API serves the built web app from this directory. */
     WEB_DIST_DIR: z.string().min(1).optional(),
+    /** Unix socket of the self-hosted image's update agent. */
+    REELCRAFT_UPDATER_SOCKET: z.string().min(1).optional(),
 
     DATABASE_URL: z.string().url(),
 

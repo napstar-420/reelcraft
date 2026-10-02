@@ -48,6 +48,8 @@ Without them, only the free fake provider is available. A settings page for keys
 | `/data/minio`       | Media files                                                   |
 | `/data/workspace`   | Render and Codex job folders                                  |
 | `/data/codex`       | Codex CLI home (`CODEX_HOME`): login, config, skills          |
+| `/data/app`         | App updates installed from inside the app                     |
+| `/data/backups`     | Database backups taken before each in-app update              |
 | `/data/secrets.env` | Passwords and signing keys generated on first start. Keep it. |
 
 Keep the volume when you remove or recreate the container: it holds all your data. Deleting it
@@ -66,10 +68,24 @@ BrowserOS Neo keeps running on your own computer as before. The container reache
 `--add-host=host.docker.internal:host-gateway`. Override the address with
 `CODEX_BROWSER_OS_URL`.
 
-**Updating.** For now: pull the newer image, remove the old container, and run the new image
-with the same volume. Your data and secrets are kept, and database migrations run
-automatically on start. Every release's notes include these steps. An in-app updater is
-planned.
+**Updating.** Reelcraft checks GitHub Releases every 6 hours. When a new version is out, the
+bottom of the sidebar shows **Update to X.Y.Z**: click it, read the notes, and click **Update**.
+The app downloads the new version, checks its signature, backs up the database and restarts
+itself, which takes a few minutes. If the new version doesn't start within 5 minutes,
+Reelcraft restores the backup and goes back to the previous version on its own. Runs in
+progress are interrupted by the restart (the dialog warns first), and their current step
+retries afterwards.
+
+Some releases also change the image itself (a new Postgres, Chromium or system library). The
+app then shows **Version X.Y.Z available** with the image steps instead: pull the newer image,
+remove the old container, and run the new image with the same volume. Your data and secrets are
+kept, and database migrations run automatically on start. Every release's notes include these
+steps. Images before 0.2.0 have no in-app updater, so update to 0.2.0 or later this way once.
+
+- Installed updates live in `/data/app`, and the last 3 pre-update database backups in
+  `/data/backups`. A newer image always replaces an older in-app update.
+- Set `REELCRAFT_UPDATES=off` to turn update checks off (the app then makes no requests to
+  GitHub).
 
 **Security.** There is no login. Anyone who can reach the port can use the app and your
 provider keys. Keep it on your own computer or a trusted network, and don't expose it to the
@@ -101,14 +117,16 @@ its official image, and Remotion's Chrome Headless Shell is installed at build t
 [s6-overlay](https://github.com/just-containers/s6-overlay) supervises the services, defined in
 `docker/app/rootfs/etc/s6-overlay/s6-rc.d/`:
 
-| Service     | Kind    | Does                                                                           |
-| ----------- | ------- | ------------------------------------------------------------------------------ |
-| `init-data` | oneshot | Creates `/data` folders, generates `secrets.env`, initializes Postgres         |
-| `postgres`  | longrun | Postgres 16 on `127.0.0.1:5432`                                                |
-| `minio`     | longrun | MinIO on `127.0.0.1:9000`, reached by the browser through the API's `/storage` |
-| `migrate`   | oneshot | Applies database migrations; the container stops if this fails                 |
-| `inngest`   | longrun | `inngest start` on `127.0.0.1:8288`, state in the `inngest` database           |
-| `api`       | longrun | API + web UI on `:8080`                                                        |
+| Service            | Kind    | Does                                                                           |
+| ------------------ | ------- | ------------------------------------------------------------------------------ |
+| `init-data`        | oneshot | Creates `/data` folders, generates `secrets.env`, initializes Postgres         |
+| `postgres`         | longrun | Postgres 16 on `127.0.0.1:5432`                                                |
+| `minio`            | longrun | MinIO on `127.0.0.1:9000`, reached by the browser through the API's `/storage` |
+| `update-reconcile` | oneshot | Rolls back an in-app update that a container restart interrupted               |
+| `migrate`          | oneshot | Applies database migrations; the container stops if this fails                 |
+| `inngest`          | longrun | `inngest start` on `127.0.0.1:8288`, state in the `inngest` database           |
+| `update-agent`     | longrun | The in-app updater (root), on the `/run/reelcraft/updater.sock` Unix socket    |
+| `api`              | longrun | API + web UI on `:8080`; applies its own migrations before starting            |
 
 Only port 8080 is exposed. The image sets `WEB_DIST_DIR` (serve the built web app) and
 `S3_BROWSER_PATH_PREFIX=/storage` (browser media URLs go through the API instead of to MinIO);
@@ -118,6 +136,31 @@ leave both unset in local dev. To start from scratch, remove the container and r
 `docker/app/smoke-test.sh <image>` boots an image on a fresh volume, runs the seeded
 "Hello Stage" template to completion and round-trips a file through `/storage`. CI runs it on
 every push and before every release.
+
+**In-app updater.** The update agent lives in the image
+(`docker/app/rootfs/usr/local/lib/reelcraft/updater/`), not in the app bundle, so a downloaded
+update can never change how updates are verified. It runs as root and owns `/data/app`; the API
+(user `reelcraft`) only relays the user's requests to it (`apps/api/src/update/`).
+
+1. It lists GitHub Releases, then downloads the newest release's manifest and checks the
+   manifest's signature against the image's `/opt/reelcraft/release-signing.pub`.
+2. It downloads this architecture's bundle, checks its size and SHA-256 against the manifest,
+   and unpacks it into `/data/app/versions/X.Y.Z`.
+3. It backs up the database with `pg_dump`, records the update as a _trial_ in
+   `/data/app/state.json`, and restarts only the `api` service.
+4. `select-app.mjs` points the `api` and `migrate` services at the right bundle (trial, then
+   installed update, then the image's own bundle). The API applies that bundle's migrations and
+   starts.
+5. When the API reports healthy on the new version, the trial becomes the active version.
+   Otherwise, after 5 minutes, the agent stops the API, restores the backup, and starts the
+   previous version.
+
+`docker/app/update-test.sh <image>` exercises all of this in CI. It publishes releases made from
+the image's own bundle on a fake GitHub API, signed with a throwaway key, then installs a good
+update and a broken one and checks that the broken one rolls back. `pnpm test:release` runs the
+agent's unit tests. Development builds (versions like `dev`) never update. For testing, the
+agent also reads `REELCRAFT_UPDATE_API`, `REELCRAFT_UPDATE_REPO` and
+`REELCRAFT_UPDATE_TRIAL_TIMEOUT_SEC`.
 
 ## Releasing
 
@@ -132,16 +175,17 @@ that PR is the release.** `.github/workflows/release.yml` then:
 3. publishes the multi-arch image to GHCR and Docker Hub as `X.Y.Z`, `X.Y`, `X` and `latest`
    (prereleases get only their exact tag);
 4. attaches `reelcraft-app-X.Y.Z-linux-<arch>.tar.gz` bundles, copied out of the published
-   images, plus a signed `reelcraft-X.Y.Z.manifest.json` that the planned in-app updater
-   verifies;
+   images, plus a signed `reelcraft-X.Y.Z.manifest.json` that the in-app updater verifies;
 5. syncs `docker/app/DOCKERHUB.md` to the Docker Hub page.
 
 If a release job fails, fix the cause and use **Re-run failed jobs**; the tag already exists.
 
 **Runtime version.** An in-app update swaps only the app bundle and keeps the user's image, so
 the image is versioned separately in `docker/app/RUNTIME_VERSION`. Bump it in any PR that
-changes what the image contains (`docker/app/Dockerfile`, `docker/app/rootfs/`). The
-`Runtime version` check enforces this. Add the `runtime-unchanged` label for image edits that
+changes what the image contains (`docker/app/Dockerfile`, `docker/app/rootfs/`, including the
+updater), or the `@remotion/renderer` version (the image installs the browser for it). The
+`Runtime version` check enforces this. Releases whose runtime is newer than a user's image are
+shown as "update the image" instead of installing in-app. Add the `runtime-unchanged` label for image edits that
 can't affect the running container, such as comments.
 
 **One-time setup** (repository settings):
@@ -516,11 +560,10 @@ received object"` error with no hint of a module-identity problem underneath. Ca
 
 ## Follow-ups not done in this pass
 
-- Self-hosted distribution, after the image and release pipeline:
-  1. In-app updater: update check, signed bundle download, backup, switch-over and rollback
-     (the image's `REELCRAFT_APP_DIR` is the hook for this).
-  2. Settings page for provider keys, and a "Connect Codex" sign-in flow.
-  3. Step-by-step install guide for Docker Desktop users.
+- Self-hosted distribution, after the image, release pipeline and in-app updater:
+  1. Settings page for provider keys, and a "Connect Codex" sign-in flow (the update dialog
+     moves to a Settings → About section there).
+  2. Step-by-step install guide for Docker Desktop users.
 
 - `pnpm --filter @reelcraft/api test:e2e` needs a live Postgres and isn't wired into CI yet
   (tracked in `docs/build-progress.md`) — run it locally against `docker compose up`.

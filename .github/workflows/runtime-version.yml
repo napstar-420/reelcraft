@@ -3,8 +3,10 @@ name: Runtime version
 # The image (runtime) and the app bundle ship separately: an update that only
 # swaps the bundle keeps the user's existing image. Any change to what the
 # image itself contains must bump docker/app/RUNTIME_VERSION, so the updater
-# knows to ask for a new image instead. Add the `runtime-unchanged` label to a
-# PR whose image changes don't affect the runtime (comments, build stage only).
+# knows to ask for a new image instead. That includes the Remotion renderer
+# version, because the image installs the headless browser for it. Add the
+# `runtime-unchanged` label to a PR whose image changes don't affect the
+# runtime (comments, build stage only).
 on:
   pull_request:
     types: [opened, synchronize, reopened, labeled, unlabeled]
@@ -23,6 +25,11 @@ jobs:
         run: |
           changed="$(git diff --name-only "$BASE_SHA"...HEAD)"
           image_changes="$(grep -E '^docker/app/(Dockerfile$|rootfs/)' <<<"$changed" || true)"
+          # The image's headless browser is installed for this Remotion version.
+          remotion() { git show "$1:apps/render-worker/package.json" | jq -r '.dependencies["@remotion/renderer"]'; }
+          if [ "$(remotion "$BASE_SHA")" != "$(remotion HEAD)" ]; then
+            image_changes="$(printf '%s\n%s' "$image_changes" "@remotion/renderer $(remotion "$BASE_SHA") -> $(remotion HEAD)" | sed '/^$/d')"
+          fi
           if [ -z "$image_changes" ]; then
             echo "No image runtime changes."
             exit 0

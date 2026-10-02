@@ -110,11 +110,14 @@ RUN mkdir -p /opt/remotion && cd /opt/remotion \
 COPY docker/app/rootfs/ /
 # The image/app-bundle contract: RUNTIME_VERSION says which runtime this image
 # provides, and the public key lets the updater verify release manifests.
+# In-app updates may replace the app bundle under /data/app; the api and
+# migrate services pick which one runs (rootfs/usr/local/lib/reelcraft/updater).
 COPY docker/app/RUNTIME_VERSION docker/app/release-signing.pub /opt/reelcraft/
 
 ENV PATH=/usr/lib/postgresql/16/bin:${PATH} \
     NODE_ENV=production \
     REELCRAFT_VERSION=${REELCRAFT_VERSION} \
+    REELCRAFT_IMAGE_VERSION=${REELCRAFT_VERSION} \
     API_PORT=8080 \
     WEB_DIST_DIR=${REELCRAFT_APP_DIR}/apps/web/dist \
     S3_ENDPOINT=http://127.0.0.1:9000 \

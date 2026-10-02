@@ -64,7 +64,7 @@ const manifest = {
   version: values.version,
   tag: values.tag,
   runtime,
-  minUpdaterVersion: null,
+  minUpdaterVersion: 1,
   releasedAt: new Date().toISOString(),
   bundles,
   images,

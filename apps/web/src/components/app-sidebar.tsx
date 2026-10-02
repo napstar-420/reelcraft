@@ -7,6 +7,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import {
   Sidebar,
   SidebarContent,
+  SidebarFooter,
   SidebarGroup,
   SidebarGroupAction,
   SidebarGroupContent,
@@ -20,6 +21,7 @@ import {
   SidebarMenuSubItem,
 } from '@/components/ui/sidebar';
 import { ChannelDialog, type ChannelDialogState } from '@/components/channels/channel-dialog';
+import { UpdateIndicator } from '@/components/update/update-indicator';
 
 const navItems = [
   { to: '/runs', label: 'Runs', icon: ListVideo },
@@ -114,6 +116,9 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
+      <SidebarFooter>
+        <UpdateIndicator />
+      </SidebarFooter>
       <ChannelDialog state={dialog} onOpenChange={(open) => !open && setDialog(null)} />
     </Sidebar>
   );

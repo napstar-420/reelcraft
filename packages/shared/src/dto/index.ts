@@ -9,3 +9,4 @@ export * from './character.dto';
 export * from './check.dto';
 export * from './template.dto';
 export * from './system.dto';
+export * from './update.dto';

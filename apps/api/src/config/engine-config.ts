@@ -46,6 +46,12 @@ export class EngineConfig implements OnModuleInit {
     return this.config.get('WEB_DIST_DIR', { infer: true });
   }
 
+  get updaterSocket(): string {
+    return (
+      this.config.get('REELCRAFT_UPDATER_SOCKET', { infer: true }) ?? '/run/reelcraft/updater.sock'
+    );
+  }
+
   get nodeEnv(): Env['NODE_ENV'] {
     return this.config.get('NODE_ENV', { infer: true });
   }

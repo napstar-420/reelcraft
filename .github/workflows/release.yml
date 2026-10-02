@@ -251,6 +251,9 @@ jobs:
 
           ## Updating
 
+          **From inside Reelcraft (0.2.0 and later):** click **Update to $VERSION** at the bottom of the
+          sidebar. If the app says this version needs a newer image, use the steps below instead.
+
           **Docker Desktop:** in **Images**, pull \`$image:$VERSION\` (or \`latest\`). Then stop and
           delete the old Reelcraft container, and run the new image with the **same volume** mounted
           at \`/data\` and the same port. Your projects and settings live in the volume and are kept.
