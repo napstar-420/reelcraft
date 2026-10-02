@@ -1,0 +1,2 @@
+# reelcraft-release-signing-key: placeholder
+# Run `node scripts/release/keygen.mjs` to replace this with the real public key.

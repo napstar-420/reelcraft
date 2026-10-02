@@ -15,6 +15,7 @@
     "format:check": "prettier --check .",
     "test": "pnpm -r --filter @reelcraft/shared --filter @reelcraft/api --filter @reelcraft/web test",
     "test:e2e": "pnpm --filter @reelcraft/api test:e2e",
+    "test:release": "node --test 'scripts/release/*.test.mjs'",
     "db:generate": "pnpm --filter @reelcraft/api db:generate",
     "db:migrate": "pnpm --filter @reelcraft/api db:migrate",
     "db:studio": "pnpm --filter @reelcraft/api db:studio",
