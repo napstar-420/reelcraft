@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0](https://github.com/napstar-420/reelcraft/compare/v0.1.1...v0.2.0) (2026-10-02)
+
+
+### Features
+
+* in-app updater for the self-hosted image ([#48](https://github.com/napstar-420/reelcraft/issues/48)) ([cb88b2f](https://github.com/napstar-420/reelcraft/commit/cb88b2fff2d0fe8fb580c916892f0e2a31717839))
+
 ## [0.1.1](https://github.com/napstar-420/reelcraft/compare/v0.1.0...v0.1.1) (2026-10-02)
 
 
