@@ -43,8 +43,18 @@ jobs:
 
   # Builds the self-hosted image (not pushed) and smoke-tests it, so a broken
   # Dockerfile or a container that boots but can't run anything fails CI.
+  # Both architectures the release ships, each on a native runner.
   image:
-    runs-on: ubuntu-latest
+    name: image (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
@@ -60,6 +70,6 @@ jobs:
             REELCRAFT_VERSION=ci-${{ github.sha }}
             REELCRAFT_REVISION=${{ github.sha }}
             REELCRAFT_RUNTIME_VERSION=${{ steps.runtime.outputs.version }}
-          cache-from: type=gha,scope=image-amd64
-          cache-to: type=gha,scope=image-amd64,mode=max
+          cache-from: type=gha,scope=image-${{ matrix.arch }}
+          cache-to: type=gha,scope=image-${{ matrix.arch }},mode=max
       - run: docker/app/smoke-test.sh reelcraft:ci
