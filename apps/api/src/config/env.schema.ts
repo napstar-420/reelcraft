@@ -74,6 +74,9 @@ export const EnvSchema = z
 
     PREVIEW_TOKEN_SECRET: z.string().min(32).optional(),
     PREVIEW_TOKEN_TTL_SEC: z.coerce.number().int().positive().default(600),
+    /** Encrypts provider keys saved in Settings; defaults to a key derived
+     * from PREVIEW_TOKEN_SECRET. */
+    SETTINGS_ENCRYPTION_KEY: z.string().min(32).optional(),
   })
   .superRefine((env, context) => {
     if (env.NODE_ENV !== 'test' && env.PREVIEW_TOKEN_SECRET === undefined) {

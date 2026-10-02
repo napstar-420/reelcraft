@@ -348,7 +348,8 @@ export class ChatgptProviderAdapter implements ProviderAdapter {
     return value;
   }
 
-  private forgetReadiness(): void {
+  /** Forgets the cached readiness, e.g. after the Neo address changed. */
+  forgetReadiness(): void {
     this.readiness = undefined;
   }
 

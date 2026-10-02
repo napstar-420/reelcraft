@@ -29,5 +29,6 @@ describe('breadcrumbsForPath', () => {
 
   it('ignores names for routes that do not use them', () => {
     expect(breadcrumbsForPath('/editor', { channel: 'Unused' })).toEqual([{ label: 'Editor' }]);
+    expect(breadcrumbsForPath('/settings')).toEqual([{ label: 'Settings' }]);
   });
 });

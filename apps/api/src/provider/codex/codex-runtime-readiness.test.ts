@@ -2,12 +2,15 @@ import { describe, expect, it, vi } from 'vitest';
 import { CodexRuntimeReadiness } from './codex-runtime-readiness';
 
 function fixture() {
-  const readiness = new CodexRuntimeReadiness({
-    codexImageExtension: 'imagegen',
-    codexBrowserExtension: 'browseros-neo',
-    codexBrowserOsUrl: 'http://127.0.0.1:9010/mcp',
-    codexReadinessTimeoutMs: 100,
-  } as never);
+  const readiness = new CodexRuntimeReadiness(
+    {
+      codexImageExtension: 'imagegen',
+      codexBrowserExtension: 'browseros-neo',
+      codexBrowserOsUrl: 'http://127.0.0.1:9010/mcp',
+      codexReadinessTimeoutMs: 100,
+    } as never,
+    { browserOsUrl: async () => 'http://127.0.0.1:9010/mcp' },
+  );
   return readiness;
 }
 

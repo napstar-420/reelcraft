@@ -1,10 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPError } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
-import type { EngineConfig } from '../../config/engine-config';
 import { NeoClient } from './neo-client';
 
-const config = { codexBrowserOsUrl: 'http://127.0.0.1:9010/mcp' } as EngineConfig;
+const config = { browserOsUrl: async () => 'http://127.0.0.1:9010/mcp' };
 const ok = { content: [], structuredContent: { ok: true, value: 7 } };
 
 describe('NeoClient', () => {

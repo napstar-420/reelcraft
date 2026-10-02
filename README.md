@@ -36,37 +36,46 @@ docker run -d --name reelcraft -p 8080:8080 -v reelcraft-data:/data ghcr.io/naps
 Then open http://localhost:8080. The first start takes a little longer while Reelcraft sets up
 its database and generates its secrets.
 
-**Provider keys.** Add environment variables in the same Run dialog, or with
-`-e NAME=value`: `OPENROUTER_API_KEY`, `FAL_KEY`, `ELEVENLABS_API_KEY`, `DEEPGRAM_API_KEY`.
-Without them, only the free fake provider is available. A settings page for keys is planned.
+**Provider keys.** Open **Settings** in the sidebar and paste your keys under **AI providers**
+(OpenRouter, fal.ai, ElevenLabs, Deepgram). Each key can be tested from there. Keys are stored
+encrypted in the database, with an encryption key derived from `/data/secrets.env`. Without
+any keys, only the free fake provider is available. You can also pass keys as environment
+variables (`OPENROUTER_API_KEY`, `FAL_KEY`, `ELEVENLABS_API_KEY`, `DEEPGRAM_API_KEY`) in the Run
+dialog or with `-e NAME=value`; a key set that way takes priority, and Settings shows it as set
+by the container environment.
 
 **What's in `/data`:**
 
-| Path                | Contents                                                      |
-| ------------------- | ------------------------------------------------------------- |
-| `/data/postgres`    | Postgres 16 (`reelcraft` and `inngest` databases)             |
-| `/data/minio`       | Media files                                                   |
-| `/data/workspace`   | Render and Codex job folders                                  |
-| `/data/codex`       | Codex CLI home (`CODEX_HOME`): login, config, skills          |
-| `/data/app`         | App updates installed from inside the app                     |
-| `/data/backups`     | Database backups taken before each in-app update              |
-| `/data/secrets.env` | Passwords and signing keys generated on first start. Keep it. |
+| Path                | Contents                                                                                                              |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `/data/postgres`    | Postgres 16 (`reelcraft` and `inngest` databases)                                                                     |
+| `/data/minio`       | Media files                                                                                                           |
+| `/data/workspace`   | Render and Codex job folders                                                                                          |
+| `/data/codex`       | Codex CLI home (`CODEX_HOME`): login, config, skills                                                                  |
+| `/data/app`         | App updates installed from inside the app                                                                             |
+| `/data/backups`     | Database backups taken before each in-app update                                                                      |
+| `/data/secrets.env` | Passwords and keys generated on first start, including the one that unlocks provider keys saved in Settings. Keep it. |
 
 Keep the volume when you remove or recreate the container: it holds all your data. Deleting it
 deletes everything.
 
-**Codex and BrowserOS Neo.** The `codex` CLI is installed in the image and stores its login in
-`/data/codex`. Until the app has a sign-in button, sign in from a terminal. Run it as the
-`reelcraft` user so the app can read the login:
+**BrowserOS Neo.** Neo keeps running on your own computer. In **Settings → BrowserOS Neo**,
+check its address and click **Test connection**. The default,
+`http://host.docker.internal:9010/mcp`, reaches the computer running Docker. On Linux without
+Docker Desktop, start the container with `--add-host=host.docker.internal:host-gateway`. The
+`CODEX_BROWSER_OS_URL` environment variable sets the default address; an address saved in
+Settings replaces it.
+
+**Codex.** The `codex` CLI is installed in the image and keeps its login in `/data/codex`. In
+**Settings → Codex**, click **Connect Codex**. Reelcraft opens OpenAI's sign-in page in BrowserOS
+Neo and types the one-time code for you; approve the sign-in there. If Neo isn't running, or
+the page asks you to sign in first, the Settings page shows the link and code so you can finish
+in any browser. Connecting also registers Neo as an MCP server for Codex, so Codex browser
+stages can use it. The terminal still works too:
 
 ```bash
 docker exec -it -u reelcraft reelcraft codex login --device-auth
 ```
-
-BrowserOS Neo keeps running on your own computer as before. The container reaches it at
-`http://host.docker.internal:9010/mcp`. On Linux without Docker Desktop, add
-`--add-host=host.docker.internal:host-gateway`. Override the address with
-`CODEX_BROWSER_OS_URL`.
 
 **Updating.** Reelcraft checks GitHub Releases every 6 hours. When a new version is out, the
 bottom of the sidebar shows **Update to X.Y.Z**: click it, read the notes, and click **Update**.
@@ -256,7 +265,10 @@ or run the selected model fail the stage; there is no fallback provider. Local C
 CLI usage settles at `$0` because it has no dependable per-call USD price.
 
 In the self-hosted image, the CLI runs inside the container with `CODEX_HOME=/data/codex`, so
-its login and configuration live in the data volume rather than in your home folder.
+its login and configuration live in the data volume rather than in your home folder. **Settings
+→ Codex → Connect Codex** signs it in (`codex login --device-auth`, with BrowserOS Neo entering
+the code) and adds a `browseros-neo` MCP server pointing at the Neo address from Settings. It
+never changes an entry you configured yourself.
 
 This provider is intentionally local and single-user. A production or multi-user deployment must
 isolate Codex accounts, job workers, BrowserOS profiles, and filesystem/process permissions per
@@ -560,10 +572,8 @@ received object"` error with no hint of a module-identity problem underneath. Ca
 
 ## Follow-ups not done in this pass
 
-- Self-hosted distribution, after the image, release pipeline and in-app updater:
-  1. Settings page for provider keys, and a "Connect Codex" sign-in flow (the update dialog
-     moves to a Settings → About section there).
-  2. Step-by-step install guide for Docker Desktop users.
+- Self-hosted distribution, after the image, release pipeline, in-app updater and Settings
+  page: a step-by-step install guide for Docker Desktop users.
 
 - `pnpm --filter @reelcraft/api test:e2e` needs a live Postgres and isn't wired into CI yet
   (tracked in `docs/build-progress.md`) — run it locally against `docker compose up`.

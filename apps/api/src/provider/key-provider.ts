@@ -1,4 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
+import type { ProviderKeyId, ProviderKeySource } from '@reelcraft/shared';
+import { SETTING, SettingsService } from '../settings/settings.service';
 
 /**
  * §23/REQ-17.3 — provider API keys behind an interface, never hardcoded or
@@ -11,22 +13,57 @@ export interface KeyProvider {
 
 export const KEY_PROVIDER = Symbol('KEY_PROVIDER');
 
-const ENV_KEYS: Record<string, string> = {
-  openrouter: 'OPENROUTER_API_KEY',
-  fal: 'FAL_KEY',
-  elevenlabs: 'ELEVENLABS_API_KEY',
-  deepgram: 'DEEPGRAM_API_KEY',
+/** Providers whose key can be set in the environment or on the Settings page. */
+export const PROVIDER_KEYS: Record<ProviderKeyId, { label: string; envVar: string }> = {
+  openrouter: { label: 'OpenRouter', envVar: 'OPENROUTER_API_KEY' },
+  fal: { label: 'fal.ai', envVar: 'FAL_KEY' },
+  elevenlabs: { label: 'ElevenLabs', envVar: 'ELEVENLABS_API_KEY' },
+  deepgram: { label: 'Deepgram', envVar: 'DEEPGRAM_API_KEY' },
 };
 
+export function isProviderKeyId(id: string): id is ProviderKeyId {
+  return Object.hasOwn(PROVIDER_KEYS, id);
+}
+
+export type ResolvedKey = {
+  value: string | undefined;
+  source: ProviderKeySource | null;
+  /** A saved key exists but can't be decrypted. */
+  unreadable: boolean;
+};
+
+/**
+ * Resolves a provider key: the container environment first, then a key
+ * saved in Settings. Adapters ask on every call, so a key saved in Settings
+ * takes effect without a restart.
+ */
 @Injectable()
-export class EnvKeyProvider implements KeyProvider {
-  private readonly logger = new Logger(EnvKeyProvider.name);
+export class SettingsKeyProvider implements KeyProvider {
+  private readonly logger = new Logger(SettingsKeyProvider.name);
+
+  constructor(
+    private readonly settings: SettingsService,
+    private readonly env: NodeJS.ProcessEnv = process.env,
+  ) {}
 
   async get(providerId: string): Promise<string | undefined> {
-    const envVar = ENV_KEYS[providerId];
-    const value = envVar ? process.env[envVar] : undefined;
-    if (value) this.logger.debug({ providerId, source: 'env', envVar }, 'provider key resolved');
-    else this.logger.warn({ providerId, source: 'env', envVar }, 'provider key missing');
+    const { value, source } = await this.resolve(providerId);
+    if (value) this.logger.debug({ providerId, source }, 'provider key resolved');
+    else this.logger.warn({ providerId }, 'provider key missing');
     return value;
+  }
+
+  async resolve(providerId: string): Promise<ResolvedKey> {
+    if (!isProviderKeyId(providerId)) return { value: undefined, source: null, unreadable: false };
+    const fromEnv = this.envValue(providerId);
+    if (fromEnv) return { value: fromEnv, source: 'env', unreadable: false };
+    const saved = await this.settings.getSecret(SETTING.providerKey(providerId));
+    if (saved.value) return { value: saved.value, source: 'saved', unreadable: false };
+    return { value: undefined, source: null, unreadable: saved.unreadable };
+  }
+
+  /** The key set in the container environment, if any. */
+  envValue(providerId: ProviderKeyId): string | undefined {
+    return this.env[PROVIDER_KEYS[providerId]!.envVar] || undefined;
   }
 }

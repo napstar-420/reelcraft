@@ -85,7 +85,7 @@ const text = parts.map((p) => p.value).join('');`;
  * `NeoClient.run`. Results over Neo's inline `evaluate` limit are parked in
  * a hidden DOM node and read back in slices within the same `run`.
  */
-function inPage(id: number, body: string, args: unknown = {}): string {
+export function inPage(id: number, body: string, args: unknown = {}): string {
   const page = pageId(id);
   const code = `const args = ${JSON.stringify(args)};
 ${PAGE_PRELUDE}

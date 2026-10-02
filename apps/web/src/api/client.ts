@@ -1,4 +1,11 @@
 import type {
+  BrowserOsSettingsDto,
+  CodexLoginDto,
+  CodexStatusDto,
+  ConnectionTestDto,
+  ProviderKeyId,
+  ProviderKeyStatusDto,
+  SettingsDto,
   ChannelDto,
   CreateChannelDto,
   UpdateChannelDto,
@@ -431,4 +438,31 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ version }),
     }),
+
+  getSettings: () => request<SettingsDto>('/settings'),
+  saveProviderKey: (provider: ProviderKeyId, value: string) =>
+    request<ProviderKeyStatusDto>(`/settings/keys/${provider}`, {
+      method: 'PUT',
+      body: JSON.stringify({ value }),
+    }),
+  deleteProviderKey: (provider: ProviderKeyId) =>
+    request<ProviderKeyStatusDto>(`/settings/keys/${provider}`, { method: 'DELETE' }),
+  testProviderKey: (provider: ProviderKeyId) =>
+    request<ConnectionTestDto>(`/settings/keys/${provider}/test`, { method: 'POST' }),
+  saveBrowserOs: (url: string) =>
+    request<BrowserOsSettingsDto>('/settings/browser-os', {
+      method: 'PUT',
+      body: JSON.stringify({ url }),
+    }),
+  testBrowserOs: (url?: string) =>
+    request<ConnectionTestDto>('/settings/browser-os/test', {
+      method: 'POST',
+      body: JSON.stringify(url ? { url } : {}),
+    }),
+  getCodexStatus: () => request<CodexStatusDto>('/codex/status'),
+  getCodexLogin: () => request<{ login: CodexLoginDto | null }>('/codex/login'),
+  startCodexLogin: () => request<CodexLoginDto>('/codex/login', { method: 'POST' }),
+  cancelCodexLogin: () =>
+    request<{ login: CodexLoginDto | null }>('/codex/login', { method: 'DELETE' }),
+  codexLogout: () => request<CodexStatusDto>('/codex/logout', { method: 'POST' }),
 };

@@ -1,29 +1,15 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
 import { ArrowUpCircle, Info, Loader2 } from 'lucide-react';
-import { api } from '@/api/client';
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
-import { UPDATE_STATUS_KEY, UpdateDialog, type UpdateTarget } from './update-dialog';
-import { installOutcome, updateOffer } from './update.logic';
+import { UpdateDialog } from './update-dialog';
+import { updateOffer } from './update.logic';
+import { useUpdateStatus } from './use-update-status';
 
 /** Sidebar footer entry: the running version, and a prompt when an update
  * is available. Opens the update dialog. */
 export function UpdateIndicator() {
   const [open, setOpen] = useState(false);
-  const [target, setTarget] = useState<UpdateTarget | null>(null);
-
-  const status = useQuery({
-    queryKey: UPDATE_STATUS_KEY,
-    queryFn: () => api.getUpdateStatus(),
-    // Poll quickly while an update runs; the app restarts during it, so
-    // failed polls are expected and simply retried.
-    refetchInterval: (query) => {
-      const data = query.state.data;
-      const waiting = target !== null && (!data || installOutcome(data, target) === null);
-      return waiting || (data && data.phase !== 'idle') ? 2000 : 60_000;
-    },
-    retry: false,
-  });
+  const { status, target, setTarget } = useUpdateStatus();
 
   const offer = updateOffer(status.data);
   const version = status.data?.current.version;
