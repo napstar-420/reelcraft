@@ -18,3 +18,7 @@ apps/api/.workspace/
 # authoritative spec source docs — not tooling-managed prose
 docs/ai-reel-engine-requirements.md
 docs/ai-video-engine-design-spec-v6.md
+
+# release-please writes these; its formatting differs from Prettier's
+CHANGELOG.md
+.release-please-manifest.json
