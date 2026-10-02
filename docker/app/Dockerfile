@@ -9,12 +9,13 @@ ARG NODE_IMAGE=node:22-bookworm-slim
 ARG RUNTIME_IMAGE=ubuntu:24.04
 ARG GO_IMAGE=golang:1.24-bookworm
 ARG INNGEST_VERSION=v1.45.1
+ARG MINIO_VERSION=v0.0.0-20260212201848-7aac2a2c5b7c
 
 # ---------------------------------------------------------------------------
 # MinIO only ships source now, so build a pinned commit. The pseudo-version is
 # checked against the Go checksum database, which keeps this reproducible.
 FROM ${GO_IMAGE} AS minio
-ARG MINIO_VERSION=v0.0.0-20260212201848-7aac2a2c5b7c
+ARG MINIO_VERSION
 RUN CGO_ENABLED=0 GOTOOLCHAIN=auto \
     go install -trimpath -ldflags "-s -w" github.com/minio/minio@${MINIO_VERSION}
 
@@ -105,6 +106,9 @@ RUN mkdir -p /opt/remotion && cd /opt/remotion \
  && install -d -o reelcraft -g reelcraft "${REELCRAFT_APP_DIR}/apps/render-worker/node_modules/.cache"
 
 COPY docker/app/rootfs/ /
+# The image/app-bundle contract: RUNTIME_VERSION says which runtime this image
+# provides, and the public key lets the updater verify release manifests.
+COPY docker/app/RUNTIME_VERSION docker/app/release-signing.pub /opt/reelcraft/
 
 ENV PATH=/usr/lib/postgresql/16/bin:${PATH} \
     NODE_ENV=production \
@@ -123,6 +127,17 @@ ENV PATH=/usr/lib/postgresql/16/bin:${PATH} \
     S6_CMD_WAIT_FOR_SERVICES_MAXTIME=0 \
     S6_SERVICES_GRACETIME=20000 \
     S6_KILL_GRACETIME=5000
+
+ARG REELCRAFT_RUNTIME_VERSION=unknown
+ARG REELCRAFT_REVISION=unknown
+ARG MINIO_VERSION
+LABEL org.opencontainers.image.title="Reelcraft" \
+      org.opencontainers.image.description="Self-hosted AI video and reel generation" \
+      org.opencontainers.image.source="https://github.com/napstar-420/reelcraft" \
+      org.opencontainers.image.version="${REELCRAFT_VERSION}" \
+      org.opencontainers.image.revision="${REELCRAFT_REVISION}" \
+      org.reelcraft.runtime="${REELCRAFT_RUNTIME_VERSION}" \
+      org.reelcraft.minio.source="https://pkg.go.dev/github.com/minio/minio@${MINIO_VERSION} (AGPL-3.0)"
 
 VOLUME /data
 EXPOSE 8080

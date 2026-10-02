@@ -1,0 +1,289 @@
+name: Release
+
+# release-please keeps a "chore(main): release X.Y.Z" PR open, built from the
+# conventional commits merged to main. Merging that PR tags the release and the
+# rest of this workflow builds, smoke-tests and publishes it. Everything runs
+# in one workflow because tags created with GITHUB_TOKEN don't trigger others.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+  packages: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    outputs:
+      created: ${{ steps.release.outputs.release_created }}
+      tag: ${{ steps.release.outputs.tag_name }}
+      version: ${{ steps.release.outputs.version }}
+    steps:
+      - id: release
+        uses: googleapis/release-please-action@v4
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  build:
+    needs: release-please
+    if: needs.release-please.outputs.created == 'true'
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    env:
+      VERSION: ${{ needs.release-please.outputs.version }}
+      DOCKERHUB_IMAGE: ${{ vars.DOCKERHUB_IMAGE }}
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+      RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release-please.outputs.tag }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # Fail before building anything if the release could not be signed.
+      - name: Check release signing setup
+        run: |
+          if grep -q 'reelcraft-release-signing-key: placeholder' docker/app/release-signing.pub; then
+            echo "::error::No release signing key yet. Run 'node scripts/release/keygen.mjs', commit docker/app/release-signing.pub, add the RELEASE_SIGNING_KEY secret, then re-run this workflow."
+            exit 1
+          fi
+          if [ -z "$RELEASE_SIGNING_KEY" ]; then
+            echo "::error::The RELEASE_SIGNING_KEY secret is not set."
+            exit 1
+          fi
+
+      - id: meta
+        name: Image names
+        run: |
+          ghcr="ghcr.io/${GITHUB_REPOSITORY,,}"
+          names="$ghcr"
+          if [ -n "$DOCKERHUB_IMAGE" ] && [ -n "$DOCKERHUB_TOKEN" ]; then
+            names="$names,docker.io/$DOCKERHUB_IMAGE"
+          else
+            echo "::notice::Docker Hub is not configured (DOCKERHUB_IMAGE variable, DOCKERHUB_USERNAME/DOCKERHUB_TOKEN secrets); publishing to GHCR only."
+          fi
+          {
+            echo "names=$names"
+            echo "runtime=$(cat docker/app/RUNTIME_VERSION)"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - if: env.DOCKERHUB_IMAGE != '' && env.DOCKERHUB_TOKEN != ''
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/app/Dockerfile
+          load: true
+          tags: reelcraft:release
+          build-args: |
+            REELCRAFT_VERSION=${{ env.VERSION }}
+            REELCRAFT_REVISION=${{ github.sha }}
+            REELCRAFT_RUNTIME_VERSION=${{ steps.meta.outputs.runtime }}
+          cache-from: type=gha,scope=release-${{ matrix.arch }}
+          cache-to: type=gha,scope=release-${{ matrix.arch }},mode=max
+
+      - name: Smoke test
+        run: docker/app/smoke-test.sh reelcraft:release
+
+      # Same inputs as the build above, so this is served from the cache.
+      - id: push
+        name: Push by digest
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/app/Dockerfile
+          build-args: |
+            REELCRAFT_VERSION=${{ env.VERSION }}
+            REELCRAFT_REVISION=${{ github.sha }}
+            REELCRAFT_RUNTIME_VERSION=${{ steps.meta.outputs.runtime }}
+          outputs: type=image,"name=${{ steps.meta.outputs.names }}",push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=release-${{ matrix.arch }}
+
+      - name: Export digest
+        run: |
+          mkdir -p "$RUNNER_TEMP/digests"
+          echo "${{ steps.push.outputs.digest }}" > "$RUNNER_TEMP/digests/${{ matrix.arch }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: digest-${{ matrix.arch }}
+          path: ${{ runner.temp }}/digests/${{ matrix.arch }}
+          retention-days: 7
+
+      # The app bundle is copied out of the image just built, so an in-app
+      # update installs exactly what this image runs.
+      - name: Extract app bundle
+        run: |
+          out="$RUNNER_TEMP/bundle"
+          mkdir -p "$out/app"
+          cid="$(docker create reelcraft:release)"
+          docker cp "$cid:/opt/reelcraft/app/." "$out/app"
+          docker rm "$cid"
+          tar -C "$out/app" --owner=0 --group=0 --numeric-owner -czf \
+            "$out/reelcraft-app-$VERSION-linux-${{ matrix.arch }}.tar.gz" .
+          ls -lh "$out"/*.tar.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bundle-${{ matrix.arch }}
+          path: ${{ runner.temp }}/bundle/*.tar.gz
+          retention-days: 7
+
+  publish-images:
+    needs: [release-please, build]
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.release-please.outputs.version }}
+      DOCKERHUB_IMAGE: ${{ vars.DOCKERHUB_IMAGE }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: digest-*
+          path: ${{ runner.temp }}/digests
+          merge-multiple: true
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - if: env.DOCKERHUB_IMAGE != '' && env.DOCKERHUB_TOKEN != ''
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Create multi-arch tags
+        run: |
+          # Prereleases (1.2.0-rc.1) only get their exact tag; stable releases
+          # also move 1.2, 1 and latest.
+          tags=("$VERSION")
+          if [[ "$VERSION" != *-* ]]; then
+            IFS=. read -r major minor _ <<<"$VERSION"
+            tags+=("$major.$minor" "$major" latest)
+          fi
+          repos=("ghcr.io/${GITHUB_REPOSITORY,,}")
+          if [ -n "$DOCKERHUB_IMAGE" ] && [ -n "$DOCKERHUB_TOKEN" ]; then
+            repos+=("docker.io/$DOCKERHUB_IMAGE")
+          fi
+          for repo in "${repos[@]}"; do
+            args=()
+            for tag in "${tags[@]}"; do args+=(-t "$repo:$tag"); done
+            sources=()
+            for digest in "$RUNNER_TEMP"/digests/*; do sources+=("$repo@$(cat "$digest")"); done
+            docker buildx imagetools create "${args[@]}" "${sources[@]}"
+            docker buildx imagetools inspect "$repo:$VERSION"
+          done
+
+  release-assets:
+    needs: [release-please, build, publish-images]
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.release-please.outputs.version }}
+      TAG: ${{ needs.release-please.outputs.tag }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      DOCKERHUB_IMAGE: ${{ vars.DOCKERHUB_IMAGE }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release-please.outputs.tag }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: bundle-*
+          path: dist/release
+          merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: digest-*
+          path: ${{ runner.temp }}/digests
+          merge-multiple: true
+      - name: Build and sign the release manifest
+        env:
+          RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
+        run: |
+          manifest="dist/release/reelcraft-$VERSION.manifest.json"
+          digests=()
+          for file in "$RUNNER_TEMP"/digests/*; do
+            digests+=(--digest "$(basename "$file")=$(cat "$file")")
+          done
+          node scripts/release/build-manifest.mjs \
+            --version "$VERSION" --tag "$TAG" --runtime "$(cat docker/app/RUNTIME_VERSION)" \
+            --bundles-dir dist/release "${digests[@]}" --out "$manifest"
+          node scripts/release/sign-manifest.mjs "$manifest"
+          cat "$manifest"
+      - name: Upload release assets
+        run: gh release upload "$TAG" dist/release/* --clobber
+      - name: Add update instructions to the release notes
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY,,}"
+          if [ -n "$DOCKERHUB_IMAGE" ]; then image="$DOCKERHUB_IMAGE"; fi
+          gh release view "$TAG" --json body -q .body > notes.md
+          cat >> notes.md <<EOF
+
+          ## Updating
+
+          **Docker Desktop:** in **Images**, pull \`$image:$VERSION\` (or \`latest\`). Then stop and
+          delete the old Reelcraft container, and run the new image with the **same volume** mounted
+          at \`/data\` and the same port. Your projects and settings live in the volume and are kept.
+
+          **Command line:**
+
+          \`\`\`bash
+          docker pull $image:$VERSION
+          docker rm -f reelcraft
+          docker run -d --name reelcraft -p 8080:8080 -v reelcraft-data:/data $image:$VERSION
+          \`\`\`
+
+          Database migrations run automatically on start.
+
+          ---
+          This image includes [MinIO](https://github.com/minio/minio) (AGPL-3.0), built unmodified from the source commit recorded in the image's \`org.reelcraft.minio.source\` label.
+          EOF
+          gh release edit "$TAG" --notes-file notes.md
+
+  dockerhub-description:
+    needs: publish-images
+    if: vars.DOCKERHUB_IMAGE != ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fill in the image name
+        env:
+          DOCKERHUB_IMAGE: ${{ vars.DOCKERHUB_IMAGE }}
+        run: sed "s|<image>|$DOCKERHUB_IMAGE|g" docker/app/DOCKERHUB.md > "$RUNNER_TEMP/DOCKERHUB.md"
+      - uses: peter-evans/dockerhub-description@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: ${{ vars.DOCKERHUB_IMAGE }}
+          short-description: Self-hosted AI video and reel generation. One container, one port.
+          readme-filepath: ${{ runner.temp }}/DOCKERHUB.md

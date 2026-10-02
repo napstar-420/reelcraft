@@ -1,0 +1,43 @@
+name: Runtime version
+
+# The image (runtime) and the app bundle ship separately: an update that only
+# swaps the bundle keeps the user's existing image. Any change to what the
+# image itself contains must bump docker/app/RUNTIME_VERSION, so the updater
+# knows to ask for a new image instead. Add the `runtime-unchanged` label to a
+# PR whose image changes don't affect the runtime (comments, build stage only).
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+jobs:
+  runtime-version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Require a RUNTIME_VERSION bump for image changes
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          OVERRIDE: ${{ contains(github.event.pull_request.labels.*.name, 'runtime-unchanged') }}
+        run: |
+          changed="$(git diff --name-only "$BASE_SHA"...HEAD)"
+          image_changes="$(grep -E '^docker/app/(Dockerfile$|rootfs/)' <<<"$changed" || true)"
+          if [ -z "$image_changes" ]; then
+            echo "No image runtime changes."
+            exit 0
+          fi
+          if grep -qx 'docker/app/RUNTIME_VERSION' <<<"$changed"; then
+            echo "RUNTIME_VERSION changed alongside:"
+            echo "$image_changes"
+            exit 0
+          fi
+          if [ "$OVERRIDE" = true ]; then
+            echo "::notice::Image files changed without a RUNTIME_VERSION bump; allowed by the runtime-unchanged label."
+            exit 0
+          fi
+          echo "::error::These files change the self-hosted image, but docker/app/RUNTIME_VERSION was not bumped:"
+          echo "$image_changes"
+          echo "Bump the number in docker/app/RUNTIME_VERSION so installs know this release needs a new image."
+          echo "If the change cannot affect the running container, add the 'runtime-unchanged' label instead."
+          exit 1

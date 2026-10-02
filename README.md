@@ -16,6 +16,11 @@ toolchain needed. See [Run with Docker](#run-with-docker-self-hosted).
 One image runs the whole app: the API, web UI, Postgres, MinIO and Inngest. Everything you
 create is stored in one volume mounted at `/data`.
 
+Releases are published to Docker Hub (searchable in Docker Desktop) and to
+`ghcr.io/napstar-420/reelcraft`, for both Intel/AMD (`amd64`) and Apple Silicon (`arm64`).
+Tags: an exact version (`1.4.2`), the latest patch of a minor (`1.4`) or major (`1`), and
+`latest`. Release notes are on [GitHub Releases](https://github.com/napstar-420/reelcraft/releases).
+
 **Docker Desktop:** search for the Reelcraft image and click **Run**. Under **Optional
 settings**:
 
@@ -25,7 +30,7 @@ settings**:
 **Command line:**
 
 ```bash
-docker run -d --name reelcraft -p 8080:8080 -v reelcraft-data:/data <image>
+docker run -d --name reelcraft -p 8080:8080 -v reelcraft-data:/data ghcr.io/napstar-420/reelcraft
 ```
 
 Then open http://localhost:8080. The first start takes a little longer while Reelcraft sets up
@@ -63,7 +68,8 @@ BrowserOS Neo keeps running on your own computer as before. The container reache
 
 **Updating.** For now: pull the newer image, remove the old container, and run the new image
 with the same volume. Your data and secrets are kept, and database migrations run
-automatically on start. An in-app updater is planned.
+automatically on start. Every release's notes include these steps. An in-app updater is
+planned.
 
 **Security.** There is no login. Anyone who can reach the port can use the app and your
 provider keys. Keep it on your own computer or a trusted network, and don't expose it to the
@@ -108,6 +114,55 @@ Only port 8080 is exposed. The image sets `WEB_DIST_DIR` (serve the built web ap
 `S3_BROWSER_PATH_PREFIX=/storage` (browser media URLs go through the API instead of to MinIO);
 leave both unset in local dev. To start from scratch, remove the container and run
 `docker volume rm reelcraft-dev-data`.
+
+`docker/app/smoke-test.sh <image>` boots an image on a fresh volume, runs the seeded
+"Hello Stage" template to completion and round-trips a file through `/storage`. CI runs it on
+every push and before every release.
+
+## Releasing
+
+Versions come from the conventional commit subjects merged to `main`.
+[release-please](https://github.com/googleapis/release-please) keeps a
+`chore(main): release X.Y.Z` PR open with the version bump and `CHANGELOG.md`: `feat` bumps
+the minor version, `fix` the patch (while below 1.0, breaking changes bump the minor). **Merging
+that PR is the release.** `.github/workflows/release.yml` then:
+
+1. tags `vX.Y.Z` and creates the GitHub Release;
+2. builds the image natively for `amd64` and `arm64`, and smoke-tests each;
+3. publishes the multi-arch image to GHCR and Docker Hub as `X.Y.Z`, `X.Y`, `X` and `latest`
+   (prereleases get only their exact tag);
+4. attaches `reelcraft-app-X.Y.Z-linux-<arch>.tar.gz` bundles, copied out of the published
+   images, plus a signed `reelcraft-X.Y.Z.manifest.json` that the planned in-app updater
+   verifies;
+5. syncs `docker/app/DOCKERHUB.md` to the Docker Hub page.
+
+If a release job fails, fix the cause and use **Re-run failed jobs**; the tag already exists.
+
+**Runtime version.** An in-app update swaps only the app bundle and keeps the user's image, so
+the image is versioned separately in `docker/app/RUNTIME_VERSION`. Bump it in any PR that
+changes what the image contains (`docker/app/Dockerfile`, `docker/app/rootfs/`). The
+`Runtime version` check enforces this. Add the `runtime-unchanged` label for image edits that
+can't affect the running container, such as comments.
+
+**One-time setup** (repository settings):
+
+1. **Signing key:** run `node scripts/release/keygen.mjs` on your own machine. Commit the
+   `docker/app/release-signing.pub` it writes, and paste the printed private key into the
+   `RELEASE_SIGNING_KEY` Actions secret. Keep a backup: replacing the key stops older installs
+   from verifying new releases.
+2. **Docker Hub:** create the repository, then add the `DOCKERHUB_IMAGE` Actions variable
+   (e.g. `yourname/reelcraft`) and the `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` secrets. The
+   token needs Read, Write and Delete scope so the description can be updated. Without these,
+   releases go to GHCR only.
+3. **Actions → General:** allow GitHub Actions to create and approve pull requests
+   (release-please opens the release PR).
+4. **After the first release:** make the `reelcraft` package public under your GitHub profile's
+   Packages. GHCR creates it as private.
+
+**Stacked PRs.** Large changes ship as a stack of PRs, each based on the previous one's branch,
+and merge bottom-up. After a lower PR is squash-merged, rebase the next branch onto `main`
+(`git rebase --onto origin/main <old-base-branch>`), force-push it with `--force-with-lease`,
+and retarget its PR to `main`.
 
 ## Stack
 
@@ -183,7 +238,9 @@ packages/
   timeline-composition/ Shared Remotion composition for preview and final render
 design/     Design tokens and static HTML previews backing docs/design-system.md
 docker/     Postgres init script, MinIO bootstrap script (dev compose)
-  app/      Self-hosted image: Dockerfile and s6 service definitions
+  app/      Self-hosted image: Dockerfile, s6 services, smoke test, Docker Hub page
+scripts/
+  release/  Release manifest build, signing and key generation
 ```
 
 See `docs/design-system.md` ("Night Studio") for the web app's design tokens and component
@@ -197,6 +254,7 @@ pnpm typecheck        # tsc -b across the whole workspace
 pnpm lint             # eslint
 pnpm test             # unit tests (packages/shared, apps/api)
 pnpm test:e2e         # apps/api e2e tests — needs `docker compose up` (real Postgres)
+pnpm test:release     # release manifest signing tests (node:test)
 pnpm db:generate      # drizzle-kit generate (after schema changes)
 pnpm db:migrate       # apply migrations
 pnpm db:studio        # drizzle studio
@@ -458,12 +516,11 @@ received object"` error with no hint of a module-identity problem underneath. Ca
 
 ## Follow-ups not done in this pass
 
-- Self-hosted distribution, after the single-container image:
-  1. Release pipeline: publish the app bundle and images on version tags.
-  2. In-app updater: update check, signed bundle download, backup, switch-over and rollback
+- Self-hosted distribution, after the image and release pipeline:
+  1. In-app updater: update check, signed bundle download, backup, switch-over and rollback
      (the image's `REELCRAFT_APP_DIR` is the hook for this).
-  3. Settings page for provider keys, and a "Connect Codex" sign-in flow.
-  4. Step-by-step install guide for Docker Desktop users.
+  2. Settings page for provider keys, and a "Connect Codex" sign-in flow.
+  3. Step-by-step install guide for Docker Desktop users.
 
 - `pnpm --filter @reelcraft/api test:e2e` needs a live Postgres and isn't wired into CI yet
   (tracked in `docs/build-progress.md`) — run it locally against `docker compose up`.
