@@ -1,3 +1,6 @@
 packages:
   - 'apps/*'
   - 'packages/*'
+  # The user guide (Docusaurus) installs on its own: `pnpm install --ignore-workspace`
+  # in apps/docs. Keeping it out keeps it out of the image and the main lockfile.
+  - '!apps/docs'

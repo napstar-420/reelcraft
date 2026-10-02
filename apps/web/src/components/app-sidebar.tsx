@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   ChevronRight,
+  CircleHelp,
   Clapperboard,
   LayoutGrid,
   ListVideo,
@@ -30,6 +31,7 @@ import {
 } from '@/components/ui/sidebar';
 import { ChannelDialog, type ChannelDialogState } from '@/components/channels/channel-dialog';
 import { UpdateIndicator } from '@/components/update/update-indicator';
+import { DOCS_URL } from '@/lib/docs-url';
 
 const navItems = [
   { to: '/runs', label: 'Runs', icon: ListVideo },
@@ -126,6 +128,16 @@ export function AppSidebar() {
         </SidebarGroup>
       </SidebarContent>
       <SidebarFooter>
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton asChild tooltip="Help" className="text-muted-foreground">
+              <a href={DOCS_URL} target="_blank" rel="noreferrer">
+                <CircleHelp />
+                <span>Help</span>
+              </a>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
         <UpdateIndicator />
       </SidebarFooter>
       <ChannelDialog state={dialog} onOpenChange={(open) => !open && setDialog(null)} />

@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/dialog';
 import { Progress } from '@/components/ui/progress';
 import { apiErrorMessage } from '@/lib/api-error-message';
+import { docsUrl } from '@/lib/docs-url';
 import {
   downloadPercent,
   formatRunWarning,
@@ -151,6 +152,14 @@ export function UpdateDialog({
             <code>/data</code>.
           </li>
         </ol>
+        <a
+          href={docsUrl('updating#update-to-a-new-image')}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center gap-1 text-xs underline underline-offset-2"
+        >
+          Step-by-step guide <ExternalLink className="size-3" />
+        </a>
       </div>
     );
   } else {

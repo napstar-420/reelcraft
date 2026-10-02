@@ -5,7 +5,14 @@ import prettierConfig from 'eslint-config-prettier';
 
 export default tseslint.config(
   {
-    ignores: ['**/dist/**', '**/node_modules/**', '**/*.d.ts', '**/drizzle/**'],
+    ignores: [
+      '**/dist/**',
+      '**/node_modules/**',
+      '**/*.d.ts',
+      '**/drizzle/**',
+      // The user guide is outside the workspace and typechecks itself.
+      'apps/docs/**',
+    ],
   },
   ...tseslint.configs.recommended,
   {

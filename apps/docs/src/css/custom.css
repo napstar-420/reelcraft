@@ -1,0 +1,29 @@
+/* Theme tokens for the Reelcraft guide. Docusaurus' Infima reads these. */
+:root {
+  --ifm-color-primary: #6d28d9;
+  --ifm-color-primary-dark: #6224c3;
+  --ifm-color-primary-darker: #5c22b8;
+  --ifm-color-primary-darkest: #4c1c98;
+  --ifm-color-primary-light: #7a3fe0;
+  --ifm-color-primary-lighter: #8148e2;
+  --ifm-color-primary-lightest: #9467e7;
+  --ifm-code-font-size: 92%;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.1);
+}
+
+[data-theme='dark'] {
+  --ifm-color-primary: #a78bfa;
+  --ifm-color-primary-dark: #9171f9;
+  --ifm-color-primary-darker: #8664f8;
+  --ifm-color-primary-darkest: #653cf6;
+  --ifm-color-primary-light: #bda5fb;
+  --ifm-color-primary-lighter: #c8b2fc;
+  --ifm-color-primary-lightest: #e8defe;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
+}
+
+/* Screenshots: a quiet frame so light UI shots don't melt into the page. */
+.markdown img {
+  border: 1px solid var(--ifm-color-emphasis-300);
+  border-radius: 8px;
+}
