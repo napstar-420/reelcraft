@@ -11,6 +11,6 @@
     { "type": "revert", "section": "Reverts" }
   ],
   "packages": {
-    ".": { "package-name": "reelcraft" }
+    ".": { "package-name": "reelcraft", "initial-version": "0.1.0" }
   }
 }
