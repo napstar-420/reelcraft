@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1](https://github.com/napstar-420/reelcraft/compare/v0.1.0...v0.1.1) (2026-10-02)
+
+
+### Bug Fixes
+
+* **docker:** install Remotion's browser by its reported path on arm64 ([#46](https://github.com/napstar-420/reelcraft/issues/46)) ([b81fefd](https://github.com/napstar-420/reelcraft/commit/b81fefd74e1c53fb1d66df88627e52616444110d))
+
 ## 0.1.0 (2026-10-02)
 
 
