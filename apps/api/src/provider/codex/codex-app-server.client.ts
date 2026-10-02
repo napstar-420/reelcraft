@@ -18,13 +18,18 @@ type RpcResponse = { id?: number; result?: unknown; error?: { message?: string }
 
 export class CodexAppServerClient {
   private readonly logger = new Logger(CodexAppServerClient.name);
-  private cached?: { expiresAt: number; models: CodexModel[] };
+  private cached?: { expiresAt: number; models: CodexModel[] } | undefined;
 
   constructor(
     private readonly spawnCodex: SpawnCodex = nodeSpawn as SpawnCodex,
     private readonly timeoutMs = 10_000,
     private readonly cacheTtlMs = 30_000,
   ) {}
+
+  /** Forgets the cached model list, after Codex's login changed. */
+  reset(): void {
+    this.cached = undefined;
+  }
 
   async listModels(): Promise<CodexModel[]> {
     if (this.cached && this.cached.expiresAt > Date.now()) return this.cached.models;

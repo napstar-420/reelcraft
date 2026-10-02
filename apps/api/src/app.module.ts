@@ -10,6 +10,7 @@ import { QcModule } from './qc/qc.module';
 import { RunModule } from './run/run.module';
 import { SystemModule } from './system/system.module';
 import { UpdateModule } from './update/update.module';
+import { SettingsPageModule } from './settings/settings-page.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { UpdateModule } from './update/update.module';
     RunModule,
     SystemModule,
     UpdateModule,
+    SettingsPageModule,
   ],
 })
 export class AppModule {}

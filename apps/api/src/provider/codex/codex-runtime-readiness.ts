@@ -1,8 +1,9 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { Modality } from '@reelcraft/shared';
 import { EngineConfig } from '../../config/engine-config';
+import { SettingsService } from '../../settings/settings.service';
 
 const execFileAsync = promisify(execFile);
 
@@ -14,10 +15,18 @@ export interface CodexRuntimeStatus {
 @Injectable()
 export class CodexRuntimeReadiness {
   private readonly logger = new Logger(CodexRuntimeReadiness.name);
-  private cached?: { expiresAt: number; status: CodexRuntimeStatus };
+  private cached?: { expiresAt: number; status: CodexRuntimeStatus } | undefined;
   private lastModalities?: string;
 
-  constructor(private readonly config: EngineConfig) {}
+  constructor(
+    private readonly config: EngineConfig,
+    @Inject(SettingsService) private readonly settings: Pick<SettingsService, 'browserOsUrl'>,
+  ) {}
+
+  /** Forgets the cached result, after Codex's login or config changed. */
+  reset(): void {
+    this.cached = undefined;
+  }
 
   async inspect(force = false): Promise<CodexRuntimeStatus> {
     if (!force && this.cached && this.cached.expiresAt > Date.now()) return this.cached.status;
@@ -85,7 +94,7 @@ export class CodexRuntimeReadiness {
 
   private async browserOsReachable(): Promise<boolean> {
     try {
-      const response = await fetch(this.config.codexBrowserOsUrl, {
+      const response = await fetch(await this.settings.browserOsUrl(), {
         method: 'GET',
         signal: AbortSignal.timeout(this.config.codexReadinessTimeoutMs),
       });

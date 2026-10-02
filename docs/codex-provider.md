@@ -18,6 +18,23 @@ and parse the final JSON before the engine's existing validation. Timeline stage
 engine-owned timeline schema before existing canonicalization. All Codex estimates and settlements
 are `$0`; token and event information is diagnostic only.
 
+## Connecting from the Settings page
+
+**Settings → Codex → Connect Codex** (`CodexLoginService`) runs `codex login --device-auth` as the
+API user, so the login lands in that user's `$CODEX_HOME` (`/data/codex` in the image). The service
+parses the sign-in link and one-time code from the CLI output, then asks BrowserOS Neo to open the
+link and type the code (`codex-device-page.ts`). The code is only ever sent to an
+`https://auth.openai.com` page. Reelcraft never clicks the consent button: the user approves the
+sign-in in Neo. If Neo is unreachable, the page wants an OpenAI sign-in first, or the script can't
+find the code box, the Settings page shows the link and code to finish in any browser. The code
+expires after 15 minutes, and one sign-in runs at a time.
+
+After a successful sign-in, and whenever the Neo address is saved in Settings,
+`CodexNeoRegistrar` makes sure Codex has a `browseros-neo` MCP server (`codex mcp add browseros-neo
+--url <address>`). It records the address it registered and only ever replaces that entry; an
+entry the user configured is left alone. `codex exec --profile reelcraft` works without a matching
+profile in `config.toml` (verified with codex-cli 0.159.3), so no profile is created.
+
 ## Local acceptance
 
 The real-provider smoke test is deliberately opt-in because it consumes authenticated Codex usage:

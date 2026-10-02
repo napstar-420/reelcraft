@@ -23,8 +23,12 @@ docker run -d --name reelcraft -p 8080:8080 -v reelcraft-data:/data <image>
 
 ## Add your AI provider keys
 
-Reelcraft works out of the box with a free test provider. To use real AI services, add their API
-keys as **Environment variables** in the same Optional settings:
+Reelcraft works out of the box with a free test provider. To use real AI services, open
+**Settings** in Reelcraft's sidebar and paste their API keys under **AI providers**. The same page
+connects BrowserOS Neo and Codex.
+
+You can also set keys as **Environment variables** in the container's Optional settings. A key
+set that way takes priority over one saved in Settings:
 
 | Variable             | Service    |
 | -------------------- | ---------- |
@@ -57,6 +61,6 @@ own computer or a network you trust, and don't expose port 8080 to the internet.
 ## More
 
 - Source and documentation: <https://github.com/napstar-420/reelcraft>
-- Codex and BrowserOS Neo setup: see "Run with Docker" in the README.
+- Codex and BrowserOS Neo: connect them in **Settings**; details in "Run with Docker" in the README.
 - This image includes [MinIO](https://github.com/minio/minio) (AGPL-3.0), built unmodified from
   source.

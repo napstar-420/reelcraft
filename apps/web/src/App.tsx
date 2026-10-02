@@ -6,6 +6,7 @@ import { BlueprintCanvasPage } from './pages/BlueprintCanvasPage';
 import { RunsPage } from './pages/RunsPage';
 import { RunPage } from './pages/RunPage';
 import { EditorPage } from './pages/EditorPage';
+import { SettingsPage } from './pages/SettingsPage';
 import { AppShell } from './components/app-shell';
 import { Skeleton } from './components/ui/skeleton';
 
@@ -33,6 +34,7 @@ export function App() {
         <Route path="/blueprints/:blueprintId/build" element={<BlueprintCanvasPage />} />
         <Route path="/runs" element={<RunsPage />} />
         <Route path="/runs/:runId" element={<RunPage />} />
+        <Route path="/settings" element={<SettingsPage />} />
         <Route
           path="/runs/:runId/stages/:stageKey/edit"
           element={

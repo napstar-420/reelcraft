@@ -40,6 +40,7 @@ For a fresh local stack: copy `.env.example` to `.env`, then run `docker compose
 - Use TypeScript, async/await, named exports, and kebab-case filenames. React components are PascalCase.
 - Validate external DTOs with shared Zod schemas via `ZodValidationPipe`; change shared DTOs when an API contract changes.
 - Keep Nest domain boundaries intact. `DbModule` is deliberately not global; import it explicitly where needed. `CapabilityModule` must not import `db`, `run`, or `blueprint` modules.
+- Provider keys resolve through `KEY_PROVIDER` (`SettingsKeyProvider`: the environment first, then keys saved encrypted in Settings); never read provider keys from `process.env` at the point of use. Read the BrowserOS Neo address with `SettingsService.browserOsUrl()`, not `EngineConfig`.
 - Use `toUsd`/`fromUsd` in `apps/api/src/common/money.ts` for database money fields; do not coerce numeric columns with `Number()`.
 - Artifact replacement must stale the old artifact before inserting the new one, inside one transaction.
 - Run state changes flow through the durable wakeup/outbox and Inngest pipeline; do not make the UI the execution driver.

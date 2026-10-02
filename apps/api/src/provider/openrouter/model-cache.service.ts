@@ -15,6 +15,10 @@ export class ModelCacheService {
     return this.cached.models;
   }
 
+  clear(): void {
+    this.cached = undefined;
+  }
+
   set(models: ModelInfo[]): void {
     this.cached = { at: Date.now(), models };
   }

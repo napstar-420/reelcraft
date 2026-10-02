@@ -17,6 +17,8 @@ export function breadcrumbsForPath(pathname: string, names: BreadcrumbNames = {}
   switch (root) {
     case 'editor':
       return [{ label: 'Editor' }];
+    case 'settings':
+      return [{ label: 'Settings' }];
     case 'channels':
       if (rest[0] === 'build') return [{ label: 'Channels', to: '/' }, { label: 'New blueprint' }];
       return [

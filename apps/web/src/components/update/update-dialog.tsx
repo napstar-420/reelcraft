@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { ExternalLink, Loader2 } from 'lucide-react';
 import type { UpdateStatusDto } from '@reelcraft/shared';
-import { api, ApiError } from '@/api/client';
+import { api } from '@/api/client';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import {
@@ -14,6 +14,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Progress } from '@/components/ui/progress';
+import { apiErrorMessage } from '@/lib/api-error-message';
 import {
   downloadPercent,
   formatRunWarning,
@@ -25,14 +26,6 @@ import {
 export type UpdateTarget = { version: string; previousResultAt: string | null };
 
 export const UPDATE_STATUS_KEY = ['system-update'] as const;
-
-function errorMessage(error: unknown, fallback: string): string {
-  if (error instanceof ApiError) {
-    const message = (error.issues as { message?: unknown } | undefined)?.message;
-    if (typeof message === 'string') return message;
-  }
-  return fallback;
-}
 
 function formatDate(iso: string | null): string {
   return iso ? new Date(iso).toLocaleString() : 'never';
@@ -213,14 +206,14 @@ export function UpdateDialog({
         {install.isError ? (
           <Alert variant="destructive">
             <AlertDescription>
-              {errorMessage(install.error, 'The update could not start.')}
+              {apiErrorMessage(install.error, 'The update could not start.')}
             </AlertDescription>
           </Alert>
         ) : null}
         {check.isError ? (
           <Alert variant="destructive">
             <AlertDescription>
-              {errorMessage(check.error, 'Could not check for updates.')}
+              {apiErrorMessage(check.error, 'Could not check for updates.')}
             </AlertDescription>
           </Alert>
         ) : null}

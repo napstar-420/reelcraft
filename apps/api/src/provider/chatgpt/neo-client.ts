@@ -1,10 +1,10 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import {
   StreamableHTTPClientTransport,
   StreamableHTTPError,
 } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
-import { EngineConfig } from '../../config/engine-config';
+import { SettingsService } from '../../settings/settings.service';
 
 const AGENT_NAME = 'reelcraft';
 
@@ -24,8 +24,11 @@ type ToolResult = {
 export class NeoClient {
   private readonly logger = new Logger(NeoClient.name);
   private client?: Promise<Client> | undefined;
+  private clientUrl?: string | undefined;
 
-  constructor(private readonly config: EngineConfig) {}
+  constructor(
+    @Inject(SettingsService) private readonly settings: Pick<SettingsService, 'browserOsUrl'>,
+  ) {}
 
   /** Runs an async JS body against Neo's `browser` SDK (30s hard cap per call). */
   async run<T>(code: string): Promise<T> {
@@ -44,7 +47,7 @@ export class NeoClient {
     retried = false,
   ): Promise<ToolResult> {
     try {
-      const client = await this.connect();
+      const client = await this.connect(await this.settings.browserOsUrl());
       return (await client.callTool({
         name,
         arguments: { agentName: AGENT_NAME, ...args },
@@ -63,19 +66,44 @@ export class NeoClient {
     }
   }
 
-  private connect(): Promise<Client> {
-    this.client ??= (async () => {
-      const client = new Client({ name: AGENT_NAME, version: '1.0.0' });
-      const transport = new StreamableHTTPClientTransport(new URL(this.config.codexBrowserOsUrl));
-      // The SDK's own `sessionId?: string` fails our `exactOptionalPropertyTypes`.
-      await client.connect(transport as unknown as Parameters<Client['connect']>[0]);
-      return client;
-    })().catch((error: unknown) => {
+  /** Connects to Neo at `url` (or the configured address) and lists its
+   * tools, for the Settings page's connection test. */
+  async probe(url?: string): Promise<void> {
+    const client = await open(url ?? (await this.settings.browserOsUrl()));
+    try {
+      const { tools } = await client.listTools();
+      if (!tools.some((tool) => tool.name === 'run')) {
+        throw new Error('this MCP server is not BrowserOS Neo (it has no "run" tool)');
+      }
+    } finally {
+      await client.close().catch(() => undefined);
+    }
+  }
+
+  private connect(url: string): Promise<Client> {
+    // The address changed in Settings: drop the old connection.
+    if (this.client && this.clientUrl !== url) {
+      const old = this.client;
       this.client = undefined;
-      throw error;
-    });
+      void old.then((client) => client.close()).catch(() => undefined);
+    }
+    if (!this.client) {
+      this.clientUrl = url;
+      this.client = open(url).catch((error: unknown) => {
+        this.client = undefined;
+        throw error;
+      });
+    }
     return this.client;
   }
+}
+
+async function open(url: string): Promise<Client> {
+  const client = new Client({ name: AGENT_NAME, version: '1.0.0' });
+  const transport = new StreamableHTTPClientTransport(new URL(url));
+  // The SDK's own `sessionId?: string` fails our `exactOptionalPropertyTypes`.
+  await client.connect(transport as unknown as Parameters<Client['connect']>[0]);
+  return client;
 }
 
 function text(result: ToolResult): string {

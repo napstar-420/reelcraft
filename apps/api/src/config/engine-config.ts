@@ -127,8 +127,14 @@ export class EngineConfig implements OnModuleInit {
     return this.config.get('CODEX_BROWSER_EXTENSION', { infer: true }) ?? 'browseros-neo';
   }
 
+  /** The BrowserOS Neo address from the environment or the built-in default.
+   * Use `SettingsService.browserOsUrl()`, which also honours Settings. */
   get codexBrowserOsUrl(): string {
-    return this.config.get('CODEX_BROWSER_OS_URL', { infer: true }) ?? 'http://127.0.0.1:9010/mcp';
+    return this.codexBrowserOsUrlFromEnv ?? 'http://127.0.0.1:9010/mcp';
+  }
+
+  get codexBrowserOsUrlFromEnv(): string | undefined {
+    return this.config.get('CODEX_BROWSER_OS_URL', { infer: true });
   }
 
   get codexReadinessTimeoutMs(): number {
@@ -194,6 +200,11 @@ export class EngineConfig implements OnModuleInit {
       return 'reelcraft-test-only-preview-token-secret';
     }
     throw new Error('PREVIEW_TOKEN_SECRET is required outside tests');
+  }
+
+  /** Secret that provider keys saved in Settings are encrypted with. */
+  get settingsEncryptionSecret(): string {
+    return this.config.get('SETTINGS_ENCRYPTION_KEY', { infer: true }) ?? this.previewTokenSecret;
   }
 
   get previewTokenTtlSec(): number {

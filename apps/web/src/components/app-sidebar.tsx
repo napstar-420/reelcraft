@@ -1,6 +1,14 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { ChevronRight, Clapperboard, LayoutGrid, ListVideo, Plus, Wrench } from 'lucide-react';
+import {
+  ChevronRight,
+  Clapperboard,
+  LayoutGrid,
+  ListVideo,
+  Plus,
+  Settings,
+  Wrench,
+} from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { api } from '@/api/client';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
@@ -26,6 +34,7 @@ import { UpdateIndicator } from '@/components/update/update-indicator';
 const navItems = [
   { to: '/runs', label: 'Runs', icon: ListVideo },
   { to: '/editor', label: 'Editor', icon: Wrench },
+  { to: '/settings', label: 'Settings', icon: Settings },
 ];
 
 export function AppSidebar() {
