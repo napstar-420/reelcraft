@@ -98,10 +98,12 @@ COPY --from=build /src/apps/web/dist ${REELCRAFT_APP_DIR}/apps/web/dist
 
 # Remotion looks for its browser relative to the working directory, and render
 # jobs run in per-job folders, so install it once and point at it explicitly.
+# The binary's name differs by architecture (headless_shell on arm64), so take
+# the path ensureBrowser() reports; its download progress goes to stdout.
 # Its webpack bundle cache lives beside the render worker and must be writable.
 RUN mkdir -p /opt/remotion && cd /opt/remotion \
- && node -e "require('${REELCRAFT_APP_DIR}/apps/render-worker/node_modules/@remotion/renderer').ensureBrowser().then(() => process.exit(0), (e) => { console.error(e); process.exit(1); })" \
- && ln -s "$(find /opt/remotion/.remotion -type f -name chrome-headless-shell | head -1)" /usr/local/bin/chrome-headless-shell \
+ && node -e "require('${REELCRAFT_APP_DIR}/apps/render-worker/node_modules/@remotion/renderer').ensureBrowser().then((s) => { if (!s.path) throw new Error('no browser installed: ' + s.type); require('fs').writeFileSync('/tmp/remotion-browser', s.path); }).catch((e) => { console.error(e); process.exit(1); })" \
+ && ln -s "$(cat /tmp/remotion-browser)" /usr/local/bin/chrome-headless-shell && rm /tmp/remotion-browser \
  && /usr/local/bin/chrome-headless-shell --version \
  && install -d -o reelcraft -g reelcraft "${REELCRAFT_APP_DIR}/apps/render-worker/node_modules/.cache"
 
