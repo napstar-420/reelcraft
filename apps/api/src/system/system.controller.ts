@@ -3,6 +3,7 @@ import { sql } from 'drizzle-orm';
 import type { SystemHealthDto } from '@reelcraft/shared';
 import { EngineConfig } from '../config/engine-config';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
+import { ReadinessService } from './readiness.service';
 
 @Controller('system')
 export class SystemController {
@@ -11,11 +12,16 @@ export class SystemController {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly config: EngineConfig,
+    private readonly readiness: ReadinessService,
   ) {}
 
-  /** Healthy means the API is serving and can reach its database. */
+  /** Healthy means the API is serving, has finished start-up registration
+   * (see ReadinessService), and can reach its database. */
   @Get('health')
   async health(): Promise<SystemHealthDto> {
+    if (!this.readiness.ready) {
+      throw new ServiceUnavailableException('starting: background jobs not registered yet');
+    }
     try {
       await this.db.execute(sql`select 1`);
     } catch (err) {

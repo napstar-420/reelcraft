@@ -17,6 +17,8 @@ import { EngineConfig } from './config/engine-config';
 import { INNGEST_CLIENT } from './orchestration/inngest.client';
 import { buildInngestFunctions } from './orchestration/functions/index';
 import { mountStorageProxy, mountWebApp } from './system/http-mounts';
+import { syncInngestOnBoot } from './system/inngest-boot-sync';
+import { ReadinessService } from './system/readiness.service';
 
 /** §1.4/§13.1 — CORS stays off; Vite proxies /api in dev, Nest serves the
  * SPA in prod. MinIO is the deliberate second origin (§21.3) in dev; the
@@ -39,6 +41,14 @@ async function bootstrap(): Promise<void> {
   mountWebApp(http, config);
 
   await app.listen(config.apiPort);
+
+  if (config.inngestSyncOnBoot) {
+    const readiness = app.get(ReadinessService);
+    void syncInngestOnBoot({
+      url: `http://127.0.0.1:${config.apiPort}/api/inngest`,
+      logger: app.get(Logger),
+    }).then(() => readiness.markInngestSynced());
+  }
 }
 
 bootstrap().catch((err: unknown) => {

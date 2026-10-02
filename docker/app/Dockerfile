@@ -114,6 +114,7 @@ ENV PATH=/usr/lib/postgresql/16/bin:${PATH} \
     S3_ENDPOINT=http://127.0.0.1:9000 \
     S3_BROWSER_PATH_PREFIX=/storage \
     INNGEST_BASE_URL=http://127.0.0.1:8288 \
+    INNGEST_SYNC_ON_BOOT=true \
     WORKSPACE_ROOT=/data/workspace \
     CODEX_HOME=/data/codex \
     CODEX_BROWSER_OS_URL=http://host.docker.internal:9010/mcp \

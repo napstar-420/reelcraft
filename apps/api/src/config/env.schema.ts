@@ -33,6 +33,10 @@ export const EnvSchema = z
     INNGEST_BASE_URL: z.string().url(),
     INNGEST_EVENT_KEY: z.string(),
     INNGEST_SIGNING_KEY: z.string(),
+    /** Register with Inngest right after boot and report unhealthy until it
+     * succeeds (self-hosted image). Off in dev, where `inngest start
+     * --sdk-url` syncs on its own and nothing waits on health. */
+    INNGEST_SYNC_ON_BOOT: z.enum(['true', 'false']).optional(),
 
     OPENROUTER_API_KEY: z.string().optional(),
     FAL_KEY: z.string().optional(),

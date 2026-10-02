@@ -101,6 +101,10 @@ export class EngineConfig implements OnModuleInit {
     };
   }
 
+  get inngestSyncOnBoot(): boolean {
+    return this.config.get('INNGEST_SYNC_ON_BOOT', { infer: true }) === 'true';
+  }
+
   get workspaceRoot(): string {
     return this.config.get('WORKSPACE_ROOT', { infer: true });
   }

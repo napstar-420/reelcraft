@@ -65,3 +65,15 @@ describe('self-hosted environment configuration', () => {
     },
   );
 });
+
+describe('INNGEST_SYNC_ON_BOOT', () => {
+  it('accepts only true or false', () => {
+    expect(validateEnv(requiredEnv({ INNGEST_SYNC_ON_BOOT: 'true' })).INNGEST_SYNC_ON_BOOT).toBe(
+      'true',
+    );
+    expect(validateEnv(requiredEnv()).INNGEST_SYNC_ON_BOOT).toBeUndefined();
+    expect(() => validateEnv(requiredEnv({ INNGEST_SYNC_ON_BOOT: 'yes' }))).toThrow(
+      'INNGEST_SYNC_ON_BOOT',
+    );
+  });
+});
