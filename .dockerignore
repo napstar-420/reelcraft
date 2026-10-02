@@ -1,0 +1,16 @@
+# Keep the image build context small and free of local state and secrets.
+.git
+**/node_modules
+**/dist
+**/dist-acceptance
+**/coverage
+**/*.tsbuildinfo
+.env
+.env.*
+docker/data
+apps/api/.workspace
+graphify-out
+.agents
+.claude
+.tours
+docs

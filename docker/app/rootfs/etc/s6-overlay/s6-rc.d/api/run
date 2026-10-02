@@ -1,0 +1,8 @@
+#!/command/with-contenv bash
+set -euo pipefail
+# shellcheck source=/dev/null
+source /usr/local/lib/reelcraft/env.sh
+# The API creates the bucket at boot, so MinIO must be answering first.
+reelcraft_wait minio 120 curl -fsS http://127.0.0.1:9000/minio/health/live
+cd "$REELCRAFT_APP_DIR/apps/api"
+exec s6-setuidgid reelcraft node dist/main.js

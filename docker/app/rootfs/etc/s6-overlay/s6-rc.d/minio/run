@@ -1,0 +1,8 @@
+#!/command/with-contenv bash
+set -euo pipefail
+# shellcheck source=/dev/null
+source /usr/local/lib/reelcraft/env.sh
+# Internal only: the browser reaches objects through the API's /storage proxy.
+export MINIO_ROOT_USER="$REELCRAFT_MINIO_USER" MINIO_ROOT_PASSWORD="$REELCRAFT_MINIO_PASSWORD"
+export MINIO_BROWSER=off MINIO_UPDATE=off
+exec s6-setuidgid reelcraft minio server /data/minio --quiet --address 127.0.0.1:9000

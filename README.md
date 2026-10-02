@@ -8,12 +8,116 @@ timeline editor, sequential iteration, channel Characters, the capability-driven
 template library, and a drag/drop visual Blueprint canvas, from design spec §24. Phase 10
 (Socket.IO live updates) is the only pending phase.
 
+Reelcraft also runs as a single self-hosted Docker container, with no repo clone or
+toolchain needed. See [Run with Docker](#run-with-docker-self-hosted).
+
+## Run with Docker (self-hosted)
+
+One image runs the whole app: the API, web UI, Postgres, MinIO and Inngest. Everything you
+create is stored in one volume mounted at `/data`.
+
+**Docker Desktop:** search for the Reelcraft image and click **Run**. Under **Optional
+settings**:
+
+- **Host port:** `8080`
+- **Volume:** host path/name `reelcraft-data`, container path `/data`
+
+**Command line:**
+
+```bash
+docker run -d --name reelcraft -p 8080:8080 -v reelcraft-data:/data <image>
+```
+
+Then open http://localhost:8080. The first start takes a little longer while Reelcraft sets up
+its database and generates its secrets.
+
+**Provider keys.** Add environment variables in the same Run dialog, or with
+`-e NAME=value`: `OPENROUTER_API_KEY`, `FAL_KEY`, `ELEVENLABS_API_KEY`, `DEEPGRAM_API_KEY`.
+Without them, only the free fake provider is available. A settings page for keys is planned.
+
+**What's in `/data`:**
+
+| Path                | Contents                                                      |
+| ------------------- | ------------------------------------------------------------- |
+| `/data/postgres`    | Postgres 16 (`reelcraft` and `inngest` databases)             |
+| `/data/minio`       | Media files                                                   |
+| `/data/workspace`   | Render and Codex job folders                                  |
+| `/data/codex`       | Codex CLI home (`CODEX_HOME`): login, config, skills          |
+| `/data/secrets.env` | Passwords and signing keys generated on first start. Keep it. |
+
+Keep the volume when you remove or recreate the container: it holds all your data. Deleting it
+deletes everything.
+
+**Codex and BrowserOS Neo.** The `codex` CLI is installed in the image and stores its login in
+`/data/codex`. Until the app has a sign-in button, sign in from a terminal. Run it as the
+`reelcraft` user so the app can read the login:
+
+```bash
+docker exec -it -u reelcraft reelcraft codex login --device-auth
+```
+
+BrowserOS Neo keeps running on your own computer as before. The container reaches it at
+`http://host.docker.internal:9010/mcp`. On Linux without Docker Desktop, add
+`--add-host=host.docker.internal:host-gateway`. Override the address with
+`CODEX_BROWSER_OS_URL`.
+
+**Updating.** For now: pull the newer image, remove the old container, and run the new image
+with the same volume. Your data and secrets are kept, and database migrations run
+automatically on start. An in-app updater is planned.
+
+**Security.** There is no login. Anyone who can reach the port can use the app and your
+provider keys. Keep it on your own computer or a trusted network, and don't expose it to the
+internet.
+
+**Known limitations.**
+
+- Deepgram transcription needs Deepgram to reach the instance (`PUBLIC_API_BASE_URL`), so it
+  doesn't work on a desktop install.
+- The image is large (Chromium, FFmpeg, Postgres and Codex are included). You download it once
+  per update.
+
+### Building the image
+
+```bash
+docker build -f docker/app/Dockerfile --build-arg REELCRAFT_VERSION=0.1.0 -t reelcraft:dev .
+docker run -d --name reelcraft -p 8080:8080 -v reelcraft-dev-data:/data reelcraft:dev
+docker logs -f reelcraft          # every service logs to the container's output
+```
+
+On every start, Inngest logs `rejecting event; event key not recognized` and a `traces export`
+404 once. Both come from the Inngest server itself (it does this with no app running) and are
+harmless.
+
+The runtime is Ubuntu 24.04, which provides Postgres 16 and FFmpeg from its own archive. MinIO
+now publishes source only, so the build compiles a pinned commit (AGPLv3). Inngest comes from
+its official image, and Remotion's Chrome Headless Shell is installed at build time.
+
+[s6-overlay](https://github.com/just-containers/s6-overlay) supervises the services, defined in
+`docker/app/rootfs/etc/s6-overlay/s6-rc.d/`:
+
+| Service     | Kind    | Does                                                                           |
+| ----------- | ------- | ------------------------------------------------------------------------------ |
+| `init-data` | oneshot | Creates `/data` folders, generates `secrets.env`, initializes Postgres         |
+| `postgres`  | longrun | Postgres 16 on `127.0.0.1:5432`                                                |
+| `minio`     | longrun | MinIO on `127.0.0.1:9000`, reached by the browser through the API's `/storage` |
+| `migrate`   | oneshot | Applies database migrations; the container stops if this fails                 |
+| `inngest`   | longrun | `inngest start` on `127.0.0.1:8288`, state in the `inngest` database           |
+| `api`       | longrun | API + web UI on `:8080`                                                        |
+
+Only port 8080 is exposed. The image sets `WEB_DIST_DIR` (serve the built web app) and
+`S3_BROWSER_PATH_PREFIX=/storage` (browser media URLs go through the API instead of to MinIO);
+leave both unset in local dev. To start from scratch, remove the container and run
+`docker volume rm reelcraft-dev-data`.
+
 ## Stack
 
 TypeScript end to end · NestJS (`apps/api`) · React + Vite (`apps/web`) · Postgres + Drizzle ·
 Inngest (self-hosted, `inngest start`) · MinIO (S3-compatible blob storage) · Zod.
 
 ## Processes & ports
+
+For local development. The self-hosted image runs the same processes inside one container and
+exposes only `:8080` (see [Building the image](#building-the-image)).
 
 | Process      | Port                              | Notes                                                                                                                               |
 | ------------ | --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
@@ -52,6 +156,9 @@ the user has enabled it. Failures to authenticate, connect BrowserOS, satisfy au
 or run the selected model fail the stage; there is no fallback provider. Local ChatGPT-authenticated
 CLI usage settles at `$0` because it has no dependable per-call USD price.
 
+In the self-hosted image, the CLI runs inside the container with `CODEX_HOME=/data/codex`, so
+its login and configuration live in the data volume rather than in your home folder.
+
 This provider is intentionally local and single-user. A production or multi-user deployment must
 isolate Codex accounts, job workers, BrowserOS profiles, and filesystem/process permissions per
 user. **Unattended BrowserOS stages are high risk:** prompts can mutate signed-in external accounts,
@@ -75,7 +182,8 @@ packages/
   shared/   Zod schemas shared by api and web (StageDef, Ref, ConfigLayer, DTOs, ...)
   timeline-composition/ Shared Remotion composition for preview and final render
 design/     Design tokens and static HTML previews backing docs/design-system.md
-docker/     Postgres init script, MinIO bootstrap script
+docker/     Postgres init script, MinIO bootstrap script (dev compose)
+  app/      Self-hosted image: Dockerfile and s6 service definitions
 ```
 
 See `docs/design-system.md` ("Night Studio") for the web app's design tokens and component
@@ -95,6 +203,9 @@ pnpm db:studio        # drizzle studio
 ```
 
 ## Phase 6 assembly prerequisites
+
+The self-hosted image already includes FFmpeg and Chrome Headless Shell; these prerequisites
+apply when running on your own machine.
 
 Install FFmpeg (both `ffmpeg` and `ffprobe`) plus Chrome/Chromium. Assembly
 supports the async `video.concat` and `timeline.render` capabilities and the
@@ -346,6 +457,13 @@ received object"` error with no hint of a module-identity problem underneath. Ca
   it never does a cross-module `instanceof` check.
 
 ## Follow-ups not done in this pass
+
+- Self-hosted distribution, after the single-container image:
+  1. Release pipeline: publish the app bundle and images on version tags.
+  2. In-app updater: update check, signed bundle download, backup, switch-over and rollback
+     (the image's `REELCRAFT_APP_DIR` is the hook for this).
+  3. Settings page for provider keys, and a "Connect Codex" sign-in flow.
+  4. Step-by-step install guide for Docker Desktop users.
 
 - `pnpm --filter @reelcraft/api test:e2e` needs a live Postgres and isn't wired into CI yet
   (tracked in `docs/build-progress.md`) — run it locally against `docker compose up`.

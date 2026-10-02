@@ -1,0 +1,59 @@
+#!/command/with-contenv bash
+# First-boot setup and per-boot permissions for the /data volume.
+set -euo pipefail
+
+PG_MAJOR=16
+DATA=/data
+PGDATA="$DATA/postgres"
+
+mkdir -p "$DATA/postgres" "$DATA/minio" "$DATA/workspace" "$DATA/codex" /run/postgresql
+# Fresh Docker volumes are owned by root. Only recurse when ownership is
+# actually wrong, so large media folders are not walked on every boot.
+for dir in "$DATA/postgres" "$DATA/minio" "$DATA/workspace" "$DATA/codex" /run/postgresql; do
+  if [ "$(stat -c %U "$dir")" != reelcraft ]; then chown -R reelcraft:reelcraft "$dir"; fi
+done
+chmod 700 "$PGDATA"
+
+if [ ! -f "$DATA/secrets.env" ]; then
+  echo "reelcraft: generating secrets in $DATA/secrets.env"
+  hex() { openssl rand -hex "$1"; }
+  (
+    umask 077
+    cat > "$DATA/secrets.env.tmp" <<SECRETS
+# Generated on first boot. Keep this file: it unlocks the data in this volume.
+REELCRAFT_PG_PASSWORD=$(hex 24)
+REELCRAFT_MINIO_USER=reelcraft-$(hex 6)
+REELCRAFT_MINIO_PASSWORD=$(hex 24)
+INNGEST_EVENT_KEY=$(hex 32)
+INNGEST_SIGNING_KEY=$(hex 32)
+PREVIEW_TOKEN_SECRET=$(hex 32)
+DEEPGRAM_CALLBACK_SECRET=$(hex 32)
+SECRETS
+  )
+  mv "$DATA/secrets.env.tmp" "$DATA/secrets.env"
+fi
+
+# shellcheck source=/dev/null
+source /usr/local/lib/reelcraft/env.sh
+
+if [ -f "$PGDATA/PG_VERSION" ]; then
+  existing="$(cat "$PGDATA/PG_VERSION")"
+  if [ "$existing" != "$PG_MAJOR" ]; then
+    echo "reelcraft: /data/postgres was created by Postgres $existing, but this image runs Postgres $PG_MAJOR." >&2
+    echo "reelcraft: use an image built for Postgres $existing, or migrate the data first." >&2
+    exit 1
+  fi
+else
+  echo "reelcraft: initializing Postgres $PG_MAJOR in $PGDATA"
+  pwfile="$(mktemp)"
+  printf '%s' "$REELCRAFT_PG_PASSWORD" > "$pwfile"
+  chown reelcraft:reelcraft "$pwfile"
+  s6-setuidgid reelcraft initdb -D "$PGDATA" -U reelcraft --pwfile="$pwfile" \
+    --encoding=UTF8 --auth-local=trust --auth-host=scram-sha-256 >/dev/null
+  rm -f "$pwfile"
+  s6-setuidgid reelcraft pg_ctl -D "$PGDATA" -w -o "-c listen_addresses='' -c unix_socket_directories=/run/postgresql" start >/dev/null
+  # Engine and Inngest state live in separate databases on one server.
+  s6-setuidgid reelcraft createdb reelcraft
+  s6-setuidgid reelcraft createdb inngest
+  s6-setuidgid reelcraft pg_ctl -D "$PGDATA" -w -m fast stop >/dev/null
+fi

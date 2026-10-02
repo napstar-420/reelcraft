@@ -8,6 +8,7 @@ import { CapabilityModule } from './capability/capability.module';
 import { CheckModule } from './check/check.module';
 import { QcModule } from './qc/qc.module';
 import { RunModule } from './run/run.module';
+import { SystemModule } from './system/system.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { RunModule } from './run/run.module';
     CheckModule,
     QcModule,
     RunModule,
+    SystemModule,
   ],
 })
 export class AppModule {}

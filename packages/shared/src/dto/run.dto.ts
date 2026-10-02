@@ -3,6 +3,10 @@ import { RunState, StageExecutionState, AttemptOutcome } from '../primitives';
 import { ConfigLayer } from '../config-layer';
 import { Probe } from '../probe';
 
+/** A media URL the browser loads: absolute, or relative to the app's own
+ * origin when a self-hosted install proxies storage (`/storage/...`). */
+export const BrowserMediaUrl = z.union([z.string().url(), z.string().regex(/^\/(?!\/)/)]);
+
 export const CreateRunDto = z.object({
   channelId: z.string(),
   blueprintVersionId: z.string(),
@@ -125,7 +129,7 @@ export const ArtifactViewDto = z.object({
     'timeline',
   ]),
   data: z.unknown().nullable(),
-  previewUrl: z.string().url().nullable(),
+  previewUrl: BrowserMediaUrl.nullable(),
   /** Media metadata (duration, resolution, fps, audio) for `media.*` kinds. */
   probe: Probe.nullable(),
   attachments: z.array(
@@ -134,7 +138,7 @@ export const ArtifactViewDto = z.object({
       role: z.enum(['evidence', 'download']),
       filename: z.string(),
       mime: z.string(),
-      url: z.string().url(),
+      url: BrowserMediaUrl,
     }),
   ),
 });
@@ -201,7 +205,7 @@ export const StageExecutionDto = z.object({
       role: z.enum(['evidence', 'download']),
       filename: z.string(),
       mime: z.string(),
-      url: z.string().url(),
+      url: BrowserMediaUrl,
     }),
   ),
 });

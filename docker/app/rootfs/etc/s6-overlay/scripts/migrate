@@ -1,0 +1,10 @@
+#!/command/with-contenv bash
+# Applies database migrations before the API starts. A failure stops the
+# container instead of starting an app against a half-migrated database.
+set -euo pipefail
+# shellcheck source=/dev/null
+source /usr/local/lib/reelcraft/env.sh
+
+reelcraft_wait postgres 120 pg_isready -q
+cd "$REELCRAFT_APP_DIR/apps/api"
+exec s6-setuidgid reelcraft node dist/db/migrate.js

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  BrowserMediaUrl,
   CreateRunDto,
   StartDryRunDto,
   ListRunsQueryDto,
@@ -106,5 +107,21 @@ describe('RunSummaryDto / ListRunsResultDto', () => {
   it('parses a representative list result', () => {
     const result = { items: [summary], total: 1, limit: 20, offset: 0 };
     expect(ListRunsResultDto.parse(result)).toEqual(result);
+  });
+});
+
+describe('BrowserMediaUrl', () => {
+  it('accepts absolute URLs and app-relative paths', () => {
+    expect(
+      BrowserMediaUrl.safeParse('http://localhost:9000/video-engine/k?X-Amz-Signature=1').success,
+    ).toBe(true);
+    expect(BrowserMediaUrl.safeParse('/storage/video-engine/k?X-Amz-Signature=1').success).toBe(
+      true,
+    );
+  });
+
+  it('rejects protocol-relative and bare strings', () => {
+    expect(BrowserMediaUrl.safeParse('//evil.example/k').success).toBe(false);
+    expect(BrowserMediaUrl.safeParse('storage/k').success).toBe(false);
   });
 });

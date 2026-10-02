@@ -35,6 +35,13 @@ export class BucketBootstrapService implements OnApplicationBootstrap {
         await client.send(new CreateBucketCommand({ Bucket: s3.bucket }));
       }
 
+      // Behind the same-origin /storage proxy the browser never fetches S3
+      // cross-origin, so there is no CORS rule to apply.
+      if (this.config.s3BrowserPathPrefix) {
+        this.logger.log({ bucket: s3.bucket }, 'bucket ready');
+        return;
+      }
+
       await client.send(
         new PutBucketCorsCommand({
           Bucket: s3.bucket,
