@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../api/client';
+import { providerName } from '@/lib/display-names';
 import { TypedValueInput } from './TypedValueInput';
 import { InfoHeading, InfoLabel } from './info-label';
 import {
@@ -136,7 +137,7 @@ export function ModelPinEditor({
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-col gap-1.5">
-        <InfoLabel info="Which AI provider serves this stage's model calls (e.g. openai, fake). Changing it clears the selected model below.">
+        <InfoLabel info="Which AI provider runs this stage's model calls (for example OpenRouter, or Fake for free test runs). Changing it clears the selected model below.">
           Provider
         </InfoLabel>
         <Select
@@ -152,7 +153,7 @@ export function ModelPinEditor({
             <SelectItem value={UNSET}>Select a provider…</SelectItem>
             {providers.data?.map((id) => (
               <SelectItem key={id} value={id}>
-                {id}
+                {providerName(id)}
               </SelectItem>
             ))}
           </SelectContent>

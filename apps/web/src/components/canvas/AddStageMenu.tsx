@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { api } from '../../api/client';
 import type { StageDef, OutputDef, OutputKind } from '@reelcraft/shared';
 import { Button } from '@/components/ui/button';
@@ -9,6 +10,16 @@ function nextStageKey(graph: StageDef[]): string {
   let n = 1;
   while (used.has(`stage-${n}`)) n++;
   return `stage-${n}`;
+}
+
+/** A readable default label: the capability's own label ("Generate Text"),
+ * numbered when the blueprint already has a stage with that label. */
+function nextStageLabel(graph: StageDef[], base: string): string {
+  const used = new Set(graph.map((s) => s.label));
+  if (!used.has(base)) return base;
+  let n = 2;
+  while (used.has(`${base} ${n}`)) n++;
+  return `${base} ${n}`;
 }
 
 /** `data` needs a `schema` this chunk has no builder for yet (Chunk 4) — fall
@@ -31,6 +42,7 @@ export function AddStageMenu({
   const [selectedKey, setSelectedKey] = useState('');
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const capabilities = useQuery({ queryKey: ['capabilities'], queryFn: api.listCapabilities });
 
   async function handleAdd() {
     if (!selectedKey) return;
@@ -40,7 +52,10 @@ export function AddStageMenu({
       const { allowedOutputs } = await api.resolveCapability(selectedKey, {});
       onAdd({
         key: nextStageKey(graph),
-        label: selectedKey,
+        label: nextStageLabel(
+          graph,
+          capabilities.data?.find((c) => c.key === selectedKey)?.label ?? selectedKey,
+        ),
         capability: selectedKey,
         config: {},
         slots: {},

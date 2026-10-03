@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { ChannelDto } from '@reelcraft/shared';
 import { api } from '@/api/client';
+import { apiErrorMessage } from '@/lib/api-error-message';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -14,6 +15,10 @@ import {
   DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog';
+
+/** Matches `CreateChannelDto.description`'s `.max(255)` in `@reelcraft/shared`
+ * (the web app imports only types from that package). */
+const CHANNEL_DESCRIPTION_MAX = 255;
 
 export type ChannelDialogMode = 'create' | 'edit' | 'view';
 
@@ -43,6 +48,9 @@ export function ChannelDialog({
     setName(channel?.name ?? '');
     setDescription(channel?.description ?? '');
     setTheme(themeLabel(channel?.theme));
+    createChannel.reset();
+    updateChannel.reset();
+    // Clear the previous attempt's error when the dialog opens again.
   }, [state, channel]);
 
   const createChannel = useMutation({
@@ -74,6 +82,8 @@ export function ChannelDialog({
 
   const isView = mode === 'view';
   const pending = createChannel.isPending || updateChannel.isPending;
+  const saveError = createChannel.error ?? updateChannel.error;
+  const descriptionTooLong = description.trim().length > CHANNEL_DESCRIPTION_MAX;
   const title =
     mode === 'create' ? 'New channel' : mode === 'edit' ? 'Edit channel' : channel?.name;
   const description_ =
@@ -94,7 +104,7 @@ export function ChannelDialog({
           id="channel-form"
           onSubmit={(e) => {
             e.preventDefault();
-            if (!name.trim()) return;
+            if (!name.trim() || descriptionTooLong) return;
             if (mode === 'create') createChannel.mutate();
             if (mode === 'edit') updateChannel.mutate();
           }}
@@ -119,7 +129,17 @@ export function ChannelDialog({
               onChange={(e) => setDescription(e.target.value)}
               placeholder="What is this channel for?"
               disabled={isView}
+              aria-invalid={descriptionTooLong || undefined}
             />
+            {!isView && (
+              <p
+                className={
+                  descriptionTooLong ? 'text-xs text-destructive' : 'text-xs text-muted-foreground'
+                }
+              >
+                {description.trim().length}/{CHANNEL_DESCRIPTION_MAX} characters
+              </p>
+            )}
           </div>
           <div className="flex flex-col gap-2">
             <Label htmlFor="channel-theme">Themes</Label>
@@ -146,6 +166,11 @@ export function ChannelDialog({
               </p>
             </div>
           )}
+          {!isView && saveError ? (
+            <p role="alert" className="text-sm text-destructive">
+              {apiErrorMessage(saveError, 'Could not save the channel.')}
+            </p>
+          ) : null}
         </form>
         <DialogFooter>
           {isView ? (
@@ -166,7 +191,12 @@ export function ChannelDialog({
               Close
             </Button>
           ) : (
-            <Button key="submit" type="submit" form="channel-form" disabled={pending}>
+            <Button
+              key="submit"
+              type="submit"
+              form="channel-form"
+              disabled={pending || descriptionTooLong}
+            >
               {mode === 'create' ? 'Create' : 'Save changes'}
             </Button>
           )}

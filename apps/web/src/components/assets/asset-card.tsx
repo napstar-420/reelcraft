@@ -4,6 +4,7 @@ import type { AssetDto, AssetKind } from '@reelcraft/shared';
 import { api } from '@/api/client';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { ASSET_KIND_LABELS } from '@/lib/display-names';
 import { Card, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { PlaceholderArt } from '@/components/placeholder-art';
 
@@ -91,7 +92,7 @@ export function AssetCard({ asset, channelId }: { asset: AssetDto; channelId: st
           {asset.name}
         </CardTitle>
         <div className="flex flex-wrap items-center gap-1.5">
-          <Badge variant="secondary">{asset.kind}</Badge>
+          <Badge variant="secondary">{ASSET_KIND_LABELS[asset.kind] ?? asset.kind}</Badge>
           <span className="text-xs text-muted-foreground tabular-nums">
             {formatBytes(asset.file.bytes)}
             {asset.file.width && asset.file.height

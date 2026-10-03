@@ -7,6 +7,16 @@ import type { InputDef, RunDetailDto, StageDef } from '@reelcraft/shared';
 import { api } from '@/api/client';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { ApprovalReviewSheet } from '@/components/runs/approval-review-sheet';
 import { ArtifactPreview } from '@/components/runs/artifact-preview';
@@ -63,6 +73,7 @@ export function CanvasRunPanel({
   const [outputSheetKey, setOutputSheetKey] = useState<string | null>(null);
   const [attemptsSheetKey, setAttemptsSheetKey] = useState<string | null>(null);
   const [approvalStageKey, setApprovalStageKey] = useState<string | null>(null);
+  const [confirmCancel, setConfirmCancel] = useState(false);
   const reusedKeys = useReusedStageKeys(run?.id, run?.stageExecutions.map((e) => e.stageKey) ?? []);
   const stageLabel = (stageKey: string) => graph.find((s) => s.key === stageKey)?.label ?? stageKey;
 
@@ -159,8 +170,8 @@ export function CanvasRunPanel({
           {runAll.isPending ? 'Starting…' : 'Run all'}
         </Button>
         {isRunActionAllowed('cancel', run.state) && (
-          <Button size="sm" variant="outline" onClick={() => cancel.mutate()}>
-            Cancel
+          <Button size="sm" variant="outline" onClick={() => setConfirmCancel(true)}>
+            Cancel run
           </Button>
         )}
         {isRunActionAllowed('pause', run.state) && (
@@ -175,6 +186,21 @@ export function CanvasRunPanel({
         )}
       </div>
 
+      <AlertDialog open={confirmCancel} onOpenChange={setConfirmCancel}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Cancel this run?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This stops the whole run, not just one stage. It can&apos;t be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep running</AlertDialogCancel>
+            <AlertDialogAction onClick={() => cancel.mutate()}>Yes, cancel run</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <div className="flex flex-col divide-y rounded-md border">
         {graph.map((stage) => {
           const execution = run.stageExecutions.find((e) => e.stageKey === stage.key);
@@ -188,10 +214,10 @@ export function CanvasRunPanel({
                 size="icon"
                 variant="ghost"
                 className="size-6 shrink-0"
-                title={stoppable ? 'Cancel' : 'Run'}
-                aria-label={stoppable ? 'Cancel' : 'Run'}
+                title={stoppable ? 'Cancel run' : 'Run'}
+                aria-label={stoppable ? 'Cancel run' : 'Run'}
                 disabled={stoppable ? cancel.isPending : runStage.isPending}
-                onClick={() => (stoppable ? cancel.mutate() : runStage.mutate(stage.key))}
+                onClick={() => (stoppable ? setConfirmCancel(true) : runStage.mutate(stage.key))}
               >
                 {stoppable ? <Square className="size-3.5" /> : <Play className="size-3.5" />}
               </Button>
