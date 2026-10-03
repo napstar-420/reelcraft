@@ -266,7 +266,8 @@ jobs:
           docker run -d --name reelcraft -p 8080:8080 -v reelcraft-data:/data $image:$VERSION
           \`\`\`
 
-          Database migrations run automatically on start.
+          Database migrations run automatically on start. Step-by-step guide:
+          https://napstar-420.github.io/reelcraft/docs/updating
 
           ---
           This image includes [MinIO](https://github.com/minio/minio) (AGPL-3.0), built unmodified from the source commit recorded in the image's \`org.reelcraft.minio.source\` label.

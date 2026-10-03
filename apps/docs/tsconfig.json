@@ -1,0 +1,9 @@
+{
+  // Editor and `pnpm typecheck` only; Docusaurus compiles the site itself.
+  "extends": "@docusaurus/tsconfig",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "noEmit": true
+  },
+  "exclude": [".docusaurus", "build"]
+}

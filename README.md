@@ -16,33 +16,25 @@ toolchain needed. See [Run with Docker](#run-with-docker-self-hosted).
 One image runs the whole app: the API, web UI, Postgres, MinIO and Inngest. Everything you
 create is stored in one volume mounted at `/data`.
 
-Releases are published to Docker Hub (searchable in Docker Desktop) and to
-`ghcr.io/napstar-420/reelcraft`, for both Intel/AMD (`amd64`) and Apple Silicon (`arm64`).
-Tags: an exact version (`1.4.2`), the latest patch of a minor (`1.4`) or major (`1`), and
-`latest`. Release notes are on [GitHub Releases](https://github.com/napstar-420/reelcraft/releases).
-
-**Docker Desktop:** search for the Reelcraft image and click **Run**. Under **Optional
-settings**:
-
-- **Host port:** `8080`
-- **Volume:** host path/name `reelcraft-data`, container path `/data`
-
-**Command line:**
+**The step-by-step guide for users is at
+[napstar-420.github.io/reelcraft/docs](https://napstar-420.github.io/reelcraft/docs/)**:
+installing Docker Desktop on Windows, macOS or Linux, running Reelcraft, provider keys,
+BrowserOS Neo, Connect Codex, updating, backups and troubleshooting. Its source is
+[`apps/docs`](apps/docs/README.md). The quick version:
 
 ```bash
-docker run -d --name reelcraft -p 8080:8080 -v reelcraft-data:/data ghcr.io/napstar-420/reelcraft
+docker run -d --name reelcraft --restart unless-stopped \
+  -p 8080:8080 -v reelcraft-data:/data zohaibkhan97/reelcraft
 ```
 
-Then open http://localhost:8080. The first start takes a little longer while Reelcraft sets up
-its database and generates its secrets.
+Then open http://localhost:8080. In Docker Desktop, search for `zohaibkhan97/reelcraft`, click
+**Run**, and under **Optional settings** set host port `8080` and volume `reelcraft-data` →
+`/data`.
 
-**Provider keys.** Open **Settings** in the sidebar and paste your keys under **AI providers**
-(OpenRouter, fal.ai, ElevenLabs, Deepgram). Each key can be tested from there. Keys are stored
-encrypted in the database, with an encryption key derived from `/data/secrets.env`. Without
-any keys, only the free fake provider is available. You can also pass keys as environment
-variables (`OPENROUTER_API_KEY`, `FAL_KEY`, `ELEVENLABS_API_KEY`, `DEEPGRAM_API_KEY`) in the Run
-dialog or with `-e NAME=value`; a key set that way takes priority, and Settings shows it as set
-by the container environment.
+Releases are published to Docker Hub (`zohaibkhan97/reelcraft`, searchable in Docker Desktop)
+and to `ghcr.io/napstar-420/reelcraft`, for both Intel/AMD (`amd64`) and Apple Silicon (`arm64`).
+Tags: an exact version (`1.4.2`), the latest patch of a minor (`1.4`) or major (`1`), and
+`latest`. Release notes are on [GitHub Releases](https://github.com/napstar-420/reelcraft/releases).
 
 **What's in `/data`:**
 
@@ -56,45 +48,13 @@ by the container environment.
 | `/data/backups`     | Database backups taken before each in-app update                                                                      |
 | `/data/secrets.env` | Passwords and keys generated on first start, including the one that unlocks provider keys saved in Settings. Keep it. |
 
-Keep the volume when you remove or recreate the container: it holds all your data. Deleting it
-deletes everything.
-
-**BrowserOS Neo.** Neo keeps running on your own computer. In **Settings → BrowserOS Neo**,
-check its address and click **Test connection**. The default,
-`http://host.docker.internal:9010/mcp`, reaches the computer running Docker. On Linux without
-Docker Desktop, start the container with `--add-host=host.docker.internal:host-gateway`. The
-`CODEX_BROWSER_OS_URL` environment variable sets the default address; an address saved in
-Settings replaces it.
-
-**Codex.** The `codex` CLI is installed in the image and keeps its login in `/data/codex`. In
-**Settings → Codex**, click **Connect Codex**. Reelcraft opens OpenAI's sign-in page in BrowserOS
-Neo and types the one-time code for you; approve the sign-in there. If Neo isn't running, or
-the page asks you to sign in first, the Settings page shows the link and code so you can finish
-in any browser. Connecting also registers Neo as an MCP server for Codex, so Codex browser
-stages can use it. The terminal still works too:
-
-```bash
-docker exec -it -u reelcraft reelcraft codex login --device-auth
-```
-
-**Updating.** Reelcraft checks GitHub Releases every 6 hours. When a new version is out, the
-bottom of the sidebar shows **Update to X.Y.Z**: click it, read the notes, and click **Update**.
-The app downloads the new version, checks its signature, backs up the database and restarts
-itself, which takes a few minutes. If the new version doesn't start within 5 minutes,
-Reelcraft restores the backup and goes back to the previous version on its own. Runs in
-progress are interrupted by the restart (the dialog warns first), and their current step
-retries afterwards.
-
-Some releases also change the image itself (a new Postgres, Chromium or system library). The
-app then shows **Version X.Y.Z available** with the image steps instead: pull the newer image,
-remove the old container, and run the new image with the same volume. Your data and secrets are
-kept, and database migrations run automatically on start. Every release's notes include these
-steps. Images before 0.2.0 have no in-app updater, so update to 0.2.0 or later this way once.
-
-- Installed updates live in `/data/app`, and the last 3 pre-update database backups in
-  `/data/backups`. A newer image always replaces an older in-app update.
-- Set `REELCRAFT_UPDATES=off` to turn update checks off (the app then makes no requests to
-  GitHub).
+**Container environment variables** (all optional): provider keys (`OPENROUTER_API_KEY`,
+`FAL_KEY`, `ELEVENLABS_API_KEY`, `DEEPGRAM_API_KEY`) take priority over keys saved in
+**Settings**; `CODEX_BROWSER_OS_URL` sets the default BrowserOS Neo address
+(`http://host.docker.internal:9010/mcp` in the image), which an address saved in Settings
+replaces; `SETTINGS_ENCRYPTION_KEY` overrides the key derived from `/data/secrets.env`;
+`REELCRAFT_UPDATES=off` turns update checks off. On Linux without Docker Desktop, start the
+container with `--add-host=host.docker.internal:host-gateway` so it can reach Neo.
 
 **Security.** There is no login. Anyone who can reach the port can use the app and your
 provider keys. Keep it on your own computer or a trusted network, and don't expose it to the
@@ -105,7 +65,7 @@ internet.
 - Deepgram transcription needs Deepgram to reach the instance (`PUBLIC_API_BASE_URL`), so it
   doesn't work on a desktop install.
 - The image is large (Chromium, FFmpeg, Postgres and Codex are included). You download it once
-  per update.
+  per image update; most updates install from inside the app instead.
 
 ### Building the image
 
@@ -289,6 +249,7 @@ apps/
   api/      NestJS backend — engine core, Drizzle schema, Inngest orchestration
   render-worker/ Remotion render process used by durable compute jobs
   web/      React + Vite frontend — minimal shell (channels → instantiate → run → watch)
+  docs/     User guide (Docusaurus) on GitHub Pages; outside the pnpm workspace
 packages/
   shared/   Zod schemas shared by api and web (StageDef, Ref, ConfigLayer, DTOs, ...)
   timeline-composition/ Shared Remotion composition for preview and final render
@@ -315,6 +276,10 @@ pnpm db:generate      # drizzle-kit generate (after schema changes)
 pnpm db:migrate       # apply migrations
 pnpm db:studio        # drizzle studio
 ```
+
+The user guide in `apps/docs` installs and builds on its own (it isn't in the workspace):
+`cd apps/docs && pnpm install --ignore-workspace && pnpm start`. See
+[`apps/docs/README.md`](apps/docs/README.md).
 
 ## Phase 6 assembly prerequisites
 
@@ -571,9 +536,6 @@ received object"` error with no hint of a module-identity problem underneath. Ca
   it never does a cross-module `instanceof` check.
 
 ## Follow-ups not done in this pass
-
-- Self-hosted distribution, after the image, release pipeline, in-app updater and Settings
-  page: a step-by-step install guide for Docker Desktop users.
 
 - `pnpm --filter @reelcraft/api test:e2e` needs a live Postgres and isn't wired into CI yet
   (tracked in `docs/build-progress.md`) — run it locally against `docker compose up`.

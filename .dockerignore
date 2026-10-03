@@ -18,3 +18,6 @@ docs
 # Updater unit tests stay out of the image.
 docker/app/rootfs/**/*.test.mjs
 docker/app/rootfs/**/testing.mjs
+
+# The user guide (Docusaurus) is published to GitHub Pages, not shipped in the image.
+apps/docs

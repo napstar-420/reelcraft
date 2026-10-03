@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { apiErrorMessage } from '@/lib/api-error-message';
+import { docsUrl } from '@/lib/docs-url';
 import {
   CODEX_LOGIN_KEY,
   CODEX_STATUS_KEY,
@@ -58,7 +59,15 @@ export function CodexCard() {
         <CardTitle>Codex</CardTitle>
         <CardDescription>
           Use your ChatGPT plan for text, image and browser stages through OpenAI’s Codex.
-          Connecting signs Codex in to your ChatGPT account inside this Reelcraft installation.
+          Connecting signs Codex in to your ChatGPT account inside this Reelcraft installation.{' '}
+          <a
+            href={docsUrl('codex')}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-0.5 underline underline-offset-2"
+          >
+            Setup guide <ExternalLink className="size-3" />
+          </a>
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">

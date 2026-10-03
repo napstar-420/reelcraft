@@ -1,0 +1,79 @@
+name: Docs
+
+# Builds the user guide (apps/docs, Docusaurus) on pull requests, which fails
+# on broken links, and publishes it to GitHub Pages from main. The guide lives
+# at /reelcraft/docs/; the Pages root is kept for a future homepage
+# (apps/website) and redirects to the guide until then.
+#
+# One-time setup: repository Settings → Pages → Source: GitHub Actions.
+on:
+  pull_request:
+    paths: ['apps/docs/**', '.github/workflows/docs.yml']
+  push:
+    branches: [main]
+    paths: ['apps/docs/**', '.github/workflows/docs.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/docs
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: apps/docs/pnpm-lock.yaml
+      # apps/docs is outside the pnpm workspace; it has its own lockfile.
+      - run: pnpm install --ignore-workspace --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm build
+      - name: Assemble the Pages site
+        if: github.event_name != 'pull_request'
+        run: |
+          mkdir -p "$RUNNER_TEMP/site"
+          cp -r build "$RUNNER_TEMP/site/docs"
+          touch "$RUNNER_TEMP/site/.nojekyll"
+          cat > "$RUNNER_TEMP/site/index.html" <<'EOF'
+          <!doctype html>
+          <html lang="en">
+            <head>
+              <meta charset="utf-8" />
+              <title>Reelcraft</title>
+              <meta http-equiv="refresh" content="0; url=docs/" />
+              <link rel="canonical" href="docs/" />
+            </head>
+            <body>
+              <p><a href="docs/">Reelcraft guide</a></p>
+            </body>
+          </html>
+          EOF
+      - if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ${{ runner.temp }}/site
+
+  deploy:
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}docs/
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

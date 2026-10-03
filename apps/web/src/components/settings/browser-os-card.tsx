@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Loader2 } from 'lucide-react';
+import { ExternalLink, Loader2 } from 'lucide-react';
 import type { ConnectionTestDto, SettingsDto } from '@reelcraft/shared';
 import { api } from '@/api/client';
 import { Button } from '@/components/ui/button';
@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { apiErrorMessage } from '@/lib/api-error-message';
+import { docsUrl } from '@/lib/docs-url';
 import { TestResult } from './provider-keys-card';
 import { browserOsSourceLabel, CODEX_STATUS_KEY, isHttpUrl, SETTINGS_KEY } from './settings.logic';
 
@@ -41,7 +42,15 @@ export function BrowserOsCard({ settings }: { settings: SettingsDto }) {
         <CardTitle>BrowserOS Neo</CardTitle>
         <CardDescription>
           BrowserOS Neo runs on your own computer. Reelcraft uses it for the ChatGPT provider, for
-          Codex browser tasks, and to help you connect Codex.
+          Codex browser tasks, and to help you connect Codex.{' '}
+          <a
+            href={docsUrl('browseros-neo')}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-0.5 underline underline-offset-2"
+          >
+            Setup guide <ExternalLink className="size-3" />
+          </a>
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
