@@ -34,6 +34,7 @@ For a fresh local stack: copy `.env.example` to `.env`, then run `docker compose
 - `apps/web/src/pages/`: routes; `components/`: UI and canvas components; `api/client.ts`: typed API boundary.
 - `packages/shared/src/`: Zod source of truth. It must not import from `apps/*` or perform I/O.
 - `packages/timeline-composition/`: shared Remotion preview/final-render composition.
+- `docs/self-hosting.md` and `docs/adr/`: how the self-hosted image, releases, in-app updater, Settings and user guide fit together, the rules for changing them, and the decisions behind them. Read these before touching `docker/app/`, `.github/workflows/release.yml`, `apps/api/src/update|settings/` or the Codex connect flow.
 - `apps/docs/`: the user guide (Docusaurus), published to GitHub Pages by `.github/workflows/docs.yml`. It is outside the pnpm workspace (`pnpm install --ignore-workspace` there). Update it whenever user-facing setup, Settings or update behaviour changes, using the UI's exact labels; keep page slugs stable, since `apps/web/src/lib/docs-url.ts` links to them.
 
 ## Code Conventions
@@ -46,6 +47,10 @@ For a fresh local stack: copy `.env.example` to `.env`, then run `docker compose
 - Artifact replacement must stale the old artifact before inserting the new one, inside one transaction.
 - Run state changes flow through the durable wakeup/outbox and Inngest pipeline; do not make the UI the execution driver.
 - Any new table with a foreign key into the channel/blueprint/run graph (directly or transitively) must be added to `ChannelService.delete()`'s cascade in `apps/api/src/channel/channel.service.ts`, and to the e2e test that asserts the full cascade. Check this whenever adding or modifying a Drizzle schema table/column that references `channel`, `blueprint`, or `run` — Postgres only catches a missed table if it has rows at delete time, so this can silently go stale without failing a single test.
+
+## Claude Code plugins
+
+- `.claude/settings.json` enables the ECC plugin (`ecc@ecc`, from `affaan-m/ECC`, pinned to a release tag) for its skills and agents. Its hooks are off for everyone via `ECC_HOOKS_ENABLED=false`; to use them, set `"env": { "ECC_HOOKS_ENABLED": "true" }` in your own `.claude/settings.local.json` (gitignored). Bump the pinned `ref` deliberately, after reading the release's hook changes.
 
 ## Testing and CI
 
