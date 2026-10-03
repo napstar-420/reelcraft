@@ -4,7 +4,8 @@ import { api } from '../../api/client';
 import { normalizeRoleReferences } from '../../lib/role-references';
 import { SchemaForm } from './SchemaForm';
 import { SECTION_HEADING_CLASS } from './typography';
-import type { CharacterDto, InputDef, RoleDef, JsonSchema } from '@reelcraft/shared';
+import type { CharacterDto, ConfigLayer, InputDef, RoleDef, JsonSchema } from '@reelcraft/shared';
+import { DefaultsEditor } from '@/components/defaults/DefaultsEditor';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -433,17 +434,20 @@ export function BlueprintSettingsPanel({
   inputs,
   roles,
   budget,
+  defaults,
   channelId,
   onChange,
 }: {
   inputs: InputDef[];
   roles: RoleDef[];
   budget: { runCapUsd: number };
+  defaults: ConfigLayer;
   channelId: string;
   onChange: (patch: {
     inputs?: InputDef[];
     roles?: RoleDef[];
     budget?: { runCapUsd: number };
+    defaults?: ConfigLayer;
   }) => void;
 }) {
   return (
@@ -478,6 +482,23 @@ export function BlueprintSettingsPanel({
               roles={roles}
               channelId={channelId}
               onChange={(next) => onChange({ roles: next })}
+            />
+          </CardContent>
+        </Card>
+
+        <Card className="sm:col-span-3">
+          <CardHeader>
+            <CardTitle>Defaults</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3">
+            <p className="text-sm text-muted-foreground">
+              Apply to every stage in this blueprint, over the channel's defaults. A stage can set
+              its own.
+            </p>
+            <DefaultsEditor
+              value={defaults}
+              onChange={(next) => onChange({ defaults: next })}
+              scope="blueprint"
             />
           </CardContent>
         </Card>

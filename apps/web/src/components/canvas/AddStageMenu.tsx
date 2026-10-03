@@ -62,7 +62,6 @@ export function AddStageMenu({
         context: {},
         output: defaultOutput(allowedOutputs),
         checks: [],
-        retryLimit: 0,
       });
       setSelectedKey('');
     } catch (err) {

@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import type { ChannelDto } from '@reelcraft/shared';
+import type { ChannelDto, ConfigLayer } from '@reelcraft/shared';
 import { api } from '@/api/client';
 import { apiErrorMessage } from '@/lib/api-error-message';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { DefaultsEditor } from '@/components/defaults/DefaultsEditor';
 import {
   Dialog,
   DialogContent,
@@ -41,6 +42,7 @@ export function ChannelDialog({
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [theme, setTheme] = useState('');
+  const [defaults, setDefaults] = useState<ConfigLayer>({});
   const queryClient = useQueryClient();
 
   useEffect(() => {
@@ -48,6 +50,7 @@ export function ChannelDialog({
     setName(channel?.name ?? '');
     setDescription(channel?.description ?? '');
     setTheme(themeLabel(channel?.theme));
+    setDefaults(channel?.defaults ?? {});
     createChannel.reset();
     updateChannel.reset();
     // Clear the previous attempt's error when the dialog opens again.
@@ -59,7 +62,7 @@ export function ChannelDialog({
         name,
         description: description.trim() || undefined,
         theme: theme.trim() ? { label: theme.trim() } : {},
-        defaults: {},
+        defaults,
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['channels'] });
@@ -73,9 +76,11 @@ export function ChannelDialog({
         name,
         description: description.trim() || undefined,
         theme: theme.trim() ? { label: theme.trim() } : {},
+        defaults,
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['channels'] });
+      void queryClient.invalidateQueries({ queryKey: ['channel', channel!.id] });
       onOpenChange(false);
     },
   });
@@ -95,7 +100,7 @@ export function ChannelDialog({
 
   return (
     <Dialog open={state !== null} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{description_}</DialogDescription>
@@ -153,6 +158,18 @@ export function ChannelDialog({
             {!isView && (
               <p className="text-xs text-muted-foreground">Separate multiple themes with commas.</p>
             )}
+          </div>
+          <div className="flex flex-col gap-2 border-t border-border pt-3">
+            <Label>Defaults</Label>
+            <p className="text-xs text-muted-foreground">
+              Apply to every blueprint in this channel. A blueprint or stage can set its own.
+            </p>
+            <DefaultsEditor
+              value={defaults}
+              onChange={setDefaults}
+              scope="channel"
+              disabled={isView}
+            />
           </div>
           {isView && channel && (
             <div className="flex flex-col gap-2">

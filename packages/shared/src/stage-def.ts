@@ -47,7 +47,9 @@ export const StageDef = z.object({
   qc: QcDef.optional(),
   /** Retries for crashes only (provider error, timeout, thrown bug) — never
    * consumed by check/QC failures or human rejections. */
-  retryLimit: z.number(),
+  /** Automatic retries after a crash. Unset inherits the blueprint, channel
+   * or engine default (0). */
+  retryLimit: z.number().int().min(0).optional(),
   approval: z
     .object({
       mode: z.enum(['stage', 'item']),

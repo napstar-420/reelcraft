@@ -7,6 +7,7 @@ import { run } from '../db/schema/index';
 import { EngineConfig } from '../config/engine-config';
 import { mergeLayer, mergeLayers } from './layer-merge';
 import { stageDefLayer } from './stage-def-layer';
+import { modalityForCapability } from '../capability/modality-for-capability';
 
 export interface EffectiveStageConfig {
   layer: ConfigLayer;
@@ -58,7 +59,11 @@ export class ConfigResolverService {
     const base = mergeLayers(args.engine, args.channelDefaults, args.blueprintDefaults);
     const result: Record<string, ConfigLayer> = {};
     for (const stage of args.graph) {
-      result[stage.key] = mergeLayer(base, stageDefLayer(stage));
+      // The default for the stage's kind of work replaces any general
+      // default model; the stage's own model still wins over both.
+      const kindDefault = base.models?.[modalityForCapability(stage.capability)];
+      const stageBase = kindDefault ? { ...base, model: kindDefault } : base;
+      result[stage.key] = mergeLayer(stageBase, stageDefLayer(stage));
     }
     return result;
   }
@@ -108,7 +113,7 @@ export class ConfigResolverService {
         stageKey,
         providerId: model?.provider,
         modelId: model?.modelId,
-        retryLimit: layer.retryLimit ?? stage.retryLimit,
+        retryLimit: layer.retryLimit ?? stage.retryLimit ?? 0,
         hasOverride: Object.keys(override).length > 0,
       },
       'stage config resolved',
@@ -116,7 +121,7 @@ export class ConfigResolverService {
     return {
       layer,
       ...(model !== undefined && { model }),
-      retryLimit: layer.retryLimit ?? stage.retryLimit,
+      retryLimit: layer.retryLimit ?? stage.retryLimit ?? 0,
       polling: {
         intervalSec: layer.polling?.intervalSec ?? 5,
         maxWaitSec: layer.polling?.maxWaitSec ?? 120,
