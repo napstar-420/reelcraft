@@ -223,6 +223,18 @@ describe('BlueprintValidatorService', () => {
     expect(issues.filter((issue) => issue.severity === 'error')).toEqual([]);
   });
 
+  it('warns when wpm is used on a stage without a speech output', () => {
+    const validator = makeValidator({ 'text.generate': withOptionalSlot });
+    const issues = validator.validate({
+      graph: [stage({ key: 'a', checks: [{ type: 'builtin', key: 'wpm', params: { max: 160 } }] })],
+      inputs: [],
+      roles: [],
+    });
+    expect(issues).toContainEqual(
+      expect.objectContaining({ path: 'stages.a.checks.0', severity: 'warning' }),
+    );
+  });
+
   it('rejects a role whose Character was deleted', () => {
     const validator = makeValidator({ 'text.generate': withManyImageReferences });
     const issues = validator.validate({

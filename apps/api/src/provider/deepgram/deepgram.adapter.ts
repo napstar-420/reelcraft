@@ -14,6 +14,18 @@ import { DRIZZLE, type Db } from '../../db/drizzle.provider';
 import { blob } from '../../db/schema';
 import { eq } from 'drizzle-orm';
 
+const DEFAULT_PRICE_PER_MINUTE_USD = 0.0043;
+
+/** Deepgram bills by audio length: the per-minute price times the minutes
+ * transcribed. With no known length, one minute is assumed. */
+export function deepgramCostUsd(
+  pricePerMinuteUsd: number,
+  durationSec: number | undefined,
+): number {
+  if (!durationSec || !Number.isFinite(durationSec) || durationSec <= 0) return pricePerMinuteUsd;
+  return Number(((pricePerMinuteUsd * durationSec) / 60).toFixed(6));
+}
+
 @Injectable()
 export class DeepgramAdapter implements ProviderAdapter {
   readonly id = 'deepgram';
@@ -36,8 +48,78 @@ export class DeepgramAdapter implements ProviderAdapter {
     ];
   }
   async estimate(req: ProviderRequest): Promise<CostEstimate> {
-    const expectedUsd = Number(req.params.pricePerMinuteUsd ?? 0.0043);
+    const rate = Number(req.params.pricePerMinuteUsd ?? DEFAULT_PRICE_PER_MINUTE_USD);
+    const expectedUsd = deepgramCostUsd(rate, await this.sourceDurationSec(req));
     return { expectedUsd, ceilingUsd: expectedUsd, basis: 'configured_ceiling' };
+  }
+
+  /** Transcribes a stored audio file in one request by uploading its bytes
+   * (no callback, so it also works when Deepgram can't reach this install).
+   * Used by quality control's Include transcript. */
+  async transcribeStored(
+    objectKey: string,
+    mime: string,
+    options: { modelId?: string; pricePerMinuteUsd?: number } = {},
+  ): Promise<{ transcript: string; durationSec: number; costUsd: number }> {
+    const apiKey = await this.keys.get(this.id);
+    if (!apiKey) throw new Error('Deepgram: no API key configured');
+    const chunks: Buffer[] = [];
+    for await (const chunk of await this.storage.getStream(objectKey)) {
+      chunks.push(Buffer.from(chunk as Buffer));
+    }
+    const modelId = options.modelId ?? 'nova-3';
+    const startedAt = Date.now();
+    const response = await fetch(
+      `https://api.deepgram.com/v1/listen?model=${encodeURIComponent(modelId)}&smart_format=true`,
+      {
+        method: 'POST',
+        headers: { Authorization: `Token ${apiKey}`, 'Content-Type': mime },
+        body: Buffer.concat(chunks),
+      },
+    );
+    if (!response.ok) {
+      this.logger.warn(
+        { providerId: this.id, model: modelId, statusCode: response.status },
+        'provider transcription failed',
+      );
+      throw new Error(`Deepgram transcription: ${response.status} ${response.statusText}`);
+    }
+    const output = normalize(await response.json());
+    this.logger.log(
+      {
+        providerId: this.id,
+        model: modelId,
+        durationSec: output.durationSec,
+        durationMs: Date.now() - startedAt,
+      },
+      'provider transcription completed',
+    );
+    return {
+      transcript: output.transcript,
+      durationSec: output.durationSec,
+      costUsd: deepgramCostUsd(
+        options.pricePerMinuteUsd ?? DEFAULT_PRICE_PER_MINUTE_USD,
+        output.durationSec,
+      ),
+    };
+  }
+
+  /** The source media's length, from the bound slot's probe or its blob row. */
+  private async sourceDurationSec(req: ProviderRequest): Promise<number | undefined> {
+    const source = (
+      req.params.slots as
+        Record<string, { blobId?: string; probe?: { durationSec?: unknown } }> | undefined
+    )?.source;
+    const fromSlot = Number(source?.probe?.durationSec);
+    if (Number.isFinite(fromSlot) && fromSlot > 0) return fromSlot;
+    if (!source?.blobId) return undefined;
+    const [row] = await this.db
+      .select({ probe: blob.probe })
+      .from(blob)
+      .where(eq(blob.id, source.blobId))
+      .limit(1);
+    const fromBlob = Number((row?.probe as { durationSec?: unknown } | null)?.durationSec);
+    return Number.isFinite(fromBlob) && fromBlob > 0 ? fromBlob : undefined;
   }
   async submit(req: ProviderRequest, key: string): Promise<JobHandle> {
     const source = (req.params.slots as Record<string, { blobId?: string }> | undefined)?.source;
@@ -125,7 +207,12 @@ export class DeepgramAdapter implements ProviderAdapter {
     );
     return {
       output,
-      costUsd: Number((job.payload as ProviderRequest).params.pricePerMinuteUsd ?? 0.0043),
+      costUsd: deepgramCostUsd(
+        Number(
+          (job.payload as ProviderRequest).params.pricePerMinuteUsd ?? DEFAULT_PRICE_PER_MINUTE_USD,
+        ),
+        output.durationSec,
+      ),
       repro: { level: 'none', providerVersion: 'nova-3' },
       rawResponse: job.result,
     };

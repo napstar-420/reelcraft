@@ -116,6 +116,43 @@ describe('BlueprintService.validateOnly (e2e)', () => {
     expect(validated.runnable).toBe(created.runnable);
   });
 
+  it('refuses Include transcript when the judge cannot listen and no Deepgram key is set', async () => {
+    const { blueprints, blueprintId } = await setup();
+    const speech: StageDef = {
+      key: 'voice',
+      label: 'Voice',
+      capability: 'audio.speech',
+      config: {},
+      slots: { text: { from: 'const', value: 'hello there' } },
+      context: {},
+      output: { kind: 'media.audio' },
+      checks: [],
+      retryLimit: 0,
+      model: { provider: 'fake', modelId: 'fake-audio-1', params: {} },
+      qc: {
+        criteria: 'Clear and friendly',
+        threshold: 70,
+        includeInputs: false,
+        media: { includeTranscript: true },
+        model: { provider: 'fake', modelId: 'fake-text-1', params: {} },
+      },
+    };
+    const result = await blueprints.validateOnly(blueprintId, {
+      graph: [speech],
+      inputs: [],
+      roles: [],
+      defaults: {},
+      budget: { runCapUsd: 5 },
+    });
+    expect(result.issues).toContainEqual(
+      expect.objectContaining({
+        path: 'stages.voice.qc.media.includeTranscript',
+        message: expect.stringMatching(/can't listen to audio and no Deepgram key/),
+        severity: 'error',
+      }),
+    );
+  });
+
   it('throws for a nonexistent blueprint id', async () => {
     const blueprints = testApp.app.get(BlueprintService);
     await expect(

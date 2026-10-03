@@ -31,6 +31,7 @@ import {
 import { resolveBoundType } from './binding-types';
 import { isFileKind, modelAcceptsKind } from '../common/file-inputs';
 import { ConfigResolverService } from '../run-config/config-resolver.service';
+import { QcAudioService } from '../qc/qc-audio';
 import { EngineConfig } from '../config/engine-config';
 import { engineDefaults } from '../run-config/engine-defaults';
 import { PINNED_PROVIDERS, PROVIDER_LABELS, ProviderRegistry } from '../provider/provider.registry';
@@ -47,6 +48,7 @@ export class BlueprintService {
     private readonly configResolver: ConfigResolverService,
     private readonly engineConfig: EngineConfig,
     private readonly providers: ProviderRegistry,
+    private readonly qcAudio: QcAudioService,
   ) {}
 
   /** `POST /blueprints`: a new blueprint, refusing a name already used in the
@@ -318,6 +320,7 @@ export class BlueprintService {
     const issues = this.validator.validate(validationInput);
     issues.push(...(await this.validateReferenceLimits(dto, blueprintRow.defaults as ConfigLayer)));
     issues.push(...(await this.validateProviderPins(dto, blueprintRow.defaults as ConfigLayer)));
+    issues.push(...(await this.validateQcTranscript(dto)));
     issues.push(
       ...(await this.validateFileInputs(
         dto,
@@ -419,6 +422,24 @@ export class BlueprintService {
         },
       ]),
     );
+  }
+
+  /** "Include transcript" needs a judge model that can listen to audio, or a
+   * Deepgram key to transcribe it (see `QcAudioService`). */
+  private async validateQcTranscript(dto: CreateBlueprintVersionDto): Promise<ValidationIssue[]> {
+    const issues: ValidationIssue[] = [];
+    for (const stage of dto.graph) {
+      if (!stage.qc?.media?.includeTranscript || stage.output.kind !== 'media.audio') continue;
+      const mode = await this.qcAudio.mode(stage.qc.model);
+      if (mode.mode === 'unavailable') {
+        issues.push({
+          path: `stages.${stage.key}.qc.media.includeTranscript`,
+          message: mode.reason,
+          severity: 'error',
+        });
+      }
+    }
+    return issues;
   }
 
   private async validateProviderPins(

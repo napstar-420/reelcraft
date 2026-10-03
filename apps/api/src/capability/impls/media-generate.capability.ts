@@ -146,6 +146,17 @@ export class MediaAnalyzeCapability extends ProviderMediaCapability {
   readonly outputKind = 'data' as const;
   readonly label = 'Analyze Media';
   readonly description = 'Probe or transcribe/align existing media.';
+  readonly configSchema: JsonSchema = {
+    type: 'object',
+    properties: {
+      operation: {
+        type: 'string',
+        enum: ['transcribe_align', 'probe'],
+        description:
+          'Transcribe align: speech to text with word timings, using Deepgram (paid). Probe: reads the duration and streams locally (free). Defaults to Transcribe align.',
+      },
+    },
+  };
   constructor(providers: ProviderRegistry) {
     super(providers);
   }

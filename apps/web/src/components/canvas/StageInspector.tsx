@@ -444,13 +444,40 @@ function QcDimensionsEditor({
 /** §2.7 — QC is forbidden on video output; not enforced here (the
  * validator's job), so this editor renders unconditionally whenever a
  * `qc` block exists regardless of `stage.output.kind`. */
+/** Whether QC's Include transcript can work: the judge model listens to the
+ * audio, or a Deepgram key lets the audio be transcribed (`qc-audio.ts`). */
+function useTranscriptAvailability(judge: QcDef['model'] | undefined) {
+  const provider = judge?.provider;
+  const models = useQuery({
+    queryKey: ['provider-models', provider],
+    queryFn: () => api.listModelsForProvider(provider!),
+    enabled: !!provider,
+  });
+  const settings = useQuery({ queryKey: ['settings'], queryFn: api.getSettings });
+  const model = models.data?.find((m) => m.modelId === judge?.modelId);
+  const hearsAudio = (model?.capabilities?.inputKinds ?? []).some(
+    (kind) => kind === 'media.audio' || kind === 'media.*',
+  );
+  const hasDeepgram = !!settings.data?.keys.find((key) => key.id === 'deepgram')?.configured;
+  if (hearsAudio) return { available: true, how: 'The judge model listens to the audio.' };
+  if (hasDeepgram)
+    return { available: true, how: 'Deepgram transcribes the audio for the judge (paid).' };
+  return {
+    available: false,
+    how: "This judge model can't listen to audio and no Deepgram key is set (Settings → Provider keys).",
+  };
+}
+
 function QcEditor({
   qc,
+  outputKind,
   onChange,
 }: {
   qc: QcDef | undefined;
+  outputKind: string;
   onChange: (qc: QcDef | undefined) => void;
 }) {
+  const transcript = useTranscriptAvailability(qc?.model);
   if (!qc) {
     return (
       <Button
@@ -545,15 +572,21 @@ function QcEditor({
         />
         Include inputs
       </Label>
-      <Label className="font-normal">
-        <Checkbox
-          checked={!!qc.media?.includeTranscript}
-          onCheckedChange={(checked) =>
-            set({ media: checked === true ? { includeTranscript: true } : undefined })
-          }
-        />
-        Include transcript
-      </Label>
+      {outputKind === 'media.audio' || qc.media?.includeTranscript ? (
+        <div className="flex flex-col gap-1">
+          <Label className="font-normal">
+            <Checkbox
+              checked={!!qc.media?.includeTranscript}
+              disabled={!transcript.available && !qc.media?.includeTranscript}
+              onCheckedChange={(checked) =>
+                set({ media: checked === true ? { includeTranscript: true } : undefined })
+              }
+            />
+            Include transcript
+          </Label>
+          <p className="text-xs text-muted-foreground">{transcript.how}</p>
+        </div>
+      ) : null}
 
       <div className="flex flex-col gap-1.5">
         <InfoHeading info="Which model judges this stage's output against Criteria. Required — unlike a stage's own Model, quality control has no default to fall back to.">
@@ -1314,7 +1347,11 @@ export function StageInspector({
               <InfoHeading info="Optional model-graded quality review of this stage's output against written criteria. Unlike Checks' pass/fail, quality control produces a score against a threshold; a failing score regenerates the output with the judge's critique, up to Max attempts.">
                 Quality control
               </InfoHeading>
-              <QcEditor qc={stage.qc} onChange={(qc) => onChange({ ...stage, qc })} />
+              <QcEditor
+                qc={stage.qc}
+                outputKind={stage.output.kind}
+                onChange={(qc) => onChange({ ...stage, qc })}
+              />
               <IssueList issues={qcIssues} />
             </div>
           </AccordionContent>

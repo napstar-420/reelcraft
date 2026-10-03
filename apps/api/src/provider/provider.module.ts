@@ -84,6 +84,7 @@ import { ChatgptProviderAdapter } from './chatgpt/chatgpt-provider.adapter';
   controllers: [DeepgramController],
   exports: [
     SettingsKeyProvider,
+    KEY_PROVIDER,
     NeoClient,
     CodexAppServerClient,
     CodexRuntimeReadiness,

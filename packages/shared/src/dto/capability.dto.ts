@@ -41,5 +41,10 @@ export const ModelInfoDto = z.object({
   unavailableModalities: z.record(Modality, z.string()).optional(),
   supportedReasoningEfforts: z.array(z.string()).optional(),
   defaultReasoningEffort: z.string().optional(),
+  /** Kinds of attached file the model can read (`media.image`, `media.audio`). */
+  capabilities: z
+    .object({ inputKinds: z.array(z.string()).optional() })
+    .passthrough()
+    .optional(),
 });
 export type ModelInfoDto = z.infer<typeof ModelInfoDto>;

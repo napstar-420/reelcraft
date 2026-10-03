@@ -9,6 +9,7 @@ import { BlueprintController } from './blueprint.controller';
 import { RunConfigModule } from '../run-config/run-config.module';
 import { ProviderModule } from '../provider/provider.module';
 import { RunModule } from '../run/run.module';
+import { QcModule } from '../qc/qc.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { RunModule } from '../run/run.module';
     RunConfigModule,
     ProviderModule,
     RunModule,
+    QcModule,
   ],
   providers: [BlueprintService, BlueprintValidatorService],
   controllers: [BlueprintController],

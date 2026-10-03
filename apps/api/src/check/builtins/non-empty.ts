@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { JsonSchema } from '@reelcraft/shared';
 import type { BuiltinCheck } from '../check.types';
-import { getPath } from '../../common/path';
+import { checkValue } from './check-value';
 
 const Params = z.object({ path: z.string().optional() });
 
@@ -27,7 +27,7 @@ export const nonEmpty: BuiltinCheck<z.infer<typeof Params>> = {
   description:
     'Checks a value (optionally at a JSON path) is not empty (a non-blank string, non-empty array, or non-empty object).',
   run(params, artifact) {
-    const value = params.path ? getPath(artifact.data, params.path) : artifact.data;
+    const value = checkValue(artifact, params.path);
     return isEmpty(value)
       ? { pass: false, message: `non_empty: value at "${params.path ?? '$'}" is empty` }
       : { pass: true };

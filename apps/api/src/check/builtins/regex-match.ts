@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { JsonSchema } from '@reelcraft/shared';
 import type { BuiltinCheck } from '../check.types';
-import { getPath } from '../../common/path';
+import { checkValue } from './check-value';
 
 /** §9.2 — `regex_match`/`regex_absent` run on the Node host, NOT inside the
  * QuickJS sandbox (regex execution has no natural sandbox boundary). This
@@ -32,7 +32,7 @@ export const regexMatch: BuiltinCheck<z.infer<typeof Params>> = {
   paramsSchema,
   description: 'Checks a string value matches a regex pattern.',
   run(params, artifact) {
-    const value = params.path ? getPath(artifact.data, params.path) : artifact.data;
+    const value = checkValue(artifact, params.path);
     if (typeof value !== 'string') {
       return {
         pass: false,

@@ -44,6 +44,7 @@ import { EngineConfig } from '../config/engine-config';
 import { CheckRunner } from '../check/check-runner.service';
 import type { CheckArtifact, CheckResult } from '../check/check.types';
 import { QcRunner, type QcOutcome, type QcVerdict } from '../qc/qc-runner.service';
+import { QcAudioService } from '../qc/qc-audio';
 import { buildQcEnvelope } from '../qc/qc-envelope';
 import { HumanWaitService } from '../run/human-wait.service';
 import { TimelineCheckService } from '../check/timeline-check.service';
@@ -142,6 +143,7 @@ export class StageRunnerService {
     private readonly fileArtifacts: FileArtifactService,
     private readonly artifactAttachments: ArtifactAttachmentService,
     private readonly events: StageEventService,
+    private readonly qcAudio: QcAudioService,
   ) {}
 
   interactionFor(capabilityKey: string): 'form' | 'timeline_editor' | undefined {
@@ -846,12 +848,20 @@ export class StageRunnerService {
         : stage.output.kind === 'text'
           ? 'text'
           : stage.output.kind;
+    // Generate Speech keeps the text it spoke (`{text}`, like a text output) so
+    // checks such as `wpm` and quality control can compare it with the audio.
+    const spokenText =
+      stage.capability === 'audio.speech' && typeof bindings.slots.text === 'string'
+        ? bindings.slots.text
+        : undefined;
     const data =
       kind === 'text'
         ? { text: output }
         : kind === 'data' || kind === 'timeline'
           ? output
-          : undefined;
+          : spokenText !== undefined
+            ? { text: spokenText }
+            : undefined;
     const artifactId = await this.artifacts.recordAttemptArtifact({
       runId: ctx.runId,
       producerStageKey: stage.key,
@@ -1013,10 +1023,49 @@ export class StageRunnerService {
         }
       }
 
-      const qcMedia =
+      let qcMedia =
         stage.output.kind === 'media.image' && persistedMedia
           ? { sourceKey: persistedMedia.storageKey, mime: mediaOutput?.mime ?? 'image/png' }
           : undefined;
+      // "Include transcript" on an audio output: the judge listens to the
+      // file when its model accepts audio, otherwise Deepgram transcribes it.
+      let qcTranscript: string | undefined;
+      if (
+        stage.qc.media?.includeTranscript &&
+        stage.output.kind === 'media.audio' &&
+        persistedMedia
+      ) {
+        const audioMime = mediaOutput?.mime ?? 'audio/mpeg';
+        const audioMode = await this.qcAudio.mode(effective.qc.judge);
+        let audioError: string | undefined;
+        if (audioMode.mode === 'attach') {
+          qcMedia = { sourceKey: persistedMedia.storageKey, mime: audioMime };
+        } else if (audioMode.mode === 'transcribe') {
+          try {
+            const transcribed = await this.qcAudio.transcribe(persistedMedia.storageKey, audioMime);
+            qcTranscript = transcribed.transcript;
+            await this.ledger.recordActual({
+              runId: ctx.runId,
+              stageKey: stage.key,
+              stageAttemptId: ctx.stageAttemptId,
+              category: 'qc',
+              amountUsd: transcribed.costUsd,
+            });
+          } catch (error) {
+            audioError = `could not transcribe the audio: ${(error as Error).message}`;
+          }
+        } else {
+          audioError = audioMode.reason;
+        }
+        if (audioError) {
+          await this.db
+            .update(stageAttempt)
+            .set({ outcome: 'qc_error', checkResults, reviewNote: audioError })
+            .where(eq(stageAttempt.id, ctx.stageAttemptId));
+          await this.finishAttempt(ctx, 'error', 'qc_error', `QC could not run: ${audioError}`);
+          return { outcome: 'qc_error', reason: audioError };
+        }
+      }
       const qcOutcome = await this.runQcWithRetries(
         stage.qc,
         effective.qc,
@@ -1024,6 +1073,7 @@ export class StageRunnerService {
         checkArtifact,
         bindings,
         qcMedia,
+        qcTranscript,
       );
 
       if (qcOutcome.status === 'error') {
@@ -1243,6 +1293,7 @@ export class StageRunnerService {
     artifact: CheckArtifact,
     bindings: ResolvedBindings,
     media: { sourceKey: string; mime: string } | undefined,
+    transcript?: string,
   ): Promise<QcOutcome> {
     const envelope = buildQcEnvelope({
       criteria: qcDef.criteria,
@@ -1254,6 +1305,7 @@ export class StageRunnerService {
       slots: bindings.slots,
       context: bindings.context,
       ...(media !== undefined && { media }),
+      ...(transcript !== undefined && { transcript }),
     });
 
     const maxAttempts = 1 + this.engineConfig.qcErrorRetries;
