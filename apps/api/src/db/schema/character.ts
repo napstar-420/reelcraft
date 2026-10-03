@@ -19,4 +19,5 @@ export const character = pgTable('character', {
   lora: jsonb('lora'), // trained LoRA config/metadata for this character, if any
   readiness: characterReadinessEnum('readiness').notNull().default('draft'), // whether the character is usable in runs
   createdAt: timestamptz('created_at').notNull().defaultNow(), // when the character was created
+  deletedAt: timestamptz('deleted_at'), // when the character was deleted (runs keep their own snapshot)
 });

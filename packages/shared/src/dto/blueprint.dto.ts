@@ -34,6 +34,9 @@ export const UpdateBlueprintDto = z.object({
   name: z.string().min(1).max(120).optional(),
   description: z.string().max(500).nullable().optional(),
   tags: z.array(z.string().trim().min(1).max(32)).max(20).optional(),
+  /** Archived blueprints are hidden from the channel's list until unarchived;
+   * nothing else changes. */
+  archived: z.boolean().optional(),
 });
 export type UpdateBlueprintDto = z.infer<typeof UpdateBlueprintDto>;
 
@@ -91,5 +94,7 @@ export const BlueprintVersionDto = z.object({
   sourceTemplateId: z.string().nullable(),
   createdAt: z.string(),
   draft: z.boolean(),
+  /** Real (not dry or draft) runs of this version; set by the versions list. */
+  runCount: z.number().optional(),
 });
 export type BlueprintVersionDto = z.infer<typeof BlueprintVersionDto>;

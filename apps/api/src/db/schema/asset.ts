@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import { pgEnum, pgTable, text, timestamptz, uniqueIndex } from './pg-helpers';
 import { channel } from './channel';
 import { blob } from './blob';
@@ -26,6 +27,11 @@ export const asset = pgTable(
       .references(() => blob.id), // underlying stored file backing this asset
     tags: text('tags').array().notNull().default([]), // freeform labels for search/filtering
     createdAt: timestamptz('created_at').notNull().defaultNow(), // when the asset was created
+    deletedAt: timestamptz('deleted_at'), // when the asset was deleted; its name is then free again
   },
-  (t) => [uniqueIndex('asset_channel_id_name_uq').on(t.channelId, t.name)],
+  (t) => [
+    uniqueIndex('asset_channel_id_name_uq')
+      .on(t.channelId, t.name)
+      .where(sql`${t.deletedAt} IS NULL`),
+  ],
 );

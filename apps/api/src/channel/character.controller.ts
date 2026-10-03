@@ -54,6 +54,9 @@ export class CharacterController {
   ) {
     return CharacterDto.parse(await this.characters.updateReference(id, blobId, dto));
   }
+  @Delete('characters/:id') async deleteCharacter(@Param('id') id: string) {
+    await this.characters.delete(id);
+  }
   @Delete('characters/:id/references/:blobId') remove(
     @Param('id') id: string,
     @Param('blobId') blobId: string,

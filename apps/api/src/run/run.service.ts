@@ -341,6 +341,10 @@ export class RunService {
           ),
         )
         .limit(1);
+      if (row?.deletedAt)
+        throw new ConflictException(
+          `RunService.start: the Character for role "${role.key}" was deleted; choose another one in Blueprint settings`,
+        );
       if (!row || row.readiness !== 'ready')
         throw new ConflictException(
           `RunService.start: Character for role "${role.key}" is not ready`,

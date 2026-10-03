@@ -48,6 +48,27 @@ export class MemoryStorageAdapter implements StorageAdapter {
     return { key: destKey, etag: hashOf(object.body), bytes: object.body.byteLength };
   }
 
+  async list(prefix: string): Promise<{ keys: string[]; prefixes: string[] }> {
+    const keys: string[] = [];
+    const prefixes = new Set<string>();
+    for (const key of this.objects.keys()) {
+      if (!key.startsWith(prefix)) continue;
+      const rest = key.slice(prefix.length);
+      const slash = rest.indexOf('/');
+      if (slash === -1) keys.push(key);
+      else prefixes.add(prefix + rest.slice(0, slash + 1));
+    }
+    return { keys, prefixes: [...prefixes] };
+  }
+
+  async listAll(prefix: string): Promise<string[]> {
+    return [...this.objects.keys()].filter((key) => key.startsWith(prefix));
+  }
+
+  has(key: string): boolean {
+    return this.objects.has(key);
+  }
+
   async delete(keys: string[]): Promise<void> {
     for (const key of keys) this.objects.delete(key);
   }

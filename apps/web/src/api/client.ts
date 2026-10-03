@@ -169,6 +169,8 @@ export const api = {
       body: JSON.stringify({ channelId, name }),
     }),
   getBlueprint: (blueprintId: string) => request<BlueprintDto>(`/blueprints/${blueprintId}`),
+  deleteBlueprint: (blueprintId: string) =>
+    request<void>(`/blueprints/${blueprintId}`, { method: 'DELETE' }),
   updateBlueprint: (blueprintId: string, dto: UpdateBlueprintDto) =>
     request<BlueprintDto>(`/blueprints/${blueprintId}`, {
       method: 'PATCH',
@@ -245,6 +247,7 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify(dto),
     }),
+  deleteCharacter: (id: string) => request<void>(`/characters/${id}`, { method: 'DELETE' }),
   deleteCharacterReference: (characterId: string, blobId: string) =>
     request<void>(`/characters/${characterId}/references/${blobId}`, { method: 'DELETE' }),
   setPrimaryCharacterReference: (characterId: string, blobId: string) =>

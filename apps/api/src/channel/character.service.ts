@@ -9,6 +9,7 @@ import type {
 } from '@reelcraft/shared';
 import type { ReferenceImage } from '@reelcraft/shared';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
+import { queueStorageOrphans } from '../artifact/storage-orphans';
 import { artifact, blob, character, channel, run } from '../db/schema';
 import { ulid } from '../common/ulid';
 import { EngineConfig } from '../config/engine-config';
@@ -33,13 +34,44 @@ export class CharacterService {
     return this.db
       .select()
       .from(character)
-      .where(and(eq(character.channelId, channelId), eq(character.scope, 'channel')));
+      .where(
+        and(
+          eq(character.channelId, channelId),
+          eq(character.scope, 'channel'),
+          isNull(character.deletedAt),
+        ),
+      );
   }
 
   async get(id: string) {
     const [row] = await this.db.select().from(character).where(eq(character.id, id)).limit(1);
-    if (!row || row.scope !== 'channel') throw new NotFoundException(`Character ${id} not found`);
+    if (!row || row.scope !== 'channel' || row.deletedAt)
+      throw new NotFoundException(`Character ${id} not found`);
     return row;
+  }
+
+  /** Soft-deletes a Character: it leaves lists and pickers, its reference
+   * images are queued for the storage cleanup sweep, and blueprints that use
+   * it fail validation until another Character is chosen. Runs keep their own
+   * snapshot of it (`RunService.resolveRoleBindings`), so past runs are
+   * unaffected. */
+  async delete(id: string): Promise<void> {
+    await this.get(id);
+    const deletedAt = new Date().toISOString();
+    await this.db.transaction(async (tx) => {
+      await tx.update(character).set({ deletedAt }).where(eq(character.id, id));
+      const files = await tx
+        .update(blob)
+        .set({ deletedAt })
+        .where(and(eq(blob.characterId, id), isNull(blob.deletedAt)))
+        .returning({ objectKey: blob.objectKey });
+      await queueStorageOrphans(
+        tx,
+        files.map((file) => file.objectKey),
+        'character_deleted',
+      );
+    });
+    this.logger.log({ characterId: id }, 'character deleted');
   }
 
   async create(channelId: string, dto: CreateCharacterDto) {
@@ -161,10 +193,16 @@ export class CharacterService {
       throw new NotFoundException(`Reference ${blobId} not found`);
     const remaining = refs.filter((ref) => ref.blobId !== blobId);
     await this.db.transaction(async (tx) => {
-      await tx
+      const files = await tx
         .update(blob)
         .set({ deletedAt: new Date().toISOString() })
-        .where(and(eq(blob.id, blobId), eq(blob.characterId, id)));
+        .where(and(eq(blob.id, blobId), eq(blob.characterId, id)))
+        .returning({ objectKey: blob.objectKey });
+      await queueStorageOrphans(
+        tx,
+        files.map((file) => file.objectKey),
+        'reference_deleted',
+      );
       await tx
         .update(character)
         .set(this.referencePatch(remaining, row.primaryRefId === blobId ? null : row.primaryRefId))

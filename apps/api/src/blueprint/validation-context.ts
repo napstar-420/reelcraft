@@ -14,6 +14,8 @@ export interface CharacterLookup {
   channelId: string;
   readiness: string;
   referenceBlobIds: Set<string>;
+  /** The Character was deleted; a blueprint must pick another one. */
+  deleted: boolean;
 }
 
 export interface BlueprintValidationInput {

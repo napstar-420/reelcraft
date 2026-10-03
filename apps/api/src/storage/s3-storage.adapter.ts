@@ -5,6 +5,7 @@ import {
   DeleteObjectsCommand,
   GetObjectCommand,
   HeadObjectCommand,
+  ListObjectsV2Command,
   PutObjectCommand,
   type S3Client,
 } from '@aws-sdk/client-s3';
@@ -108,6 +109,47 @@ export class S3StorageAdapter implements StorageAdapter {
     } else {
       this.logger.debug({ keys: keys.length }, 'storage objects deleted');
     }
+  }
+
+  async list(prefix: string): Promise<{ keys: string[]; prefixes: string[] }> {
+    const keys: string[] = [];
+    const prefixes: string[] = [];
+    let token: string | undefined;
+    do {
+      const res = await this.logged('list', { prefix }, () =>
+        this.client.send(
+          new ListObjectsV2Command({
+            Bucket: this.bucket,
+            Prefix: prefix,
+            Delimiter: '/',
+            ContinuationToken: token,
+          }),
+        ),
+      );
+      for (const entry of res.Contents ?? []) if (entry.Key) keys.push(entry.Key);
+      for (const entry of res.CommonPrefixes ?? []) if (entry.Prefix) prefixes.push(entry.Prefix);
+      token = res.IsTruncated ? res.NextContinuationToken : undefined;
+    } while (token);
+    return { keys, prefixes };
+  }
+
+  async listAll(prefix: string): Promise<string[]> {
+    const keys: string[] = [];
+    let token: string | undefined;
+    do {
+      const res = await this.logged('listAll', { prefix }, () =>
+        this.client.send(
+          new ListObjectsV2Command({
+            Bucket: this.bucket,
+            Prefix: prefix,
+            ContinuationToken: token,
+          }),
+        ),
+      );
+      for (const entry of res.Contents ?? []) if (entry.Key) keys.push(entry.Key);
+      token = res.IsTruncated ? res.NextContinuationToken : undefined;
+    } while (token);
+    return keys;
   }
 
   async presignGet(key: string, ttlSec: number, options: PresignOptions = {}): Promise<string> {

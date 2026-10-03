@@ -76,6 +76,8 @@ describe('blueprint draft versions (e2e)', () => {
       [1, 0],
     ]);
     expect(listed.every((v) => !v.draft)).toBe(true);
+    // Each listed version carries its real-run count for the Versions menu.
+    expect(listed.map((v) => v.runCount)).toEqual([0, 0]);
 
     const v12 = await blueprints.createVersion(blueprintId, content('v1.2'));
     expect(v12).toMatchObject({ major: 1, minor: 2, draft: false });

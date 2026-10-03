@@ -1,11 +1,12 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { and, eq, isNull, lte, or } from 'drizzle-orm';
+import { and, eq, inArray, isNull, lte, or } from 'drizzle-orm';
 import { STORAGE_ADAPTER, type StorageAdapter } from '../storage/storage.adapter';
 import { ulid } from '../common/ulid';
 import { redactSecrets } from '../common/redact-secrets';
 import { objectKey } from '../storage/object-key';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
-import { blob } from '../db/schema';
+import { blob, channel, character, storageOrphan } from '../db/schema';
+import { queueStorageOrphans } from './storage-orphans';
 import { EngineConfig } from '../config/engine-config';
 
 /** Thin wrapper over StorageAdapter for the object-key conventions §4.3
@@ -88,6 +89,67 @@ export class BlobService {
     }
     if (rows.length) this.logger.log({ collected: rows.length }, 'blobs collected');
     return rows.length;
+  }
+
+  /** Deletes queued orphan objects (`storage_orphan`) once they have waited
+   * `blobRetentionDays`, then forgets them. Bounded and idempotent like
+   * `collectEligible`: deleting a missing object is accepted. */
+  async collectOrphans(limit = 500): Promise<number> {
+    const cutoff = new Date(Date.now() - this.config.blobRetentionDays * 86_400_000).toISOString();
+    const rows = await this.db
+      .select({ objectKey: storageOrphan.objectKey })
+      .from(storageOrphan)
+      .where(lte(storageOrphan.queuedAt, cutoff))
+      .limit(limit);
+    if (rows.length === 0) return 0;
+    const keys = rows.map((row) => row.objectKey);
+    await this.storage.delete(keys);
+    await this.db.delete(storageOrphan).where(inArray(storageOrphan.objectKey, keys));
+    this.logger.log({ collected: keys.length }, 'orphaned objects collected');
+    return keys.length;
+  }
+
+  /** Finds objects left in storage by channels and characters deleted before
+   * deletes queued their files, and queues them. Object keys start with
+   * `<owner>/<channelId>/` or `<owner>/characters/<characterId>/`
+   * (`storage/object-key.ts`); a folder is only queued when its id is a ULID
+   * and no channel or character row with that id exists. */
+  async queueOrphanedFolders(): Promise<number> {
+    const isUlid = (value: string) => /^[0-9A-HJKMNP-TV-Z]{26}$/.test(value);
+    const segment = (prefix: string) => prefix.split('/').at(-2) ?? '';
+    let queued = 0;
+    const queueFolder = async (prefix: string) => {
+      const keys = await this.storage.listAll(prefix);
+      await queueStorageOrphans(this.db, keys, 'orphaned_prefix');
+      queued += keys.length;
+      this.logger.log({ prefix, objects: keys.length }, 'orphaned storage folder queued');
+    };
+    for (const ownerPrefix of (await this.storage.list('')).prefixes) {
+      for (const prefix of (await this.storage.list(ownerPrefix)).prefixes) {
+        const id = segment(prefix);
+        if (id === 'characters') {
+          for (const characterPrefix of (await this.storage.list(prefix)).prefixes) {
+            const characterId = segment(characterPrefix);
+            if (!isUlid(characterId)) continue;
+            const [row] = await this.db
+              .select({ id: character.id })
+              .from(character)
+              .where(eq(character.id, characterId))
+              .limit(1);
+            if (!row) await queueFolder(characterPrefix);
+          }
+          continue;
+        }
+        if (!isUlid(id)) continue;
+        const [row] = await this.db
+          .select({ id: channel.id })
+          .from(channel)
+          .where(eq(channel.id, id))
+          .limit(1);
+        if (!row) await queueFolder(prefix);
+      }
+    }
+    return queued;
   }
 
   async writeRawResponse(params: {
