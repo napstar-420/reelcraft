@@ -47,6 +47,10 @@ For a fresh local stack: copy `.env.example` to `.env`, then run `docker compose
 - Run state changes flow through the durable wakeup/outbox and Inngest pipeline; do not make the UI the execution driver.
 - Any new table with a foreign key into the channel/blueprint/run graph (directly or transitively) must be added to `ChannelService.delete()`'s cascade in `apps/api/src/channel/channel.service.ts`, and to the e2e test that asserts the full cascade. Check this whenever adding or modifying a Drizzle schema table/column that references `channel`, `blueprint`, or `run` — Postgres only catches a missed table if it has rows at delete time, so this can silently go stale without failing a single test.
 
+## Claude Code plugins
+
+- `.claude/settings.json` enables the ECC plugin (`ecc@ecc`, from `affaan-m/ECC`, pinned to a release tag) for its skills and agents. Its hooks are off for everyone via `ECC_HOOKS_ENABLED=false`; to use them, set `"env": { "ECC_HOOKS_ENABLED": "true" }` in your own `.claude/settings.local.json` (gitignored). Bump the pinned `ref` deliberately, after reading the release's hook changes.
+
 ## Testing and CI
 
 - Place unit tests beside source as `*.test.ts`; place API E2E tests in `apps/api/test/e2e/*.e2e.test.ts`.

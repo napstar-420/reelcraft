@@ -17,3 +17,6 @@ coverage/
 docker/data/
 apps/api/.workspace/
 graphify-out/
+
+# Personal Claude Code settings (e.g. turning ECC hooks on)
+.claude/settings.local.json
