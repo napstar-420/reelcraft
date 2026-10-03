@@ -30,7 +30,7 @@ export class BlueprintController {
 
   @Post()
   async create(@Body(new ZodValidationPipe(CreateBlueprintDto)) dto: CreateBlueprintDto) {
-    const blueprintId = await this.blueprints.ensureBlueprint(dto.channelId, dto.name, {
+    const blueprintId = await this.blueprints.createBlueprint(dto.channelId, dto.name, {
       description: dto.description,
       tags: dto.tags,
     });

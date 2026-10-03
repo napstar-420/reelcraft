@@ -26,6 +26,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { PlaceholderArt } from '@/components/placeholder-art';
+import { apiErrorMessage } from '@/lib/api-error-message';
 
 function BlueprintEditDialog({
   blueprint,
@@ -44,6 +45,7 @@ function BlueprintEditDialog({
     setName(blueprint.name);
     setDescription(blueprint.description ?? '');
     setTagsText(blueprint.tags.join(', '));
+    update.reset();
   }, [blueprint]);
 
   const update = useMutation({
@@ -93,6 +95,11 @@ function BlueprintEditDialog({
               onChange={(e) => setTagsText(e.target.value)}
             />
           </div>
+          {update.error ? (
+            <p role="alert" className="text-sm text-destructive">
+              {apiErrorMessage(update.error, 'Could not save the blueprint.')}
+            </p>
+          ) : null}
         </div>
         <DialogFooter>
           <Button disabled={!name.trim() || update.isPending} onClick={() => update.mutate()}>

@@ -24,12 +24,13 @@ import {
 import { Dropzone } from '@/components/upload/dropzone';
 import { useUpload } from '@/components/upload/use-upload';
 
+/** Kinds a new asset can be uploaded as. Fonts and LUTs are left out until a
+ * stage can use them (the API still accepts them, and existing ones still
+ * show in the Assets tab). */
 const ASSET_KINDS: { value: AssetKind; label: string; accept: string }[] = [
   { value: 'media.image', label: 'Image', accept: 'image/*' },
   { value: 'media.video', label: 'Video', accept: 'video/*' },
   { value: 'media.audio', label: 'Audio', accept: 'audio/*' },
-  { value: 'font', label: 'Font', accept: '.ttf,.otf,.woff,.woff2' },
-  { value: 'lut', label: 'LUT', accept: '.cube' },
 ];
 
 export function AssetCreateDialog({

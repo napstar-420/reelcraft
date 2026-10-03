@@ -25,6 +25,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { api, ApiError } from '../api/client';
+import { apiErrorMessage } from '../lib/api-error-message';
 import { AddStageMenu } from '../components/canvas/AddStageMenu';
 import { StageInspector } from '../components/canvas/StageInspector';
 import { BlueprintSettingsPanel } from '../components/canvas/BlueprintSettingsPanel';
@@ -62,6 +63,7 @@ import type {
   VersionBump,
 } from '@reelcraft/shared';
 import { formatBlueprintVersion } from '../lib/format-blueprint-version';
+import { dropIndex, stageX } from './canvas-layout.logic';
 
 type BlueprintDraft = {
   graph: StageDef[];
@@ -81,7 +83,7 @@ function stageNodes(graph: StageDef[], issuesByStage: Map<string, ValidationIssu
   return graph.map((stage, index) => ({
     id: stage.key,
     type: 'stage',
-    position: { x: index * 320, y: 80 },
+    position: { x: stageX(index), y: 80 },
     data: {
       label: stage.label || stage.key,
       key: stage.key,
@@ -333,7 +335,7 @@ function StageGraphCanvas({
   function handleNodeDragStop(_event: unknown, node: Node) {
     const fromIndex = graph.findIndex((s) => s.key === node.id);
     if (fromIndex === -1) return;
-    const toIndex = Math.min(Math.max(Math.round(node.position.x / 250), 0), graph.length - 1);
+    const toIndex = dropIndex(node.position.x, graph.length);
     if (toIndex === fromIndex) return;
     onReorder(fromIndex, toIndex);
   }
@@ -476,6 +478,15 @@ function StartFromTemplate({
   );
 }
 
+/** The existing blueprint's id when `POST /blueprints` refused a taken name. */
+function blueprintNameTaken(error: unknown): string | null {
+  if (!(error instanceof ApiError)) return null;
+  const body = error.issues as { code?: unknown; blueprintId?: unknown } | undefined;
+  return body?.code === 'blueprint_name_taken' && typeof body.blueprintId === 'string'
+    ? body.blueprintId
+    : null;
+}
+
 function CreateBlueprintForm({
   channelId,
   onCreated,
@@ -486,6 +497,7 @@ function CreateBlueprintForm({
   const [name, setName] = useState('');
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [existingId, setExistingId] = useState<string | null>(null);
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -493,11 +505,14 @@ function CreateBlueprintForm({
     if (!trimmed) return;
     setPending(true);
     setError(null);
+    setExistingId(null);
     try {
       const { blueprintId } = await api.createBlueprint(channelId, trimmed);
       onCreated(blueprintId);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create blueprint');
+      const taken = blueprintNameTaken(err);
+      if (taken) setExistingId(taken);
+      setError(apiErrorMessage(err, 'Failed to create blueprint'));
     } finally {
       setPending(false);
     }
@@ -523,7 +538,19 @@ function CreateBlueprintForm({
             </Button>
             {error && (
               <Alert variant="destructive">
-                <AlertDescription>{error}</AlertDescription>
+                <AlertDescription className="flex flex-wrap items-center gap-3">
+                  {error}
+                  {existingId ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => onCreated(existingId)}
+                    >
+                      Open it
+                    </Button>
+                  ) : null}
+                </AlertDescription>
               </Alert>
             )}
           </form>

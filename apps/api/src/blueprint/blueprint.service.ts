@@ -1,5 +1,5 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
-import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { ConflictException, Inject, Injectable, Logger } from '@nestjs/common';
+import { and, desc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import type {
   ConfigLayer,
   CreateBlueprintVersionDto,
@@ -38,6 +38,40 @@ export class BlueprintService {
     private readonly engineConfig: EngineConfig,
     private readonly providers: ProviderRegistry,
   ) {}
+
+  /** `POST /blueprints`: a new blueprint, refusing a name already used in the
+   * channel (409 `blueprint_name_taken`, with the existing id so the UI can
+   * offer to open it). `ensureBlueprint` keeps its idempotent behaviour for
+   * template instantiation and tests. */
+  async createBlueprint(
+    channelId: string,
+    name: string,
+    dto?: { description?: string | undefined; tags?: string[] | undefined },
+  ): Promise<string> {
+    await this.assertNameFree(channelId, name);
+    return this.ensureBlueprint(channelId, name, dto);
+  }
+
+  private async assertNameFree(channelId: string, name: string, exceptId?: string) {
+    const [existing] = await this.db
+      .select({ id: blueprint.id })
+      .from(blueprint)
+      .where(
+        and(
+          eq(blueprint.channelId, channelId),
+          eq(blueprint.name, name),
+          ...(exceptId ? [ne(blueprint.id, exceptId)] : []),
+        ),
+      )
+      .limit(1);
+    if (existing) {
+      throw new ConflictException({
+        code: 'blueprint_name_taken',
+        message: `A blueprint named "${name}" already exists in this channel`,
+        blueprintId: existing.id,
+      });
+    }
+  }
 
   async ensureBlueprint(
     channelId: string,
@@ -102,7 +136,10 @@ export class BlueprintService {
   }
 
   async update(id: string, dto: UpdateBlueprintDto) {
-    await this.getBlueprint(id);
+    const current = await this.getBlueprint(id);
+    if (dto.name !== undefined && dto.name !== current.name) {
+      await this.assertNameFree(current.channelId, dto.name, id);
+    }
     await this.db.update(blueprint).set(dto).where(eq(blueprint.id, id));
     this.logger.log({ blueprintId: id, fields: Object.keys(dto) }, 'blueprint updated');
     return this.getBlueprint(id);

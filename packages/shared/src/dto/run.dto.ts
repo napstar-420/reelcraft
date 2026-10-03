@@ -188,6 +188,8 @@ export type StageOutputDto = z.infer<typeof StageOutputDto>;
 export const StageExecutionDto = z.object({
   id: z.string(),
   stageKey: z.string(),
+  /** The stage's Label from the run's blueprint version (its key if unset). */
+  label: z.string(),
   state: StageExecutionState,
   isIterating: z.boolean(),
   itemCount: z.number().nullable(),

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { CharacterDto } from '@reelcraft/shared';
 import { api } from '@/api/client';
+import { apiErrorMessage } from '@/lib/api-error-message';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -38,6 +39,9 @@ export function CharacterDialog({
     if (!state) return;
     setName(character?.name ?? '');
     setDescription(character?.description ?? '');
+    // Clear the previous attempt's error when the dialog opens again.
+    createCharacter.reset();
+    updateCharacter.reset();
   }, [state, character]);
 
   const createCharacter = useMutation({
@@ -58,6 +62,7 @@ export function CharacterDialog({
   });
 
   const pending = createCharacter.isPending || updateCharacter.isPending;
+  const saveError = createCharacter.error ?? updateCharacter.error;
 
   return (
     <Dialog open={state !== null} onOpenChange={onOpenChange}>
@@ -100,6 +105,11 @@ export function CharacterDialog({
               placeholder="Describe this character's appearance and personality"
             />
           </div>
+          {saveError ? (
+            <p role="alert" className="text-sm text-destructive">
+              {apiErrorMessage(saveError, 'Could not save the character.')}
+            </p>
+          ) : null}
         </form>
         <DialogFooter>
           <Button type="submit" form="character-form" disabled={pending}>

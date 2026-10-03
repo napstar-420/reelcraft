@@ -285,7 +285,12 @@ export function RunPage() {
           {run.stageExecutions.map((se) => (
             <Card key={se.id} className="flex-row items-center justify-between gap-4 px-4">
               <div className="flex flex-wrap items-center gap-3">
-                <span className="font-medium">{se.stageKey}</span>
+                <span className="flex flex-col">
+                  <span className="font-medium">{se.label}</span>
+                  {se.label !== se.stageKey ? (
+                    <span className="font-mono text-xs text-muted-foreground">{se.stageKey}</span>
+                  ) : null}
+                </span>
                 <StatusBadge tone={stageExecutionStateTone(se.state)} label={se.state} />
                 <span className="text-sm text-muted-foreground">
                   {se.attemptCount} attempt{se.attemptCount === 1 ? '' : 's'}

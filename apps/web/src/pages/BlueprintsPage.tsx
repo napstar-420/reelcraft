@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useParams, useSearchParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
@@ -54,6 +54,7 @@ export function BlueprintsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const tab = searchParams.get('tab') ?? 'blueprints';
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const [dialog, setDialog] = useState<ChannelDialogState | null>(null);
   const [archiveTarget, setArchiveTarget] = useState<ChannelDto | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ChannelDto | null>(null);
@@ -81,10 +82,14 @@ export function BlueprintsPage() {
   });
   const deleteChannel = useMutation({
     mutationFn: (target: ChannelDto) => api.deleteChannel(target.id),
-    onSuccess: () => {
-      onSettled();
+    onSuccess: (_result, target) => {
       setDeleteTarget(null);
       setDeleteConfirmText('');
+      // The channel no longer exists: leave its page before refetching it.
+      queryClient.removeQueries({ queryKey: ['channel', target.id] });
+      void queryClient.invalidateQueries({ queryKey: ['channels'] });
+      navigate('/');
+      toast.success(`Channel "${target.name}" deleted`);
     },
     onError,
   });

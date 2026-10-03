@@ -44,6 +44,16 @@ import {
   AccordionTrigger,
 } from '@/components/ui/accordion';
 import { Trash2 } from 'lucide-react';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -208,7 +218,7 @@ function InstructionsEditor({
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-col gap-1.5">
-        <InfoLabel info="Optional system-role prompt sent before the template on every call — sets tone, persona, or constraints that shouldn't change per-run. Leave blank to use the capability's own default system prompt, if it has one.">
+        <InfoLabel info="Optional system prompt sent before the Template on every call — sets tone, persona, or rules that don't change from run to run. It is sent exactly as written: {{ }} values are not filled in here. Leave blank to send no system prompt.">
           System
         </InfoLabel>
         <CollapsibleTextarea
@@ -220,7 +230,7 @@ function InstructionsEditor({
         />
       </div>
       <div className="flex flex-col gap-1.5">
-        <InfoLabel info="The user-role prompt sent to the model. Supports {{ }} interpolation: reference this stage's Slots or Context values by name, e.g. {{ myContextKey }}. When the stage regenerates after failed checks, a quality control rejection or a human rejection, the feedback is added to the prompt automatically — use {{ priorCritique }} only to control where it goes. Required for capabilities that read a prompt (e.g. text/LLM generation) — leave blank for capabilities that don't.">
+        <InfoLabel info="The user-role prompt sent to the model. Supports {{ }} interpolation: reference this stage's Slots or Context values by name, e.g. {{ myContextKey }}. When the stage regenerates after failed checks, a quality control rejection or a human rejection, the feedback is added to the prompt automatically — use {{ priorCritique }} only to control where it goes. Files ticked Attach file under Context are sent alongside the prompt and listed by their Context key: mention them by that name rather than with {{ }}. Required for capabilities that read a prompt (e.g. text/LLM generation) — leave blank for capabilities that don't.">
           Template
         </InfoLabel>
         <CollapsibleTextarea
@@ -260,7 +270,7 @@ function BudgetEditor({
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-col gap-1.5">
-        <InfoLabel info="Maximum USD this stage's own model calls may spend. If exceeded mid-run, the stage stops with a budget-exceeded failure.">
+        <InfoLabel info="Maximum USD this stage's own model calls may spend in a run. If the next call would go over it, the run pauses as Paused Budget.">
           Stage cap (USD)
         </InfoLabel>
         <Input
@@ -270,7 +280,7 @@ function BudgetEditor({
         />
       </div>
       <div className="flex flex-col gap-1.5">
-        <InfoLabel info="Maximum USD this stage's quality control pass (if any) may spend, tracked separately from the stage cap above.">
+        <InfoLabel info="Maximum USD this stage's quality control judge may spend in a run, tracked separately from the stage cap above. If the next judgement would go over it, the stage fails (QC budget exhausted).">
           Quality control cap (USD)
         </InfoLabel>
         <Input
@@ -622,7 +632,7 @@ function ApprovalEditor({
       {approval.onReject ? (
         <div className="flex flex-wrap items-end gap-2">
           <div className="flex flex-col gap-1.5">
-            <InfoLabel info="Which stage to re-run when this stage's output is rejected during human approval. Leave unset to just fail the run on rejection.">
+            <InfoLabel info="Which earlier stage to re-run when this stage's output is rejected during human approval. Leave unset to re-run this stage itself, with the rejection note as feedback.">
               Retry stage
             </InfoLabel>
             <Select
@@ -761,7 +771,7 @@ function IterateEditor({
         align with item
       </Label>
       <div className="flex flex-col gap-1.5">
-        <InfoLabel info="How many times a single failing iteration item retries before the whole iteration is treated as failed.">
+        <InfoLabel info="How many times one item automatically retries after a crash (provider error or timeout) before the stage fails. Failed checks and quality control have their own limits.">
           Item retry limit
         </InfoLabel>
         <Input
@@ -826,6 +836,7 @@ export function StageInspector({
   onChange: (updated: StageDef) => void;
 }) {
   const capabilities = useQuery({ queryKey: ['capabilities'], queryFn: api.listCapabilities });
+  const [pendingCapability, setPendingCapability] = useState<string | null>(null);
   const [resolved, setResolved] = useState<{ slots: SlotDef[]; allowedOutputs: OutputKind[] }>({
     slots: [],
     allowedOutputs: [],
@@ -974,7 +985,7 @@ export function StageInspector({
           <AccordionTrigger className={STAGE_SECTION_TRIGGER_CLASS}>Basics</AccordionTrigger>
           <AccordionContent className={STAGE_SECTION_CONTENT_CLASS}>
             <div className="flex flex-col gap-1.5">
-              <InfoLabel info="This stage's unique identifier within the blueprint. Set once at creation and immutable afterward — other stages' Refs and memory `writes` keys address this stage by it.">
+              <InfoLabel info="This stage's unique id within the blueprint. Set when the stage is created and can't be changed. Runs, logs and Human approval's Retry stage refer to the stage by it.">
                 Key
               </InfoLabel>
               <Input type="text" value={stage.key} disabled />
@@ -990,18 +1001,55 @@ export function StageInspector({
               />
             </div>
             <div className="flex flex-col gap-1.5">
-              <InfoLabel info="The type of work this stage performs (e.g. text.generate, media.generate). Determines what Slots it accepts, what Config schema applies, and what output kinds are allowed.">
+              <InfoLabel info="The type of work this stage performs (e.g. Generate Text, Generate Image). Determines what Slots it accepts, what Config schema applies, and what output kinds are allowed.">
                 Capability
               </InfoLabel>
               <CapabilityPicker
                 value={stage.capability}
-                onValueChange={(next) =>
-                  onChange({ ...stage, capability: next, config: {}, slots: {} })
-                }
+                onValueChange={(next) => {
+                  if (next === stage.capability) return;
+                  const hasSettings =
+                    Object.keys(stage.config).length > 0 || Object.keys(stage.slots).length > 0;
+                  if (hasSettings) setPendingCapability(next);
+                  else onChange({ ...stage, capability: next, config: {}, slots: {} });
+                }}
                 size="sm"
                 triggerClassName="w-full sm:w-64"
               />
               <IssueList issues={capabilityIssues} />
+              <AlertDialog
+                open={pendingCapability !== null}
+                onOpenChange={(open) => {
+                  if (!open) setPendingCapability(null);
+                }}
+              >
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Change this stage&apos;s capability?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Changing the capability resets this stage&apos;s Config and Slots, because
+                      each capability has its own. Discard changes undoes it until you save.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Keep current</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={() => {
+                        if (pendingCapability !== null)
+                          onChange({
+                            ...stage,
+                            capability: pendingCapability,
+                            config: {},
+                            slots: {},
+                          });
+                        setPendingCapability(null);
+                      }}
+                    >
+                      Change capability
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             </div>
 
             <div className="flex flex-col gap-1.5">
@@ -1015,7 +1063,7 @@ export function StageInspector({
 
             {configSchema && Object.keys(configSchema.properties ?? {}).length > 0 && (
               <div className="flex flex-col gap-1.5">
-                <InfoHeading info="Capability-specific settings defined by the selected capability's own config schema — e.g. model defaults or generation parameters distinct from Instructions.">
+                <InfoHeading info="Settings defined by the selected capability, such as a video's transition or a render's quality. Not every capability has any. The model is chosen under Model, not here.">
                   Config
                 </InfoHeading>
                 <SchemaForm
@@ -1040,7 +1088,7 @@ export function StageInspector({
           </AccordionTrigger>
           <AccordionContent className={STAGE_SECTION_CONTENT_CLASS}>
             <div className="flex flex-col gap-3">
-              <InfoHeading info="Typed data inputs the selected capability declares via its own slots() method (e.g. startFrame, references for video.generate). Bind each to a value — a prior stage's output, a memory key, a blueprint input, and more.">
+              <InfoHeading info="Typed inputs the selected capability declares (e.g. startFrame and references for Generate Video). Bind each to a value: the previous stage's output, a memory key, a blueprint input, an asset, and more.">
                 Slots
               </InfoHeading>
               {resolved.slots.length === 0 && (
@@ -1071,7 +1119,7 @@ export function StageInspector({
             </div>
 
             <div className="flex flex-col gap-3">
-              <InfoHeading info="Free-form key/value bindings interpolated into this stage's Instructions template ({{ key }}). Unlike Slots, any capability can read Context regardless of what it declares. On text generation stages, tick Attach file to send a bound file (e.g. an image) to the model so it can see it — refer to it by name in the prompt rather than with {{ }}. Unticked, the model only gets the file's details (handle, kind), e.g. for building a timeline.">
+              <InfoHeading info="Free-form key/value bindings interpolated into this stage's Instructions template ({{ key }}). Unlike Slots, any capability can read Context regardless of what it declares. On text generation stages, tick Attach file to send a bound file (e.g. an image) to the model so it can see it. The model sees it listed under this key, so mention it by that name in the prompt rather than with {{ }} (which would insert the file's details, not the file). Unticked, the model only gets the file's details (handle, kind), e.g. for building a timeline.">
                 Context
               </InfoHeading>
               {Object.entries(stage.context).map(([key, ref]) => (
@@ -1228,7 +1276,7 @@ export function StageInspector({
           </AccordionTrigger>
           <AccordionContent className={STAGE_SECTION_CONTENT_CLASS}>
             <div className="flex flex-col gap-1.5">
-              <InfoHeading info="Automated pass/fail validations run against this stage's finished output — builtin checks or custom scripts. A failing check can block the run depending on its severity.">
+              <InfoHeading info="Automated pass/fail tests run against this stage's finished output — builtin checks or custom scripts. When a check fails, the output is regenerated with the failure messages as feedback, up to Max check attempts; after that the stage fails.">
                 Checks
               </InfoHeading>
               <ChecksEditor
@@ -1307,7 +1355,7 @@ export function StageInspector({
           </AccordionTrigger>
           <AccordionContent className={STAGE_SECTION_CONTENT_CLASS}>
             <div className="flex flex-col gap-1.5">
-              <InfoHeading info="How many times this stage automatically retries after it crashes (provider error, timeout, or an unexpected error) before surfacing as a run failure. Failed checks, quality control rejections and human rejections never use these retries — they have their own limits.">
+              <InfoHeading info="How many times this stage automatically retries after it crashes (a provider error or timeout) before the stage fails. Failed checks, quality control rejections and human rejections never use these retries — they have their own limits.">
                 Retry limit
               </InfoHeading>
               <div className="flex flex-col gap-1.5">
@@ -1325,7 +1373,7 @@ export function StageInspector({
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <InfoHeading info="Optional per-stage USD spending caps. If exceeded mid-run, the stage (or its quality control pass) stops with a budget-exceeded failure rather than continuing to spend.">
+              <InfoHeading info="Optional per-stage USD spending caps. If the stage's next model call would go over the stage cap, the run pauses as Paused Budget; if the quality control judge would go over its cap, the stage fails.">
                 Budget
               </InfoHeading>
               <BudgetEditor

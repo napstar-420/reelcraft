@@ -10,6 +10,7 @@ import { Label } from '../components/ui/label';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { Slider } from '../components/ui/slider';
 import { api } from '../api/client';
+import { appendResource, describeSubmitError, type SubmitErrorView } from './timeline-editor.logic';
 
 type Selection = { trackIndex: number; itemIndex: number };
 
@@ -26,6 +27,8 @@ export function TimelineEditorPage() {
   const [readOnly, setReadOnly] = useState(false);
   const [history, setHistory] = useState<Timeline[]>([]);
   const [future, setFuture] = useState<Timeline[]>([]);
+  const [submitError, setSubmitError] = useState<SubmitErrorView>();
+  const [submitting, setSubmitting] = useState(false);
   const saveTimer = useRef<number>();
   const latestRevision = useRef(0);
 
@@ -97,6 +100,25 @@ export function TimelineEditorPage() {
     void persist(next);
   };
 
+  const submit = async () => {
+    if (!timeline) return;
+    window.clearTimeout(saveTimer.current);
+    setSubmitting(true);
+    setSubmitError(undefined);
+    try {
+      await persist(timeline);
+      await api.submitTimelineDraft(runId, stageKey, latestRevision.current);
+      navigate(`/runs/${runId}`);
+    } catch (error) {
+      setSubmitError(describeSubmitError(error));
+      if (error && typeof error === 'object' && 'status' in error && error.status === 409) {
+        await load().catch(() => undefined);
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   if (!timeline)
     return (
       <main className="flex h-screen items-center justify-center bg-background text-foreground">
@@ -123,19 +145,28 @@ export function TimelineEditorPage() {
             Redo
           </Button>
           <Button
-            disabled={readOnly || status === 'Saving…'}
-            onClick={() =>
-              void persist(timeline).then(() =>
-                api
-                  .submitTimelineDraft(runId, stageKey, latestRevision.current)
-                  .then(() => navigate(`/runs/${runId}`)),
-              )
-            }
+            disabled={readOnly || submitting || status === 'Saving…'}
+            onClick={() => void submit()}
           >
-            Submit timeline
+            {submitting ? 'Submitting…' : 'Submit timeline'}
           </Button>
         </div>
       </header>
+      {submitError ? (
+        <div
+          role="alert"
+          className="border-b border-destructive/40 bg-destructive/10 px-5 py-3 text-sm text-destructive"
+        >
+          <p className="font-medium">{submitError.message}</p>
+          {submitError.failures.length ? (
+            <ul className="mt-1 list-disc pl-5">
+              {submitError.failures.map((failure) => (
+                <li key={failure}>{failure}</li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      ) : null}
 
       <section className="grid min-h-0 flex-1 grid-cols-[240px_1fr_260px]">
         <aside className="min-h-0 border-r bg-muted/30">
@@ -150,32 +181,7 @@ export function TimelineEditorPage() {
                   key={resource.handle}
                   disabled={readOnly}
                   className="block w-full overflow-hidden rounded-lg border bg-card text-left text-card-foreground transition-colors hover:bg-accent disabled:pointer-events-none disabled:opacity-50"
-                  onClick={() =>
-                    commit((next) => {
-                      const visual = next.tracks.find((track) => track.type === 'video');
-                      if (!visual) return;
-                      const end = visual.items.reduce(
-                        (max, item) =>
-                          item.type === 'media' || item.type === 'text'
-                            ? Math.max(max, item.startSec + (item.durationSec ?? 1))
-                            : max,
-                        0,
-                      );
-                      visual.items.push({
-                        type: 'media',
-                        handle: resource.handle,
-                        startSec: end,
-                        durationSec:
-                          resource.probe &&
-                          typeof resource.probe === 'object' &&
-                          'durationSec' in resource.probe
-                            ? Number(resource.probe.durationSec)
-                            : 5,
-                        fit: 'cover',
-                        overflow: 'trim',
-                      });
-                    })
-                  }
+                  onClick={() => commit((next) => appendResource(next, resource))}
                 >
                   {resource.kind === 'media.image' ? (
                     <img src={resource.url} alt="" className="block h-[90px] w-full object-cover" />

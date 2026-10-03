@@ -13,17 +13,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { ASSET_KIND_LABELS } from '@/lib/display-names';
 import { AssetCard } from './asset-card';
 import { AssetCreateDialog } from './asset-create-dialog';
 
 const ALL = '__all__';
-const KIND_LABELS: Record<AssetKind, string> = {
-  'media.image': 'Image',
-  'media.video': 'Video',
-  'media.audio': 'Audio',
-  font: 'Font',
-  lut: 'LUT',
-};
 type SortKey = 'newest' | 'name' | 'size';
 
 function sortAssets(assets: AssetDto[], sort: SortKey): AssetDto[] {
@@ -94,11 +88,17 @@ export function AssetsTab({ channelId }: { channelId?: string | undefined }) {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value={ALL}>All types</SelectItem>
-              {Object.entries(KIND_LABELS).map(([value, label]) => (
-                <SelectItem key={value} value={value}>
-                  {label}
-                </SelectItem>
-              ))}
+              {Object.entries(ASSET_KIND_LABELS)
+                .filter(
+                  ([value]) =>
+                    value.startsWith('media.') ||
+                    assets.data?.some((asset) => asset.kind === value),
+                )
+                .map(([value, label]) => (
+                  <SelectItem key={value} value={value}>
+                    {label}
+                  </SelectItem>
+                ))}
             </SelectContent>
           </Select>
           <Select value={sort} onValueChange={(v) => setSort(v as SortKey)}>

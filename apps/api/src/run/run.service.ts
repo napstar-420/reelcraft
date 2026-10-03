@@ -710,6 +710,7 @@ export class RunService {
           const capability = definition?.capability ?? 'unknown';
           return {
             ...execution,
+            label: definition?.label || execution.stageKey,
             attemptCount: attemptCounts.get(execution.id) ?? 0,
             capability,
             interaction: this.capabilities.get(capability).interaction?.kind ?? null,
