@@ -34,6 +34,7 @@ import { EngineConfig } from '../config/engine-config';
 import { CapabilityRegistry } from '../capability/capability.registry';
 import { ConfigResolverService } from '../run-config/config-resolver.service';
 import { engineDefaults } from '../run-config/engine-defaults';
+import { mergeLayer } from '../run-config/layer-merge';
 import { LedgerService } from '../budget/ledger.service';
 import { collectAssetIds, roleRefsOf } from '../blueprint/collect-asset-refs';
 import { RunInputService } from './run-input.service';
@@ -561,13 +562,24 @@ export class RunService {
     return overridden;
   }
 
-  /** §12.4 — the one budget mutation allowed while `RUNNING`; also the only
-   * way to unblock a `PAUSED_BUDGET` run, since `raiseBudget` alone widens
-   * the cap but doesn't resume the orchestrator. */
-  async raiseBudget(runId: string, capUsd: number) {
-    await this.ledger.raiseBudget({ runId, newCapUsd: capUsd });
-    this.logger.log({ runId, capUsd }, 'run budget raised');
-    return this.get(runId);
+  /** §12.4 — the one budget mutation allowed while `RUNNING`. With
+   * `stageKey` it raises that stage's own cap for this run instead of the
+   * run cap. A `PAUSED_BUDGET` run is resumed in the same request. */
+  async raiseBudget(runId: string, capUsd: number, stageKey?: string) {
+    if (stageKey) await this.ledger.raiseStageCap({ runId, stageKey, newCapUsd: capUsd });
+    else await this.ledger.raiseBudget({ runId, newCapUsd: capUsd });
+    this.logger.log({ runId, capUsd, stageKey }, 'run budget raised');
+    // A run paused for budget continues straight away; in any other state
+    // raising a cap only widens it.
+    const current = await this.get(runId);
+    if (current.state !== 'PAUSED_BUDGET') return current;
+    try {
+      return await this.resume(runId);
+    } catch (error) {
+      if (!(error instanceof ConflictException)) throw error;
+      this.logger.warn({ runId, err: error }, 'raised budget but the run could not resume');
+      return this.get(runId);
+    }
   }
 
   /** §12.4 — budget pauses and failed runs are explicit recovery points
@@ -694,8 +706,10 @@ export class RunService {
       attachmentsByArtifact.set(attachment.artifactId, values);
     }
     const final = await findFinalVideo(this.db, runId);
+    const budgetBlock = row.state === 'PAUSED_BUDGET' ? await this.budgetBlock(row) : null;
     return {
       ...row,
+      budgetBlock,
       finalVideo: final
         ? {
             artifactId: final.artifactId,
@@ -711,6 +725,7 @@ export class RunService {
           return {
             ...execution,
             label: definition?.label || execution.stageKey,
+            output: definition?.output ?? null,
             attemptCount: attemptCounts.get(execution.id) ?? 0,
             capability,
             interaction: this.capabilities.get(capability).interaction?.kind ?? null,
@@ -739,6 +754,35 @@ export class RunService {
         }),
       ),
     };
+  }
+
+  /** Which cap paused a `PAUSED_BUDGET` run: the latest `budget_blocked`
+   * attempt's recorded reason (`stage-runner.service.ts`), so the Raise
+   * budget dialog raises the cap that actually blocks it. */
+  private async budgetBlock(row: typeof run.$inferSelect) {
+    const [event] = await this.db
+      .select({ data: stageEvent.data, stageKey: stageExecution.stageKey })
+      .from(stageEvent)
+      .innerJoin(stageExecution, eq(stageExecution.id, stageEvent.stageExecutionId))
+      .where(
+        and(
+          eq(stageEvent.runId, row.id),
+          eq(stageEvent.type, 'attempt.finished'),
+          sql`${stageEvent.data}->>'outcome' = 'budget_blocked'`,
+        ),
+      )
+      .orderBy(desc(stageEvent.id))
+      .limit(1);
+    const stageKey = event?.stageKey ?? row.cursorStageKey;
+    if (!stageKey) return null;
+    const reason = (event?.data as { reason?: unknown } | null)?.reason;
+    if (reason !== 'stage_cap_exceeded')
+      return { scope: 'run' as const, stageKey, stageCapUsd: null };
+    const resolved = (row.resolvedConfig ?? {}) as Record<string, ConfigLayer>;
+    const overrides = (row.overrides ?? {}) as Record<string, ConfigLayer>;
+    const stageCapUsd =
+      mergeLayer(resolved[stageKey] ?? {}, overrides[stageKey] ?? {}).budget?.stageCapUsd ?? null;
+    return { scope: 'stage' as const, stageKey, stageCapUsd };
   }
 
   async approvalCandidate(runId: string, stageKey: string) {

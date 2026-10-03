@@ -77,6 +77,8 @@ export type RunLaunchRequest = {
   inputDefs: InputDef[];
   values: LaunchValues;
   resume?: LaunchResume;
+  /** Start a dry run (fake provider) instead of a real run. */
+  dryRun?: boolean;
 };
 
 type CreatedRun = { id: string };
@@ -119,6 +121,7 @@ export async function executeRunLaunch<TStarted extends StartedRun>(
         inputs: buildLaunchInputs(request.inputDefs, request.values),
         roleBindings: {},
         rerunStageKeys: [],
+        ...(request.dryRun && { dryRun: true }),
       })
     ).id;
 

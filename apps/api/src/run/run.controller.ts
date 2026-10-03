@@ -55,7 +55,7 @@ export class RunController {
   @Post()
   @UsePipes(new ZodValidationPipe(CreateRunDto))
   create(@Body() dto: CreateRunDto) {
-    return this.runs.create(dto);
+    return this.runs.create(dto, { dryRun: dto.dryRun ?? false });
   }
 
   @Get()
@@ -99,7 +99,7 @@ export class RunController {
   @Post(':id/budget')
   @UsePipes(new ZodValidationPipe(RaiseBudgetDto))
   raiseBudget(@Param('id') id: string, @Body() dto: RaiseBudgetDto) {
-    return this.runs.raiseBudget(id, dto.capUsd);
+    return this.runs.raiseBudget(id, dto.capUsd, dto.stageKey);
   }
 
   @Post(':id/pause')

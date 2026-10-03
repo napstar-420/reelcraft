@@ -63,12 +63,16 @@ export function RunLaunchDialog({
   prepareVersion,
   onLaunched,
   disabled = false,
+  dryRun = false,
 }: {
   channelId: string;
   inputs: InputDef[];
   defaultBudgetCapUsd: number;
   prepareVersion: () => Promise<string>;
   disabled?: boolean;
+  /** Dry-run mode: same inputs and uploads, but every model is forced to the
+   * free fake provider. */
+  dryRun?: boolean;
   /** The canvas's run dock passes this to stay on the canvas and switch its
    * active run instead of navigating to `/runs/:id` (the default, used by
    * every other launch site). */
@@ -102,6 +106,7 @@ export function RunLaunchDialog({
             budgetCapUsd,
             inputDefs: inputs,
             values,
+            dryRun,
             ...(recoverable && {
               resume: {
                 runId: recoverable.runId,
@@ -161,16 +166,21 @@ export function RunLaunchDialog({
       }}
     >
       <DialogTrigger asChild>
-        <Button type="button" disabled={!channelId || disabled}>
-          Run
+        <Button
+          type="button"
+          variant={dryRun ? 'outline' : 'default'}
+          disabled={!channelId || disabled}
+        >
+          {dryRun ? 'Dry run (fake provider)' : 'Run'}
         </Button>
       </DialogTrigger>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
         <DialogHeader>
-          <DialogTitle>Run blueprint</DialogTitle>
+          <DialogTitle>{dryRun ? 'Dry run' : 'Run blueprint'}</DialogTitle>
           <DialogDescription>
-            This is a real run. It uses each stage&apos;s configured provider, including Codex, and
-            may consume provider usage. Dry run continues to use the deterministic fake provider.
+            {dryRun
+              ? 'A free test run: every stage uses the fake provider instead of its configured model, so nothing is charged. Human stages still pause for you.'
+              : "This is a real run. It uses each stage's configured provider, including Codex, and may consume provider usage. Dry run continues to use the deterministic fake provider."}
           </DialogDescription>
         </DialogHeader>
 
@@ -275,7 +285,13 @@ export function RunLaunchDialog({
             Cancel
           </Button>
           <Button type="button" onClick={() => launch.mutate()} disabled={launch.isPending}>
-            {launch.isPending ? 'Starting…' : recoverable ? retryLabel : 'Start real run'}
+            {launch.isPending
+              ? 'Starting…'
+              : recoverable
+                ? retryLabel
+                : dryRun
+                  ? 'Start dry run'
+                  : 'Start real run'}
           </Button>
         </DialogFooter>
       </DialogContent>

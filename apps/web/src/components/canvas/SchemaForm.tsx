@@ -12,7 +12,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 
-function defaultForSchema(schema: JsonSchema): unknown {
+export function defaultForSchema(schema: JsonSchema): unknown {
   switch (schema.type) {
     case 'string':
       return '';

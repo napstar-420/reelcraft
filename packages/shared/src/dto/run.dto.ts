@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { RunState, StageExecutionState, AttemptOutcome } from '../primitives';
 import { ConfigLayer } from '../config-layer';
 import { Probe } from '../probe';
+import { OutputDef } from '../output';
 
 /** A media URL the browser loads: absolute, or relative to the app's own
  * origin when a self-hosted install proxies storage (`/storage/...`). */
@@ -24,6 +25,9 @@ export const CreateRunDto = z.object({
   // Stop the run after this stage; later stages are created 'skipped'
   // rather than 'pending', so the run completes without executing them.
   untilStageKey: z.string().optional(),
+  /** A dry run: every model is forced to the free fake provider (see
+   * `RunService.applyDryRunOverride`). Media inputs upload as for a real run. */
+  dryRun: z.boolean().optional(),
 });
 export type CreateRunDto = z.infer<typeof CreateRunDto>;
 
@@ -33,7 +37,9 @@ export type CreateRunDto = z.infer<typeof CreateRunDto>;
  * or a terminal run state; duplicating that rule in the DTO would just
  * create a second source of truth for it. */
 export const RaiseBudgetDto = z.object({
-  capUsd: z.number(),
+  capUsd: z.number().positive(),
+  /** Raise this stage's own cap (for this run) instead of the run cap. */
+  stageKey: z.string().min(1).optional(),
 });
 export type RaiseBudgetDto = z.infer<typeof RaiseBudgetDto>;
 
@@ -190,6 +196,9 @@ export const StageExecutionDto = z.object({
   stageKey: z.string(),
   /** The stage's Label from the run's blueprint version (its key if unset). */
   label: z.string(),
+  /** The stage's declared output (kind, and schema for `data`), so a human
+   * input form can be built for it. */
+  output: OutputDef.nullable(),
   state: StageExecutionState,
   isIterating: z.boolean(),
   itemCount: z.number().nullable(),
@@ -231,6 +240,15 @@ export const RunDetailDto = z.object({
   stageExecutions: z.array(StageExecutionDto),
   startedAt: z.string(),
   endedAt: z.string().nullable(),
+  /** Set while `PAUSED_BUDGET`: which cap paused the run. `stage` means the
+   * stage's own Stage cap (raise it with `RaiseBudgetDto.stageKey`). */
+  budgetBlock: z
+    .object({
+      scope: z.enum(['run', 'stage']),
+      stageKey: z.string(),
+      stageCapUsd: z.number().nullable(),
+    })
+    .nullable(),
   finalVideo: z
     .object({
       artifactId: z.string(),

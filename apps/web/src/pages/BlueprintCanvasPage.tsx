@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ReactFlow,
@@ -606,8 +606,6 @@ function SaveAndDryRun({
   latestSaved: SavedVersion | null;
   onSaved: (version: SavedVersion, savedDraft: BlueprintDraft) => void;
 }) {
-  const navigate = useNavigate();
-
   const save = useMutation({
     // Capture what was sent: edits made while the save is in flight must
     // stay "unsaved".
@@ -627,14 +625,6 @@ function SaveAndDryRun({
     await assertRunnable(blueprintId, draft);
     return latestSaved.id;
   }
-
-  const dryRun = useMutation({
-    mutationFn: () => {
-      if (runBlocked || !latestSaved) throw new Error('Save to run your changes.');
-      return api.startDryRun(blueprintId, `${latestSaved.major}.${latestSaved.minor}`);
-    },
-    onSuccess: (run) => navigate(`/runs/${run.id}`),
-  });
 
   const saveIssues =
     save.error instanceof ApiError ? (save.error.issues as ValidationIssue[]) : undefined;
@@ -679,14 +669,15 @@ function SaveAndDryRun({
             prepareVersion={prepareSavedVersion}
             disabled={runBlocked}
           />
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => dryRun.mutate()}
-            disabled={runBlocked || dryRun.isPending}
-          >
-            {dryRun.isPending ? 'Starting…' : 'Dry run (fake provider)'}
-          </Button>
+          <RunLaunchDialog
+            key={`dry-${draftKey}`}
+            dryRun
+            channelId={channelId}
+            inputs={draft.inputs}
+            defaultBudgetCapUsd={1}
+            prepareVersion={prepareSavedVersion}
+            disabled={runBlocked}
+          />
         </div>
         <p className="text-xs text-muted-foreground">
           {runBlocked
@@ -707,11 +698,6 @@ function SaveAndDryRun({
               <AlertDescription>{save.error.message}</AlertDescription>
             </Alert>
           ))}
-        {dryRun.isError && (
-          <Alert variant="destructive">
-            <AlertDescription>{dryRun.error.message}</AlertDescription>
-          </Alert>
-        )}
       </CardContent>
     </Card>
   );

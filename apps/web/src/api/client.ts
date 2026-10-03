@@ -318,10 +318,10 @@ export const api = {
     }),
   pauseRun: (runId: string) => request<RunDetailDto>(`/runs/${runId}/pause`, { method: 'POST' }),
   resumeRun: (runId: string) => request<RunDetailDto>(`/runs/${runId}/resume`, { method: 'POST' }),
-  raiseRunBudget: (runId: string, capUsd: number) =>
+  raiseRunBudget: (runId: string, capUsd: number, stageKey?: string) =>
     request<RunDetailDto>(`/runs/${runId}/budget`, {
       method: 'POST',
-      body: JSON.stringify({ capUsd }),
+      body: JSON.stringify({ capUsd, ...(stageKey && { stageKey }) }),
     }),
   previewStageRetry: (
     runId: string,

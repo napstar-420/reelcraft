@@ -4,6 +4,7 @@ import { StageDef } from '@reelcraft/shared';
 import type { Db } from '../../db/drizzle.provider';
 import { artifact, blueprintVersion, run, stageExecution, stageItem } from '../../db/schema/index';
 import type { RunStateService } from '../run-state.service';
+import { isStageEnabled } from '../enabled-when';
 import { buildStageExecuteFunction } from './stage-execute.fn';
 import type { RunWakeupClaimService, RunWakeupEventData } from '../../run/run-wakeup-claim.service';
 import type { DerivedFrameService } from '../../artifact/derived-frame.service';
@@ -105,7 +106,7 @@ export function buildRunOrchestrateFunction(
 
       const executions = await step.run('load-stage-executions', async () => {
         const [row] = await db
-          .select({ graph: blueprintVersion.graph })
+          .select({ graph: blueprintVersion.graph, inputs: run.inputs })
           .from(run)
           .innerJoin(blueprintVersion, eq(run.blueprintVersionId, blueprintVersion.id))
           .where(eq(run.id, runId))
@@ -138,9 +139,12 @@ export function buildRunOrchestrateFunction(
                 );
         const executionIdsNeedingItemWork = new Set(nonPassedItems.map((r) => r.stageExecutionId));
 
+        const inputs = (row.inputs ?? {}) as Record<string, unknown>;
+        const enabledWhenByKey = new Map(graph.map((stage) => [stage.key, stage.enabledWhen]));
         return orderStageExecutions(graph, rows).map((r) => ({
           ...r,
           needsItemWork: executionIdsNeedingItemWork.has(r.id),
+          enabled: isStageEnabled(enabledWhenByKey.get(r.stageKey), inputs),
         }));
       });
 
@@ -154,6 +158,13 @@ export function buildRunOrchestrateFunction(
         // Seeded runs (RunService.create's `untilStageKey`) mark stages past
         // the stop point 'skipped' up front — never re-checked, never run.
         if (execution.state === 'skipped') continue;
+        // §16 — "Enabled when" didn't match this run's input: skip the stage.
+        if (!execution.enabled) {
+          await step.run(`skip-disabled-${execution.stageKey}`, () =>
+            runState.skipStage(runId, execution.id, execution.stageKey),
+          );
+          continue;
+        }
 
         // §12.4 manual pause — checked before starting the next stage, not
         // by killing the durable function (that's cancel's job via

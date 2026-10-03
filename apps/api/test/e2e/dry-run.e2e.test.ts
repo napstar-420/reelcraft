@@ -1,10 +1,11 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { InngestTestEngine } from '@inngest/test';
 import { eq } from 'drizzle-orm';
-import type { StageDef } from '@reelcraft/shared';
+import { CreateRunDto, type ConfigLayer, type StageDef } from '@reelcraft/shared';
 import { ChannelService } from '../../src/channel/channel.service';
 import { BlueprintService } from '../../src/blueprint/blueprint.service';
 import { RunService } from '../../src/run/run.service';
+import { RunController } from '../../src/run/run.controller';
 import type { StageExecuteEventData } from '../../src/orchestration/functions/stage-execute.fn';
 import { run, stageAttempt, stageExecution } from '../../src/db/schema/index';
 import { buildTestApp, type TestApp } from '../support/build-app';
@@ -105,6 +106,43 @@ describe('dry-run execution (e2e)', () => {
     });
     return outerEngine.execute();
   }
+
+  it('creates a dry run with inputs through POST /runs { dryRun: true }', async () => {
+    const channels = testApp.app.get(ChannelService);
+    const blueprints = testApp.app.get(BlueprintService);
+    const controller = testApp.app.get(RunController);
+
+    const channel = await channels.create('local', {
+      name: `Dry Run Inputs Channel ${Date.now()}`,
+      theme: {},
+      defaults: {},
+    });
+    const blueprintId = await blueprints.ensureBlueprint(channel.id, 'Dry Run Inputs Blueprint');
+    const version = await blueprints.createVersion(blueprintId, {
+      graph: GRAPH,
+      inputs: [{ key: 'topic', label: 'Topic', required: true, accepts: { kind: 'text' } }],
+      roles: [],
+      defaults: {},
+      budget: { runCapUsd: 10 },
+    });
+
+    const created = await controller.create(
+      CreateRunDto.parse({
+        channelId: channel.id,
+        blueprintVersionId: version.id,
+        inputs: { topic: 'otters' },
+        budgetCapUsd: 1,
+        dryRun: true,
+      }),
+    );
+
+    const [row] = await testDb.db.select().from(run).where(eq(run.id, created.id));
+    expect(row?.dryRun).toBe(true);
+    expect(row?.inputs).toEqual({ topic: 'otters' });
+    for (const layer of Object.values(row?.resolvedConfig as Record<string, ConfigLayer>)) {
+      expect(layer.model?.provider).toBe('fake');
+    }
+  });
 
   it('drives a dry run to completion through the real Inngest pipeline with every stage forced to the fake provider', async () => {
     const channels = testApp.app.get(ChannelService);
