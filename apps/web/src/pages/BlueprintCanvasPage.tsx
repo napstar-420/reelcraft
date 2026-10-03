@@ -26,6 +26,18 @@ import {
 } from 'lucide-react';
 import { api, ApiError } from '../api/client';
 import { apiErrorMessage } from '../lib/api-error-message';
+import { toast } from 'sonner';
+import { VersionHistory } from '../components/canvas/version-history';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '../components/ui/alert-dialog';
 import { AddStageMenu } from '../components/canvas/AddStageMenu';
 import { StageInspector } from '../components/canvas/StageInspector';
 import { BlueprintSettingsPanel } from '../components/canvas/BlueprintSettingsPanel';
@@ -54,6 +66,7 @@ import { IssueList } from '../components/ui/issue-list';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '../components/ui/sheet';
 import type {
+  BlueprintVersionDto,
   StageDef,
   InputDef,
   RoleDef,
@@ -813,6 +826,9 @@ function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
   const [savedDraft, setSavedDraft] = useState<BlueprintDraft>(emptyDraft);
   const [runSnapshot, setRunSnapshot] = useState<{ id: string; contentKey: string } | null>(null);
   const serverHasWorkingDraft = useRef(false);
+  /** An older saved version opened read-only from the Versions menu. */
+  const [viewing, setViewing] = useState<BlueprintVersionDto | null>(null);
+  const [confirmRestore, setConfirmRestore] = useState(false);
 
   // Load once: the autosaved working copy if there is one, else the latest
   // saved version. `latestSaved` is what Run/Dry run execute.
@@ -877,6 +893,23 @@ function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
     void queryClient.invalidateQueries({ queryKey: ['blueprint-versions', blueprintId] });
   }
 
+  const restore = useMutation({
+    mutationFn: async (version: BlueprintVersionDto) => {
+      const restored = draftOf(version);
+      const saved = await api.createBlueprintVersion(blueprintId, restored, 'minor');
+      return { saved, restored, from: version };
+    },
+    onSuccess: ({ saved, restored, from }) => {
+      const contentKey = stableStringify(restored);
+      handleSaved({ id: saved.id, major: saved.major, minor: saved.minor, contentKey }, restored);
+      setDraft(restored);
+      setSelectedStageKey(null);
+      setViewing(null);
+      toast.success(`Restored ${formatBlueprintVersion(from)} as ${formatBlueprintVersion(saved)}`);
+    },
+    onError: (error) => toast.error(apiErrorMessage(error, 'Could not restore this version.')),
+  });
+
   function discardChanges() {
     setDraft(savedDraft);
     setSelectedStageKey(null);
@@ -899,8 +932,9 @@ function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
     return () => window.clearTimeout(validateTimer.current);
   }, [blueprintId, draftKey]);
 
-  const issuesByStage = useMemo(() => groupIssuesByStage(validation?.issues ?? []), [validation]);
-  const bannerIssues = useMemo(() => graphLevelIssues(validation?.issues ?? []), [validation]);
+  const shownIssues = viewing ? viewing.validation : (validation?.issues ?? []);
+  const issuesByStage = useMemo(() => groupIssuesByStage(shownIssues), [shownIssues]);
+  const bannerIssues = useMemo(() => graphLevelIssues(shownIssues), [shownIssues]);
 
   if (versions.isLoading || !draft) {
     return <p className="text-sm text-muted-foreground">Loading…</p>;
@@ -934,7 +968,10 @@ function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
     setDraft((prev) => prev && { ...prev, ...patch });
   }
 
-  const stageSelected = !!selectedStageKey && draft.graph.some((s) => s.key === selectedStageKey);
+  // While an older version is open, the canvas shows it read-only.
+  const shown = viewing ? draftOf(viewing) : draft;
+  const readOnly = viewing !== null;
+  const stageSelected = !!selectedStageKey && shown.graph.some((s) => s.key === selectedStageKey);
 
   return (
     <div className="space-y-6">
@@ -946,13 +983,22 @@ function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
               {formatBlueprintVersion(latestSaved)}
             </span>
           )}
-          {isDirty && <StatusBadge tone="warning" label="Unsaved changes" />}
-          {isDirty && latestSaved && (
+          <VersionHistory
+            versions={versions.data ?? []}
+            currentVersionId={latestSaved?.id ?? null}
+            viewingVersionId={viewing?.id ?? null}
+            onView={(version) => {
+              setSelectedStageKey(null);
+              setViewing(version);
+            }}
+          />
+          {!readOnly && isDirty && <StatusBadge tone="warning" label="Unsaved changes" />}
+          {!readOnly && isDirty && latestSaved && (
             <Button type="button" variant="ghost" size="sm" onClick={discardChanges}>
               Discard changes
             </Button>
           )}
-          {!validationFailed && validation && (
+          {!readOnly && !validationFailed && validation && (
             <StatusBadge
               tone={validation.runnable ? 'success' : 'error'}
               label={validation.runnable ? 'Runnable' : 'Not runnable yet'}
@@ -964,43 +1010,94 @@ function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
         )}
       </div>
 
+      {viewing ? (
+        <Alert>
+          <AlertDescription className="flex flex-wrap items-center gap-3">
+            <span>
+              Viewing {formatBlueprintVersion(viewing)} (read-only). Restoring saves it as a new
+              version; nothing is overwritten.
+            </span>
+            <span className="flex gap-2">
+              <Button
+                type="button"
+                size="sm"
+                disabled={restore.isPending}
+                onClick={() => setConfirmRestore(true)}
+              >
+                Restore this version
+              </Button>
+              <Button type="button" size="sm" variant="outline" onClick={() => setViewing(null)}>
+                Back to latest
+              </Button>
+            </span>
+          </AlertDescription>
+        </Alert>
+      ) : null}
+      <AlertDialog open={confirmRestore} onOpenChange={setConfirmRestore}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Restore {viewing ? formatBlueprintVersion(viewing) : 'this version'}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              It is saved as a new version
+              {latestSaved
+                ? ` (${formatBlueprintVersion({ major: latestSaved.major, minor: latestSaved.minor + 1 })})`
+                : ''}
+              , and the canvas switches to it.
+              {isDirty ? ' Your unsaved changes on the canvas are discarded.' : ''}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => viewing && restore.mutate(viewing)}>
+              Restore
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <IssueList issues={bannerIssues} />
 
-      <section className="space-y-2">
-        <BlueprintSettingsPanel
-          inputs={draft.inputs}
-          roles={draft.roles}
-          budget={draft.budget}
-          channelId={channelId ?? ''}
-          onChange={updateSettings}
-        />
-      </section>
-
-      <section className="space-y-2">
-        <h2 className="text-lg font-medium">Stages</h2>
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
-          <div className="min-w-0 flex-1 space-y-2">
-            <StageGraphCanvas
-              graph={draft.graph}
-              issuesByStage={issuesByStage}
-              onDeleteStage={deleteStage}
-              onReorder={reorderStage}
-              onSelectStage={setSelectedStageKey}
-            />
-            <AddStageMenu graph={draft.graph} onAdd={addStage} />
-          </div>
-          <CanvasRunPanel
+      <fieldset disabled={readOnly} className="min-w-0 space-y-6">
+        <section className="space-y-2">
+          <BlueprintSettingsPanel
+            inputs={shown.inputs}
+            roles={shown.roles}
+            budget={shown.budget}
             channelId={channelId ?? ''}
-            blueprintId={blueprintId}
-            graph={draft.graph}
-            inputs={draft.inputs}
-            budgetCapUsd={draft.budget.runCapUsd}
-            run={canvasRun.run}
-            onSwitchRun={canvasRun.setActiveRunId}
-            prepareRunnableVersion={prepareCanvasRunVersion}
+            onChange={updateSettings}
           />
-        </div>
-      </section>
+        </section>
+
+        <section className="space-y-2">
+          <h2 className="text-lg font-medium">Stages</h2>
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
+            <div className="min-w-0 flex-1 space-y-2">
+              <StageGraphCanvas
+                graph={shown.graph}
+                issuesByStage={issuesByStage}
+                onDeleteStage={deleteStage}
+                onReorder={readOnly ? () => undefined : reorderStage}
+                onSelectStage={setSelectedStageKey}
+              />
+              {readOnly ? null : <AddStageMenu graph={draft.graph} onAdd={addStage} />}
+            </div>
+            {readOnly ? null : (
+              <CanvasRunPanel
+                channelId={channelId ?? ''}
+                blueprintId={blueprintId}
+                graph={draft.graph}
+                inputs={draft.inputs}
+                budgetCapUsd={draft.budget.runCapUsd}
+                run={canvasRun.run}
+                onSwitchRun={canvasRun.setActiveRunId}
+                prepareRunnableVersion={prepareCanvasRunVersion}
+              />
+            )}
+          </div>
+        </section>
+      </fieldset>
 
       <Sheet
         open={stageSelected}
@@ -1013,32 +1110,36 @@ function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
             <SheetTitle>{selectedStageKey}</SheetTitle>
           </SheetHeader>
           <ScrollArea className="flex-1 px-4 pb-4">
-            {selectedStageKey && stageSelected && (
-              <StageInspector
-                stageKey={selectedStageKey}
-                graph={draft.graph}
-                inputs={draft.inputs}
-                roles={draft.roles}
-                assets={assets.data ?? []}
-                issues={issuesByStage.get(selectedStageKey) ?? []}
-                onChange={updateStage}
-              />
-            )}
+            <fieldset disabled={readOnly} className="min-w-0">
+              {selectedStageKey && stageSelected && (
+                <StageInspector
+                  stageKey={selectedStageKey}
+                  graph={shown.graph}
+                  inputs={shown.inputs}
+                  roles={shown.roles}
+                  assets={assets.data ?? []}
+                  issues={issuesByStage.get(selectedStageKey) ?? []}
+                  onChange={readOnly ? () => undefined : updateStage}
+                />
+              )}
+            </fieldset>
           </ScrollArea>
         </SheetContent>
       </Sheet>
 
-      <SaveAndDryRun
-        blueprintId={blueprintId}
-        channelId={channelId ?? ''}
-        draft={draft}
-        draftKey={draftKey}
-        runnable={validation?.runnable}
-        isDirty={isDirty}
-        latestSaved={latestSaved}
-        onSaved={handleSaved}
-      />
-      <SaveAsTemplate graph={draft.graph} />
+      {readOnly ? null : (
+        <SaveAndDryRun
+          blueprintId={blueprintId}
+          channelId={channelId ?? ''}
+          draft={draft}
+          draftKey={draftKey}
+          runnable={validation?.runnable}
+          isDirty={isDirty}
+          latestSaved={latestSaved}
+          onSaved={handleSaved}
+        />
+      )}
+      {readOnly ? null : <SaveAsTemplate graph={draft.graph} />}
     </div>
   );
 }

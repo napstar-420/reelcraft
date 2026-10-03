@@ -46,7 +46,7 @@ For a fresh local stack: copy `.env.example` to `.env`, then run `docker compose
 - Use `toUsd`/`fromUsd` in `apps/api/src/common/money.ts` for database money fields; do not coerce numeric columns with `Number()`.
 - Artifact replacement must stale the old artifact before inserting the new one, inside one transaction.
 - Run state changes flow through the durable wakeup/outbox and Inngest pipeline; do not make the UI the execution driver.
-- Any new table with a foreign key into the channel/blueprint/run graph (directly or transitively) must be added to `ChannelService.delete()`'s cascade in `apps/api/src/channel/channel.service.ts`, and to the e2e test that asserts the full cascade. Check this whenever adding or modifying a Drizzle schema table/column that references `channel`, `blueprint`, or `run` — Postgres only catches a missed table if it has rows at delete time, so this can silently go stale without failing a single test.
+- Any new table with a foreign key into the channel/blueprint/run graph (directly or transitively) must be added to the delete cascade: `deleteRunsCascade()` in `apps/api/src/run/run-cascade.ts` for anything under a run (shared by channel and blueprint delete), otherwise `ChannelService.delete()` in `apps/api/src/channel/channel.service.ts`, and to the e2e tests that assert the cascade (`channel-delete-cascade.e2e.test.ts`). Deleted rows' files go to `storage_orphan` (`queueStorageOrphans`) so the `blob.gc` sweep removes them. Check this whenever adding or modifying a Drizzle schema table/column that references `channel`, `blueprint`, or `run` — Postgres only catches a missed table if it has rows at delete time, so this can silently go stale without failing a single test.
 
 ## Claude Code plugins
 

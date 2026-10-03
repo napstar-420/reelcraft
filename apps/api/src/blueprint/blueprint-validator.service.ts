@@ -142,6 +142,14 @@ export class BlueprintValidatorService {
         });
         continue;
       }
+      if (character.deleted) {
+        issues.push({
+          path,
+          message: `role "${role.key}" uses a Character that was deleted; choose another one`,
+          severity: 'error',
+        });
+        continue;
+      }
       if (character.channelId !== input.blueprintChannelId) {
         issues.push({
           path,

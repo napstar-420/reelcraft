@@ -17,6 +17,11 @@ export interface StorageAdapter {
    * party fetches the URL and needs it absolute. */
   presignGet(key: string, ttlSec: number, options?: PresignOptions): Promise<string>;
   presignPut(key: string, ttlSec: number): Promise<string>;
+  /** One level of the key tree under `prefix` (which ends in `/`): the
+   * object keys directly in it and the sub-prefixes ("folders") below it. */
+  list(prefix: string): Promise<{ keys: string[]; prefixes: string[] }>;
+  /** Every object key under `prefix`, at any depth. */
+  listAll(prefix: string): Promise<string[]>;
 }
 
 export interface PresignOptions {

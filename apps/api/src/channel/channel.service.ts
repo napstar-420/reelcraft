@@ -1,27 +1,19 @@
 import { ConflictException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import type { CreateChannelDto, ListChannelsQueryDto, UpdateChannelDto } from '@reelcraft/shared';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
 import {
-  artifact,
-  artifactAttachment,
   asset,
   blob,
   blueprint,
   blueprintVersion,
   channel,
   character,
-  humanWait,
-  ledgerEntry,
   run,
-  runMemory,
-  runWakeup,
-  stageAttempt,
-  stageEvent,
-  stageExecution,
-  stageItem,
 } from '../db/schema/index';
 import { ulid } from '../common/ulid';
+import { queueStorageOrphans } from '../artifact/storage-orphans';
+import { deleteRunsCascade } from '../run/run-cascade';
 
 @Injectable()
 export class ChannelService {
@@ -57,6 +49,7 @@ export class ChannelService {
       characters: sql<number>`(
         select count(*)::int from character
         where character.channel_id = channel.id and character.scope = 'channel'
+          and character.deleted_at is null
       )`.as('character_count'),
       assets: sql<number>`(
         select count(*)::int from asset
@@ -135,18 +128,15 @@ export class ChannelService {
    * stale without failing a single test.
    *
    * Deletion order follows FK direction (a row must be deleted before
-   * anything it references can be deleted): ledgerEntry/humanWait/runWakeup/
-   * runMemory/artifactAttachment have no dependents and go first; then
-   * asset (its blob id is captured before the row is deleted, since blob
-   * itself is deleted later); then stageAttempt, then stageItem, then
-   * stageExecution (each references the next, and all three reference
-   * artifact); then artifact (references run and blob); then blob
-   * (references run and character, plus the asset blobs captured above);
-   * then run (references channel and blueprintVersion) and character
+   * anything it references can be deleted): asset (its blob id is captured
+   * first, since blob is deleted later); then the runs and everything under
+   * them (`deleteRunsCascade` in `run/run-cascade.ts`, which owns that part
+   * of the order); then the character and asset blobs; then character
    * (references channel and blueprint); then blueprintVersion, after nulling
    * `blueprint.currentVersionId` to break the blueprint/blueprint_version
    * cycle documented in `db/schema/blueprint.ts`; then blueprint; then
-   * channel itself.
+   * channel itself. Every deleted blob's file is queued in `storage_orphan`
+   * for the `blob.gc` sweep.
    */
   async delete(id: string): Promise<void> {
     await this.get(id);
@@ -173,22 +163,6 @@ export class ChannelService {
       const blueprintIds = (
         await tx.select({ id: blueprint.id }).from(blueprint).where(eq(blueprint.channelId, id))
       ).map((b) => b.id);
-      const stageExecutionIds = runIds.length
-        ? (
-            await tx
-              .select({ id: stageExecution.id })
-              .from(stageExecution)
-              .where(inArray(stageExecution.runId, runIds))
-          ).map((se) => se.id)
-        : [];
-      const artifactIds = runIds.length
-        ? (
-            await tx
-              .select({ id: artifact.id })
-              .from(artifact)
-              .where(inArray(artifact.runId, runIds))
-          ).map((a) => a.id)
-        : [];
       const channelCharacterIds = (
         await tx.select({ id: character.id }).from(character).where(eq(character.channelId, id))
       ).map((c) => c.id);
@@ -205,34 +179,26 @@ export class ChannelService {
         await tx.select({ blobId: asset.blobId }).from(asset).where(eq(asset.channelId, id))
       ).map((a) => a.blobId);
 
-      if (runIds.length) await tx.delete(stageEvent).where(inArray(stageEvent.runId, runIds));
-      if (runIds.length) await tx.delete(ledgerEntry).where(inArray(ledgerEntry.runId, runIds));
-      if (runIds.length) await tx.delete(humanWait).where(inArray(humanWait.runId, runIds));
-      if (runIds.length) await tx.delete(runWakeup).where(inArray(runWakeup.runId, runIds));
-      if (runIds.length) await tx.delete(runMemory).where(inArray(runMemory.runId, runIds));
-      if (artifactIds.length) {
-        await tx
-          .delete(artifactAttachment)
-          .where(inArray(artifactAttachment.artifactId, artifactIds));
-      }
       await tx.delete(asset).where(eq(asset.channelId, id));
+      // Runs and everything under them; their files are queued for the
+      // storage cleanup sweep (`blob.gc` deletes them after the retention period).
+      const runCounts = await deleteRunsCascade(tx, runIds, 'channel_deleted');
 
-      if (stageExecutionIds.length) {
-        await tx
-          .delete(stageAttempt)
-          .where(inArray(stageAttempt.stageExecutionId, stageExecutionIds));
-        await tx.delete(stageItem).where(inArray(stageItem.stageExecutionId, stageExecutionIds));
-      }
-      if (runIds.length) {
-        await tx.delete(stageExecution).where(inArray(stageExecution.runId, runIds));
-      }
-      if (runIds.length) await tx.delete(artifact).where(inArray(artifact.runId, runIds));
+      const otherFiles = await tx
+        .delete(blob)
+        .where(
+          or(
+            characterIds.length ? inArray(blob.characterId, characterIds) : undefined,
+            assetBlobIds.length ? inArray(blob.id, assetBlobIds) : undefined,
+          ) ?? sql`false`,
+        )
+        .returning({ objectKey: blob.objectKey });
+      await queueStorageOrphans(
+        tx,
+        otherFiles.map((file) => file.objectKey),
+        'channel_deleted',
+      );
 
-      if (runIds.length) await tx.delete(blob).where(inArray(blob.runId, runIds));
-      if (characterIds.length) await tx.delete(blob).where(inArray(blob.characterId, characterIds));
-      if (assetBlobIds.length) await tx.delete(blob).where(inArray(blob.id, assetBlobIds));
-
-      if (runIds.length) await tx.delete(run).where(inArray(run.id, runIds));
       if (characterIds.length) {
         await tx.delete(character).where(inArray(character.id, characterIds));
       }
@@ -253,8 +219,8 @@ export class ChannelService {
         runCount: runIds.length,
         blueprintCount: blueprintIds.length,
         characterCount: characterIds.length,
-        artifactCount: artifactIds.length,
-        stageExecutionCount: stageExecutionIds.length,
+        artifactCount: runCounts.artifactCount,
+        stageExecutionCount: runCounts.stageExecutionCount,
         assetCount: assetBlobIds.length,
       };
     });

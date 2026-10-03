@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { ConflictException, Inject, Injectable, Logger } from '@nestjs/common';
 import { and, eq, isNull } from 'drizzle-orm';
 import { Probe, type AssetFileDto, type CreateAssetDto } from '@reelcraft/shared';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
@@ -9,6 +9,7 @@ import { objectKey } from '../storage/object-key';
 import { EngineConfig } from '../config/engine-config';
 import { WorkspaceService } from '../storage/workspace.service';
 import { MediaProbeService } from '../artifact/media-probe.service';
+import { queueStorageOrphans } from '../artifact/storage-orphans';
 
 /**
  * §3.3 — reusable channel material with a lifetime longer than a run.
@@ -42,6 +43,19 @@ export class AssetService {
 
   async create(channelId: string, dto: CreateAssetDto) {
     const ownerId = await this.requireChannelOwner(channelId);
+    const [taken] = await this.db
+      .select({ id: asset.id })
+      .from(asset)
+      .where(and(eq(asset.channelId, channelId), eq(asset.name, dto.name), isNull(asset.deletedAt)))
+      .limit(1);
+    if (taken) {
+      // The file was already uploaded; nothing will reference it.
+      await queueStorageOrphans(this.db, [dto.objectKey], 'upload_rejected');
+      throw new ConflictException({
+        code: 'asset_name_taken',
+        message: `An asset named "${dto.name}" already exists in this channel`,
+      });
+    }
     const stat = await this.storage.stat(dto.objectKey);
     const probe = dto.kind.startsWith('media.')
       ? await this.workspaces.withWorkspace(dto.blobId, async (workspace) =>
@@ -88,7 +102,7 @@ export class AssetService {
       .select({ asset, bytes: blob.bytes, mime: blob.mime, probe: blob.probe })
       .from(asset)
       .innerJoin(blob, eq(asset.blobId, blob.id))
-      .where(and(eq(asset.channelId, channelId), isNull(blob.deletedAt)));
+      .where(and(eq(asset.channelId, channelId), isNull(asset.deletedAt), isNull(blob.deletedAt)));
     return rows.map((r) => ({ ...r.asset, file: this.toFileDto(r.bytes, r.mime, r.probe) }));
   }
 
@@ -116,19 +130,22 @@ export class AssetService {
     };
   }
 
-  /** Soft-delete via `blob.deletedAt` rather than removing the `asset` row —
-   * §4.5's pattern, though assets are channel-scoped and never collected by
-   * the run-scoped retention sweep, so this is a direct delete-marking, not
-   * a `gc_eligible` flip. Known limitation: `asset_channel_id_name_uq`
-   * still holds the deleted row's name, so re-uploading under the same name
-   * requires the deleted row to be dealt with first — acceptable for phase
-   * 4's scope, revisit if this proves annoying in practice. */
+  /** Soft-delete: `asset.deletedAt` frees the name (the unique index only
+   * covers live assets) and `blob.deletedAt` hides the file from listings and
+   * new runs, while runs that already used it keep their own record. The file
+   * itself is queued for the storage cleanup sweep. */
   async delete(id: string): Promise<void> {
     const row = await this.get(id);
-    await this.db
-      .update(blob)
-      .set({ deletedAt: new Date().toISOString() })
-      .where(eq(blob.id, row.blobId));
+    const deletedAt = new Date().toISOString();
+    await this.db.transaction(async (tx) => {
+      await tx.update(asset).set({ deletedAt }).where(eq(asset.id, id));
+      const [file] = await tx
+        .update(blob)
+        .set({ deletedAt })
+        .where(eq(blob.id, row.blobId))
+        .returning({ objectKey: blob.objectKey });
+      if (file) await queueStorageOrphans(tx, [file.objectKey], 'asset_deleted');
+    });
     this.logger.log({ channelId: row.channelId, assetId: id, blobId: row.blobId }, 'asset deleted');
   }
 

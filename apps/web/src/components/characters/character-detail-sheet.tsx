@@ -24,6 +24,19 @@ import {
 } from '@/components/ui/sheet';
 import { Dropzone } from '@/components/upload/dropzone';
 import { useUpload } from '@/components/upload/use-upload';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
+import { toast } from 'sonner';
+import { apiErrorMessage } from '@/lib/api-error-message';
 
 // Keep in sync with `ReferenceImage.view`'s enum in packages/shared/src/character.ts —
 // importing the Zod schema itself as a value breaks Vite's production build (the
@@ -190,6 +203,17 @@ export function CharacterDetailSheet({
     queryFn: () => api.getCharacter(characterId!),
     enabled: !!characterId,
   });
+  const queryClient = useQueryClient();
+  const deleteCharacter = useMutation({
+    mutationFn: () => api.deleteCharacter(characterId!),
+    onSuccess: () => {
+      toast.success(`Character "${character.data?.name ?? ''}" deleted`);
+      void queryClient.invalidateQueries({ queryKey: ['characters', channelId] });
+      void queryClient.invalidateQueries({ queryKey: ['channel', channelId] });
+      onOpenChange(false);
+    },
+    onError: (error) => toast.error(apiErrorMessage(error, 'Could not delete the character.')),
+  });
 
   return (
     <Sheet open={characterId !== null} onOpenChange={onOpenChange}>
@@ -221,6 +245,31 @@ export function CharacterDetailSheet({
             </div>
           )}
           {characterId && <AddReference characterId={characterId} channelId={channelId} />}
+          {character.data && (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="outline" className="self-start text-destructive">
+                  Delete character
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Delete {character.data.name}?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    The character and its reference images are removed from this channel. Past runs
+                    keep the copy they used. Blueprints that use this character must choose another
+                    one before they can run again.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={() => deleteCharacter.mutate()}>
+                    Delete character
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )}
         </div>
       </SheetContent>
     </Sheet>

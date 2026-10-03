@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { ApiError } from '@/api/client';
+import { apiErrorMessage } from '@/lib/api-error-message';
 import { sha256Hex } from '@/lib/sha256';
 
 export type UploadStatus = 'idle' | 'hashing' | 'uploading' | 'confirming' | 'done' | 'error';
@@ -51,7 +51,7 @@ export function useUpload<TConfirmResult>(opts: {
         return result;
       } catch (err) {
         setStatus('error');
-        setError(err instanceof ApiError ? err.message : (err as Error).message);
+        setError(apiErrorMessage(err, (err as Error).message || 'Upload failed'));
         throw err;
       }
     },

@@ -15,8 +15,20 @@ export function buildCronShellFunctions(
   computeJobs?: ComputeJobService,
 ) {
   const blobGc = client.createFunction({ id: 'blob.gc' }, { cron: '0 * * * *' }, async () => {
-    if (blobs) await blobs.collectEligible();
+    if (!blobs) return;
+    await blobs.collectEligible();
+    await blobs.collectOrphans();
   });
+
+  // Daily: files left in storage by channels and characters deleted before
+  // their deletes queued them (see BlobService.queueOrphanedFolders).
+  const orphanScan = client.createFunction(
+    { id: 'storage.orphan-scan' },
+    { cron: '23 4 * * *' },
+    async () => {
+      if (blobs) await blobs.queueOrphanedFolders();
+    },
+  );
 
   const jobReaper = client.createFunction(
     { id: 'compute-job.reap' },
@@ -26,5 +38,5 @@ export function buildCronShellFunctions(
     },
   );
 
-  return [blobGc, jobReaper];
+  return [blobGc, orphanScan, jobReaper];
 }

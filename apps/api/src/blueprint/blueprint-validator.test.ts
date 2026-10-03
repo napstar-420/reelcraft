@@ -211,11 +211,52 @@ describe('BlueprintValidatorService', () => {
       charactersById: new Map([
         [
           'char-1',
-          { channelId: 'channel-1', readiness: 'ready', referenceBlobIds: new Set(['ref-1']) },
+          {
+            channelId: 'channel-1',
+            readiness: 'ready',
+            referenceBlobIds: new Set(['ref-1']),
+            deleted: false,
+          },
         ],
       ]),
     });
     expect(issues.filter((issue) => issue.severity === 'error')).toEqual([]);
+  });
+
+  it('rejects a role whose Character was deleted', () => {
+    const validator = makeValidator({ 'text.generate': withManyImageReferences });
+    const issues = validator.validate({
+      graph: [stage({ key: 'a', slots: { references: { from: 'role', roleKey: 'host' } } })],
+      inputs: [],
+      roles: [
+        {
+          key: 'host',
+          label: 'Host',
+          required: true,
+          characterId: 'char-1',
+          referenceBlobIds: ['ref-1'],
+        },
+      ],
+      blueprintChannelId: 'channel-1',
+      charactersById: new Map([
+        [
+          'char-1',
+          {
+            channelId: 'channel-1',
+            readiness: 'ready',
+            referenceBlobIds: new Set(['ref-1']),
+            deleted: true,
+          },
+        ],
+      ]),
+    });
+    expect(issues).toContainEqual(
+      expect.objectContaining({
+        path: 'roles.host',
+        message: expect.stringMatching(/was deleted/),
+        severity: 'error',
+      }),
+    );
   });
 
   it('rejects a Character role in a single-image slot before a run can spend', () => {
@@ -237,7 +278,12 @@ describe('BlueprintValidatorService', () => {
       charactersById: new Map([
         [
           'char-1',
-          { channelId: 'channel-1', readiness: 'ready', referenceBlobIds: new Set(['ref-1']) },
+          {
+            channelId: 'channel-1',
+            readiness: 'ready',
+            referenceBlobIds: new Set(['ref-1']),
+            deleted: false,
+          },
         ],
       ]),
     });
@@ -264,7 +310,12 @@ describe('BlueprintValidatorService', () => {
         charactersById: new Map([
           [
             'char-1',
-            { channelId: 'channel-1', readiness: 'ready', referenceBlobIds: new Set(['ref-1']) },
+            {
+              channelId: 'channel-1',
+              readiness: 'ready',
+              referenceBlobIds: new Set(['ref-1']),
+              deleted: false,
+            },
           ],
         ]),
       });

@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -53,6 +54,11 @@ export class BlueprintController {
     @Body(new ZodValidationPipe(UpdateBlueprintDto)) dto: UpdateBlueprintDto,
   ) {
     return this.blueprints.update(id, dto);
+  }
+
+  @Delete(':id')
+  async remove(@Param('id') id: string) {
+    await this.blueprints.delete(id);
   }
 
   @Post(':id/versions')

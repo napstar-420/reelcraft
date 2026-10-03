@@ -1,4 +1,4 @@
-import { ConflictException, Inject, Injectable, Logger } from '@nestjs/common';
+import { ConflictException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { and, desc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import type {
   ConfigLayer,
@@ -8,7 +8,17 @@ import type {
   VersionBump,
 } from '@reelcraft/shared';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
-import { asset, blob, blueprint, blueprintVersion, character, channel } from '../db/schema/index';
+import {
+  asset,
+  blob,
+  blueprint,
+  blueprintVersion,
+  character,
+  channel,
+  run,
+} from '../db/schema/index';
+import { deleteRunsCascade } from '../run/run-cascade';
+import { queueStorageOrphans } from '../artifact/storage-orphans';
 import { ulid } from '../common/ulid';
 import { BlueprintValidatorService } from './blueprint-validator.service';
 import { collectAssetIds, roleRefsOf } from './collect-asset-refs';
@@ -145,13 +155,64 @@ export class BlueprintService {
     return this.getBlueprint(id);
   }
 
+  /** Permanently deletes a blueprint with all its versions and runs (and
+   * any blueprint-scoped characters). Refuses while one of its runs is still
+   * in progress. Files are queued for the storage cleanup sweep. */
+  async delete(id: string): Promise<void> {
+    await this.getBlueprint(id);
+    const versionIds = (
+      await this.db
+        .select({ id: blueprintVersion.id })
+        .from(blueprintVersion)
+        .where(eq(blueprintVersion.blueprintId, id))
+    ).map((row) => row.id);
+    const runRows = versionIds.length
+      ? await this.db
+          .select({ id: run.id, endedAt: run.endedAt })
+          .from(run)
+          .where(inArray(run.blueprintVersionId, versionIds))
+      : [];
+    const open = runRows.filter((row) => row.endedAt === null).length;
+    if (open > 0) {
+      throw new ConflictException(
+        `This blueprint has ${open} run(s) still in progress; cancel them or wait for them to finish before deleting it.`,
+      );
+    }
+    await this.db.transaction(async (tx) => {
+      await deleteRunsCascade(
+        tx,
+        runRows.map((row) => row.id),
+        'blueprint_deleted',
+      );
+      const characterIds = (
+        await tx.select({ id: character.id }).from(character).where(eq(character.blueprintId, id))
+      ).map((row) => row.id);
+      if (characterIds.length) {
+        const files = await tx
+          .delete(blob)
+          .where(inArray(blob.characterId, characterIds))
+          .returning({ objectKey: blob.objectKey });
+        await queueStorageOrphans(
+          tx,
+          files.map((file) => file.objectKey),
+          'blueprint_deleted',
+        );
+        await tx.delete(character).where(inArray(character.id, characterIds));
+      }
+      await tx.update(blueprint).set({ currentVersionId: null }).where(eq(blueprint.id, id));
+      await tx.delete(blueprintVersion).where(eq(blueprintVersion.blueprintId, id));
+      await tx.delete(blueprint).where(eq(blueprint.id, id));
+    });
+    this.logger.log({ blueprintId: id, runCount: runRows.length }, 'blueprint deleted');
+  }
+
   async getBlueprint(id: string) {
     const [row] = await this.db
       .select({ blueprint, ...this.runStatsSelection() })
       .from(blueprint)
       .where(eq(blueprint.id, id))
       .limit(1);
-    if (!row) throw new Error(`Blueprint ${id} not found`);
+    if (!row) throw new NotFoundException(`Blueprint ${id} not found`);
     return { ...row.blueprint, runCount: row.runCount, latestPosterBlobId: row.latestPosterBlobId };
   }
 
@@ -286,11 +347,18 @@ export class BlueprintService {
   }
 
   async listVersions(blueprintId: string) {
-    return this.db
-      .select()
+    const rows = await this.db
+      .select({
+        version: blueprintVersion,
+        runCount: sql<number>`(
+          select count(*)::int from run r
+          where r.blueprint_version_id = blueprint_version.id and not r.dry_run
+        )`.as('run_count'),
+      })
       .from(blueprintVersion)
       .where(and(eq(blueprintVersion.blueprintId, blueprintId), eq(blueprintVersion.draft, false)))
       .orderBy(desc(blueprintVersion.major), desc(blueprintVersion.minor));
+    return rows.map((row) => ({ ...row.version, runCount: row.runCount }));
   }
 
   async setWorkingDraft(id: string, workingDraft: CreateBlueprintVersionDto | null) {
@@ -334,6 +402,7 @@ export class BlueprintService {
         channelId: character.channelId,
         readiness: character.readiness,
         referenceSet: character.referenceSet,
+        deletedAt: character.deletedAt,
       })
       .from(character)
       .where(and(inArray(character.id, ids), eq(character.scope, 'channel')));
@@ -343,6 +412,7 @@ export class BlueprintService {
         {
           channelId: row.channelId ?? '',
           readiness: row.readiness,
+          deleted: row.deletedAt !== null,
           referenceBlobIds: new Set(
             (row.referenceSet as Array<{ blobId: string }>).map((ref) => ref.blobId),
           ),
