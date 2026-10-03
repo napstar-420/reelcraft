@@ -42,14 +42,14 @@ A run you want to delete along with its blueprint or channel must be finished or
 
 ## Which buttons when
 
-| The run is…                       | You can                                                   |
-| --------------------------------- | --------------------------------------------------------- |
-| Running                           | Pause, Cancel, Raise budget                               |
-| Paused Manual                     | Resume, Cancel, Raise budget                              |
-| Paused Budget                     | Raise budget (continues), Resume, Retry a stage, Cancel   |
-| Paused Approval or Paused Input   | Do what it asks, Retry a stage, Cancel, Raise budget      |
-| Failed                            | Resume, Retry a stage, Raise budget, Cancel               |
-| Completed                         | Retry a stage, Rerun                                      |
-| Cancelled                         | Rerun                                                     |
+| The run is…                     | You can                                                 |
+| ------------------------------- | ------------------------------------------------------- |
+| Running                         | Pause, Cancel, Raise budget                             |
+| Paused Manual                   | Resume, Cancel, Raise budget                            |
+| Paused Budget                   | Raise budget (continues), Resume, Retry a stage, Cancel |
+| Paused Approval or Paused Input | Do what it asks, Retry a stage, Cancel, Raise budget    |
+| Failed                          | Resume, Retry a stage, Raise budget, Cancel             |
+| Completed                       | Retry a stage, Rerun                                    |
+| Cancelled                       | Rerun                                                   |
 
 See [Run statuses](../reference/run-statuses.md).

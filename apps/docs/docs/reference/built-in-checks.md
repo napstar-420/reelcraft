@@ -10,19 +10,19 @@ A **path** says where in the output to look: a field name, or fields separated b
 `scene.narration`. Leave it empty to check the whole output. Text checks read the text of a `text` output,
 or the words spoken in a **Generate Speech** output, without needing a path.
 
-Settings marked *required* must be filled in. A `min` or `max` left empty isn't checked.
+Settings marked _required_ must be filled in. A `min` or `max` left empty isn't checked.
 
-| Check            | What it tests                                                          | Settings                                |
-| ---------------- | ---------------------------------------------------------------------- | --------------------------------------- |
-| `non_empty`      | A value is not empty: text that isn't blank, a list with items, an object with fields | `path`                  |
-| `word_count`     | The number of words in some text                                       | `path`, `min`, `max`                    |
-| `regex_match`    | Some text matches a pattern                                            | `pattern` (required), `flags`, `path`   |
-| `regex_absent`   | Some text does **not** match a pattern                                 | `pattern` (required), `flags`, `path`   |
-| `numeric_range`  | A number is within a range                                             | `path` (required), `min`, `max`         |
-| `array_length`   | A list has a number of items within a range                            | `path` (required), `min`, `max`         |
-| `duration_range` | The length of a video or audio file, in seconds                        | `min`, `max`                            |
-| `media_format`   | The file's container and/or codec                                      | `container`, `codec`                    |
-| `wpm`            | Words spoken per minute, in a **Generate Speech** output               | `min`, `max`                            |
+| Check            | What it tests                                                                         | Settings                              |
+| ---------------- | ------------------------------------------------------------------------------------- | ------------------------------------- |
+| `non_empty`      | A value is not empty: text that isn't blank, a list with items, an object with fields | `path`                                |
+| `word_count`     | The number of words in some text                                                      | `path`, `min`, `max`                  |
+| `regex_match`    | Some text matches a pattern                                                           | `pattern` (required), `flags`, `path` |
+| `regex_absent`   | Some text does **not** match a pattern                                                | `pattern` (required), `flags`, `path` |
+| `numeric_range`  | A number is within a range                                                            | `path` (required), `min`, `max`       |
+| `array_length`   | A list has a number of items within a range                                           | `path` (required), `min`, `max`       |
+| `duration_range` | The length of a video or audio file, in seconds                                       | `min`, `max`                          |
+| `media_format`   | The file's container and/or codec                                                     | `container`, `codec`                  |
+| `wpm`            | Words spoken per minute, in a **Generate Speech** output                              | `min`, `max`                          |
 
 ## Details
 
@@ -32,8 +32,8 @@ Settings marked *required* must be filled in. A `min` or `max` left empty isn't 
 the usual single letters, up to 5, such as `i` to ignore capital letters. The text must be text: a pattern
 on a number fails. A pattern that isn't valid is an authoring error.
 
-**`duration_range`** and **`media_format`** read the file's technical details. They fail with *artifact has
-no probe metadata* if Reelcraft couldn't read the file.
+**`duration_range`** and **`media_format`** read the file's technical details. They fail with _artifact has
+no probe metadata_ if Reelcraft couldn't read the file.
 
 **`wpm`** divides the spoken words by the audio's length in minutes. It only works on **Generate Speech**
 outputs.

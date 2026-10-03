@@ -14,9 +14,11 @@ start it. The page updates by itself while the run is going.
   - **Pause** or **Resume**.
   - **Cancel run**, with a confirmation: **Cancel this run? This stops the run permanently and can't be
     undone.**
-  See [Pause, resume and cancel](./pause-resume-cancel.md).
+    See [Pause, resume and cancel](./pause-resume-cancel.md).
 
 If an action can't be done, a red **Action failed** box says why.
+
+![A completed run: its stages, with View output and Attempts buttons](/img/usage/run-page.png)
 
 ## The budget bar
 

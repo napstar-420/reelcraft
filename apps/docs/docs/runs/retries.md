@@ -22,9 +22,9 @@ Use this when one stage failed, or when you don't like what it made and want to 
 
    | Choice                              | What it does                                                    |
    | ----------------------------------- | --------------------------------------------------------------- |
-   | **With stages that use its output** | Redoes this stage and the later stages that use its output       |
-   | **Only this stage**                 | Redoes just this stage. Later stages keep their current outputs  |
-   | **This and all later stages**       | Redoes this stage and every stage after it                       |
+   | **With stages that use its output** | Redoes this stage and the later stages that use its output      |
+   | **Only this stage**                 | Redoes just this stage. Later stages keep their current outputs |
+   | **This and all later stages**       | Redoes this stage and every stage after it                      |
 
 3. A summary appears, with the **Affected stages**, what is **Already spent** and the **Estimated rerun
    cost**. Select **Confirm re-run**, or **Cancel**.

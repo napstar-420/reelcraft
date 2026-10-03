@@ -47,8 +47,8 @@ The run's status becomes **Paused Budget**, and the page says which limit was re
 For a run that is paused for budget, the run **continues straight away**: you don't need to press
 **Resume**. Raising a stage cap only changes that stage, for this run only. The blueprint isn't touched.
 
-If the new amount isn't higher, you're told: *The new budget cap ($…) must be higher than the current cap
-($…)*.
+If the new amount isn't higher, you're told: _The new budget cap ($…) must be higher than the current cap
+($…)_.
 
 You can also raise the budget on a run that is still running, waiting for you, or failed. There the
 button reads **Raise budget**, and it only widens the cap. A **Completed** or **Cancelled** run can't be
@@ -57,7 +57,7 @@ changed.
 ## When a stage's quality control runs out of money
 
 If a stage's judge would go over its quality control cap, the stage doesn't pause: it **fails** with
-*qc_budget_exhausted*. Raise the cap in the blueprint and rerun the stage.
+_qc_budget_exhausted_. Raise the cap in the blueprint and rerun the stage.
 
 ## What things cost
 

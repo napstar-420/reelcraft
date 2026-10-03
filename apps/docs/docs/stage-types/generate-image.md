@@ -37,11 +37,13 @@ Paid per image by the provider, or your ChatGPT plan for Codex and ChatGPT. Fake
 ## Tips
 
 - To make one image per scene, [iterate](../blueprints/iterate-conditions-approval.md#iterate) over
-  the scenes and use `{{ item.visual }}` in the prompt.
+  the scenes, bind a context entry named `visual` to **item** with the path `visual`, and use
+  `{{ visual }}` in the prompt.
 - For the same character in every image, bind a [role](../channels/characters.md) to `references`.
 - [Quality control](../blueprints/quality-control.md) can look at the image: the judge sees the
   picture itself.
 
 ## Example
 
-"Scene image": iterates over `scenes`, with the Template `{{ item.visual }}, vertical, cinematic lighting`, and `references` bound to the host character's role.
+"Scene image": iterates over the `scenes` memory key, with a context entry `visual` bound to the item's
+`visual` field, the Template `{{ visual }}, vertical, cinematic lighting`, and `references` bound to the host character's role.

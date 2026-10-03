@@ -12,15 +12,20 @@ condition**, **+ add human approval** and **+ add iterate**. A stage can have an
 repeats, such as one image and one video clip per scene of a script.
 
 1. Open the stage and select **+ add iterate**.
-2. Under **Over**, choose where the list comes from. It must be a list, for example a `scenes` field
-   of a previous stage's `data` output. See [Connecting stages](./connecting-stages.md).
-3. Set the **Item alias**, the name of the current item. It starts as `item`.
-4. Optionally set **Item retry limit** and **Max items**.
+2. Under **Over**, choose where the list comes from. It must be a list. The reliable way is
+   **memory**: in the earlier stage, add a [Memory write](./connecting-stages.md#memory) whose path is
+   the list field (for example key `scenes`, path `scenes`), then choose `memory` and that key here.
+   **prev** also works when the previous stage's whole output is a list (a `data` output whose schema
+   is an array). **prev** with a path into a field isn't accepted: it shows **iterate.over does not
+   narrow to an array schema**.
+3. Optionally set **Item alias**, **Item retry limit** and **Max items**.
 
-Inside the stage, the current item is available as the alias in the prompt (`{{ item }}`,
-`{{ item.narration }}`) and in slots and context, by binding to **item**. To use the same stage's
-result for the **previous** item, for example to start a clip from the last frame of the one before,
-bind to **prevItem**. See
+Inside the stage, use the current item by **binding** to it: add a context entry (or fill a slot) and
+choose **item** as its source, with a path to the part you want. For example, a context entry named
+`visual` bound to **item** with the path `visual` can then be used in the prompt as `{{ visual }}`. The
+**Item alias** is only a name for the item; it can't be written in a prompt directly, so `{{ item }}`
+isn't available. To use the same stage's result for the **previous** item, for example to start a clip
+from the last frame of the one before, bind to **prevItem**. See
 [Connecting stages](./connecting-stages.md#paths). For the first item there is no previous item.
 
 How it runs:

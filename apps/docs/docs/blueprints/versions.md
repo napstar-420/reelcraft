@@ -61,6 +61,8 @@ The canvas shows that version, read-only, with the note **Viewing v1.1 (read-onl
 its stages to see their settings, but you can't change them. Your unsaved changes are kept, out of
 sight. Select **Back to latest** to return to them.
 
+![The Versions menu, listing v1.2 (latest), v1.1 and v1.0](/img/usage/versions-menu.png)
+
 ## Restore an older version
 
 1. Open the version from the **Versions** menu.

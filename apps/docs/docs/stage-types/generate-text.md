@@ -44,7 +44,8 @@ ChatGPT plan instead of an API bill. Fake is free.
 ## Tips
 
 - Use a `data` output with a schema when a later stage needs separate pieces, such as one scene per
-  image.
+  image. Use a `text` output when the result must go to a stage that wants text, such as
+  [Generate Speech](./generate-speech.md).
 - Add a [check](../blueprints/checks.md) such as `word_count`, then [quality
   control](../blueprints/quality-control.md) for what rules can't judge.
 - If the model can't do the task, it says so, and the stage fails with a clear message. See
@@ -52,5 +53,7 @@ ChatGPT plan instead of an API bill. Fake is free.
 
 ## Example
 
-A stage named "Write script" with a `data` output whose schema has `title` (text) and `scenes` (a
-list of objects with `narration` and `visual`). Its Template: `Write a 30-second script about {{ topic }}, in 4 scenes.` Later stages read `scenes` with a path.
+A stage named "Plan scenes" with a `data` output whose schema has `scenes`, a list of objects with a
+`visual` field. Its Template: `Plan 3 scenes for a 30-second video about {{ topic }}.` A **Memory write** saves
+`scenes` under the key `scenes`, and later stages [iterate](../blueprints/iterate-conditions-approval.md#iterate)
+over it.

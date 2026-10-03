@@ -35,15 +35,15 @@ If a provider has no available model for the stage, the box says why, for exampl
 
 ## Providers
 
-| Provider       | What it does in Reelcraft                                                        |
-| -------------- | -------------------------------------------------------------------------------- |
-| **OpenRouter** | Text and image models from many vendors, paid by use with your OpenRouter key    |
-| **fal**        | Video generation                                                                 |
-| **ElevenLabs** | Speech (voice-over)                                                              |
-| **Deepgram**   | Transcription and word timings, for Analyze Media                                |
-| **Codex**      | Text, and image and browser steps, using your ChatGPT plan. See [Connect Codex](../codex.md) |
-| **ChatGPT**    | Text and images through a ChatGPT tab in BrowserOS Neo. See [BrowserOS Neo](../browseros-neo.md) |
-| **Fake (test)** | Free placeholder results for every kind of work                                 |
+| Provider        | What it does in Reelcraft                                                                        |
+| --------------- | ------------------------------------------------------------------------------------------------ |
+| **OpenRouter**  | Text and image models from many vendors, paid by use with your OpenRouter key                    |
+| **fal**         | Video generation                                                                                 |
+| **ElevenLabs**  | Speech (voice-over)                                                                              |
+| **Deepgram**    | Transcription and word timings, for Analyze Media                                                |
+| **Codex**       | Text, and image and browser steps, using your ChatGPT plan. See [Connect Codex](../codex.md)     |
+| **ChatGPT**     | Text and images through a ChatGPT tab in BrowserOS Neo. See [BrowserOS Neo](../browseros-neo.md) |
+| **Fake (test)** | Free placeholder results for every kind of work                                                  |
 
 Which providers appear depends on what you've set up in **Settings**.
 

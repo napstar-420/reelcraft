@@ -10,6 +10,8 @@ the stage's key. **← Run** takes you back.
 It has three areas: the **Media** panel on the left, the preview and tracks in the middle, and the
 **Inspector** on the right.
 
+![The timeline editor: Media panel, preview, tracks and Inspector](/img/usage/timeline-editor.png)
+
 ## Saving and undoing
 
 Everything you change is saved automatically. The top of the page says **Saving…** and then **All changes
@@ -20,8 +22,8 @@ If the run isn't waiting for this stage any more, the editor opens as **Read onl
 
 ## Media
 
-The **Media** panel lists everything you can use: the clips, images and audio the stage was given. Select one
-to add it:
+The **Media** panel lists everything you can use: the clips, images and audio the stage was given, each
+named by its handle. Select one to add it:
 
 - images and videos go **at the end of the main video track**;
 - audio goes on an **audio track**, creating one if there isn't one, starting at the beginning.
@@ -75,5 +77,5 @@ Select an item to see its settings. Which ones depend on what it is.
 When you're done, select **Submit timeline**. Reelcraft runs the [timeline checks](./timeline-checks.md):
 
 - If they pass, the run continues.
-- If they don't, a red box lists what's wrong, for example *timeline.coverage: primary video track has gaps*,
+- If they don't, a red box lists what's wrong, for example _timeline.coverage: primary video track has gaps_,
   and you stay in the editor to fix it.

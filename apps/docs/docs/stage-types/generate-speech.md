@@ -18,9 +18,12 @@ control can use them.
 
 ## Inputs
 
-- **`text`** (required, one text value): what to say. Bind it to a text output, such as a script, or
-  to one field of a `data` output with a path. See
-  [Connecting stages](../blueprints/connecting-stages.md).
+- **`text`** (required, one text value): what to say. Bind it to the output of a stage whose output is
+  `text`, such as a script. A text field inside a `data` output can't be used here: a `text` slot only
+  accepts a `text` output, and Reelcraft shows **incompatible source: source kind "data" does not match
+  accepted kind "text"**. Have a stage write the script as `text`, and another stage plan the scenes as
+  `data` if you need both. See [Connecting stages](../blueprints/connecting-stages.md).
+  A fixed text value (**const**) and a run input of type text work too.
 
 The voice and speed come from the model and its **Params**. See
 [Models](../blueprints/models.md).
@@ -48,5 +51,5 @@ Paid by ElevenLabs, based on the amount of text.
 
 ## Example
 
-"Voice-over": `text` bound to the previous stage's `script` field, with a `wpm` check between 130 and
-170.
+"Voice-over": `text` bound to the `script` memory key, written by a stage with a `text` output, with a
+`wpm` check between 130 and 170.

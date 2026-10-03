@@ -24,13 +24,13 @@ Select **+ add input** and fill in:
 - **Required**: tick it if a run can't start without it.
 - **Accepts**: what kind of value it is:
 
-  | Accepts       | The run dialog shows             | Extra setting                                    |
-  | ------------- | -------------------------------- | ------------------------------------------------ |
-  | `text`        | A text box                       | —                                                |
-  | `data`        | A box for JSON                   | **Schema**: the shape the JSON must have         |
-  | `media.image` | A file picker for images         | **Cardinality**: `one` file or `many` files      |
-  | `media.video` | A file picker for videos         | **Cardinality**                                  |
-  | `media.audio` | A file picker for audio          | **Cardinality**                                  |
+  | Accepts       | The run dialog shows     | Extra setting                               |
+  | ------------- | ------------------------ | ------------------------------------------- |
+  | `text`        | A text box               | —                                           |
+  | `data`        | A box for JSON           | **Schema**: the shape the JSON must have    |
+  | `media.image` | A file picker for images | **Cardinality**: `one` file or `many` files |
+  | `media.video` | A file picker for videos | **Cardinality**                             |
+  | `media.audio` | A file picker for audio  | **Cardinality**                             |
 
 Select **Remove input** to delete one.
 

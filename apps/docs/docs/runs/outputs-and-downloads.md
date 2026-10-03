@@ -15,15 +15,15 @@ A stage that [iterates](../blueprints/iterate-conditions-approval.md#iterate) sh
 
 How each kind of output looks:
 
-| Output           | What you see                                                                          |
-| ---------------- | ------------------------------------------------------------------------------------- |
-| `text`           | The text, with a copy button                                                          |
+| Output           | What you see                                                                                                                     |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `text`           | The text, with a copy button                                                                                                     |
 | `data`           | A collapsible **Tree** of its fields, or the **Raw JSON**. Hover a field to copy its path, ready for a binding or a memory write |
-| `timeline`       | The **Lanes**: tracks of clips, text and captions along a time ruler, or the **Raw JSON** |
-| `media.image`    | The picture. Select it to open it full size                                           |
-| `media.video`    | A player                                                                              |
-| `media.audio`    | A player                                                                              |
-| `file.subtitles` | The first cues of the file, and a **Download** link                                   |
+| `timeline`       | The **Lanes**: tracks of clips, text and captions along a time ruler, or the **Raw JSON**                                        |
+| `media.image`    | The picture. Select it to open it full size                                                                                      |
+| `media.video`    | A player                                                                                                                         |
+| `media.audio`    | A player                                                                                                                         |
+| `file.subtitles` | The first cues of the file, and a **Download** link                                                                              |
 
 Images, video and audio have a **Download** button.
 

@@ -11,15 +11,15 @@ with the first one.
 
 ## Output kinds
 
-| Kind             | What it is                                                   | Made by                                                      |
-| ---------------- | ------------------------------------------------------------ | ------------------------------------------------------------ |
-| `text`           | Plain text, such as a script                                 | Generate Text, Human Input                                   |
-| `data`           | A structured JSON object that follows a schema you describe  | Generate Text, Human Input, Analyze Media, Automate Browser  |
-| `timeline`       | An edit plan: which clips, text and captions go where        | Generate Text, Human Timeline Edit                           |
-| `media.image`    | An image                                                     | Generate Image                                               |
-| `media.video`    | A video                                                      | Generate Video, Concatenate Video, Render Timeline           |
-| `media.audio`    | Audio, such as speech                                        | Generate Speech                                              |
-| `file.subtitles` | A subtitle file (SRT or VTT)                                 | Export Subtitles                                             |
+| Kind             | What it is                                                  | Made by                                                     |
+| ---------------- | ----------------------------------------------------------- | ----------------------------------------------------------- |
+| `text`           | Plain text, such as a script                                | Generate Text, Human Input                                  |
+| `data`           | A structured JSON object that follows a schema you describe | Generate Text, Human Input, Analyze Media, Automate Browser |
+| `timeline`       | An edit plan: which clips, text and captions go where       | Generate Text, Human Timeline Edit                          |
+| `media.image`    | An image                                                    | Generate Image                                              |
+| `media.video`    | A video                                                     | Generate Video, Concatenate Video, Render Timeline          |
+| `media.audio`    | Audio, such as speech                                       | Generate Speech                                             |
+| `file.subtitles` | A subtitle file (SRT or VTT)                                | Export Subtitles                                            |
 
 You can't pick a kind a stage type doesn't allow. If a saved blueprint has one, it shows **capability
 "…" does not allow output kind "…"**.

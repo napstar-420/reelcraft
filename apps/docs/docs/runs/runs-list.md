@@ -25,15 +25,15 @@ If nothing matches, the list says **No runs match these filters.** With no runs 
 
 Each row shows:
 
-| Column               | What it is                                                   |
-| -------------------- | ------------------------------------------------------------ |
-| **Run**              | The first 8 characters of the run's id                       |
-| **Channel**          | Its channel                                                  |
-| **Blueprint**        | The blueprint and version, such as `Launch video v1.3`       |
-| **State**            | Its [status](../reference/run-statuses.md)                   |
-| **Spent / Budget**   | What it has spent, out of its budget cap                     |
-| **Started**          | When it began                                                |
-| **Duration**         | How long it has run, or took                                 |
+| Column             | What it is                                             |
+| ------------------ | ------------------------------------------------------ |
+| **Run**            | The first 8 characters of the run's id                 |
+| **Channel**        | Its channel                                            |
+| **Blueprint**      | The blueprint and version, such as `Launch video v1.3` |
+| **State**          | Its [status](../reference/run-statuses.md)             |
+| **Spent / Budget** | What it has spent, out of its budget cap               |
+| **Started**        | When it began                                          |
+| **Duration**       | How long it has run, or took                           |
 
 Select a row to open its [run page](./run-page.md).
 

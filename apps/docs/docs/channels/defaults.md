@@ -11,6 +11,8 @@ description: Set a default model, retries, a spending cap and the video format o
   under **Blueprint settings** on the blueprint's canvas. Like any other blueprint change, they're
   part of the version you save.
 
+![The Defaults section of the channel dialog](/img/usage/channel-defaults.png)
+
 ## What you can set
 
 ### Default models
@@ -18,13 +20,13 @@ description: Set a default model, retries, a spending cap and the video format o
 Pick a model for each kind of work. A stage that doesn't pick its own model uses the default for
 its kind:
 
-| Default              | Used by stages of this type                                     |
-| -------------------- | --------------------------------------------------------------- |
-| **Text**             | [Generate Text](../stage-types/generate-text.md)                |
-| **Images**           | [Generate Image](../stage-types/generate-image.md)              |
-| **Video**            | [Generate Video](../stage-types/generate-video.md)              |
-| **Speech and audio** | [Generate Speech](../stage-types/generate-speech.md)            |
-| **Media analysis**   | [Analyze Media](../stage-types/analyze-media.md)                |
+| Default              | Used by stages of this type                          |
+| -------------------- | ---------------------------------------------------- |
+| **Text**             | [Generate Text](../stage-types/generate-text.md)     |
+| **Images**           | [Generate Image](../stage-types/generate-image.md)   |
+| **Video**            | [Generate Video](../stage-types/generate-video.md)   |
+| **Speech and audio** | [Generate Speech](../stage-types/generate-speech.md) |
+| **Media analysis**   | [Analyze Media](../stage-types/analyze-media.md)     |
 
 Select a kind to open its picker, then choose a **Provider** and **Model**. The row shows
 **Not set** until you pick a provider. To clear a default, set its provider back to **Select a
@@ -73,8 +75,8 @@ A stage that's left empty shows what it will get. In the stage inspector:
 
 - an empty **Retries** box shows the inherited value, for example **Default (2)**;
 - an empty **Stage cap (USD)** box shows the inherited cap, or **No cap**;
-- a stage without a model says which default it will use, for example *No model set here, so it
-  uses the default: OpenRouter · …*.
+- a stage without a model says which default it will use, for example _No model set here, so it
+  uses the default: OpenRouter · …_.
 
 :::tip
 

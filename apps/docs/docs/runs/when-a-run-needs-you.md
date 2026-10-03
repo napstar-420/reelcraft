@@ -6,11 +6,13 @@ description: Approve or reject an output, provide an input, or edit a timeline w
 Some runs stop and wait for you. Their status says so, and the stage waiting shows a button. A run
 costs nothing while it waits, and you can leave it as long as you like.
 
-| The run says        | Because                                   | What to do                          |
-| ------------------- | ----------------------------------------- | ----------------------------------- |
-| **Paused Approval** | A stage with [human approval](../blueprints/iterate-conditions-approval.md#human-approval) finished | **Review output** |
-| **Paused Input**    | A [Human Input](../stage-types/human-input.md) or [Human Timeline Edit](../stage-types/human-timeline-edit.md) stage is waiting | **Provide input** or **Open editor** |
-| **Paused Budget**   | The next step would go over a limit        | See [Budget and costs](./budget-and-costs.md) |
+| The run says        | Because                                                                                                                         | What to do                                    |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
+| **Paused Approval** | A stage with [human approval](../blueprints/iterate-conditions-approval.md#human-approval) finished                             | **Review output**                             |
+| **Paused Input**    | A [Human Input](../stage-types/human-input.md) or [Human Timeline Edit](../stage-types/human-timeline-edit.md) stage is waiting | **Provide input** or **Open editor**          |
+| **Paused Budget**   | The next step would go over a limit                                                                                             | See [Budget and costs](./budget-and-costs.md) |
+
+![A run in Paused Input, with the Open editor button on its stage](/img/usage/run-needs-you.png)
 
 ## Review output
 
@@ -25,7 +27,7 @@ costs nothing while it waits, and you can leave it as long as you like.
 
 Rejecting redoes the work, so Reelcraft shows you what it will cost first.
 
-1. Optionally write a **Rejection note**: *Explain what should change on the next attempt*. It's added to
+1. Optionally write a **Rejection note**: _Explain what should change on the next attempt_. It's added to
    the next attempt's prompt as feedback, so be specific. See
    [Prompts](../blueprints/prompts.md#when-an-attempt-is-rejected).
 2. Select **Reject**. A summary shows **Confirm rejection**, with the **Affected stages** and the

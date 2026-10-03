@@ -51,5 +51,6 @@ first.
 
 ## Example
 
-"Scene clip": iterates over `scenes`, Template `{{ item.visual }}`, `startFrame` bound to the scene
+"Scene clip": iterates over the `scenes` memory key, with a context entry `visual` bound to the item's
+`visual` field, Template `{{ visual }}`, `startFrame` bound to the scene
 image and Human approval in `item` mode.

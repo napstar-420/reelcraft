@@ -33,6 +33,7 @@ The canvas is where you build the blueprint. From top to bottom:
   - whether the blueprint is **Runnable** or **Not runnable yet**.
 
   See [Versions](./versions.md).
+
 - **Blueprint settings**: the run cap, inputs, the character role and defaults. See
   [Blueprint settings](./settings.md).
 - **Stages**:
@@ -41,6 +42,8 @@ The canvas is where you build the blueprint. From top to bottom:
   - the menu to add a stage;
   - the **run panel**, for trying stages out (see [Canvas runs](../runs/canvas-runs.md)).
 - **Save & run**: save a version, start a run or a dry run.
+
+![The blueprint canvas: the stage list, the diagram and the run panel](/img/usage/blueprint-canvas.png)
 
 ### Add a stage
 

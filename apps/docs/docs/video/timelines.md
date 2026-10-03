@@ -20,12 +20,12 @@ timelines made in the editor. The canvas can also have a background colour.
 A timeline has **tracks**, like layers. Each track holds **items** that start at a time and last for a
 while.
 
-| Track type  | Holds                                                    |
-| ----------- | -------------------------------------------------------- |
-| **video**   | Clips and images that make up the main picture           |
-| **audio**   | Voice-over and music                                     |
-| **overlay** | Titles and other text, and clips or images drawn on top  |
-| **captions**| Captions that follow the speech                          |
+| Track type   | Holds                                                   |
+| ------------ | ------------------------------------------------------- |
+| **video**    | Clips and images that make up the main picture          |
+| **audio**    | Voice-over and music                                    |
+| **overlay**  | Titles and other text, and clips or images drawn on top |
+| **captions** | Captions that follow the speech                         |
 
 The items:
 
@@ -55,12 +55,12 @@ A media item can have:
 
 Text and captions look the way their **style** says. Reelcraft has four:
 
-| Style                    | Used for | Looks like                                                            |
-| ------------------------ | -------- | --------------------------------------------------------------------- |
-| **Title**                | Text     | Large centred white text with a soft shadow                           |
-| **Minimal Lower Third**  | Text     | A dark band with left-aligned text, for names and labels              |
-| **Bold Pop**             | Captions | Large, heavy capitals with a thick black outline                      |
-| **Clean Captions**       | Captions | Compact, readable text on a translucent dark background               |
+| Style                   | Used for | Looks like                                               |
+| ----------------------- | -------- | -------------------------------------------------------- |
+| **Title**               | Text     | Large centred white text with a soft shadow              |
+| **Minimal Lower Third** | Text     | A dark band with left-aligned text, for names and labels |
+| **Bold Pop**            | Captions | Large, heavy capitals with a thick black outline         |
+| **Clean Captions**      | Captions | Compact, readable text on a translucent dark background  |
 
 A text item also has a **position**: **Top**, **Center** or **Bottom**.
 

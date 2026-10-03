@@ -10,6 +10,8 @@ top, and next to the setting they're about.
 
 Hover over the **ⓘ** next to any setting for a short explanation.
 
+![The stage inspector, open on the Basics section](/img/usage/stage-inspector.png)
+
 ## Basics
 
 - **Key**: the stage's id, such as `stage-3`. It's set when the stage is added and can't be
@@ -85,11 +87,11 @@ See [Iterate, conditions and approval](./iterate-conditions-approval.md).
 
 A stage can try again for different reasons, and each reason has its own limit:
 
-| Why it tries again                                     | The limit                                         | Set in                              |
-| ------------------------------------------------------ | ------------------------------------------------- | ----------------------------------- |
-| It **crashed**: the provider failed or timed out       | **Retries** (or **Item retry limit** per item)    | Execution (retry, budget), Iterate  |
-| Its output **failed a check**                          | **Max check attempts**                            | Checks & Quality control            |
-| **Quality control** scored it too low                  | **Max attempts**                                  | Quality control                     |
+| Why it tries again                               | The limit                                      | Set in                             |
+| ------------------------------------------------ | ---------------------------------------------- | ---------------------------------- |
+| It **crashed**: the provider failed or timed out | **Retries** (or **Item retry limit** per item) | Execution (retry, budget), Iterate |
+| Its output **failed a check**                    | **Max check attempts**                         | Checks & Quality control           |
+| **Quality control** scored it too low            | **Max attempts**                               | Quality control                    |
 
 When the output fails a check or quality control, the stage makes a new output with the reasons it
 failed added to its prompt, so the next attempt can fix them. A crash simply tries the same request

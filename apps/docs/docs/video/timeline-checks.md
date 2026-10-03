@@ -7,15 +7,15 @@ Whenever a stage makes a timeline, or you submit one from the [editor](./timelin
 runs seven checks on it. They catch mistakes before the video is rendered, which saves time and money. All
 seven are shown for every timeline, so you can see which pass.
 
-| Check                       | Fails when                                                              |
-| --------------------------- | ----------------------------------------------------------------------- |
-| `timeline.schema`           | The timeline isn't valid at all, for example a missing field or an item on the wrong kind of track |
-| `timeline.handles_resolve`  | An item refers to a file that doesn't exist, was replaced or was deleted |
-| `timeline.styles_exist`     | A text or captions item uses a style Reelcraft doesn't have             |
-| `timeline.source_bounds`    | An item asks for more of a file than the file has                       |
-| `timeline.coverage`         | The main video track has gaps with nothing in them                      |
-| `timeline.av_alignment`     | The audio and the video end at noticeably different times               |
-| `timeline.canvas_match`     | The timeline's shape doesn't match the aspect ratio you asked for       |
+| Check                      | Fails when                                                                                         |
+| -------------------------- | -------------------------------------------------------------------------------------------------- |
+| `timeline.schema`          | The timeline isn't valid at all, for example a missing field or an item on the wrong kind of track |
+| `timeline.handles_resolve` | An item refers to a file that doesn't exist, was replaced or was deleted                           |
+| `timeline.styles_exist`    | A text or captions item uses a style Reelcraft doesn't have                                        |
+| `timeline.source_bounds`   | An item asks for more of a file than the file has                                                  |
+| `timeline.coverage`        | The main video track has gaps with nothing in them                                                 |
+| `timeline.av_alignment`    | The audio and the video end at noticeably different times                                          |
+| `timeline.canvas_match`    | The timeline's shape doesn't match the aspect ratio you asked for                                  |
 
 If the schema check fails, only it is reported, since the others can't be worked out.
 

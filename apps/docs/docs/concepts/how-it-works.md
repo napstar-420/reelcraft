@@ -52,17 +52,17 @@ Channel
 
 ## What you control, and where
 
-| You want to…                                | Look at                                                   |
-| ------------------------------------------- | --------------------------------------------------------- |
-| Choose the AI model for each kind of work   | [Defaults](../channels/defaults.md) and [Models](../blueprints/models.md) |
-| Write instructions for an AI model          | [Prompts](../blueprints/prompts.md)                       |
-| Feed one stage with another's output        | [Connecting stages](../blueprints/connecting-stages.md)   |
-| Repeat a stage for every scene              | [Iterate](../blueprints/iterate-conditions-approval.md#iterate) |
-| Catch bad results automatically             | [Checks](../blueprints/checks.md) and [Quality control](../blueprints/quality-control.md) |
-| Review results yourself                     | [Human approval](../blueprints/iterate-conditions-approval.md#human-approval) |
-| Keep the same face in every image           | [Characters](../channels/characters.md)                   |
-| Put clips, music and captions together      | [Assembly](../video/assembly.md)                          |
-| Limit what a run can spend                  | [Budget and costs](../runs/budget-and-costs.md)           |
-| Try things out for free                     | [Dry runs](../runs/dry-runs.md)                           |
+| You want to…                              | Look at                                                                                   |
+| ----------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Choose the AI model for each kind of work | [Defaults](../channels/defaults.md) and [Models](../blueprints/models.md)                 |
+| Write instructions for an AI model        | [Prompts](../blueprints/prompts.md)                                                       |
+| Feed one stage with another's output      | [Connecting stages](../blueprints/connecting-stages.md)                                   |
+| Repeat a stage for every scene            | [Iterate](../blueprints/iterate-conditions-approval.md#iterate)                           |
+| Catch bad results automatically           | [Checks](../blueprints/checks.md) and [Quality control](../blueprints/quality-control.md) |
+| Review results yourself                   | [Human approval](../blueprints/iterate-conditions-approval.md#human-approval)             |
+| Keep the same face in every image         | [Characters](../channels/characters.md)                                                   |
+| Put clips, music and captions together    | [Assembly](../video/assembly.md)                                                          |
+| Limit what a run can spend                | [Budget and costs](../runs/budget-and-costs.md)                                           |
+| Try things out for free                   | [Dry runs](../runs/dry-runs.md)                                                           |
 
 New words are explained in the [Glossary](./glossary.md).

@@ -25,16 +25,20 @@ Two channels never share any of these.
 If the channel can't be saved, the reason is shown above the **Create** button and the form stays
 open, so you can fix it and try again.
 
+![The Channels page with one channel card](/img/usage/channels-list.png)
+
 ## The channel page
 
 Select a channel's card to open its page. Its tabs show how many of each item it has:
 
-| Tab            | What's there                                                           |
-| -------------- | ---------------------------------------------------------------------- |
-| **Blueprints** | The recipes for your videos. See [Blueprints](../blueprints/blueprints.md). |
+| Tab            | What's there                                                                     |
+| -------------- | -------------------------------------------------------------------------------- |
+| **Blueprints** | The recipes for your videos. See [Blueprints](../blueprints/blueprints.md).      |
 | **Characters** | People or mascots that appear in your videos. See [Characters](./characters.md). |
-| **Assets**     | Images, video and audio you upload to reuse. See [Assets](./assets.md). |
-| **Runs**       | Every run of this channel's blueprints. See [Runs list](../runs/runs-list.md). |
+| **Assets**     | Images, video and audio you upload to reuse. See [Assets](./assets.md).          |
+| **Runs**       | Every run of this channel's blueprints. See [Runs list](../runs/runs-list.md).   |
+
+![A channel's page, with the Blueprints, Characters, Assets and Runs tabs](/img/usage/channel-page.png)
 
 ## Edit a channel
 

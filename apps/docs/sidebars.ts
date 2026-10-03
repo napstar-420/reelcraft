@@ -25,12 +25,7 @@ const sidebars: SidebarsConfig = {
       type: 'category',
       label: 'Channels',
       collapsed: true,
-      items: [
-        'channels/channels',
-        'channels/defaults',
-        'channels/characters',
-        'channels/assets',
-      ],
+      items: ['channels/channels', 'channels/defaults', 'channels/characters', 'channels/assets'],
     },
     {
       type: 'category',

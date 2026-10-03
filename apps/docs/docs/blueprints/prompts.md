@@ -33,7 +33,7 @@ You can use any of these names:
 
 - a **slot** of the stage, by its name;
 - a **context** key you added (see [Connecting stages](./connecting-stages.md));
-- the **item alias** (by default `item`) on a stage that iterates;
+- on a stage that iterates, a context entry you've bound to **item**, for example `{{ visual }}`;
 - `priorCritique`, described below.
 
 To reach into a value that has fields, use dots and positions: `{{ idea.title }}`,
@@ -73,7 +73,7 @@ Then Reelcraft puts them there and doesn't add them anywhere else. On the first 
 ## Output instructions
 
 A **Generate Text** stage with a `text` or `data` output also has **Output instructions** under
-**Output & memory writes**: up to 4,000 characters of guidance about the *content and style* of the
+**Output & memory writes**: up to 4,000 characters of guidance about the _content and style_ of the
 result, such as "Use a concise, professional tone." They work like the Template, with the same
 `{{ }}` values. For a `data` output, the [schema](./outputs.md) decides the structure and these
 instructions guide what goes in it.
@@ -102,13 +102,13 @@ with an error instead of a made-up result. Reelcraft fails the stage with a mess
 
 The codes are:
 
-| Code               | Meaning                                                    |
-| ------------------ | ---------------------------------------------------------- |
-| `input_missing`    | A required input or file wasn't provided or was empty      |
-| `input_unreadable` | A file couldn't be read                                    |
-| `input_mismatch`   | The inputs don't contain what the task needs               |
-| `task_impossible`  | The instructions are contradictory or can't be done        |
-| `refused`          | The model declined the task                                |
+| Code               | Meaning                                               |
+| ------------------ | ----------------------------------------------------- |
+| `input_missing`    | A required input or file wasn't provided or was empty |
+| `input_unreadable` | A file couldn't be read                               |
+| `input_mismatch`   | The inputs don't contain what the task needs          |
+| `task_impossible`  | The instructions are contradictory or can't be done   |
+| `refused`          | The model declined the task                           |
 
 This isn't retried, because the same inputs would give the same answer. Fix the input or the
 instructions and run again. The call is still charged. See

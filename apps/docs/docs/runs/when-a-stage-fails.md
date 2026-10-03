@@ -13,20 +13,20 @@ Reading it is easier if you know the kinds of failure.
 
 Each attempt has an outcome:
 
-| Outcome                  | Meaning                                                                       |
-| ------------------------ | ----------------------------------------------------------------------------- |
-| **Success**              | It worked                                                                     |
-| **Awaiting Approval**    | It worked and is waiting for your review                                      |
-| **Check Failed**         | Its output failed a [check](../blueprints/checks.md)                          |
-| **Qc Failed**            | [Quality control](../blueprints/quality-control.md) scored it too low         |
-| **Qc Error**             | The quality control judge couldn't produce a score                            |
-| **Qc Budget Exhausted**  | The judge would have gone over its cap                                        |
-| **Provider Error**       | The AI service returned an error                                              |
-| **Provider Timeout**     | The AI service didn't answer in time                                          |
-| **Infra Error**          | Something went wrong inside Reelcraft                                         |
-| **Budget Blocked**       | The next step would have gone over a [budget](./budget-and-costs.md) limit    |
-| **Rejected**             | You rejected it                                                               |
-| **Cancelled**            | The run was cancelled                                                         |
+| Outcome                 | Meaning                                                                    |
+| ----------------------- | -------------------------------------------------------------------------- |
+| **Success**             | It worked                                                                  |
+| **Awaiting Approval**   | It worked and is waiting for your review                                   |
+| **Check Failed**        | Its output failed a [check](../blueprints/checks.md)                       |
+| **Qc Failed**           | [Quality control](../blueprints/quality-control.md) scored it too low      |
+| **Qc Error**            | The quality control judge couldn't produce a score                         |
+| **Qc Budget Exhausted** | The judge would have gone over its cap                                     |
+| **Provider Error**      | The AI service returned an error                                           |
+| **Provider Timeout**    | The AI service didn't answer in time                                       |
+| **Infra Error**         | Something went wrong inside Reelcraft                                      |
+| **Budget Blocked**      | The next step would have gone over a [budget](./budget-and-costs.md) limit |
+| **Rejected**            | You rejected it                                                            |
+| **Cancelled**           | The run was cancelled                                                      |
 
 An attempt that failed isn't always the end: Reelcraft tries again, within the limits described in
 [Stages](../blueprints/stages.md#three-kinds-of-try-again), and the stage only fails once those run out.

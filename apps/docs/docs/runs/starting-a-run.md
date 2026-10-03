@@ -32,6 +32,8 @@ inputs and budget you give it. You can start as many runs as you like from the s
 Reelcraft checks your entries first, and shows what to fix under each box, for example **Topic is
 required.** or **Script must contain valid JSON.**
 
+![The Run blueprint dialog](/img/usage/run-dialog.png)
+
 The run page opens as soon as the run starts. See [Run page](./run-page.md).
 
 :::note A real run costs real money
@@ -53,8 +55,8 @@ Codex, and may consume provider usage.**
 ## If starting fails
 
 If a file upload or the start itself fails, the run is kept, in the **Created** state, and the dialog
-shows **Run saved for retry**: *Run … remains in CREATED state. Retrying continues that run and will
-not create a duplicate.* Fix the cause, such as your connection, and select **Retry upload & run** (or
+shows **Run saved for retry**: _Run … remains in CREATED state. Retrying continues that run and will
+not create a duplicate._ Fix the cause, such as your connection, and select **Retry upload & run** (or
 **Retry start**).
 
 If the run can't start at all, the reason appears under **Run could not start**.

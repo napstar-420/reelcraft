@@ -25,17 +25,17 @@ Choose the check under **Select a builtin check…**, then fill in its settings.
 **path**: where in the output to look. Leave the path empty to check the whole output. See
 [Paths](./connecting-stages.md#paths).
 
-| Check            | What it tests                                                       | Settings                         |
-| ---------------- | ------------------------------------------------------------------- | -------------------------------- |
-| `non_empty`      | The value isn't empty: not blank text, an empty list or an empty object | `path` (optional)            |
-| `word_count`     | The number of words in some text                                    | `path`, `min`, `max`             |
-| `regex_match`    | The text matches a pattern                                          | `pattern`, `flags`, `path`       |
-| `regex_absent`   | The text does **not** match a pattern, such as a banned word        | `pattern`, `flags`, `path`       |
-| `numeric_range`  | A number is between a minimum and a maximum                         | `path` (required), `min`, `max`  |
-| `array_length`   | A list has between a minimum and a maximum number of items          | `path` (required), `min`, `max`  |
-| `duration_range` | A video's or audio's length, in seconds                             | `min`, `max`                     |
-| `media_format`   | A media file's container (such as `mov,mp4,m4a,3gp,3g2,mj2`) and/or codec (such as `h264`) | `container`, `codec` |
-| `wpm`            | Speaking pace: the words of a **Generate Speech** output spoken per minute | `min`, `max`              |
+| Check            | What it tests                                                                              | Settings                        |
+| ---------------- | ------------------------------------------------------------------------------------------ | ------------------------------- |
+| `non_empty`      | The value isn't empty: not blank text, an empty list or an empty object                    | `path` (optional)               |
+| `word_count`     | The number of words in some text                                                           | `path`, `min`, `max`            |
+| `regex_match`    | The text matches a pattern                                                                 | `pattern`, `flags`, `path`      |
+| `regex_absent`   | The text does **not** match a pattern, such as a banned word                               | `pattern`, `flags`, `path`      |
+| `numeric_range`  | A number is between a minimum and a maximum                                                | `path` (required), `min`, `max` |
+| `array_length`   | A list has between a minimum and a maximum number of items                                 | `path` (required), `min`, `max` |
+| `duration_range` | A video's or audio's length, in seconds                                                    | `min`, `max`                    |
+| `media_format`   | A media file's container (such as `mov,mp4,m4a,3gp,3g2,mj2`) and/or codec (such as `h264`) | `container`, `codec`            |
+| `wpm`            | Speaking pace: the words of a **Generate Speech** output spoken per minute                 | `min`, `max`                    |
 
 A `min` or `max` you leave empty isn't checked. See [Built-in checks](../reference/built-in-checks.md)
 for each one in detail.
