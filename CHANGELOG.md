@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.3.0](https://github.com/napstar-420/reelcraft/compare/v0.2.0...v0.3.0) (2026-10-03)
+
+
+### Features
+
+* channel and blueprint defaults editors, with a default model per kind of work ([#61](https://github.com/napstar-420/reelcraft/issues/61)) ([cd150c0](https://github.com/napstar-420/reelcraft/commit/cd150c01c89e9f27735ee5cd47c254c0183a2a04))
+* delete and archive in the channel library, version history, and storage cleanup ([#58](https://github.com/napstar-420/reelcraft/issues/58)) ([867a883](https://github.com/napstar-420/reelcraft/commit/867a883cf7187b502e5ec45819d9f72d3b08b22b))
+* install guide for Docker Desktop users on GitHub Pages ([#52](https://github.com/napstar-420/reelcraft/issues/52)) ([184a145](https://github.com/napstar-420/reelcraft/commit/184a1453b831119d6695eadc16734d00e6a01f9b))
+* quality control can hear audio, a working wpm check, Analyze Media operation, and Deepgram costs by length ([#59](https://github.com/napstar-420/reelcraft/issues/59)) ([904228e](https://github.com/napstar-420/reelcraft/commit/904228ec53d03645b67d01a25130e02acc6a5034))
+* runs that can be unblocked, rerun, dry-run with inputs and skip disabled stages ([#57](https://github.com/napstar-420/reelcraft/issues/57)) ([8185b2f](https://github.com/napstar-420/reelcraft/commit/8185b2fecbb0ca6253657fde59a66eab3b625251))
+* settings page for provider keys, BrowserOS Neo and Connect Codex ([#50](https://github.com/napstar-420/reelcraft/issues/50)) ([a8946d6](https://github.com/napstar-420/reelcraft/commit/a8946d6453272f27df4f9f376ee8182f99c92ac9))
+* timeline styles render as designed, real Ken Burns, and an editor with full clip controls, drag and trim ([#60](https://github.com/napstar-420/reelcraft/issues/60)) ([2b808f1](https://github.com/napstar-420/reelcraft/commit/2b808f14d18c48e22f035a032bf19874de2a1d12))
+
+
+### Bug Fixes
+
+* clearer errors, safer actions and readable labels across the app ([#56](https://github.com/napstar-420/reelcraft/issues/56)) ([917733c](https://github.com/napstar-420/reelcraft/commit/917733c390d8de4db05a8789c57a1354d0d646ec))
+
 ## [0.2.0](https://github.com/napstar-420/reelcraft/compare/v0.1.1...v0.2.0) (2026-10-02)
 
 
