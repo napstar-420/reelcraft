@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { InngestTestEngine, type InngestTestEngine as InngestTestEngineNs } from '@inngest/test';
-import { eq } from 'drizzle-orm';
-import type { StageDef } from '@reelcraft/shared';
+import { and, eq } from 'drizzle-orm';
+import type { InputDef, StageDef } from '@reelcraft/shared';
 import { ChannelService } from '../../src/channel/channel.service';
 import { BlueprintService } from '../../src/blueprint/blueprint.service';
 import { RunService } from '../../src/run/run.service';
@@ -60,7 +60,10 @@ describe('run.orchestrate (real Inngest steps, mocked stage.execute, e2e)', () =
     }
   });
 
-  async function setupRun(graph: StageDef[]) {
+  async function setupRun(
+    graph: StageDef[],
+    options: { inputs?: Record<string, unknown>; inputDefs?: InputDef[] } = {},
+  ) {
     const channels = testApp.app.get(ChannelService);
     const blueprints = testApp.app.get(BlueprintService);
     const runs = testApp.app.get(RunService);
@@ -76,7 +79,7 @@ describe('run.orchestrate (real Inngest steps, mocked stage.execute, e2e)', () =
     );
     const version = await blueprints.createVersion(blueprintId, {
       graph,
-      inputs: [],
+      inputs: options.inputDefs ?? [],
       roles: [],
       defaults: {},
       budget: { runCapUsd: 10 },
@@ -84,7 +87,7 @@ describe('run.orchestrate (real Inngest steps, mocked stage.execute, e2e)', () =
     return runs.create({
       channelId: channel.id,
       blueprintVersionId: version.id,
-      inputs: {},
+      inputs: options.inputs ?? {},
       roleBindings: {},
       rerunStageKeys: [],
       budgetCapUsd: 10,
@@ -116,6 +119,55 @@ describe('run.orchestrate (real Inngest steps, mocked stage.execute, e2e)', () =
 
     const [row] = await testDb.db.select().from(run).where(eq(run.id, createdRun.id));
     expect(row?.state).toBe('COMPLETED');
+  });
+
+  describe('enabledWhen (§16)', () => {
+    const lengthInput: InputDef = {
+      key: 'length',
+      label: 'Length',
+      required: true,
+      accepts: { kind: 'text' },
+    };
+    const graph = [
+      stage('intro'),
+      { ...stage('long-part'), enabledWhen: { input: 'length', equals: 'long' } },
+      stage('outro'),
+    ];
+
+    it.each([
+      ['short', ['intro', 'outro'], 'skipped'],
+      ['long', ['intro', 'long-part', 'outro'], 'pending'],
+    ] as const)('with length=%s runs %j', async (length, expectedInvoked, longPartState) => {
+      const createdRun = await setupRun(graph, {
+        inputs: { length },
+        inputDefs: [lengthInput],
+      });
+      const invoked: string[] = [];
+
+      const { result, error } = await orchestrate(
+        createdRun.id,
+        graph.map((s) => ({
+          id: `invoke-stage-${s.key}`,
+          handler: () => {
+            invoked.push(s.key);
+            return { outcome: 'passed', artifactId: `a-${s.key}` };
+          },
+        })),
+      );
+
+      expect(error).toBeUndefined();
+      expect(result).toEqual({ state: 'COMPLETED' });
+      expect(invoked).toEqual(expectedInvoked);
+      const [longPart] = await testDb.db
+        .select()
+        .from(stageExecution)
+        .where(
+          and(eq(stageExecution.stageKey, 'long-part'), eq(stageExecution.runId, createdRun.id)),
+        );
+      // A run invoked through the mocked stage step never updates the
+      // execution itself, so only the skipped case changes its state here.
+      expect(longPart?.state).toBe(longPartState);
+    });
   });
 
   it('invokes stages strictly in blueprint graph order, not alphabetically', async () => {

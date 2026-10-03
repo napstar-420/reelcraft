@@ -89,6 +89,8 @@ export function RunPage() {
         blueprintVersionId: run!.blueprintVersionId,
         budgetCapUsd: Number(run!.budgetCapUsd),
         inputs: run!.inputs,
+        // Roles come from the blueprint version: starting the new run takes a
+        // fresh snapshot of each character as it is now.
         roleBindings: {},
         rerunStageKeys: [],
       });
@@ -123,10 +125,8 @@ export function RunPage() {
   const isStageRunning = (stageKey: string | null) =>
     run.stageExecutions.some((se) => se.stageKey === stageKey && se.state === 'running');
   const isTerminal = ['COMPLETED', 'FAILED', 'CANCELLED'].includes(run.state);
-  // Role bindings become immutable Character snapshots once a run starts —
-  // reusing them for a new run isn't safe, so rerun is only offered when
-  // the blueprint has none to begin with.
-  const canRerun = isTerminal && Object.keys(run.roleBindings).length === 0;
+  const canRerun = isTerminal;
+  const usesCharacter = Object.keys(run.roleBindings).length > 0;
 
   return (
     <section className="flex flex-col gap-6">
@@ -139,6 +139,10 @@ export function RunPage() {
       <RaiseBudgetDialog
         runId={run.id}
         currentBudgetCapUsd={budgetCapUsd}
+        budgetBlock={run.budgetBlock}
+        stageLabel={
+          run.stageExecutions.find((se) => se.stageKey === run.budgetBlock?.stageKey)?.label
+        }
         open={raiseBudgetOpen}
         onOpenChange={setRaiseBudgetOpen}
       />
@@ -152,6 +156,8 @@ export function RunPage() {
       <SubmitFormInputDialog
         runId={run.id}
         stageKey={formInputStageKey}
+        stageLabel={run.stageExecutions.find((se) => se.stageKey === formInputStageKey)?.label}
+        output={run.stageExecutions.find((se) => se.stageKey === formInputStageKey)?.output}
         open={formInputStageKey !== null}
         onOpenChange={(open) => !open && setFormInputStageKey(null)}
       />
@@ -180,15 +186,32 @@ export function RunPage() {
           </div>
           <div className="flex items-center gap-2">
             {canRerun ? (
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={rerun.isPending}
-                onClick={() => rerun.mutate()}
-              >
-                {rerun.isPending ? <Loader2 className="animate-spin" /> : <RotateCcw />}
-                Rerun
-              </Button>
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button size="sm" variant="outline" disabled={rerun.isPending}>
+                    {rerun.isPending ? <Loader2 className="animate-spin" /> : <RotateCcw />}
+                    Rerun
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Start a new run?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      A new run starts from the beginning with the same blueprint version, inputs
+                      and budget cap.
+                      {usesCharacter
+                        ? ' It uses the character as it is now, including any changes made since this run.'
+                        : ''}
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction onClick={() => rerun.mutate()}>
+                      Start new run
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             ) : null}
             {canPause ? (
               <Button
@@ -238,12 +261,12 @@ export function RunPage() {
           </div>
         </div>
 
-        {cancelRun.isError || pauseRun.isError || resumeRun.isError ? (
+        {cancelRun.isError || pauseRun.isError || resumeRun.isError || rerun.isError ? (
           <Alert variant="destructive">
             <AlertTitle>Action failed</AlertTitle>
             <AlertDescription>
               {describeRunActionError(
-                cancelRun.error ?? pauseRun.error ?? resumeRun.error,
+                cancelRun.error ?? pauseRun.error ?? resumeRun.error ?? rerun.error,
                 'The action could not be completed.',
               )}
             </AlertDescription>
@@ -262,6 +285,16 @@ export function RunPage() {
           <p className="text-sm text-muted-foreground">
             ${spentUsd.toFixed(2)} spent of ${budgetCapUsd.toFixed(2)} budget
           </p>
+          {run.budgetBlock ? (
+            <p className="text-sm text-amber-700 dark:text-amber-400">
+              {run.budgetBlock.scope === 'stage'
+                ? `Paused: stage "${
+                    run.stageExecutions.find((se) => se.stageKey === run.budgetBlock!.stageKey)
+                      ?.label ?? run.budgetBlock.stageKey
+                  }" reached its own Stage cap ($${Number(run.budgetBlock.stageCapUsd ?? 0).toFixed(2)}). Raise it to continue.`
+                : 'Paused: the next step would go over the run budget. Raise the budget to continue.'}
+            </p>
+          ) : null}
         </div>
       </div>
 

@@ -2,7 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
 import type { RunState } from '@reelcraft/shared';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
-import { run } from '../db/schema/index';
+import { run, stageExecution } from '../db/schema/index';
 import { InProcessRunEvents } from './run-events';
 
 @Injectable()
@@ -32,6 +32,16 @@ export class RunStateService {
 
   async setCursor(runId: string, stageKey: string | null): Promise<void> {
     await this.db.update(run).set({ cursorStageKey: stageKey }).where(eq(run.id, runId));
+  }
+
+  /** §16 — a stage whose "Enabled when" condition doesn't match the run's
+   * input is marked `skipped` and never executed. */
+  async skipStage(runId: string, stageExecutionId: string, stageKey: string): Promise<void> {
+    await this.db
+      .update(stageExecution)
+      .set({ state: 'skipped', endedAt: new Date().toISOString() })
+      .where(eq(stageExecution.id, stageExecutionId));
+    this.logger.log({ runId, stageKey }, 'stage skipped: enabledWhen did not match');
   }
 
   /** §12.4 — manual-pause runnability check: read without locking, since the

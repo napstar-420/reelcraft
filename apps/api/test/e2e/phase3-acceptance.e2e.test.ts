@@ -193,9 +193,9 @@ describe('phase 3 acceptance: reserve, cap-hit, PAUSED_BUDGET, raise, resume, se
       );
     expect(expensiveOutputEntriesBeforeRaise).toHaveLength(0); // the blocked reserve wrote nothing
 
-    // 2. Raise the cap, then resume.
+    // 2. Raise the cap: a run paused for budget resumes in the same request
+    // (a second, explicit resume is no longer needed).
     await runs.raiseBudget(createdRun.id, 10);
-    await runs.resume(createdRun.id);
 
     const [resumedRow] = await testDb.db.select().from(run).where(eq(run.id, createdRun.id));
     expect(resumedRow?.state).toBe('PAUSED_BUDGET');

@@ -1,11 +1,12 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, ConflictException, Inject, Injectable, Logger } from '@nestjs/common';
 import { and, eq, inArray, lt, notExists, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
-import type { LedgerEntryCategory } from '@reelcraft/shared';
+import type { ConfigLayer, LedgerEntryCategory } from '@reelcraft/shared';
 import { ulid } from '../common/ulid';
 import { fromUsd, toUsd } from '../common/money';
 import { DRIZZLE, type Db, type Tx } from '../db/drizzle.provider';
 import { ledgerEntry, run, stageAttempt } from '../db/schema/index';
+import { mergeLayer } from '../run-config/layer-merge';
 
 export type ReserveResult =
   | { ok: true; reservationId: string }
@@ -376,15 +377,11 @@ export class LedgerService {
   }): Promise<{ budgetCapUsd: number }> {
     return this.db.transaction(async (tx) => {
       const runRow = await this.lockRunRow(tx, params.runId);
-      if (runRow.state === 'COMPLETED' || runRow.state === 'CANCELLED') {
-        throw new Error(
-          `LedgerService.raiseBudget: run ${params.runId} is ${runRow.state}, budget cannot be raised`,
-        );
-      }
+      this.assertCapRaisable(params.runId, runRow.state);
       const currentCapUsd = toUsd(runRow.budgetCapUsd);
       if (params.newCapUsd <= currentCapUsd) {
-        throw new Error(
-          `LedgerService.raiseBudget: newCapUsd (${params.newCapUsd}) must exceed the current cap (${currentCapUsd})`,
+        throw new BadRequestException(
+          `The new budget cap ($${params.newCapUsd}) must be higher than the current cap ($${currentCapUsd})`,
         );
       }
       await tx
@@ -397,6 +394,62 @@ export class LedgerService {
       );
       return { budgetCapUsd: params.newCapUsd };
     });
+  }
+
+  /** Raises one stage's own `budget.stageCapUsd` for this run only, as a run
+   * override (`run.overrides[stageKey]`), the same layer `PATCH
+   * /runs/:id/overrides` writes but without invalidating the stage's
+   * outputs: a cap change never changes what a stage produces. This is how
+   * a run paused by a stage cap (`stage_cap_exceeded`) gets unblocked. */
+  async raiseStageCap(params: {
+    runId: string;
+    stageKey: string;
+    newCapUsd: number;
+  }): Promise<{ stageCapUsd: number }> {
+    return this.db.transaction(async (tx) => {
+      const runRow = await this.lockRunRow(tx, params.runId);
+      this.assertCapRaisable(params.runId, runRow.state);
+      const [configRow] = await tx
+        .select({ resolvedConfig: run.resolvedConfig, overrides: run.overrides })
+        .from(run)
+        .where(eq(run.id, params.runId));
+      const resolved = (configRow?.resolvedConfig ?? {}) as Record<string, ConfigLayer>;
+      const overrides = (configRow?.overrides ?? {}) as Record<string, ConfigLayer>;
+      if (!(params.stageKey in resolved)) {
+        throw new BadRequestException(`Run ${params.runId} has no stage ${params.stageKey}`);
+      }
+      const current =
+        mergeLayer(resolved[params.stageKey] ?? {}, overrides[params.stageKey] ?? {}).budget
+          ?.stageCapUsd ?? undefined;
+      if (current !== undefined && params.newCapUsd <= current) {
+        throw new BadRequestException(
+          `The new stage cap ($${params.newCapUsd}) must be higher than the current stage cap ($${current})`,
+        );
+      }
+      const next = {
+        ...overrides,
+        [params.stageKey]: mergeLayer(overrides[params.stageKey] ?? {}, {
+          budget: { stageCapUsd: params.newCapUsd },
+        }),
+      };
+      await tx.update(run).set({ overrides: next }).where(eq(run.id, params.runId));
+      this.logger.log(
+        {
+          runId: params.runId,
+          stageKey: params.stageKey,
+          fromCapUsd: current,
+          toCapUsd: params.newCapUsd,
+        },
+        'stage budget cap raised',
+      );
+      return { stageCapUsd: params.newCapUsd };
+    });
+  }
+
+  private assertCapRaisable(runId: string, state: string) {
+    if (state === 'COMPLETED' || state === 'CANCELLED') {
+      throw new ConflictException(`Run ${runId} is ${state}, so its budget can't be raised`);
+    }
   }
 
   /** §10.4 — cumulative confirmed QC spend for `(run, stage)`, read by
