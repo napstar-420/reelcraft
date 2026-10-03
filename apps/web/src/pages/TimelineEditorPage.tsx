@@ -1,18 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Player } from '@remotion/player';
+import { Player, type PlayerRef } from '@remotion/player';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import type { Timeline, TimelineItem, TimelineResource, TimingMap } from '@reelcraft/shared';
+import type { Timeline, TimelineResource, TimelineStyle, TimingMap } from '@reelcraft/shared';
 import { TimelineComposition, timelineDurationSec } from '@reelcraft/timeline-composition';
-import { cn } from 'cn';
 import { Button } from '../components/ui/button';
-import { Input } from '../components/ui/input';
-import { Label } from '../components/ui/label';
 import { ScrollArea } from '../components/ui/scroll-area';
-import { Slider } from '../components/ui/slider';
+import { ItemInspector } from '../components/timeline-editor/item-inspector';
+import { TrackLanes, type Selection } from '../components/timeline-editor/track-lanes';
 import { api } from '../api/client';
-import { appendResource, describeSubmitError, type SubmitErrorView } from './timeline-editor.logic';
-
-type Selection = { trackIndex: number; itemIndex: number };
+import {
+  appendResource,
+  describeSubmitError,
+  resourceDurationSec,
+  type SubmitErrorView,
+} from './timeline-editor.logic';
 
 const clone = (timeline: Timeline): Timeline => structuredClone(timeline);
 
@@ -22,6 +23,8 @@ export function TimelineEditorPage() {
   const [timeline, setTimeline] = useState<Timeline>();
   const [resources, setResources] = useState<TimelineResource[]>([]);
   const [timingMaps, setTimingMaps] = useState<Record<string, TimingMap>>({});
+  const [styles, setStyles] = useState<TimelineStyle[]>([]);
+  const playerRef = useRef<PlayerRef>(null);
   const [selection, setSelection] = useState<Selection>();
   const [status, setStatus] = useState('Loading editor…');
   const [readOnly, setReadOnly] = useState(false);
@@ -37,6 +40,7 @@ export function TimelineEditorPage() {
     setTimeline(session.timeline);
     setResources(session.resources);
     setTimingMaps(session.timingMaps);
+    setStyles(session.styles);
     latestRevision.current = session.draftRevision;
     setReadOnly(session.readOnly);
     setStatus(session.readOnly ? 'Read only' : 'All changes saved');
@@ -79,6 +83,17 @@ export function TimelineEditorPage() {
 
   const resourceMap = useMemo(
     () => Object.fromEntries(resources.map((resource) => [resource.handle, resource.url])),
+    [resources],
+  );
+  const styleTokens = useMemo(
+    () =>
+      Object.fromEntries(
+        styles.flatMap((style) => (style.tokens ? [[style.id, style.tokens]] : [])),
+      ),
+    [styles],
+  );
+  const resourceByHandle = useMemo(
+    () => new Map(resources.map((resource) => [resource.handle, resource])),
     [resources],
   );
   const selected = selection && timeline?.tracks[selection.trackIndex]?.items[selection.itemIndex];
@@ -212,10 +227,11 @@ export function TimelineEditorPage() {
                       overlay = { id: `overlay-${Date.now()}`, type: 'overlay', items: [] };
                       next.tracks.push(overlay);
                     }
+                    const frame = playerRef.current?.getCurrentFrame() ?? 0;
                     overlay.items.push({
                       type: 'text',
                       text: 'New title',
-                      startSec: 0,
+                      startSec: Math.round((frame / next.canvas.fps) * 10) / 10,
                       durationSec: 3,
                       styleId: 'text.title',
                       position: 'center',
@@ -235,8 +251,9 @@ export function TimelineEditorPage() {
             style={{ maxHeight: '58vh' }}
           >
             <Player
+              ref={playerRef}
               component={TimelineComposition}
-              inputProps={{ timeline, resources: resourceMap, timingMaps }}
+              inputProps={{ timeline, resources: resourceMap, timingMaps, styles: styleTokens }}
               durationInFrames={Math.max(1, Math.ceil(duration * timeline.canvas.fps))}
               compositionWidth={timeline.canvas.width}
               compositionHeight={timeline.canvas.height}
@@ -248,48 +265,26 @@ export function TimelineEditorPage() {
               }}
             />
           </div>
-          <div className="flex justify-between text-xs text-muted-foreground">
-            0s <span>{duration.toFixed(1)}s</span>
-          </div>
-          <div className="mt-2 border-t">
-            {timeline.tracks.map((track, trackIndex) => (
-              <div className="grid min-h-[54px] grid-cols-[78px_1fr] border-b" key={track.id}>
-                <strong className="px-1.5 py-2.5 text-[0.72rem] font-medium tracking-wide text-muted-foreground uppercase">
-                  {track.type}
-                </strong>
-                <div className="relative my-[7px] rounded-sm bg-muted/50">
-                  {track.items.map((item, itemIndex) => {
-                    const start = item.type === 'captions' ? (item.startSec ?? 0) : item.startSec;
-                    const itemDuration =
-                      item.type === 'captions' ? duration - start : (item.durationSec ?? 1);
-                    const isSelected =
-                      selection?.trackIndex === trackIndex && selection.itemIndex === itemIndex;
-                    return (
-                      <button
-                        type="button"
-                        key={`${track.id}-${itemIndex}`}
-                        className={cn(
-                          'absolute top-0.5 bottom-0.5 overflow-hidden rounded-sm border border-primary/40 bg-primary/20 px-1.5 text-left text-[0.72rem] text-ellipsis whitespace-nowrap text-foreground',
-                          isSelected && 'ring-2 ring-primary',
-                        )}
-                        style={{
-                          left: `${(start / duration) * 100}%`,
-                          width: `${Math.max(3, (itemDuration / duration) * 100)}%`,
-                        }}
-                        onClick={() => setSelection({ trackIndex, itemIndex })}
-                      >
-                        {item.type === 'media'
-                          ? item.handle
-                          : item.type === 'text'
-                            ? item.text
-                            : 'Captions'}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
-          </div>
+          <TrackLanes
+            timeline={timeline}
+            durationSec={duration}
+            selection={selection}
+            readOnly={readOnly}
+            sourceSecOf={(handle) => resourceDurationSec(resourceByHandle.get(handle))}
+            onSelect={setSelection}
+            onTiming={(sel, timing) =>
+              commit((next) => {
+                const item = next.tracks[sel.trackIndex]?.items[sel.itemIndex];
+                if (!item || item.type === 'captions') return;
+                item.startSec = timing.startSec;
+                item.durationSec = timing.durationSec;
+                if (item.type === 'media') {
+                  if (timing.trimInSec > 0) item.trimInSec = timing.trimInSec;
+                  else delete item.trimInSec;
+                }
+              })
+            }
+          />
         </section>
 
         <aside className="min-h-0 border-l bg-muted/30">
@@ -299,118 +294,33 @@ export function TimelineEditorPage() {
                 Inspector
               </h2>
               {!selected || !selection ? (
-                <p className="text-sm text-muted-foreground">Select a clip or title.</p>
+                <p className="text-sm text-muted-foreground">
+                  Select a clip, title or captions. Drag a clip to move it, or drag its edges to
+                  trim it.
+                </p>
               ) : (
-                <>
-                  {selected.type === 'text' ? (
-                    <div className="space-y-1.5">
-                      <Label htmlFor="clip-text">Text</Label>
-                      <Input
-                        id="clip-text"
-                        value={selected.text}
-                        onChange={(event) =>
-                          commit((next) => {
-                            const item = next.tracks[selection.trackIndex]!.items[
-                              selection.itemIndex
-                            ] as Extract<TimelineItem, { type: 'text' }>;
-                            item.text = event.target.value;
-                          })
-                        }
-                      />
-                    </div>
-                  ) : null}
-                  {selected.type !== 'captions' ? (
-                    <>
-                      <div className="space-y-1.5">
-                        <Label htmlFor="clip-start">Start (seconds)</Label>
-                        <Input
-                          id="clip-start"
-                          type="number"
-                          min="0"
-                          step="0.1"
-                          value={selected.startSec}
-                          onChange={(event) =>
-                            commit((next) => {
-                              const item =
-                                next.tracks[selection.trackIndex]!.items[selection.itemIndex];
-                              if (item && item.type !== 'captions')
-                                item.startSec = Number(event.target.value);
-                            })
-                          }
-                        />
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label htmlFor="clip-duration">Duration</Label>
-                        <Input
-                          id="clip-duration"
-                          type="number"
-                          min="0.1"
-                          step="0.1"
-                          value={selected.durationSec ?? 1}
-                          onChange={(event) =>
-                            commit((next) => {
-                              const item =
-                                next.tracks[selection.trackIndex]!.items[selection.itemIndex];
-                              if (item && item.type !== 'captions')
-                                item.durationSec = Number(event.target.value);
-                            })
-                          }
-                        />
-                      </div>
-                    </>
-                  ) : null}
-                  {selected.type === 'media' ? (
-                    <>
-                      <div className="space-y-1.5">
-                        <Label htmlFor="clip-trim-in">Trim in</Label>
-                        <Input
-                          id="clip-trim-in"
-                          type="number"
-                          min="0"
-                          step="0.1"
-                          value={selected.trimInSec ?? 0}
-                          onChange={(event) =>
-                            commit((next) => {
-                              const item =
-                                next.tracks[selection.trackIndex]!.items[selection.itemIndex];
-                              if (item?.type === 'media')
-                                item.trimInSec = Number(event.target.value);
-                            })
-                          }
-                        />
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label>Volume</Label>
-                        <Slider
-                          value={[selected.volume ?? 1]}
-                          min={0}
-                          max={2}
-                          step={0.05}
-                          onValueChange={([value]) =>
-                            commit((next) => {
-                              const item =
-                                next.tracks[selection.trackIndex]!.items[selection.itemIndex];
-                              if (item?.type === 'media') item.volume = value;
-                            })
-                          }
-                        />
-                      </div>
-                    </>
-                  ) : null}
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    disabled={readOnly}
-                    onClick={() => {
-                      commit((next) => {
-                        next.tracks[selection.trackIndex]!.items.splice(selection.itemIndex, 1);
-                      });
-                      setSelection(undefined);
-                    }}
-                  >
-                    Delete item
-                  </Button>
-                </>
+                <ItemInspector
+                  key={`${selection.trackIndex}-${selection.itemIndex}`}
+                  item={selected}
+                  styles={styles}
+                  readOnly={readOnly}
+                  isImage={
+                    selected.type === 'media' &&
+                    resourceByHandle.get(selected.handle)?.kind === 'media.image'
+                  }
+                  update={(mutate) =>
+                    commit((next) => {
+                      const item = next.tracks[selection.trackIndex]?.items[selection.itemIndex];
+                      if (item) mutate(item);
+                    })
+                  }
+                  onDelete={() => {
+                    commit((next) => {
+                      next.tracks[selection.trackIndex]!.items.splice(selection.itemIndex, 1);
+                    });
+                    setSelection(undefined);
+                  }}
+                />
               )}
             </div>
           </ScrollArea>

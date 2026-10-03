@@ -103,3 +103,100 @@ export function appendResource(timeline: Timeline, resource: TimelineResource): 
     overflow: 'trim',
   });
 }
+
+/** The shortest a clip or title can be made by trimming. */
+export const MIN_ITEM_SEC = 0.1;
+
+type TimedItem = Exclude<Timeline['tracks'][number]['items'][number], { type: 'captions' }>;
+export type ItemTiming = { startSec: number; durationSec: number; trimInSec: number };
+
+const round = (value: number) => Math.round(value * 1000) / 1000;
+
+/** The length of a media resource from its probe, when known. */
+export function resourceDurationSec(resource: TimelineResource | undefined): number | undefined {
+  return resource ? probeDuration(resource) : undefined;
+}
+
+/** Where an item starts and ends, for the tracks view and drag maths. */
+export function itemTiming(item: TimedItem): ItemTiming {
+  return {
+    startSec: item.startSec,
+    durationSec: item.durationSec ?? 1,
+    trimInSec: item.type === 'media' ? (item.trimInSec ?? 0) : 0,
+  };
+}
+
+/** Times a dragged edge snaps to: 0 and the start and end of every other
+ * clip or title on any track. */
+export function snapTargets(
+  timeline: Timeline,
+  except: { trackIndex: number; itemIndex: number },
+): number[] {
+  const targets = new Set<number>([0]);
+  timeline.tracks.forEach((track, trackIndex) =>
+    track.items.forEach((item, itemIndex) => {
+      if (item.type === 'captions') return;
+      if (trackIndex === except.trackIndex && itemIndex === except.itemIndex) return;
+      const timing = itemTiming(item);
+      targets.add(round(timing.startSec));
+      targets.add(round(timing.startSec + timing.durationSec));
+    }),
+  );
+  return [...targets];
+}
+
+/** Snaps to the nearest target within `thresholdSec`, otherwise to 0.1 s. */
+export function snapSec(value: number, targets: number[], thresholdSec = 0.15): number {
+  let best: number | undefined;
+  for (const target of targets) {
+    if (
+      Math.abs(target - value) <= thresholdSec &&
+      (best === undefined || Math.abs(target - value) < Math.abs(best - value))
+    ) {
+      best = target;
+    }
+  }
+  return round(best ?? Math.round(value * 10) / 10);
+}
+
+/** Moving keeps the length; an item can't start before 0. */
+export function moveTo(timing: ItemTiming, startSec: number): ItemTiming {
+  return { ...timing, startSec: round(Math.max(0, startSec)) };
+}
+
+/** Dragging the left edge: the end stays put, and a media clip's trim-in
+ * moves with it (it can't go before the start of the source). */
+export function trimStartTo(timing: ItemTiming, startSec: number, isMedia: boolean): ItemTiming {
+  const end = timing.startSec + timing.durationSec;
+  let start = Math.min(startSec, end - MIN_ITEM_SEC);
+  start = Math.max(start, 0);
+  if (isMedia) start = Math.max(start, timing.startSec - timing.trimInSec);
+  const delta = start - timing.startSec;
+  return {
+    startSec: round(start),
+    durationSec: round(end - start),
+    trimInSec: isMedia ? round(timing.trimInSec + delta) : 0,
+  };
+}
+
+/** Dragging the right edge: a trimmed clip can't run past the end of its
+ * source (`sourceSec`), unless its overflow loops, freezes or speeds up. */
+export function trimEndTo(timing: ItemTiming, endSec: number, sourceSec?: number): ItemTiming {
+  let duration = Math.max(endSec - timing.startSec, MIN_ITEM_SEC);
+  if (sourceSec !== undefined) duration = Math.min(duration, sourceSec - timing.trimInSec);
+  return { ...timing, durationSec: round(Math.max(duration, MIN_ITEM_SEC)) };
+}
+
+/** Fades in and out can't add up to more than the clip. */
+export function clampFades(
+  durationSec: number,
+  fadeInSec: number | undefined,
+  fadeOutSec: number | undefined,
+): { fadeInSec?: number; fadeOutSec?: number } {
+  const fadeIn = Math.max(0, Math.min(fadeInSec ?? 0, durationSec));
+  const fadeOut = Math.max(0, Math.min(fadeOutSec ?? 0, durationSec - fadeIn));
+  return {
+    ...(fadeIn > 0 && { fadeInSec: round(fadeIn) }),
+    ...(fadeOut > 0 && { fadeOutSec: round(fadeOut) }),
+  };
+}
