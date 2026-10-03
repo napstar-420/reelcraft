@@ -177,4 +177,27 @@ describe('duration_range / media_format / wpm (probe-based)', () => {
     const result = BUILTIN_CHECKS.wpm!.run({ min: 20, max: 40 }, textOverVideo);
     expect(result).toEqual({ pass: true, details: { rate: 30 } });
   });
+
+  it('wpm reads the spoken text of a Generate Speech output', () => {
+    const speech: CheckArtifact = {
+      kind: 'media.audio',
+      data: { text: 'one two three four five' },
+      probe,
+    };
+    expect(BUILTIN_CHECKS.wpm!.run({ min: 20, max: 40 }, speech)).toEqual({
+      pass: true,
+      details: { rate: 30 },
+    });
+    expect(BUILTIN_CHECKS.wpm!.run({ max: 20 }, speech).pass).toBe(false);
+  });
+
+  it('text checks read a text output without a path', () => {
+    const text: CheckArtifact = { kind: 'text', data: { text: 'hello brave new world' } };
+    expect(BUILTIN_CHECKS.word_count!.run({ min: 4, max: 4 }, text).pass).toBe(true);
+    expect(BUILTIN_CHECKS.regex_match!.run({ pattern: 'brave' }, text).pass).toBe(true);
+    expect(BUILTIN_CHECKS.regex_absent!.run({ pattern: 'brave' }, text).pass).toBe(false);
+    expect(BUILTIN_CHECKS.non_empty!.run({}, text).pass).toBe(true);
+    // An explicit path keeps working.
+    expect(BUILTIN_CHECKS.word_count!.run({ path: 'text', min: 4 }, text).pass).toBe(true);
+  });
 });

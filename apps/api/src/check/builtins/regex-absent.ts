@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { JsonSchema } from '@reelcraft/shared';
 import type { BuiltinCheck } from '../check.types';
-import { getPath } from '../../common/path';
+import { checkValue } from './check-value';
 
 /** See `regex-match.ts`'s doc comment — same host-execution caveat applies. */
 const MAX_PATTERN_LENGTH = 200;
@@ -28,7 +28,7 @@ export const regexAbsent: BuiltinCheck<z.infer<typeof Params>> = {
   paramsSchema,
   description: 'Checks a string value does not match a regex pattern.',
   run(params, artifact) {
-    const value = params.path ? getPath(artifact.data, params.path) : artifact.data;
+    const value = checkValue(artifact, params.path);
     if (typeof value !== 'string') {
       return {
         pass: false,

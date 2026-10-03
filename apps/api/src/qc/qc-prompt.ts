@@ -13,7 +13,14 @@ export function buildQcPrompt(envelope: QcEnvelope): { system: string; user: str
       : 'Provide a single overall score from 0-100.',
     'Respond with JSON only, matching: {"dimensions"?: [{"key": string, "score": number, "critique"?: string}], "score"?: number, "critique": string}.',
     ...(envelope.media
-      ? ['The artifact image is attached to this message — evaluate it directly.']
+      ? [
+          envelope.media.mime.startsWith('audio/')
+            ? 'The artifact audio is attached to this message — listen to it and evaluate it directly.'
+            : 'The artifact image is attached to this message — evaluate it directly.',
+        ]
+      : []),
+    ...(envelope.transcript !== undefined
+      ? ['A transcript of the artifact audio is included as "transcript".']
       : []),
   ].join('\n');
 

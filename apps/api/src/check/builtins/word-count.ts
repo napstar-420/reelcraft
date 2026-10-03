@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { JsonSchema } from '@reelcraft/shared';
 import type { BuiltinCheck } from '../check.types';
-import { getPath } from '../../common/path';
+import { checkValue } from './check-value';
 
 const Params = z.object({
   path: z.string().optional(),
@@ -30,7 +30,7 @@ export const wordCount: BuiltinCheck<z.infer<typeof Params>> = {
   description:
     'Counts words in a string value (optionally at a JSON path) against a min/max range.',
   run(params, artifact) {
-    const value = params.path ? getPath(artifact.data, params.path) : artifact.data;
+    const value = checkValue(artifact, params.path);
     if (typeof value !== 'string') {
       return {
         pass: false,

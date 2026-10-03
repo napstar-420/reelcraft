@@ -1,4 +1,5 @@
 import type { JsonSchema } from '@reelcraft/shared';
+import { enumOptionLabel } from './schema-form.logic';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -58,7 +59,7 @@ function EnumSelect({
         <SelectItem value={ENUM_UNSET}>Select…</SelectItem>
         {(schema.enum ?? []).map((option) => (
           <SelectItem key={String(option)} value={String(option)}>
-            {String(option)}
+            {enumOptionLabel(option)}
           </SelectItem>
         ))}
       </SelectContent>
@@ -99,6 +100,9 @@ function ObjectForm({
             value={obj[propKey]}
             onChange={(next) => onChange({ ...obj, [propKey]: next })}
           />
+          {propSchema.description && propSchema.type !== 'object' && (
+            <p className="text-xs text-muted-foreground">{propSchema.description}</p>
+          )}
         </div>
       ))}
     </div>

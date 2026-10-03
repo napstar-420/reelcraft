@@ -299,12 +299,31 @@ export class BlueprintValidatorService {
       });
     }
 
+    if (stage.qc?.media?.includeTranscript && stage.output.kind !== 'media.audio') {
+      issues.push({
+        path: `${base}.qc.media.includeTranscript`,
+        message: 'Include transcript only works on an audio (media.audio) output',
+        severity: 'error',
+      });
+    }
+
     if (stage.qc && stage.capability === 'human.input') {
       issues.push({
         path: `${base}.qc`,
         message: 'qc is not allowed on human.input — user submissions run checks only',
         severity: 'error',
       });
+    }
+
+    for (const [index, check] of stage.checks.entries()) {
+      if (check.type === 'builtin' && check.key === 'wpm' && stage.output.kind !== 'media.audio') {
+        issues.push({
+          path: `${base}.checks.${index}`,
+          message:
+            'wpm measures speaking pace and needs a Generate Speech (media.audio) output; it fails on other outputs',
+          severity: 'warning',
+        });
+      }
     }
 
     if (stage.checks.length === 0 && !stage.qc) {

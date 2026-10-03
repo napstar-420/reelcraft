@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { Probe, type JsonSchema } from '@reelcraft/shared';
 import type { BuiltinCheck } from '../check.types';
-import { getPath } from '../../common/path';
+import { checkValue } from './check-value';
 
 const Params = z.object({
   path: z.string().optional(),
@@ -18,21 +18,22 @@ const paramsSchema: JsonSchema = {
   },
 };
 
-/** Reading-speed check — words per minute of a text artifact against its
- * paired media artifact's probed duration (§9.3). No I/O: `probe` is
- * already a plain object on the `CheckArtifact` by the time a check runs. */
+/** Speaking-pace check (§9.3): words per minute of the text a Generate Speech
+ * output spoke (its `{text}` data, or the value at `path`) over the audio's
+ * probed duration. No I/O: `probe` is already a plain object on the
+ * `CheckArtifact` by the time a check runs. */
 export const wpm: BuiltinCheck<z.infer<typeof Params>> = {
   key: 'wpm',
   params: Params,
   paramsSchema,
   description:
-    "Computes a text artifact's words-per-minute against its paired media artifact's probed duration and checks it against a min/max range.",
+    'Speaking pace: words per minute of a Generate Speech output (the text it spoke over the audio length) checked against a min/max range.',
   run(params, artifact) {
     const probe = Probe.safeParse(artifact.probe);
     if (!probe.success || probe.data.durationSec <= 0) {
       return { pass: false, message: 'wpm: artifact has no usable probe duration' };
     }
-    const value = params.path ? getPath(artifact.data, params.path) : artifact.data;
+    const value = checkValue(artifact, params.path);
     if (typeof value !== 'string') {
       return { pass: false, message: `wpm: value at "${params.path ?? '$'}" is not a string` };
     }
