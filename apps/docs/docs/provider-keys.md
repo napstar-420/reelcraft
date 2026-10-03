@@ -21,9 +21,11 @@ their website, which is a good idea.
 
 :::note Deepgram on a desktop install
 
-Deepgram sends its results back to Reelcraft over the internet, so it needs a public address for
-your Reelcraft. On a normal desktop install it can't reach your computer, and transcription with
-Deepgram doesn't work.
+Deepgram sends the results of an [Analyze Media](./stage-types/analyze-media.md) stage back to
+Reelcraft over the internet, so it needs a public address for your Reelcraft. On a normal desktop
+install it can't reach your computer, and that stage's **Transcribe align** setting doesn't work.
+Deepgram transcripts for [quality control](./blueprints/quality-control.md#include-transcript) are not
+affected.
 
 :::
 
