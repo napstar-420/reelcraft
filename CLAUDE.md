@@ -34,6 +34,7 @@ For a fresh local stack: copy `.env.example` to `.env`, then run `docker compose
 - `apps/web/src/pages/`: routes; `components/`: UI and canvas components; `api/client.ts`: typed API boundary.
 - `packages/shared/src/`: Zod source of truth. It must not import from `apps/*` or perform I/O.
 - `packages/timeline-composition/`: shared Remotion preview/final-render composition.
+- `docs/self-hosting.md` and `docs/adr/`: how the self-hosted image, releases, in-app updater, Settings and user guide fit together, the rules for changing them, and the decisions behind them. Read these before touching `docker/app/`, `.github/workflows/release.yml`, `apps/api/src/update|settings/` or the Codex connect flow.
 - `apps/docs/`: the user guide (Docusaurus), published to GitHub Pages by `.github/workflows/docs.yml`. It is outside the pnpm workspace (`pnpm install --ignore-workspace` there). Update it whenever user-facing setup, Settings or update behaviour changes, using the UI's exact labels; keep page slugs stable, since `apps/web/src/lib/docs-url.ts` links to them.
 
 ## Code Conventions
