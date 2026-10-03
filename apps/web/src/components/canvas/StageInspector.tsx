@@ -35,8 +35,16 @@ import type {
   EnabledWhen,
   QcDef,
   ModelPin,
+  Modality,
+  PartialModelPin,
   ValidationIssue,
 } from '@reelcraft/shared';
+import { providerName } from '@/lib/display-names';
+import {
+  omitKey,
+  parseWhole,
+  type InheritedDefaults,
+} from '@/components/defaults/defaults-editor.logic';
 import {
   Accordion,
   AccordionContent,
@@ -251,15 +259,33 @@ function toNumberOrUndefined(raw: string): number | undefined {
   return Number.isNaN(n) ? undefined : n;
 }
 
+/** Same mapping as the API's `modalityForCapability`: the capability id's
+ * first part names its kind of work. */
+function modalityOf(capability: string): Modality {
+  return capability.split('.')[0] as Modality;
+}
+
+function InheritedModelNote({ pin }: { pin: PartialModelPin | undefined }) {
+  return (
+    <p className="text-xs text-muted-foreground">
+      {pin?.provider
+        ? `No model set here, so it uses the default: ${providerName(pin.provider)}${pin.modelId ? ` · ${pin.modelId}` : ''}.`
+        : 'No model set here, and the blueprint and channel have no default for this kind of work.'}
+    </p>
+  );
+}
+
 /** `stageCapUsd`/`qcCapUsd`, both optional — an empty input clears its own
  * field back to `undefined` rather than `0`/`NaN`, and once both are unset
  * `onChange` is called with `undefined` for the whole `budget` object
  * (mirrors `StageDef.budget` itself being optional, not `{}`). */
 function BudgetEditor({
   budget,
+  inheritedStageCapUsd,
   onChange,
 }: {
   budget: StageDef['budget'];
+  inheritedStageCapUsd: number | undefined;
   onChange: (budget: StageDef['budget']) => void;
 }) {
   function set(patch: Partial<NonNullable<StageDef['budget']>>) {
@@ -275,6 +301,9 @@ function BudgetEditor({
         </InfoLabel>
         <Input
           type="number"
+          placeholder={
+            inheritedStageCapUsd === undefined ? 'No cap' : `Default ($${inheritedStageCapUsd})`
+          }
           value={budget?.stageCapUsd ?? ''}
           onChange={(e) => set({ stageCapUsd: toNumberOrUndefined(e.target.value) })}
         />
@@ -856,6 +885,7 @@ export function StageInspector({
   roles,
   assets,
   issues = [],
+  inherited = { retryLimit: 0, models: {} },
   onChange,
 }: {
   stageKey: string;
@@ -866,6 +896,8 @@ export function StageInspector({
   /** This stage's own validation issues (already filtered/grouped by stage
    * key one level up in `BlueprintCanvasPage`'s `issuesByStage`). */
   issues?: ValidationIssue[];
+  /** The channel and blueprint defaults a field falls back to when empty. */
+  inherited?: InheritedDefaults;
   onChange: (updated: StageDef) => void;
 }) {
   const capabilities = useQuery({ queryKey: ['capabilities'], queryFn: api.listCapabilities });
@@ -1372,6 +1404,9 @@ export function StageInspector({
                 onChange={(model) => onChange({ ...stage, model })}
                 {...(stageCapability && { modality: stageCapability.modality })}
               />
+              {!stage.model?.provider && (
+                <InheritedModelNote pin={inherited.models[modalityOf(stage.capability)]} />
+              )}
               {stageCapability?.modality === 'browser' && (
                 <p className="text-xs text-amber-700 dark:text-amber-400">
                   Browser automation uses BrowserOS Neo's persistent signed-in profile and may act
@@ -1396,15 +1431,21 @@ export function StageInspector({
                 Retry limit
               </InfoHeading>
               <div className="flex flex-col gap-1.5">
-                <InfoLabel info="Number of automatic crash retries; 0 disables crash retrying for this stage.">
+                <InfoLabel info="Number of automatic crash retries; 0 disables crash retrying for this stage. Leave empty to use the blueprint or channel default.">
                   Retries
                 </InfoLabel>
                 <Input
                   type="number"
                   className="w-32"
                   min={0}
-                  value={stage.retryLimit ?? 0}
-                  onChange={(e) => onChange({ ...stage, retryLimit: Number(e.target.value) || 0 })}
+                  step={1}
+                  placeholder={`Default (${inherited.retryLimit})`}
+                  value={stage.retryLimit ?? ''}
+                  onChange={(e) => {
+                    const rest = omitKey(stage, 'retryLimit');
+                    const retries = parseWhole(e.target.value);
+                    onChange(retries === undefined ? rest : { ...rest, retryLimit: retries });
+                  }}
                 />
               </div>
             </div>
@@ -1415,6 +1456,7 @@ export function StageInspector({
               </InfoHeading>
               <BudgetEditor
                 budget={stage.budget}
+                inheritedStageCapUsd={inherited.stageCapUsd}
                 onChange={(budget) => onChange({ ...stage, budget })}
               />
             </div>

@@ -41,6 +41,7 @@ import {
 import { AddStageMenu } from '../components/canvas/AddStageMenu';
 import { StageInspector } from '../components/canvas/StageInspector';
 import { BlueprintSettingsPanel } from '../components/canvas/BlueprintSettingsPanel';
+import { inheritedDefaults } from '../components/defaults/defaults-editor.logic';
 import { RunLaunchDialog } from './RunLaunchDialog';
 import { CanvasRunPanel } from '../components/canvas/CanvasRunPanel';
 import { useCanvasRun } from '../hooks/useCanvasRun';
@@ -808,6 +809,11 @@ function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
     queryFn: () => api.getBlueprint(blueprintId),
   });
   const channelId = blueprintMeta.data?.channelId;
+  const channel = useQuery({
+    queryKey: ['channel', channelId],
+    queryFn: () => api.getChannel(channelId!),
+    enabled: !!channelId,
+  });
   const assets = useQuery({
     queryKey: ['channel-assets', channelId],
     queryFn: () => api.listChannelAssets(channelId!),
@@ -964,6 +970,7 @@ function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
     inputs?: InputDef[];
     roles?: RoleDef[];
     budget?: { runCapUsd: number };
+    defaults?: ConfigLayer;
   }) {
     setDraft((prev) => prev && { ...prev, ...patch });
   }
@@ -1065,6 +1072,7 @@ function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
             inputs={shown.inputs}
             roles={shown.roles}
             budget={shown.budget}
+            defaults={shown.defaults}
             channelId={channelId ?? ''}
             onChange={updateSettings}
           />
@@ -1119,6 +1127,7 @@ function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
                   roles={shown.roles}
                   assets={assets.data ?? []}
                   issues={issuesByStage.get(selectedStageKey) ?? []}
+                  inherited={inheritedDefaults(channel.data?.defaults ?? {}, shown.defaults)}
                   onChange={readOnly ? () => undefined : updateStage}
                 />
               )}

@@ -20,6 +20,10 @@ export type PartialModelPin = z.infer<typeof PartialModelPin>;
  */
 export const ConfigLayer = z.object({
   model: PartialModelPin.nullish(),
+  /** Default model per kind of work (`text`, `image`, `video`, `audio`, …):
+   * a stage without its own model uses the default for its capability's
+   * kind. Set on a channel or blueprint, not on a stage. */
+  models: z.record(Modality, PartialModelPin).nullish(),
   qc: z
     .object({
       threshold: z.number().nullish(),

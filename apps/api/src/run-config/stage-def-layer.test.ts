@@ -19,9 +19,17 @@ function stage(overrides: Partial<StageDef> = {}): StageDef {
 }
 
 describe('stageDefLayer', () => {
-  it('projects retryLimit and model unconditionally', () => {
+  it('projects a retryLimit the stage sets', () => {
     const layer = stageDefLayer(stage({ retryLimit: 2 }));
     expect(layer).toEqual({ retryLimit: 2 });
+  });
+
+  it('leaves retryLimit out when the stage does not set it, so a default applies', () => {
+    const unset = stage();
+    delete unset.retryLimit;
+    const layer = stageDefLayer(unset);
+    expect(layer).toEqual({});
+    expect(mergeLayer({ retryLimit: 3 }, layer).retryLimit).toBe(3);
   });
 
   it('projects StageDef.budget.stageCapUsd into ConfigLayer.budget.stageCapUsd', () => {

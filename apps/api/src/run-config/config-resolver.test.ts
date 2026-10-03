@@ -97,4 +97,44 @@ describe('ConfigResolverService.resolveRunConfig (pure)', () => {
     });
     expect(result.outline?.budget).toEqual({ stageCapUsd: 2 });
   });
+
+  it('a stage without a retry limit gets the blueprint default, over the channel and engine', () => {
+    const unset = stage({ key: 'a' });
+    delete unset.retryLimit;
+    const result = resolver.resolveRunConfig({
+      graph: [unset, stage({ key: 'b', retryLimit: 0 })],
+      engine: { retryLimit: 0 },
+      channelDefaults: { retryLimit: 1 },
+      blueprintDefaults: { retryLimit: 2 },
+    });
+    expect(result.a?.retryLimit).toBe(2);
+    // An explicit 0 on the stage still wins.
+    expect(result.b?.retryLimit).toBe(0);
+  });
+
+  it('a stage without a model uses the default for its kind of work', () => {
+    const imagePin = { provider: 'fake', modelId: 'fake-image-1' };
+    const result = resolver.resolveRunConfig({
+      graph: [
+        stage({ key: 'script' }),
+        stage({ key: 'art', capability: 'image.generate', output: { kind: 'media.image' } }),
+        stage({
+          key: 'pinned',
+          capability: 'image.generate',
+          output: { kind: 'media.image' },
+          model: { provider: 'fal', modelId: 'flux' },
+        }),
+      ],
+      engine: {},
+      channelDefaults: {
+        models: { text: { provider: 'fake', modelId: 'fake-text-1' }, image: imagePin },
+      },
+      blueprintDefaults: { models: { text: { provider: 'openrouter', modelId: 'm' } } },
+    });
+    // The blueprint's text default wins over the channel's.
+    expect(result.script?.model).toEqual({ provider: 'openrouter', modelId: 'm' });
+    expect(result.art?.model).toEqual(imagePin);
+    // The stage's own model wins over both.
+    expect(result.pinned?.model).toEqual({ provider: 'fal', modelId: 'flux' });
+  });
 });
