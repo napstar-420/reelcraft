@@ -13,6 +13,7 @@ import type {
 import { ComputeJobService, type ComputeHandle } from '../../storage/compute-job.service';
 import { EngineConfig } from '../../config/engine-config';
 import { Capability } from '../capability.decorator';
+import { StyleRegistry } from '../style.registry';
 import type { CancelResult, CapabilityImpl, ExecCtx, ExecResult } from '../capability.interface';
 
 type MediaDescriptor = {
@@ -207,6 +208,7 @@ export class TimelineRenderCapability extends LocalComputeCapability<RenderConfi
   constructor(
     compute: ComputeJobService,
     private readonly config: EngineConfig,
+    private readonly styles: StyleRegistry,
   ) {
     super(compute);
   }
@@ -264,7 +266,11 @@ export class TimelineRenderCapability extends LocalComputeCapability<RenderConfi
         { asFilename: 'timeline.json', contents: JSON.stringify(timeline) },
         {
           asFilename: 'resources.json',
-          contents: JSON.stringify({ media: resourceFiles, timing: timingMaps }),
+          contents: JSON.stringify({
+            media: resourceFiles,
+            timing: timingMaps,
+            styles: this.styles.tokensById(),
+          }),
         },
       ],
       outputFilename: 'timeline.mp4',

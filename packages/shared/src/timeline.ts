@@ -134,11 +134,32 @@ export const TimelineResource = z.object({
 });
 export type TimelineResource = z.infer<typeof TimelineResource>;
 
+/** How a text or caption style looks when rendered. Plain values (no CSS
+ * strings to parse) so the renderer and the editor preview draw the same. */
+export const TextStyleTokens = z.object({
+  color: z.string(),
+  fontFamily: z.string(),
+  fontSize: z.number().positive(),
+  fontWeight: z.number().int().min(100).max(1000),
+  /** Text outline, drawn behind the fill. */
+  stroke: z.object({ color: z.string(), width: z.number().nonnegative() }).optional(),
+  shadow: z.string().optional(),
+  /** A box behind the text. */
+  background: z
+    .object({ color: z.string(), paddingEm: z.number().nonnegative(), radius: z.number() })
+    .optional(),
+  uppercase: z.boolean().optional(),
+  /** Horizontal alignment; a lower third sits left. */
+  align: z.enum(['left', 'center']).optional(),
+});
+export type TextStyleTokens = z.infer<typeof TextStyleTokens>;
+
 export const TimelineStyle = z.object({
   id: z.string(),
   label: z.string(),
   category: z.enum(['caption', 'text', 'lower_third']),
   description: z.string(),
   supportedItemTypes: z.array(z.enum(['text', 'captions'])),
+  tokens: TextStyleTokens.optional(),
 });
 export type TimelineStyle = z.infer<typeof TimelineStyle>;

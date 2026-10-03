@@ -24,10 +24,16 @@ async function main() {
   const renderData = JSON.parse(await readFile(resourcesPath, 'utf8')) as {
     media: Record<string, string>;
     timing: Record<string, import('@reelcraft/shared').TimingMap>;
+    styles?: Record<string, import('@reelcraft/shared').TextStyleTokens>;
   };
   const resourceDir = path.dirname(resourcesPath);
   const resources = renderData.media;
-  const inputProps = { timeline, resources, timingMaps: renderData.timing };
+  const inputProps = {
+    timeline,
+    resources,
+    timingMaps: renderData.timing,
+    styles: renderData.styles ?? {},
+  };
   const entry = path.resolve(__dirname, 'root.js');
   const serveUrl = await bundle({ entryPoint: entry, publicDir: resourceDir });
   const composition = await selectComposition({

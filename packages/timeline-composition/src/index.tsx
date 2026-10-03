@@ -12,12 +12,18 @@ import {
   useVideoConfig,
 } from 'remotion';
 import type { CalculateMetadataFunction } from 'remotion';
-import type { Timeline, TimelineItem, TimingMap } from '@reelcraft/shared';
+import type { TextStyleTokens, Timeline, TimelineItem, TimingMap } from '@reelcraft/shared';
+import { DEFAULT_TEXT_STYLE, kenBurnsTransform, textStyleCss } from './render-helpers';
+
+export { DEFAULT_TEXT_STYLE, kenBurnsTransform, textStyleCss } from './render-helpers';
 
 export type TimelineCompositionProps = {
   timeline: Timeline;
   resources: Record<string, string>;
   timingMaps?: Record<string, TimingMap>;
+  /** Style id → tokens (from the API's style registry); unknown ids fall back
+   * to `DEFAULT_TEXT_STYLE`. */
+  styles?: Record<string, TextStyleTokens>;
 };
 
 export const timelineDurationSec = (
@@ -42,11 +48,13 @@ const MediaItem = ({
   item,
   src,
   trackType,
+  clipIndex = 0,
   duckIntervals = [],
 }: {
   item: Extract<TimelineItem, { type: 'media' }>;
   src: string;
   trackType: 'video' | 'audio' | 'overlay' | 'captions';
+  clipIndex?: number;
   duckIntervals?: Array<{ startSec: number; endSec: number }>;
 }) => {
   const frame = useCurrentFrame();
@@ -76,7 +84,9 @@ const MediaItem = ({
   const motionTransform = item.motion
     ? item.motion.type === 'pan'
       ? `scale(${1 + intensity}) translateX(${(progress - 0.5) * intensity * 50}%)`
-      : `scale(${1 + progress * intensity})`
+      : item.motion.type === 'ken_burns'
+        ? kenBurnsTransform(progress, intensity, clipIndex)
+        : `scale(${1 + progress * intensity})`
     : undefined;
   const transitionTransform =
     item.transitionIn?.type === 'slide' ? `translateX(${(1 - entryProgress) * 100}%)` : undefined;
@@ -110,33 +120,52 @@ const MediaItem = ({
   );
 };
 
-const TextItem = ({ item }: { item: Extract<TimelineItem, { type: 'text' }> }) => {
-  const position =
+const TextItem = ({
+  item,
+  tokens,
+}: {
+  item: Extract<TimelineItem, { type: 'text' }>;
+  tokens: TextStyleTokens;
+}) => {
+  const left = tokens.align === 'left';
+  const vertical: React.CSSProperties =
     typeof item.position === 'object'
-      ? {
-          left: `${item.position.x}%`,
-          top: `${item.position.y}%`,
-          transform: 'translate(-50%, -50%)',
-        }
+      ? {}
       : item.position === 'top'
-        ? { top: '9%' }
+        ? { justifyContent: 'flex-start', paddingTop: '9%' }
         : item.position === 'bottom'
-          ? { bottom: '9%' }
-          : { top: '50%', transform: 'translateY(-50%)' };
+          ? { justifyContent: 'flex-end', paddingBottom: left ? '12%' : '9%' }
+          : { justifyContent: 'center' };
+  const text = <span style={textStyleCss(tokens)}>{item.text}</span>;
+  if (typeof item.position === 'object') {
+    return (
+      <AbsoluteFill>
+        <div
+          style={{
+            position: 'absolute',
+            left: `${item.position.x}%`,
+            top: `${item.position.y}%`,
+            transform: 'translate(-50%, -50%)',
+            textAlign: 'center',
+          }}
+        >
+          {text}
+        </div>
+      </AbsoluteFill>
+    );
+  }
   return (
     <AbsoluteFill
       style={{
-        justifyContent: 'center',
-        alignItems: 'center',
-        color: 'white',
-        fontFamily: 'Inter, Arial, sans-serif',
-        fontWeight: item.styleId.includes('bold') ? 900 : 700,
-        fontSize: item.styleId.includes('lower_third') ? 48 : 72,
-        textShadow: '0 3px 12px rgba(0,0,0,.75)',
-        ...position,
+        ...vertical,
+        alignItems: left ? 'flex-start' : 'center',
+        paddingLeft: left ? '6%' : '7%',
+        paddingRight: '7%',
+        boxSizing: 'border-box',
+        textAlign: left ? 'left' : 'center',
       }}
     >
-      {item.text}
+      <div>{text}</div>
     </AbsoluteFill>
   );
 };
@@ -144,9 +173,11 @@ const TextItem = ({ item }: { item: Extract<TimelineItem, { type: 'text' }> }) =
 const CaptionsItem = ({
   item,
   timing,
+  tokens,
 }: {
   item: Extract<TimelineItem, { type: 'captions' }>;
   timing: TimingMap;
+  tokens: TextStyleTokens;
 }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
@@ -162,15 +193,12 @@ const CaptionsItem = ({
         alignItems: 'center',
         padding: '0 7% 9%',
         boxSizing: 'border-box',
-        color: 'white',
-        fontFamily: 'Inter, Arial, sans-serif',
-        fontWeight: item.styleId.includes('bold') ? 900 : 700,
-        fontSize: 58,
         textAlign: 'center',
-        textShadow: '0 3px 10px rgba(0,0,0,.9)',
       }}
     >
-      <span>{sentence.text}</span>
+      <div>
+        <span style={textStyleCss(tokens)}>{sentence.text}</span>
+      </div>
     </AbsoluteFill>
   );
 };
@@ -179,8 +207,10 @@ export const TimelineComposition = ({
   timeline,
   resources,
   timingMaps = {},
+  styles = {},
 }: TimelineCompositionProps) => {
   const { fps } = useVideoConfig();
+  const tokensFor = (styleId: string) => styles[styleId] ?? DEFAULT_TEXT_STYLE;
   return (
     <AbsoluteFill style={{ backgroundColor: timeline.canvas.background ?? '#000' }}>
       {timeline.tracks.flatMap((track) =>
@@ -201,15 +231,20 @@ export const TimelineComposition = ({
             >
               {item.type === 'captions' ? (
                 timingMaps[item.timingHandle] ? (
-                  <CaptionsItem item={item} timing={timingMaps[item.timingHandle]!} />
+                  <CaptionsItem
+                    item={item}
+                    timing={timingMaps[item.timingHandle]!}
+                    tokens={tokensFor(item.styleId)}
+                  />
                 ) : null
               ) : item.type === 'text' ? (
-                <TextItem item={item} />
+                <TextItem item={item} tokens={tokensFor(item.styleId)} />
               ) : resources[item.handle] ? (
                 <MediaItem
                   item={item}
                   src={resources[item.handle]!}
                   trackType={track.type}
+                  clipIndex={index}
                   duckIntervals={
                     track.duckUnder
                       ? (
@@ -259,7 +294,7 @@ export const TimelineRoot = () => (
     height={1080}
     fps={30}
     durationInFrames={1}
-    defaultProps={{ timeline: fallbackTimeline, resources: {}, timingMaps: {} }}
+    defaultProps={{ timeline: fallbackTimeline, resources: {}, timingMaps: {}, styles: {} }}
     calculateMetadata={calculateMetadata}
   />
 );
