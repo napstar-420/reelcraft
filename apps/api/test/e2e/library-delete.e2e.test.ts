@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { eq, inArray } from 'drizzle-orm';
 import { ConflictException, NotFoundException } from '@nestjs/common';
-import type { StageDef } from '@reelcraft/shared';
+import type { StageDef, ValidationIssue } from '@reelcraft/shared';
 import { ChannelService } from '../../src/channel/channel.service';
 import { BlueprintService } from '../../src/blueprint/blueprint.service';
 import { CharacterService } from '../../src/channel/character.service';
@@ -147,7 +147,9 @@ describe('library deletes and storage cleanup (e2e)', () => {
         budget: { runCapUsd: 5 },
       });
     const before = await save();
-    expect(before.validation.filter((issue) => issue.severity === 'error')).toEqual([]);
+    expect(
+      (before.validation as ValidationIssue[]).filter((issue) => issue.severity === 'error'),
+    ).toEqual([]);
 
     await characters.delete(host.id);
 
