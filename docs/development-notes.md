@@ -1,0 +1,261 @@
+# Development notes
+
+Things that are easy to trip over when working on Reelcraft, plus the local-only acceptance checks.
+This was moved out of the README so the README stays short. For the rules every change must follow,
+read [`CLAUDE.md`](../CLAUDE.md). For how the self-hosted image, updater and releases work, read
+[`self-hosting.md`](self-hosting.md).
+
+## Local Codex provider
+
+`text.generate` stages may select the `codex` provider when the API runs on a macOS workstation
+with an installed, authenticated Codex CLI. Reelcraft discovers the current visible model catalog
+and each model's supported reasoning efforts through `codex app-server`; it does not hard-code the
+catalog. The selected effort is stored in `model.params.reasoningEffort`. Other params become raw
+dotted `codex exec -c key=<TOML value>` overrides, while Reelcraft keeps model, effort, working
+directory, approval policy, output files/schema, and ephemeral execution authoritative.
+
+Jobs run outside this repository under `WORKSPACE_ROOT/codex-jobs`. They inherit the API process
+owner's Codex login, configuration, skills, plugins, and MCP servers, including BrowserOS Neo when
+the user has enabled it. Failures to authenticate, connect BrowserOS, satisfy automatic approval,
+or run the selected model fail the stage; there is no fallback provider. Local ChatGPT-authenticated
+CLI usage settles at `$0` because it has no dependable per-call USD price.
+
+In the self-hosted image, the CLI runs inside the container with `CODEX_HOME=/data/codex`, so
+its login and configuration live in the data volume rather than in your home folder. **Settings
+→ Codex → Connect Codex** signs it in (`codex login --device-auth`, with BrowserOS Neo entering
+the code) and adds a `browseros-neo` MCP server pointing at the Neo address from Settings. It
+never changes an entry you configured yourself.
+
+This provider is intentionally local and single-user. A production or multi-user deployment must
+isolate Codex accounts, job workers, BrowserOS profiles, and filesystem/process permissions per
+user. **Unattended BrowserOS stages are high risk:** prompts can mutate signed-in external accounts,
+and Reelcraft's USD budget controls do not constrain purchases, deletions, messages, or other
+external actions. Test browser-capable stages only with disposable accounts and sites.
+
+After reviewing the prompt and account risk, run the opt-in local acceptance check with:
+
+```bash
+REELCRAFT_CODEX_ACCEPTANCE=1 pnpm --filter @reelcraft/api acceptance:codex
+```
+
+## Video assembly: local prerequisites
+
+The self-hosted image already includes FFmpeg and Chrome Headless Shell; these prerequisites
+apply when running on your own machine.
+
+Install FFmpeg (both `ffmpeg` and `ffprobe`) plus Chrome/Chromium. Assembly
+supports the async `video.concat` and `timeline.render` capabilities and the
+sync `subtitles.export` capability. A `human.timeline_edit` stage opens the
+browser editor, whose preview and server renderer share the same Remotion
+composition. Set `REMOTION_BROWSER_EXECUTABLE` if Remotion cannot discover the
+browser automatically.
+
+Run the local-only uploaded-input render acceptance with:
+
+```bash
+pnpm --filter @reelcraft/api acceptance:phase6-render
+```
+
+The command builds the render worker, creates an input clip, renders a timeline,
+and verifies the resulting MP4 with `ffprobe`. It is intentionally not part of
+CI because it requires system media and browser dependencies.
+
+## Iteration: local prerequisites
+
+Install FFmpeg (`ffmpeg` and `ffprobe`). Iteration adds the `iterate` stage
+shape — sequential per-item execution with the `prevItem` carry and its
+ffmpeg-backed `lastFrame`/`firstFrame` derived-frame shortcut.
+
+Run the local-only broll derived-frame acceptance with:
+
+```bash
+pnpm --filter @reelcraft/api acceptance:phase7-broll
+```
+
+The command builds a synthetic video fixture, drives a 3-item `video.generate`
+iterating stage, and verifies `{from:'prevItem', path:'lastFrame'}` really
+extracts and caches a frame via `ffmpeg`. It is intentionally not part of CI
+because it requires a system `ffmpeg` binary.
+
+## Media: local prerequisites
+
+Install FFmpeg so `ffprobe` is on the API process `PATH`. Media runs store a
+normalized probe, stream generated output to MinIO, and expose live objects at
+`GET /api/blobs/:id` through short-lived redirects; collected objects return
+`410`. Real provider pins are optional: OpenRouter image generation, ElevenLabs
+speech, and fal's `fal-ai/kling-video/v3/standard` video queue use the matching
+environment key. Video defaults to requiring an audio stream unless its output
+constraint explicitly selects `optional` or `forbidden`. Real-provider calls
+should be run locally with explicit funded keys; the normal test suite is free.
+
+## Characters
+
+Characters are reusable channel assets. Create one with `POST
+/api/channels/:channelId/characters`, request and confirm reference-image
+uploads under `/api/characters/:id/references`, or promote an active generated
+image with `POST /api/characters/:id/references/promote`. A one-role blueprint
+stores its selected Character and ordered reference blob IDs. Starting a run
+snapshots those references before any provider work; changing or deleting a
+Character later cannot alter an existing run. LoRA training is not yet part of
+the product.
+
+Targeted fake-media runner coverage requires Docker Postgres and can be run with:
+
+```bash
+pnpm --filter @reelcraft/api exec vitest run -c vitest.e2e.config.ts test/e2e/media-output.e2e.test.ts
+```
+
+It uses deterministic fixtures and a test probe so CI does not require FFmpeg.
+Before enabling real media, verify the host dependency directly with
+`ffprobe -v error -show_format -show_streams path/to/media-file`.
+
+## Run-control endpoints
+
+Runs are created in `CREATED`, inputs/assets are attached, and
+`POST /runs/:id/start` commits a revision-bound `run/started` wakeup. Operator
+mutations use a durable Postgres outbox, so a temporary Inngest delivery failure
+does not lose a committed action. Useful endpoints include:
+
+- `GET /runs/:id/memory` and `GET /runs/:id/invalidation-preview?stageKey=...`
+- `POST /runs/:id/stages/:key/retry`, followed by `/retry/confirm`
+- `PATCH /runs/:id/overrides`
+- `POST /runs/:id/stages/:key/artifact` for previewed text/data edits
+- `POST /runs/:id/stages/:key/approve` for approval or routed rejection
+- `POST /runs/:id/stages/:key/input` for a parked `human.input` stage
+- `POST /runs/:id/resume` for `PAUSED_BUDGET` or `FAILED`
+- `POST /runs/:id/cancel`
+
+Previewed mutations repeat the exact proposed payload with the returned signed
+token. Tokens are bound to the run revision, action, payload digest, expiry, and
+invalidation fingerprint; a competing mutation makes an older preview fail
+closed. Approval and human-input waits do not expire. The hourly reminder sweep
+records durable 24h/48h reminder events without changing run state.
+
+## Known gotchas
+
+- **`blueprint` ↔ `blueprint_version` FK cycle** (§3.4): `blueprint.current_version_id` has no
+  FK in the initial migration; `drizzle/0001_blueprint_current_version_fk.sql` adds it as a
+  documented follow-up.
+- **`artifact_active_uq`** (§3.9): a partial unique index that cannot be `DEFERRABLE`. Every
+  artifact-superseding write must mark the old row stale _before_ inserting the new one, in one
+  transaction — see `ArtifactService.finalize()`.
+- **`forcePathStyle: true`** is mandatory for the MinIO `StorageAdapter` — the AWS SDK defaults
+  to virtual-host addressing, which needs wildcard DNS local MinIO doesn't have.
+- **`DbModule` is deliberately not `@Global()`**, unlike what §1.3's prose literally says,
+  because the spec also says `CapabilityModule` must not be able to reach it — those two
+  statements can't both hold under Nest's DI model. Modules that need the `DRIZZLE` token
+  import `DbModule` explicitly.
+- **Money columns** (`numeric(12,4)`) round-trip as strings through `drizzle-orm`'s
+  `postgres-js` driver — always go through `common/money.ts`'s `toUsd`/`fromUsd`, never
+  `Number()` directly.
+- **CommonJS, not ESM**, across `apps/api` and `packages/shared` — this was a deliberate switch
+  made during setup (not in the original plan) after `drizzle-kit generate` couldn't resolve
+  the NodeNext-style `.js`-suffixed relative imports across the schema files. `apps/web` is
+  unaffected (Vite handles its own module resolution for the browser).
+- **Inngest client-ID rename cleanup:** changing the SDK client ID registers a new app but does not
+  rename or delete the old app or its unfinished runs. After a rename, use the supported Inngest
+  management surface for the deployed version:
+  1. Stop sending events to the old client ID, then cancel unfinished old-app runs through an
+     official Inngest API, CLI, MCP integration, or management UI.
+  2. Archive the obsolete app in the Inngest management UI when that control is available. Keep its
+     completed run history unless there is an explicit retention reason to remove it.
+  3. Resync the current API endpoint, confirm the `reelcraft` app and functions are registered, and
+     start a new test run. Verify that only `reelcraft` receives new events and that no obsolete
+     client-ID function keeps retrying callbacks.
+
+  The locally installed `inngest-cli` package is currently **1.44.0**. Its self-hosted server UI does
+  not expose the cloud app-archive control or a supported app-archive endpoint. If the official
+  API/CLI/MCP available for that installation also cannot archive the old app or cancel its runs,
+  leave the persisted history intact and upgrade to a version with the required management support
+  before completing the cleanup. **Never edit Inngest's private PostgreSQL tables and never reset
+  either the Inngest or Reelcraft database to remove an old registration.** Those shortcuts can
+  corrupt durable run state or delete unrelated history.
+
+- **Inngest + Redis**: resolved — the pinned `inngest/inngest` image logs
+  `"starting event stream","backend":"redis"` on boot, using an embedded Redis-compatible
+  store automatically. No separate `redis` compose service needed.
+- **`minio/minio` and `minio/mc` no longer pull from Docker Hub** without login — MinIO moved
+  their official images to `quay.io/minio/minio` and `quay.io/minio/mc`. `docker-compose.yml`
+  uses the `quay.io` images.
+- **Postgres init scripts must be executable.** `docker-entrypoint.sh` execs
+  `/docker-entrypoint-initdb.d/*.sh` directly rather than sourcing them; a non-executable
+  script fails with a cryptic `bad interpreter: Permission denied`, which silently skips DB
+  creation and leaves the container in `Exited (126)`. Both init scripts are checked in with
+  the executable bit set — if you edit them, re-`chmod +x`.
+- **`INNGEST_SIGNING_KEY` must be a bare hex string with an even number of characters** — no
+  `signkey-` prefix, no other formatting. Generate one with `openssl rand -hex 32`. The same
+  value must be set in `docker-compose.yml` (for the `inngest` service) and in `.env` (for the
+  API, which signs/verifies against it).
+- **AWS SDK v3 + MinIO 501s on CORS/bucket calls** — newer `@aws-sdk/client-s3` versions default
+  `requestChecksumCalculation`/`responseChecksumValidation` to `WHEN_SUPPORTED`, sending a
+  checksum header MinIO's S3 API rejects with `501 NotImplemented`. Fixed by setting both to
+  `WHEN_REQUIRED` in `storage/s3-client.factory.ts`, which both `S3StorageAdapter` and
+  `BucketBootstrapService` now share. `BucketBootstrapService` also no longer lets a failure
+  here crash the whole app (an `OnApplicationBootstrap` rejection is otherwise fatal) — it logs
+  a warning and relies on the `mc` bootstrap sidecar in `docker-compose.yml` instead.
+- **`express` must be a direct dependency of `apps/api`**, not just a transitive dependency of
+  `@nestjs/platform-express` — pnpm's strict `node_modules` isolation blocks requiring
+  undeclared "phantom" dependencies, and `main.ts` imports `express` directly for its body-size
+  middleware.
+- **`@UsePipes()` at the method level applies to _every_ parameter, not just `@Body()`.**
+  `ChannelController.create` and `BlueprintController.createVersion` originally applied
+  `ZodValidationPipe(SomeDto)` via `@UsePipes()` alongside an `@Owner()`/`@Param()` argument —
+  the pipe ran against that plain string too and failed validation. Fixed by scoping the pipe
+  to the body parameter directly: `@Body(new ZodValidationPipe(Dto))`.
+- **Zod's `discriminatedUnion` requires the discriminator value to be unique across every
+  branch.** `JobStatus` originally used `z.discriminatedUnion('done', ...)` with two branches
+  both keyed `done: true` (`succeeded` vs. `failed`, distinguished only by `outcome`) — Zod
+  throws at schema-construction time, which crashed the process on boot since it happens at
+  module load. Fixed by using a plain `z.union([...])` instead.
+- **A stale `tsconfig.tsbuildinfo` can make `tsc`/`nest build` silently under-emit.** After
+  editing `tsconfig.base.json` (the ESM→CommonJS switch), rebuilding without first deleting
+  `*.tsbuildinfo` left several `apps/api/src/*` directories (`capability/`, `config/`,
+  `provider/`, `storage/`, etc.) missing from `dist/` entirely, with no build error — `nest
+start` only surfaced it as a runtime `Cannot find module`. If a build looks incomplete after
+  a tsconfig change, `rm -rf dist *.tsbuildinfo` and rebuild clean before debugging further.
+- **`dotenv/config`'s bare import reads `.env` from `process.cwd()`, which pnpm sets to the
+  package directory under `--filter`** — `pnpm db:migrate` (root) silently found no
+  `DATABASE_URL` because it looked for `apps/api/.env`, not the repo-root `.env` the fresh-clone
+  setup above actually creates. Fixed via `src/common/load-dotenv.ts`, which walks up to the
+  `pnpm-workspace.yaml`-marked repo root instead of trusting cwd; both `migrate.ts` and
+  `drizzle.config.ts` use it now.
+- **`apps/api` test harness (`vitest.config.ts` unit / `vitest.e2e.config.ts` e2e)** needs
+  `unplugin-swc` with `module: { type: 'es6' }` — not `'commonjs'`, even though the app itself
+  builds to CommonJS. Vitest runs every file through Vite's own ESM module graph regardless of
+  the app's `tsc`/`nest build` output target, and vitest's own package is ESM-only.
+- **e2e tests isolate via a fresh Postgres _database_ per suite, not a schema.** A schema-per-
+  suite approach (`search_path`) was tried first and silently produced empty tables:
+  `drizzle-kit generate` hardcodes every FK's `REFERENCES` clause to `"public".<table>`
+  (verified — all 25 FKs in `drizzle/0000_daffy_vision.sql`), so a table created in a non-public
+  schema still has its foreign keys point at `public`'s tables regardless of `search_path`. See
+  `test/support/test-db.ts`.
+- **`typescript-eslint`'s `projectService` can't parse standalone build-tool config files**
+  (`drizzle.config.ts`, `vitest.config.ts`, `vitest.e2e.config.ts`, and pre-existing
+  `apps/web/vite.config.ts` / `packages/shared/vitest.config.ts`) — they aren't included by any
+  app's `tsconfig.json`, so `pnpm lint` fails to parse them (confirmed pre-existing on `main`,
+  not introduced by this change). `apps/api/test/**` is fixed via a sibling `test/tsconfig.json`
+  (TS's project service auto-discovers the _nearest_ `tsconfig.json` by name); the remaining
+  root-level `*.config.ts` files need an `allowDefaultProject` glob in `eslint.config.mjs`,
+  which is protected by a `config-protection` hook this session couldn't get past — needs a
+  maintainer to add it (or temporarily disable the hook).
+- **Never wrap a `@reelcraft/shared` zod schema in a freshly-imported `z.record(...)`/`z.union(...)`
+  inside `apps/api` test code.** Under Vite/vitest, `@reelcraft/shared`'s compiled `dist/` (its
+  own `require('zod')`) and a plain `import { z } from 'zod'` in `apps/api` source end up as
+  distinct module instances — `sharedSchema instanceof (apps/api's) z.ZodType` is `false` even
+  though `sharedSchema.constructor.name === 'ZodObject'`. `z.record(keySchema, valueSchema)`
+  relies on an internal `instanceof` check to tell its two-argument form apart from its
+  one-argument form; when it silently fails, `z.record` falls back to the one-argument
+  interpretation, so `z.record(z.string(), ConfigLayer)` quietly becomes "every value must be a
+  string" instead of "every value must satisfy `ConfigLayer`" — a confusing `"expected string,
+received object"` error with no hint of a module-identity problem underneath. Call `.parse()`
+  directly on the shared schema instead (see `ConfigResolverService`'s `parseConfigLayerMap`);
+  it never does a cross-module `instanceof` check.
+
+## Follow-ups not done in this pass
+
+- `pnpm --filter @reelcraft/api test:e2e` needs a live Postgres and isn't wired into CI yet
+  (tracked in `docs/build-progress.md`) — run it locally against `docker compose up`.
+- `eslint.config.mjs`'s shared-package import-boundary rule is scoped slightly too broadly
+  (applies repo-wide rather than only under `packages/shared/**`) — harmless in practice since
+  no import specifier in this codebase literally contains `apps/`, but worth tightening. See
+  also the `allowDefaultProject` gap noted above — both need the same protected-config change.
