@@ -1024,10 +1024,13 @@ export function StageInspector({
   }
 
   function handleContextKeyChange(oldKey: string, newKey: string) {
-    const { [oldKey]: refValue, ...rest } = stage.context;
-    if (refValue === undefined) return;
+    if (stage.context[oldKey] === undefined) return;
     const attach = (stage.attach ?? []).map((key) => (key === oldKey ? newKey : key));
-    onChange(withAttach({ ...stage, context: { ...rest, [newKey]: refValue } }, attach));
+    // Rebuilt in place: the row keeps its position while its name is typed.
+    const context = Object.fromEntries(
+      Object.entries(stage.context).map(([key, ref]) => [key === oldKey ? newKey : key, ref]),
+    );
+    onChange(withAttach({ ...stage, context }, attach));
   }
 
   function handleContextValueChange(key: string, ref: Ref) {
@@ -1214,8 +1217,9 @@ export function StageInspector({
               <InfoHeading info="Free-form key/value bindings interpolated into this stage's Instructions template ({{ key }}). Unlike Slots, any capability can read Context regardless of what it declares. On text generation stages, tick Attach file to send a bound file (e.g. an image) to the model so it can see it. The model sees it listed under this key, so mention it by that name in the prompt rather than with {{ }} (which would insert the file's details, not the file). Unticked, the model only gets the file's details (handle, kind), e.g. for building a timeline.">
                 Context
               </InfoHeading>
-              {Object.entries(stage.context).map(([key, ref]) => (
-                <div key={key} className="flex flex-col gap-1.5">
+              {Object.entries(stage.context).map(([key, ref], position) => (
+                // Keyed by position: the name is being edited, so it can't be the key.
+                <div key={position} className="flex flex-col gap-1.5">
                   <div className="flex flex-wrap items-center gap-2">
                     <Input
                       type="text"
