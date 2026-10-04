@@ -2,6 +2,10 @@ import type { JsonSchema } from '@reelcraft/shared';
 
 export const FLOW_START_URL = 'https://labs.google/fx/tools/flow';
 
+/** Most reference images a Flow stage may upload as ingredients (the Codex
+ * browser job accepts 20 input files: `MAX_BROWSER_INPUTS` in its adapter). */
+export const FLOW_MAX_REFERENCES = 20;
+
 /** The video models in Flow's model picker, named exactly as Flow shows them.
  * Fixed for now: a Flow update means editing this list. */
 export const FLOW_MODELS = [

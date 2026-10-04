@@ -36,6 +36,7 @@ import { EngineConfig } from '../config/engine-config';
 import { engineDefaults } from '../run-config/engine-defaults';
 import { PINNED_PROVIDERS, PROVIDER_LABELS, ProviderRegistry } from '../provider/provider.registry';
 import { modalityForCapability } from '../capability/modality-for-capability';
+import { FLOW_MAX_REFERENCES } from '../capability/impls/flow-video.prompt';
 import type { ModelInfo } from '../provider/provider-adapter.interface';
 
 @Injectable()
@@ -654,8 +655,13 @@ export class BlueprintService {
         });
         continue;
       }
-      const maxRefs = info?.capabilities.maxRefs ?? info?.capabilities.image?.maxReferences;
-      if (!info || maxRefs === undefined) {
+      // Flow uploads references as browser ingredients, so its limit is the
+      // Codex browser job's input cap, not the model's image-generation one.
+      const maxRefs =
+        stage.capability === 'browser.flow_video'
+          ? FLOW_MAX_REFERENCES
+          : (info?.capabilities.maxRefs ?? info?.capabilities.image?.maxReferences);
+      if (maxRefs === undefined || (!info && stage.capability !== 'browser.flow_video')) {
         issues.push({
           path: `stages.${stage.key}`,
           message: `model "${model.modelId}" does not declare a reference limit`,
@@ -665,7 +671,7 @@ export class BlueprintService {
       }
       if (
         stage.capability === 'video.generate' &&
-        !info.capabilities.video?.inputs.includes('references')
+        !info?.capabilities.video?.inputs.includes('references')
       ) {
         issues.push({
           path: `stages.${stage.key}`,
