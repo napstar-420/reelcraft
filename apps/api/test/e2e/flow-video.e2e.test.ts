@@ -12,6 +12,9 @@ import { RunWakeupDispatcher } from '../../src/run/run-wakeup-dispatcher.service
 import { RunWakeupClaimService } from '../../src/run/run-wakeup-claim.service';
 import { StageRunnerService } from '../../src/orchestration/stage-runner.service';
 import { ProviderRegistry } from '../../src/provider/provider.registry';
+import { CharacterService } from '../../src/channel/character.service';
+import { STORAGE_ADAPTER, type StorageAdapter } from '../../src/storage/storage.adapter';
+import type { ReferenceImage } from '@reelcraft/shared';
 import { INNGEST_CLIENT } from '../../src/orchestration/inngest.client';
 import {
   artifact,
@@ -420,5 +423,63 @@ describe('Generate Video with Flow (e2e)', () => {
     const second = attempts.find((a) => a.attemptNo === 2)!;
     expect(second.renderedPrompt).toContain('Scene 2 has the wrong background.');
     expect(second.renderedPrompt).toContain('Clips to make again (their index): 2');
+  });
+
+  it('saves and starts a run whose character role feeds the Flow stage, whatever the model declares about references', async () => {
+    const channel = await testApp.app.get(ChannelService).create('local', {
+      name: `Flow Role ${Date.now()}-${Math.random()}`,
+      theme: {},
+      defaults: {},
+    });
+    const characters = testApp.app.get(CharacterService);
+    const storage = testApp.app.get<StorageAdapter>(STORAGE_ADAPTER);
+    const character = await characters.create(channel.id, { name: 'Lucia', description: 'Host' });
+    let latest = character as { referenceSet: unknown };
+    for (const view of ['front', 'profile'] as const) {
+      const upload = await characters.requestReferenceUpload(character.id, 'png');
+      await storage.put(upload.objectKey, Buffer.from('png'), { mime: 'image/png' });
+      latest = await characters.confirmReference(character.id, {
+        blobId: upload.blobId,
+        objectKey: upload.objectKey,
+        sha256: 'deadbeef',
+        view,
+      });
+    }
+    const blobIds = (latest.referenceSet as ReferenceImage[]).map((ref) => ref.blobId);
+
+    const blueprints = testApp.app.get(BlueprintService);
+    const blueprintId = await blueprints.ensureBlueprint(channel.id, 'Flow Role');
+    const version = await blueprints.createVersion(blueprintId, {
+      graph: [{ ...flowStage, slots: { references: { from: 'role', roleKey: 'character' } } }],
+      inputs: [],
+      roles: [
+        {
+          key: 'character',
+          label: 'Character',
+          required: true,
+          characterId: character.id,
+          referenceBlobIds: blobIds,
+        },
+      ],
+      defaults: {},
+      budget: { runCapUsd: 10 },
+    });
+    expect(
+      (version.validation as Array<{ severity: string }>).filter((i) => i.severity === 'error'),
+    ).toEqual([]);
+    expect(version.runnable).toBe(true);
+
+    const runs = testApp.app.get(RunService);
+    const created = await runs.create({
+      channelId: channel.id,
+      blueprintVersionId: version.id,
+      inputs: {},
+      roleBindings: {},
+      rerunStageKeys: [],
+      budgetCapUsd: 10,
+    });
+    // Starting checks the reference limit too, the path that said "does not
+    // declare a reference limit" for a Codex model.
+    await expect(runs.start(created.id)).resolves.toBeDefined();
   });
 });

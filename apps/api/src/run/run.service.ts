@@ -10,6 +10,7 @@ import type {
 } from '@reelcraft/shared';
 import { InputDef, RoleDef as RoleDefSchema, StageDef } from '@reelcraft/shared';
 import { RUN_ACTION_ALLOWED_STATES } from './run-action-policy';
+import { stageReferenceLimit } from '../common/reference-limit';
 import { findFinalVideo } from '../artifact/final-video';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
 import {
@@ -417,14 +418,14 @@ export class RunService {
       const info = (await this.providers.get(model.provider).listModels()).find(
         (candidate) => candidate.modelId === model.modelId,
       );
-      const maxRefs = info?.capabilities.maxRefs ?? info?.capabilities.image?.maxReferences;
-      if (!info || maxRefs === undefined)
+      const maxRefs = stageReferenceLimit(stage.capability, info?.capabilities);
+      if (maxRefs === undefined || (!info && stage.capability !== 'browser.flow_video'))
         throw new ConflictException(
           `RunService.start: model "${model.modelId}" does not declare a reference limit`,
         );
       if (
         stage.capability === 'video.generate' &&
-        !info.capabilities.video?.inputs.includes('references')
+        !info?.capabilities.video?.inputs.includes('references')
       ) {
         throw new ConflictException(
           `RunService.start: model "${model.modelId}" does not support reference-image conditioning`,
