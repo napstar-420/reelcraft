@@ -109,7 +109,10 @@ export function ModelPinEditor({
   clearable = true,
   modality,
 }: ModelPinEditorProps) {
-  const providers = useQuery({ queryKey: ['providers'], queryFn: api.listProviders });
+  const providers = useQuery({
+    queryKey: ['providers', modality ?? null],
+    queryFn: () => api.listProviders(modality),
+  });
   const provider = value?.provider ?? '';
   const models = useQuery({
     queryKey: ['provider-models', provider],

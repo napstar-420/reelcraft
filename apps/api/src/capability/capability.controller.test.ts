@@ -115,3 +115,31 @@ describe('CapabilityController.resolve', () => {
     );
   });
 });
+
+describe('CapabilityController.listProviders', () => {
+  const adapters: Record<string, string[]> = {
+    codex: ['text', 'image', 'browser'],
+    fal: ['video'],
+    openrouter: ['text'],
+  };
+  const providers = {
+    list: () => Object.keys(adapters),
+    get: (id: string) => ({ modalities: adapters[id] }),
+  } as unknown as ProviderRegistry;
+  const controller = new CapabilityController(
+    {} as CapabilityRegistry,
+    providers,
+    noStyles,
+    new SchemaValidatorService(),
+  );
+
+  it('lists every provider without a modality', () => {
+    expect(controller.listProviders()).toEqual(['codex', 'fal', 'openrouter']);
+  });
+
+  it('keeps only the providers that support the requested modality', () => {
+    expect(controller.listProviders('browser')).toEqual(['codex']);
+    expect(controller.listProviders('text')).toEqual(['codex', 'openrouter']);
+    expect(controller.listProviders('audio')).toEqual([]);
+  });
+});

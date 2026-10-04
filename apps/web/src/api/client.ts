@@ -265,7 +265,10 @@ export const api = {
       body: JSON.stringify({ config }),
     }),
 
-  listProviders: () => request<string[]>('/providers'),
+  listProviders: (modality?: string) =>
+    request<string[]>(
+      modality ? `/providers?modality=${encodeURIComponent(modality)}` : '/providers',
+    ),
   listModelsForProvider: (providerId: string) =>
     request<ModelInfoDto[]>(`/providers/${providerId}/models`),
 

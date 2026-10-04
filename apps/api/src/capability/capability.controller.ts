@@ -6,6 +6,7 @@ import {
   NotFoundException,
   Param,
   Post,
+  Query,
 } from '@nestjs/common';
 import { ResolveCapabilityRequestDto } from '@reelcraft/shared';
 import { CapabilityRegistry } from './capability.registry';
@@ -44,8 +45,12 @@ export class CapabilityController {
   }
 
   @Get('providers')
-  listProviders() {
-    return this.providers.list();
+  listProviders(@Query('modality') modality?: string) {
+    const ids = this.providers.list();
+    // `?modality=browser` keeps only the providers that can do that kind of work.
+    return modality
+      ? ids.filter((id) => this.providers.get(id).modalities.some((m) => m === modality))
+      : ids;
   }
 
   @Get('providers/:id/models')
