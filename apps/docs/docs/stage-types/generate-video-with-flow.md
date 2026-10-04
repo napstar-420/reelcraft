@@ -60,6 +60,23 @@ Under **Config**:
 - **references** (optional): images to add to Flow as **ingredients**, such as a
   [character's](../channels/characters.md) pictures. Bind a character role or other images to it.
 
+### Telling the images apart
+
+The agent sees each reference by name: a character's image as **Lucia, front view**, an asset by
+the **name you gave it** in the channel's Assets (for example `Beach background`). Name your assets
+for what they show, and refer to them by those names in the template ("use Lucia as the host, in
+front of the Beach background").
+
+## Durations
+
+If the template gives a clip's duration, the agent sets Flow's duration to it. When the model
+doesn't offer that exact length, it uses the closest one (the longer when two are equally close).
+
+## Missing clips
+
+A clip that fails twice stops the stage with an error naming it, instead of finishing with clips
+missing. Clips already made are kept, so a retry only makes the rest.
+
 ## Accounts and credits
 
 Flow charges credits for each clip, and an account can run out partway through.

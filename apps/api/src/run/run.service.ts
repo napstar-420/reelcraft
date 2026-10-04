@@ -450,7 +450,7 @@ export class RunService {
   private async resolveAssetBindings(
     graph: StageDef[],
     channelId: string,
-  ): Promise<Record<string, { blobId: string; kind: string }>> {
+  ): Promise<Record<string, { blobId: string; kind: string; name: string }>> {
     const assetIds = collectAssetIds(graph);
     if (assetIds.length === 0) return {};
 
@@ -458,13 +458,19 @@ export class RunService {
     // must not resolve for a NEW run even though its row still exists —
     // treated identically to "no longer exists" below.
     const rows = await this.db
-      .select({ id: asset.id, channelId: asset.channelId, kind: asset.kind, blobId: asset.blobId })
+      .select({
+        id: asset.id,
+        channelId: asset.channelId,
+        kind: asset.kind,
+        blobId: asset.blobId,
+        name: asset.name,
+      })
       .from(asset)
       .innerJoin(blob, eq(asset.blobId, blob.id))
       .where(and(inArray(asset.id, assetIds), isNull(blob.deletedAt)));
     const byId = new Map(rows.map((r) => [r.id, r]));
 
-    const bindings: Record<string, { blobId: string; kind: string }> = {};
+    const bindings: Record<string, { blobId: string; kind: string; name: string }> = {};
     for (const assetId of assetIds) {
       const row = byId.get(assetId);
       if (!row) {
@@ -475,7 +481,7 @@ export class RunService {
           `RunService.start: referenced asset "${assetId}" belongs to a different channel`,
         );
       }
-      bindings[assetId] = { blobId: row.blobId, kind: row.kind };
+      bindings[assetId] = { blobId: row.blobId, kind: row.kind, name: row.name };
     }
     return bindings;
   }

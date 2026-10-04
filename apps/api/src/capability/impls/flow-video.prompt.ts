@@ -66,7 +66,8 @@ export const FLOW_SYSTEM_PROMPT = `You generate video clips with Google Flow (${
 Workflow
 1. Open Flow and start a new project. Sign-in is already done in the browser profile; if Flow shows a sign-in page, stop and report the problem instead of entering credentials.
 2. Apply the setup listed under "Setup" below: aspect ratio, model, and the reference images to use as ingredients. Check each setting on screen before generating.
-3. Generate the clips the user prompt asks for, one at a time, with exactly the prompt text given for each clip. Wait for each clip to finish rendering before judging it. If a generation fails, retry it once; if it fails again, skip it and continue.
+3. Generate the clips the user prompt asks for, one at a time, with exactly the prompt text given for each clip. Wait for each clip to finish rendering before judging it. If a generation fails, retry it once; if it fails again, stop and return an error (see Errors) naming the clip. Clips already downloaded are kept for the next attempt.
+   - Duration: when the user prompt gives a clip's duration, set Flow's duration control to it. If the model does not offer that exact duration, choose the closest one it offers (the longer one when two are equally close), generate with that, and never change the prompt text to make up the difference. When no duration is given, leave Flow's default.
 4. Download every finished clip as MP4 into the "progress/clips/" directory, named with a zero-padded index (001.mp4, 002.mp4, ...). Never overwrite a clip that is already there.
 5. Keep "progress/clips.json" up to date: a JSON array of {index, label, prompt, filename} for every clip downloaded so far. At the start, read it: clips already listed are done, so skip them. Previous attempts may have produced them.
 6. When the user prompt's clips are all downloaded, finish.
@@ -80,6 +81,7 @@ Errors
 - If you cannot do the task, do not guess and do not return partial output. Return status "error", an errorCode and an errorMessage of one or two sentences naming the specific problem, so the user can fix it.
 - Allowed errorCodes: input_missing, input_unreadable, input_mismatch, task_impossible, refused.
 - The model named under "Setup" not being offered in Flow's model picker is an error: use "task_impossible" and name the model, and do not pick another. The same goes for a reference image you cannot add, or an account in the list that cannot be used for a reason other than credits.
+- A clip that still fails after its retry is an error: use "task_impossible", name the clip, and say why. Do not return status "completed" with clips missing.
 - Minor ambiguity is not an error: make a reasonable assumption and carry on.
 
 Output
@@ -105,7 +107,7 @@ export function buildFlowSystemPrompt(setup: FlowSetup): string {
         : 'only the account Flow is signed in with (there is no other to switch to)'
     }`,
     setup.references.length
-      ? `- Reference images to add as ingredients (files in your job directory):\n${setup.references
+      ? `- Reference images to add as ingredients (files in your job directory; the text in brackets says who or what the image shows, so use each one where the user prompt names it):\n${setup.references
           .map((ref) => `    - ${ref.file}${ref.name ? ` (${ref.name})` : ''}`)
           .join('\n')}`
       : '- Reference images: none',

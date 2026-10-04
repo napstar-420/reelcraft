@@ -40,7 +40,7 @@ export interface BindingScope {
    * `RunService.start()` (§6.2). Never re-read from the live `asset` table
    * here, so a later channel-asset edit can't retroactively change a past
    * run. */
-  assetBindings?: Record<string, { blobId: string; kind: string }> | undefined;
+  assetBindings?: Record<string, { blobId: string; kind: string; name?: string }> | undefined;
   /** Immutable Character snapshots written by RunService.start(). */
   roleBindings?: Record<string, RoleBinding> | undefined;
   /** phase 7 — carried through the interface now so callers don't churn later. */
@@ -283,6 +283,7 @@ export class BindingResolverService {
             handle: `asset:${ref.assetId}`,
             blobId: binding.blobId,
             kind: binding.kind,
+            ...(binding.name && { name: binding.name }),
             ...(blobRow?.objectKey && { sourceKey: blobRow.objectKey }),
             ...(blobRow?.probe != null && { probe: blobRow.probe }),
             hasAudio:

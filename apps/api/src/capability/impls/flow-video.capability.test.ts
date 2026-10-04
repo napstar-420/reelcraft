@@ -78,8 +78,8 @@ function setup(fetched: unknown) {
     config: { provider: 'codex', modelId: 'gpt', aspectRatio: '9:16', flowModel: 'Veo 3.1' },
     slots: {
       references: [
-        { sourceKey: 'characters/c1/refs/a.png', characterName: 'Ava' },
-        { sourceKey: 'characters/c1/refs/b.png' },
+        { sourceKey: 'characters/c1/refs/a.png', characterName: 'Ava', view: 'front' },
+        { sourceKey: 'assets/x/b.png', name: 'Beach background' },
       ],
     },
     context: {},
@@ -104,8 +104,10 @@ describe('FlowVideoCapability.submit', () => {
     expect(first.system).toContain('a@example.com, b@example.com');
     expect(first.system).toContain('Aspect ratio: 9:16');
     expect(first.system).toContain('Model: Veo 3.1');
-    expect(first.system).toContain('inputs/1-a.png (Ava)');
-    expect(first.system).toContain('inputs/2-b.png');
+    expect(first.system).toContain('inputs/1-a.png (Ava, front view)');
+    expect(first.system).toContain('inputs/2-b.png (Beach background)');
+    expect(first.system).toContain('closest one it offers');
+    expect(first.system).toContain('still fails after its retry is an error');
     expect(first.params.startUrl).toContain('labs.google');
     expect(first.params.progressKey).toMatch(/^[a-f0-9]{32}$/);
     expect(second.params.progressKey).toBe(first.params.progressKey);

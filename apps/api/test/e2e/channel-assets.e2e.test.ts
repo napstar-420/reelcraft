@@ -135,7 +135,11 @@ describe('channel assets (e2e)', () => {
 
     const [beforeEdit] = await testDb.db.select().from(run).where(eq(run.id, created.id)).limit(1);
     const snapshot = beforeEdit?.assetBindings as Record<string, { blobId: string; kind: string }>;
-    expect(snapshot[logo.id]).toEqual({ blobId: originalBlobId, kind: 'media.image' });
+    expect(snapshot[logo.id]).toEqual({
+      blobId: originalBlobId,
+      kind: 'media.image',
+      name: logo.name,
+    });
 
     // Simulate a later channel-asset edit (repointing the asset at a
     // different blob) — direct DB write since AssetService has no "update".

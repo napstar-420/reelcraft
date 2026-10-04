@@ -216,13 +216,19 @@ export class FlowVideoCapability implements CapabilityImpl<FlowVideoConfig> {
   }
 }
 
+/** What the agent should call a reference image: the character (and which
+ * view of them), the asset's name, or the image's caption. */
 function referenceName(references: unknown, sourceKey: string): string | undefined {
   if (!Array.isArray(references)) return undefined;
   const match = references.find(
-    (ref): ref is { characterName?: string; caption?: string } =>
+    (ref): ref is { characterName?: string; view?: string; name?: string; caption?: string } =>
       typeof ref === 'object' &&
       ref !== null &&
       (ref as { sourceKey?: unknown }).sourceKey === sourceKey,
   );
-  return match?.characterName ?? match?.caption;
+  if (!match) return undefined;
+  if (match.characterName) {
+    return match.view ? `${match.characterName}, ${match.view} view` : match.characterName;
+  }
+  return match.name ?? match.caption;
 }
