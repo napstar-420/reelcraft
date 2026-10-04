@@ -41,6 +41,9 @@ before paying for anything. To make real videos, connect one or more of these la
 3. [Add AI provider keys](./provider-keys.md), and if you use them, connect
    [BrowserOS Neo](./browseros-neo.md) and [Codex](./codex.md)
 
+Then learn how to make videos: start with [How Reelcraft works](./concepts/how-it-works.md), then build a
+[blueprint](./blueprints/blueprints.md) and [run it](./runs/starting-a-run.md).
+
 Later: [update Reelcraft](./updating.md), [back it up](./backup.md), and
 [fix common problems](./troubleshooting.md).
 

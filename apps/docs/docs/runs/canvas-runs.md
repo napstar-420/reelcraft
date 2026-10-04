@@ -1,0 +1,60 @@
+---
+title: Canvas runs
+description: Try stages one at a time while you build, without saving a version or starting from scratch.
+---
+
+While you build a blueprint, you don't want to rerun everything after each small change. The **run
+panel** beside the stages lets you run a blueprint, or one stage of it, and see the results next to
+the canvas.
+
+## The first run
+
+With no runs yet, the panel says **No runs yet. Start one to run stages independently and monitor them
+here.** Select **Run**, fill in the inputs and start a run, as in [Starting a run](./starting-a-run.md).
+
+After that, the panel follows the latest run.
+
+## What the panel shows
+
+- The run's short id, as a link to its [run page](./run-page.md), with its status, what it has spent
+  and how long it has taken.
+- **Run all**, **Cancel run**, **Pause** and **Resume**, whichever apply.
+- A list of the stages, each with a status dot, its label and buttons.
+- **Blueprint output**: the result of the last stage, once it has run.
+- **Memory**: the values stages have saved. See
+  [Connecting stages](../blueprints/connecting-stages.md#memory).
+
+## Run all
+
+**Run all** starts a new run of the blueprint as it is on the canvas, using the same inputs as the
+last run. It **reuses** every stage at the start of the blueprint that hasn't changed since, so only the
+stages from the first change onwards run again. Reused stages are marked **Reused**.
+
+Only the unbroken run of unchanged stages from the first stage is reused. If you change stage 3, stages
+3 and later run again, even if some of them wouldn't be affected.
+
+## Run a single stage
+
+Select the play button next to a stage to run just that stage. Reelcraft reuses everything before it,
+runs the stage fresh, and stops right after it. Use it to tune one prompt without paying for the stages
+around it.
+
+While a stage is running, its button turns into a stop button, labelled **Cancel run**. There's no way
+to stop just one stage: it cancels the whole run, and Reelcraft asks first: **Cancel this run? This
+stops the whole run, not just one stage. It can't be undone.**
+
+## Unsaved changes
+
+You can run while the canvas has unsaved changes. Reelcraft saves a temporary copy of the canvas as it
+is and runs that. It doesn't appear in the **Versions** menu, and it isn't a new version.
+
+Select **Save** when you're happy. [Versions](../blueprints/versions.md) explains the difference.
+
+The blueprint must be **Runnable** for any of these to start.
+
+## The stage buttons
+
+- **View output** (the eye): the stage's current output.
+- **Attempts** (the clock): every attempt, with its log.
+- **Review output**: appears on the stage waiting for your approval. See
+  [When a run needs you](./when-a-run-needs-you.md).
