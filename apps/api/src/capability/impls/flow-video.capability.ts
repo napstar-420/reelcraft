@@ -78,7 +78,11 @@ export class FlowVideoCapability implements CapabilityImpl<FlowVideoConfig> {
   constructor(private readonly providers: ProviderRegistry) {}
 
   slots(): SlotDef[] {
-    return [{ name: 'references', accepts: ['media.image'], required: false, cardinality: 'many' }];
+    return [
+      { name: 'references', accepts: ['media.image'], required: false, cardinality: 'many' },
+      // Anything else to add as an ingredient: a background, props, a second character.
+      { name: 'ingredients', accepts: ['media.image'], required: false, cardinality: 'many' },
+    ];
   }
 
   allowedOutputs(): OutputKind[] {
@@ -186,7 +190,7 @@ export class FlowVideoCapability implements CapabilityImpl<FlowVideoConfig> {
   private request(ctx: ExecCtx<FlowVideoConfig>) {
     const references = [...new Set(collectSourceKeys(ctx.slots))].map((sourceKey, index) => ({
       file: `inputs/${index + 1}-${basename(sourceKey)}`,
-      name: referenceName(ctx.slots.references, sourceKey),
+      name: referenceName(Object.values(ctx.slots).flat(), sourceKey),
     }));
     return {
       modality: 'browser' as const,

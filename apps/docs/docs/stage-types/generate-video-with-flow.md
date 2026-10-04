@@ -59,6 +59,9 @@ Under **Config**:
 
 - **references** (optional): images to add to Flow as **ingredients**, such as a
   [character's](../channels/characters.md) pictures. Bind a character role or other images to it.
+- **ingredients** (optional): more ingredient images, such as a background, props or a second
+  character. Bind an asset or an input. Put them here, not under **Context**: only slots reach
+  Flow as images.
 
 ### Telling the images apart
 

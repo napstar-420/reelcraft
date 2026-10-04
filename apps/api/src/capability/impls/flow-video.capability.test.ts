@@ -77,10 +77,8 @@ function setup(fetched: unknown) {
     attemptNo: 1,
     config: { provider: 'codex', modelId: 'gpt', aspectRatio: '9:16', flowModel: 'Veo 3.1' },
     slots: {
-      references: [
-        { sourceKey: 'characters/c1/refs/a.png', characterName: 'Ava', view: 'front' },
-        { sourceKey: 'assets/x/b.png', name: 'Beach background' },
-      ],
+      references: [{ sourceKey: 'characters/c1/refs/a.png', characterName: 'Ava', view: 'front' }],
+      ingredients: [{ sourceKey: 'assets/x/b.png', name: 'Beach background' }],
     },
     context: {},
     layer: { flow: { accounts: ['a@example.com', 'b@example.com'] } },
