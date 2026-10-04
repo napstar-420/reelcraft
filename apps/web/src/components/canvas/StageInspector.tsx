@@ -17,6 +17,12 @@ import {
   isOutputInstructionsIssue,
   supportsOutputInstructions,
   updateDataOutputSchema,
+  FLOW_CAPABILITY,
+  MAX_INGREDIENTS,
+  ingredientCount,
+  ingredientSlotName,
+  visibleConfigSchema,
+  withIngredientCount,
 } from './stage-inspector.logic';
 import { parseValidationPath, type ParsedValidationPath } from '../../lib/parse-validation-path';
 import {
@@ -965,6 +971,8 @@ export function StageInspector({
 
   const configSchema = capabilities.data?.find((c) => c.key === stage.capability)?.configSchema;
   const stageCapability = capabilities.data?.find((c) => c.key === stage.capability);
+  const ingredients = ingredientCount(stage.config);
+  const lastIngredientSlot = ingredients > 0 ? ingredientSlotName(ingredients) : undefined;
 
   /** Chunk 7b — attribute this stage's validation issues to the field each
    * one's `path` (via `parseValidationPath`) names. Slot/context names come
@@ -1162,7 +1170,7 @@ export function StageInspector({
                   Config
                 </InfoHeading>
                 <SchemaForm
-                  schema={configSchema}
+                  schema={visibleConfigSchema(stage.capability, configSchema)}
                   value={stage.config}
                   onChange={(next) =>
                     onChange({ ...stage, config: (next as Record<string, unknown>) ?? {} })
@@ -1208,9 +1216,34 @@ export function StageInspector({
                     assets={assets}
                     iterating={!!stage.iterate}
                   />
+                  {stage.capability === FLOW_CAPABILITY &&
+                    slot.name === lastIngredientSlot &&
+                    ingredients > 0 && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="self-start"
+                        onClick={() => onChange(withIngredientCount(stage, ingredients - 1))}
+                      >
+                        Remove
+                      </Button>
+                    )}
                   <IssueList issues={slotIssues(slot.name)} />
                 </div>
               ))}
+              {stage.capability === FLOW_CAPABILITY && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="self-start"
+                  disabled={ingredients >= MAX_INGREDIENTS}
+                  onClick={() => onChange(withIngredientCount(stage, ingredients + 1))}
+                >
+                  + add ingredient
+                </Button>
+              )}
             </div>
 
             <div className="flex flex-col gap-3">

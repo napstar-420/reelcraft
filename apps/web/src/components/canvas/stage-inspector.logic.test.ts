@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import type { StageDef } from '@reelcraft/shared';
 import {
   buildStageOutput,
+  ingredientCount,
+  ingredientSlotName,
+  visibleConfigSchema,
+  withIngredientCount,
   inferSchemaFromValue,
   isOutputInstructionsIssue,
   parseSchemaJson,
@@ -172,5 +177,48 @@ describe('stage inspector output logic', () => {
         raw: 'stages.draft.output.schema',
       }),
     ).toBe(false);
+  });
+});
+
+describe('Flow ingredient inputs', () => {
+  const stage = (slots: StageDef['slots'], config: StageDef['config'] = {}) =>
+    ({ key: 's', capability: 'browser.flow_video', slots, config }) as StageDef;
+  const bound = { from: 'asset', assetId: 'a' } as const;
+
+  it('defaults to one and names them ingredients, ingredients2…', () => {
+    expect(ingredientCount({})).toBe(1);
+    expect(ingredientCount({ ingredientSlots: 3 })).toBe(3);
+    expect([1, 2, 3].map(ingredientSlotName)).toEqual([
+      'ingredients',
+      'ingredients2',
+      'ingredients3',
+    ]);
+  });
+
+  it('adds one, keeping what is bound', () => {
+    const next = withIngredientCount(stage({ ingredients: bound }), 2);
+    expect(next.config).toEqual({ ingredientSlots: 2 });
+    expect(next.slots).toEqual({ ingredients: bound });
+  });
+
+  it('removes the last one with its binding, and leaves other slots alone', () => {
+    const next = withIngredientCount(
+      stage({ references: bound, ingredients: bound, ingredients2: bound }, { ingredientSlots: 2 }),
+      1,
+    );
+    expect(Object.keys(next.slots)).toEqual(['references', 'ingredients']);
+    expect(withIngredientCount(next, 0).slots).toEqual({ references: bound });
+    expect(withIngredientCount(next, 99).config).toEqual({ ingredientSlots: 8 });
+  });
+
+  it('hides the count from the Config form, for Flow only', () => {
+    const schema = {
+      type: 'object',
+      properties: { aspectRatio: { type: 'string' }, ingredientSlots: { type: 'integer' } },
+    } as const;
+    expect(Object.keys(visibleConfigSchema('browser.flow_video', schema).properties!)).toEqual([
+      'aspectRatio',
+    ]);
+    expect(visibleConfigSchema('video.generate', schema)).toBe(schema);
   });
 });

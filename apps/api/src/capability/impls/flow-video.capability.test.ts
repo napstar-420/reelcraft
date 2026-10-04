@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { FlowVideoCapability, quotaResumeAt } from './flow-video.capability';
+import { FlowVideoCapability, ingredientSlotNames, quotaResumeAt } from './flow-video.capability';
 
 const NOW = Date.parse('2026-10-04T12:00:00.000Z');
 
@@ -201,5 +201,44 @@ describe('FlowVideoCapability.fetch', () => {
     await expect(
       missing.capability.fetch({ providerId: 'codex', externalId: 'job' }),
     ).rejects.toThrow(/no downloaded file/);
+  });
+});
+
+describe('Flow ingredient slots', () => {
+  const capability = new FlowVideoCapability({} as never);
+  const config = { provider: 'codex', modelId: 'gpt' };
+
+  it('names them ingredients, ingredients2, ingredients3…', () => {
+    expect(ingredientSlotNames(0)).toEqual([]);
+    expect(ingredientSlotNames(3)).toEqual(['ingredients', 'ingredients2', 'ingredients3']);
+    expect(ingredientSlotNames(99)).toHaveLength(8);
+    expect(ingredientSlotNames()).toEqual(['ingredients']);
+  });
+
+  it('declares references plus one image slot per ingredient input', () => {
+    expect(capability.slots(config).map((s) => s.name)).toEqual(['references', 'ingredients']);
+    expect(capability.slots({ ...config, ingredientSlots: 3 }).map((s) => s.name)).toEqual([
+      'references',
+      'ingredients',
+      'ingredients2',
+      'ingredients3',
+    ]);
+    expect(capability.slots({ ...config, ingredientSlots: 0 }).map((s) => s.name)).toEqual([
+      'references',
+    ]);
+    expect(
+      capability
+        .slots({ ...config, ingredientSlots: 2 })
+        .every((s) => s.accepts[0] === 'media.image'),
+    ).toBe(true);
+  });
+
+  it('rejects a count outside 0 to 8', () => {
+    for (const ingredientSlots of [-1, 9, 1.5]) {
+      expect(capability.validate({ ...config, ingredientSlots }, stage())).toEqual([
+        expect.objectContaining({ path: 'config.ingredientSlots' }),
+      ]);
+    }
+    expect(capability.validate({ ...config, ingredientSlots: 8 }, stage())).toEqual([]);
   });
 });

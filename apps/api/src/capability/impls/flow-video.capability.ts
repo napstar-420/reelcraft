@@ -31,6 +31,7 @@ interface FlowVideoConfig {
   params?: Record<string, unknown>;
   aspectRatio?: string;
   flowModel?: string;
+  ingredientSlots?: number;
 }
 
 interface FlowResult {
@@ -42,6 +43,16 @@ interface FlowResult {
 }
 
 const ASPECT_RATIOS = ['16:9', '9:16'];
+const DEFAULT_INGREDIENT_SLOTS = 1;
+const MAX_INGREDIENT_SLOTS = 8;
+
+/** `ingredients`, `ingredients2`, `ingredients3`, … */
+export function ingredientSlotNames(
+  count: number | undefined = DEFAULT_INGREDIENT_SLOTS,
+): string[] {
+  const n = Math.min(Math.max(Math.trunc(count), 0), MAX_INGREDIENT_SLOTS);
+  return Array.from({ length: n }, (_, i) => (i === 0 ? 'ingredients' : `ingredients${i + 1}`));
+}
 const MINUTE_MS = 60_000;
 /** Used when Flow does not say when credits come back. */
 const DEFAULT_WAIT_MS = 6 * 60 * MINUTE_MS;
@@ -72,16 +83,28 @@ export class FlowVideoCapability implements CapabilityImpl<FlowVideoConfig> {
     properties: {
       aspectRatio: { type: 'string', enum: ASPECT_RATIOS },
       flowModel: { type: 'string', enum: [...FLOW_MODELS] },
+      ingredientSlots: {
+        type: 'integer',
+        minimum: 0,
+        maximum: MAX_INGREDIENT_SLOTS,
+        description: `How many extra ingredient inputs the stage has (default ${DEFAULT_INGREDIENT_SLOTS})`,
+      },
     },
   };
 
   constructor(private readonly providers: ProviderRegistry) {}
 
-  slots(): SlotDef[] {
+  slots(config: FlowVideoConfig): SlotDef[] {
+    // `references` is for the character; the numbered ones are anything else
+    // to add as an ingredient (a background, props, a second character).
     return [
       { name: 'references', accepts: ['media.image'], required: false, cardinality: 'many' },
-      // Anything else to add as an ingredient: a background, props, a second character.
-      { name: 'ingredients', accepts: ['media.image'], required: false, cardinality: 'many' },
+      ...ingredientSlotNames(config?.ingredientSlots).map((name) => ({
+        name,
+        accepts: ['media.image' as const],
+        required: false,
+        cardinality: 'many' as const,
+      })),
     ];
   }
 
@@ -116,6 +139,20 @@ export class FlowVideoCapability implements CapabilityImpl<FlowVideoConfig> {
       issues.push({
         path: 'writes',
         message: 'a video list cannot be written to memory; bind it from the next stage with prev',
+        severity: 'error',
+      });
+    }
+    if (
+      config.ingredientSlots !== undefined &&
+      !(
+        Number.isInteger(config.ingredientSlots) &&
+        config.ingredientSlots >= 0 &&
+        config.ingredientSlots <= MAX_INGREDIENT_SLOTS
+      )
+    ) {
+      issues.push({
+        path: 'config.ingredientSlots',
+        message: `Ingredient inputs must be 0 to ${MAX_INGREDIENT_SLOTS}`,
         severity: 'error',
       });
     }
