@@ -44,6 +44,14 @@ describe('FlowVideoCapability.validate', () => {
       .map((issue) => issue.path);
     expect(paths).toEqual(['output.kind', 'iterate', 'writes']);
   });
+  it('offers the four Flow models as a fixed list', () => {
+    expect(capability.configSchema.properties?.flowModel?.enum).toEqual([
+      'Omni 1.1 Flash',
+      'Veo 3.1 - Lite',
+      'Veo 3.1 - Fast',
+      'Veo 3.1 - Quality',
+    ]);
+  });
   it('rejects an aspect ratio Flow lacks', () => {
     expect(capability.validate({ ...config, aspectRatio: '4:3' }, stage())).toHaveLength(1);
   });
@@ -118,6 +126,8 @@ describe('FlowVideoCapability.fetch', () => {
       output: {
         status: 'completed',
         resetAt: '',
+        errorCode: '',
+        errorMessage: '',
         clips: [
           { index: 2, label: 'B', prompt: 'pb', filename: '002.mp4' },
           { index: 1, label: 'A', prompt: 'pa', filename: '001.mp4' },
@@ -138,16 +148,41 @@ describe('FlowVideoCapability.fetch', () => {
 
   it('defers until the credits reset when every account is out', async () => {
     const { capability } = setup({
-      output: { status: 'credits_exhausted', resetAt: '', clips: [] },
+      output: {
+        status: 'credits_exhausted',
+        resetAt: '',
+        errorCode: '',
+        errorMessage: '',
+        clips: [],
+      },
       attachments: [],
     });
     const result = await capability.fetch({ providerId: 'codex', externalId: 'job' });
     expect(Date.parse(result.deferUntil!)).toBeGreaterThan(Date.now());
   });
 
+  it('turns an agent error, such as a model Flow does not offer, into a model error', async () => {
+    const { capability } = setup({
+      output: {
+        status: 'error',
+        resetAt: '',
+        errorCode: 'task_impossible',
+        errorMessage: 'Flow does not offer "Veo 3.1 - Lite".',
+        clips: [],
+      },
+      attachments: [],
+    });
+    const result = await capability.fetch({ providerId: 'codex', externalId: 'job' });
+    expect(result.modelError).toEqual({
+      code: 'task_impossible',
+      message: 'Flow does not offer "Veo 3.1 - Lite".',
+    });
+    expect(result.deferUntil).toBeUndefined();
+  });
+
   it('fails when it finished without clips or a clip file is missing', async () => {
     const empty = setup({
-      output: { status: 'completed', resetAt: '', clips: [] },
+      output: { status: 'completed', resetAt: '', errorCode: '', errorMessage: '', clips: [] },
       attachments: [],
     });
     await expect(
@@ -157,6 +192,8 @@ describe('FlowVideoCapability.fetch', () => {
       output: {
         status: 'completed',
         resetAt: '',
+        errorCode: '',
+        errorMessage: '',
         clips: [{ index: 1, label: '', prompt: '', filename: '001.mp4' }],
       },
       attachments: [],

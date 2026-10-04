@@ -2,15 +2,41 @@ import type { JsonSchema } from '@reelcraft/shared';
 
 export const FLOW_START_URL = 'https://labs.google/fx/tools/flow';
 
+/** The video models in Flow's model picker, named exactly as Flow shows them.
+ * Fixed for now: a Flow update means editing this list. */
+export const FLOW_MODELS = [
+  'Omni 1.1 Flash',
+  'Veo 3.1 - Lite',
+  'Veo 3.1 - Fast',
+  'Veo 3.1 - Quality',
+] as const;
+
 /** What the agent hands back. Every field is required (Codex's strict mode);
  * an empty string stands for "unknown". */
 export const FLOW_RESULT_SCHEMA: JsonSchema = {
   type: 'object',
   properties: {
-    status: { type: 'string', enum: ['completed', 'credits_exhausted'] },
+    status: { type: 'string', enum: ['completed', 'credits_exhausted', 'error'] },
     resetAt: {
       type: 'string',
       description: 'ISO 8601 time the credits reset, or "" when Flow does not say',
+    },
+    errorCode: {
+      type: 'string',
+      enum: [
+        '',
+        'input_missing',
+        'input_unreadable',
+        'input_mismatch',
+        'task_impossible',
+        'refused',
+      ],
+      description: 'Only with status "error"; otherwise ""',
+    },
+    errorMessage: {
+      type: 'string',
+      description:
+        'Only with status "error": one or two sentences naming the problem; otherwise ""',
     },
     clips: {
       type: 'array',
@@ -26,7 +52,7 @@ export const FLOW_RESULT_SCHEMA: JsonSchema = {
       },
     },
   },
-  required: ['status', 'resetAt', 'clips'],
+  required: ['status', 'resetAt', 'errorCode', 'errorMessage', 'clips'],
 };
 
 /** The part of the system prompt that never changes. Shown read-only in the
@@ -46,8 +72,14 @@ Credits
 - When the current account runs out, switch to the next account in the list below (profile menu, then the Google account chooser) and continue with the remaining clips in a project there. Do not use an account that is not in the list.
 - When every account in the list is out of credits, stop. Return status "credits_exhausted", and in resetAt the time Flow says the credits come back (ISO 8601), or "" if it does not say.
 
+Errors
+- If you cannot do the task, do not guess and do not return partial output. Return status "error", an errorCode and an errorMessage of one or two sentences naming the specific problem, so the user can fix it.
+- Allowed errorCodes: input_missing, input_unreadable, input_mismatch, task_impossible, refused.
+- The model named under "Setup" not being offered in Flow's model picker is an error: use "task_impossible" and name the model, and do not pick another. The same goes for a reference image you cannot add, or an account in the list that cannot be used for a reason other than credits.
+- Minor ambiguity is not an error: make a reasonable assumption and carry on.
+
 Output
-- Return the supplied JSON manifest. status is "completed" when every requested clip is downloaded, otherwise "credits_exhausted".
+- Return the supplied JSON manifest. status is "completed" when every requested clip is downloaded, "credits_exhausted" when every account is out of credits, and "error" as above. Unused fields are "" (or an empty list).
 - clips lists EVERY clip downloaded so far, including those from earlier attempts, each with its index, label, prompt and filename.
 - Attach every clip file in the manifest's attachments (role "download", mime "video/mp4", the same filename). Attach a screenshot or two of the final state as evidence.
 - Use BrowserOS Neo only, and work only in tabs you opened.`;

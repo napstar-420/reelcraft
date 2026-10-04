@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { basename } from 'node:path';
 import { Injectable } from '@nestjs/common';
+import { ModelErrorCode } from '@reelcraft/shared';
 import type {
   CostEstimate,
   JobHandle,
@@ -17,6 +18,7 @@ import type { CapabilityImpl, ExecCtx, ExecResult } from '../capability.interfac
 import { ProviderRegistry } from '../../provider/provider.registry';
 import { collectSourceKeys } from '../../provider/source-keys';
 import {
+  FLOW_MODELS,
   FLOW_RESULT_SCHEMA,
   FLOW_START_URL,
   FLOW_SYSTEM_PROMPT,
@@ -32,8 +34,10 @@ interface FlowVideoConfig {
 }
 
 interface FlowResult {
-  status: 'completed' | 'credits_exhausted';
+  status: 'completed' | 'credits_exhausted' | 'error';
   resetAt: string;
+  errorCode: string;
+  errorMessage: string;
   clips: Array<{ index: number; label: string; prompt: string; filename: string }>;
 }
 
@@ -67,7 +71,7 @@ export class FlowVideoCapability implements CapabilityImpl<FlowVideoConfig> {
     type: 'object',
     properties: {
       aspectRatio: { type: 'string', enum: ASPECT_RATIOS },
-      flowModel: { type: 'string' },
+      flowModel: { type: 'string', enum: [...FLOW_MODELS] },
     },
   };
 
@@ -137,6 +141,17 @@ export class FlowVideoCapability implements CapabilityImpl<FlowVideoConfig> {
     const result = await this.providers.get(handle.providerId).fetch(handle);
     const flow = result.output as FlowResult;
     const base = { costUsd: result.costUsd, repro: result.repro };
+    if (flow.status === 'error') {
+      const code = ModelErrorCode.safeParse(flow.errorCode);
+      return {
+        output: flow,
+        ...base,
+        modelError: {
+          code: code.success ? code.data : 'task_impossible',
+          message: flow.errorMessage.trim() || 'Flow reported an error without details.',
+        },
+      };
+    }
     if (flow.status === 'credits_exhausted') {
       // Finished clips stay in the job's progress directory for the next attempt.
       return { output: flow, ...base, deferUntil: quotaResumeAt(flow.resetAt) };

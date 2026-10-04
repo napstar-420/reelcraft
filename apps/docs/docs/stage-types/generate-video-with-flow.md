@@ -51,8 +51,9 @@ Under **Config**:
 
 - **aspectRatio**: `16:9` or `9:16`. Empty uses the blueprint's or channel's
   [format](../channels/defaults.md#format) aspect ratio, and otherwise Flow's own default.
-- **flowModel**: the Flow video model to pick, for example `Veo 3.1 - Fast`. Use the name as Flow
-  shows it. Empty leaves Flow's choice.
+- **flowModel**: the Flow video model, chosen from a list: Omni 1.1 Flash, Veo 3.1 - Lite,
+  Veo 3.1 - Fast or Veo 3.1 - Quality. Empty leaves Flow's choice. If your account doesn't offer
+  the model you pick, the stage fails with an error naming it instead of using another.
 
 ## Inputs
 
