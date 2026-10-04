@@ -44,6 +44,9 @@ describe('Generate Video with Flow (e2e)', () => {
 
   /** What the stubbed Codex adapter reports for the next fetch. */
   let fetched: { output: unknown; attachments?: unknown[] };
+  /** What the stubbed judge answers when quality control calls Codex. */
+  let judged: unknown = { score: 90, critique: 'Fine.' };
+  const requests = new Map<string, { modality?: string }>();
 
   beforeAll(async () => {
     testDb = await createTestDb();
@@ -62,9 +65,20 @@ describe('Generate Video with Flow (e2e)', () => {
         },
       ],
       estimate: async () => ({ expectedUsd: 0, ceilingUsd: 0, basis: 'configured_ceiling' }),
-      submit: async (_request: unknown, key: string) => ({ providerId: 'codex', externalId: key }),
+      submit: async (request: { modality?: string }, key: string) => {
+        requests.set(key, request);
+        return { providerId: 'codex', externalId: key };
+      },
       poll: async () => ({ done: true, outcome: 'succeeded' }),
-      fetch: async () => ({ costUsd: 0, repro: { level: 'approximate' }, ...fetched }),
+      fetch: async (handle: { externalId: string }) =>
+        (requests.get(handle.externalId)?.modality ?? 'text') === 'text'
+          ? {
+              output: JSON.stringify(judged),
+              costUsd: 0,
+              repro: { level: 'none' },
+              rawResponse: {},
+            }
+          : { costUsd: 0, repro: { level: 'approximate' }, ...fetched },
       cancel: async () => ({ confirmed: true }),
     };
     const registry = testApp.app.get(ProviderRegistry);
@@ -311,5 +325,100 @@ describe('Generate Video with Flow (e2e)', () => {
     const view = output.items[0]!.artifact;
     expect(view.clips?.map((c) => c.index)).toEqual([1, 2]);
     expect(view.attachments.map((a) => a.role)).toEqual(['evidence']);
+  });
+
+  it('judges the clip list with Codex and, when it names bad clips, asks the next attempt to redo only those', async () => {
+    const qcStage: StageDef = {
+      ...flowStage,
+      qc: {
+        criteria: 'Same character and studio in every clip',
+        threshold: 70,
+        model: { provider: 'codex', modelId: 'gpt-example', params: { reasoningEffort: 'low' } },
+        includeInputs: false,
+      },
+    };
+    const channel = await testApp.app.get(ChannelService).create('local', {
+      name: `Flow QC ${Date.now()}-${Math.random()}`,
+      theme: {},
+      defaults: {},
+    });
+    const blueprints = testApp.app.get(BlueprintService);
+    const blueprintId = await blueprints.ensureBlueprint(channel.id, 'Flow QC');
+    const dto = {
+      graph: [qcStage],
+      inputs: [],
+      roles: [],
+      defaults: {},
+      budget: { runCapUsd: 10 },
+    };
+    // A judge that can't watch video is refused at save time.
+    const badJudge = {
+      ...dto,
+      graph: [
+        {
+          ...qcStage,
+          qc: { ...qcStage.qc!, model: { provider: 'fake', modelId: 'fake-judge-1', params: {} } },
+        },
+      ],
+    };
+    expect((await blueprints.validateOnly(blueprintId, badJudge)).issues).toContainEqual(
+      expect.objectContaining({ path: 'stages.flow.qc.model', severity: 'error' }),
+    );
+    const version = await blueprints.createVersion(blueprintId, dto);
+    expect(version.runnable).toBe(true);
+
+    const createdRun = await testApp.app.get(RunService).create({
+      channelId: channel.id,
+      blueprintVersionId: version.id,
+      inputs: {},
+      roleBindings: {},
+      rerunStageKeys: [],
+      budgetCapUsd: 10,
+    });
+    await testDb.db
+      .update(runTable)
+      .set({ state: 'RUNNING' })
+      .where(eq(runTable.id, createdRun.id));
+    const execution = createdRun.stageExecutions.find((e) => e.stageKey === 'flow')!;
+    const dir = await files;
+    const clip = async (name: string) => {
+      const localPath = join(dir, name);
+      await writeFile(localPath, `video ${name}`);
+      return { role: 'download', localPath, mime: 'video/mp4', filename: name };
+    };
+    fetched = {
+      output: {
+        status: 'completed',
+        resetAt: '',
+        errorCode: '',
+        errorMessage: '',
+        clips: [
+          { index: 1, label: 'Scene 1', prompt: 'p1', filename: 'q1.mp4' },
+          { index: 2, label: 'Scene 2', prompt: 'p2', filename: 'q2.mp4' },
+        ],
+      },
+      attachments: [await clip('q1.mp4'), await clip('q2.mp4')],
+    };
+    judged = { score: 40, critique: 'Scene 2 has the wrong background.', failedClips: [2] };
+
+    const first = await attempt(createdRun.id, execution.id);
+    expect(first.outcome).toBe('qc_failed');
+    const judgeCall = [...requests.values()].find((r) => r.modality === 'text') as {
+      params?: Record<string, unknown>;
+    };
+    expect(judgeCall.params).toMatchObject({
+      __inspectFiles: true,
+      slots: { qcClip1: expect.anything(), qcClip2: expect.anything() },
+    });
+
+    // The next attempt's prompt carries the critique and the clips to redo.
+    await attempt(createdRun.id, execution.id);
+    const attempts = await testDb.db
+      .select()
+      .from(stageAttempt)
+      .where(eq(stageAttempt.stageExecutionId, execution.id));
+    const second = attempts.find((a) => a.attemptNo === 2)!;
+    expect(second.renderedPrompt).toContain('Scene 2 has the wrong background.');
+    expect(second.renderedPrompt).toContain('Clips to make again (their index): 2');
   });
 });

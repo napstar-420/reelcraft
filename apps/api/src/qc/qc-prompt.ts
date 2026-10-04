@@ -11,12 +11,22 @@ export function buildQcPrompt(envelope: QcEnvelope): { system: string; user: str
           .map((d) => `"${d.key}" (${d.description})`)
           .join(', ')}.`
       : 'Provide a single overall score from 0-100.',
-    'Respond with JSON only, matching: {"dimensions"?: [{"key": string, "score": number, "critique"?: string}], "score"?: number, "critique": string}.',
+    'Respond with JSON only, matching: {"dimensions"?: [{"key": string, "score": number, "critique"?: string}], "score"?: number, "critique": string, "failedClips"?: number[]}.',
     ...(envelope.media
       ? [
           envelope.media.mime.startsWith('audio/')
             ? 'The artifact audio is attached to this message — listen to it and evaluate it directly.'
             : 'The artifact image is attached to this message — evaluate it directly.',
+        ]
+      : []),
+    ...(envelope.clips
+      ? [
+          `The artifact is ${envelope.clips.length} video clips, attached to this message in this order: ${envelope.clips
+            .map((c) => `${c.label} (index ${c.index})`)
+            .join(
+              ', ',
+            )}. Watch and listen to every clip and evaluate the set against the criteria.`,
+          'Add "failedClips" to your JSON: the index of every clip that must be made again (an empty list when none). Name those clips and what is wrong with each in the critique. Do not list a clip that is acceptable.',
         ]
       : []),
     ...(envelope.transcript !== undefined

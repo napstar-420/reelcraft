@@ -59,6 +59,7 @@ const RESERVED_CONFIG_KEYS = new Set([
   'maxSteps',
   'timeoutMs',
   'progressKey',
+  '__inspectFiles',
   '__referenceFiles',
 ]);
 
@@ -142,6 +143,11 @@ export function buildCodexPrompt(input: {
     input.modality === 'image' && Array.isArray(input.params?.__referenceFiles)
       ? `Reference images available to the image tool: ${input.params.__referenceFiles.join(', ')}`
       : undefined;
+  // A judge reading files (such as video clips) opens them with local tools.
+  const inspectContext =
+    input.modality === 'text' && Array.isArray(input.params?.__referenceFiles)
+      ? `Files to inspect, in order: ${input.params.__referenceFiles.join(', ')}. Open and examine them yourself with the local tools you have (for example ffmpeg to extract frames and audio); do not guess from the file names.`
+      : undefined;
   const outputInstruction =
     input.output?.kind === 'data'
       ? 'Return only JSON matching the supplied output schema. Do not wrap it in Markdown.'
@@ -159,6 +165,7 @@ export function buildCodexPrompt(input: {
     ...(modalityInstruction ? [modalityInstruction] : []),
     ...(browserContext ? [browserContext] : []),
     ...(imageContext ? [imageContext] : []),
+    ...(inspectContext ? [inspectContext] : []),
     outputInstruction,
     '</output_requirements>',
   ].join('\n');

@@ -100,6 +100,15 @@ describe('Codex command construction', () => {
     expect(prompt).toContain('Persistent progress directory: progress/');
   });
 
+  it('tells a text judge to open its input files itself', () => {
+    const prompt = buildCodexPrompt({
+      modality: 'text',
+      params: { __referenceFiles: ['inputs/1-a.mp4', 'inputs/2-b.mp4'] },
+    });
+    expect(prompt).toContain('Files to inspect, in order: inputs/1-a.mp4, inputs/2-b.mp4');
+    expect(buildCodexPrompt({ modality: 'text' })).not.toContain('Files to inspect');
+  });
+
   it('delimits system, user, and output requirements', () => {
     const prompt = buildCodexPrompt({
       modality: 'text',

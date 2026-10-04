@@ -120,7 +120,8 @@ export class CodexProviderAdapter implements ProviderAdapter {
     if (!this.modalities.includes(modality)) {
       throw new Error(`Codex does not support modality "${modality}"`);
     }
-    if (modality === 'text' && collectSourceKeys(req.params.slots).length > 0) {
+    const inspectFiles = modality === 'text' && req.params.__inspectFiles === true;
+    if (modality === 'text' && !inspectFiles && collectSourceKeys(req.params.slots).length > 0) {
       throw new Error('Codex text generation cannot read attached files; pick another model');
     }
     await this.readiness?.assertAvailable(modality);
@@ -152,11 +153,11 @@ export class CodexProviderAdapter implements ProviderAdapter {
     const outputDir = join(jobDir, 'outputs');
     await mkdir(outputDir, { mode: 0o700 });
     const referenceFiles =
-      (modality === 'image' || modality === 'browser') && this.inputMaterializer
+      (modality === 'image' || modality === 'browser' || inspectFiles) && this.inputMaterializer
         ? await this.inputMaterializer.materialize(
             jobDir,
             req.params.slots,
-            modality === 'browser' ? MAX_BROWSER_INPUTS : undefined,
+            modality === 'image' ? undefined : MAX_BROWSER_INPUTS,
           )
         : [];
     const timeoutMs = positiveInt(req.params.timeoutMs) ?? this.jobTimeoutMs;

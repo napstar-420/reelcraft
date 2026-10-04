@@ -348,6 +348,43 @@ describe('CodexProviderAdapter', () => {
     expect(status.deadlineMs).toBeCloseTo(Date.parse(startedAt) + 900_000, -2);
   });
 
+  describe('text jobs that inspect files', () => {
+    const slots = { qcClip1: { sourceKey: 'run/a/1.mp4' } };
+    const request = (params: Record<string, unknown>) => ({
+      modelId: 'gpt-example',
+      params: { reasoningEffort: 'low', slots, ...params },
+      output: { kind: 'text' as const },
+    });
+
+    it('still refuses attached files unless the job is a file inspection', async () => {
+      const { adapter } = await fixture();
+      await expect(adapter.submit(request({}), 'plain')).rejects.toThrow(
+        /cannot read attached files/,
+      );
+    });
+
+    it('materializes the files for a file inspection and lists them in the prompt', async () => {
+      const { root, launcher } = await fixture();
+      const materialize = vi.fn(async () => ['inputs/1-1.mp4']);
+      const adapter = new CodexProviderAdapter(
+        { workspaceRoot: root } as never,
+        {
+          listModels: async () => [
+            { modelId: 'gpt-example', label: 'x', supportedReasoningEfforts: ['low'] },
+          ],
+        } as never,
+        launcher as never,
+        undefined,
+        { materialize } as never,
+      );
+      await adapter.submit(request({ __inspectFiles: true }), 'inspect');
+      expect(materialize).toHaveBeenCalledWith(expect.any(String), slots, 20);
+      const jobDir = (launcher.launch.mock.calls[0]?.[0] as { jobDir: string }).jobDir;
+      const runner = JSON.parse(await readFile(join(jobDir, 'runner-request.json'), 'utf8'));
+      expect(runner.prompt).toContain('Files to inspect, in order: inputs/1-1.mp4');
+    });
+  });
+
   describe('browser jobs with a progress directory', () => {
     const request = (extra: Record<string, unknown> = {}) => ({
       modality: 'browser' as const,

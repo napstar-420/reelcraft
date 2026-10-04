@@ -647,6 +647,13 @@ function QcEditor({
           <p className="text-xs text-muted-foreground">{transcript.how}</p>
         </div>
       ) : null}
+      {outputKind === 'media.video_list' ? (
+        <p className="text-xs text-muted-foreground">
+          The judge watches every clip, in order, and can name the clips to make again. Use Codex
+          (it opens the files itself) or a model that accepts video input. Make sure the machine
+          running Codex has ffmpeg.
+        </p>
+      ) : null}
 
       <div className="flex flex-col gap-1.5">
         <InfoHeading info="Which model judges this stage's output against Criteria. Required — unlike a stage's own Model, quality control has no default to fall back to.">

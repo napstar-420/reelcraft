@@ -448,6 +448,10 @@ export class StageRunnerService {
       } else if (row.outcome === 'qc_failed') {
         const verdict = row.qcVerdict as QcVerdict | null;
         lines.push(`Attempt ${row.attemptNo} was rejected by QC: ${verdict?.critique ?? ''}`);
+        // A clip list names the clips to make again; the stage keeps the rest.
+        if (verdict?.failedClips?.length) {
+          lines.push(`Clips to make again (their index): ${verdict.failedClips.join(', ')}`);
+        }
       }
     }
     const routed = await this.db
@@ -1152,6 +1156,13 @@ export class StageRunnerService {
           return { outcome: 'qc_error', reason: audioError };
         }
       }
+      // A clip list is judged as every clip, in order, as video files.
+      const qcClips = persistedClips.map(({ clip, storageKey }) => ({
+        sourceKey: storageKey,
+        mime: clip.source.mime ?? 'video/mp4',
+        index: clip.index,
+        label: clip.label || `Clip ${clip.index}`,
+      }));
       const qcOutcome = await this.runQcWithRetries(
         stage.qc,
         effective.qc,
@@ -1160,6 +1171,7 @@ export class StageRunnerService {
         bindings,
         qcMedia,
         qcTranscript,
+        qcClips,
       );
 
       if (qcOutcome.status === 'error') {
@@ -1380,6 +1392,7 @@ export class StageRunnerService {
     bindings: ResolvedBindings,
     media: { sourceKey: string; mime: string } | undefined,
     transcript?: string,
+    clips?: Array<{ sourceKey: string; mime: string; index: number; label: string }>,
   ): Promise<QcOutcome> {
     const envelope = buildQcEnvelope({
       criteria: qcDef.criteria,
@@ -1392,6 +1405,7 @@ export class StageRunnerService {
       context: bindings.context,
       ...(media !== undefined && { media }),
       ...(transcript !== undefined && { transcript }),
+      ...(clips?.length && { clips }),
     });
 
     const maxAttempts = 1 + this.engineConfig.qcErrorRetries;

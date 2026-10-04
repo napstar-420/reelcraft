@@ -72,6 +72,9 @@ Workflow
 5. Keep "progress/clips.json" up to date: a JSON array of {index, label, prompt, filename} for every clip downloaded so far. At the start, read it: clips already listed are done, so skip them. Previous attempts may have produced them.
 6. When the user prompt's clips are all downloaded, finish.
 
+Feedback
+- If the user prompt contains feedback saying earlier clips were rejected, fix only what it names. When it lists "Clips to make again" by index, delete exactly those clips from "progress/clips/" and "progress/clips.json" first, keep every other clip, and make the listed ones again from the same prompts. When it gives feedback without listing indexes, make every clip again.
+
 Credits
 - Flow charges credits per generation. Watch for an out-of-credits message or a disabled Generate button.
 - When the current account runs out, switch to the next account in the list below (profile menu, then the Google account chooser) and continue with the remaining clips in a project there. Do not use an account that is not in the list.
