@@ -26,6 +26,7 @@ const RETRY_STATES = [
   'PAUSED_BUDGET',
   'PAUSED_APPROVAL',
   'PAUSED_INPUT',
+  'PAUSED_QUOTA',
   'FAILED',
   'COMPLETED',
 ] as const;
@@ -257,7 +258,7 @@ export class RunActionService {
     const result = await this.mutation.withLockedRun(
       runId,
       'patch_overrides',
-      ['PAUSED_BUDGET', 'PAUSED_APPROVAL', 'PAUSED_INPUT', 'FAILED'],
+      ['PAUSED_BUDGET', 'PAUSED_APPROVAL', 'PAUSED_INPUT', 'PAUSED_QUOTA', 'FAILED'],
       async (tx, lockedRun) => {
         if (lockedRun.revision !== claimsRevision) {
           throw new ConflictException('The run changed; request a new preview');

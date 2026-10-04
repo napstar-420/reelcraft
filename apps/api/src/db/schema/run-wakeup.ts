@@ -17,6 +17,7 @@ export const runWakeup = pgTable(
     eventName: text('event_name').notNull(), // Inngest event name to dispatch
     dispatchAttemptCount: integer('dispatch_attempt_count').notNull().default(0), // number of times dispatch has been attempted
     lastError: text('last_error'), // error message from the most recent failed dispatch attempt
+    notBefore: timestamptz('not_before'), // when set, the wakeup is held back until this time (e.g. provider quota reset)
     createdAt: timestamptz('created_at').notNull().defaultNow(), // when the wakeup was enqueued
     dispatchedAt: timestamptz('dispatched_at'), // when the wakeup was successfully dispatched to Inngest
     claimedAt: timestamptz('claimed_at'), // when a dispatcher claimed this wakeup for processing

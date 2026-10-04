@@ -62,6 +62,7 @@ const sidebars: SidebarsConfig = {
         'stage-types/human-input',
         'stage-types/human-timeline-edit',
         'stage-types/automate-browser',
+        'stage-types/generate-video-with-flow',
       ],
     },
     {

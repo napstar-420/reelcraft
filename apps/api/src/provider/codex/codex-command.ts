@@ -58,6 +58,7 @@ const RESERVED_CONFIG_KEYS = new Set([
   'startUrl',
   'maxSteps',
   'timeoutMs',
+  'progressKey',
   '__referenceFiles',
 ]);
 
@@ -126,6 +127,14 @@ export function buildCodexPrompt(input: {
           `Maximum browser steps: ${String(input.params?.__browserMaxSteps ?? 50)}`,
           ...(typeof input.params?.startUrl === 'string'
             ? [`Start URL: ${input.params.startUrl}`]
+            : []),
+          ...(Array.isArray(input.params?.__referenceFiles) && input.params.__referenceFiles.length
+            ? [`Input files provided to you: ${input.params.__referenceFiles.join(', ')}`]
+            : []),
+          ...(typeof input.params?.__progressDir === 'string'
+            ? [
+                `Persistent progress directory: ${input.params.__progressDir} (kept across attempts; save finished work there)`,
+              ]
             : []),
         ].join('\n')
       : undefined;

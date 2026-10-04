@@ -102,3 +102,26 @@ export function inheritedDefaults(channel: ConfigLayer, blueprint: ConfigLayer):
     models,
   };
 }
+
+/** The Google accounts Flow stages may use, in order of use. An empty list
+ * clears the setting, so the stage falls back to the channel's. */
+export function setFlowAccounts(layer: ConfigLayer, accounts: string[]): ConfigLayer {
+  const rest = omitKey(layer, 'flow');
+  return accounts.length ? { ...rest, flow: { accounts } } : rest;
+}
+
+/** Adds `email` at the end of the list, or removes it when already listed. */
+export function toggleAccount(accounts: string[], email: string): string[] {
+  return accounts.includes(email) ? accounts.filter((a) => a !== email) : [...accounts, email];
+}
+
+export type FlowAccountChoice = { email: string; name: string; signedIn: boolean };
+
+/** Accounts matching a search box (by email or name), case-insensitively. */
+export function filterAccounts(accounts: FlowAccountChoice[], query: string): FlowAccountChoice[] {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return accounts;
+  return accounts.filter(
+    (a) => a.email.toLowerCase().includes(needle) || a.name.toLowerCase().includes(needle),
+  );
+}

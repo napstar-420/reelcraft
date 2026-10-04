@@ -15,6 +15,7 @@ import type {
   RunDetailDto,
   RunMemoryDto,
   CapabilityDto,
+  FlowAccountsDto,
   ResolveCapabilityResponseDto,
   ModelInfoDto,
   SaveTemplateDto,
@@ -257,6 +258,7 @@ export const api = {
     }),
 
   listCapabilities: () => request<CapabilityDto[]>('/capabilities'),
+  flowAccounts: () => request<FlowAccountsDto>('/flow/accounts'),
   resolveCapability: (key: string, config: Record<string, unknown>) =>
     request<ResolveCapabilityResponseDto>(`/capabilities/${key}/resolve`, {
       method: 'POST',

@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
@@ -346,6 +346,100 @@ describe('CodexProviderAdapter', () => {
     if (status.done) throw new Error('expected an in-progress status');
     // Default jobTimeoutMs is 900_000ms (15 minutes) — see engine-config.ts.
     expect(status.deadlineMs).toBeCloseTo(Date.parse(startedAt) + 900_000, -2);
+  });
+
+  describe('browser jobs with a progress directory', () => {
+    const request = (extra: Record<string, unknown> = {}) => ({
+      modality: 'browser' as const,
+      modelId: 'gpt-example',
+      params: { reasoningEffort: 'low', progressKey: 'a'.repeat(32), ...extra },
+      output: {
+        kind: 'data' as const,
+        schema: { type: 'object' as const, properties: { ok: { type: 'string' as const } } },
+      },
+    });
+
+    it('shares one progress directory across attempts and returns files saved in it', async () => {
+      const { adapter, launcher, root } = await fixture();
+      const dirs: string[] = [];
+      launcher.launch.mockImplementation(async ({ jobDir }: { jobDir: string }) => {
+        dirs.push(jobDir);
+        await mkdir(join(jobDir, 'progress', 'clips'), { recursive: true });
+        await writeFile(join(jobDir, 'progress', 'clips', '001.mp4'), 'clip');
+        await writeFile(
+          join(jobDir, 'result.json'),
+          JSON.stringify({
+            version: 1,
+            output: { ok: 'yes' },
+            attachments: [
+              {
+                path: 'progress/clips/001.mp4',
+                mime: 'video/mp4',
+                filename: '001.mp4',
+                role: 'download',
+              },
+            ],
+          }),
+        );
+        await writeFile(join(jobDir, 'status.json'), JSON.stringify({ state: 'succeeded' }));
+        return 1;
+      });
+      const first = await adapter.submit(request(), 'attempt-1');
+      const second = await adapter.submit(request(), 'attempt-2');
+      expect(dirs).toHaveLength(2);
+      expect(await realpath(join(dirs[0]!, 'progress'))).toBe(
+        await realpath(join(dirs[1]!, 'progress')),
+      );
+      expect(await realpath(join(dirs[0]!, 'progress'))).toBe(
+        await realpath(join(root, 'codex-jobs', 'progress', 'a'.repeat(32))),
+      );
+      const result = await adapter.fetch(second);
+      expect(result.attachments).toEqual([
+        expect.objectContaining({ role: 'download', filename: '001.mp4' }),
+      ]);
+      expect(first.externalId).not.toBe(second.externalId);
+    });
+
+    it('still refuses paths outside outputs/ and progress/', async () => {
+      const { adapter, launcher, root } = await fixture();
+      await writeFile(join(root, 'secret.txt'), 'nope');
+      launcher.launch.mockImplementationOnce(async ({ jobDir }: { jobDir: string }) => {
+        await writeFile(
+          join(jobDir, 'result.json'),
+          JSON.stringify({
+            version: 1,
+            output: { ok: 'yes' },
+            attachments: [
+              { path: '../../secret.txt', mime: 'text/plain', filename: 's.txt', role: 'download' },
+            ],
+          }),
+        );
+        await writeFile(join(jobDir, 'status.json'), JSON.stringify({ state: 'succeeded' }));
+        return 1;
+      });
+      const handle = await adapter.submit(request(), 'escape');
+      await expect(adapter.fetch(handle)).rejects.toThrow(/escapes the job output directory/);
+    });
+
+    it('ignores a malformed progress key and honours per-job limits', async () => {
+      const { adapter, launcher } = await fixture();
+      const handle = await adapter.submit(
+        request({ progressKey: '../../etc', timeoutMs: 3_600_000, maxSteps: 900 }),
+        'limits',
+      );
+      const jobDir = (launcher.launch.mock.calls[0]?.[0] as { jobDir: string }).jobDir;
+      await expect(realpath(join(jobDir, 'progress'))).rejects.toThrow();
+      const runner = JSON.parse(await readFile(join(jobDir, 'runner-request.json'), 'utf8'));
+      expect(runner).toMatchObject({ timeoutMs: 3_600_000, browserMaxSteps: 900 });
+      const startedAt = new Date(Date.now() - 1000).toISOString();
+      await writeFile(
+        join(jobDir, 'status.json'),
+        JSON.stringify({ state: 'running', pid: process.pid, startedAt }),
+      );
+      const status = await adapter.poll(handle);
+      if (status.done) throw new Error('expected running');
+      expect(status.deadlineMs).toBeCloseTo(Date.parse(startedAt) + 3_600_000, -2);
+    });
   });
 
   it('rejects final messages above the durable output limit', async () => {

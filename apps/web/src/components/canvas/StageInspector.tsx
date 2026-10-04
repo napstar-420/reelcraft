@@ -163,6 +163,7 @@ function CollapsibleTextarea({
   maxLength,
   placeholder,
   className,
+  disabled,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -170,6 +171,7 @@ function CollapsibleTextarea({
   maxLength?: number;
   placeholder?: string;
   className?: string;
+  disabled?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   return (
@@ -178,6 +180,7 @@ function CollapsibleTextarea({
         rows={rows}
         maxLength={maxLength}
         placeholder={placeholder}
+        disabled={disabled}
         className={cn(className, !expanded && 'max-h-87.5 overflow-y-auto')}
         value={value}
         onChange={(e) => onChange(e.target.value)}
@@ -205,9 +208,14 @@ function CollapsibleTextarea({
  * "uses a prompt". */
 function InstructionsEditor({
   instructions,
+  lockedSystemPrompt,
+  templateRequired,
   onChange,
 }: {
   instructions: StageDef['instructions'];
+  /** A capability that owns its system prompt shows it here, read-only. */
+  lockedSystemPrompt?: string | undefined;
+  templateRequired?: boolean | undefined;
   onChange: (instructions: StageDef['instructions']) => void;
 }) {
   function set(patch: { system?: string; template?: string }) {
@@ -226,20 +234,37 @@ function InstructionsEditor({
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-col gap-1.5">
-        <InfoLabel info="Optional system prompt sent before the Template on every call — sets tone, persona, or rules that don't change from run to run. It is sent exactly as written: {{ }} values are not filled in here. Leave blank to send no system prompt.">
-          System
-        </InfoLabel>
-        <CollapsibleTextarea
-          rows={3}
-          className="font-mono text-xs"
-          placeholder="e.g. You are a meticulous video-production assistant."
-          value={instructions?.system ?? ''}
-          onChange={(v) => set({ system: v })}
-        />
+        {lockedSystemPrompt ? (
+          <>
+            <InfoLabel info="This stage type brings its own system prompt, which tells the agent how to do the work. It is always used and can't be edited. Say what to make in the Template below.">
+              System (managed by Reelcraft)
+            </InfoLabel>
+            <CollapsibleTextarea
+              rows={3}
+              className="font-mono text-xs"
+              value={lockedSystemPrompt}
+              disabled
+              onChange={() => undefined}
+            />
+          </>
+        ) : (
+          <>
+            <InfoLabel info="Optional system prompt sent before the Template on every call — sets tone, persona, or rules that don't change from run to run. It is sent exactly as written: {{ }} values are not filled in here. Leave blank to send no system prompt.">
+              System
+            </InfoLabel>
+            <CollapsibleTextarea
+              rows={3}
+              className="font-mono text-xs"
+              placeholder="e.g. You are a meticulous video-production assistant."
+              value={instructions?.system ?? ''}
+              onChange={(v) => set({ system: v })}
+            />
+          </>
+        )}
       </div>
       <div className="flex flex-col gap-1.5">
         <InfoLabel info="The user-role prompt sent to the model. Supports {{ }} interpolation: reference this stage's Slots or Context values by name, e.g. {{ myContextKey }}. When the stage regenerates after failed checks, a quality control rejection or a human rejection, the feedback is added to the prompt automatically — use {{ priorCritique }} only to control where it goes. Files ticked Attach file under Context are sent alongside the prompt and listed by their Context key: mention them by that name rather than with {{ }}. Required for capabilities that read a prompt (e.g. text/LLM generation) — leave blank for capabilities that don't.">
-          Template
+          {templateRequired ? 'Template (required)' : 'Template'}
         </InfoLabel>
         <CollapsibleTextarea
           rows={6}
@@ -1121,6 +1146,8 @@ export function StageInspector({
               <h3 className={SECTION_HEADING_CLASS}>Instructions</h3>
               <InstructionsEditor
                 instructions={stage.instructions}
+                lockedSystemPrompt={stageCapability?.lockedSystemPrompt}
+                templateRequired={stageCapability?.requiresTemplate}
                 onChange={(instructions) => onChange({ ...stage, instructions })}
               />
               <IssueList issues={instructionsIssues} />

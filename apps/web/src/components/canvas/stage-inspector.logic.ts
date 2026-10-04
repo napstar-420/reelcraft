@@ -21,6 +21,7 @@ export function buildStageOutput(kind: OutputKind, previous: OutputDef): OutputD
     case 'media.image':
     case 'media.video':
     case 'media.audio':
+    case 'media.video_list':
       return { kind };
     case 'file.subtitles':
       return { kind: 'file.subtitles' };

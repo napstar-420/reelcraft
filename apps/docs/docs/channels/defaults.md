@@ -47,6 +47,13 @@ The most each stage may spend in one run. If a stage's next model call would go 
 pauses as **Paused Budget** until you raise the cap. Empty means no stage cap: only the run's own
 cap applies. See [Budget and costs](../runs/budget-and-costs.md).
 
+### Flow accounts
+
+The Google accounts [Generate Video with Flow](../stage-types/generate-video-with-flow.md) stages
+may use, in order. Choose **Choose accounts** to see the accounts signed in to
+[BrowserOS Neo](../browseros-neo.md), search them, and tick the ones to use. A blueprint's list
+replaces the channel's.
+
 ### Format
 
 - **Aspect ratio**: 9:16, 16:9, 1:1 or 4:5. Timelines are checked against it, so a vertical

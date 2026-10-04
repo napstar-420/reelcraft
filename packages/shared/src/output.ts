@@ -13,7 +13,7 @@ export type MediaConstraints = z.infer<typeof MediaConstraints>;
 
 const OutputInstructions = z.string().max(4_000).optional();
 
-/** §4.2 — the seven closed artifact kinds a Stage may declare as its output. */
+/** §4.2 — the closed artifact kinds a Stage may declare as its output. */
 export const OutputDef = z.discriminatedUnion('kind', [
   z.object({
     kind: z.literal('data'),
@@ -23,7 +23,7 @@ export const OutputDef = z.discriminatedUnion('kind', [
   }),
   z.object({ kind: z.literal('text'), instructions: OutputInstructions }),
   z.object({
-    kind: z.enum(['media.image', 'media.video', 'media.audio']),
+    kind: z.enum(['media.image', 'media.video', 'media.audio', 'media.video_list']),
     constraints: MediaConstraints.optional(),
   }),
   z.object({ kind: z.literal('file.subtitles') }),

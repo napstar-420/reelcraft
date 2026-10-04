@@ -33,6 +33,8 @@ export class CapabilityController {
       description: impl.description,
       configSchema: impl.configSchema,
       ...(impl.interaction && { interaction: impl.interaction }),
+      ...(impl.lockedSystemPrompt && { lockedSystemPrompt: impl.lockedSystemPrompt }),
+      ...(impl.requiresTemplate && { requiresTemplate: impl.requiresTemplate }),
     }));
   }
 

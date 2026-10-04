@@ -51,6 +51,7 @@ import { StageAttemptsSheet } from '@/components/runs/stage-attempts-sheet';
 import { StageOutputSheet } from '@/components/runs/stage-output-sheet';
 import { RunMemoryCard } from '@/components/runs/run-memory-card';
 import { isApprovalStillOpen } from './approval-review.logic';
+import { quotaPauseMessage } from '@/lib/quota-pause';
 
 export function RunPage() {
   const { runId } = useParams<{ runId: string }>();
@@ -285,6 +286,11 @@ export function RunPage() {
           <p className="text-sm text-muted-foreground">
             ${spentUsd.toFixed(2)} spent of ${budgetCapUsd.toFixed(2)} budget
           </p>
+          {run.state === 'PAUSED_QUOTA' ? (
+            <p className="text-sm text-amber-700 dark:text-amber-400">
+              {quotaPauseMessage(run.resumeAt, (when) => when.toLocaleString())}
+            </p>
+          ) : null}
           {run.budgetBlock ? (
             <p className="text-sm text-amber-700 dark:text-amber-400">
               {run.budgetBlock.scope === 'stage'

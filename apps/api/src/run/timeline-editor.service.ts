@@ -9,6 +9,7 @@ import {
   type TimelineResource,
 } from '@reelcraft/shared';
 import { BlobService } from '../artifact/blob.service';
+import { clipHandle, parseArtifactHandle, storedClips } from '../artifact/clip-handle';
 import { StyleRegistry } from '../capability/style.registry';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
 import {
@@ -36,6 +37,8 @@ type Context = {
 type SourceRow = {
   assetId?: string | undefined;
   artifactId: string;
+  /** Set for one clip of a `media.video_list` artifact. */
+  clipPosition?: number | undefined;
   blobId?: string | undefined;
   kind: string;
   probe?: unknown;
@@ -231,7 +234,11 @@ export class TimelineEditorService {
     for (const [slotName, ref] of Object.entries(context.stage.slots)) {
       const rows = await this.rowsForRef(context, ref);
       for (const row of rows) {
-        const handle = row.assetId ? `asset:${row.assetId}` : `artifact:${row.artifactId}`;
+        const handle = row.assetId
+          ? `asset:${row.assetId}`
+          : row.clipPosition !== undefined
+            ? clipHandle(row.artifactId, row.clipPosition)
+            : `artifact:${row.artifactId}`;
         allowedHandles.add(handle);
         if (slotName === 'timeline' && row.data) {
           const parsed = Timeline.safeParse(row.data);
@@ -307,8 +314,34 @@ export class TimelineEditorService {
       ),
     );
     for (const handle of handles) {
-      if (!handle.startsWith('artifact:')) continue;
-      const id = handle.slice('artifact:'.length);
+      const parsed = parseArtifactHandle(handle);
+      if (!parsed) continue;
+      if (parsed.clipPosition !== undefined) {
+        const [list] = await this.db
+          .select({ data: artifact.data })
+          .from(artifact)
+          .where(
+            and(
+              eq(artifact.id, parsed.artifactId),
+              eq(artifact.runId, context.run.id),
+              eq(artifact.kind, 'media.video_list'),
+              eq(artifact.stale, false),
+            ),
+          )
+          .limit(1);
+        const clip = storedClips(list?.data)[parsed.clipPosition];
+        const access = clip ? await this.blobs.readUrl(context.ownerId, clip.blobId) : undefined;
+        if (clip && access?.status === 'live') {
+          resources.push({
+            handle,
+            kind: 'media.video',
+            url: access.url,
+            ...(clip.probe !== null && clip.probe !== undefined ? { probe: clip.probe } : {}),
+          });
+        }
+        continue;
+      }
+      const id = parsed.artifactId;
       const [row] = await this.db
         .select({ artifact, blob })
         .from(artifact)
@@ -369,7 +402,7 @@ export class TimelineEditorService {
         );
       return rows
         .filter((row) => ref.index === undefined || row.itemIndex === ref.index)
-        .map(toSourceRow);
+        .flatMap(toSourceRows);
     }
     if (ref.from === 'prev') {
       const index = context.graph.findIndex((stage) => stage.key === context.stage.key);
@@ -385,7 +418,7 @@ export class TimelineEditorService {
             eq(artifact.stale, false),
           ),
         );
-      return rows.map(toSourceRow);
+      return rows.flatMap(toSourceRows);
     }
     if (ref.from === 'memory') {
       const [memory] = await this.db
@@ -411,7 +444,7 @@ export class TimelineEditorService {
         .from(artifact)
         .where(eq(artifact.id, memory.artifactId))
         .limit(1);
-      return row ? [toSourceRow(row)] : [];
+      return row ? toSourceRows(row) : [];
     }
     if (ref.from === 'const') {
       const parsed = Timeline.safeParse(ref.value);
@@ -459,6 +492,19 @@ export class TimelineEditorService {
     if (!wait) throw new ConflictException('The timeline editor has not opened yet');
     return { run: row.run, ownerId: row.ownerId, graph, stage, execution, wait };
   }
+}
+
+/** A `media.video_list` artifact is offered to the editor as one source per clip. */
+function toSourceRows(row: typeof artifact.$inferSelect): SourceRow[] {
+  if (row.kind !== 'media.video_list') return [toSourceRow(row)];
+  return storedClips(row.data).map((clip, position) => ({
+    artifactId: row.id,
+    clipPosition: position,
+    blobId: clip.blobId,
+    kind: 'media.video',
+    probe: clip.probe,
+    data: undefined,
+  }));
 }
 
 function toSourceRow(row: typeof artifact.$inferSelect): SourceRow {

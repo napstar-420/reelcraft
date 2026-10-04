@@ -1,5 +1,5 @@
 import { ConflictException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import type {
   CreateRunDto,
   ConfigLayer,
@@ -16,6 +16,7 @@ import {
   asset,
   artifact,
   artifactAttachment,
+  runWakeup,
   blob,
   blueprint,
   blueprintVersion,
@@ -711,9 +712,11 @@ export class RunService {
     }
     const final = await findFinalVideo(this.db, runId);
     const budgetBlock = row.state === 'PAUSED_BUDGET' ? await this.budgetBlock(row) : null;
+    const resumeAt = row.state === 'PAUSED_QUOTA' ? await this.quotaResumeAt(runId) : null;
     return {
       ...row,
       budgetBlock,
+      resumeAt,
       finalVideo: final
         ? {
             artifactId: final.artifactId,
@@ -735,8 +738,9 @@ export class RunService {
             interaction: this.capabilities.get(capability).interaction?.kind ?? null,
             attachments: (
               await Promise.all(
-                (attachmentsByArtifact.get(execution.outputArtifactId ?? '') ?? []).map(
-                  async (attachment) => {
+                (attachmentsByArtifact.get(execution.outputArtifactId ?? '') ?? [])
+                  .filter((attachment) => attachment.role !== 'clip')
+                  .map(async (attachment) => {
                     const access = await this.blobs.readUrl(
                       owner?.ownerId ?? 'local',
                       attachment.blobId,
@@ -750,14 +754,30 @@ export class RunService {
                       mime: attachment.mime,
                       url: access.url,
                     };
-                  },
-                ),
+                  }),
               )
             ).filter((attachment) => attachment !== undefined),
           };
         }),
       ),
     };
+  }
+
+  /** When a `PAUSED_QUOTA` run resumes by itself: the held-back wakeup's time. */
+  private async quotaResumeAt(runId: string): Promise<string | null> {
+    const [wakeup] = await this.db
+      .select({ notBefore: runWakeup.notBefore })
+      .from(runWakeup)
+      .where(
+        and(
+          eq(runWakeup.runId, runId),
+          isNull(runWakeup.dispatchedAt),
+          isNotNull(runWakeup.notBefore),
+        ),
+      )
+      .orderBy(desc(runWakeup.createdAt))
+      .limit(1);
+    return wakeup?.notBefore ?? null;
   }
 
   /** Which cap paused a `PAUSED_BUDGET` run: the latest `budget_blocked`
@@ -954,9 +974,34 @@ export class RunService {
         }),
       )
     ).filter((value) => value !== undefined);
+    const clips =
+      row.kind === 'media.video_list'
+        ? (
+            await Promise.all(
+              (
+                ((row.data as { clips?: unknown[] } | null)?.clips ?? []) as Array<{
+                  index: number;
+                  label: string | null;
+                  blobId: string;
+                  probe: Probe | null;
+                }>
+              ).map(async (clip) => {
+                const access = await this.blobs.readUrl(ownerId, clip.blobId);
+                if (access?.status !== 'live') return undefined;
+                return {
+                  index: clip.index,
+                  label: clip.label,
+                  url: access.url,
+                  probe: clip.probe ?? null,
+                };
+              }),
+            )
+          ).filter((clip) => clip !== undefined)
+        : undefined;
     return {
       id: row.id,
       kind: row.kind,
+      ...(clips && { clips }),
       // Subtitle cues are shown inline, so their (small) text rides along
       // with the view rather than the browser fetching the presigned URL.
       data:

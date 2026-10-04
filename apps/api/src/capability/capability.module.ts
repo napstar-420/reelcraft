@@ -19,6 +19,7 @@ import {
   MediaAnalyzeCapability,
 } from './impls/media-generate.capability';
 import { BrowserAutomateCapability } from './impls/browser-automate.capability';
+import { FlowVideoCapability } from './impls/flow-video.capability';
 
 /**
  * §1.3 — may inject ProviderModule and StorageModule. Must NOT be able to
@@ -43,6 +44,7 @@ import { BrowserAutomateCapability } from './impls/browser-automate.capability';
     AudioSpeechCapability,
     MediaAnalyzeCapability,
     BrowserAutomateCapability,
+    FlowVideoCapability,
   ],
   controllers: [CapabilityController],
   exports: [CapabilityRegistry, StyleRegistry],

@@ -31,6 +31,9 @@ If the run is paused because of money, an amber line says which limit was hit:
 - **Paused: the next step would go over the run budget.**
 - **Paused: stage "…" reached its own Stage cap ($…).**
 
+A run waiting for [Flow](../stage-types/generate-video-with-flow.md) credits says
+**Paused: every Flow account is out of credits.** and when it resumes by itself.
+
 ## Final video
 
 When a run has made a video, it plays here. It's the video made by the last stage, in blueprint order,

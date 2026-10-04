@@ -23,6 +23,8 @@ export const ArtifactKind = z.enum([
   'media.image',
   'media.video',
   'media.audio',
+  /** An ordered list of video clips in one artifact (e.g. a Flow stage's clips). */
+  'media.video_list',
   'file.subtitles',
   'timeline',
 ]);
@@ -39,6 +41,8 @@ export const RunState = z.enum([
   'PAUSED_APPROVAL',
   'PAUSED_INPUT',
   'PAUSED_MANUAL',
+  /** Out of provider quota (e.g. every Flow account's credits); resumes on its own. */
+  'PAUSED_QUOTA',
   'FAILED',
   'COMPLETED',
   'CANCELLED',
@@ -87,6 +91,8 @@ export const AttemptOutcome = z.enum([
   'cancelled',
   'user_edit',
   'awaiting_approval',
+  /** Out of provider quota; the run pauses and a later attempt resumes the work. */
+  'deferred',
 ]);
 export type AttemptOutcome = z.infer<typeof AttemptOutcome>;
 

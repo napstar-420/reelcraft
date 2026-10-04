@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { and, desc, eq, isNull } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull } from 'drizzle-orm';
 import type { ArtifactKind, Ref } from '@reelcraft/shared';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
 import { artifact, blob, runMemory } from '../db/schema/index';
@@ -7,6 +7,7 @@ import type { StageDef } from '@reelcraft/shared';
 import { getPath } from '../common/path';
 import { unwrapText } from '../common/unwrap-text';
 import { DerivedFrameService } from './derived-frame.service';
+import { storedClips } from './clip-handle';
 import { MemoryService } from './memory.service';
 
 type ArtifactRow = typeof artifact.$inferSelect;
@@ -59,6 +60,9 @@ export interface RefProvenance {
   ref: Ref;
   artifactId?: string;
   artifactIds?: string[];
+  /** How many clips a `media.video_list` artifact contributed (they are
+   * addressed `artifact:<artifactId>#<position>`). */
+  clipCount?: number;
   memoryKey?: string;
   memoryVersion?: number;
   /** Populated instead of `memoryVersion` for a group read (bare key,
@@ -173,7 +177,14 @@ export class BindingResolverService {
       case 'prev': {
         const row = await this.fetchPrevArtifact(ctx, ref);
         const value = await this.valueForArtifactRow(row, ref.path, 'prev');
-        return { value, provenance: { ref, artifactId: row.id } };
+        return {
+          value,
+          provenance: {
+            ref,
+            artifactId: row.id,
+            ...(row.kind === 'media.video_list' && { clipCount: (value as unknown[]).length }),
+          },
+        };
       }
 
       case 'memory': {
@@ -609,6 +620,7 @@ export class BindingResolverService {
     path: string | undefined,
     handle: string,
   ): Promise<unknown> {
+    if (row.kind === 'media.video_list') return this.clipManifests(row, handle);
     if ((row.kind as ArtifactKind).startsWith('media.')) {
       return this.mediaManifest(row, handle);
     }
@@ -661,6 +673,31 @@ export class BindingResolverService {
           .limit(1)
       : [undefined];
     return mediaManifest(row, handle, blobRow?.objectKey);
+  }
+
+  /** A `media.video_list` artifact binds as the ordered array of its clips,
+   * each a `media.video` manifest. */
+  private async clipManifests(row: typeof artifact.$inferSelect, handle: string) {
+    const clips = storedClips(row.data);
+    const blobs = clips.length
+      ? await this.db
+          .select({ id: blob.id, objectKey: blob.objectKey })
+          .from(blob)
+          .where(
+            inArray(
+              blob.id,
+              clips.map((clip) => clip.blobId),
+            ),
+          )
+      : [];
+    const keys = new Map(blobs.map((row) => [row.id, row.objectKey]));
+    return clips.map((clip, position) =>
+      mediaManifest(
+        { ...row, kind: 'media.video', probe: clip.probe },
+        `${handle}#${position}`,
+        keys.get(clip.blobId),
+      ),
+    );
   }
 
   private async blobManifest(row: typeof artifact.$inferSelect, handle: string) {

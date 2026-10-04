@@ -429,6 +429,14 @@ export class BlueprintValidatorService {
           });
         }
 
+        if (boundType.kind === 'media.video_list' && slotDef.cardinality === 'one') {
+          issues.push({
+            path: `${base}.slots.${slotDef.name}`,
+            message: "a video list needs a cardinality:'many' slot",
+            severity: 'error',
+          });
+        }
+
         // §16.2 — cardinality vs. an iterate-derived producer's real arity.
         // Scoped to memory-group/iterate-derived refs only (Locked Decision
         // 2) — pre-existing many-cardinality inputs are untouched.
