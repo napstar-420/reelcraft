@@ -128,3 +128,12 @@ describe('isCompatible', () => {
     expect(isCompatible({ kind: 'text' }, [], deps).compatible).toBe(false);
   });
 });
+
+describe('isCompatible with a video list', () => {
+  it('lets a video list satisfy a video slot, and nothing else', () => {
+    const list: SourceType = { kind: 'media.video_list' };
+    expect(isCompatible(list, ['media.video'], deps).compatible).toBe(true);
+    expect(isCompatible(list, ['media.image'], deps).compatible).toBe(false);
+    expect(isCompatible({ kind: 'media.video' }, ['media.video'], deps).compatible).toBe(true);
+  });
+});

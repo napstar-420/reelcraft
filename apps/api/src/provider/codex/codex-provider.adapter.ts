@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdir, readFile, realpath, rename, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, realpath, rename, stat, symlink, writeFile } from 'node:fs/promises';
 import { basename, join, relative, resolve } from 'node:path';
 import { Logger } from '@nestjs/common';
 import type { JobHandle, JobStatus, JsonSchema, Modality } from '@reelcraft/shared';
@@ -41,6 +41,12 @@ type ToolResultManifest = {
 };
 
 const TEXT_RESULT_LIMIT = 4 * 1024 * 1024;
+const MAX_BROWSER_INPUTS = 20;
+const MAX_BROWSER_ATTACHMENTS = 200;
+
+function positiveInt(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : undefined;
+}
 
 async function atomicJson(path: string, value: unknown): Promise<void> {
   const temp = `${path}.${process.pid}.tmp`;
@@ -114,7 +120,8 @@ export class CodexProviderAdapter implements ProviderAdapter {
     if (!this.modalities.includes(modality)) {
       throw new Error(`Codex does not support modality "${modality}"`);
     }
-    if (modality === 'text' && collectSourceKeys(req.params.slots).length > 0) {
+    const inspectFiles = modality === 'text' && req.params.__inspectFiles === true;
+    if (modality === 'text' && !inspectFiles && collectSourceKeys(req.params.slots).length > 0) {
       throw new Error('Codex text generation cannot read attached files; pick another model');
     }
     await this.readiness?.assertAvailable(modality);
@@ -146,9 +153,19 @@ export class CodexProviderAdapter implements ProviderAdapter {
     const outputDir = join(jobDir, 'outputs');
     await mkdir(outputDir, { mode: 0o700 });
     const referenceFiles =
-      modality === 'image' && this.inputMaterializer
-        ? await this.inputMaterializer.materialize(jobDir, req.params.slots)
+      (modality === 'image' || modality === 'browser' || inspectFiles) && this.inputMaterializer
+        ? await this.inputMaterializer.materialize(
+            jobDir,
+            req.params.slots,
+            modality === 'image' ? undefined : MAX_BROWSER_INPUTS,
+          )
         : [];
+    const timeoutMs = positiveInt(req.params.timeoutMs) ?? this.jobTimeoutMs;
+    const browserMaxSteps = positiveInt(req.params.maxSteps) ?? this.browserMaxSteps;
+    const progressDir =
+      modality === 'browser'
+        ? await this.linkProgressDir(jobDir, req.params.progressKey)
+        : undefined;
     const schema = this.outputSchema(req);
     const strictSchema = schema ? strictJsonSchema(schema) : undefined;
     const outputSchemaPath = strictSchema ? join(jobDir, 'schema.json') : undefined;
@@ -164,6 +181,7 @@ export class CodexProviderAdapter implements ProviderAdapter {
       params: this.sanitizeParams(req.params),
       outputKind: req.output?.kind ?? 'text',
       modality,
+      timeoutMs,
       promptLength: buildCodexPrompt({ ...req, modality }).length,
     });
     const runnerRequestPath = join(jobDir, 'runner-request.json');
@@ -175,8 +193,8 @@ export class CodexProviderAdapter implements ProviderAdapter {
       outputDir,
       modality,
       profile: this.profile,
-      timeoutMs: this.jobTimeoutMs,
-      browserMaxSteps: this.browserMaxSteps,
+      timeoutMs,
+      browserMaxSteps,
       sessionName: `reelcraft-${externalId.slice(0, 12)}`,
       ...(outputSchemaPath && { outputSchemaPath }),
       params: req.params,
@@ -186,8 +204,9 @@ export class CodexProviderAdapter implements ProviderAdapter {
         params: {
           ...req.params,
           __sessionName: `reelcraft-${externalId.slice(0, 12)}`,
-          __browserMaxSteps: this.browserMaxSteps,
+          __browserMaxSteps: browserMaxSteps,
           __referenceFiles: referenceFiles,
+          ...(progressDir && { __progressDir: progressDir }),
         },
       }),
     });
@@ -243,7 +262,7 @@ export class CodexProviderAdapter implements ProviderAdapter {
         };
       }
       const deadlineMs = status.startedAt
-        ? Date.parse(status.startedAt) + this.jobTimeoutMs
+        ? Date.parse(status.startedAt) + (await this.jobTimeoutMs_(handle))
         : undefined;
       return {
         done: false,
@@ -314,8 +333,10 @@ export class CodexProviderAdapter implements ProviderAdapter {
     }
     if (modality === 'browser') {
       const manifest = this.parseToolManifest(text);
-      if ((manifest.attachments?.length ?? 0) > 20) {
-        throw new Error('Codex browser result exceeds the 20 attachment limit');
+      if ((manifest.attachments?.length ?? 0) > MAX_BROWSER_ATTACHMENTS) {
+        throw new Error(
+          `Codex browser result exceeds the ${MAX_BROWSER_ATTACHMENTS} attachment limit`,
+        );
       }
       const attachments = await Promise.all(
         (manifest.attachments ?? []).map(async (attachment) => ({
@@ -371,6 +392,30 @@ export class CodexProviderAdapter implements ProviderAdapter {
     };
   }
 
+  /** A directory that outlives this job, shared by every attempt of the same
+   * stage (`progressKey`): the agent saves finished work there so a later
+   * attempt, after a pause or a crash, carries on instead of starting over.
+   * Exposed in the job as `progress/`. */
+  private async linkProgressDir(jobDir: string, key: unknown): Promise<string | undefined> {
+    if (typeof key !== 'string' || !/^[a-f0-9]{16,64}$/.test(key)) return undefined;
+    const target = join(this.jobsRoot, 'progress', key);
+    await mkdir(target, { recursive: true, mode: 0o700 });
+    await symlink(target, join(jobDir, 'progress'));
+    return 'progress/';
+  }
+
+  /** The timeout this job was submitted with (jobs can override the default). */
+  private async jobTimeoutMs_(handle: JobHandle): Promise<number> {
+    try {
+      const manifest = JSON.parse(
+        await readFile(join(this.jobDir(handle), 'manifest.json'), 'utf8'),
+      ) as { timeoutMs?: number };
+      return positiveInt(manifest.timeoutMs) ?? this.jobTimeoutMs;
+    } catch {
+      return this.jobTimeoutMs;
+    }
+  }
+
   private assertEffort(model: CodexModel, effort: unknown): asserts effort is string {
     if (typeof effort !== 'string' || !model.supportedReasoningEfforts.includes(effort)) {
       throw new Error(
@@ -406,7 +451,7 @@ export class CodexProviderAdapter implements ProviderAdapter {
           output: req.output?.kind === 'data' ? req.output.schema : { type: 'object' },
           attachments: {
             type: 'array',
-            maxItems: 20,
+            maxItems: MAX_BROWSER_ATTACHMENTS,
             items: {
               type: 'object',
               properties: {
@@ -450,11 +495,18 @@ export class CodexProviderAdapter implements ProviderAdapter {
     if (allowedMimes && !allowedMimes.includes(value.mime)) {
       throw new Error(`Codex tool result has unsupported MIME type "${value.mime}"`);
     }
-    const outputRoot = await realpath(join(jobDir, 'outputs'));
     const candidate = resolve(jobDir, value.path);
     const localPath = await realpath(candidate);
-    const within = relative(outputRoot, localPath);
-    if (within.startsWith('..') || resolve(outputRoot, within) !== localPath) {
+    // Files live under `outputs/`, or under the job's `progress/` directory
+    // (a symlink to storage that outlives the job; see `linkProgressDir`).
+    const roots = [await realpath(join(jobDir, 'outputs'))];
+    const progressRoot = await realpath(join(jobDir, 'progress')).catch(() => undefined);
+    if (progressRoot) roots.push(progressRoot);
+    const inside = roots.some((root) => {
+      const within = relative(root, localPath);
+      return !within.startsWith('..') && resolve(root, within) === localPath;
+    });
+    if (!inside) {
       throw new Error('Codex tool result path escapes the job output directory');
     }
     const fileStat = await stat(localPath);

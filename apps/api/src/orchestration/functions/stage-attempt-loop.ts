@@ -33,6 +33,7 @@ export type StageAttemptOutcome =
   | { outcome: 'approval_required'; artifactId: string }
   | { outcome: 'run_not_running' }
   | { outcome: 'budget_blocked'; reason: 'run_cap_exceeded' | 'stage_cap_exceeded' }
+  | { outcome: 'deferred'; resumeAt: string }
   | { outcome: 'failed'; reason: string };
 
 export interface StageAttemptLoopParams {
@@ -203,6 +204,10 @@ export async function runStageAttemptLoop(
 
       if (fetched.outcome === 'run_not_running') {
         return { outcome: 'run_not_running' as const };
+      }
+
+      if (fetched.outcome === 'deferred') {
+        return { outcome: 'deferred' as const, resumeAt: fetched.resumeAt };
       }
 
       if (fetched.outcome === 'qc_error' || fetched.outcome === 'model_error') {

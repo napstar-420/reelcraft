@@ -10,10 +10,9 @@ import { collectSourceKeys } from '../source-keys';
 export class CodexInputMaterializer {
   constructor(@Inject(STORAGE_ADAPTER) private readonly storage: StorageAdapter) {}
 
-  async materialize(jobDir: string, slots: unknown): Promise<string[]> {
+  async materialize(jobDir: string, slots: unknown, max = 5): Promise<string[]> {
     const sourceKeys = collectSourceKeys(slots);
-    if (sourceKeys.length > 5)
-      throw new Error('Codex image generation accepts at most 5 references');
+    if (sourceKeys.length > max) throw new Error(`Codex accepts at most ${max} reference files`);
     const inputDir = join(jobDir, 'inputs');
     await mkdir(inputDir, { mode: 0o700 });
     const paths: string[] = [];

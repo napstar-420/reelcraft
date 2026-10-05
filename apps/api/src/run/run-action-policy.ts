@@ -23,7 +23,7 @@ export type RunAction =
  * defeating the point of a manual pause. If a future change needs one of
  * those actions to also work from `PAUSED_MANUAL`, add it to that action's
  * entry explicitly rather than to this shared array. */
-const PAUSED_STATES = ['PAUSED_BUDGET', 'PAUSED_APPROVAL', 'PAUSED_INPUT'] as const;
+const PAUSED_STATES = ['PAUSED_BUDGET', 'PAUSED_APPROVAL', 'PAUSED_INPUT', 'PAUSED_QUOTA'] as const;
 
 /** The single source of truth for the Phase 4 run action matrix (§12.4).
  * `apps/web/src/lib/run-action-policy.ts` keeps an intentionally-duplicated
@@ -41,7 +41,7 @@ export const RUN_ACTION_ALLOWED_STATES = {
   approve: ['PAUSED_APPROVAL'],
   reject: ['PAUSED_APPROVAL'],
   submit_input: ['PAUSED_INPUT'],
-  resume: ['PAUSED_BUDGET', 'PAUSED_MANUAL', 'FAILED'],
+  resume: ['PAUSED_BUDGET', 'PAUSED_MANUAL', 'PAUSED_QUOTA', 'FAILED'],
   cancel: ['CREATED', 'RUNNING', ...PAUSED_STATES, 'PAUSED_MANUAL', 'FAILED'],
 } as const satisfies Record<RunAction, readonly RunState[]>;
 

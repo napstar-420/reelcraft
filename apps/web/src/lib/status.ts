@@ -33,6 +33,7 @@ const runStateTones: Record<RunState, StatusTone> = {
   PAUSED_APPROVAL: 'warning',
   PAUSED_INPUT: 'warning',
   PAUSED_MANUAL: 'warning',
+  PAUSED_QUOTA: 'warning',
   FAILED: 'error',
   COMPLETED: 'success',
   CANCELLED: 'neutral',
@@ -64,6 +65,7 @@ const attemptOutcomeTones: Record<AttemptOutcome, StatusTone> = {
   rejected: 'error',
   cancelled: 'neutral',
   user_edit: 'neutral',
+  deferred: 'warning',
 };
 
 const severityTones: Record<ValidationIssue['severity'], StatusTone> = {

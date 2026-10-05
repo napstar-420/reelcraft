@@ -3,6 +3,7 @@ import { and, eq } from 'drizzle-orm';
 import { Timeline } from '@reelcraft/shared';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
 import { artifact, blob, run } from '../db/schema';
+import { parseArtifactHandle, storedClips } from './clip-handle';
 
 export type ResolvedTimelineResource = {
   handle: string;
@@ -34,14 +35,23 @@ export class TimelineResourceResolverService {
       .limit(1);
     const result: Record<string, ResolvedTimelineResource> = {};
     for (const handle of handles) {
-      if (handle.startsWith('artifact:')) {
+      const parsed = parseArtifactHandle(handle);
+      if (parsed?.clipPosition !== undefined) {
+        const resolved = await this.resolveClip(
+          runId,
+          handle,
+          parsed.artifactId,
+          parsed.clipPosition,
+        );
+        if (resolved) result[handle] = resolved;
+      } else if (parsed) {
         const [row] = await this.db
           .select({ artifact, blob })
           .from(artifact)
           .leftJoin(blob, eq(artifact.blobId, blob.id))
           .where(
             and(
-              eq(artifact.id, handle.slice('artifact:'.length)),
+              eq(artifact.id, parsed.artifactId),
               eq(artifact.runId, runId),
               eq(artifact.stale, false),
             ),
@@ -99,5 +109,43 @@ export class TimelineResourceResolverService {
       'timeline resources resolved',
     );
     return result;
+  }
+
+  /** One clip of a `media.video_list` artifact (`artifact:<id>#<position>`). */
+  private async resolveClip(
+    runId: string,
+    handle: string,
+    artifactId: string,
+    position: number,
+  ): Promise<ResolvedTimelineResource | undefined> {
+    const [row] = await this.db
+      .select({ data: artifact.data })
+      .from(artifact)
+      .where(
+        and(
+          eq(artifact.id, artifactId),
+          eq(artifact.runId, runId),
+          eq(artifact.kind, 'media.video_list'),
+          eq(artifact.stale, false),
+        ),
+      )
+      .limit(1);
+    const clip = storedClips(row?.data)[position];
+    const [blobRow] = clip
+      ? await this.db.select().from(blob).where(eq(blob.id, clip.blobId)).limit(1)
+      : [];
+    if (!clip || !blobRow || blobRow.deletedAt) {
+      this.logger.warn(
+        { runId, handle, reason: 'clip not available' },
+        'timeline handle unresolved',
+      );
+      return undefined;
+    }
+    return {
+      handle,
+      kind: 'media.video',
+      sourceKey: blobRow.objectKey,
+      ...(clip.probe !== null && clip.probe !== undefined && { probe: clip.probe }),
+    };
   }
 }

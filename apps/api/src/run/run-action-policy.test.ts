@@ -24,7 +24,13 @@ describe('RunActionPolicy', () => {
         message: 'Action patch_overrides is not allowed while run is COMPLETED',
         state: 'COMPLETED',
         action: 'patch_overrides',
-        allowedStates: ['PAUSED_BUDGET', 'PAUSED_APPROVAL', 'PAUSED_INPUT', 'FAILED'],
+        allowedStates: [
+          'PAUSED_BUDGET',
+          'PAUSED_APPROVAL',
+          'PAUSED_INPUT',
+          'PAUSED_QUOTA',
+          'FAILED',
+        ],
       });
     }
   });

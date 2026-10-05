@@ -85,7 +85,7 @@ describe('RunActionService stage retry', () => {
     expect(mutation.withLockedRun).toHaveBeenCalledWith(
       'run-1',
       'retry',
-      ['PAUSED_BUDGET', 'PAUSED_APPROVAL', 'PAUSED_INPUT', 'FAILED', 'COMPLETED'],
+      ['PAUSED_BUDGET', 'PAUSED_APPROVAL', 'PAUSED_INPUT', 'PAUSED_QUOTA', 'FAILED', 'COMPLETED'],
       expect.any(Function),
       'run/resumed',
     );

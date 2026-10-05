@@ -94,6 +94,7 @@ export type FetchAndFinalizeResult =
   | { outcome: 'qc_failed'; checkResults: CheckResult[]; qcVerdict: QcVerdict }
   | { outcome: 'qc_error'; reason: string }
   | { outcome: 'model_error'; reason: string }
+  | { outcome: 'deferred'; resumeAt: string }
   | { outcome: 'qc_budget_exhausted'; checkResults: CheckResult[] };
 
 /** §11 — `reserveAndSubmit`'s outcome: either a reservation was made and
@@ -104,6 +105,20 @@ export type SubmitOutcome =
   | { outcome: 'submitted'; handle: JobHandle }
   | { outcome: 'budget_blocked'; reason: 'run_cap_exceeded' | 'stage_cap_exceeded' }
   | { outcome: 'run_not_running' };
+
+/** One clip a capability hands back for a `media.video_list` output. */
+interface ClipOutput {
+  index: number;
+  label?: string;
+  prompt?: string;
+  source: import('@reelcraft/shared').MediaSource;
+}
+
+function clipFilename(clip: ClipOutput): string {
+  return clip.source.filename ?? `clip-${clip.index}.mp4`;
+}
+
+type PersistedClip = { clip: ClipOutput } & Awaited<ReturnType<MediaArtifactService['persist']>>;
 
 function isUniqueViolation(err: unknown): boolean {
   return typeof err === 'object' && err !== null && (err as { code?: unknown }).code === '23505';
@@ -433,6 +448,10 @@ export class StageRunnerService {
       } else if (row.outcome === 'qc_failed') {
         const verdict = row.qcVerdict as QcVerdict | null;
         lines.push(`Attempt ${row.attemptNo} was rejected by QC: ${verdict?.critique ?? ''}`);
+        // A clip list names the clips to make again; the stage keeps the rest.
+        if (verdict?.failedClips?.length) {
+          lines.push(`Clips to make again (their index): ${verdict.failedClips.join(', ')}`);
+        }
       }
     }
     const routed = await this.db
@@ -466,9 +485,11 @@ export class StageRunnerService {
   ) {
     return {
       runId: ctx.runId,
+      stageExecutionId: ctx.stageExecutionId,
       stageKey: ctx.stageKey,
       attemptNo: ctx.attemptNo,
       itemIndex: ctx.itemIndex,
+      layer: { flow: effective.layer.flow, format: effective.layer.format },
       // §7.2 TODO: this should be a ProviderClient scoped to the effective
       // model pin, not raw config on ctx.config — carried over from phase 1
       // as a deliberate shortcut; changing it is a capability-contract
@@ -809,9 +830,43 @@ export class StageRunnerService {
       return { outcome: 'model_error', reason };
     }
 
-    const mediaOutput = stage.output.kind.startsWith('media.')
-      ? (output as import('@reelcraft/shared').MediaSource)
-      : undefined;
+    if (result.deferUntil) {
+      // Out of provider quota: nothing to persist. The attempt is parked as
+      // `deferred` (it spends no retry) and the run pauses until the quota
+      // resets; the next attempt picks up where this one stopped.
+      await this.ledger.settleSuccess({
+        runId: ctx.runId,
+        stageKey: stage.key,
+        stageAttemptId: ctx.stageAttemptId,
+        reservationId: await this.ledger.reservationIdFor(ctx.stageAttemptId),
+        actualUsd: result.costUsd,
+      });
+      await this.db
+        .update(stageAttempt)
+        .set({
+          outcome: 'deferred',
+          phase: 'settled',
+          rawResponseRef,
+          costUsd: fromUsd(result.costUsd),
+          reviewNote: `Out of quota until ${result.deferUntil}`,
+        })
+        .where(eq(stageAttempt.id, ctx.stageAttemptId));
+      await this.finishAttempt(
+        ctx,
+        'warn',
+        'deferred',
+        `Out of quota; resuming at ${result.deferUntil}`,
+        { resumeAt: result.deferUntil },
+      );
+      return { outcome: 'deferred', resumeAt: result.deferUntil };
+    }
+
+    const isClipList = stage.output.kind === 'media.video_list';
+    const mediaOutput =
+      stage.output.kind.startsWith('media.') && !isClipList
+        ? (output as import('@reelcraft/shared').MediaSource)
+        : undefined;
+    const clipOutputs = isClipList ? (output as { clips: Array<ClipOutput> }).clips : undefined;
     const fileOutput =
       stage.output.kind === 'file.subtitles'
         ? (output as import('@reelcraft/shared').FileSource)
@@ -828,6 +883,20 @@ export class StageRunnerService {
         : undefined;
     } finally {
       if (mediaOutput?.localPath) await capability.cleanup?.(handle);
+    }
+    const persistedClips: PersistedClip[] = [];
+    try {
+      for (const clip of clipOutputs ?? []) {
+        const persisted = await this.mediaArtifacts.persist({
+          ownerId: channelRow?.ownerId ?? 'local',
+          channelId: runRow.channelId,
+          runId: ctx.runId,
+          source: clip.source,
+        });
+        persistedClips.push({ clip, ...persisted });
+      }
+    } finally {
+      if (clipOutputs?.length) await capability.cleanup?.(handle);
     }
     let persistedFile: Awaited<ReturnType<FileArtifactService['persist']>> | undefined;
     try {
@@ -859,9 +928,20 @@ export class StageRunnerService {
         ? { text: output }
         : kind === 'data' || kind === 'timeline'
           ? output
-          : spokenText !== undefined
-            ? { text: spokenText }
-            : undefined;
+          : kind === 'media.video_list'
+            ? {
+                clips: persistedClips.map(({ clip, blobId, probe }) => ({
+                  index: clip.index,
+                  label: clip.label ?? null,
+                  prompt: clip.prompt ?? null,
+                  filename: clipFilename(clip),
+                  blobId,
+                  probe,
+                })),
+              }
+            : spokenText !== undefined
+              ? { text: spokenText }
+              : undefined;
     const artifactId = await this.artifacts.recordAttemptArtifact({
       runId: ctx.runId,
       producerStageKey: stage.key,
@@ -880,6 +960,16 @@ export class StageRunnerService {
       repro: result.repro,
       costUsd: result.costUsd,
     });
+    if (persistedClips.length) {
+      await this.artifactAttachments.linkClips(
+        artifactId,
+        persistedClips.map(({ clip, blobId }) => ({
+          blobId,
+          filename: clipFilename(clip),
+          mime: clip.source.mime ?? 'video/mp4',
+        })),
+      );
+    }
     if (result.attachments?.length) {
       await this.artifactAttachments.persist({
         ownerId: channelRow?.ownerId ?? 'local',
@@ -1066,6 +1156,13 @@ export class StageRunnerService {
           return { outcome: 'qc_error', reason: audioError };
         }
       }
+      // A clip list is judged as every clip, in order, as video files.
+      const qcClips = persistedClips.map(({ clip, storageKey }) => ({
+        sourceKey: storageKey,
+        mime: clip.source.mime ?? 'video/mp4',
+        index: clip.index,
+        label: clip.label || `Clip ${clip.index}`,
+      }));
       const qcOutcome = await this.runQcWithRetries(
         stage.qc,
         effective.qc,
@@ -1074,6 +1171,7 @@ export class StageRunnerService {
         bindings,
         qcMedia,
         qcTranscript,
+        qcClips,
       );
 
       if (qcOutcome.status === 'error') {
@@ -1294,6 +1392,7 @@ export class StageRunnerService {
     bindings: ResolvedBindings,
     media: { sourceKey: string; mime: string } | undefined,
     transcript?: string,
+    clips?: Array<{ sourceKey: string; mime: string; index: number; label: string }>,
   ): Promise<QcOutcome> {
     const envelope = buildQcEnvelope({
       criteria: qcDef.criteria,
@@ -1306,6 +1405,7 @@ export class StageRunnerService {
       context: bindings.context,
       ...(media !== undefined && { media }),
       ...(transcript !== undefined && { transcript }),
+      ...(clips?.length && { clips }),
     });
 
     const maxAttempts = 1 + this.engineConfig.qcErrorRetries;

@@ -14,6 +14,8 @@ export const JudgeResponse = z.object({
     .optional(),
   score: z.number().min(0).max(100).optional(),
   critique: z.string(),
+  /** Clip lists only: the index of every clip that should be made again. */
+  failedClips: z.array(z.number().int()).optional(),
 });
 export type JudgeResponse = z.infer<typeof JudgeResponse>;
 

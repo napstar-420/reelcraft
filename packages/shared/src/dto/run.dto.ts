@@ -131,6 +131,7 @@ export const ArtifactViewDto = z.object({
     'media.image',
     'media.video',
     'media.audio',
+    'media.video_list',
     'file.subtitles',
     'timeline',
   ]),
@@ -147,6 +148,17 @@ export const ArtifactViewDto = z.object({
       url: BrowserMediaUrl,
     }),
   ),
+  /** The clips of a `media.video_list` artifact, in order. */
+  clips: z
+    .array(
+      z.object({
+        index: z.number().int(),
+        label: z.string().nullable(),
+        url: BrowserMediaUrl,
+        probe: Probe.nullable(),
+      }),
+    )
+    .optional(),
 });
 export type ArtifactViewDto = z.infer<typeof ArtifactViewDto>;
 
@@ -242,6 +254,8 @@ export const RunDetailDto = z.object({
   endedAt: z.string().nullable(),
   /** Set while `PAUSED_BUDGET`: which cap paused the run. `stage` means the
    * stage's own Stage cap (raise it with `RaiseBudgetDto.stageKey`). */
+  /** Set while `PAUSED_QUOTA`: when the run resumes by itself (ISO time). */
+  resumeAt: z.string().nullable().optional(),
   budgetBlock: z
     .object({
       scope: z.enum(['run', 'stage']),

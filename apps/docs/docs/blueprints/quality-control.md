@@ -62,7 +62,8 @@ The judge sees only:
 - the stage's **output**: its text or data, or for an image the picture itself;
 - the output's technical details for media, such as its length;
 - the stage's inputs, only if you ticked **Include inputs**;
-- for audio, the transcript or the audio itself, if you ticked **Include transcript**.
+- for audio, the transcript or the audio itself, if you ticked **Include transcript**;
+- for a video list, every clip itself, in order (see below).
 
 It never sees the stage's own prompt, which model made the output, what it cost, how many attempts
 there have been, earlier verdicts or the threshold. This keeps the judgement honest.
@@ -84,6 +85,21 @@ let the judge assess what was said:
 If the option is on and later becomes impossible, the quality control fails to run and the stage
 fails with that reason. The blueprint also shows **Include transcript only works on an audio
 (media.audio) output** if you use it on any other output.
+
+## Video lists
+
+A [Generate Video with Flow](../stage-types/generate-video-with-flow.md) stage makes a video list, and
+quality control can judge it. The judge **watches every clip, in order**, and gives one score for the
+whole set.
+
+- The judge must be able to watch video. **Codex** can: it opens the clips itself with its local tools,
+  so the machine running Codex needs **ffmpeg**. Any other model must accept video input. Otherwise the
+  blueprint shows **This judge model can't watch video.**
+- The judge also names the clips that are wrong. On a failed score, the next attempt makes **only those
+  clips again** and keeps the others, so you don't spend Flow credits on clips that were fine. The
+  critique names each bad clip and says what's wrong with it.
+- If the judge fails the set without naming clips, or a person rejects it without saying which, the next
+  attempt makes every clip again.
 
 ## Cost
 

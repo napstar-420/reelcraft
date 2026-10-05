@@ -1,4 +1,5 @@
 import type {
+  ConfigLayer,
   JsonSchema,
   ModelCapabilities,
   ModelError,
@@ -19,6 +20,7 @@ import type { FileInput } from '../common/file-inputs';
  */
 export interface ExecCtx<Cfg> {
   runId: string;
+  stageExecutionId?: string | undefined;
   stageKey: string;
   attemptNo: number;
   itemIndex?: number | undefined;
@@ -31,6 +33,9 @@ export interface ExecCtx<Cfg> {
   systemPrompt?: string | undefined;
   output?: OutputDef | undefined;
   idempotencyKey: string;
+  /** The merged run config layer, for capabilities that read shared
+   * defaults (e.g. the Flow stage's account list). */
+  layer?: Pick<ConfigLayer, 'flow' | 'format'> | undefined;
   logger: { log: (msg: string) => void; error: (msg: string, err?: unknown) => void };
   resources?: Record<
     string,
@@ -49,6 +54,9 @@ export interface ExecResult<Out = unknown> {
   /** The model declined the task with a structured error reply; the stage
    * fails with this message instead of persisting `output`. */
   modelError?: ModelError;
+  /** The provider is out of quota until this time (ISO): the attempt is
+   * recorded as `deferred` and the run pauses until then instead of failing. */
+  deferUntil?: string;
   attachments?: Array<{
     role: 'evidence' | 'download';
     localPath?: string;
@@ -76,6 +84,11 @@ export interface CapabilityImpl<Cfg = Record<string, unknown>> {
   /** One-sentence explanation shown alongside `label` in the stage picker. */
   readonly description: string;
   readonly interaction?: { kind: 'form' | 'timeline_editor' };
+  /** A system prompt the capability owns: shown read-only in the stage
+   * editor, and always used in place of the stage's own. */
+  readonly lockedSystemPrompt?: string;
+  /** The stage cannot run without a template prompt. */
+  readonly requiresTemplate?: boolean;
   /** §4.2/§16.2 — the restricted-dialect shape of `StageDef.config` this
    * capability accepts, backing `GET /capabilities` (`CapabilityDto`,
    * `packages/shared/src/dto/capability.dto.ts`) and save-time validation.

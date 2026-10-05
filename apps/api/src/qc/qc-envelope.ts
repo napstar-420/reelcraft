@@ -20,6 +20,15 @@ export interface QcEnvelope {
    * by the judge's provider adapter (never inlined as base64 here — the
    * envelope stays a small, loggable object). */
   media?: { sourceKey: string; mime: string };
+  /** Clip lists only: every clip as a video file, in order. */
+  clips?: QcClip[];
+}
+
+export interface QcClip {
+  sourceKey: string;
+  mime: string;
+  index: number;
+  label: string;
 }
 
 export interface QcEnvelopeSource {
@@ -33,6 +42,7 @@ export interface QcEnvelopeSource {
   context?: Record<string, unknown>;
   transcript?: string;
   media?: { sourceKey: string; mime: string };
+  clips?: QcClip[];
 }
 
 /**
@@ -68,6 +78,14 @@ export function buildQcEnvelope(source: QcEnvelopeSource): QcEnvelope {
   }
   if (source.media !== undefined) {
     envelope.media = { sourceKey: source.media.sourceKey, mime: source.media.mime };
+  }
+  if (source.clips !== undefined) {
+    envelope.clips = source.clips.map((c) => ({
+      sourceKey: c.sourceKey,
+      mime: c.mime,
+      index: c.index,
+      label: c.label,
+    }));
   }
   return envelope;
 }

@@ -1,4 +1,4 @@
-import type { JsonSchema, OutputDef, OutputKind } from '@reelcraft/shared';
+import type { JsonSchema, OutputDef, OutputKind, StageDef } from '@reelcraft/shared';
 import type { ParsedValidationPath } from '../../lib/parse-validation-path';
 
 function outputInstructions(output: OutputDef): string | undefined {
@@ -21,6 +21,7 @@ export function buildStageOutput(kind: OutputKind, previous: OutputDef): OutputD
     case 'media.image':
     case 'media.video':
     case 'media.audio':
+    case 'media.video_list':
       return { kind };
     case 'file.subtitles':
       return { kind: 'file.subtitles' };
@@ -169,4 +170,42 @@ export function inferSchemaFromValue(value: unknown): JsonSchema {
     };
   }
   return { type: 'string' };
+}
+
+/** The Flow stage's extra ingredient inputs are a count in its config, added
+ * and removed with buttons rather than typed, so the number stays out of the
+ * Config form. The slots are `ingredients`, `ingredients2`, `ingredients3`… */
+export const FLOW_CAPABILITY = 'browser.flow_video';
+const INGREDIENT_COUNT_KEY = 'ingredientSlots';
+const DEFAULT_INGREDIENTS = 1;
+export const MAX_INGREDIENTS = 8;
+
+export function ingredientSlotName(position: number): string {
+  return position <= 1 ? 'ingredients' : `ingredients${position}`;
+}
+
+export function ingredientCount(config: Record<string, unknown>): number {
+  const count = config[INGREDIENT_COUNT_KEY];
+  return typeof count === 'number' ? count : DEFAULT_INGREDIENTS;
+}
+
+/** The stage with `count` ingredient inputs; bindings of inputs that no
+ * longer exist are dropped. */
+export function withIngredientCount(stage: StageDef, count: number): StageDef {
+  const next = Math.min(Math.max(count, 0), MAX_INGREDIENTS);
+  const keep = new Set(Array.from({ length: next }, (_, i) => ingredientSlotName(i + 1)));
+  const slots = Object.fromEntries(
+    Object.entries(stage.slots).filter(
+      ([name]) => !/^ingredients\d*$/.test(name) || keep.has(name),
+    ),
+  );
+  return { ...stage, config: { ...stage.config, [INGREDIENT_COUNT_KEY]: next }, slots };
+}
+
+/** The config schema as the Config form should show it. */
+export function visibleConfigSchema(capability: string, schema: JsonSchema): JsonSchema {
+  if (capability !== FLOW_CAPABILITY || !schema.properties) return schema;
+  const properties = { ...schema.properties };
+  delete properties[INGREDIENT_COUNT_KEY];
+  return { ...schema, properties };
 }

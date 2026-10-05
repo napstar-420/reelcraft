@@ -9,6 +9,8 @@ export interface QcVerdict {
   score: number;
   critique: string;
   dimensions?: Array<{ key: string; score: number; critique?: string }>;
+  /** Clip lists only: indexes of the clips to make again. */
+  failedClips?: number[];
 }
 
 export type QcOutcome =
@@ -80,9 +82,7 @@ export class QcRunner {
       {
         modality: 'text',
         modelId: args.judge.modelId,
-        params: args.envelope.media
-          ? { ...params, slots: { qcArtifact: { sourceKey: args.envelope.media.sourceKey } } }
-          : params,
+        params: qcParams(params, args.envelope),
         renderedPrompt: prompt.user,
         system: prompt.system,
       },
@@ -132,7 +132,37 @@ export class QcRunner {
   }
 }
 
+/** The judge's request params: the attached image or audio, or a clip list's
+ * videos. A judge given clips must open the files itself (`__inspectFiles`). */
+function qcParams(params: Record<string, unknown>, envelope: QcEnvelope): Record<string, unknown> {
+  if (envelope.clips?.length) {
+    return {
+      ...params,
+      __inspectFiles: true,
+      slots: Object.fromEntries(
+        envelope.clips.map((clip, i) => [`qcClip${i + 1}`, { sourceKey: clip.sourceKey }]),
+      ),
+    };
+  }
+  return envelope.media
+    ? { ...params, slots: { qcArtifact: { sourceKey: envelope.media.sourceKey } } }
+    : params;
+}
+
+/** Only indexes of clips that were actually judged count. */
+function failedClipsOf(response: JudgeResponse, envelope: QcEnvelope): number[] | undefined {
+  if (!envelope.clips) return undefined;
+  const known = new Set(envelope.clips.map((clip) => clip.index));
+  return [...new Set((response.failedClips ?? []).filter((index) => known.has(index)))];
+}
+
 function toVerdict(response: JudgeResponse, envelope: QcEnvelope): QcVerdict {
+  const failedClips = failedClipsOf(response, envelope);
+  const verdict = scoreOf(response, envelope);
+  return failedClips ? { ...verdict, failedClips } : verdict;
+}
+
+function scoreOf(response: JudgeResponse, envelope: QcEnvelope): QcVerdict {
   if (response.dimensions && envelope.dimensions) {
     const weightByKey = new Map(envelope.dimensions.map((d) => [d.key, d.weight]));
     const joined = response.dimensions

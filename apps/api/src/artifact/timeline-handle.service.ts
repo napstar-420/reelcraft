@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Timeline, type Ref } from '@reelcraft/shared';
 import type { RefProvenance } from './binding-resolver.service';
+import { clipHandle } from './clip-handle';
 
 @Injectable()
 export class TimelineHandleService {
@@ -36,6 +37,9 @@ export class TimelineHandleService {
       return;
     }
     if (source.artifactId) mappings.set(base, `artifact:${source.artifactId}`);
+    for (let position = 0; position < (source.clipCount ?? 0); position += 1) {
+      mappings.set(`${base}#${position}`, clipHandle(source.artifactId!, position));
+    }
     for (const [index, id] of (source.artifactIds ?? []).entries()) {
       mappings.set(`${base}#${index}`, `artifact:${id}`);
     }

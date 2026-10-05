@@ -10,6 +10,7 @@ export const runStateEnum = pgEnum('run_state', [
   'PAUSED_APPROVAL',
   'PAUSED_INPUT',
   'PAUSED_MANUAL',
+  'PAUSED_QUOTA',
   'FAILED',
   'COMPLETED',
   'CANCELLED',

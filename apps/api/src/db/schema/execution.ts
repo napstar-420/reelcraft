@@ -52,6 +52,8 @@ export const attemptOutcomeEnum = pgEnum('attempt_outcome', [
   // 'awaiting_approval' while a stage-level approval gate is open
   // (see StageRunnerService.pauseForApproval and HumanActionService).
   'awaiting_approval',
+  // out of provider quota — the run pauses until the quota resets
+  'deferred',
 ]);
 
 export const stageAttemptPhaseEnum = pgEnum('stage_attempt_phase', [

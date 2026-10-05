@@ -1,5 +1,5 @@
 import { ConflictException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import type {
   CreateRunDto,
   ConfigLayer,
@@ -10,12 +10,14 @@ import type {
 } from '@reelcraft/shared';
 import { InputDef, RoleDef as RoleDefSchema, StageDef } from '@reelcraft/shared';
 import { RUN_ACTION_ALLOWED_STATES } from './run-action-policy';
+import { stageReferenceLimit } from '../common/reference-limit';
 import { findFinalVideo } from '../artifact/final-video';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
 import {
   asset,
   artifact,
   artifactAttachment,
+  runWakeup,
   blob,
   blueprint,
   blueprintVersion,
@@ -416,14 +418,14 @@ export class RunService {
       const info = (await this.providers.get(model.provider).listModels()).find(
         (candidate) => candidate.modelId === model.modelId,
       );
-      const maxRefs = info?.capabilities.maxRefs ?? info?.capabilities.image?.maxReferences;
-      if (!info || maxRefs === undefined)
+      const maxRefs = stageReferenceLimit(stage.capability, info?.capabilities);
+      if (maxRefs === undefined || (!info && stage.capability !== 'browser.flow_video'))
         throw new ConflictException(
           `RunService.start: model "${model.modelId}" does not declare a reference limit`,
         );
       if (
         stage.capability === 'video.generate' &&
-        !info.capabilities.video?.inputs.includes('references')
+        !info?.capabilities.video?.inputs.includes('references')
       ) {
         throw new ConflictException(
           `RunService.start: model "${model.modelId}" does not support reference-image conditioning`,
@@ -449,7 +451,7 @@ export class RunService {
   private async resolveAssetBindings(
     graph: StageDef[],
     channelId: string,
-  ): Promise<Record<string, { blobId: string; kind: string }>> {
+  ): Promise<Record<string, { blobId: string; kind: string; name: string }>> {
     const assetIds = collectAssetIds(graph);
     if (assetIds.length === 0) return {};
 
@@ -457,13 +459,19 @@ export class RunService {
     // must not resolve for a NEW run even though its row still exists —
     // treated identically to "no longer exists" below.
     const rows = await this.db
-      .select({ id: asset.id, channelId: asset.channelId, kind: asset.kind, blobId: asset.blobId })
+      .select({
+        id: asset.id,
+        channelId: asset.channelId,
+        kind: asset.kind,
+        blobId: asset.blobId,
+        name: asset.name,
+      })
       .from(asset)
       .innerJoin(blob, eq(asset.blobId, blob.id))
       .where(and(inArray(asset.id, assetIds), isNull(blob.deletedAt)));
     const byId = new Map(rows.map((r) => [r.id, r]));
 
-    const bindings: Record<string, { blobId: string; kind: string }> = {};
+    const bindings: Record<string, { blobId: string; kind: string; name: string }> = {};
     for (const assetId of assetIds) {
       const row = byId.get(assetId);
       if (!row) {
@@ -474,7 +482,7 @@ export class RunService {
           `RunService.start: referenced asset "${assetId}" belongs to a different channel`,
         );
       }
-      bindings[assetId] = { blobId: row.blobId, kind: row.kind };
+      bindings[assetId] = { blobId: row.blobId, kind: row.kind, name: row.name };
     }
     return bindings;
   }
@@ -711,9 +719,11 @@ export class RunService {
     }
     const final = await findFinalVideo(this.db, runId);
     const budgetBlock = row.state === 'PAUSED_BUDGET' ? await this.budgetBlock(row) : null;
+    const resumeAt = row.state === 'PAUSED_QUOTA' ? await this.quotaResumeAt(runId) : null;
     return {
       ...row,
       budgetBlock,
+      resumeAt,
       finalVideo: final
         ? {
             artifactId: final.artifactId,
@@ -735,8 +745,9 @@ export class RunService {
             interaction: this.capabilities.get(capability).interaction?.kind ?? null,
             attachments: (
               await Promise.all(
-                (attachmentsByArtifact.get(execution.outputArtifactId ?? '') ?? []).map(
-                  async (attachment) => {
+                (attachmentsByArtifact.get(execution.outputArtifactId ?? '') ?? [])
+                  .filter((attachment) => attachment.role !== 'clip')
+                  .map(async (attachment) => {
                     const access = await this.blobs.readUrl(
                       owner?.ownerId ?? 'local',
                       attachment.blobId,
@@ -750,14 +761,30 @@ export class RunService {
                       mime: attachment.mime,
                       url: access.url,
                     };
-                  },
-                ),
+                  }),
               )
             ).filter((attachment) => attachment !== undefined),
           };
         }),
       ),
     };
+  }
+
+  /** When a `PAUSED_QUOTA` run resumes by itself: the held-back wakeup's time. */
+  private async quotaResumeAt(runId: string): Promise<string | null> {
+    const [wakeup] = await this.db
+      .select({ notBefore: runWakeup.notBefore })
+      .from(runWakeup)
+      .where(
+        and(
+          eq(runWakeup.runId, runId),
+          isNull(runWakeup.dispatchedAt),
+          isNotNull(runWakeup.notBefore),
+        ),
+      )
+      .orderBy(desc(runWakeup.createdAt))
+      .limit(1);
+    return wakeup?.notBefore ?? null;
   }
 
   /** Which cap paused a `PAUSED_BUDGET` run: the latest `budget_blocked`
@@ -954,9 +981,34 @@ export class RunService {
         }),
       )
     ).filter((value) => value !== undefined);
+    const clips =
+      row.kind === 'media.video_list'
+        ? (
+            await Promise.all(
+              (
+                ((row.data as { clips?: unknown[] } | null)?.clips ?? []) as Array<{
+                  index: number;
+                  label: string | null;
+                  blobId: string;
+                  probe: Probe | null;
+                }>
+              ).map(async (clip) => {
+                const access = await this.blobs.readUrl(ownerId, clip.blobId);
+                if (access?.status !== 'live') return undefined;
+                return {
+                  index: clip.index,
+                  label: clip.label,
+                  url: access.url,
+                  probe: clip.probe ?? null,
+                };
+              }),
+            )
+          ).filter((clip) => clip !== undefined)
+        : undefined;
     return {
       id: row.id,
       kind: row.kind,
+      ...(clips && { clips }),
       // Subtitle cues are shown inline, so their (small) text rides along
       // with the view rather than the browser fetching the presigned URL.
       data:

@@ -11,12 +11,14 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { providerName } from '@/lib/display-names';
+import { FlowAccountsPicker } from './FlowAccountsPicker';
 import {
   ASPECT_RATIOS,
   MODEL_KINDS,
   isResolution,
   parseAmount,
   parseWhole,
+  setFlowAccounts,
   setFormat,
   setKindModel,
   setRetryLimit,
@@ -117,6 +119,18 @@ export function DefaultsEditor({
             onChange={(e) => onChange(setStageCap(value, parseAmount(e.target.value)))}
           />
         </div>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <InfoHeading
+          info={`The Google accounts Generate Video with Flow stages use, in this order: when one runs out of credits the next is used, and when all do the run pauses until they reset. Pick from the accounts signed in to BrowserOS Neo. ${scope === 'blueprint' ? 'Replaces the channel’s list.' : 'A blueprint can set its own list.'}`}
+        >
+          Flow accounts
+        </InfoHeading>
+        <FlowAccountsPicker
+          value={value.flow?.accounts ?? []}
+          onChange={(accounts) => onChange(setFlowAccounts(value, accounts))}
+        />
       </div>
 
       <div className="flex flex-col gap-2">
