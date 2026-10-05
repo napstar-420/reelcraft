@@ -463,13 +463,9 @@ export function decidePoll(
   now: number,
 ): JobStatus | 'imageless' {
   if (!state.signedIn) return signedOutFailure();
-  if (state.generating) return running(job);
-  if (job.modality === 'image') {
-    if (state.images > 0) return { done: true, outcome: 'succeeded' };
-    if (state.imagesLoading) return running(job);
-  } else if (state.replyDone) {
-    return { done: true, outcome: 'succeeded' };
-  }
+  // An error banner wins over everything: a failed message can leave a stale
+  // Stop button or an earlier Copy button behind, and would otherwise wait out
+  // the whole deadline.
   if (state.errorShown) {
     return {
       done: true,
@@ -478,6 +474,13 @@ export function decidePoll(
       retryable: true,
       failureClass: 'provider',
     };
+  }
+  if (state.generating) return running(job);
+  if (job.modality === 'image') {
+    if (state.images > 0) return { done: true, outcome: 'succeeded' };
+    if (state.imagesLoading) return running(job);
+  } else if (state.replyDone) {
+    return { done: true, outcome: 'succeeded' };
   }
   if (job.modality === 'image' && state.replyDone) {
     if (imagelessSince === undefined) return 'imageless';

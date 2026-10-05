@@ -285,7 +285,8 @@ return {
   replyDone: !!main && main.querySelectorAll(S.copy).length > 0,
   images: new Set(imgs.map((i) => i.src)).size,
   imagesLoading: /(loading|creating|generating) image/i.test(text.slice(-800)),
-  errorShown: !!main && [...main.querySelectorAll('button')].some((b) => /^(retry|try again)$/i.test((b.getAttribute('aria-label') || b.innerText || '').trim())),
+  // ChatGPT's failure banner ("Message delivery timed out. Please try again." with a Retry button).
+  errorShown: [...document.querySelectorAll('button')].some((b) => /^(retry|try again)$/i.test((b.getAttribute('aria-label') || b.innerText || '').trim())) || /message delivery timed out|something went wrong|network error|error generating/i.test(text.slice(-600)),
   tail: text.slice(-400),
 };`,
   );

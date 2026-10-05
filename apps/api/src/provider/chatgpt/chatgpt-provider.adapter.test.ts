@@ -406,6 +406,25 @@ describe('ChatgptProviderAdapter.poll stall', () => {
   });
 });
 
+describe('decidePoll error banner', () => {
+  it("fails at once on ChatGPT's error banner, even with a stale Stop or Copy button", () => {
+    for (const stale of [{ generating: true }, { replyDone: true }, {}]) {
+      expect(
+        decidePoll(
+          state({
+            errorShown: true,
+            tail: 'Message delivery timed out. Please try again.',
+            ...stale,
+          }),
+          text,
+          undefined,
+          0,
+        ),
+      ).toMatchObject({ done: true, outcome: 'failed', failureClass: 'provider' });
+    }
+  });
+});
+
 describe('isIdle', () => {
   it('is true only when nothing is generating and nothing has come of it', () => {
     expect(isIdle(state({}))).toBe(true);
