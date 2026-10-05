@@ -66,17 +66,18 @@ const state = (over: Partial<PageState> = {}): PageState => ({
 });
 
 describe('ChatgptProviderAdapter.submit', () => {
-  it('opens a temporary chat with the search hint, sets effort, then pastes the prompt', async () => {
+  it('opens a temporary chat, sets effort, turns web search on, then pastes the prompt', async () => {
     const { adapter, scripts } = fixture([
       7, // open tab
       signedIn,
       { value: 2 }, // effort High
-      true, // web search chip present
+      true, // web search pill showing
       { url: 'https://chatgpt.com/c/abc?temporary-chat=true' },
     ]);
     const handle = await adapter.submit(textReq, 'key-1');
 
-    expect(scripts[0]).toContain('temporary-chat=true&hints=search');
+    expect(scripts[0]).toContain('temporary-chat=true');
+    expect(scripts[3]).toContain('Input.dispatchMouseEvent');
     expect(scripts[2]).toContain('\\"stop\\":2');
     expect(scripts[4]).toContain('Summarise the news');
     expect(scripts[4]).toContain('Be terse');

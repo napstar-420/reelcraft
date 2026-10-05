@@ -29,7 +29,7 @@ import {
   stopGeneratingScript,
   UPLOAD_CHUNK,
   stripCitations,
-  webSearchOnScript,
+  enableWebSearchScript,
   type ChatgptEffort,
   type PageState,
   type SignInState,
@@ -151,7 +151,7 @@ export class ChatgptProviderAdapter implements ProviderAdapter {
 
     const webSearch = req.params.webSearch === true;
     const pageId = await this.neo.run<number>(
-      openChatScript(chatUrl({ temporary: modality === 'text', webSearch })),
+      openChatScript(chatUrl({ temporary: modality === 'text' })),
     );
     try {
       const signIn = await this.neo.run<SignInState>(signInStateScript(pageId));
@@ -172,13 +172,13 @@ export class ChatgptProviderAdapter implements ProviderAdapter {
       if (set.value !== EFFORT_STOPS[effort as ChatgptEffort]) {
         throw new ChatgptPageError(`Could not set ChatGPT effort to "${effort}"`);
       }
-      if (webSearch && !(await this.neo.run<boolean>(webSearchOnScript(pageId)))) {
+      if (webSearch && !(await this.neo.run<boolean>(enableWebSearchScript(pageId)))) {
         throw new ChatgptPageError('Could not turn on ChatGPT web search');
       }
       if (references.length > 0) await this.uploadReferences(pageId, references);
       const sent = this.pageResult(
         await this.neo.run<{ url?: string; error?: string }>(
-          sendPromptScript(pageId, pastedPrompt),
+          sendPromptScript(pageId, pastedPrompt, webSearch),
         ),
       );
       const payload: ChatgptJobPayload = {
@@ -356,9 +356,7 @@ export class ChatgptProviderAdapter implements ProviderAdapter {
   private async probeReadiness(): Promise<Readiness> {
     let pageId: number;
     try {
-      pageId = await this.neo.run<number>(
-        openChatScript(chatUrl({ temporary: true, webSearch: false })),
-      );
+      pageId = await this.neo.run<number>(openChatScript(chatUrl({ temporary: true })));
     } catch (error) {
       this.logger.warn({ err: error }, 'chatgpt readiness: neo unreachable');
       return unavailable(NEO_UNAVAILABLE_MESSAGE);
