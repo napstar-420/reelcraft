@@ -376,6 +376,17 @@ export const api = {
         } satisfies ApprovalActionDto),
       },
     ),
+  retryStageQc: (runId: string, stageKey: string, itemIndex?: number) =>
+    request<{ accepted: true; revision: number }>(
+      `/runs/${runId}/stages/${encodeURIComponent(stageKey)}/approve`,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'retry_qc',
+          ...(itemIndex !== undefined ? { itemIndex } : {}),
+        } satisfies ApprovalActionDto),
+      },
+    ),
   previewStageRejection: (runId: string, stageKey: string, note?: string, itemIndex?: number) =>
     request<{
       previewToken: string;

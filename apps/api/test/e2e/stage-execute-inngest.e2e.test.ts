@@ -432,7 +432,7 @@ describe('stage.execute (real Inngest steps, e2e)', () => {
     expect(waits.map((w) => w.kind)).toEqual(['approval']);
   });
 
-  it('a QC judge that keeps erroring is terminal after exactly one generation attempt, regardless of retryLimit', async () => {
+  it('a QC judge that keeps erroring pauses the run for review after exactly one generation attempt, regardless of retryLimit', async () => {
     const graph: StageDef[] = [
       {
         key: 'unjudgeable',
@@ -467,7 +467,7 @@ describe('stage.execute (real Inngest steps, e2e)', () => {
       stageKey: 'unjudgeable',
     });
     expect(error).toBeUndefined();
-    expect(result).toMatchObject({ outcome: 'failed' });
+    expect(result).toMatchObject({ outcome: 'approval_required' });
 
     const rows = await testDb.db
       .select()
@@ -475,10 +475,12 @@ describe('stage.execute (real Inngest steps, e2e)', () => {
       .where(
         and(eq(stageAttempt.stageExecutionId, execution.id), isNull(stageAttempt.stageItemId)),
       );
-    // qc_error is terminal immediately — never loops back for another
-    // generation attempt despite retryLimit:5 leaving plenty of room.
+    // A judge that cannot run never loops back for another generation attempt
+    // despite retryLimit:5, and never fails the stage: the output is parked
+    // for review (approve, reject, or retry QC).
     expect(rows).toHaveLength(1);
     expect(rows[0]?.outcome).toBe('qc_error');
+    expect(rows[0]?.phase).toBe('awaiting_approval');
   });
 
   it('a poll() that reports a failed job is retried on a fresh attempt and succeeds', async () => {

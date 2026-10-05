@@ -36,6 +36,7 @@ describe('runStageAttemptLoop user_action failures', () => {
   it('fails the stage once with the provider message, without spending retries', async () => {
     const reason = 'Sign in to ChatGPT to continue';
     const runner = {
+      findHeldQcAttempt: vi.fn().mockResolvedValue(undefined),
       beginAttempt: vi.fn().mockResolvedValue({ attemptNo: 1 }),
       countRoundAttempts: vi.fn().mockResolvedValue(0),
       reserveAndSubmit: vi.fn().mockResolvedValue({
@@ -82,6 +83,7 @@ describe('runStageAttemptLoop feedback retries', () => {
   function feedbackRunner(outcome: 'qc_failed' | 'check_failed') {
     const recorded: string[] = [];
     const runner = {
+      findHeldQcAttempt: vi.fn().mockResolvedValue(undefined),
       beginAttempt: vi.fn(async () => ({ attemptNo: recorded.length + 1 })),
       countRoundAttempts: vi.fn(
         async (_exec: string, outcomes: string[]) =>
@@ -209,6 +211,7 @@ describe('runStageAttemptLoop replays', () => {
     let attempts = 0;
     const polls: Record<string, number> = {};
     const runner = {
+      findHeldQcAttempt: vi.fn().mockResolvedValue(undefined),
       beginAttempt: vi.fn(async () => ({ attemptNo: ++attempts })),
       countRoundAttempts: vi.fn().mockResolvedValue(0),
       infraAttemptLimit: () => 3,
@@ -271,6 +274,7 @@ describe('runStageAttemptLoop replays', () => {
     vi.spyOn(Date, 'now').mockImplementation(() => now);
     let attempts = 0;
     const runner = {
+      findHeldQcAttempt: vi.fn().mockResolvedValue(undefined),
       beginAttempt: vi.fn(async () => ({ attemptNo: ++attempts })),
       countRoundAttempts: vi.fn().mockResolvedValue(0),
       infraAttemptLimit: () => 3,
@@ -315,6 +319,7 @@ describe('runStageAttemptLoop replays', () => {
 
   it('still times a provider without its own deadline out, spending a retry', async () => {
     const runner = {
+      findHeldQcAttempt: vi.fn().mockResolvedValue(undefined),
       beginAttempt: vi.fn().mockResolvedValue({ attemptNo: 1 }),
       countRoundAttempts: vi.fn().mockResolvedValue(0),
       infraAttemptLimit: () => 3,
@@ -342,5 +347,73 @@ describe('runStageAttemptLoop replays', () => {
     expect(result).toEqual({ outcome: 'failed', reason: 'provider_timeout' });
     expect(runner.recordProviderTimeout).toHaveBeenCalledTimes(1);
     expect(runner.recordProviderStall).not.toHaveBeenCalled();
+  });
+});
+
+describe('runStageAttemptLoop Retry QC', () => {
+  const held = { attemptNo: 1, stageAttemptId: 'attempt-1' };
+  const run = (runner: object) =>
+    runStageAttemptLoop({
+      step: { run: (_id: string, fn: () => unknown) => fn(), sleep: vi.fn() } as never,
+      logger: { warn: vi.fn() } as never,
+      runner: runner as never,
+      stage: { qc: { maxAttempts: 3 } } as never,
+      effective: { polling: { maxWaitSec: 10 } } as never,
+      prevStageKey: undefined,
+      runId: 'run',
+      stageExecutionId: 'exec',
+      stageKey: 'draft',
+      retryLimit: 0,
+    });
+
+  it('judges the held output again without generating or spending an attempt', async () => {
+    const runner = {
+      findHeldQcAttempt: vi.fn().mockResolvedValue(held),
+      retryHeldQc: vi.fn().mockResolvedValue({ outcome: 'success', artifactId: 'a1' }),
+      beginAttempt: vi.fn(),
+      reserveAndSubmit: vi.fn(),
+    };
+    await expect(run(runner)).resolves.toEqual({ outcome: 'passed', artifactId: 'a1' });
+    expect(runner.retryHeldQc).toHaveBeenCalledWith(
+      expect.anything(),
+      held,
+      undefined,
+      expect.anything(),
+    );
+    expect(runner.beginAttempt).not.toHaveBeenCalled();
+    expect(runner.reserveAndSubmit).not.toHaveBeenCalled();
+  });
+
+  it('pauses again when QC still cannot run', async () => {
+    const runner = {
+      findHeldQcAttempt: vi.fn().mockResolvedValue(held),
+      retryHeldQc: vi.fn().mockResolvedValue({ outcome: 'approval_required', artifactId: 'a1' }),
+      beginAttempt: vi.fn(),
+    };
+    await expect(run(runner)).resolves.toEqual({ outcome: 'approval_required', artifactId: 'a1' });
+  });
+
+  it('regenerates when the retried QC rejects the output', async () => {
+    let regenerated = 0;
+    const runner = {
+      findHeldQcAttempt: vi.fn().mockResolvedValueOnce(held).mockResolvedValue(undefined),
+      retryHeldQc: vi.fn().mockResolvedValue({
+        outcome: 'qc_failed',
+        checkResults: [],
+        qcVerdict: { score: 10, critique: 'Too generic.' },
+      }),
+      countRoundAttempts: vi.fn().mockResolvedValueOnce(1).mockResolvedValue(0),
+      infraAttemptLimit: () => 3,
+      beginAttempt: vi.fn(async () => ({ attemptNo: 2, stageAttemptId: 'attempt-2' })),
+      reserveAndSubmit: vi.fn(async () => {
+        regenerated += 1;
+        return { outcome: 'submitted', handle: { providerId: 'fake', externalId: 'x' } };
+      }),
+      pollOnce: vi.fn().mockResolvedValue({ done: true, outcome: 'succeeded' }),
+      fetchAndFinalize: vi.fn().mockResolvedValue({ outcome: 'success', artifactId: 'a2' }),
+      failStageExecution: vi.fn(),
+    };
+    await expect(run(runner)).resolves.toEqual({ outcome: 'passed', artifactId: 'a2' });
+    expect(regenerated).toBe(1);
   });
 });

@@ -190,9 +190,9 @@ export class RunController {
     @Param('key') key: string,
     @Body(new ZodValidationPipe(ApprovalActionDto)) dto: ApprovalActionDto,
   ) {
-    return dto.action === 'approve'
-      ? this.humanActions.approve(id, key, dto.itemIndex)
-      : this.humanActions.reject(id, key, dto.note, dto.previewToken, dto.itemIndex);
+    if (dto.action === 'approve') return this.humanActions.approve(id, key, dto.itemIndex);
+    if (dto.action === 'retry_qc') return this.humanActions.retryQc(id, key, dto.itemIndex);
+    return this.humanActions.reject(id, key, dto.note, dto.previewToken, dto.itemIndex);
   }
 
   @Post(':id/stages/:key/input')

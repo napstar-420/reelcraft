@@ -2,7 +2,11 @@ import type { Context, Logger } from 'inngest';
 import { DEFAULT_FEEDBACK_MAX_ATTEMPTS } from '@reelcraft/shared';
 import type { JobStatus, StageDef } from '@reelcraft/shared';
 import { CONSUMES_RETRY_LIMIT } from '../attempt-outcome';
-import type { StageAttemptContext, StageRunnerService } from '../stage-runner.service';
+import type {
+  FetchAndFinalizeResult,
+  StageAttemptContext,
+  StageRunnerService,
+} from '../stage-runner.service';
 import type { EffectiveStageConfig } from '../../run-config/config-resolver.service';
 
 /** `Context.Any['step']` — the step-tools object handed to every Inngest
@@ -94,9 +98,98 @@ export async function runStageAttemptLoop(
     stageItemId,
   } = params;
 
+  /** What to do with a finished fetch (or a "Retry QC" judging): the stage's
+   * outcome when it is decided, or `undefined` to loop to a fresh attempt. */
+  const settleFetched = async (
+    fetched: FetchAndFinalizeResult,
+    attemptCtx: StageAttemptContext,
+    iteration: number,
+  ): Promise<StageAttemptOutcome | undefined> => {
+    if (fetched.outcome === 'success') {
+      return { outcome: 'passed' as const, artifactId: fetched.artifactId };
+    }
+
+    if (fetched.outcome === 'approval_required') {
+      return { outcome: 'approval_required' as const, artifactId: fetched.artifactId };
+    }
+
+    if (fetched.outcome === 'run_not_running') {
+      return { outcome: 'run_not_running' as const };
+    }
+
+    if (fetched.outcome === 'deferred') {
+      return { outcome: 'deferred' as const, resumeAt: fetched.resumeAt };
+    }
+
+    if (fetched.outcome === 'qc_error' || fetched.outcome === 'model_error') {
+      await step.run(`fail-stage-${stageKey}`, () =>
+        runner.failStageExecution(stageExecutionId, fetched.reason, stageItemId),
+      );
+      return { outcome: 'failed' as const, reason: fetched.reason };
+    }
+
+    if (fetched.outcome === 'qc_budget_exhausted') {
+      await step.run(`fail-stage-${stageKey}`, () =>
+        runner.failStageExecution(stageExecutionId, 'qc_budget_exhausted', stageItemId),
+      );
+      return { outcome: 'failed' as const, reason: 'qc_budget_exhausted' };
+    }
+
+    // check_failed | qc_failed — not a stage failure: loop to a fresh
+    // attempt (the critique is spliced into its prompt) until this
+    // feedback kind's own cap is spent. This attempt's outcome is already
+    // recorded, so the count includes it.
+    const failedOutcome = fetched.outcome;
+    const failuresUsed = await step.run(`count-${failedOutcome}-${iteration}`, () =>
+      runner.countRoundAttempts(stageExecutionId, [failedOutcome], stageItemId),
+    );
+    const maxAttempts =
+      (failedOutcome === 'qc_failed' ? stage.qc?.maxAttempts : stage.checkMaxAttempts) ??
+      DEFAULT_FEEDBACK_MAX_ATTEMPTS;
+    if (failuresUsed >= maxAttempts) {
+      if (failedOutcome === 'qc_failed' && stage.qc?.onExhausted === 'human_review') {
+        const handedOff = await step.run(`qc-handoff-${stageKey}-${iteration}`, () =>
+          runner.handOffForReview(stage, attemptCtx),
+        );
+        return handedOff.outcome === 'approval_required'
+          ? { outcome: 'approval_required' as const, artifactId: handedOff.artifactId }
+          : { outcome: 'run_not_running' as const };
+      }
+      const reason =
+        fetched.outcome === 'check_failed'
+          ? `check_failed after ${failuresUsed} attempts: ${fetched.checkResults
+              .filter((r) => !r.pass)
+              .map((r) => r.name)
+              .join(', ')}`
+          : `qc_failed after ${failuresUsed} attempts: ${fetched.qcVerdict.critique}`;
+      await step.run(`fail-stage-${stageKey}`, () =>
+        runner.failStageExecution(stageExecutionId, reason, stageItemId),
+      );
+      return { outcome: 'failed' as const, reason };
+    }
+    return undefined;
+  };
+
   let iteration = 0;
   while (true) {
     iteration += 1;
+
+    // "Retry QC": quality control could not run, the output was parked for
+    // review and a person released it to be judged again. Judge the stored
+    // output; nothing is generated and no attempt is spent.
+    const held = await step.run(
+      `find-held-qc-${iteration}`,
+      async () => (await runner.findHeldQcAttempt(stageExecutionId, stageItemId)) ?? null,
+    );
+    if (held) {
+      const retried = await step.run(`retry-qc-${iteration}`, () =>
+        runner.retryHeldQc(stage, held, prevStageKey, effective),
+      );
+      const settled = await settleFetched(retried, held, iteration);
+      if (settled) return settled;
+      continue;
+    }
+
     const attemptCtx: StageAttemptContext = await step.run(`begin-attempt-${iteration}`, () =>
       runner.beginAttempt({ runId, stageExecutionId, stageKey, itemIndex, stageItemId }),
     );
@@ -218,68 +311,8 @@ export async function runStageAttemptLoop(
         runner.fetchAndFinalize(stage, attemptCtx, handle, prevStageKey, effective),
       );
 
-      if (fetched.outcome === 'success') {
-        return { outcome: 'passed' as const, artifactId: fetched.artifactId };
-      }
-
-      if (fetched.outcome === 'approval_required') {
-        return { outcome: 'approval_required' as const, artifactId: fetched.artifactId };
-      }
-
-      if (fetched.outcome === 'run_not_running') {
-        return { outcome: 'run_not_running' as const };
-      }
-
-      if (fetched.outcome === 'deferred') {
-        return { outcome: 'deferred' as const, resumeAt: fetched.resumeAt };
-      }
-
-      if (fetched.outcome === 'qc_error' || fetched.outcome === 'model_error') {
-        await step.run(`fail-stage-${stageKey}`, () =>
-          runner.failStageExecution(stageExecutionId, fetched.reason, stageItemId),
-        );
-        return { outcome: 'failed' as const, reason: fetched.reason };
-      }
-
-      if (fetched.outcome === 'qc_budget_exhausted') {
-        await step.run(`fail-stage-${stageKey}`, () =>
-          runner.failStageExecution(stageExecutionId, 'qc_budget_exhausted', stageItemId),
-        );
-        return { outcome: 'failed' as const, reason: 'qc_budget_exhausted' };
-      }
-
-      // check_failed | qc_failed — not a stage failure: loop to a fresh
-      // attempt (the critique is spliced into its prompt) until this
-      // feedback kind's own cap is spent. This attempt's outcome is already
-      // recorded, so the count includes it.
-      const failedOutcome = fetched.outcome;
-      const failuresUsed = await step.run(`count-${failedOutcome}-${iteration}`, () =>
-        runner.countRoundAttempts(stageExecutionId, [failedOutcome], stageItemId),
-      );
-      const maxAttempts =
-        (failedOutcome === 'qc_failed' ? stage.qc?.maxAttempts : stage.checkMaxAttempts) ??
-        DEFAULT_FEEDBACK_MAX_ATTEMPTS;
-      if (failuresUsed >= maxAttempts) {
-        if (failedOutcome === 'qc_failed' && stage.qc?.onExhausted === 'human_review') {
-          const handedOff = await step.run(`qc-handoff-${stageKey}-${iteration}`, () =>
-            runner.handOffForReview(stage, attemptCtx),
-          );
-          return handedOff.outcome === 'approval_required'
-            ? { outcome: 'approval_required' as const, artifactId: handedOff.artifactId }
-            : { outcome: 'run_not_running' as const };
-        }
-        const reason =
-          fetched.outcome === 'check_failed'
-            ? `check_failed after ${failuresUsed} attempts: ${fetched.checkResults
-                .filter((r) => !r.pass)
-                .map((r) => r.name)
-                .join(', ')}`
-            : `qc_failed after ${failuresUsed} attempts: ${fetched.qcVerdict.critique}`;
-        await step.run(`fail-stage-${stageKey}`, () =>
-          runner.failStageExecution(stageExecutionId, reason, stageItemId),
-        );
-        return { outcome: 'failed' as const, reason };
-      }
+      const settled = await settleFetched(fetched, attemptCtx, iteration);
+      if (settled) return settled;
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
       logger.warn(

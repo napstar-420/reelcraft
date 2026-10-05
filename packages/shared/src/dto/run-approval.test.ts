@@ -24,7 +24,7 @@ describe('approval candidate DTO', () => {
       ApprovalCandidateDto.parse({
         stageKey: 'draft',
         itemIndex: null,
-        attempt,
+        attempt: { ...attempt, qcUnavailable: null },
         artifact: {
           id: 'artifact-1',
           kind: 'text',
@@ -39,6 +39,7 @@ describe('approval candidate DTO', () => {
       attemptNo: 1,
       checkResults: [],
       qcVerdict: null,
+      qcUnavailable: null,
       costUsd: 0,
       createdAt: '2026-09-26T00:00:00.000Z',
     });

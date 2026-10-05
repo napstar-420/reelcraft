@@ -170,6 +170,9 @@ export const ApprovalCandidateDto = z.object({
     attemptNo: z.number(),
     checkResults: z.unknown().nullable(),
     qcVerdict: z.unknown().nullable(),
+    /** Why quality control could not judge this output, when that is why it
+     * is waiting for review; the review then offers "Retry QC". */
+    qcUnavailable: z.string().nullable(),
     costUsd: z.number(),
     createdAt: z.string(),
   }),

@@ -212,7 +212,8 @@ export function flowAccounts(config: Record<string, unknown>): string[] {
 }
 
 export function withFlowAccounts(stage: StageDef, accounts: string[]): StageDef {
-  const { [ACCOUNTS_KEY]: _dropped, ...rest } = stage.config;
+  const rest = { ...stage.config };
+  delete rest[ACCOUNTS_KEY];
   return { ...stage, config: accounts.length ? { ...rest, [ACCOUNTS_KEY]: accounts } : rest };
 }
 
