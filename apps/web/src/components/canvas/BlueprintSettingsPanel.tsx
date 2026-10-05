@@ -1,4 +1,14 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import {
+  ArrowDownToLine,
+  ChevronRight,
+  CircleDollarSign,
+  Plus,
+  SlidersHorizontal,
+  Trash2,
+  UserRound,
+} from 'lucide-react';
+import { cn } from 'cn';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../api/client';
 import { normalizeRoleReferences } from '../../lib/role-references';
@@ -8,7 +18,6 @@ import type { CharacterDto, ConfigLayer, InputDef, RoleDef, JsonSchema } from '@
 import { DefaultsEditor } from '@/components/defaults/DefaultsEditor';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -86,13 +95,24 @@ function BudgetEditor({
 }) {
   return (
     <div className="flex flex-col gap-1.5">
-      <Label>Run cap (USD)</Label>
-      <Input
-        type="number"
-        className="w-48"
-        value={budget.runCapUsd}
-        onChange={(e) => onChange({ runCapUsd: Number(e.target.value) || 0 })}
-      />
+      <Label htmlFor="blueprint-run-cap">Run cap (USD)</Label>
+      <div className="relative w-44">
+        <span className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-sm text-muted-foreground">
+          $
+        </span>
+        <Input
+          id="blueprint-run-cap"
+          type="number"
+          min={0}
+          step={0.5}
+          className="pl-6"
+          value={budget.runCapUsd}
+          onChange={(e) => onChange({ runCapUsd: Number(e.target.value) || 0 })}
+        />
+      </div>
+      <p className="text-xs text-muted-foreground">
+        A run pauses when its next model call would pass this cap. Dry runs are capped at $1.
+      </p>
     </div>
   );
 }
@@ -104,6 +124,9 @@ function InputsEditor({
   inputs: InputDef[];
   onChange: (inputs: InputDef[]) => void;
 }) {
+  // The row being edited, by position: keys are editable, so they can't identify it.
+  const [openIndex, setOpenIndex] = useState<number | null>(null);
+
   function update(index: number, patch: Partial<InputDef>) {
     const next = [...inputs];
     const current = next[index];
@@ -114,6 +137,7 @@ function InputsEditor({
 
   function remove(index: number) {
     onChange(inputs.filter((_, i) => i !== index));
+    setOpenIndex(null);
   }
 
   function add() {
@@ -121,119 +145,153 @@ function InputsEditor({
       ...inputs,
       { key: nextFreeInputKey(inputs), label: '', required: false, accepts: { kind: 'text' } },
     ]);
+    setOpenIndex(inputs.length);
   }
 
   return (
-    <div className="flex flex-col gap-3">
-      {inputs.map((input, index) => (
-        <Card key={index} size="sm">
-          <CardContent className="flex flex-col gap-3">
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="flex flex-col gap-1.5">
-                <Label>Key</Label>
-                <Input
-                  type="text"
-                  value={input.key}
-                  onChange={(e) => update(index, { key: e.target.value })}
-                />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <Label>Label</Label>
-                <Input
-                  type="text"
-                  value={input.label}
-                  onChange={(e) => update(index, { label: e.target.value })}
-                />
-              </div>
-            </div>
-
-            <Label className="font-normal">
-              <Checkbox
-                checked={input.required}
-                onCheckedChange={(checked) => update(index, { required: checked === true })}
-              />
-              Required
-            </Label>
-
-            <div className="flex flex-col gap-1.5">
-              <Label>Accepts</Label>
-              <Select
-                value={input.accepts.kind}
-                onValueChange={(next) =>
-                  update(index, {
-                    accepts: buildAccepts(next as InputDef['accepts']['kind'], input.accepts),
-                  })
-                }
-              >
-                <SelectTrigger size="sm" className="w-48">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="text">text</SelectItem>
-                  <SelectItem value="data">data</SelectItem>
-                  <SelectItem value="media.image">media.image</SelectItem>
-                  <SelectItem value="media.video">media.video</SelectItem>
-                  <SelectItem value="media.audio">media.audio</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {input.accepts.kind === 'data' && (
-              <div className="flex flex-col gap-1.5 border-l-2 border-border pl-3">
-                <h4 className={SECTION_HEADING_CLASS}>Schema</h4>
-                <SchemaForm
-                  schema={JSON_SCHEMA_META}
-                  value={input.accepts.schema}
-                  onChange={(next) =>
-                    update(index, {
-                      accepts: { kind: 'data', schema: (next as JsonSchema) ?? { type: 'object' } },
-                    })
-                  }
-                />
-              </div>
-            )}
-
-            {(input.accepts.kind === 'media.image' ||
-              input.accepts.kind === 'media.video' ||
-              input.accepts.kind === 'media.audio') && (
-              <div className="flex flex-col gap-1.5">
-                <Label>Cardinality</Label>
-                <Select
-                  value={input.accepts.cardinality}
-                  onValueChange={(next) =>
-                    update(index, {
-                      accepts: {
-                        kind: input.accepts.kind as 'media.image' | 'media.video' | 'media.audio',
-                        cardinality: next as 'one' | 'many',
-                      },
-                    })
-                  }
-                >
-                  <SelectTrigger size="sm" className="w-32">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="one">one</SelectItem>
-                    <SelectItem value="many">many</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-
-            <Button
+    <div className="flex flex-col gap-2">
+      {inputs.length === 0 && (
+        <p className="text-sm text-muted-foreground">
+          No inputs. Runs of this blueprint take no values.
+        </p>
+      )}
+      {inputs.map((input, index) => {
+        const open = openIndex === index;
+        return (
+          <div key={index} className="overflow-hidden rounded-lg border">
+            <button
               type="button"
-              variant="outline"
-              size="sm"
-              className="self-start"
-              onClick={() => remove(index)}
+              aria-expanded={open}
+              onClick={() => setOpenIndex(open ? null : index)}
+              className="flex w-full items-center gap-2.5 px-3 py-2 text-left hover:bg-muted"
             >
-              Remove input
-            </Button>
-          </CardContent>
-        </Card>
-      ))}
+              <ChevronRight
+                className={cn(
+                  'size-3.5 shrink-0 text-muted-foreground transition-transform',
+                  open && 'rotate-90',
+                )}
+              />
+              <code className="text-xs font-medium">{input.key}</code>
+              <span className="min-w-0 flex-1 truncate text-sm">{input.label}</span>
+              <Badge variant="secondary">{input.accepts.kind}</Badge>
+              {input.required && <Badge variant="outline">Required</Badge>}
+            </button>
+            {open && (
+              <div className="flex flex-col gap-3 border-t px-3 py-3">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="flex flex-col gap-1.5">
+                    <Label>Key</Label>
+                    <Input
+                      type="text"
+                      value={input.key}
+                      onChange={(e) => update(index, { key: e.target.value })}
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <Label>Label</Label>
+                    <Input
+                      type="text"
+                      value={input.label}
+                      onChange={(e) => update(index, { label: e.target.value })}
+                    />
+                  </div>
+                </div>
+
+                <Label className="font-normal">
+                  <Checkbox
+                    checked={input.required}
+                    onCheckedChange={(checked) => update(index, { required: checked === true })}
+                  />
+                  Required
+                </Label>
+
+                <div className="flex flex-col gap-1.5">
+                  <Label>Accepts</Label>
+                  <Select
+                    value={input.accepts.kind}
+                    onValueChange={(next) =>
+                      update(index, {
+                        accepts: buildAccepts(next as InputDef['accepts']['kind'], input.accepts),
+                      })
+                    }
+                  >
+                    <SelectTrigger size="sm" className="w-48">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="text">text</SelectItem>
+                      <SelectItem value="data">data</SelectItem>
+                      <SelectItem value="media.image">media.image</SelectItem>
+                      <SelectItem value="media.video">media.video</SelectItem>
+                      <SelectItem value="media.audio">media.audio</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {input.accepts.kind === 'data' && (
+                  <div className="flex flex-col gap-1.5 border-l-2 border-border pl-3">
+                    <h4 className={SECTION_HEADING_CLASS}>Schema</h4>
+                    <SchemaForm
+                      schema={JSON_SCHEMA_META}
+                      value={input.accepts.schema}
+                      onChange={(next) =>
+                        update(index, {
+                          accepts: {
+                            kind: 'data',
+                            schema: (next as JsonSchema) ?? { type: 'object' },
+                          },
+                        })
+                      }
+                    />
+                  </div>
+                )}
+
+                {(input.accepts.kind === 'media.image' ||
+                  input.accepts.kind === 'media.video' ||
+                  input.accepts.kind === 'media.audio') && (
+                  <div className="flex flex-col gap-1.5">
+                    <Label>Cardinality</Label>
+                    <Select
+                      value={input.accepts.cardinality}
+                      onValueChange={(next) =>
+                        update(index, {
+                          accepts: {
+                            kind: input.accepts.kind as
+                              'media.image' | 'media.video' | 'media.audio',
+                            cardinality: next as 'one' | 'many',
+                          },
+                        })
+                      }
+                    >
+                      <SelectTrigger size="sm" className="w-32">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="one">one</SelectItem>
+                        <SelectItem value="many">many</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="self-start text-destructive"
+                  onClick={() => remove(index)}
+                >
+                  <Trash2 />
+                  Remove input
+                </Button>
+              </div>
+            )}
+          </div>
+        );
+      })}
       <Button type="button" variant="outline" size="sm" onClick={add} className="self-start">
-        + add input
+        <Plus />
+        Add input
       </Button>
     </div>
   );
@@ -342,7 +400,8 @@ function RoleEditor({
         size="sm"
         onClick={() => onChange([{ key: 'role-1', label: '', required: false }])}
       >
-        + add role
+        <Plus />
+        Add role
       </Button>
     );
   }
@@ -352,8 +411,8 @@ function RoleEditor({
   }
 
   return (
-    <Card size="sm">
-      <CardContent className="flex flex-col gap-3">
+    <div className="flex flex-col gap-3 rounded-lg border p-3">
+      <div className="flex flex-col gap-3">
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="flex flex-col gap-1.5">
             <Label>Key</Label>
@@ -421,15 +480,41 @@ function RoleEditor({
         >
           Remove role
         </Button>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
 
-/** Chunk 8 — closes the last no-code gap: `draft.inputs`/`draft.roles`/
- * `draft.budget` had no editor anywhere before this (only `draft.graph` was
- * editable, via Chunks 2-7). Always-visible on `BlueprintCanvasPage`, not
- * gated behind stage selection like `StageInspector`. */
+function SettingsSection({
+  icon,
+  title,
+  aside,
+  children,
+  last,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  aside?: string;
+  children: React.ReactNode;
+  last?: boolean;
+}) {
+  return (
+    <section className={cn('flex flex-col gap-3 p-4', !last && 'border-b')}>
+      <h3 className={cn(SECTION_HEADING_CLASS, 'flex items-center gap-2 [&_svg]:size-3.5')}>
+        {icon}
+        {title}
+        {aside ? (
+          <span className="ml-auto font-medium tracking-normal normal-case">{aside}</span>
+        ) : null}
+      </h3>
+      {children}
+    </section>
+  );
+}
+
+/** The blueprint-level settings, as the dock's Blueprint tab: inputs, the
+ * role, the run cap and the blueprint's defaults. Always available, not gated
+ * behind selecting a stage the way the stage inspector is. */
 export function BlueprintSettingsPanel({
   inputs,
   roles,
@@ -451,58 +536,34 @@ export function BlueprintSettingsPanel({
   }) => void;
 }) {
   return (
-    <section className="flex flex-col gap-4">
-      <h2 className="text-lg font-semibold">Blueprint settings</h2>
+    <div className="flex flex-col">
+      <SettingsSection icon={<ArrowDownToLine />} title="Inputs" aside={String(inputs.length)}>
+        <InputsEditor inputs={inputs} onChange={(next) => onChange({ inputs: next })} />
+      </SettingsSection>
 
-      <div className="grid items-start gap-4 sm:grid-cols-3">
-        <Card>
-          <CardHeader>
-            <CardTitle>Budget</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <BudgetEditor budget={budget} onChange={(next) => onChange({ budget: next })} />
-          </CardContent>
-        </Card>
+      <SettingsSection icon={<UserRound />} title="Role" aside={`${roles.length} of 1`}>
+        <RoleEditor
+          roles={roles}
+          channelId={channelId}
+          onChange={(next) => onChange({ roles: next })}
+        />
+      </SettingsSection>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Inputs</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <InputsEditor inputs={inputs} onChange={(next) => onChange({ inputs: next })} />
-          </CardContent>
-        </Card>
+      <SettingsSection icon={<CircleDollarSign />} title="Budget">
+        <BudgetEditor budget={budget} onChange={(next) => onChange({ budget: next })} />
+      </SettingsSection>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Role</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <RoleEditor
-              roles={roles}
-              channelId={channelId}
-              onChange={(next) => onChange({ roles: next })}
-            />
-          </CardContent>
-        </Card>
-
-        <Card className="sm:col-span-3">
-          <CardHeader>
-            <CardTitle>Defaults</CardTitle>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-3">
-            <p className="text-sm text-muted-foreground">
-              Apply to every stage in this blueprint, over the channel's defaults. A stage can set
-              its own.
-            </p>
-            <DefaultsEditor
-              value={defaults}
-              onChange={(next) => onChange({ defaults: next })}
-              scope="blueprint"
-            />
-          </CardContent>
-        </Card>
-      </div>
-    </section>
+      <SettingsSection icon={<SlidersHorizontal />} title="Defaults" last>
+        <p className="text-sm text-muted-foreground">
+          Apply to every stage in this blueprint, over the channel's defaults. A stage can set its
+          own.
+        </p>
+        <DefaultsEditor
+          value={defaults}
+          onChange={(next) => onChange({ defaults: next })}
+          scope="blueprint"
+        />
+      </SettingsSection>
+    </div>
   );
 }

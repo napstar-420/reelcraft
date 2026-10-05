@@ -8,7 +8,7 @@ run is going or long after.
 
 ## View an output
 
-On a stage's card (or in the canvas run panel), select **View output**. A panel opens, titled **Output of**
+On a stage's row in the canvas **Run** tab, select **View output**. A panel opens, titled **Output of**
 the stage. It shows the stage's current output, or **No output yet. This stage is still running.**
 A stage that [iterates](../blueprints/iterate-conditions-approval.md#iterate) shows one block per item:
 **Item 1**, **Item 2**, and so on.

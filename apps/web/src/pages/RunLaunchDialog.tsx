@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { FlaskConical, Play } from 'lucide-react';
+import { cn } from 'cn';
 import { useMutation } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import type { InputDef } from '@reelcraft/shared';
@@ -25,6 +27,9 @@ import {
   type LaunchResume,
   type LaunchValues,
 } from './run-launch.logic';
+
+/** A dry run is free, so its default cap is only a safety net. */
+const DRY_RUN_BUDGET_CAP_USD = 1;
 
 type RecoverableLaunch = LaunchResume & { blueprintVersionId: string };
 
@@ -63,16 +68,12 @@ export function RunLaunchDialog({
   prepareVersion,
   onLaunched,
   disabled = false,
-  dryRun = false,
 }: {
   channelId: string;
   inputs: InputDef[];
   defaultBudgetCapUsd: number;
   prepareVersion: () => Promise<string>;
   disabled?: boolean;
-  /** Dry-run mode: same inputs and uploads, but every model is forced to the
-   * free fake provider. */
-  dryRun?: boolean;
   /** The canvas's run dock passes this to stay on the canvas and switch its
    * active run instead of navigating to `/runs/:id` (the default, used by
    * every other launch site). */
@@ -80,6 +81,9 @@ export function RunLaunchDialog({
 }) {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
+  // A dry run uses the same inputs and uploads, but every model is forced to
+  // the free fake provider.
+  const [dryRun, setDryRun] = useState(false);
   const [budgetCapUsd, setBudgetCapUsd] = useState(defaultBudgetCapUsd);
   const [values, setValues] = useState<LaunchValues>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -152,6 +156,12 @@ export function RunLaunchDialog({
 
   const retryLabel = recoverable?.phase === 'start' ? 'Retry start' : 'Retry upload & run';
 
+  function chooseMode(nextDryRun: boolean) {
+    if (nextDryRun === dryRun) return;
+    setDryRun(nextDryRun);
+    setBudgetCapUsd(nextDryRun ? DRY_RUN_BUDGET_CAP_USD : defaultBudgetCapUsd);
+  }
+
   return (
     <Dialog
       open={open}
@@ -159,6 +169,8 @@ export function RunLaunchDialog({
         if (launch.isPending) return;
         setOpen(next);
         if (!next) {
+          setDryRun(false);
+          setBudgetCapUsd(defaultBudgetCapUsd);
           setErrors({});
           setRecoverable(null);
           launch.reset();
@@ -166,12 +178,9 @@ export function RunLaunchDialog({
       }}
     >
       <DialogTrigger asChild>
-        <Button
-          type="button"
-          variant={dryRun ? 'outline' : 'default'}
-          disabled={!channelId || disabled}
-        >
-          {dryRun ? 'Dry run (fake provider)' : 'Run'}
+        <Button type="button" disabled={!channelId || disabled}>
+          <Play />
+          Run
         </Button>
       </DialogTrigger>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
@@ -185,6 +194,33 @@ export function RunLaunchDialog({
         </DialogHeader>
 
         <div className="space-y-4">
+          <div
+            role="radiogroup"
+            aria-label="Run mode"
+            className="grid grid-cols-2 gap-0.5 rounded-lg bg-muted p-0.5"
+          >
+            {[
+              { dry: false, label: 'Live run', icon: <Play className="size-3.5" /> },
+              { dry: true, label: 'Dry run', icon: <FlaskConical className="size-3.5" /> },
+            ].map((mode) => (
+              <button
+                key={mode.label}
+                type="button"
+                role="radio"
+                aria-checked={dryRun === mode.dry}
+                disabled={recoverable !== null || launch.isPending}
+                onClick={() => chooseMode(mode.dry)}
+                className={cn(
+                  'inline-flex h-7 items-center justify-center gap-1.5 rounded-md text-sm font-medium text-muted-foreground disabled:cursor-not-allowed disabled:opacity-60',
+                  dryRun === mode.dry && 'bg-background text-foreground shadow-sm',
+                )}
+              >
+                {mode.icon}
+                {mode.label}
+              </button>
+            ))}
+          </div>
+
           <div className="space-y-1.5">
             <Label htmlFor="run-budget-cap">Budget cap (USD)</Label>
             <Input

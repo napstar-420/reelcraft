@@ -73,6 +73,10 @@
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
   --radius: 0.625rem;
+  --canvas: oklch(0.972 0.005 290);
+  --canvas-dot: oklch(0.84 0.01 290);
+  --edge: oklch(0.72 0.012 290);
+  --memory: oklch(0.541 0.25 293);
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
   --sidebar: oklch(0.985 0 0);
@@ -109,6 +113,10 @@
   --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
+  --canvas: oklch(0.135 0.02 275);
+  --canvas-dot: oklch(1 0 0 / 10%);
+  --edge: oklch(1 0 0 / 28%);
+  --memory: oklch(0.74 0.15 295);
   --sidebar: oklch(0.14 0.02 275);
   --sidebar-foreground: oklch(0.94 0.006 290);
   --sidebar-primary: oklch(0.7 0.14 290);
@@ -162,6 +170,24 @@
 }
 .skip-link:focus {
   left: 0.5rem;
+}
+
+/* Blueprint canvas (components/canvas/stage-graph.tsx). */
+.stage-canvas.react-flow {
+  --xy-background-color: var(--canvas);
+  --xy-background-pattern-color: var(--canvas-dot);
+  --xy-edge-stroke: var(--edge);
+}
+.stage-canvas .react-flow__node:not(.dragging) {
+  transition: transform 300ms var(--ease-out);
+}
+.stage-canvas .react-flow__attribution {
+  background: transparent;
+}
+@keyframes memory-flow {
+  to {
+    stroke-dashoffset: -18;
+  }
 }
 
 /* React Flow's own stylesheet is light-only: follow the app theme instead. */

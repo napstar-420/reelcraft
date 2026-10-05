@@ -58,5 +58,5 @@ above.
 
 ## Reusing work while you build
 
-The [run panel on the canvas](./canvas-runs.md) offers a middle path: **Run all** and single-stage runs
+The [**Run** tab on the canvas](./canvas-runs.md) offers a middle path: **Run all** and single-stage runs
 start a new run that reuses the unchanged stages from the previous one.

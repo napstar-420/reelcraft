@@ -4,7 +4,7 @@ description: What every status of a run, a stage and an attempt means, and what 
 ---
 
 Statuses appear as coloured badges on the [Runs list](../runs/runs-list.md), the
-[run page](../runs/run-page.md) and the canvas [run panel](../runs/canvas-runs.md).
+[run page](../runs/run-page.md) and the canvas [**Run** tab](../runs/canvas-runs.md).
 
 ## Run statuses
 

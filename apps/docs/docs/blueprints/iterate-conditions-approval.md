@@ -3,7 +3,7 @@ title: Iterate, conditions and approval
 description: Repeat a stage for every item in a list, run a stage only when an input matches, and pause for your approval.
 ---
 
-These three extras sit at the bottom of the stage inspector. Each starts as a button: **+ add
+These three extras sit in the **Flow control** section of the stage inspector. Each starts as a button: **+ add
 condition**, **+ add human approval** and **+ add iterate**. A stage can have any combination.
 
 ## Iterate

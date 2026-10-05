@@ -4,9 +4,10 @@ description: A tour of the stage inspector, section by section, and the three ki
 ---
 
 A **stage** is one step of a blueprint: write a script, make an image, record speech, ask you to
-review something, and so on. Select a stage's card on the canvas to open its **inspector**, titled
-**Inspect stage**. Every section is open by default. Any problems with the stage are listed at the
-top, and next to the setting they're about.
+review something, and so on. Select a stage's card on the canvas to open its **inspector** in the **Stage** tab. The top shows the
+stage's label, key and type. **Basics**, **Data** and **Flow control** are open to start with; the
+others open when you select them, and each closed section says on its header what the stage has set
+there. Any problems with the stage are listed at the top, and next to the setting they're about.
 
 Hover over the **ⓘ** next to any setting for a short explanation.
 

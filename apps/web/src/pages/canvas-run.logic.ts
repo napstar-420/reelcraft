@@ -1,7 +1,7 @@
 import type { CreateRunDto, RunDetailDto } from '@reelcraft/shared';
 
 /** Pure DTO builders for the canvas run dock's three actions — kept
- * separate from `CanvasRunPanel.tsx` so they're testable without React.
+ * separate from `useCanvasRunActions.ts` so they're testable without React.
  * `source` is the run whose finished stages should be reused
  * (`RunService.create`'s `seedFromRunId` — see run-seed.ts on the API side);
  * no source run yet is handled by the caller falling back to

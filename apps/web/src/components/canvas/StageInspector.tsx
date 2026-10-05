@@ -16,6 +16,7 @@ import { schemaPaths } from '../../lib/ref-paths';
 import {
   buildStageOutput,
   isOutputInstructionsIssue,
+  stageSectionSummaries,
   supportsOutputInstructions,
   updateDataOutputSchema,
   FLOW_CAPABILITY,
@@ -31,6 +32,7 @@ import { parseValidationPath, type ParsedValidationPath } from '../../lib/parse-
 import {
   SECTION_HEADING_CLASS,
   STAGE_SECTION_CONTENT_CLASS,
+  STAGE_SECTION_ITEM_CLASS,
   STAGE_SECTION_TRIGGER_CLASS,
 } from './typography';
 import type {
@@ -911,7 +913,23 @@ function IterateEditor({
   );
 }
 
-const ACCORDION_SECTIONS = ['basics', 'data', 'output-writes', 'checks-qc', 'model', 'execution'];
+const ACCORDION_SECTIONS = ['basics', 'data', 'flow'];
+
+/** A section header: its title, then (muted, right-aligned) a one-line
+ * summary of what the stage has set there, so a collapsed inspector still
+ * reads as a description of the stage. */
+function SectionTrigger({ title, summary }: { title: React.ReactNode; summary: string }) {
+  return (
+    <AccordionTrigger className={STAGE_SECTION_TRIGGER_CLASS}>
+      <span className="flex min-w-0 flex-1 items-center gap-3">
+        <span>{title}</span>
+        <span className="ml-auto truncate text-xs font-normal text-muted-foreground">
+          {summary}
+        </span>
+      </span>
+    </AccordionTrigger>
+  );
+}
 
 /** Chunk 4 — the real slot/context/config/output/writes editor for one
  * selected stage, replacing Chunk 3's `DemoBindingHarness`. `stage.key` is
@@ -978,6 +996,7 @@ export function StageInspector({
    * type sidesteps that entirely. */
   const stage: StageDef = found;
   const output = stage.output;
+  const summaries = stageSectionSummaries(stage);
 
   const configSchema = capabilities.data?.find((c) => c.key === stage.capability)?.configSchema;
   const stageCapability = capabilities.data?.find((c) => c.key === stage.capability);
@@ -1083,17 +1102,16 @@ export function StageInspector({
   }
 
   return (
-    <section className="flex flex-col gap-4">
-      <h2 className="text-lg font-semibold">Inspect stage</h2>
+    <section className="flex flex-col">
+      <IssueList issues={stageLevelIssues} className="px-4 pb-3" />
 
-      <IssueList issues={stageLevelIssues} />
-
-      <Accordion type="multiple" defaultValue={ACCORDION_SECTIONS} className="flex flex-col gap-2">
-        <AccordionItem
-          value="basics"
-          className="rounded-xl border border-border overflow-hidden px-3"
-        >
-          <AccordionTrigger className={STAGE_SECTION_TRIGGER_CLASS}>Basics</AccordionTrigger>
+      <Accordion
+        type="multiple"
+        defaultValue={ACCORDION_SECTIONS}
+        className="flex flex-col border-t"
+      >
+        <AccordionItem value="basics" className={STAGE_SECTION_ITEM_CLASS}>
+          <SectionTrigger title="Basics" summary={summaries.basics} />
           <AccordionContent className={STAGE_SECTION_CONTENT_CLASS}>
             <div className="flex flex-col gap-1.5">
               <InfoLabel info="This stage's unique id within the blueprint. Set when the stage is created and can't be changed. Runs, logs and Human approval's Retry stage refer to the stage by it.">
@@ -1203,13 +1221,8 @@ export function StageInspector({
           </AccordionContent>
         </AccordionItem>
 
-        <AccordionItem
-          value="data"
-          className="rounded-xl border border-border overflow-hidden px-3"
-        >
-          <AccordionTrigger className={STAGE_SECTION_TRIGGER_CLASS}>
-            Data (slots, context)
-          </AccordionTrigger>
+        <AccordionItem value="data" className={STAGE_SECTION_ITEM_CLASS}>
+          <SectionTrigger title="Data (slots, context)" summary={summaries.data} />
           <AccordionContent className={STAGE_SECTION_CONTENT_CLASS}>
             <div className="flex flex-col gap-3">
               <InfoHeading info="Typed inputs the selected capability declares (e.g. startFrame and references for Generate Video). Bind each to a value: the previous stage's output, a memory key, a blueprint input, an asset, and more.">
@@ -1326,13 +1339,8 @@ export function StageInspector({
           </AccordionContent>
         </AccordionItem>
 
-        <AccordionItem
-          value="output-writes"
-          className="rounded-xl border border-border overflow-hidden px-3"
-        >
-          <AccordionTrigger className={STAGE_SECTION_TRIGGER_CLASS}>
-            Output &amp; memory writes
-          </AccordionTrigger>
+        <AccordionItem value="output-writes" className={STAGE_SECTION_ITEM_CLASS}>
+          <SectionTrigger title="Output &amp; memory writes" summary={summaries['output-writes']} />
           <AccordionContent className={STAGE_SECTION_CONTENT_CLASS}>
             <div className="flex flex-col gap-1.5">
               <InfoHeading info="What this stage returns to the run graph. The kind you pick here (text/data/timeline/media) determines the shape a downstream stage's `prev` Ref receives — it is not stored anywhere else, unlike a memory write.">
@@ -1417,13 +1425,8 @@ export function StageInspector({
           </AccordionContent>
         </AccordionItem>
 
-        <AccordionItem
-          value="checks-qc"
-          className="rounded-xl border border-border overflow-hidden px-3"
-        >
-          <AccordionTrigger className={STAGE_SECTION_TRIGGER_CLASS}>
-            Checks &amp; Quality control
-          </AccordionTrigger>
+        <AccordionItem value="checks-qc" className={STAGE_SECTION_ITEM_CLASS}>
+          <SectionTrigger title="Checks &amp; Quality control" summary={summaries['checks-qc']} />
           <AccordionContent className={STAGE_SECTION_CONTENT_CLASS}>
             <div className="flex flex-col gap-1.5">
               <InfoHeading info="Automated pass/fail tests run against this stage's finished output — builtin checks or custom scripts. When a check fails, the output is regenerated with the failure messages as feedback, up to Max check attempts; after that the stage fails.">
@@ -1474,11 +1477,8 @@ export function StageInspector({
           </AccordionContent>
         </AccordionItem>
 
-        <AccordionItem
-          value="model"
-          className="rounded-xl border border-border overflow-hidden px-3"
-        >
-          <AccordionTrigger className={STAGE_SECTION_TRIGGER_CLASS}>Model</AccordionTrigger>
+        <AccordionItem value="model" className={STAGE_SECTION_ITEM_CLASS}>
+          <SectionTrigger title="Model" summary={summaries.model} />
           <AccordionContent className={STAGE_SECTION_CONTENT_CLASS}>
             <div className="flex flex-col gap-1.5">
               <InfoHeading info="Pins this stage to a specific provider/model/version, overriding the blueprint or channel's default. Leave fields unset to inherit the default at run time.">
@@ -1503,13 +1503,8 @@ export function StageInspector({
           </AccordionContent>
         </AccordionItem>
 
-        <AccordionItem
-          value="execution"
-          className="rounded-xl border border-border overflow-hidden px-3"
-        >
-          <AccordionTrigger className={STAGE_SECTION_TRIGGER_CLASS}>
-            Execution (retry, budget)
-          </AccordionTrigger>
+        <AccordionItem value="execution" className={STAGE_SECTION_ITEM_CLASS}>
+          <SectionTrigger title="Execution (retry, budget)" summary={summaries.execution} />
           <AccordionContent className={STAGE_SECTION_CONTENT_CLASS}>
             <div className="flex flex-col gap-1.5">
               <InfoHeading info="How many times this stage automatically retries after it crashes (a provider error or timeout) before the stage fails. Failed checks, quality control rejections and human rejections never use these retries — they have their own limits.">
@@ -1547,47 +1542,51 @@ export function StageInspector({
             </div>
           </AccordionContent>
         </AccordionItem>
+        <AccordionItem value="flow" className={STAGE_SECTION_ITEM_CLASS}>
+          <SectionTrigger title="Flow control" summary={summaries.flow} />
+          <AccordionContent className={STAGE_SECTION_CONTENT_CLASS}>
+            <div className="flex flex-col gap-1.5">
+              <InfoHeading info="Optional condition gating whether this stage runs at all. When set, the stage is skipped unless the named blueprint Input equals the given value.">
+                Enabled when
+              </InfoHeading>
+              <EnabledWhenEditor
+                enabledWhen={stage.enabledWhen}
+                inputs={inputs}
+                onChange={(enabledWhen) => onChange({ ...stage, enabledWhen })}
+              />
+              <IssueList issues={enabledWhenIssues} />
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <InfoHeading info="Optional human-in-the-loop gate. When set, the run pauses after this stage (or after each item, in item mode) for a person to approve or reject before continuing.">
+                Human approval
+              </InfoHeading>
+              <ApprovalEditor
+                approval={stage.approval}
+                graph={graph}
+                onChange={(approval) => onChange({ ...stage, approval })}
+              />
+              <IssueList issues={approvalIssues} />
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <InfoHeading info="Loops this stage once per item in an array, in order — item i may consume item i-1's result, but nothing runs in parallel. Leave unset to run this stage once.">
+                Iterate
+              </InfoHeading>
+              <IterateEditor
+                iterate={stage.iterate}
+                stageIndex={stageIndex}
+                graph={graph}
+                inputs={inputs}
+                roles={roles}
+                assets={assets}
+                onChange={(iterate) => onChange({ ...stage, iterate })}
+              />
+              <IssueList issues={iterateIssues} />
+            </div>
+          </AccordionContent>
+        </AccordionItem>
       </Accordion>
-
-      <div className="flex flex-col gap-1.5">
-        <InfoHeading info="Optional condition gating whether this stage runs at all. When set, the stage is skipped unless the named blueprint Input equals the given value.">
-          Enabled when
-        </InfoHeading>
-        <EnabledWhenEditor
-          enabledWhen={stage.enabledWhen}
-          inputs={inputs}
-          onChange={(enabledWhen) => onChange({ ...stage, enabledWhen })}
-        />
-        <IssueList issues={enabledWhenIssues} />
-      </div>
-
-      <div className="flex flex-col gap-1.5">
-        <InfoHeading info="Optional human-in-the-loop gate. When set, the run pauses after this stage (or after each item, in item mode) for a person to approve or reject before continuing.">
-          Human approval
-        </InfoHeading>
-        <ApprovalEditor
-          approval={stage.approval}
-          graph={graph}
-          onChange={(approval) => onChange({ ...stage, approval })}
-        />
-        <IssueList issues={approvalIssues} />
-      </div>
-
-      <div className="flex flex-col gap-1.5">
-        <InfoHeading info="Loops this stage once per item in an array, in order — item i may consume item i-1's result, but nothing runs in parallel. Leave unset to run this stage once.">
-          Iterate
-        </InfoHeading>
-        <IterateEditor
-          iterate={stage.iterate}
-          stageIndex={stageIndex}
-          graph={graph}
-          inputs={inputs}
-          roles={roles}
-          assets={assets}
-          onChange={(iterate) => onChange({ ...stage, iterate })}
-        />
-        <IssueList issues={iterateIssues} />
-      </div>
     </section>
   );
 }

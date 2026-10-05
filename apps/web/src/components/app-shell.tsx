@@ -15,11 +15,7 @@ import {
 import { Separator } from '@/components/ui/separator';
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
 import { breadcrumbsForPath } from '@/lib/breadcrumbs';
-
-// Canvas and run pages want the full viewport width (a node graph and a
-// video player both benefit from the extra room); every other page reads
-// better constrained to a max width instead of stretching edge to edge.
-const FULL_WIDTH_PATH = /^\/(channels\/[^/]+\/build|blueprints\/[^/]+\/build|runs\/[^/]+)/;
+import { shellLayoutForPath } from '@/lib/shell-layout';
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const location = useLocation();
@@ -32,7 +28,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   });
 
   const crumbs = breadcrumbsForPath(location.pathname, { channel: channel.data?.name });
-  const fullWidth = FULL_WIDTH_PATH.test(location.pathname);
+  const layout = shellLayoutForPath(location.pathname);
 
   return (
     <SidebarProvider className="h-svh">
@@ -66,9 +62,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <ModeToggle />
           </div>
         </header>
-        <main id="main-content" className="min-h-0 min-w-0 flex-1 overflow-auto p-6">
-          <div className={fullWidth ? undefined : 'mx-auto w-full max-w-7xl'}>{children}</div>
-        </main>
+        {layout === 'workbench' ? (
+          // The blueprint canvas fills the viewport and does its own scrolling.
+          <main id="main-content" className="min-h-0 min-w-0 flex-1 overflow-hidden">
+            {children}
+          </main>
+        ) : (
+          <main id="main-content" className="min-h-0 min-w-0 flex-1 overflow-auto p-6">
+            <div className={layout === 'wide' ? undefined : 'mx-auto w-full max-w-7xl'}>
+              {children}
+            </div>
+          </main>
+        )}
       </SidebarInset>
     </SidebarProvider>
   );
