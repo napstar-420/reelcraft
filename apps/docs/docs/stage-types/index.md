@@ -24,7 +24,7 @@ what the stage does, what inputs (slots) and settings it has, and what it can ou
 [budget](../runs/budget-and-costs.md). **Free** types run inside Reelcraft. See
 [Costs](../reference/costs.md) for the details.
 
-Add a stage by choosing its type under the stages on the canvas. See
+Add a stage by selecting **Add stage** on the canvas and picking its type. See
 [Blueprints](../blueprints/blueprints.md#add-a-stage).
 
 ## How a blueprint usually fits together

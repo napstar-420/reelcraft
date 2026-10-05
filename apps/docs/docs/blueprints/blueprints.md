@@ -14,7 +14,8 @@ different inputs each time.
 
 1. Open a channel and select the **Blueprints** tab.
 2. Select **Create custom blueprint**.
-3. Enter a **Blueprint name** and select **Create**.
+3. Enter a **Blueprint name** and select **Create blank blueprint**. Or start from a template: select
+   its card, set the **Run cap (USD)** and select **Use template**.
 
 The blueprint's canvas opens, ready for its first stage.
 
@@ -24,65 +25,87 @@ one.
 
 ## The canvas
 
-The canvas is where you build the blueprint. From top to bottom:
+The canvas is where you build the blueprint. It fills the page, with a bar across the top and one
+panel on the right.
 
-- **The header** shows:
-  - the latest saved version, such as `v1.2`;
-  - the **Versions** menu;
-  - whether you have **Unsaved changes**;
-  - whether the blueprint is **Runnable** or **Not runnable yet**.
+**The top bar** shows:
 
-  See [Versions](./versions.md).
+- the blueprint's name and the latest saved version, such as `v1.2`;
+- whether you have **Unsaved changes** or **All changes saved**;
+- whether the blueprint is **Runnable** or **Not runnable yet**, with how many problems it has;
+- **Versions**, **Discard**, **Save** and **Run**.
 
-- **Blueprint settings**: the run cap, inputs, the character role and defaults. See
+See [Versions](./versions.md) for saving, and [Starting a run](../runs/starting-a-run.md) for **Run**.
+
+**The canvas itself** shows the blueprint from left to right:
+
+- The **Start** card, **Blueprint inputs**, lists the inputs a run asks for, the role and the run cap.
+  Select it to open the **Blueprint** tab.
+- One card for each stage, in the order they run.
+- An **Add stage** card at the end.
+
+Drag the canvas to move around. Scroll to move, and pinch or hold Ctrl (or ⌘) and scroll to zoom.
+
+**The strip along the bottom** has a pill for every stage (select one to jump to it), a **problems**
+button when there are any, and the zoom buttons. The last one fits every stage on screen.
+
+**The panel on the right** has three tabs:
+
+- **Stage**: the settings of the selected stage. See [Stages](./stages.md).
+- **Run**: the latest run, for trying stages out. See [Canvas runs](../runs/canvas-runs.md).
+- **Blueprint**: the run cap, inputs, the character role and defaults. See
   [Blueprint settings](./settings.md).
-- **Stages**:
-  - a list of the stages with a **Delete** button on each;
-  - a diagram of the stages;
-  - the menu to add a stage;
-  - the **run panel**, for trying stages out (see [Canvas runs](../runs/canvas-runs.md)).
-- **Save & run**: save a version, start a run or a dry run.
 
-![The blueprint canvas: the stage list, the diagram and the run panel](/img/usage/blueprint-canvas.png)
+Select **✕** to hide the panel, and **Panel** to bring it back. The expand button next to it makes the
+panel wider.
+
+![The blueprint canvas: the stage cards, the stage strip and the Stage tab](/img/usage/blueprint-canvas.png)
 
 ### Add a stage
 
-1. Under the stages, open the stage type menu and pick a type, such as **Generate Text**. See
-   [Stage types](../stage-types/index.md) for what each one does.
-2. Select **+ Add stage**.
+Select **Add stage** at the top left of the canvas, or press **A**, and pick a stage type from the list,
+such as **Generate Text**. Type to search. See [Stage types](../stage-types/index.md) for what each one
+does.
 
-The new stage goes at the end. Its label is the stage type's name, such as **Generate Text**, or
-**Generate Text 2** if that label is taken. Its key is `stage-1`, `stage-2`, and so on.
+To put a stage in the middle of the blueprint, hover between two cards and select the **+** that
+appears, then pick a type. The list says where it will go, for example **Inserted between Write script
+and Plan shots**.
+
+A stage added at the end goes after the last card. Its label is the stage type's name, such as
+**Generate Text**, or **Generate Text 2** if that label is taken. Its key is `stage-1`, `stage-2`, and
+so on.
 
 ### Open a stage
 
-Select a stage's card in the diagram. Its **inspector** opens on the right, with every setting for
-that stage. See [Stages](./stages.md).
+Select a stage's card. Its settings open in the **Stage** tab. See [Stages](./stages.md).
 
-### Read the diagram
+### Read the cards
 
 Each card shows:
 
-- the stage's label and key;
+- the stage's label and type, with its key above it;
 - the start of its instructions;
-- the inputs it takes and the output it makes;
-- its problems, if it has any: **✗** with the number of errors, **⚠** with the number of warnings.
+- the inputs it takes and the output it makes, and the memory keys it writes;
+- what it does beyond the basics: **Each item**, **Approval**, **QC**, its checks, and **If …** when it
+  only runs on a condition;
+- its problems, if it has any: **✗** with the number of errors, **⚠** with the number of warnings;
+- once there's a run, the stage's status, what it cost, and a play button to run just that stage.
 
 Solid lines join each stage to the next one. Dashed purple lines show **memory**: a value one stage
 saves and a later stage reads, labelled with its key. A red dashed line means two stages write the
-same memory key, which you'll need to fix. See
+same memory key, which you'll need to fix. Turn **Memory links** off to hide them. See
 [Connecting stages](./connecting-stages.md#memory).
 
 ### Reorder stages
 
-Drag a card left or right in the diagram and drop it where it should go. The stages run in the order
-shown, from left to right.
+Drag a card left or right and drop it where it should go. Or hover over a card and select **Move
+earlier** or **Move later**. The stages run in the order shown, from left to right.
 
 ### Delete a stage
 
-Select **Delete** next to the stage in the list. There's no confirmation, but nothing is saved until
-you save. If you delete a stage by mistake, select **Discard changes** to go back to your last save.
-That discards all your unsaved changes, not only the delete.
+Hover over the card and select the bin, or select the bin at the top of the **Stage** tab. There's no
+confirmation, and nothing is saved until you save. A message appears with **Undo**. You can also select
+**Discard** to go back to your last save, which discards all your unsaved changes, not only the delete.
 
 ## Edit a blueprint's details
 

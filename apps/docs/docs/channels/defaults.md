@@ -7,8 +7,8 @@ description: Set a default model, retries, a spending cap and the video format o
 
 - **On a channel**: they apply to every blueprint in the channel. Open the channel's **More** menu,
   select **Edit**, and scroll to **Defaults**.
-- **On a blueprint**: they apply to every stage in that blueprint. They're in the **Defaults** card
-  under **Blueprint settings** on the blueprint's canvas. Like any other blueprint change, they're
+- **On a blueprint**: they apply to every stage in that blueprint. They're under **Defaults** in
+  the **Blueprint** tab on the blueprint's canvas. Like any other blueprint change, they're
   part of the version you save.
 
 ![The Defaults section of the channel dialog](/img/usage/channel-defaults.png)
@@ -71,7 +71,7 @@ When the same setting is set in more than one place, the most specific one wins:
 So a channel can say "write with model A", one blueprint can say "write with model B", and one
 stage in that blueprint can still pick model C.
 
-A stage that's left empty shows what it will get. In the stage inspector:
+A stage that's left empty shows what it will get. In the stage inspector (the **Stage** tab):
 
 - an empty **Retries** box shows the inherited value, for example **Default (2)**;
 - an empty **Stage cap (USD)** box shows the inherited cap, or **No cap**;

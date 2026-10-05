@@ -3,8 +3,9 @@ title: Blueprint settings
 description: The run cap, the inputs a run asks for, the character role and the blueprint's defaults.
 ---
 
-**Blueprint settings** sit above the stages on the canvas. They apply to the whole blueprint, and
-they're saved with each version like everything else on the canvas.
+**Blueprint settings** are in the **Blueprint** tab of the panel on the canvas. Select the **Start**
+card on the canvas to open it. They apply to the whole blueprint, and they're saved with each version
+like everything else on the canvas.
 
 ## Budget
 
@@ -17,7 +18,7 @@ with this amount, and you can change it there for each run. See
 **Inputs** are what a run asks you for when it starts, such as a topic, a script or a photo. Each
 run can use different inputs, so one blueprint makes many different videos.
 
-Select **+ add input** and fill in:
+Select **Add input**, then select the new row to open it and fill in:
 
 - **Key**: the name stages use to refer to it, such as `topic`. Each input needs its own key.
 - **Label**: what the run dialog shows, such as "Video topic".
@@ -43,7 +44,7 @@ input that takes `many` files, you can pick one file by its position, starting a
 A **role** lets the blueprint use one of the channel's [characters](../channels/characters.md),
 such as a host who should look the same in every image.
 
-1. Select **+ add role**.
+1. Select **Add role**.
 2. Give it a **Key** and a **Label**.
 3. Choose the **Character**. The label fills in with its name if it's empty.
 4. Tick the **Reference images** to send to the model. At least one stays ticked.

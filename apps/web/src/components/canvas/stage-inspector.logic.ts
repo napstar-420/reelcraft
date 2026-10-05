@@ -1,4 +1,4 @@
-import type { JsonSchema, OutputDef, OutputKind } from '@reelcraft/shared';
+import type { JsonSchema, OutputDef, OutputKind, StageDef } from '@reelcraft/shared';
 import type { ParsedValidationPath } from '../../lib/parse-validation-path';
 
 function outputInstructions(output: OutputDef): string | undefined {
@@ -169,4 +169,42 @@ export function inferSchemaFromValue(value: unknown): JsonSchema {
     };
   }
   return { type: 'string' };
+}
+
+export type StageSectionSummaries = Record<
+  'basics' | 'data' | 'output-writes' | 'checks-qc' | 'model' | 'execution' | 'flow',
+  string
+>;
+
+function count(n: number, noun: string): string {
+  return `${n} ${noun}${n === 1 ? '' : 's'}`;
+}
+
+/** One short line per inspector section, shown on its collapsed header so a
+ * stage's shape can be read without opening anything. */
+export function stageSectionSummaries(stage: StageDef): StageSectionSummaries {
+  const writes = Object.keys(stage.writes ?? {});
+  const slots = Object.keys(stage.slots).length;
+  const context = Object.keys(stage.context).length;
+  const execution = [
+    stage.retryLimit !== undefined ? `retry ${stage.retryLimit}` : '',
+    stage.budget?.stageCapUsd !== undefined ? `cap $${stage.budget.stageCapUsd}` : '',
+  ].filter(Boolean);
+  const flow = [
+    stage.enabledWhen ? 'conditional' : '',
+    stage.approval ? 'approval' : '',
+    stage.iterate ? 'per item' : '',
+  ].filter(Boolean);
+  return {
+    basics: stage.capability,
+    data: context > 0 ? `${count(slots, 'slot')}, ${context} context` : count(slots, 'slot'),
+    'output-writes':
+      writes.length > 0 ? `${stage.output.kind} → ${writes.join(', ')}` : stage.output.kind,
+    'checks-qc': stage.qc
+      ? `${count(stage.checks.length, 'check')}, QC on`
+      : count(stage.checks.length, 'check'),
+    model: stage.model?.modelId ?? stage.model?.provider ?? 'Inherited',
+    execution: execution.length > 0 ? execution.join(', ') : 'Defaults',
+    flow: flow.length > 0 ? flow.join(', ') : 'Runs once',
+  };
 }

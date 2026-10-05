@@ -120,4 +120,4 @@ instructions and run again. The call is still charged. See
 - Put things that never change in **System**, and things that change from run to run in **Template**
   with `{{ }}`.
 - Test a prompt cheaply with a [dry run](../runs/dry-runs.md) first, then run only the stage you're
-  working on from the [run panel](../runs/canvas-runs.md).
+  working on from the [**Run** tab](../runs/canvas-runs.md).

@@ -16,7 +16,7 @@ settings**. See [Versions](../blueprints/versions.md#runnable-or-not).
 | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
 | a blueprint must declare at least one stage                   | Add a stage                                                                                            |
 | duplicate stage key "…"                                       | Two stages have the same key. Delete one and add it again                                              |
-| A blueprint may declare at most one Character role            | Remove all but one role in **Blueprint settings** → **Role**                                           |
+| A blueprint may declare at most one Character role            | Remove all but one role in the **Blueprint** tab → **Role**                                            |
 | role "…" is declared but never bound by any stage _(warning)_ | Bind a stage's slot to the role, or remove the role                                                    |
 | memory key "…" is written by multiple stages _(warning)_      | Give each stage its own memory key. See [Connecting stages](../blueprints/connecting-stages.md#memory) |
 

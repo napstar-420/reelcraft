@@ -17,9 +17,9 @@ inputs and budget you give it. You can start as many runs as you like from the s
 
 ## Start a run
 
-1. Open the blueprint's canvas. Under **Save & run**, select **Run**. (If **Run** is off, the card says
-   **Save to run your changes**: save first.)
-2. In the dialog, titled **Run blueprint**, set the **Budget cap (USD)**. It starts as the blueprint's
+1. Open the blueprint's canvas and select **Run** in the top bar. (If **Run** is off, hover over it: it
+   says **Save your changes to run this version**. Save first.)
+2. In the dialog, titled **Run blueprint**, keep **Live run** selected and set the **Budget cap (USD)**. It starts as the blueprint's
    [run cap](../blueprints/settings.md#budget). The run never spends more than this unless you raise
    it. See [Budget and costs](./budget-and-costs.md).
 3. Fill in the blueprint's inputs. A **\*** marks a required one:
@@ -65,4 +65,4 @@ If the run can't start at all, the reason appears under **Run could not start**.
 
 - **Rerun** on a finished run starts a new one from the beginning with the same inputs. See
   [Retries](./retries.md#start-over-with-rerun).
-- The [run panel](./canvas-runs.md) on the canvas runs stages one at a time while you're building.
+- The [**Run** tab](./canvas-runs.md) on the canvas runs stages one at a time while you're building.

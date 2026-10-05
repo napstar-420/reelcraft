@@ -3,23 +3,24 @@ title: Canvas runs
 description: Try stages one at a time while you build, without saving a version or starting from scratch.
 ---
 
-While you build a blueprint, you don't want to rerun everything after each small change. The **run
-panel** beside the stages lets you run a blueprint, or one stage of it, and see the results next to
-the canvas.
+While you build a blueprint, you don't want to rerun everything after each small change. The **Run**
+tab beside the canvas lets you run a blueprint, or one stage of it, and see the results next to the
+canvas. Each stage card shows the same status, so you can watch a run without leaving the diagram.
 
 ## The first run
 
-With no runs yet, the panel says **No runs yet. Start one to run stages independently and monitor them
-here.** Select **Run**, fill in the inputs and start a run, as in [Starting a run](./starting-a-run.md).
+With no runs yet, the tab says **No runs yet**. Select **Run blueprint**, fill in the inputs and start a
+run, as in [Starting a run](./starting-a-run.md).
 
-After that, the panel follows the latest run.
+After that, the tab follows the latest run.
 
-## What the panel shows
+## What the tab shows
 
-- The run's short id, as a link to its [run page](./run-page.md), with its status, what it has spent
-  and how long it has taken.
+- The run's short id, as a link to its [run page](./run-page.md), with its status and how long it has
+  taken, and a bar showing what it has spent against the run's cap.
 - **Run all**, **Cancel run**, **Pause** and **Resume**, whichever apply.
-- A list of the stages, each with a status dot, its label and buttons.
+- A list of the stages, each with a status dot, its label and buttons. Select a label to open that stage
+  in the **Stage** tab.
 - **Blueprint output**: the result of the last stage, once it has run.
 - **Memory**: the values stages have saved. See
   [Connecting stages](../blueprints/connecting-stages.md#memory).
@@ -35,11 +36,11 @@ Only the unbroken run of unchanged stages from the first stage is reused. If you
 
 ## Run a single stage
 
-Select the play button next to a stage to run just that stage. Reelcraft reuses everything before it,
+Select the play button next to a stage, in the **Run** tab or on its card, to run just that stage. Reelcraft reuses everything before it,
 runs the stage fresh, and stops right after it. Use it to tune one prompt without paying for the stages
 around it.
 
-While a stage is running, its button turns into a stop button, labelled **Cancel run**. There's no way
+While a stage is running, its button on the card turns into a stop button, labelled **Cancel run**. There's no way
 to stop just one stage: it cancels the whole run, and Reelcraft asks first: **Cancel this run? This
 stops the whole run, not just one stage. It can't be undone.**
 
@@ -56,5 +57,5 @@ The blueprint must be **Runnable** for any of these to start.
 
 - **View output** (the eye): the stage's current output.
 - **Attempts** (the clock): every attempt, with its log.
-- **Review output**: appears on the stage waiting for your approval. See
+- **Review** (on the card) or **Review output** (in the tab): appears on the stage waiting for your approval. See
   [When a run needs you](./when-a-run-needs-you.md).

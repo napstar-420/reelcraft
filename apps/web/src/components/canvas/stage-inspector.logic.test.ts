@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
+import type { StageDef } from '@reelcraft/shared';
 import {
   buildStageOutput,
   inferSchemaFromValue,
   isOutputInstructionsIssue,
   parseSchemaJson,
   retypeSchema,
+  stageSectionSummaries,
   summarizeSchema,
   supportsOutputInstructions,
   updateDataOutputSchema,
@@ -172,5 +174,57 @@ describe('stage inspector output logic', () => {
         raw: 'stages.draft.output.schema',
       }),
     ).toBe(false);
+  });
+});
+
+describe('stageSectionSummaries', () => {
+  const base: StageDef = {
+    key: 's',
+    label: 'S',
+    capability: 'text.generate',
+    config: {},
+    slots: {},
+    context: {},
+    output: { kind: 'text' },
+    checks: [],
+  };
+
+  it('summarises an empty stage with defaults', () => {
+    expect(stageSectionSummaries(base)).toEqual({
+      basics: 'text.generate',
+      data: '0 slots',
+      'output-writes': 'text',
+      'checks-qc': '0 checks',
+      model: 'Inherited',
+      execution: 'Defaults',
+      flow: 'Runs once',
+    });
+  });
+
+  it('reads a configured stage at a glance', () => {
+    const summary = stageSectionSummaries({
+      ...base,
+      slots: { a: { from: 'prev' } },
+      context: { c: { from: 'prev' } },
+      writes: { script: '$' },
+      checks: [{ type: 'builtin', key: 'k', params: {} }],
+      qc: {
+        criteria: 'x',
+        threshold: 0.7,
+        model: { provider: 'fake', modelId: 'm', params: {} },
+        includeInputs: false,
+      },
+      model: { provider: 'openrouter', modelId: 'gpt' },
+      retryLimit: 2,
+      budget: { stageCapUsd: 1.5 },
+      approval: { mode: 'stage' },
+      enabledWhen: { input: 'x', equals: 'y' },
+    });
+    expect(summary.data).toBe('1 slot, 1 context');
+    expect(summary['output-writes']).toBe('text → script');
+    expect(summary['checks-qc']).toBe('1 check, QC on');
+    expect(summary.model).toBe('gpt');
+    expect(summary.execution).toBe('retry 2, cap $1.5');
+    expect(summary.flow).toBe('conditional, approval');
   });
 });
