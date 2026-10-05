@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/napstar-420/reelcraft/compare/v0.4.0...v0.4.1) (2026-10-05)
+
+
+### Bug Fixes
+
+* **web:** render update release notes as markdown ([#70](https://github.com/napstar-420/reelcraft/issues/70)) ([ae8ab84](https://github.com/napstar-420/reelcraft/commit/ae8ab84aa2289700da7245eacbd601cc9c4ac356))
+
 ## [0.4.0](https://github.com/napstar-420/reelcraft/compare/v0.3.0...v0.4.0) (2026-10-05)
 
 
