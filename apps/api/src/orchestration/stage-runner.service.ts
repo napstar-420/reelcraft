@@ -672,9 +672,26 @@ export class StageRunnerService {
     return { outcome: 'submitted', handle };
   }
 
-  async pollOnce(stage: StageDef, handle: JobHandle): Promise<JobStatus> {
+  async pollOnce(
+    stage: StageDef,
+    handle: JobHandle,
+    ctx?: StageAttemptContext,
+  ): Promise<JobStatus> {
     const capability = this.capabilities.get(stage.capability);
-    return capability.poll(handle);
+    const status = await capability.poll(handle);
+    // A job that keeps its own deadline may run far past `polling.maxWaitSec`,
+    // which is all the reservation's expiry allowed for: keep the reservation
+    // alive for as long as the provider says the job may, so the budget sweep
+    // doesn't settle (and mark the attempt timed out) under a job that is
+    // still working.
+    if (ctx && !status.done && status.deadlineMs !== undefined) {
+      const reservationId = await this.ledger.reservationIdFor(ctx.stageAttemptId);
+      await this.ledger.extendReservation(
+        reservationId,
+        status.deadlineMs + this.engineConfig.fetchAllowanceSec * 1000,
+      );
+    }
+    return status;
   }
 
   /** Poll exhausted without `status.done` — §13's backoff loop calls this
@@ -711,6 +728,27 @@ export class StageRunnerService {
       'provider_timeout',
       'Provider did not finish within the polling window; job cancelled',
     );
+  }
+
+  /** A self-timed provider job (browser providers) ran past its own deadline:
+   * cancels it, settles the reservation like a timeout, and records an
+   * infrastructure error so the loop retries without spending `retryLimit`. */
+  async recordProviderStall(
+    stage: StageDef,
+    ctx: StageAttemptContext,
+    handle: JobHandle,
+    reason: string,
+  ): Promise<void> {
+    const capability = this.capabilities.get(stage.capability);
+    await capability.cancel?.(handle);
+    const reservationId = await this.ledger.reservationIdFor(ctx.stageAttemptId);
+    await this.ledger.settleProvisional({
+      runId: ctx.runId,
+      stageKey: ctx.stageKey,
+      stageAttemptId: ctx.stageAttemptId,
+      reservationId,
+    });
+    await this.recordInfraError(ctx, reason);
   }
 
   /** §11.3 — a provider-reported job failure before any billed work: a

@@ -124,22 +124,44 @@ export async function runStageAttemptLoop(
       }
       const handle = submission.handle;
 
-      let status = await step.run(`poll-${stageKey}-${iteration}-0`, () =>
-        runner.pollOnce(stage, handle),
-      );
+      // The "still inside the provider's own deadline" check reads the clock,
+      // so it runs inside the poll step and its answer is saved with the
+      // status. Inngest re-runs this whole function on every step and replays
+      // saved results: a clock read out here would be re-decided against the
+      // current time on every replay, so an earlier attempt's loop could
+      // suddenly "time out" long after it finished and take the stage down.
+      const poll = (id: string) =>
+        step.run(id, async () => {
+          const polled = await runner.pollOnce(stage, handle, attemptCtx);
+          return { status: polled, live: withinProviderDeadline(polled) };
+        });
+      let { status, live } = await poll(`poll-${stageKey}-${iteration}-0`);
       let pollCount = 0;
       let elapsedSec = 0;
-      while (
-        !status.done &&
-        (elapsedSec < effective.polling.maxWaitSec || withinProviderDeadline(status))
-      ) {
+      while (!status.done && (elapsedSec < effective.polling.maxWaitSec || live)) {
         const waitSec = POLL_BACKOFF_SEC[Math.min(pollCount, POLL_BACKOFF_SEC.length - 1)]!;
         pollCount += 1;
         elapsedSec += waitSec;
         await step.sleep(`poll-wait-${stageKey}-${iteration}-${pollCount}`, `${waitSec}s`);
-        status = await step.run(`poll-${stageKey}-${iteration}-${pollCount}`, () =>
-          runner.pollOnce(stage, handle),
+        ({ status, live } = await poll(`poll-${stageKey}-${iteration}-${pollCount}`));
+      }
+
+      if (!status.done && status.deadlineMs !== undefined) {
+        // A browser provider (ChatGPT, Codex) that kept its own clock and
+        // ran past it: its page or process is stuck, which is ours to clean
+        // up, not the stage's to fail on. Cancel it and go again as an
+        // infrastructure retry; only repeated stalls fail the stage.
+        const reason = 'The provider job stalled and was cancelled';
+        await step.run(`provider-stalled-${stageKey}-${iteration}`, () =>
+          runner.recordProviderStall(stage, attemptCtx, handle, reason),
         );
+        if (infraAttemptsUsed + 1 >= runner.infraAttemptLimit()) {
+          await step.run(`fail-stage-infra-${stageKey}`, () =>
+            runner.failStageExecution(stageExecutionId, reason, stageItemId),
+          );
+          return { outcome: 'failed' as const, reason };
+        }
+        continue;
       }
 
       if (!status.done) {

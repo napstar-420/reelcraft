@@ -45,8 +45,14 @@ export const CHATGPT_MODEL_ID = 'chatgpt';
 const EFFORTS = Object.keys(EFFORT_STOPS) as ChatgptEffort[];
 const MAX_REFERENCES = 5;
 const MAX_REFERENCE_BYTES = 8 * 1024 * 1024;
-/** High effort + web search took ~2.5 min in the spike; leave generous room. */
-const JOB_DEADLINE_MS = 15 * 60_000;
+/** High effort + web search took ~2.5 min in the spike, and a long structured
+ * answer with sources ~9 min; leave generous room. A job still generating at
+ * this point is cancelled and retried, so it only has to be longer than any
+ * real reply. */
+const JOB_DEADLINE_MS = 45 * 60_000;
+/** A tab showing no Stop button, no reply and no error for this long has
+ * stalled (it was closed, never sent, or ChatGPT fell over). */
+const IDLE_STALL_MS = 4 * 60_000;
 /** A finished image reply with no image yet may still be rendering it. */
 const IMAGE_GRACE_MS = 30_000;
 const READINESS_TTL_MS = 60_000;
@@ -84,6 +90,8 @@ export class ChatgptProviderAdapter implements ProviderAdapter {
   private readiness?: { expiresAt: number; value: Promise<Readiness> } | undefined;
   /** externalId → when an image reply first looked finished without an image. */
   private readonly imagelessSince = new Map<string, number>();
+  /** externalId → when the tab first looked idle (nothing generating, no reply). */
+  private readonly idleSince = new Map<string, number>();
   /**
    * externalId → in-flight/completed fetch(). `fetch()` closes the Neo tab
    * as a side effect, so a second call for the same handle (an Inngest step
@@ -224,8 +232,27 @@ export class ChatgptProviderAdapter implements ProviderAdapter {
       this.imagelessSince.set(handle.externalId, Date.now());
       return running(job);
     }
-    if (!status.done) return status;
+    if (!status.done) {
+      if (!isIdle(state)) {
+        this.idleSince.delete(handle.externalId);
+        return status;
+      }
+      const since = this.idleSince.get(handle.externalId) ?? Date.now();
+      this.idleSince.set(handle.externalId, since);
+      if (Date.now() - since < IDLE_STALL_MS) return status;
+      this.idleSince.delete(handle.externalId);
+      this.logger.warn({ pageId: job.pageId, tail: state.tail.slice(-200) }, 'chatgpt tab stalled');
+      await this.close(job.pageId);
+      return {
+        done: true,
+        outcome: 'failed',
+        reason: 'ChatGPT stopped without replying',
+        retryable: true,
+        failureClass: 'infrastructure',
+      };
+    }
     this.imagelessSince.delete(handle.externalId);
+    this.idleSince.delete(handle.externalId);
     if (status.outcome === 'succeeded') return status;
     if (status.failureClass === 'user_action') this.forgetReadiness();
     // Surface what ChatGPT said (e.g. an image refusal) instead of a generic reason.
@@ -411,6 +438,17 @@ function signedOutFailure(): JobStatus {
     retryable: false,
     failureClass: 'user_action',
   };
+}
+
+/** Nothing is generating and nothing has come of it: no reply, image or error. */
+export function isIdle(state: PageState): boolean {
+  return (
+    !state.generating &&
+    !state.replyDone &&
+    !state.errorShown &&
+    !state.imagesLoading &&
+    state.images === 0
+  );
 }
 
 /**

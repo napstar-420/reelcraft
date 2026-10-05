@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { JobStatus } from '@reelcraft/shared';
 import { runStageAttemptLoop, withinProviderDeadline } from './stage-attempt-loop';
 
@@ -163,5 +163,184 @@ describe('runStageAttemptLoop feedback retries', () => {
     const capped = feedbackRunner('check_failed');
     await loop(capped, { checkMaxAttempts: 1 });
     expect(capped.reserveAndSubmit).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * Runs `body` the way Inngest does: the whole function is re-run from the top
+ * every time a new step completes, finished steps answer from their saved
+ * result, and a step seen for the first time ends the pass. `onNewStep` can
+ * move the clock between passes, as real time passes between replays.
+ */
+async function replay<T>(
+  body: (step: unknown) => Promise<T>,
+  onNewStep: (id: string) => void,
+): Promise<T> {
+  const memo = new Map<string, unknown>();
+  for (;;) {
+    let interrupt!: () => void;
+    const interrupted = new Promise<'interrupted'>(
+      (resolve) => (interrupt = () => resolve('interrupted')),
+    );
+    const record = (id: string, value: unknown) => {
+      memo.set(id, JSON.parse(JSON.stringify(value ?? null)));
+      onNewStep(id);
+      interrupt();
+      return new Promise<never>(() => undefined); // like Inngest: the pass just stops
+    };
+    const step = {
+      run: async (id: string, fn: () => Promise<unknown>) =>
+        memo.has(id) ? memo.get(id) : record(id, await fn()),
+      sleep: async (id: string) => (memo.has(id) ? undefined : record(id, true)),
+    };
+    const result = await Promise.race([body(step), interrupted]);
+    if (result !== 'interrupted') return result;
+  }
+}
+
+describe('runStageAttemptLoop replays', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it('does not time out an earlier attempt when the clock passes its provider deadline', async () => {
+    let now = Date.UTC(2026, 9, 5, 6, 17, 0);
+    vi.spyOn(Date, 'now').mockImplementation(() => now);
+    const DEADLINE = 15 * 60_000;
+
+    let attempts = 0;
+    let polls: Record<string, number> = {};
+    const runner = {
+      beginAttempt: vi.fn(async () => ({ attemptNo: ++attempts })),
+      countRoundAttempts: vi.fn().mockResolvedValue(0),
+      infraAttemptLimit: () => 3,
+      reserveAndSubmit: vi.fn(async () => ({
+        outcome: 'submitted',
+        handle: { providerId: 'chatgpt', externalId: `job-${attempts}`, submittedAt: now },
+      })),
+      // Each job reads as running (with its own 15 minute deadline) for a few
+      // polls, then done.
+      pollOnce: vi.fn(
+        async (_stage: unknown, handle: { externalId: string; submittedAt: number }) => {
+          polls[handle.externalId] = (polls[handle.externalId] ?? 0) + 1;
+          return polls[handle.externalId]! <= 4
+            ? { done: false, phase: 'running', deadlineMs: handle.submittedAt + DEADLINE }
+            : { done: true, outcome: 'succeeded' };
+        },
+      ),
+      fetchAndFinalize: vi.fn(async () =>
+        attempts === 1
+          ? { outcome: 'qc_failed', checkResults: [], qcVerdict: { score: 10, critique: 'No.' } }
+          : { outcome: 'success', artifactId: 'artifact-2' },
+      ),
+      recordProviderTimeout: vi.fn(),
+      recordProviderStall: vi.fn(),
+      failStageExecution: vi.fn(),
+      recordAttemptError: vi.fn(),
+    };
+
+    const result = await replay(
+      (step) =>
+        runStageAttemptLoop({
+          step: step as never,
+          logger: { warn: vi.fn() } as never,
+          runner: runner as never,
+          stage: { qc: { maxAttempts: 3 } } as never,
+          effective: { polling: { maxWaitSec: 10 } } as never,
+          prevStageKey: undefined,
+          runId: 'run',
+          stageExecutionId: 'exec',
+          stageKey: 'draft',
+          retryLimit: 0,
+        }),
+      (id) => {
+        now += 1_000;
+        // Attempt 1 ran for 9 minutes; attempt 2 is polling when attempt 1's
+        // 15 minutes run out, still well inside its own.
+        if (id === 'begin-attempt-2') now += 9 * 60_000;
+        if (id === 'poll-draft-2-1') now += 7 * 60_000;
+      },
+    );
+
+    expect(result).toEqual({ outcome: 'passed', artifactId: 'artifact-2' });
+    expect(runner.recordProviderTimeout).not.toHaveBeenCalled();
+    expect(runner.recordProviderStall).not.toHaveBeenCalled();
+    expect(runner.failStageExecution).not.toHaveBeenCalled();
+  });
+
+  it('retries a stalled self-timed job as an infrastructure error, not a failed stage', async () => {
+    let now = 1_000_000;
+    vi.spyOn(Date, 'now').mockImplementation(() => now);
+    let attempts = 0;
+    const runner = {
+      beginAttempt: vi.fn(async () => ({ attemptNo: ++attempts })),
+      countRoundAttempts: vi.fn().mockResolvedValue(0),
+      infraAttemptLimit: () => 3,
+      reserveAndSubmit: vi.fn(async () => ({
+        outcome: 'submitted',
+        handle: { providerId: 'chatgpt', externalId: `job-${attempts}` },
+      })),
+      // Attempt 1 never finishes (its deadline passes); attempt 2 is done at once.
+      pollOnce: vi.fn(async () =>
+        attempts === 1
+          ? { done: false, phase: 'running', deadlineMs: 1_000_000 + 60_000 }
+          : { done: true, outcome: 'succeeded' },
+      ),
+      fetchAndFinalize: vi.fn(async () => ({ outcome: 'success', artifactId: 'a' })),
+      recordProviderTimeout: vi.fn(),
+      recordProviderStall: vi.fn(),
+      failStageExecution: vi.fn(),
+    };
+    const result = await replay(
+      (step) =>
+        runStageAttemptLoop({
+          step: step as never,
+          logger: { warn: vi.fn() } as never,
+          runner: runner as never,
+          stage: {} as never,
+          effective: { polling: { maxWaitSec: 10 } } as never,
+          prevStageKey: undefined,
+          runId: 'run',
+          stageExecutionId: 'exec',
+          stageKey: 'draft',
+          retryLimit: 0,
+        }),
+      () => {
+        now += 30_000;
+      },
+    );
+    expect(result).toEqual({ outcome: 'passed', artifactId: 'a' });
+    expect(runner.recordProviderStall).toHaveBeenCalledTimes(1);
+    expect(runner.recordProviderTimeout).not.toHaveBeenCalled();
+    expect(runner.failStageExecution).not.toHaveBeenCalled();
+  });
+
+  it('still times a provider without its own deadline out, spending a retry', async () => {
+    const runner = {
+      beginAttempt: vi.fn().mockResolvedValue({ attemptNo: 1 }),
+      countRoundAttempts: vi.fn().mockResolvedValue(0),
+      infraAttemptLimit: () => 3,
+      reserveAndSubmit: vi.fn().mockResolvedValue({
+        outcome: 'submitted',
+        handle: { providerId: 'fal', externalId: 'x' },
+      }),
+      pollOnce: vi.fn().mockResolvedValue({ done: false, phase: 'running' }),
+      recordProviderTimeout: vi.fn(),
+      recordProviderStall: vi.fn(),
+      failStageExecution: vi.fn(),
+    };
+    const result = await runStageAttemptLoop({
+      step: { run: (_id: string, fn: () => unknown) => fn(), sleep: vi.fn() } as never,
+      logger: { warn: vi.fn() } as never,
+      runner: runner as never,
+      stage: {} as never,
+      effective: { polling: { maxWaitSec: 10 } } as never,
+      prevStageKey: undefined,
+      runId: 'run',
+      stageExecutionId: 'exec',
+      stageKey: 'draft',
+      retryLimit: 0,
+    });
+    expect(result).toEqual({ outcome: 'failed', reason: 'provider_timeout' });
+    expect(runner.recordProviderTimeout).toHaveBeenCalledTimes(1);
+    expect(runner.recordProviderStall).not.toHaveBeenCalled();
   });
 });
