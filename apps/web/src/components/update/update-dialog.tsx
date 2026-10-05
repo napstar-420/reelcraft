@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { ExternalLink, Loader2 } from 'lucide-react';
+import Markdown, { type Components } from 'react-markdown';
 import type { UpdateStatusDto } from '@reelcraft/shared';
 import { api } from '@/api/client';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -27,6 +28,23 @@ import {
 export type UpdateTarget = { version: string; previousResultAt: string | null };
 
 export const UPDATE_STATUS_KEY = ['system-update'] as const;
+
+// Release notes are GitHub-flavoured markdown; react-markdown ignores raw HTML.
+const NOTES_COMPONENTS: Components = {
+  a: ({ node: _node, ...props }) => (
+    <a {...props} target="_blank" rel="noreferrer" className="underline underline-offset-2" />
+  ),
+  pre: ({ node: _node, ...props }) => (
+    <pre {...props} className="overflow-x-auto rounded bg-background p-2 font-mono" />
+  ),
+  code: ({ node: _node, ...props }) => <code {...props} className="font-mono" />,
+  ul: ({ node: _node, ...props }) => <ul {...props} className="list-disc space-y-1 pl-5" />,
+  ol: ({ node: _node, ...props }) => <ol {...props} className="list-decimal space-y-1 pl-5" />,
+  h1: ({ node: _node, ...props }) => <h3 {...props} className="text-sm font-semibold" />,
+  h2: ({ node: _node, ...props }) => <h3 {...props} className="text-sm font-semibold" />,
+  h3: ({ node: _node, ...props }) => <h4 {...props} className="font-semibold" />,
+  hr: () => <hr className="border-border" />,
+};
 
 function formatDate(iso: string | null): string {
   return iso ? new Date(iso).toLocaleString() : 'never';
@@ -118,9 +136,9 @@ export function UpdateDialog({
           Version <strong>{latest.version}</strong> is available. You have {status.current.version}.
         </p>
         {latest.notes ? (
-          <pre className="max-h-64 overflow-y-auto whitespace-pre-wrap rounded-md bg-muted p-3 font-sans text-xs">
-            {latest.notes}
-          </pre>
+          <div className="max-h-64 min-w-0 space-y-2 overflow-y-auto break-words rounded-md bg-muted p-3 text-xs">
+            <Markdown components={NOTES_COMPONENTS}>{latest.notes}</Markdown>
+          </div>
         ) : null}
         {runWarning ? (
           <Alert>
