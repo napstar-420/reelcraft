@@ -198,4 +198,58 @@ describe('QcRunner', () => {
       slots: { qcArtifact: { sourceKey: 'run/abc/blob-1.png' } },
     });
   });
+
+  it('attaches every clip of a video list and keeps only the failed clip indexes it judged', async () => {
+    const registry = new ProviderRegistry();
+    const submit = vi.fn(async (_req: ProviderRequest, _key: string) => ({
+      providerId: 'stub-video',
+      externalId: 'job-1',
+    }));
+    registry.register({
+      id: 'stub-video',
+      modalities: ['text'],
+      listModels: async () => [],
+      estimate: async () => ({ expectedUsd: 0, ceilingUsd: 0, basis: 'configured_ceiling' }),
+      submit,
+      poll: async () => ({ done: true, outcome: 'succeeded' }),
+      fetch: async () => ({
+        output: JSON.stringify({
+          score: 40,
+          critique: 'Scene 2 has the wrong background.',
+          failedClips: [2, 2, 9],
+        }),
+        costUsd: 0,
+        repro: { level: 'none' },
+        rawResponse: {},
+      }),
+      cancel: async () => ({ confirmed: true }),
+    } as ProviderAdapter);
+    const clipEnvelope = buildQcEnvelope({
+      criteria: 'Same character and studio in every clip',
+      artifactKind: 'media.video_list',
+      artifactData: { clips: [] },
+      includeInputs: false,
+      clips: [
+        { sourceKey: 'run/a/1.mp4', mime: 'video/mp4', index: 1, label: 'Scene 1' },
+        { sourceKey: 'run/a/2.mp4', mime: 'video/mp4', index: 2, label: 'Scene 2' },
+      ],
+    });
+
+    const outcome = await new QcRunner(registry).run({
+      envelope: clipEnvelope,
+      judge: { provider: 'stub-video', modelId: 'stub', params: {} },
+      threshold: 70,
+      idempotencyKey: 'qc-clips-1',
+    });
+
+    const [request] = submit.mock.calls[0]!;
+    expect(request.params).toMatchObject({
+      __inspectFiles: true,
+      slots: { qcClip1: { sourceKey: 'run/a/1.mp4' }, qcClip2: { sourceKey: 'run/a/2.mp4' } },
+    });
+    expect(request.system).toContain('Scene 1 (index 1), Scene 2 (index 2)');
+    expect(request.system).toContain('failedClips');
+    expect(outcome.status).toBe('failed');
+    if (outcome.status === 'failed') expect(outcome.verdict.failedClips).toEqual([2]);
+  });
 });

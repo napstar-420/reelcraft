@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { Inngest } from 'inngest';
-import { eq, isNull, sql } from 'drizzle-orm';
+import { and, eq, isNull, lte, or, sql } from 'drizzle-orm';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
 import { runWakeup } from '../db/schema/index';
 import { INNGEST_CLIENT } from '../orchestration/inngest.client';
@@ -23,6 +23,8 @@ export class RunWakeupDispatcher {
       .where(eq(runWakeup.id, wakeupId))
       .limit(1);
     if (!wakeup || wakeup.dispatchedAt !== null) return false;
+    // Held back (e.g. until a provider's quota resets): the sweep sends it later.
+    if (wakeup.notBefore !== null && Date.parse(wakeup.notBefore) > Date.now()) return false;
 
     await this.db
       .update(runWakeup)
@@ -67,7 +69,12 @@ export class RunWakeupDispatcher {
     const pending = await this.db
       .select({ id: runWakeup.id })
       .from(runWakeup)
-      .where(isNull(runWakeup.dispatchedAt))
+      .where(
+        and(
+          isNull(runWakeup.dispatchedAt),
+          or(isNull(runWakeup.notBefore), lte(runWakeup.notBefore, sql`now()`)),
+        ),
+      )
       .limit(limit);
 
     let dispatched = 0;

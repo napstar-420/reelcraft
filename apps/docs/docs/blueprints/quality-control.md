@@ -62,7 +62,8 @@ The judge sees only:
 - the stage's **output**: its text or data, or for an image the picture itself;
 - the output's technical details for media, such as its length;
 - the stage's inputs, only if you ticked **Include inputs**;
-- for audio, the transcript or the audio itself, if you ticked **Include transcript**.
+- for audio, the transcript or the audio itself, if you ticked **Include transcript**;
+- for a video list, every clip itself, in order (see below).
 
 It never sees the stage's own prompt, which model made the output, what it cost, how many attempts
 there have been, earlier verdicts or the threshold. This keeps the judgement honest.
@@ -85,6 +86,21 @@ If the option is on and later becomes impossible, the quality control fails to r
 fails with that reason. The blueprint also shows **Include transcript only works on an audio
 (media.audio) output** if you use it on any other output.
 
+## Video lists
+
+A [Generate Video with Flow](../stage-types/generate-video-with-flow.md) stage makes a video list, and
+quality control can judge it. The judge **watches every clip, in order**, and gives one score for the
+whole set.
+
+- The judge must be able to watch video. **Codex** can: it opens the clips itself with its local tools,
+  so the machine running Codex needs **ffmpeg**. Any other model must accept video input. Otherwise the
+  blueprint shows **This judge model can't watch video.**
+- The judge also names the clips that are wrong. On a failed score, the next attempt makes **only those
+  clips again** and keeps the others, so you don't spend Flow credits on clips that were fine. The
+  critique names each bad clip and says what's wrong with it.
+- If the judge fails the set without naming clips, or a person rejects it without saying which, the next
+  attempt makes every clip again.
+
 ## Cost
 
 Each scoring is a call to the judge model. A stage that fails its score several times makes several
@@ -97,8 +113,10 @@ exhausted**). See [Budget and costs](../runs/budget-and-costs.md).
 ## When the judge itself fails
 
 If the judge can't produce a score, for example because it timed out or answered with something
-unreadable, Reelcraft asks it again a couple of times. If it still fails, the stage fails and says
-that quality control couldn't run. Re-prompting the stage wouldn't help, so it doesn't.
+unreadable, Reelcraft asks it again a couple of times. If it still fails, the stage doesn't fail and
+isn't generated again. The run pauses as **Paused Approval** with the output waiting, and you can
+**Retry QC** once the judge is back, **Approve** the output as it is, or **Reject** it. See
+[Review output](../runs/when-a-run-needs-you.md#when-quality-control-could-not-run).
 
 ## A good setup
 

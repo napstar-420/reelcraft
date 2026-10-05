@@ -68,6 +68,33 @@ describe('RunWakeupDispatcher', () => {
     );
   });
 
+  it('holds back a wakeup until its not-before time', async () => {
+    const inFuture = new Date(Date.now() + 3_600_000).toISOString();
+    const db = {
+      select: vi.fn().mockReturnValue(selectQuery([{ ...pending, notBefore: inFuture }])),
+      update: vi.fn(),
+    };
+    const inngest = { send: vi.fn() };
+    const dispatcher = new RunWakeupDispatcher(db as never, inngest as never);
+
+    await expect(dispatcher.dispatch('wake-1')).resolves.toBe(false);
+    expect(inngest.send).not.toHaveBeenCalled();
+    expect(db.update).not.toHaveBeenCalled();
+  });
+
+  it('sends a wakeup whose not-before time has passed', async () => {
+    const past = new Date(Date.now() - 1000).toISOString();
+    const update = updateQuery();
+    const db = {
+      select: vi.fn().mockReturnValue(selectQuery([{ ...pending, notBefore: past }])),
+      update: vi.fn().mockReturnValue({ set: update.set }),
+    };
+    const inngest = { send: vi.fn().mockResolvedValue(undefined) };
+    const dispatcher = new RunWakeupDispatcher(db as never, inngest as never);
+
+    await expect(dispatcher.dispatch('wake-1')).resolves.toBe(true);
+  });
+
   it('does not resend an already-dispatched wakeup', async () => {
     const db = {
       select: vi.fn().mockReturnValue(selectQuery([{ ...pending, dispatchedAt: 'already' }])),

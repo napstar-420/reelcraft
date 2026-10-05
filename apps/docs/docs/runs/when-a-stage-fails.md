@@ -56,8 +56,10 @@ the instructions it names. See [Prompts](../blueprints/prompts.md#when-the-model
 
 ### QC could not run
 
-Quality control itself failed to run, for example because the judge model can't hear audio and no Deepgram
-key is set. The message says why.
+Quality control itself failed to run, for example because the judge model didn't answer or can't hear audio
+and no Deepgram key is set. The stage doesn't fail for this: the run pauses as **Paused Approval** with the
+output waiting, and the review says **Quality control could not run** and why. See
+[Review output](./when-a-run-needs-you.md#when-quality-control-could-not-run).
 
 ### Provider errors and timeouts
 
@@ -69,6 +71,10 @@ credit, a model that's no longer available, or the service being down.
 - Try again later, then **Resume** the run.
 
 A stage retries these automatically up to its **Retries**. After that, the stage fails.
+
+ChatGPT and Codex jobs that stall (a ChatGPT tab that sits idle, or a job still running long past its own
+limit) are cancelled and started again by Reelcraft itself, without using up **Retries**. Only repeated stalls
+fail the stage.
 
 ### unknown provider "undefined"
 

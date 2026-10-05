@@ -35,7 +35,9 @@ import { QcAudioService } from '../qc/qc-audio';
 import { EngineConfig } from '../config/engine-config';
 import { engineDefaults } from '../run-config/engine-defaults';
 import { PINNED_PROVIDERS, PROVIDER_LABELS, ProviderRegistry } from '../provider/provider.registry';
+import { QC_VIDEO_UNAVAILABLE, judgeWatchesVideo } from '../qc/qc-video';
 import { modalityForCapability } from '../capability/modality-for-capability';
+import { stageReferenceLimit } from '../common/reference-limit';
 import type { ModelInfo } from '../provider/provider-adapter.interface';
 
 @Injectable()
@@ -321,6 +323,7 @@ export class BlueprintService {
     issues.push(...(await this.validateReferenceLimits(dto, blueprintRow.defaults as ConfigLayer)));
     issues.push(...(await this.validateProviderPins(dto, blueprintRow.defaults as ConfigLayer)));
     issues.push(...(await this.validateQcTranscript(dto)));
+    issues.push(...(await this.validateQcVideo(dto)));
     issues.push(
       ...(await this.validateFileInputs(
         dto,
@@ -435,6 +438,22 @@ export class BlueprintService {
         issues.push({
           path: `stages.${stage.key}.qc.media.includeTranscript`,
           message: mode.reason,
+          severity: 'error',
+        });
+      }
+    }
+    return issues;
+  }
+
+  /** QC on a video list needs a judge that can watch video. */
+  private async validateQcVideo(dto: CreateBlueprintVersionDto): Promise<ValidationIssue[]> {
+    const issues: ValidationIssue[] = [];
+    for (const stage of dto.graph) {
+      if (!stage.qc || stage.output.kind !== 'media.video_list') continue;
+      if (!(await judgeWatchesVideo(this.providers, stage.qc.model))) {
+        issues.push({
+          path: `stages.${stage.key}.qc.model`,
+          message: QC_VIDEO_UNAVAILABLE,
           severity: 'error',
         });
       }
@@ -654,8 +673,10 @@ export class BlueprintService {
         });
         continue;
       }
-      const maxRefs = info?.capabilities.maxRefs ?? info?.capabilities.image?.maxReferences;
-      if (!info || maxRefs === undefined) {
+      // Flow uploads references as browser ingredients, so its limit is the
+      // Codex browser job's input cap, not the model's image-generation one.
+      const maxRefs = stageReferenceLimit(stage.capability, info?.capabilities);
+      if (maxRefs === undefined || (!info && stage.capability !== 'browser.flow_video')) {
         issues.push({
           path: `stages.${stage.key}`,
           message: `model "${model.modelId}" does not declare a reference limit`,
@@ -665,7 +686,7 @@ export class BlueprintService {
       }
       if (
         stage.capability === 'video.generate' &&
-        !info.capabilities.video?.inputs.includes('references')
+        !info?.capabilities.video?.inputs.includes('references')
       ) {
         issues.push({
           path: `stages.${stage.key}`,

@@ -249,7 +249,7 @@ describe('semantic retry loop (e2e)', () => {
     expect(qcEntries).toHaveLength(1);
   });
 
-  it('a QC judge that keeps erroring is exhausted after qcErrorRetries and terminal regardless of retryLimit', async () => {
+  it('a QC judge that keeps erroring is exhausted after qcErrorRetries, then the output is parked for review regardless of retryLimit', async () => {
     const graph: StageDef[] = [
       {
         key: 'unjudgeable',
@@ -273,7 +273,7 @@ describe('semantic retry loop (e2e)', () => {
             params: { max_tokens: 256 },
           },
         },
-        retryLimit: 5, // plenty of semantic retries left — qc_error must still be terminal
+        retryLimit: 5, // plenty of semantic retries left — a QC error still never regenerates
         model: { provider: 'fake', modelId: 'fake-text-1', params: { max_tokens: 256 } },
       },
     ];
@@ -294,17 +294,19 @@ describe('semantic retry loop (e2e)', () => {
     const handle = await submitOrThrow(stageRunner, stage, ctx, prevStageKey, effective);
     await stageRunner.pollOnce(stage, handle);
     const result = await stageRunner.fetchAndFinalize(stage, ctx, handle, prevStageKey, effective);
-    expect(result.outcome).toBe('qc_error');
-
-    // The engine loop treats qc_error as always terminal (§10.4) — proven
-    // here by calling the same helper `stage-execute.fn.ts` would call on
-    // its last-attempt branch, independent of `stage.retryLimit`.
-    await stageRunner.failStageExecution(execution.id, 'qc_error');
+    // A judge that cannot run no longer fails the stage: the output is parked
+    // for review (approve, reject or retry QC), whatever retryLimit says.
+    expect(result.outcome).toBe('approval_required');
+    const [attempt] = await testDb.db
+      .select()
+      .from(stageAttempt)
+      .where(eq(stageAttempt.id, ctx.stageAttemptId));
+    expect(attempt).toMatchObject({ outcome: 'qc_error', phase: 'awaiting_approval' });
     const [executionRow] = await testDb.db
       .select()
       .from(stageExecution)
       .where(eq(stageExecution.id, execution.id));
-    expect(executionRow?.state).toBe('failed');
+    expect(executionRow?.state).toBe('awaiting_approval');
 
     // No qc ledger entries — every attempt errored before producing a verdict.
     const qcEntries = await testDb.db

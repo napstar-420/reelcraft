@@ -23,6 +23,14 @@ describe('run action DTOs', () => {
     });
   });
 
+  it('accepts a QC retry, with an optional item', () => {
+    expect(ApprovalActionDto.parse({ action: 'retry_qc' })).toEqual({ action: 'retry_qc' });
+    expect(ApprovalActionDto.parse({ action: 'retry_qc', itemIndex: 1 })).toEqual({
+      action: 'retry_qc',
+      itemIndex: 1,
+    });
+  });
+
   it('requires a non-empty preview token for confirmations', () => {
     expect(() => ConfirmRunActionDto.parse({ previewToken: '' })).toThrow();
     expect(ConfirmRunActionDto.parse({ previewToken: 'token' })).toEqual({

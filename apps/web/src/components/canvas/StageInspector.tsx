@@ -6,6 +6,7 @@ import { BindingPicker } from './BindingPicker';
 import { CapabilityPicker } from './CapabilityPicker';
 import { OutputSchemaField } from './OutputSchemaEditor';
 import { SchemaForm } from './SchemaForm';
+import { FlowAccountsPicker } from './FlowAccountsPicker';
 import { ChecksEditor } from './ChecksEditor';
 import { InfoHeading, InfoLabel } from './info-label';
 import { ModelPinEditor } from './ModelPinEditor';
@@ -18,6 +19,14 @@ import {
   stageSectionSummaries,
   supportsOutputInstructions,
   updateDataOutputSchema,
+  FLOW_CAPABILITY,
+  MAX_INGREDIENTS,
+  ingredientCount,
+  ingredientSlotName,
+  visibleConfigSchema,
+  flowAccounts,
+  withFlowAccounts,
+  withIngredientCount,
 } from './stage-inspector.logic';
 import { parseValidationPath, type ParsedValidationPath } from '../../lib/parse-validation-path';
 import {
@@ -165,6 +174,7 @@ function CollapsibleTextarea({
   maxLength,
   placeholder,
   className,
+  disabled,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -172,6 +182,7 @@ function CollapsibleTextarea({
   maxLength?: number;
   placeholder?: string;
   className?: string;
+  disabled?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   return (
@@ -180,6 +191,7 @@ function CollapsibleTextarea({
         rows={rows}
         maxLength={maxLength}
         placeholder={placeholder}
+        disabled={disabled}
         className={cn(className, !expanded && 'max-h-87.5 overflow-y-auto')}
         value={value}
         onChange={(e) => onChange(e.target.value)}
@@ -207,9 +219,14 @@ function CollapsibleTextarea({
  * "uses a prompt". */
 function InstructionsEditor({
   instructions,
+  lockedSystemPrompt,
+  templateRequired,
   onChange,
 }: {
   instructions: StageDef['instructions'];
+  /** A capability that owns its system prompt shows it here, read-only. */
+  lockedSystemPrompt?: string | undefined;
+  templateRequired?: boolean | undefined;
   onChange: (instructions: StageDef['instructions']) => void;
 }) {
   function set(patch: { system?: string; template?: string }) {
@@ -228,20 +245,37 @@ function InstructionsEditor({
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-col gap-1.5">
-        <InfoLabel info="Optional system prompt sent before the Template on every call — sets tone, persona, or rules that don't change from run to run. It is sent exactly as written: {{ }} values are not filled in here. Leave blank to send no system prompt.">
-          System
-        </InfoLabel>
-        <CollapsibleTextarea
-          rows={3}
-          className="font-mono text-xs"
-          placeholder="e.g. You are a meticulous video-production assistant."
-          value={instructions?.system ?? ''}
-          onChange={(v) => set({ system: v })}
-        />
+        {lockedSystemPrompt ? (
+          <>
+            <InfoLabel info="This stage type brings its own system prompt, which tells the agent how to do the work. It is always used and can't be edited. Say what to make in the Template below.">
+              System (managed by Reelcraft)
+            </InfoLabel>
+            <CollapsibleTextarea
+              rows={3}
+              className="font-mono text-xs"
+              value={lockedSystemPrompt}
+              disabled
+              onChange={() => undefined}
+            />
+          </>
+        ) : (
+          <>
+            <InfoLabel info="Optional system prompt sent before the Template on every call — sets tone, persona, or rules that don't change from run to run. It is sent exactly as written: {{ }} values are not filled in here. Leave blank to send no system prompt.">
+              System
+            </InfoLabel>
+            <CollapsibleTextarea
+              rows={3}
+              className="font-mono text-xs"
+              placeholder="e.g. You are a meticulous video-production assistant."
+              value={instructions?.system ?? ''}
+              onChange={(v) => set({ system: v })}
+            />
+          </>
+        )}
       </div>
       <div className="flex flex-col gap-1.5">
         <InfoLabel info="The user-role prompt sent to the model. Supports {{ }} interpolation: reference this stage's Slots or Context values by name, e.g. {{ myContextKey }}. When the stage regenerates after failed checks, a quality control rejection or a human rejection, the feedback is added to the prompt automatically — use {{ priorCritique }} only to control where it goes. Files ticked Attach file under Context are sent alongside the prompt and listed by their Context key: mention them by that name rather than with {{ }}. Required for capabilities that read a prompt (e.g. text/LLM generation) — leave blank for capabilities that don't.">
-          Template
+          {templateRequired ? 'Template (required)' : 'Template'}
         </InfoLabel>
         <CollapsibleTextarea
           rows={6}
@@ -618,6 +652,13 @@ function QcEditor({
           <p className="text-xs text-muted-foreground">{transcript.how}</p>
         </div>
       ) : null}
+      {outputKind === 'media.video_list' ? (
+        <p className="text-xs text-muted-foreground">
+          The judge watches every clip, in order, and can name the clips to make again. Use Codex
+          (it opens the files itself) or a model that accepts video input. Make sure the machine
+          running Codex has ffmpeg.
+        </p>
+      ) : null}
 
       <div className="flex flex-col gap-1.5">
         <InfoHeading info="Which model judges this stage's output against Criteria. Required — unlike a stage's own Model, quality control has no default to fall back to.">
@@ -959,6 +1000,8 @@ export function StageInspector({
 
   const configSchema = capabilities.data?.find((c) => c.key === stage.capability)?.configSchema;
   const stageCapability = capabilities.data?.find((c) => c.key === stage.capability);
+  const ingredients = ingredientCount(stage.config);
+  const lastIngredientSlot = ingredients > 0 ? ingredientSlotName(ingredients) : undefined;
 
   /** Chunk 7b — attribute this stage's validation issues to the field each
    * one's `path` (via `parseValidationPath`) names. Slot/context names come
@@ -1018,10 +1061,13 @@ export function StageInspector({
   }
 
   function handleContextKeyChange(oldKey: string, newKey: string) {
-    const { [oldKey]: refValue, ...rest } = stage.context;
-    if (refValue === undefined) return;
+    if (stage.context[oldKey] === undefined) return;
     const attach = (stage.attach ?? []).map((key) => (key === oldKey ? newKey : key));
-    onChange(withAttach({ ...stage, context: { ...rest, [newKey]: refValue } }, attach));
+    // Rebuilt in place: the row keeps its position while its name is typed.
+    const context = Object.fromEntries(
+      Object.entries(stage.context).map(([key, ref]) => [key === oldKey ? newKey : key, ref]),
+    );
+    onChange(withAttach({ ...stage, context }, attach));
   }
 
   function handleContextValueChange(key: string, ref: Ref) {
@@ -1139,6 +1185,8 @@ export function StageInspector({
               <h3 className={SECTION_HEADING_CLASS}>Instructions</h3>
               <InstructionsEditor
                 instructions={stage.instructions}
+                lockedSystemPrompt={stageCapability?.lockedSystemPrompt}
+                templateRequired={stageCapability?.requiresTemplate}
                 onChange={(instructions) => onChange({ ...stage, instructions })}
               />
               <IssueList issues={instructionsIssues} />
@@ -1150,12 +1198,23 @@ export function StageInspector({
                   Config
                 </InfoHeading>
                 <SchemaForm
-                  schema={configSchema}
+                  schema={visibleConfigSchema(stage.capability, configSchema)}
                   value={stage.config}
                   onChange={(next) =>
                     onChange({ ...stage, config: (next as Record<string, unknown>) ?? {} })
                   }
                 />
+                {stage.capability === FLOW_CAPABILITY && (
+                  <div className="flex flex-col gap-1.5">
+                    <InfoLabel info="The Google accounts this stage uses, in this order: when one runs out of credits the next is used, and when all do the run pauses until they reset. Pick from the accounts signed in to BrowserOS Neo. With none picked, Flow uses whichever account it is signed in with.">
+                      Flow accounts
+                    </InfoLabel>
+                    <FlowAccountsPicker
+                      value={flowAccounts(stage.config)}
+                      onChange={(accounts) => onChange(withFlowAccounts(stage, accounts))}
+                    />
+                  </div>
+                )}
                 <IssueList issues={configIssues} />
               </div>
             )}
@@ -1191,17 +1250,43 @@ export function StageInspector({
                     assets={assets}
                     iterating={!!stage.iterate}
                   />
+                  {stage.capability === FLOW_CAPABILITY &&
+                    slot.name === lastIngredientSlot &&
+                    ingredients > 0 && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="self-start"
+                        onClick={() => onChange(withIngredientCount(stage, ingredients - 1))}
+                      >
+                        Remove
+                      </Button>
+                    )}
                   <IssueList issues={slotIssues(slot.name)} />
                 </div>
               ))}
+              {stage.capability === FLOW_CAPABILITY && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="self-start"
+                  disabled={ingredients >= MAX_INGREDIENTS}
+                  onClick={() => onChange(withIngredientCount(stage, ingredients + 1))}
+                >
+                  + add ingredient
+                </Button>
+              )}
             </div>
 
             <div className="flex flex-col gap-3">
               <InfoHeading info="Free-form key/value bindings interpolated into this stage's Instructions template ({{ key }}). Unlike Slots, any capability can read Context regardless of what it declares. On text generation stages, tick Attach file to send a bound file (e.g. an image) to the model so it can see it. The model sees it listed under this key, so mention it by that name in the prompt rather than with {{ }} (which would insert the file's details, not the file). Unticked, the model only gets the file's details (handle, kind), e.g. for building a timeline.">
                 Context
               </InfoHeading>
-              {Object.entries(stage.context).map(([key, ref]) => (
-                <div key={key} className="flex flex-col gap-1.5">
+              {Object.entries(stage.context).map(([key, ref], position) => (
+                // Keyed by position: the name is being edited, so it can't be the key.
+                <div key={position} className="flex flex-col gap-1.5">
                   <div className="flex flex-wrap items-center gap-2">
                     <Input
                       type="text"

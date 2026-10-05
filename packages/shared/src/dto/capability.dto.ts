@@ -13,6 +13,10 @@ export const CapabilityDto = z.object({
   description: z.string(),
   configSchema: JsonSchema,
   interaction: z.object({ kind: z.enum(['form', 'timeline_editor']) }).optional(),
+  /** The capability supplies its own system prompt; the stage's is ignored. */
+  lockedSystemPrompt: z.string().optional(),
+  /** The stage cannot run without a template prompt. */
+  requiresTemplate: z.boolean().optional(),
 });
 export type CapabilityDto = z.infer<typeof CapabilityDto>;
 
@@ -48,3 +52,10 @@ export const ModelInfoDto = z.object({
     .optional(),
 });
 export type ModelInfoDto = z.infer<typeof ModelInfoDto>;
+
+/** Backs `GET /flow/accounts`: the Google accounts signed in to BrowserOS Neo,
+ * from which a blueprint picks the ones Flow stages may use. */
+export const FlowAccountsDto = z.object({
+  accounts: z.array(z.object({ email: z.string(), name: z.string(), signedIn: z.boolean() })),
+});
+export type FlowAccountsDto = z.infer<typeof FlowAccountsDto>;

@@ -198,6 +198,14 @@ export function buildRunOrchestrateFunction(
           return { state: 'PAUSED_BUDGET' as const };
         }
 
+        if (result.outcome === 'deferred') {
+          // The provider is out of quota (e.g. every Flow account's credits).
+          // The pause carries its own timed wakeup, so the run resumes by itself.
+          const { resumeAt } = result;
+          await step.run('mark-paused-quota', () => runState.pauseForQuota(runId, resumeAt));
+          return { state: 'PAUSED_QUOTA' as const };
+        }
+
         if (result.outcome === 'run_not_running') {
           // The run stopped being RUNNING while this stage's attempt was
           // in flight (manual pause or cancel raced it). Re-read the actual

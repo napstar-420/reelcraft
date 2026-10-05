@@ -96,4 +96,12 @@ describe('buildQcEnvelope', () => {
     slots.topic = 'mutated-after-the-fact';
     expect(envelope.inputs?.slots.topic).toBe('original');
   });
+
+  it('includes the clips of a video list, copied field by field', () => {
+    const clips = [{ sourceKey: 'k/1.mp4', mime: 'video/mp4', index: 1, label: 'Scene 1' }];
+    const envelope = buildQcEnvelope({ ...baseSource, clips });
+    expect(envelope.clips).toEqual(clips);
+    expect(envelope.clips![0]).not.toBe(clips[0]);
+    expect('clips' in buildQcEnvelope(baseSource)).toBe(false);
+  });
 });

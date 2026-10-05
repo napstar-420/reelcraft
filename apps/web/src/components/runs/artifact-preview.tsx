@@ -3,6 +3,7 @@ import { Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { approvalCandidateView } from '@/pages/approval-review.logic';
 import { CopyButton } from './artifact-views/copy-button';
+import { ClipListView } from './artifact-views/clip-list-view';
 import { DataView } from './artifact-views/data-view';
 import { MediaView } from './artifact-views/media-view';
 import { SubtitlesView } from './artifact-views/subtitles-view';
@@ -18,6 +19,8 @@ export function ArtifactPreview({ artifact }: { artifact: ArtifactViewDto }) {
           <DataView data={artifact.data} />
         ) : artifact.kind === 'timeline' && isTimeline(artifact.data) ? (
           <TimelineView timeline={artifact.data} />
+        ) : artifact.kind === 'media.video_list' ? (
+          <ClipListView clips={artifact.clips ?? []} />
         ) : artifact.kind === 'file.subtitles' ? (
           <SubtitlesView data={artifact.data} url={artifact.previewUrl} />
         ) : view.kind === 'text' ? (

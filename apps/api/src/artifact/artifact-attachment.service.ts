@@ -25,6 +25,24 @@ export class ArtifactAttachmentService {
     @Inject(STORAGE_ADAPTER) private readonly storage: StorageAdapter,
   ) {}
 
+  /** Links clip blobs that are already stored (and probed) as the `clip`
+   * attachments of a `media.video_list` artifact, in order. */
+  async linkClips(
+    artifactId: string,
+    clips: Array<{ blobId: string; filename: string; mime: string }>,
+  ): Promise<void> {
+    await this.db.insert(artifactAttachment).values(
+      clips.map((clip) => ({
+        id: ulid(),
+        artifactId,
+        blobId: clip.blobId,
+        role: 'clip',
+        filename: basename(clip.filename),
+        mime: clip.mime,
+      })),
+    );
+  }
+
   async persist(input: {
     ownerId: string;
     channelId: string;

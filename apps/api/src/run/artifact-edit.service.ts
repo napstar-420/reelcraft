@@ -79,7 +79,7 @@ export class ArtifactEditService {
     const result = await this.mutation.withLockedRun(
       runId,
       'edit_artifact',
-      ['PAUSED_BUDGET', 'PAUSED_APPROVAL', 'PAUSED_INPUT', 'FAILED', 'COMPLETED'],
+      ['PAUSED_BUDGET', 'PAUSED_APPROVAL', 'PAUSED_INPUT', 'PAUSED_QUOTA', 'FAILED', 'COMPLETED'],
       async (tx, lockedRun) => {
         if (lockedRun.revision !== claims.runRevision) {
           throw new ConflictException('The run changed; request a new preview');

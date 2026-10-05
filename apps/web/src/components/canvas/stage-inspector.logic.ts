@@ -21,6 +21,7 @@ export function buildStageOutput(kind: OutputKind, previous: OutputDef): OutputD
     case 'media.image':
     case 'media.video':
     case 'media.audio':
+    case 'media.video_list':
       return { kind };
     case 'file.subtitles':
       return { kind: 'file.subtitles' };
@@ -207,4 +208,74 @@ export function stageSectionSummaries(stage: StageDef): StageSectionSummaries {
     execution: execution.length > 0 ? execution.join(', ') : 'Defaults',
     flow: flow.length > 0 ? flow.join(', ') : 'Runs once',
   };
+}
+
+/** The Flow stage's extra ingredient inputs are a count in its config, added
+ * and removed with buttons rather than typed, so the number stays out of the
+ * Config form. The slots are `ingredients`, `ingredients2`, `ingredients3`… */
+export const FLOW_CAPABILITY = 'browser.flow_video';
+const INGREDIENT_COUNT_KEY = 'ingredientSlots';
+const ACCOUNTS_KEY = 'accounts';
+const DEFAULT_INGREDIENTS = 1;
+export const MAX_INGREDIENTS = 8;
+
+export function ingredientSlotName(position: number): string {
+  return position <= 1 ? 'ingredients' : `ingredients${position}`;
+}
+
+export function ingredientCount(config: Record<string, unknown>): number {
+  const count = config[INGREDIENT_COUNT_KEY];
+  return typeof count === 'number' ? count : DEFAULT_INGREDIENTS;
+}
+
+/** The stage with `count` ingredient inputs; bindings of inputs that no
+ * longer exist are dropped. */
+export function withIngredientCount(stage: StageDef, count: number): StageDef {
+  const next = Math.min(Math.max(count, 0), MAX_INGREDIENTS);
+  const keep = new Set(Array.from({ length: next }, (_, i) => ingredientSlotName(i + 1)));
+  const slots = Object.fromEntries(
+    Object.entries(stage.slots).filter(
+      ([name]) => !/^ingredients\d*$/.test(name) || keep.has(name),
+    ),
+  );
+  return { ...stage, config: { ...stage.config, [INGREDIENT_COUNT_KEY]: next }, slots };
+}
+
+/** The Google accounts a Flow stage uses, in order of use. They are picked
+ * from the accounts signed in to BrowserOS Neo, not typed, so they stay out
+ * of the Config form too. An empty list clears the setting. */
+export function flowAccounts(config: Record<string, unknown>): string[] {
+  const accounts = config[ACCOUNTS_KEY];
+  return Array.isArray(accounts) ? accounts.filter((a): a is string => typeof a === 'string') : [];
+}
+
+export function withFlowAccounts(stage: StageDef, accounts: string[]): StageDef {
+  const rest = { ...stage.config };
+  delete rest[ACCOUNTS_KEY];
+  return { ...stage, config: accounts.length ? { ...rest, [ACCOUNTS_KEY]: accounts } : rest };
+}
+
+/** Adds `email` at the end of the list, or removes it when already listed. */
+export function toggleAccount(accounts: string[], email: string): string[] {
+  return accounts.includes(email) ? accounts.filter((a) => a !== email) : [...accounts, email];
+}
+
+export type FlowAccountChoice = { email: string; name: string; signedIn: boolean };
+
+/** Accounts matching a search box (by email or name), case-insensitively. */
+export function filterAccounts(accounts: FlowAccountChoice[], query: string): FlowAccountChoice[] {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return accounts;
+  return accounts.filter(
+    (a) => a.email.toLowerCase().includes(needle) || a.name.toLowerCase().includes(needle),
+  );
+}
+
+/** The config schema as the Config form should show it. */
+export function visibleConfigSchema(capability: string, schema: JsonSchema): JsonSchema {
+  if (capability !== FLOW_CAPABILITY || !schema.properties) return schema;
+  const properties = { ...schema.properties };
+  delete properties[INGREDIENT_COUNT_KEY];
+  delete properties[ACCOUNTS_KEY];
+  return { ...schema, properties };
 }

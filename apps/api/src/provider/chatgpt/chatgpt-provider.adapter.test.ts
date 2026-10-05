@@ -5,6 +5,7 @@ import {
   CHATGPT_SIGN_IN_MESSAGE,
   ChatgptProviderAdapter,
   decidePoll,
+  isIdle,
   parseJsonReply,
 } from './chatgpt-provider.adapter';
 import { stripCitations, type PageState } from './chatgpt-page';
@@ -66,17 +67,18 @@ const state = (over: Partial<PageState> = {}): PageState => ({
 });
 
 describe('ChatgptProviderAdapter.submit', () => {
-  it('opens a temporary chat with the search hint, sets effort, then pastes the prompt', async () => {
+  it('opens a temporary chat, sets effort, turns web search on, then pastes the prompt', async () => {
     const { adapter, scripts } = fixture([
       7, // open tab
       signedIn,
       { value: 2 }, // effort High
-      true, // web search chip present
+      true, // web search pill showing
       { url: 'https://chatgpt.com/c/abc?temporary-chat=true' },
     ]);
     const handle = await adapter.submit(textReq, 'key-1');
 
-    expect(scripts[0]).toContain('temporary-chat=true&hints=search');
+    expect(scripts[0]).toContain('temporary-chat=true');
+    expect(scripts[3]).toContain('Input.dispatchMouseEvent');
     expect(scripts[2]).toContain('\\"stop\\":2');
     expect(scripts[4]).toContain('Summarise the news');
     expect(scripts[4]).toContain('Be terse');
@@ -199,7 +201,7 @@ describe('decidePoll', () => {
   it('keeps running while ChatGPT generates, with a provider deadline', () => {
     expect(decidePoll(state({ generating: true }), text, undefined, 2_000)).toMatchObject({
       done: false,
-      deadlineMs: 1_000 + 15 * 60_000,
+      deadlineMs: 1_000 + 45 * 60_000,
     });
   });
 
@@ -359,5 +361,82 @@ describe('reply helpers', () => {
 
   it('names the bad reply when JSON parsing fails', () => {
     expect(() => parseJsonReply('Sure! Here it is')).toThrow(/not valid JSON: Sure!/);
+  });
+});
+
+describe('ChatgptProviderAdapter.poll stall', () => {
+  it('cancels a tab that sat idle for minutes so the stage retries it as an infrastructure error', async () => {
+    vi.useFakeTimers();
+    try {
+      const { adapter, closed } = fixture([state(), state(), state()]);
+      const handle = job({ submittedAt: Date.now() });
+      // Idle, but not for long yet.
+      await expect(adapter.poll(handle)).resolves.toMatchObject({ done: false });
+      vi.advanceTimersByTime(3 * 60_000);
+      await expect(adapter.poll(handle)).resolves.toMatchObject({ done: false });
+      expect(closed()).toBe(0);
+      vi.advanceTimersByTime(2 * 60_000);
+      await expect(adapter.poll(handle)).resolves.toMatchObject({
+        done: true,
+        outcome: 'failed',
+        retryable: true,
+        failureClass: 'infrastructure',
+      });
+      expect(closed()).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps waiting while the tab is generating, however long it takes', async () => {
+    vi.useFakeTimers();
+    try {
+      const { adapter, closed } = fixture([
+        state({ generating: true }),
+        state({ generating: true }),
+      ]);
+      const handle = job({ submittedAt: Date.now() });
+      await adapter.poll(handle);
+      vi.advanceTimersByTime(30 * 60_000);
+      await expect(adapter.poll(handle)).resolves.toMatchObject({ done: false });
+      expect(closed()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('decidePoll error banner', () => {
+  const text = { modality: 'text' as const, submittedAt: 1_000 };
+  it("fails at once on ChatGPT's error banner, even with a stale Stop or Copy button", () => {
+    for (const stale of [{ generating: true }, { replyDone: true }, {}]) {
+      expect(
+        decidePoll(
+          state({
+            errorShown: true,
+            tail: 'Message delivery timed out. Please try again.',
+            ...stale,
+          }),
+          text,
+          undefined,
+          0,
+        ),
+      ).toMatchObject({ done: true, outcome: 'failed', failureClass: 'provider' });
+    }
+  });
+});
+
+describe('isIdle', () => {
+  it('is true only when nothing is generating and nothing has come of it', () => {
+    expect(isIdle(state({}))).toBe(true);
+    for (const busy of [
+      { generating: true },
+      { replyDone: true },
+      { errorShown: true },
+      { imagesLoading: true },
+      { images: 1 },
+    ]) {
+      expect(isIdle(state(busy))).toBe(false);
+    }
   });
 });

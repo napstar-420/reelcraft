@@ -29,7 +29,7 @@ import {
   stopGeneratingScript,
   UPLOAD_CHUNK,
   stripCitations,
-  webSearchOnScript,
+  enableWebSearchScript,
   type ChatgptEffort,
   type PageState,
   type SignInState,
@@ -45,8 +45,14 @@ export const CHATGPT_MODEL_ID = 'chatgpt';
 const EFFORTS = Object.keys(EFFORT_STOPS) as ChatgptEffort[];
 const MAX_REFERENCES = 5;
 const MAX_REFERENCE_BYTES = 8 * 1024 * 1024;
-/** High effort + web search took ~2.5 min in the spike; leave generous room. */
-const JOB_DEADLINE_MS = 15 * 60_000;
+/** High effort + web search took ~2.5 min in the spike, and a long structured
+ * answer with sources ~9 min; leave generous room. A job still generating at
+ * this point is cancelled and retried, so it only has to be longer than any
+ * real reply. */
+const JOB_DEADLINE_MS = 45 * 60_000;
+/** A tab showing no Stop button, no reply and no error for this long has
+ * stalled (it was closed, never sent, or ChatGPT fell over). */
+const IDLE_STALL_MS = 4 * 60_000;
 /** A finished image reply with no image yet may still be rendering it. */
 const IMAGE_GRACE_MS = 30_000;
 const READINESS_TTL_MS = 60_000;
@@ -84,6 +90,8 @@ export class ChatgptProviderAdapter implements ProviderAdapter {
   private readiness?: { expiresAt: number; value: Promise<Readiness> } | undefined;
   /** externalId → when an image reply first looked finished without an image. */
   private readonly imagelessSince = new Map<string, number>();
+  /** externalId → when the tab first looked idle (nothing generating, no reply). */
+  private readonly idleSince = new Map<string, number>();
   /**
    * externalId → in-flight/completed fetch(). `fetch()` closes the Neo tab
    * as a side effect, so a second call for the same handle (an Inngest step
@@ -151,7 +159,7 @@ export class ChatgptProviderAdapter implements ProviderAdapter {
 
     const webSearch = req.params.webSearch === true;
     const pageId = await this.neo.run<number>(
-      openChatScript(chatUrl({ temporary: modality === 'text', webSearch })),
+      openChatScript(chatUrl({ temporary: modality === 'text' })),
     );
     try {
       const signIn = await this.neo.run<SignInState>(signInStateScript(pageId));
@@ -172,13 +180,13 @@ export class ChatgptProviderAdapter implements ProviderAdapter {
       if (set.value !== EFFORT_STOPS[effort as ChatgptEffort]) {
         throw new ChatgptPageError(`Could not set ChatGPT effort to "${effort}"`);
       }
-      if (webSearch && !(await this.neo.run<boolean>(webSearchOnScript(pageId)))) {
+      if (webSearch && !(await this.neo.run<boolean>(enableWebSearchScript(pageId)))) {
         throw new ChatgptPageError('Could not turn on ChatGPT web search');
       }
       if (references.length > 0) await this.uploadReferences(pageId, references);
       const sent = this.pageResult(
         await this.neo.run<{ url?: string; error?: string }>(
-          sendPromptScript(pageId, pastedPrompt),
+          sendPromptScript(pageId, pastedPrompt, webSearch),
         ),
       );
       const payload: ChatgptJobPayload = {
@@ -224,8 +232,27 @@ export class ChatgptProviderAdapter implements ProviderAdapter {
       this.imagelessSince.set(handle.externalId, Date.now());
       return running(job);
     }
-    if (!status.done) return status;
+    if (!status.done) {
+      if (!isIdle(state)) {
+        this.idleSince.delete(handle.externalId);
+        return status;
+      }
+      const since = this.idleSince.get(handle.externalId) ?? Date.now();
+      this.idleSince.set(handle.externalId, since);
+      if (Date.now() - since < IDLE_STALL_MS) return status;
+      this.idleSince.delete(handle.externalId);
+      this.logger.warn({ pageId: job.pageId, tail: state.tail.slice(-200) }, 'chatgpt tab stalled');
+      await this.close(job.pageId);
+      return {
+        done: true,
+        outcome: 'failed',
+        reason: 'ChatGPT stopped without replying',
+        retryable: true,
+        failureClass: 'infrastructure',
+      };
+    }
     this.imagelessSince.delete(handle.externalId);
+    this.idleSince.delete(handle.externalId);
     if (status.outcome === 'succeeded') return status;
     if (status.failureClass === 'user_action') this.forgetReadiness();
     // Surface what ChatGPT said (e.g. an image refusal) instead of a generic reason.
@@ -356,9 +383,7 @@ export class ChatgptProviderAdapter implements ProviderAdapter {
   private async probeReadiness(): Promise<Readiness> {
     let pageId: number;
     try {
-      pageId = await this.neo.run<number>(
-        openChatScript(chatUrl({ temporary: true, webSearch: false })),
-      );
+      pageId = await this.neo.run<number>(openChatScript(chatUrl({ temporary: true })));
     } catch (error) {
       this.logger.warn({ err: error }, 'chatgpt readiness: neo unreachable');
       return unavailable(NEO_UNAVAILABLE_MESSAGE);
@@ -415,6 +440,17 @@ function signedOutFailure(): JobStatus {
   };
 }
 
+/** Nothing is generating and nothing has come of it: no reply, image or error. */
+export function isIdle(state: PageState): boolean {
+  return (
+    !state.generating &&
+    !state.replyDone &&
+    !state.errorShown &&
+    !state.imagesLoading &&
+    state.images === 0
+  );
+}
+
 /**
  * Pure read of one tab snapshot. Returns `'imageless'` when an image reply
  * looks finished but has no image yet — the caller starts a grace timer,
@@ -427,13 +463,9 @@ export function decidePoll(
   now: number,
 ): JobStatus | 'imageless' {
   if (!state.signedIn) return signedOutFailure();
-  if (state.generating) return running(job);
-  if (job.modality === 'image') {
-    if (state.images > 0) return { done: true, outcome: 'succeeded' };
-    if (state.imagesLoading) return running(job);
-  } else if (state.replyDone) {
-    return { done: true, outcome: 'succeeded' };
-  }
+  // An error banner wins over everything: a failed message can leave a stale
+  // Stop button or an earlier Copy button behind, and would otherwise wait out
+  // the whole deadline.
   if (state.errorShown) {
     return {
       done: true,
@@ -442,6 +474,13 @@ export function decidePoll(
       retryable: true,
       failureClass: 'provider',
     };
+  }
+  if (state.generating) return running(job);
+  if (job.modality === 'image') {
+    if (state.images > 0) return { done: true, outcome: 'succeeded' };
+    if (state.imagesLoading) return running(job);
+  } else if (state.replyDone) {
+    return { done: true, outcome: 'succeeded' };
   }
   if (job.modality === 'image' && state.replyDone) {
     if (imagelessSince === undefined) return 'imageless';

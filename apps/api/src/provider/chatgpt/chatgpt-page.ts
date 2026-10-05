@@ -11,15 +11,11 @@ import type { ReferenceFile } from '../reference-files';
 
 /**
  * Text uses a temporary chat so it stays out of the user's history; image
- * generation is unavailable there, so images use a regular chat. Web search
- * is preselected with ChatGPT's own `hints=search` URL hint — its "+" menu
- * is a Radix trigger that ignores synthetic clicks, and Neo's trusted input
- * does not reach a background tab reliably.
+ * generation is unavailable there, so images use a regular chat.
  */
-export function chatUrl(opts: { temporary: boolean; webSearch: boolean }): string {
+export function chatUrl(opts: { temporary: boolean }): string {
   const url = new URL('https://chatgpt.com/');
   if (opts.temporary) url.searchParams.set('temporary-chat', 'true');
-  if (opts.webSearch) url.searchParams.set('hints', 'search');
   return url.toString();
 }
 
@@ -31,7 +27,7 @@ const S = {
   copy: 'button[aria-label="Copy"]',
   modelButton: 'button[aria-label="Select ChatGPT model"]',
   effortRow: '[data-reasoning-slider="true"]',
-  webSearchChip: 'button[aria-label="Remove Web search"]',
+  addButton: 'button[aria-label="Add files and more"]',
   generatedImage: 'main img[alt^="Generated image"]',
 };
 
@@ -143,12 +139,42 @@ return { value };`,
   );
 }
 
-/** Confirms the `hints=search` URL hint turned web search on. */
-export function webSearchOnScript(id: number): string {
-  return inPage(
-    id,
-    `return !!(await waitFor(() => document.querySelector(S.webSearchChip), 8000));`,
-  );
+/** The "Web search" pill ChatGPT shows inside the composer once the tool is on. */
+const WEB_SEARCH_LABEL = 'Web search';
+
+/**
+ * Turns web search on through the composer's "+" menu. The menu is a Radix
+ * trigger that ignores synthetic clicks (and the old `hints=search` URL hint
+ * is gone), so the two clicks are trusted mouse events sent over CDP; they
+ * reach a background tab fine. Returns whether the pill is showing.
+ */
+export function enableWebSearchScript(id: number): string {
+  const page = pageId(id);
+  return `const page = ${page};
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const ev = async (code) => (await browser.evaluate(page, { code })).value;
+const pill = () => ev(${JSON.stringify(
+    `return [...document.querySelectorAll(${JSON.stringify(S.composer)} + ' span')].some((e) => e.textContent.trim() === ${JSON.stringify(WEB_SEARCH_LABEL)});`,
+  )});
+const center = (find) => ev('const el = ' + find + '; if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 };');
+const until = async (fn, ms) => { const end = Date.now() + ms; while (Date.now() < end) { const v = await fn(); if (v) return v; await sleep(250); } return null; };
+if (await pill()) return true;
+const info = await browser.pages.getInfo(page);
+const { sessionId } = await browser.cdp('Target.attachToTarget', { targetId: info.targetId, flatten: true });
+const click = async (p) => { for (const type of ['mouseMoved', 'mousePressed', 'mouseReleased']) await browser.cdp('Input.dispatchMouseEvent', { type, x: p.x, y: p.y, button: 'left', clickCount: 1 }, sessionId); };
+try {
+  const plus = await until(() => center(${JSON.stringify(`document.querySelector(${JSON.stringify(S.addButton)})`)}), 5000);
+  if (!plus) return false;
+  await click(plus);
+  const row = await until(() => center(${JSON.stringify(
+    `[...document.querySelectorAll('span')].find((e) => e.textContent.trim() === ${JSON.stringify(WEB_SEARCH_LABEL)} && !e.closest('[role=textbox]'))`,
+  )}), 5000);
+  if (!row) return false;
+  await click(row);
+  return !!(await until(pill, 5000));
+} finally {
+  await browser.cdp('Target.detachFromTarget', { sessionId }).catch(() => {});
+}`;
 }
 
 /** Base64 characters per upload `run`: Neo rejects request bodies over 4 MB. */
@@ -211,11 +237,12 @@ return ok ? { ok: true } : { error: 'ChatGPT did not accept the reference images
 }
 
 /** `insertText` keeps newlines and literal markup; a synthetic paste is ignored by the composer. */
-export function sendPromptScript(id: number, prompt: string): string {
+export function sendPromptScript(id: number, prompt: string, webSearch = false): string {
   return inPage(
     id,
     `const box = () => document.querySelector(S.composer);
-const typed = () => !!box() && box().innerText.trim().length > 0;
+// With web search on, the composer already holds its "Web search" pill.
+const typed = () => !!box() && box().innerText.replace(args.webSearch ? /^\s*Web search/ : '', '').trim().length > 0;
 const type = () => { box().focus(); document.execCommand('insertText', false, args.prompt); };
 if (!box()) return { error: 'ChatGPT composer not found' };
 type();
@@ -230,7 +257,7 @@ if (!typed()) return { error: 'ChatGPT cleared the prompt before sending' };
 document.querySelector(S.send).click();
 await waitFor(() => location.pathname.startsWith('/c/'), 15000);
 return { url: location.href };`,
-    { prompt },
+    { prompt, webSearch },
   );
 }
 
@@ -258,7 +285,8 @@ return {
   replyDone: !!main && main.querySelectorAll(S.copy).length > 0,
   images: new Set(imgs.map((i) => i.src)).size,
   imagesLoading: /(loading|creating|generating) image/i.test(text.slice(-800)),
-  errorShown: !!main && [...main.querySelectorAll('button')].some((b) => /^(retry|try again)$/i.test((b.getAttribute('aria-label') || b.innerText || '').trim())),
+  // ChatGPT's failure banner ("Message delivery timed out. Please try again." with a Retry button).
+  errorShown: [...document.querySelectorAll('button')].some((b) => /^(retry|try again)$/i.test((b.getAttribute('aria-label') || b.innerText || '').trim())) || /message delivery timed out|something went wrong|network error|error generating/i.test(text.slice(-600)),
   tail: text.slice(-400),
 };`,
   );

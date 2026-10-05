@@ -189,3 +189,23 @@
     stroke-dashoffset: -18;
   }
 }
+
+/* React Flow's own stylesheet is light-only: follow the app theme instead. */
+.react-flow .react-flow__controls-button {
+  background: var(--card);
+  color: var(--foreground);
+  border-bottom-color: var(--border);
+}
+.react-flow .react-flow__controls-button:hover {
+  background: var(--accent);
+}
+.react-flow .react-flow__controls-button svg {
+  fill: currentColor;
+}
+.react-flow .react-flow__attribution {
+  background: transparent;
+  color: var(--muted-foreground);
+}
+.react-flow .react-flow__attribution a {
+  color: inherit;
+}

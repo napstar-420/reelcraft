@@ -77,5 +77,28 @@ export default tseslint.config(
     ignores: ['apps/api/src/db/migrate.ts'],
     rules: { 'no-console': 'error' },
   },
+  {
+    // Inngest re-runs a function's body from the top on every step and replays
+    // saved step results. A clock read out here is decided again at replay
+    // time, so replays diverge (an old attempt "times out" long after it
+    // finished). Read the clock inside a step.run and return what it decided.
+    files: ['apps/api/src/orchestration/functions/**/*.ts'],
+    ignores: ['**/*.test.ts'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: "CallExpression[callee.object.name='Date'][callee.property.name='now']",
+          message:
+            "Don't read the clock in an Inngest function body: replays re-decide it. Read it inside step.run and return the result.",
+        },
+        {
+          selector: "NewExpression[callee.name='Date'][arguments.length=0]",
+          message:
+            "Don't read the clock in an Inngest function body: replays re-decide it. Read it inside step.run and return the result.",
+        },
+      ],
+    },
+  },
   prettierConfig,
 );

@@ -26,6 +26,7 @@ const RUN_STATE_SET: Record<RunState, true> = {
   PAUSED_APPROVAL: true,
   PAUSED_INPUT: true,
   PAUSED_MANUAL: true,
+  PAUSED_QUOTA: true,
   FAILED: true,
   COMPLETED: true,
   CANCELLED: true,

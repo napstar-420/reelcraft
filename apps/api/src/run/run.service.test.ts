@@ -131,7 +131,7 @@ describe('RunService durable control wakeups', () => {
       expect(setup.runMutation.withLockedRun).toHaveBeenCalledWith(
         'run-1',
         'resume',
-        ['PAUSED_BUDGET', 'PAUSED_MANUAL', 'FAILED'],
+        ['PAUSED_BUDGET', 'PAUSED_MANUAL', 'PAUSED_QUOTA', 'FAILED'],
         expect.any(Function),
         'run/resumed',
       );

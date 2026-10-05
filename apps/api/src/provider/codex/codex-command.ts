@@ -58,6 +58,8 @@ const RESERVED_CONFIG_KEYS = new Set([
   'startUrl',
   'maxSteps',
   'timeoutMs',
+  'progressKey',
+  '__inspectFiles',
   '__referenceFiles',
 ]);
 
@@ -127,11 +129,24 @@ export function buildCodexPrompt(input: {
           ...(typeof input.params?.startUrl === 'string'
             ? [`Start URL: ${input.params.startUrl}`]
             : []),
+          ...(Array.isArray(input.params?.__referenceFiles) && input.params.__referenceFiles.length
+            ? [`Input files provided to you: ${input.params.__referenceFiles.join(', ')}`]
+            : []),
+          ...(typeof input.params?.__progressDir === 'string'
+            ? [
+                `Persistent progress directory: ${input.params.__progressDir} (kept across attempts; save finished work there)`,
+              ]
+            : []),
         ].join('\n')
       : undefined;
   const imageContext =
     input.modality === 'image' && Array.isArray(input.params?.__referenceFiles)
       ? `Reference images available to the image tool: ${input.params.__referenceFiles.join(', ')}`
+      : undefined;
+  // A judge reading files (such as video clips) opens them with local tools.
+  const inspectContext =
+    input.modality === 'text' && Array.isArray(input.params?.__referenceFiles)
+      ? `Files to inspect, in order: ${input.params.__referenceFiles.join(', ')}. Open and examine them yourself with the local tools you have (for example ffmpeg to extract frames and audio); do not guess from the file names.`
       : undefined;
   const outputInstruction =
     input.output?.kind === 'data'
@@ -150,6 +165,7 @@ export function buildCodexPrompt(input: {
     ...(modalityInstruction ? [modalityInstruction] : []),
     ...(browserContext ? [browserContext] : []),
     ...(imageContext ? [imageContext] : []),
+    ...(inspectContext ? [inspectContext] : []),
     outputInstruction,
     '</output_requirements>',
   ].join('\n');

@@ -15,6 +15,7 @@ import type {
   RunDetailDto,
   RunMemoryDto,
   CapabilityDto,
+  FlowAccountsDto,
   ResolveCapabilityResponseDto,
   ModelInfoDto,
   SaveTemplateDto,
@@ -257,13 +258,17 @@ export const api = {
     }),
 
   listCapabilities: () => request<CapabilityDto[]>('/capabilities'),
+  flowAccounts: () => request<FlowAccountsDto>('/flow/accounts'),
   resolveCapability: (key: string, config: Record<string, unknown>) =>
     request<ResolveCapabilityResponseDto>(`/capabilities/${key}/resolve`, {
       method: 'POST',
       body: JSON.stringify({ config }),
     }),
 
-  listProviders: () => request<string[]>('/providers'),
+  listProviders: (modality?: string) =>
+    request<string[]>(
+      modality ? `/providers?modality=${encodeURIComponent(modality)}` : '/providers',
+    ),
   listModelsForProvider: (providerId: string) =>
     request<ModelInfoDto[]>(`/providers/${providerId}/models`),
 
@@ -367,6 +372,17 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({
           action: 'approve',
+          ...(itemIndex !== undefined ? { itemIndex } : {}),
+        } satisfies ApprovalActionDto),
+      },
+    ),
+  retryStageQc: (runId: string, stageKey: string, itemIndex?: number) =>
+    request<{ accepted: true; revision: number }>(
+      `/runs/${runId}/stages/${encodeURIComponent(stageKey)}/approve`,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'retry_qc',
           ...(itemIndex !== undefined ? { itemIndex } : {}),
         } satisfies ApprovalActionDto),
       },

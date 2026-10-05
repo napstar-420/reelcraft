@@ -41,8 +41,9 @@ response as `pastedPrompt`.
 - **Image chats stay in your ChatGPT history.** Text chats are temporary and do not appear there.
 - **Effort is sticky account-wide** in ChatGPT. Every job sets it explicitly, and your ChatGPT app
   keeps whatever the last job used.
-- Web search uses ChatGPT's `hints=search` URL hint. The "+" menu ignores synthetic clicks, and
-  Neo's trusted input doesn't reliably reach background tabs.
+- Web search is turned on from the composer's "+" menu, which ignores synthetic clicks, so two
+  trusted mouse clicks are sent over CDP (they work in a background tab). The old `hints=search`
+  URL hint was dropped by ChatGPT. The "Web search" pill then sits inside the composer text.
 - Neo returns `evaluate` results over ~6 KB as files, so large results (images, long replies) are
   read back in small chunks. See `inPage` in `chatgpt-page.ts`.
 - Every chatgpt.com selector lives in `apps/api/src/provider/chatgpt/chatgpt-page.ts`. When

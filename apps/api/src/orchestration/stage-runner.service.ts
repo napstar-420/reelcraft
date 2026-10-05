@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
-import { and, asc, eq, gt, inArray, isNull, lt, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, isNull, lt, sql } from 'drizzle-orm';
 import type {
   AttemptOutcome,
   HumanWaitKind,
@@ -12,6 +12,8 @@ import type {
 import { StageDef, approvalModeOf } from '@reelcraft/shared';
 import { DRIZZLE, type Db, type Tx } from '../db/drizzle.provider';
 import {
+  artifact,
+  blob,
   run,
   blueprintVersion,
   stageAttempt,
@@ -20,7 +22,7 @@ import {
   channel,
 } from '../db/schema/index';
 import { ulid } from '../common/ulid';
-import { fromUsd } from '../common/money';
+import { fromUsd, toUsd } from '../common/money';
 import { renderStagePrompt } from '../common/prompt-template';
 import { collectFileInputs, promptScopeWithRoles } from '../common/file-inputs';
 import { CapabilityRegistry } from '../capability/capability.registry';
@@ -94,6 +96,7 @@ export type FetchAndFinalizeResult =
   | { outcome: 'qc_failed'; checkResults: CheckResult[]; qcVerdict: QcVerdict }
   | { outcome: 'qc_error'; reason: string }
   | { outcome: 'model_error'; reason: string }
+  | { outcome: 'deferred'; resumeAt: string }
   | { outcome: 'qc_budget_exhausted'; checkResults: CheckResult[] };
 
 /** §11 — `reserveAndSubmit`'s outcome: either a reservation was made and
@@ -104,6 +107,41 @@ export type SubmitOutcome =
   | { outcome: 'submitted'; handle: JobHandle }
   | { outcome: 'budget_blocked'; reason: 'run_cap_exceeded' | 'stage_cap_exceeded' }
   | { outcome: 'run_not_running' };
+
+/** One clip a capability hands back for a `media.video_list` output. */
+interface ClipOutput {
+  index: number;
+  label?: string;
+  prompt?: string;
+  source: import('@reelcraft/shared').MediaSource;
+}
+
+function clipFilename(clip: ClipOutput): string {
+  return clip.source.filename ?? `clip-${clip.index}.mp4`;
+}
+
+type PersistedClip = { clip: ClipOutput } & Awaited<ReturnType<MediaArtifactService['persist']>>;
+
+type MediaProbe = Awaited<ReturnType<MediaArtifactService['persist']>>['probe'];
+
+/** A stored, not yet finalized attempt output, as checks and quality control
+ * see it. Built right after a fetch, or rebuilt from the database to retry
+ * quality control on its own. */
+interface Candidate {
+  kind: CheckArtifact['kind'];
+  data: unknown;
+  /** What the capability returned (a timeline's checks read it as such). */
+  output: unknown;
+  artifactId: string;
+  costUsd: number;
+  media?: {
+    storageKey: string;
+    probe: MediaProbe;
+    mime?: string | undefined;
+  };
+  /** A clip list's clips, ready for the judge. */
+  clips: Array<{ sourceKey: string; mime: string; index: number; label: string }>;
+}
 
 function isUniqueViolation(err: unknown): boolean {
   return typeof err === 'object' && err !== null && (err as { code?: unknown }).code === '23505';
@@ -433,6 +471,10 @@ export class StageRunnerService {
       } else if (row.outcome === 'qc_failed') {
         const verdict = row.qcVerdict as QcVerdict | null;
         lines.push(`Attempt ${row.attemptNo} was rejected by QC: ${verdict?.critique ?? ''}`);
+        // A clip list names the clips to make again; the stage keeps the rest.
+        if (verdict?.failedClips?.length) {
+          lines.push(`Clips to make again (their index): ${verdict.failedClips.join(', ')}`);
+        }
       }
     }
     const routed = await this.db
@@ -466,9 +508,11 @@ export class StageRunnerService {
   ) {
     return {
       runId: ctx.runId,
+      stageExecutionId: ctx.stageExecutionId,
       stageKey: ctx.stageKey,
       attemptNo: ctx.attemptNo,
       itemIndex: ctx.itemIndex,
+      layer: { format: effective.layer.format },
       // §7.2 TODO: this should be a ProviderClient scoped to the effective
       // model pin, not raw config on ctx.config — carried over from phase 1
       // as a deliberate shortcut; changing it is a capability-contract
@@ -651,9 +695,26 @@ export class StageRunnerService {
     return { outcome: 'submitted', handle };
   }
 
-  async pollOnce(stage: StageDef, handle: JobHandle): Promise<JobStatus> {
+  async pollOnce(
+    stage: StageDef,
+    handle: JobHandle,
+    ctx?: StageAttemptContext,
+  ): Promise<JobStatus> {
     const capability = this.capabilities.get(stage.capability);
-    return capability.poll(handle);
+    const status = await capability.poll(handle);
+    // A job that keeps its own deadline may run far past `polling.maxWaitSec`,
+    // which is all the reservation's expiry allowed for: keep the reservation
+    // alive for as long as the provider says the job may, so the budget sweep
+    // doesn't settle (and mark the attempt timed out) under a job that is
+    // still working.
+    if (ctx && !status.done && status.deadlineMs !== undefined) {
+      const reservationId = await this.ledger.reservationIdFor(ctx.stageAttemptId);
+      await this.ledger.extendReservation(
+        reservationId,
+        status.deadlineMs + this.engineConfig.fetchAllowanceSec * 1000,
+      );
+    }
+    return status;
   }
 
   /** Poll exhausted without `status.done` — §13's backoff loop calls this
@@ -690,6 +751,27 @@ export class StageRunnerService {
       'provider_timeout',
       'Provider did not finish within the polling window; job cancelled',
     );
+  }
+
+  /** A self-timed provider job (browser providers) ran past its own deadline:
+   * cancels it, settles the reservation like a timeout, and records an
+   * infrastructure error so the loop retries without spending `retryLimit`. */
+  async recordProviderStall(
+    stage: StageDef,
+    ctx: StageAttemptContext,
+    handle: JobHandle,
+    reason: string,
+  ): Promise<void> {
+    const capability = this.capabilities.get(stage.capability);
+    await capability.cancel?.(handle);
+    const reservationId = await this.ledger.reservationIdFor(ctx.stageAttemptId);
+    await this.ledger.settleProvisional({
+      runId: ctx.runId,
+      stageKey: ctx.stageKey,
+      stageAttemptId: ctx.stageAttemptId,
+      reservationId,
+    });
+    await this.recordInfraError(ctx, reason);
   }
 
   /** §11.3 — a provider-reported job failure before any billed work: a
@@ -809,9 +891,43 @@ export class StageRunnerService {
       return { outcome: 'model_error', reason };
     }
 
-    const mediaOutput = stage.output.kind.startsWith('media.')
-      ? (output as import('@reelcraft/shared').MediaSource)
-      : undefined;
+    if (result.deferUntil) {
+      // Out of provider quota: nothing to persist. The attempt is parked as
+      // `deferred` (it spends no retry) and the run pauses until the quota
+      // resets; the next attempt picks up where this one stopped.
+      await this.ledger.settleSuccess({
+        runId: ctx.runId,
+        stageKey: stage.key,
+        stageAttemptId: ctx.stageAttemptId,
+        reservationId: await this.ledger.reservationIdFor(ctx.stageAttemptId),
+        actualUsd: result.costUsd,
+      });
+      await this.db
+        .update(stageAttempt)
+        .set({
+          outcome: 'deferred',
+          phase: 'settled',
+          rawResponseRef,
+          costUsd: fromUsd(result.costUsd),
+          reviewNote: `Out of quota until ${result.deferUntil}`,
+        })
+        .where(eq(stageAttempt.id, ctx.stageAttemptId));
+      await this.finishAttempt(
+        ctx,
+        'warn',
+        'deferred',
+        `Out of quota; resuming at ${result.deferUntil}`,
+        { resumeAt: result.deferUntil },
+      );
+      return { outcome: 'deferred', resumeAt: result.deferUntil };
+    }
+
+    const isClipList = stage.output.kind === 'media.video_list';
+    const mediaOutput =
+      stage.output.kind.startsWith('media.') && !isClipList
+        ? (output as import('@reelcraft/shared').MediaSource)
+        : undefined;
+    const clipOutputs = isClipList ? (output as { clips: Array<ClipOutput> }).clips : undefined;
     const fileOutput =
       stage.output.kind === 'file.subtitles'
         ? (output as import('@reelcraft/shared').FileSource)
@@ -828,6 +944,20 @@ export class StageRunnerService {
         : undefined;
     } finally {
       if (mediaOutput?.localPath) await capability.cleanup?.(handle);
+    }
+    const persistedClips: PersistedClip[] = [];
+    try {
+      for (const clip of clipOutputs ?? []) {
+        const persisted = await this.mediaArtifacts.persist({
+          ownerId: channelRow?.ownerId ?? 'local',
+          channelId: runRow.channelId,
+          runId: ctx.runId,
+          source: clip.source,
+        });
+        persistedClips.push({ clip, ...persisted });
+      }
+    } finally {
+      if (clipOutputs?.length) await capability.cleanup?.(handle);
     }
     let persistedFile: Awaited<ReturnType<FileArtifactService['persist']>> | undefined;
     try {
@@ -859,9 +989,20 @@ export class StageRunnerService {
         ? { text: output }
         : kind === 'data' || kind === 'timeline'
           ? output
-          : spokenText !== undefined
-            ? { text: spokenText }
-            : undefined;
+          : kind === 'media.video_list'
+            ? {
+                clips: persistedClips.map(({ clip, blobId, probe }) => ({
+                  index: clip.index,
+                  label: clip.label ?? null,
+                  prompt: clip.prompt ?? null,
+                  filename: clipFilename(clip),
+                  blobId,
+                  probe,
+                })),
+              }
+            : spokenText !== undefined
+              ? { text: spokenText }
+              : undefined;
     const artifactId = await this.artifacts.recordAttemptArtifact({
       runId: ctx.runId,
       producerStageKey: stage.key,
@@ -880,6 +1021,16 @@ export class StageRunnerService {
       repro: result.repro,
       costUsd: result.costUsd,
     });
+    if (persistedClips.length) {
+      await this.artifactAttachments.linkClips(
+        artifactId,
+        persistedClips.map(({ clip, blobId }) => ({
+          blobId,
+          filename: clipFilename(clip),
+          mime: clip.source.mime ?? 'video/mp4',
+        })),
+      );
+    }
     if (result.attachments?.length) {
       await this.artifactAttachments.persist({
         ownerId: channelRow?.ownerId ?? 'local',
@@ -908,6 +1059,50 @@ export class StageRunnerService {
       .set({ phase: 'settled', artifactId, rawResponseRef, costUsd: fromUsd(result.costUsd) })
       .where(eq(stageAttempt.id, ctx.stageAttemptId));
 
+    return this.judgeAndFinalize({
+      stage,
+      ctx,
+      effective,
+      prevStageKey,
+      bindings,
+      candidate: {
+        kind,
+        data,
+        output,
+        artifactId,
+        costUsd: result.costUsd,
+        ...(persistedMedia && {
+          media: {
+            storageKey: persistedMedia.storageKey,
+            probe: persistedMedia.probe,
+            mime: mediaOutput?.mime,
+          },
+        }),
+        clips: persistedClips.map(({ clip, storageKey }) => ({
+          sourceKey: storageKey,
+          mime: clip.source.mime ?? 'video/mp4',
+          index: clip.index,
+          label: clip.label || `Clip ${clip.index}`,
+        })),
+      },
+    });
+  }
+
+  /** Everything after the candidate artifact is stored: checks, quality
+   * control, then finalize (or hand to a human). Split from `fetchAndFinalize`
+   * so "Retry QC" can run it again on a stored candidate without
+   * regenerating it. */
+  private async judgeAndFinalize(p: {
+    stage: StageDef;
+    ctx: StageAttemptContext;
+    effective: EffectiveStageConfig;
+    prevStageKey: string | undefined;
+    bindings: ResolvedBindings;
+    candidate: Candidate;
+  }): Promise<FetchAndFinalizeResult> {
+    const { stage, ctx, effective, prevStageKey, bindings, candidate } = p;
+    const { kind, data, output, artifactId } = candidate;
+    const persistedMedia = candidate.media;
     const checkArtifact: CheckArtifact = {
       kind,
       data,
@@ -1025,7 +1220,7 @@ export class StageRunnerService {
 
       let qcMedia =
         stage.output.kind === 'media.image' && persistedMedia
-          ? { sourceKey: persistedMedia.storageKey, mime: mediaOutput?.mime ?? 'image/png' }
+          ? { sourceKey: persistedMedia.storageKey, mime: persistedMedia.mime ?? 'image/png' }
           : undefined;
       // "Include transcript" on an audio output: the judge listens to the
       // file when its model accepts audio, otherwise Deepgram transcribes it.
@@ -1035,7 +1230,7 @@ export class StageRunnerService {
         stage.output.kind === 'media.audio' &&
         persistedMedia
       ) {
-        const audioMime = mediaOutput?.mime ?? 'audio/mpeg';
+        const audioMime = persistedMedia.mime ?? 'audio/mpeg';
         const audioMode = await this.qcAudio.mode(effective.qc.judge);
         let audioError: string | undefined;
         if (audioMode.mode === 'attach') {
@@ -1057,15 +1252,11 @@ export class StageRunnerService {
         } else {
           audioError = audioMode.reason;
         }
-        if (audioError) {
-          await this.db
-            .update(stageAttempt)
-            .set({ outcome: 'qc_error', checkResults, reviewNote: audioError })
-            .where(eq(stageAttempt.id, ctx.stageAttemptId));
-          await this.finishAttempt(ctx, 'error', 'qc_error', `QC could not run: ${audioError}`);
-          return { outcome: 'qc_error', reason: audioError };
-        }
+        if (audioError)
+          return this.holdForQcRetry(stage, ctx, checkResults, audioError, artifactId);
       }
+      // A clip list is judged as every clip, in order, as video files.
+      const qcClips = candidate.clips;
       const qcOutcome = await this.runQcWithRetries(
         stage.qc,
         effective.qc,
@@ -1074,15 +1265,11 @@ export class StageRunnerService {
         bindings,
         qcMedia,
         qcTranscript,
+        qcClips,
       );
 
       if (qcOutcome.status === 'error') {
-        await this.db
-          .update(stageAttempt)
-          .set({ outcome: 'qc_error', checkResults, reviewNote: qcOutcome.reason })
-          .where(eq(stageAttempt.id, ctx.stageAttemptId));
-        await this.finishAttempt(ctx, 'error', 'qc_error', `QC could not run: ${qcOutcome.reason}`);
-        return { outcome: 'qc_error', reason: qcOutcome.reason };
+        return this.holdForQcRetry(stage, ctx, checkResults, qcOutcome.reason, artifactId);
       }
 
       await this.ledger.recordActual({
@@ -1145,7 +1332,7 @@ export class StageRunnerService {
           itemIndex: ctx.itemIndex,
           newArtifactId: artifactId,
           stageItemId: ctx.stageItemId,
-          costUsd: result.costUsd,
+          costUsd: candidate.costUsd,
           applyWrites: this.memory.buildWriteCallback(stage, {
             runId: ctx.runId,
             stageKey: stage.key,
@@ -1186,6 +1373,177 @@ export class StageRunnerService {
     return finalized;
   }
 
+  /** Quality control could not run (the judge was unreachable, stuck or
+   * unparseable). The stage does not fail for that: the output is parked
+   * behind the approval gate and the run pauses, so a person can approve it,
+   * reject it, or retry QC once the judge is back. */
+  private async holdForQcRetry(
+    stage: StageDef,
+    ctx: StageAttemptContext,
+    checkResults: CheckResult[],
+    reason: string,
+    artifactId: string,
+  ): Promise<FetchAndFinalizeResult> {
+    const held = await this.db.transaction(async (tx) => {
+      const [lockedRun] = await tx
+        .select({ state: run.state })
+        .from(run)
+        .where(eq(run.id, ctx.runId))
+        .for('update');
+      if (!lockedRun || (lockedRun.state !== 'RUNNING' && lockedRun.state !== 'PAUSED_MANUAL')) {
+        await tx
+          .update(stageAttempt)
+          .set({ outcome: 'cancelled', phase: 'settled', checkResults })
+          .where(eq(stageAttempt.id, ctx.stageAttemptId));
+        return false;
+      }
+      await this.openApprovalGate(tx, stage, ctx, checkResults, reason);
+      return true;
+    });
+    if (!held) {
+      await this.finishAttempt(ctx, 'info', 'cancelled', 'Run stopped; output discarded');
+      return { outcome: 'run_not_running' };
+    }
+    await this.finishAttempt(
+      ctx,
+      'warn',
+      'qc_error',
+      `QC could not run: ${reason}. The run is paused: approve the output, reject it, or retry QC.`,
+    );
+    return { outcome: 'approval_required', artifactId };
+  }
+
+  /** The attempt a person asked to retry QC on: the newest one for this
+   * stage (or item), parked by `holdForQcRetry` and released by "Retry QC". */
+  async findHeldQcAttempt(
+    stageExecutionId: string,
+    stageItemId?: string,
+  ): Promise<StageAttemptContext | undefined> {
+    const [row] = await this.db
+      .select({
+        id: stageAttempt.id,
+        attemptNo: stageAttempt.attemptNo,
+        outcome: stageAttempt.outcome,
+        phase: stageAttempt.phase,
+        artifactId: stageAttempt.artifactId,
+        stageItemId: stageAttempt.stageItemId,
+        runId: stageExecution.runId,
+        stageKey: stageExecution.stageKey,
+      })
+      .from(stageAttempt)
+      .innerJoin(stageExecution, eq(stageExecution.id, stageAttempt.stageExecutionId))
+      .where(
+        and(
+          eq(stageAttempt.stageExecutionId, stageExecutionId),
+          stageItemId
+            ? eq(stageAttempt.stageItemId, stageItemId)
+            : isNull(stageAttempt.stageItemId),
+        ),
+      )
+      .orderBy(desc(stageAttempt.attemptNo))
+      .limit(1);
+    if (!row || row.outcome !== 'qc_error' || row.phase !== 'settled' || !row.artifactId) {
+      return undefined;
+    }
+    let itemIndex: number | undefined;
+    if (row.stageItemId) {
+      const [item] = await this.db
+        .select({ itemIndex: stageItem.itemIndex })
+        .from(stageItem)
+        .where(eq(stageItem.id, row.stageItemId))
+        .limit(1);
+      itemIndex = item?.itemIndex;
+    }
+    return {
+      runId: row.runId,
+      stageExecutionId,
+      stageKey: row.stageKey,
+      attemptNo: row.attemptNo,
+      stageAttemptId: row.id,
+      itemIndex,
+      stageItemId: row.stageItemId ?? undefined,
+    };
+  }
+
+  /** "Retry QC": judges the stored candidate of a held attempt again, with
+   * the same checks, judge and outcomes as the first time, but without
+   * generating anything. */
+  async retryHeldQc(
+    stage: StageDef,
+    ctx: StageAttemptContext,
+    prevStageKey: string | undefined,
+    effective: EffectiveStageConfig,
+  ): Promise<FetchAndFinalizeResult> {
+    const [attempt] = await this.db
+      .select({ artifactId: stageAttempt.artifactId, costUsd: stageAttempt.costUsd })
+      .from(stageAttempt)
+      .where(eq(stageAttempt.id, ctx.stageAttemptId))
+      .limit(1);
+    if (!attempt?.artifactId) {
+      throw new Error(`StageRunnerService: attempt ${ctx.stageAttemptId} has no artifact`);
+    }
+    const [stored] = await this.db
+      .select()
+      .from(artifact)
+      .where(eq(artifact.id, attempt.artifactId))
+      .limit(1);
+    if (!stored) throw new Error(`StageRunnerService: artifact ${attempt.artifactId} not found`);
+
+    const keyOf = async (blobId: string) => {
+      const [row] = await this.db
+        .select({ objectKey: blob.objectKey, mime: blob.mime })
+        .from(blob)
+        .where(eq(blob.id, blobId))
+        .limit(1);
+      if (!row) throw new Error(`StageRunnerService: blob ${blobId} not found`);
+      return row;
+    };
+    const storedClips = (
+      (
+        stored.data as {
+          clips?: Array<{ index: number; label: string | null; blobId: string }>;
+        } | null
+      )?.clips ?? []
+    ).filter(() => stored.kind === 'media.video_list');
+    const clips = await Promise.all(
+      storedClips.map(async (clip) => {
+        const file = await keyOf(clip.blobId);
+        return {
+          sourceKey: file.objectKey,
+          mime: file.mime,
+          index: clip.index,
+          label: clip.label || `Clip ${clip.index}`,
+        };
+      }),
+    );
+    const mediaBlob = stored.blobId ? await keyOf(stored.blobId) : undefined;
+    const bindings = await this.resolveBindings(stage, ctx.runId, prevStageKey, ctx.itemIndex);
+    return this.judgeAndFinalize({
+      stage,
+      ctx,
+      effective,
+      prevStageKey,
+      bindings,
+      candidate: {
+        kind: stored.kind as Candidate['kind'],
+        data: stored.data,
+        output: stored.data,
+        artifactId: stored.id,
+        costUsd: toUsd(attempt.costUsd),
+        ...(mediaBlob && stored.probe
+          ? {
+              media: {
+                storageKey: mediaBlob.objectKey,
+                probe: stored.probe as MediaProbe,
+                mime: mediaBlob.mime,
+              },
+            }
+          : {}),
+        clips,
+      },
+    });
+  }
+
   /** Parks the attempt's (not yet finalized) artifact behind a human
    * approval gate — for a stage's own `approval`, and for QC hand-off. */
   private async openApprovalGate(
@@ -1193,12 +1551,16 @@ export class StageRunnerService {
     stage: StageDef,
     ctx: StageAttemptContext,
     checkResults?: CheckResult[],
+    qcError?: string,
   ): Promise<void> {
     await tx
       .update(stageAttempt)
       .set({
-        outcome: 'awaiting_approval',
+        // A QC hold keeps `qc_error` as its outcome, so the review can offer
+        // "Retry QC" next to Approve and Reject.
+        outcome: qcError !== undefined ? 'qc_error' : 'awaiting_approval',
         phase: 'awaiting_approval',
+        ...(qcError !== undefined && { reviewNote: qcError }),
         ...(checkResults && { checkResults }),
       })
       .where(eq(stageAttempt.id, ctx.stageAttemptId));
@@ -1294,6 +1656,7 @@ export class StageRunnerService {
     bindings: ResolvedBindings,
     media: { sourceKey: string; mime: string } | undefined,
     transcript?: string,
+    clips?: Array<{ sourceKey: string; mime: string; index: number; label: string }>,
   ): Promise<QcOutcome> {
     const envelope = buildQcEnvelope({
       criteria: qcDef.criteria,
@@ -1306,6 +1669,7 @@ export class StageRunnerService {
       context: bindings.context,
       ...(media !== undefined && { media }),
       ...(transcript !== undefined && { transcript }),
+      ...(clips?.length && { clips }),
     });
 
     const maxAttempts = 1 + this.engineConfig.qcErrorRetries;

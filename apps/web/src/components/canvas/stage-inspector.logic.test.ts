@@ -2,6 +2,14 @@ import { describe, expect, it } from 'vitest';
 import type { StageDef } from '@reelcraft/shared';
 import {
   buildStageOutput,
+  filterAccounts,
+  flowAccounts,
+  toggleAccount,
+  withFlowAccounts,
+  ingredientCount,
+  ingredientSlotName,
+  visibleConfigSchema,
+  withIngredientCount,
   inferSchemaFromValue,
   isOutputInstructionsIssue,
   parseSchemaJson,
@@ -226,5 +234,75 @@ describe('stageSectionSummaries', () => {
     expect(summary.model).toBe('gpt');
     expect(summary.execution).toBe('retry 2, cap $1.5');
     expect(summary.flow).toBe('conditional, approval');
+  });
+});
+
+describe('Flow ingredient inputs', () => {
+  const stage = (slots: StageDef['slots'], config: StageDef['config'] = {}) =>
+    ({ key: 's', capability: 'browser.flow_video', slots, config }) as StageDef;
+  const bound = { from: 'asset', assetId: 'a' } as const;
+
+  it('defaults to one and names them ingredients, ingredients2…', () => {
+    expect(ingredientCount({})).toBe(1);
+    expect(ingredientCount({ ingredientSlots: 3 })).toBe(3);
+    expect([1, 2, 3].map(ingredientSlotName)).toEqual([
+      'ingredients',
+      'ingredients2',
+      'ingredients3',
+    ]);
+  });
+
+  it('adds one, keeping what is bound', () => {
+    const next = withIngredientCount(stage({ ingredients: bound }), 2);
+    expect(next.config).toEqual({ ingredientSlots: 2 });
+    expect(next.slots).toEqual({ ingredients: bound });
+  });
+
+  it('removes the last one with its binding, and leaves other slots alone', () => {
+    const next = withIngredientCount(
+      stage({ references: bound, ingredients: bound, ingredients2: bound }, { ingredientSlots: 2 }),
+      1,
+    );
+    expect(Object.keys(next.slots)).toEqual(['references', 'ingredients']);
+    expect(withIngredientCount(next, 0).slots).toEqual({ references: bound });
+    expect(withIngredientCount(next, 99).config).toEqual({ ingredientSlots: 8 });
+  });
+
+  it('hides the count from the Config form, for Flow only', () => {
+    const schema = {
+      type: 'object',
+      properties: { aspectRatio: { type: 'string' }, ingredientSlots: { type: 'integer' } },
+    } as const;
+    expect(Object.keys(visibleConfigSchema('browser.flow_video', schema).properties!)).toEqual([
+      'aspectRatio',
+    ]);
+    expect(visibleConfigSchema('video.generate', schema)).toBe(schema);
+  });
+});
+
+describe('Flow stage accounts', () => {
+  it('sets the list in order and drops the key when empty', () => {
+    const stage = { config: { aspectRatio: '9:16' } } as unknown as StageDef;
+    const set = withFlowAccounts(stage, ['a@x.com', 'b@x.com']);
+    expect(set.config).toEqual({ aspectRatio: '9:16', accounts: ['a@x.com', 'b@x.com'] });
+    expect(flowAccounts(set.config)).toEqual(['a@x.com', 'b@x.com']);
+    expect(withFlowAccounts(set, []).config).toEqual({ aspectRatio: '9:16' });
+    expect(flowAccounts({})).toEqual([]);
+  });
+
+  it('adds an account at the end and removes it when toggled again', () => {
+    expect(toggleAccount(['a@x.com'], 'b@x.com')).toEqual(['a@x.com', 'b@x.com']);
+    expect(toggleAccount(['a@x.com', 'b@x.com'], 'a@x.com')).toEqual(['b@x.com']);
+  });
+
+  it('filters the choices by email or name', () => {
+    const choices = [
+      { email: 'ava@gmail.com', name: 'Ava Stone', signedIn: true },
+      { email: 'ben@work.io', name: 'Ben', signedIn: true },
+    ];
+    expect(filterAccounts(choices, '')).toHaveLength(2);
+    expect(filterAccounts(choices, ' WORK ')).toEqual([choices[1]]);
+    expect(filterAccounts(choices, 'stone')).toEqual([choices[0]]);
+    expect(filterAccounts(choices, 'zzz')).toEqual([]);
   });
 });

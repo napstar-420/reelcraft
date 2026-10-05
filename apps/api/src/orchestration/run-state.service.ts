@@ -1,8 +1,9 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import type { RunState } from '@reelcraft/shared';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
-import { run, stageExecution } from '../db/schema/index';
+import { ulid } from '../common/ulid';
+import { run, runWakeup, stageExecution } from '../db/schema/index';
 import { InProcessRunEvents } from './run-events';
 
 @Injectable()
@@ -28,6 +29,35 @@ export class RunStateService {
       .where(eq(run.id, runId));
     this.logger.log({ runId, toState: state }, 'run state changed');
     this.events.publish({ runId, type: 'state_changed', state });
+  }
+
+  /** Pauses a RUNNING run until `resumeAt` and queues the wakeup that resumes
+   * it then (the dispatcher holds it back until `notBefore`). The wakeup is
+   * bound to the run's revision, so a manual resume or any other operator
+   * action in the meantime makes it stale and it is dropped. A run that is
+   * no longer RUNNING (cancelled, paused by hand) is left alone. */
+  async pauseForQuota(runId: string, resumeAt: string): Promise<void> {
+    const paused = await this.db.transaction(async (tx) => {
+      const [row] = await tx
+        .update(run)
+        .set({ state: 'PAUSED_QUOTA' })
+        .where(and(eq(run.id, runId), eq(run.state, 'RUNNING')))
+        .returning({ revision: run.revision });
+      if (!row) return false;
+      await tx.insert(runWakeup).values({
+        id: ulid(),
+        runId,
+        action: 'resume',
+        sourceState: 'PAUSED_QUOTA',
+        expectedRevision: row.revision,
+        eventName: 'run/resumed',
+        notBefore: resumeAt,
+      });
+      return true;
+    });
+    if (!paused) return;
+    this.logger.log({ runId, toState: 'PAUSED_QUOTA', resumeAt }, 'run state changed');
+    this.events.publish({ runId, type: 'state_changed', state: 'PAUSED_QUOTA' });
   }
 
   async setCursor(runId: string, stageKey: string | null): Promise<void> {

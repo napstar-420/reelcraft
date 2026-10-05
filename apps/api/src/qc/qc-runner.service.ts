@@ -9,6 +9,8 @@ export interface QcVerdict {
   score: number;
   critique: string;
   dimensions?: Array<{ key: string; score: number; critique?: string }>;
+  /** Clip lists only: indexes of the clips to make again. */
+  failedClips?: number[];
 }
 
 export type QcOutcome =
@@ -16,14 +18,14 @@ export type QcOutcome =
   | { status: 'failed'; verdict: QcVerdict; costUsd: number }
   | { status: 'error'; reason: string; costUsd: number };
 
-/** Same backoff sequence as the main attempt loop's `POLL_BACKOFF_SEC`
- * (`stage-attempt-loop.ts`) — a real judge call goes through the same
- * submit/poll provider adapter as the stage's own generation call and needs
- * real round-trip time, not the ~200ms `FakeProviderAdapter` resolves on.
- * ponytail: still an inline blocking poll (~50s ceiling) rather than
- * `stage-attempt-loop.ts`'s durable per-poll steps — revisit with that same
- * step-per-poll treatment if a judge model routinely needs longer. */
+/** Backoff between judge polls (the last step repeats). A real judge goes
+ * through the same submit/poll adapter as the stage's own call and takes real
+ * time: a ChatGPT judge thinks for minutes. The adapters fail a job that
+ * outlives their own deadline, so this cap only guards a poll that never ends.
+ * ponytail: still an inline blocking poll rather than `stage-attempt-loop.ts`'s
+ * durable per-poll steps; revisit if judges routinely run this long. */
 const POLL_BACKOFF_SEC = [5, 15, 30];
+const JUDGE_DEADLINE_MS = 20 * 60_000;
 
 /**
  * §10 — runs a QC judge call against `ProviderRegistry` directly (not
@@ -80,9 +82,7 @@ export class QcRunner {
       {
         modality: 'text',
         modelId: args.judge.modelId,
-        params: args.envelope.media
-          ? { ...params, slots: { qcArtifact: { sourceKey: args.envelope.media.sourceKey } } }
-          : params,
+        params: qcParams(params, args.envelope),
         renderedPrompt: prompt.user,
         system: prompt.system,
       },
@@ -90,16 +90,15 @@ export class QcRunner {
     );
 
     let status = await adapter.poll(handle);
-    // §13.3-class shortcut, same as stage-runner.service.ts's documented
-    // ExecCtx.config TODO: this polls a bounded backoff sequence inline
-    // rather than its own step-per-poll loop (see the ponytail note above).
-    for (const backoffSec of POLL_BACKOFF_SEC) {
-      if (status.done) break;
-      await sleep(backoffSec * 1000);
+    const giveUpAt = Date.now() + JUDGE_DEADLINE_MS;
+    for (let i = 0; !status.done && Date.now() < giveUpAt; i++) {
+      await sleep(POLL_BACKOFF_SEC[Math.min(i, POLL_BACKOFF_SEC.length - 1)]! * 1000);
       status = await adapter.poll(handle);
     }
 
     if (!status.done) {
+      // Don't leave the judge's page open (ChatGPT) or its job running.
+      await adapter.cancel(handle).catch(() => undefined);
       return { status: 'error', reason: 'qc judge call did not complete in time', costUsd: 0 };
     }
     if (status.outcome === 'failed') {
@@ -132,7 +131,37 @@ export class QcRunner {
   }
 }
 
+/** The judge's request params: the attached image or audio, or a clip list's
+ * videos. A judge given clips must open the files itself (`__inspectFiles`). */
+function qcParams(params: Record<string, unknown>, envelope: QcEnvelope): Record<string, unknown> {
+  if (envelope.clips?.length) {
+    return {
+      ...params,
+      __inspectFiles: true,
+      slots: Object.fromEntries(
+        envelope.clips.map((clip, i) => [`qcClip${i + 1}`, { sourceKey: clip.sourceKey }]),
+      ),
+    };
+  }
+  return envelope.media
+    ? { ...params, slots: { qcArtifact: { sourceKey: envelope.media.sourceKey } } }
+    : params;
+}
+
+/** Only indexes of clips that were actually judged count. */
+function failedClipsOf(response: JudgeResponse, envelope: QcEnvelope): number[] | undefined {
+  if (!envelope.clips) return undefined;
+  const known = new Set(envelope.clips.map((clip) => clip.index));
+  return [...new Set((response.failedClips ?? []).filter((index) => known.has(index)))];
+}
+
 function toVerdict(response: JudgeResponse, envelope: QcEnvelope): QcVerdict {
+  const failedClips = failedClipsOf(response, envelope);
+  const verdict = scoreOf(response, envelope);
+  return failedClips ? { ...verdict, failedClips } : verdict;
+}
+
+function scoreOf(response: JudgeResponse, envelope: QcEnvelope): QcVerdict {
   if (response.dimensions && envelope.dimensions) {
     const weightByKey = new Map(envelope.dimensions.map((d) => [d.key, d.weight]));
     const joined = response.dimensions

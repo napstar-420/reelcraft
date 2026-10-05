@@ -8,17 +8,17 @@ Statuses appear as coloured badges on the [Runs list](../runs/runs-list.md), the
 
 ## Run statuses
 
-| Status              | Meaning                                                           | You can                                                        |
-| ------------------- | ----------------------------------------------------------------- | -------------------------------------------------------------- |
-| **Created**         | The run exists but hasn't started, for example while files upload | Wait, or cancel                                                |
-| **Running**         | Stages are being carried out                                      | Pause, cancel, raise the budget                                |
-| **Paused Budget**   | The next step would go over the run's or a stage's spending limit | Raise the budget (it continues), resume, retry a stage, cancel |
-| **Paused Approval** | A stage with human approval is waiting for your review            | Review output, retry a stage, cancel                           |
-| **Paused Input**    | A Human Input or Human Timeline Edit stage is waiting for you     | Provide input or open the editor, retry a stage, cancel        |
-| **Paused Manual**   | You paused it                                                     | Resume, cancel, raise the budget                               |
-| **Failed**          | A stage couldn't finish                                           | Resume, retry a stage, rerun, raise the budget, cancel         |
-| **Completed**       | Every stage finished                                              | Rerun, retry a stage                                           |
-| **Cancelled**       | You stopped it for good                                           | Rerun                                                          |
+| Status              | Meaning                                                                           | You can                                                            |
+| ------------------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| **Created**         | The run exists but hasn't started, for example while files upload                 | Wait, or cancel                                                    |
+| **Running**         | Stages are being carried out                                                      | Pause, cancel, raise the budget                                    |
+| **Paused Budget**   | The next step would go over the run's or a stage's spending limit                 | Raise the budget (it continues), resume, retry a stage, cancel     |
+| **Paused Approval** | A stage with human approval, or QC that could not run, is waiting for your review | Review output (Retry QC, Approve or Reject), retry a stage, cancel |
+| **Paused Input**    | A Human Input or Human Timeline Edit stage is waiting for you                     | Provide input or open the editor, retry a stage, cancel            |
+| **Paused Manual**   | You paused it                                                                     | Resume, cancel, raise the budget                                   |
+| **Failed**          | A stage couldn't finish                                                           | Resume, retry a stage, rerun, raise the budget, cancel             |
+| **Completed**       | Every stage finished                                                              | Rerun, retry a stage                                               |
+| **Cancelled**       | You stopped it for good                                                           | Rerun                                                              |
 
 Retrying a stage isn't offered on a run you paused yourself, because that would quietly resume it. Resume
 it first.

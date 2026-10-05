@@ -20,6 +20,7 @@ export const artifactKind = pgEnum('artifact_kind', [
   'media.image',
   'media.video',
   'media.audio',
+  'media.video_list',
   'file.subtitles',
   'timeline',
 ]);
