@@ -407,6 +407,7 @@ describe('ChatgptProviderAdapter.poll stall', () => {
 });
 
 describe('decidePoll error banner', () => {
+  const text = { modality: 'text' as const, submittedAt: 1_000 };
   it("fails at once on ChatGPT's error banner, even with a stale Stop or Copy button", () => {
     for (const stale of [{ generating: true }, { replyDone: true }, {}]) {
       expect(
