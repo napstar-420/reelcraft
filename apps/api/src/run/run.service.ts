@@ -920,6 +920,10 @@ export class RunService {
         attemptNo: attempt.attemptNo,
         checkResults: attempt.checkResults,
         qcVerdict: attempt.qcVerdict,
+        qcUnavailable:
+          attempt.outcome === 'qc_error'
+            ? (attempt.reviewNote ?? 'Quality control could not run')
+            : null,
         costUsd: toUsd(attempt.costUsd),
         createdAt: attempt.createdAt,
       },

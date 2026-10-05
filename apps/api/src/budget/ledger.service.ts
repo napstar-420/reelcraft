@@ -199,6 +199,21 @@ export class LedgerService {
       .where(and(eq(ledgerEntry.id, reservationId), eq(ledgerEntry.kind, 'reservation')));
   }
 
+  /** Moves a reservation's expiry out to `untilMs`, never earlier: for a job
+   * whose provider allows it longer than the generic poll window. */
+  async extendReservation(reservationId: string, untilMs: number): Promise<void> {
+    await this.db
+      .update(ledgerEntry)
+      .set({ expiresAt: new Date(untilMs).toISOString() })
+      .where(
+        and(
+          eq(ledgerEntry.id, reservationId),
+          eq(ledgerEntry.kind, 'reservation'),
+          lt(ledgerEntry.expiresAt, new Date(untilMs).toISOString()),
+        ),
+      );
+  }
+
   /** §11.3 — the confirmed-success settlement: a confirmed `actual` at the
    * true cost plus a confirmed `release` of the full ceiling, so the
    * reservation's ceiling and the real spend are both visible in the

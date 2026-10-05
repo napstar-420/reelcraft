@@ -12,6 +12,7 @@ export type RunAction =
   | 'patch_overrides'
   | 'approve'
   | 'reject'
+  | 'retry_qc'
   | 'submit_input'
   | 'resume'
   | 'cancel';
@@ -40,6 +41,7 @@ export const RUN_ACTION_ALLOWED_STATES = {
   patch_overrides: [...PAUSED_STATES, 'FAILED'],
   approve: ['PAUSED_APPROVAL'],
   reject: ['PAUSED_APPROVAL'],
+  retry_qc: ['PAUSED_APPROVAL'],
   submit_input: ['PAUSED_INPUT'],
   resume: ['PAUSED_BUDGET', 'PAUSED_MANUAL', 'PAUSED_QUOTA', 'FAILED'],
   cancel: ['CREATED', 'RUNNING', ...PAUSED_STATES, 'PAUSED_MANUAL', 'FAILED'],

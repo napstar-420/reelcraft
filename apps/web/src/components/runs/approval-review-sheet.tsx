@@ -60,6 +60,11 @@ export function ApprovalReviewSheet({
     onSuccess: finish,
     onError: fail,
   });
+  const retryQc = useMutation({
+    mutationFn: () => api.retryStageQc(runId, stageKey as string, itemIndex),
+    onSuccess: finish,
+    onError: fail,
+  });
   const previewRejection = useMutation({
     mutationFn: () =>
       api.previewStageRejection(runId, stageKey as string, note.trim() || undefined, itemIndex),
@@ -81,7 +86,11 @@ export function ApprovalReviewSheet({
     onSuccess: finish,
     onError: fail,
   });
-  const busy = approve.isPending || previewRejection.isPending || confirmRejection.isPending;
+  const busy =
+    approve.isPending ||
+    retryQc.isPending ||
+    previewRejection.isPending ||
+    confirmRejection.isPending;
   const summary = useMemo(
     () =>
       preview
@@ -118,7 +127,19 @@ export function ApprovalReviewSheet({
               <AlertDescription>{describeApiFailure(candidateQuery.error)}</AlertDescription>
             </Alert>
           ) : candidateQuery.data ? (
-            <ApprovalCandidate candidate={candidateQuery.data} />
+            <>
+              {candidateQuery.data.attempt.qcUnavailable !== null ? (
+                <Alert className="mt-4">
+                  <AlertCircle />
+                  <AlertTitle>Quality control could not run</AlertTitle>
+                  <AlertDescription>
+                    {candidateQuery.data.attempt.qcUnavailable} The output below has not been
+                    judged. Retry QC once the judge is back, approve it as it is, or reject it.
+                  </AlertDescription>
+                </Alert>
+              ) : null}
+              <ApprovalCandidate candidate={candidateQuery.data} />
+            </>
           ) : null}
 
           {error ? (
@@ -192,7 +213,18 @@ export function ApprovalReviewSheet({
                 {previewRejection.isPending ? <Loader2 className="animate-spin" /> : null}
                 Reject
               </Button>
-              <Button disabled={busy || !candidateQuery.data} onClick={() => approve.mutate()}>
+              {candidateQuery.data?.attempt.qcUnavailable !== null &&
+              candidateQuery.data !== undefined ? (
+                <Button disabled={busy} onClick={() => retryQc.mutate()}>
+                  {retryQc.isPending ? <Loader2 className="animate-spin" /> : null}
+                  Retry QC
+                </Button>
+              ) : null}
+              <Button
+                variant={candidateQuery.data?.attempt.qcUnavailable ? 'outline' : 'default'}
+                disabled={busy || !candidateQuery.data}
+                onClick={() => approve.mutate()}
+              >
                 {approve.isPending ? <Loader2 className="animate-spin" /> : null}
                 Approve
               </Button>

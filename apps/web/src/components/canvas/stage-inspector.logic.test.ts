@@ -2,6 +2,10 @@ import { describe, expect, it } from 'vitest';
 import type { StageDef } from '@reelcraft/shared';
 import {
   buildStageOutput,
+  filterAccounts,
+  flowAccounts,
+  toggleAccount,
+  withFlowAccounts,
   ingredientCount,
   ingredientSlotName,
   visibleConfigSchema,
@@ -220,5 +224,32 @@ describe('Flow ingredient inputs', () => {
       'aspectRatio',
     ]);
     expect(visibleConfigSchema('video.generate', schema)).toBe(schema);
+  });
+});
+
+describe('Flow stage accounts', () => {
+  it('sets the list in order and drops the key when empty', () => {
+    const stage = { config: { aspectRatio: '9:16' } } as unknown as StageDef;
+    const set = withFlowAccounts(stage, ['a@x.com', 'b@x.com']);
+    expect(set.config).toEqual({ aspectRatio: '9:16', accounts: ['a@x.com', 'b@x.com'] });
+    expect(flowAccounts(set.config)).toEqual(['a@x.com', 'b@x.com']);
+    expect(withFlowAccounts(set, []).config).toEqual({ aspectRatio: '9:16' });
+    expect(flowAccounts({})).toEqual([]);
+  });
+
+  it('adds an account at the end and removes it when toggled again', () => {
+    expect(toggleAccount(['a@x.com'], 'b@x.com')).toEqual(['a@x.com', 'b@x.com']);
+    expect(toggleAccount(['a@x.com', 'b@x.com'], 'a@x.com')).toEqual(['b@x.com']);
+  });
+
+  it('filters the choices by email or name', () => {
+    const choices = [
+      { email: 'ava@gmail.com', name: 'Ava Stone', signedIn: true },
+      { email: 'ben@work.io', name: 'Ben', signedIn: true },
+    ];
+    expect(filterAccounts(choices, '')).toHaveLength(2);
+    expect(filterAccounts(choices, ' WORK ')).toEqual([choices[1]]);
+    expect(filterAccounts(choices, 'stone')).toEqual([choices[0]]);
+    expect(filterAccounts(choices, 'zzz')).toEqual([]);
   });
 });

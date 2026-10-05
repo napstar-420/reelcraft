@@ -35,6 +35,8 @@ export type ManualArtifactEditDto = z.infer<typeof ManualArtifactEditDto>;
 
 export const ApprovalActionDto = z.discriminatedUnion('action', [
   z.object({ action: z.literal('approve'), itemIndex: z.number().int().nonnegative().optional() }),
+  // Quality control could not run and the output is parked for review: judge it again.
+  z.object({ action: z.literal('retry_qc'), itemIndex: z.number().int().nonnegative().optional() }),
   z.object({
     action: z.literal('reject'),
     note: z.string().optional(),

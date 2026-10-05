@@ -18,14 +18,14 @@ export type QcOutcome =
   | { status: 'failed'; verdict: QcVerdict; costUsd: number }
   | { status: 'error'; reason: string; costUsd: number };
 
-/** Same backoff sequence as the main attempt loop's `POLL_BACKOFF_SEC`
- * (`stage-attempt-loop.ts`) — a real judge call goes through the same
- * submit/poll provider adapter as the stage's own generation call and needs
- * real round-trip time, not the ~200ms `FakeProviderAdapter` resolves on.
- * ponytail: still an inline blocking poll (~50s ceiling) rather than
- * `stage-attempt-loop.ts`'s durable per-poll steps — revisit with that same
- * step-per-poll treatment if a judge model routinely needs longer. */
+/** Backoff between judge polls (the last step repeats). A real judge goes
+ * through the same submit/poll adapter as the stage's own call and takes real
+ * time: a ChatGPT judge thinks for minutes. The adapters fail a job that
+ * outlives their own deadline, so this cap only guards a poll that never ends.
+ * ponytail: still an inline blocking poll rather than `stage-attempt-loop.ts`'s
+ * durable per-poll steps; revisit if judges routinely run this long. */
 const POLL_BACKOFF_SEC = [5, 15, 30];
+const JUDGE_DEADLINE_MS = 20 * 60_000;
 
 /**
  * §10 — runs a QC judge call against `ProviderRegistry` directly (not
@@ -90,16 +90,15 @@ export class QcRunner {
     );
 
     let status = await adapter.poll(handle);
-    // §13.3-class shortcut, same as stage-runner.service.ts's documented
-    // ExecCtx.config TODO: this polls a bounded backoff sequence inline
-    // rather than its own step-per-poll loop (see the ponytail note above).
-    for (const backoffSec of POLL_BACKOFF_SEC) {
-      if (status.done) break;
-      await sleep(backoffSec * 1000);
+    const giveUpAt = Date.now() + JUDGE_DEADLINE_MS;
+    for (let i = 0; !status.done && Date.now() < giveUpAt; i++) {
+      await sleep(POLL_BACKOFF_SEC[Math.min(i, POLL_BACKOFF_SEC.length - 1)]! * 1000);
       status = await adapter.poll(handle);
     }
 
     if (!status.done) {
+      // Don't leave the judge's page open (ChatGPT) or its job running.
+      await adapter.cancel(handle).catch(() => undefined);
       return { status: 'error', reason: 'qc judge call did not complete in time', costUsd: 0 };
     }
     if (status.outcome === 'failed') {

@@ -128,6 +128,60 @@ export class HumanActionService {
     await this.waits.resolve(tx, execution.id);
   }
 
+  /** "Retry QC": the output was parked because quality control could not
+   * run. Releases the hold and resumes the run; the stage loop then judges
+   * the stored output again (no regeneration, no attempt spent). */
+  async retryQc(runId: string, stageKey: string, itemIndex?: number) {
+    const result = await this.mutation.withLockedRun(
+      runId,
+      'retry_qc',
+      ['PAUSED_APPROVAL'],
+      async (tx, lockedRun) => {
+        if (lockedRun.cursorStageKey !== stageKey) {
+          throw new ConflictException(
+            `Approval is waiting at ${lockedRun.cursorStageKey ?? 'no stage'}`,
+          );
+        }
+        const { stage, execution } = await this.loadStageAndExecution(tx, lockedRun, stageKey);
+        const item =
+          approvalModeOf(stage) === 'item'
+            ? await this.resolveOpenItem(tx, execution.id, itemIndex)
+            : undefined;
+        const pending = await this.pendingAttempt(tx, execution.id, item?.id);
+        if (
+          !pending?.artifactId ||
+          pending.phase !== 'awaiting_approval' ||
+          pending.outcome !== 'qc_error'
+        ) {
+          throw new ConflictException('Quality control did not fail on this output');
+        }
+        await this.requireOpenWait(tx, execution.id, 'approval', item?.id);
+        // Released: the stage loop picks up the newest `qc_error` attempt that
+        // is settled and judges it again.
+        await tx
+          .update(stageAttempt)
+          .set({ phase: 'settled' })
+          .where(eq(stageAttempt.id, pending.id));
+        if (item) {
+          await tx.update(stageItem).set({ state: 'running' }).where(eq(stageItem.id, item.id));
+        } else {
+          await tx
+            .update(stageExecution)
+            .set({ state: 'running' })
+            .where(eq(stageExecution.id, execution.id));
+        }
+        await this.waits.resolve(tx, execution.id);
+      },
+      'run/resumed',
+    );
+    this.logger.log(
+      { runId, stageKey, itemIndex, wakeupId: result.wakeupId, revision: result.revision },
+      'qc retry requested',
+    );
+    await this.dispatchBestEffort(result.wakeupId);
+    return { accepted: true, revision: result.revision };
+  }
+
   /** phase 7 chunk 6 — the item-mode analogue of `approveInTransaction`'s
    * stage-mode body above: same shape (finalize, settle the attempt,
    * resolve the wait), but scoped to one `stage_item` and deliberately

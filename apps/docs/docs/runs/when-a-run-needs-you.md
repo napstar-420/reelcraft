@@ -6,12 +6,12 @@ description: Approve or reject an output, provide an input, or edit a timeline w
 Some runs stop and wait for you. Their status says so, and the stage waiting shows a button. A run
 costs nothing while it waits, and you can leave it as long as you like.
 
-| The run says        | Because                                                                                                                         | What to do                                       |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
-| **Paused Approval** | A stage with [human approval](../blueprints/iterate-conditions-approval.md#human-approval) finished                             | **Review output**                                |
-| **Paused Input**    | A [Human Input](../stage-types/human-input.md) or [Human Timeline Edit](../stage-types/human-timeline-edit.md) stage is waiting | **Provide input** or **Open editor**             |
-| **Paused Budget**   | The next step would go over a limit                                                                                             | See [Budget and costs](./budget-and-costs.md)    |
-| **Paused Quota**    | Every Flow account is out of credits ([Generate Video with Flow](../stage-types/generate-video-with-flow.md))                   | Wait: it resumes by itself, or select **Resume** |
+| The run says        | Because                                                                                                                                                                      | What to do                                       |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| **Paused Approval** | A stage with [human approval](../blueprints/iterate-conditions-approval.md#human-approval) finished, or [quality control could not run](#when-quality-control-could-not-run) | **Review output**                                |
+| **Paused Input**    | A [Human Input](../stage-types/human-input.md) or [Human Timeline Edit](../stage-types/human-timeline-edit.md) stage is waiting                                              | **Provide input** or **Open editor**             |
+| **Paused Budget**   | The next step would go over a limit                                                                                                                                          | See [Budget and costs](./budget-and-costs.md)    |
+| **Paused Quota**    | Every Flow account is out of credits ([Generate Video with Flow](../stage-types/generate-video-with-flow.md))                                                                | Wait: it resumes by itself, or select **Resume** |
 
 ![A run in Paused Input, with the Open editor button on its stage](/img/usage/run-needs-you.png)
 
@@ -23,6 +23,18 @@ costs nothing while it waits, and you can leave it as long as you like.
 3. Either:
    - select **Approve**: the run continues;
    - or select **Reject**.
+
+### When quality control could not run
+
+If the quality control judge couldn't be reached or didn't answer, the stage doesn't fail. The run pauses as
+**Paused Approval** and **Review output** opens with **Quality control could not run** and the reason. The
+output shown has not been judged. Choose:
+
+- **Retry QC**: judge the same output again. Nothing is generated again, so it costs only the judge call. If
+  QC still can't run, the run pauses again. If it rejects the output, the stage redoes it with the critique,
+  as for any QC rejection.
+- **Approve**: accept the output without a QC verdict.
+- **Reject**: redo the work, as below.
 
 ### Rejecting
 

@@ -55,6 +55,16 @@ describe('FlowVideoCapability.validate', () => {
   it('rejects an aspect ratio Flow lacks', () => {
     expect(capability.validate({ ...config, aspectRatio: '4:3' }, stage())).toHaveLength(1);
   });
+  it('accepts a list of account emails and rejects a bad or repeated one', () => {
+    expect(capability.validate({ ...config, accounts: ['a@x.com', 'b@x.com'] }, stage())).toEqual(
+      [],
+    );
+    for (const accounts of [['nope'], ['a@x.com', 'a@x.com']]) {
+      expect(capability.validate({ ...config, accounts }, stage())).toEqual([
+        expect.objectContaining({ path: 'config.accounts', severity: 'error' }),
+      ]);
+    }
+  });
   it('declares a locked system prompt and a required template', () => {
     expect(capability.requiresTemplate).toBe(true);
     expect(capability.lockedSystemPrompt).toContain('Google Flow');
@@ -75,13 +85,18 @@ function setup(fetched: unknown) {
     stageExecutionId: 'exec',
     stageKey: 'flow',
     attemptNo: 1,
-    config: { provider: 'codex', modelId: 'gpt', aspectRatio: '9:16', flowModel: 'Veo 3.1' },
+    config: {
+      provider: 'codex',
+      modelId: 'gpt',
+      aspectRatio: '9:16',
+      flowModel: 'Veo 3.1',
+      accounts: ['a@example.com', 'b@example.com'],
+    },
     slots: {
       references: [{ sourceKey: 'characters/c1/refs/a.png', characterName: 'Ava', view: 'front' }],
       ingredients: [{ sourceKey: 'assets/x/b.png', name: 'Beach background' }],
     },
     context: {},
-    layer: { flow: { accounts: ['a@example.com', 'b@example.com'] } },
     renderedPrompt: 'Make clips',
     systemPrompt: 'ignored',
     output: { kind: 'media.video_list' as const },

@@ -32,6 +32,7 @@ interface FlowVideoConfig {
   aspectRatio?: string;
   flowModel?: string;
   ingredientSlots?: number;
+  accounts?: string[];
 }
 
 interface FlowResult {
@@ -43,6 +44,7 @@ interface FlowResult {
 }
 
 const ASPECT_RATIOS = ['16:9', '9:16'];
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const DEFAULT_INGREDIENT_SLOTS = 1;
 const MAX_INGREDIENT_SLOTS = 8;
 
@@ -83,6 +85,12 @@ export class FlowVideoCapability implements CapabilityImpl<FlowVideoConfig> {
     properties: {
       aspectRatio: { type: 'string', enum: ASPECT_RATIOS },
       flowModel: { type: 'string', enum: [...FLOW_MODELS] },
+      accounts: {
+        type: 'array',
+        items: { type: 'string' },
+        description:
+          'Google accounts (emails) signed in to BrowserOS Neo, in order of use: the next is used when one runs out of credits',
+      },
       ingredientSlots: {
         type: 'integer',
         minimum: 0,
@@ -153,6 +161,20 @@ export class FlowVideoCapability implements CapabilityImpl<FlowVideoConfig> {
       issues.push({
         path: 'config.ingredientSlots',
         message: `Ingredient inputs must be 0 to ${MAX_INGREDIENT_SLOTS}`,
+        severity: 'error',
+      });
+    }
+    const badAccount = config.accounts?.find((a) => !EMAIL.test(a));
+    if (
+      badAccount !== undefined ||
+      (config.accounts && new Set(config.accounts).size < config.accounts.length)
+    ) {
+      issues.push({
+        path: 'config.accounts',
+        message:
+          badAccount !== undefined
+            ? `"${badAccount}" is not an email address`
+            : 'Each Google account can be listed once',
         severity: 'error',
       });
     }
@@ -249,7 +271,7 @@ export class FlowVideoCapability implements CapabilityImpl<FlowVideoConfig> {
       system: buildFlowSystemPrompt({
         aspectRatio: ctx.config.aspectRatio ?? ctx.layer?.format?.aspectRatio ?? undefined,
         flowModel: ctx.config.flowModel,
-        accounts: ctx.layer?.flow?.accounts ?? [],
+        accounts: ctx.config.accounts ?? [],
         references,
       }),
       output: { kind: 'data' as const, schema: FLOW_RESULT_SCHEMA },

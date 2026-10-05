@@ -65,12 +65,5 @@ export const ConfigLayer = z.object({
       maxWaitSec: z.number().nullish(),
     })
     .nullish(),
-  /** Google accounts (emails) signed in to BrowserOS Neo that Flow stages
-   * may use, in order; the next one is used when one runs out of credits. */
-  flow: z
-    .object({
-      accounts: z.array(z.string().email()).nullish(),
-    })
-    .nullish(),
 });
 export type ConfigLayer = z.infer<typeof ConfigLayer>;

@@ -113,8 +113,10 @@ exhausted**). See [Budget and costs](../runs/budget-and-costs.md).
 ## When the judge itself fails
 
 If the judge can't produce a score, for example because it timed out or answered with something
-unreadable, Reelcraft asks it again a couple of times. If it still fails, the stage fails and says
-that quality control couldn't run. Re-prompting the stage wouldn't help, so it doesn't.
+unreadable, Reelcraft asks it again a couple of times. If it still fails, the stage doesn't fail and
+isn't generated again. The run pauses as **Paused Approval** with the output waiting, and you can
+**Retry QC** once the judge is back, **Approve** the output as it is, or **Reject** it. See
+[Review output](../runs/when-a-run-needs-you.md#when-quality-control-could-not-run).
 
 ## A good setup
 

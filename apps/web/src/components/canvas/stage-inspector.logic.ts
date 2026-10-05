@@ -177,6 +177,7 @@ export function inferSchemaFromValue(value: unknown): JsonSchema {
  * Config form. The slots are `ingredients`, `ingredients2`, `ingredients3`… */
 export const FLOW_CAPABILITY = 'browser.flow_video';
 const INGREDIENT_COUNT_KEY = 'ingredientSlots';
+const ACCOUNTS_KEY = 'accounts';
 const DEFAULT_INGREDIENTS = 1;
 export const MAX_INGREDIENTS = 8;
 
@@ -202,10 +203,41 @@ export function withIngredientCount(stage: StageDef, count: number): StageDef {
   return { ...stage, config: { ...stage.config, [INGREDIENT_COUNT_KEY]: next }, slots };
 }
 
+/** The Google accounts a Flow stage uses, in order of use. They are picked
+ * from the accounts signed in to BrowserOS Neo, not typed, so they stay out
+ * of the Config form too. An empty list clears the setting. */
+export function flowAccounts(config: Record<string, unknown>): string[] {
+  const accounts = config[ACCOUNTS_KEY];
+  return Array.isArray(accounts) ? accounts.filter((a): a is string => typeof a === 'string') : [];
+}
+
+export function withFlowAccounts(stage: StageDef, accounts: string[]): StageDef {
+  const rest = { ...stage.config };
+  delete rest[ACCOUNTS_KEY];
+  return { ...stage, config: accounts.length ? { ...rest, [ACCOUNTS_KEY]: accounts } : rest };
+}
+
+/** Adds `email` at the end of the list, or removes it when already listed. */
+export function toggleAccount(accounts: string[], email: string): string[] {
+  return accounts.includes(email) ? accounts.filter((a) => a !== email) : [...accounts, email];
+}
+
+export type FlowAccountChoice = { email: string; name: string; signedIn: boolean };
+
+/** Accounts matching a search box (by email or name), case-insensitively. */
+export function filterAccounts(accounts: FlowAccountChoice[], query: string): FlowAccountChoice[] {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return accounts;
+  return accounts.filter(
+    (a) => a.email.toLowerCase().includes(needle) || a.name.toLowerCase().includes(needle),
+  );
+}
+
 /** The config schema as the Config form should show it. */
 export function visibleConfigSchema(capability: string, schema: JsonSchema): JsonSchema {
   if (capability !== FLOW_CAPABILITY || !schema.properties) return schema;
   const properties = { ...schema.properties };
   delete properties[INGREDIENT_COUNT_KEY];
+  delete properties[ACCOUNTS_KEY];
   return { ...schema, properties };
 }
