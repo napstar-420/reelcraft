@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.0](https://github.com/napstar-420/reelcraft/compare/v0.3.0...v0.4.0) (2026-10-05)
+
+
+### Features
+
+* Generate Video with Flow stage ([#64](https://github.com/napstar-420/reelcraft/issues/64)) ([d55607e](https://github.com/napstar-420/reelcraft/commit/d55607edb33ccb15a7cc6cb26a8af858aa29f89e))
+
+
+### Bug Fixes
+
+* stop stages failing on provider waits; pause for review when QC can't run ([#66](https://github.com/napstar-420/reelcraft/issues/66)) ([1348b15](https://github.com/napstar-420/reelcraft/commit/1348b151bc3e1edadc41cfea1eb3e7566fb8f533))
+
 ## [0.3.0](https://github.com/napstar-420/reelcraft/compare/v0.2.0...v0.3.0) (2026-10-03)
 
 
