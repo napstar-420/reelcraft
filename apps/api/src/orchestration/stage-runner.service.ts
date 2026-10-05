@@ -489,7 +489,7 @@ export class StageRunnerService {
       stageKey: ctx.stageKey,
       attemptNo: ctx.attemptNo,
       itemIndex: ctx.itemIndex,
-      layer: { flow: effective.layer.flow, format: effective.layer.format },
+      layer: { format: effective.layer.format },
       // §7.2 TODO: this should be a ProviderClient scoped to the effective
       // model pin, not raw config on ctx.config — carried over from phase 1
       // as a deliberate shortcut; changing it is a capability-contract

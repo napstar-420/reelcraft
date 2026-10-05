@@ -11,7 +11,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
-import { filterAccounts, toggleAccount } from './defaults-editor.logic';
+import { filterAccounts, toggleAccount } from './stage-inspector.logic';
 
 /** Picks the Google accounts Flow stages use, from the ones signed in to
  * BrowserOS Neo. The order picked is the order they are used in. */

@@ -103,7 +103,7 @@ describe('Generate Video with Flow (e2e)', () => {
     const channel = await testApp.app.get(ChannelService).create('local', {
       name: `Flow Channel ${Date.now()}-${Math.random()}`,
       theme: {},
-      defaults: { flow: { accounts: ['a@example.com', 'b@example.com'] } },
+      defaults: {},
     });
     const blueprints = testApp.app.get(BlueprintService);
     const blueprintId = await blueprints.ensureBlueprint(channel.id, 'Flow Blueprint');

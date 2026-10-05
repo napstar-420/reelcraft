@@ -35,7 +35,7 @@ export interface ExecCtx<Cfg> {
   idempotencyKey: string;
   /** The merged run config layer, for capabilities that read shared
    * defaults (e.g. the Flow stage's account list). */
-  layer?: Pick<ConfigLayer, 'flow' | 'format'> | undefined;
+  layer?: Pick<ConfigLayer, 'format'> | undefined;
   logger: { log: (msg: string) => void; error: (msg: string, err?: unknown) => void };
   resources?: Record<
     string,

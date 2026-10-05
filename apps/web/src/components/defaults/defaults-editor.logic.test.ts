@@ -1,16 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
-  filterAccounts,
   inheritedDefaults,
   isResolution,
   parseAmount,
   parseWhole,
-  setFlowAccounts,
   setFormat,
   setKindModel,
   setRetryLimit,
   setStageCap,
-  toggleAccount,
 } from './defaults-editor.logic';
 
 describe('defaults editor', () => {
@@ -56,31 +53,5 @@ describe('defaults editor', () => {
         { retryLimit: 3, models: { text: image } },
       ),
     ).toEqual({ retryLimit: 3, stageCapUsd: 2, models: { text: image, image } });
-  });
-});
-
-describe('Flow accounts', () => {
-  it('sets the list in order and clears the whole group when empty', () => {
-    expect(setFlowAccounts({ retryLimit: 1 }, ['a@x.com', 'b@x.com'])).toEqual({
-      retryLimit: 1,
-      flow: { accounts: ['a@x.com', 'b@x.com'] },
-    });
-    expect(setFlowAccounts({ flow: { accounts: ['a@x.com'] } }, [])).toEqual({});
-  });
-
-  it('adds an account at the end and removes it when toggled again', () => {
-    expect(toggleAccount(['a@x.com'], 'b@x.com')).toEqual(['a@x.com', 'b@x.com']);
-    expect(toggleAccount(['a@x.com', 'b@x.com'], 'a@x.com')).toEqual(['b@x.com']);
-  });
-
-  it('filters the choices by email or name', () => {
-    const choices = [
-      { email: 'ava@gmail.com', name: 'Ava Stone', signedIn: true },
-      { email: 'ben@work.io', name: 'Ben', signedIn: true },
-    ];
-    expect(filterAccounts(choices, '')).toHaveLength(2);
-    expect(filterAccounts(choices, ' WORK ')).toEqual([choices[1]]);
-    expect(filterAccounts(choices, 'stone')).toEqual([choices[0]]);
-    expect(filterAccounts(choices, 'zzz')).toEqual([]);
   });
 });

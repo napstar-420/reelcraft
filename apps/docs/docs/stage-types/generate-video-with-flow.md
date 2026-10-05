@@ -86,9 +86,10 @@ missing. Clips already made are kept, so a retry only makes the rest.
 Flow charges credits for each clip, and an account can run out partway through.
 
 1. Sign in to each Google account in BrowserOS Neo.
-2. Open the blueprint's **Defaults** card (or the channel's) and, under **Flow accounts**, choose
-   **Choose accounts**. The list shows the accounts signed in to Neo; search it and tick the ones to
-   use. The order you tick them is the order they're used in.
+2. Select the stage, and under **Config** find **Flow accounts**. Choose **Choose accounts**. The
+   list shows the accounts signed in to Neo; search it and tick the ones to use. The order you tick
+   them is the order they're used in. The list belongs to this stage, so another Flow stage can use
+   different accounts.
 3. When an account runs out of credits, the stage switches to the next one and carries on.
 4. When **every** account is out, the run pauses as **Paused Quota**. It resumes by itself when the
    credits come back, using the time Flow shows (or in 6 hours if Flow doesn't say), and carries on

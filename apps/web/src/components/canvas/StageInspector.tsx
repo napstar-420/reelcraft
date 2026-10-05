@@ -6,6 +6,7 @@ import { BindingPicker } from './BindingPicker';
 import { CapabilityPicker } from './CapabilityPicker';
 import { OutputSchemaField } from './OutputSchemaEditor';
 import { SchemaForm } from './SchemaForm';
+import { FlowAccountsPicker } from './FlowAccountsPicker';
 import { ChecksEditor } from './ChecksEditor';
 import { InfoHeading, InfoLabel } from './info-label';
 import { ModelPinEditor } from './ModelPinEditor';
@@ -22,6 +23,8 @@ import {
   ingredientCount,
   ingredientSlotName,
   visibleConfigSchema,
+  flowAccounts,
+  withFlowAccounts,
   withIngredientCount,
 } from './stage-inspector.logic';
 import { parseValidationPath, type ParsedValidationPath } from '../../lib/parse-validation-path';
@@ -1183,6 +1186,17 @@ export function StageInspector({
                     onChange({ ...stage, config: (next as Record<string, unknown>) ?? {} })
                   }
                 />
+                {stage.capability === FLOW_CAPABILITY && (
+                  <div className="flex flex-col gap-1.5">
+                    <InfoLabel info="The Google accounts this stage uses, in this order: when one runs out of credits the next is used, and when all do the run pauses until they reset. Pick from the accounts signed in to BrowserOS Neo. With none picked, Flow uses whichever account it is signed in with.">
+                      Flow accounts
+                    </InfoLabel>
+                    <FlowAccountsPicker
+                      value={flowAccounts(stage.config)}
+                      onChange={(accounts) => onChange(withFlowAccounts(stage, accounts))}
+                    />
+                  </div>
+                )}
                 <IssueList issues={configIssues} />
               </div>
             )}
