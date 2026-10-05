@@ -207,7 +207,7 @@ describe('runStageAttemptLoop replays', () => {
     const DEADLINE = 15 * 60_000;
 
     let attempts = 0;
-    let polls: Record<string, number> = {};
+    const polls: Record<string, number> = {};
     const runner = {
       beginAttempt: vi.fn(async () => ({ attemptNo: ++attempts })),
       countRoundAttempts: vi.fn().mockResolvedValue(0),

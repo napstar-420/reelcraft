@@ -20,8 +20,10 @@ const POLL_BACKOFF_SEC = [5, 15, 30];
  * `polling.maxWaitSec` as long as that provider-declared deadline hasn't
  * passed — it's demonstrably still alive and within its own real budget,
  * not hung. Providers that never set `deadlineMs` get exactly today's
- * behavior: only `maxWaitSec` bounds them. */
+ * behavior: only `maxWaitSec` bounds them. Reads the clock, so call it only
+ * inside a `step.run` (see the lint rule for this directory). */
 export function withinProviderDeadline(status: JobStatus): boolean {
+  // eslint-disable-next-line no-restricted-syntax -- only ever called inside a step.run
   return !status.done && status.deadlineMs !== undefined && Date.now() < status.deadlineMs;
 }
 
