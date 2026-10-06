@@ -10,3 +10,4 @@ export * from './check.dto';
 export * from './system.dto';
 export * from './update.dto';
 export * from './settings.dto';
+export * from './package.dto';
