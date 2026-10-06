@@ -32,6 +32,12 @@ describe('assistant instructions', () => {
     }
   });
 
+  it('state the hard limits up front, not only in the guide', () => {
+    for (const phrase of ['parallel', 'enabledWhen', 'publish', 'Characters']) {
+      expect(text).toContain(phrase);
+    }
+  });
+
   it('tell the model to look things up and admit what Reelcraft cannot do', () => {
     expect(text).toContain('Never guess');
     expect(text).toContain('limits');
