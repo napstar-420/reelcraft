@@ -245,8 +245,7 @@ export function useAssistant({
       await replaceDraft(next);
       await record(proposal);
       toast.success('The assistant changed the blueprint.', {
-        description: payload.summary,
-        duration: 12_000,
+        duration: 5_000,
         action: before
           ? {
               label: 'Undo',
@@ -265,8 +264,7 @@ export function useAssistant({
       void queryClient.invalidateQueries({ queryKey: ['blueprint', blueprintId] });
       void queryClient.invalidateQueries({ queryKey: ['blueprints'] });
       toast.success('The assistant changed the blueprint details.', {
-        description: payload.summary,
-        duration: 12_000,
+        duration: 5_000,
         action: {
           label: 'Undo',
           onClick: () =>
