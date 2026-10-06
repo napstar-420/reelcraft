@@ -211,7 +211,7 @@ describe('package export → import (e2e)', () => {
   it('blocks a package that was changed after it was signed', async () => {
     const files = unzipSync(await exportZip());
     const mediaPath = Object.keys(files).find((p) => p.startsWith('media/'))!;
-    files[mediaPath] = pngBytes('swapped');
+    files[mediaPath] = new Uint8Array(pngBytes('swapped'));
     const key = await upload(zipSync(files));
     const { report, opened } = await inspector.inspect('local', key, target);
     expect(opened).toBeNull();
