@@ -1,9 +1,9 @@
-import {
-  formatFingerprint,
-  type InstallPackageDto,
-  type PackageInspectReportDto,
-  type PackageSignerDto,
-  type PackageSlot,
+import { formatFingerprint } from '../../lib/format-fingerprint';
+import type {
+  InstallPackageDto,
+  PackageInspectReportDto,
+  PackageSignerDto,
+  PackageSlot,
 } from '@reelcraft/shared';
 
 /** What the importer picked for a slot: the package's own media (`bundled`),

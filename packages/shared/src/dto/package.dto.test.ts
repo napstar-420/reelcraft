@@ -1,11 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  formatFingerprint,
-  PackageManifest,
-  PackagePipeline,
-  slotKeyOf,
-  slotRef,
-} from './package.dto';
+import { PackageManifest, PackagePipeline, slotKeyOf, slotRef } from './package.dto';
 
 const sha = 'a'.repeat(64);
 const manifest = {
@@ -46,13 +40,9 @@ describe('PackagePipeline', () => {
   });
 });
 
-describe('slots and fingerprints', () => {
+describe('slots', () => {
   it('round-trips a slot placeholder', () => {
     expect(slotKeyOf(slotRef('host'))).toBe('host');
     expect(slotKeyOf('01HABC')).toBeNull();
-  });
-
-  it('groups a fingerprint in fours', () => {
-    expect(formatFingerprint('ab12cd34ef56ab78')).toBe('ab12 cd34 ef56 ab78');
   });
 });
