@@ -1,19 +1,16 @@
-import { useState } from 'react';
 import { ChevronDown, CircleCheck, Lock, RotateCcw, Save } from 'lucide-react';
-import type { BlueprintVersionDto, StageDef, VersionBump } from '@reelcraft/shared';
+import type { BlueprintVersionDto, VersionBump } from '@reelcraft/shared';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { formatBlueprintVersion } from '@/lib/format-blueprint-version';
 import { VersionHistory } from './version-history';
-import { SaveTemplateDialog } from './save-template-dialog';
 
 type Version = { major: number; minor: number };
 
@@ -23,7 +20,6 @@ type Version = { major: number; minor: number };
 export function CanvasToolbar({
   blueprintName,
   channelName,
-  graph,
   latestSaved,
   versions,
   viewing,
@@ -40,7 +36,6 @@ export function CanvasToolbar({
 }: {
   blueprintName: string | undefined;
   channelName: string | undefined;
-  graph: StageDef[];
   latestSaved: (Version & { id: string }) | null;
   versions: BlueprintVersionDto[];
   /** An older saved version open read-only, or null on the working canvas. */
@@ -58,7 +53,6 @@ export function CanvasToolbar({
   /** Why Run is off, shown on hover; null when it is on. */
   runBlockedReason: string | null;
 }) {
-  const [templateOpen, setTemplateOpen] = useState(false);
   const readOnly = viewing !== null;
   const nextMajor = latestSaved
     ? formatBlueprintVersion({ major: latestSaved.major + 1, minor: 0 })
@@ -176,15 +170,6 @@ export function CanvasToolbar({
                     </span>
                   </DropdownMenuItem>
                 )}
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onSelect={() => setTemplateOpen(true)}>
-                  <span className="flex flex-col">
-                    Save as template…
-                    <span className="text-xs text-muted-foreground">
-                      Reuse this graph in other channels
-                    </span>
-                  </span>
-                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
@@ -193,7 +178,6 @@ export function CanvasToolbar({
           <span title={runBlockedReason ?? 'Run the latest saved version'}>{runButton}</span>
         )}
       </div>
-      <SaveTemplateDialog graph={graph} open={templateOpen} onOpenChange={setTemplateOpen} />
     </div>
   );
 }

@@ -39,7 +39,6 @@ export const blueprintVersion = pgTable(
     budget: jsonb('budget').notNull(), // { runCapUsd }: spending limit for runs of this version
     validation: jsonb('validation').notNull(), // validation rules/results applied to this version's graph
     runnable: boolean('runnable').notNull().default(false), // whether this version has passed validation and can be run
-    sourceTemplateId: text('source_template_id'), // template this version was generated from, if any
     createdAt: timestamptz('created_at').notNull().defaultNow(), // when this version was created
     draft: boolean('draft').notNull().default(false), // canvas run snapshot of unsaved edits: not in version history, never current; major/minor = the saved version it was edited from
   },

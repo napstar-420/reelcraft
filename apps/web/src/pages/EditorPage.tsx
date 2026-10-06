@@ -2,9 +2,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../api/client';
 import { CapabilityConfigForm } from '../components/CapabilityConfigForm';
-import { SchemaEditor } from '../components/SchemaEditor';
 import { CheckTesterPage } from '../components/CheckTesterPage';
-import { TemplateLibraryPanel } from '../components/TemplateLibraryPanel';
 import { DryRunTrigger } from '../components/DryRunTrigger';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import {
@@ -16,8 +14,8 @@ import {
 } from '@/components/ui/select';
 
 /** Shared home for Phase 9's editor panels — Chunk 6 adds the capability
- * config form and schema editor; Chunk 7 extends this same page with the
- * check tester, template library, and dry-run trigger rather than standing
+ * config form; Chunk 7 extends this same page with the
+ * check tester, and dry-run trigger rather than standing
  * up a competing page. No visual graph canvas (Locked Decision 3) — the
  * blueprint graph itself stays JSON-authored. */
 export function EditorPage() {
@@ -33,9 +31,7 @@ export function EditorPage() {
       <Tabs defaultValue="capability-config">
         <TabsList>
           <TabsTrigger value="capability-config">Capability Config</TabsTrigger>
-          <TabsTrigger value="schema-editor">Schema Editor</TabsTrigger>
           <TabsTrigger value="check-tester">Check Tester</TabsTrigger>
-          <TabsTrigger value="template-library">Template Library</TabsTrigger>
           <TabsTrigger value="dry-run">Dry Run</TabsTrigger>
         </TabsList>
 
@@ -55,16 +51,8 @@ export function EditorPage() {
           {selectedKey && <CapabilityConfigForm capabilityKey={selectedKey} />}
         </TabsContent>
 
-        <TabsContent value="schema-editor">
-          <SchemaEditor />
-        </TabsContent>
-
         <TabsContent value="check-tester">
           <CheckTesterPage />
-        </TabsContent>
-
-        <TabsContent value="template-library">
-          <TemplateLibraryPanel />
         </TabsContent>
 
         <TabsContent value="dry-run">

@@ -9,10 +9,9 @@ import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 
 /** Drives `POST /blueprints/:id/versions/:v/dry-run` from a plain
- * blueprintId/version pair the user already knows (e.g. from a
- * `TemplateLibraryPanel` blueprint-kind instantiate) — there is no
+ * blueprintId/version pair the user already knows — there is no
  * "list blueprints" endpoint to build a picker from. On success, navigates
- * to `/runs/:id` exactly like `BlueprintsPage.tsx`'s `instantiateAndRun`, so
+ * to `/runs/:id` so
  * the existing `RunPage` SSE/polling view takes over. */
 export function DryRunTrigger() {
   const navigate = useNavigate();

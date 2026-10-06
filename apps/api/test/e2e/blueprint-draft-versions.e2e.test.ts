@@ -60,10 +60,10 @@ describe('blueprint draft versions (e2e)', () => {
     await blueprints.createVersion(blueprintId, content('v1.0'));
     const v11 = await blueprints.createVersion(blueprintId, content('v1.1'));
 
-    const draftA = await blueprints.createVersion(blueprintId, content('edit a'), undefined, {
+    const draftA = await blueprints.createVersion(blueprintId, content('edit a'), {
       draft: true,
     });
-    const draftB = await blueprints.createVersion(blueprintId, content('edit b'), undefined, {
+    const draftB = await blueprints.createVersion(blueprintId, content('edit b'), {
       draft: true,
     });
     expect(draftA).toMatchObject({ major: 1, minor: 1, draft: true });
@@ -86,18 +86,18 @@ describe('blueprint draft versions (e2e)', () => {
 
   it('save bumps minor, "Bump version" bumps major and resets minor', async () => {
     const { blueprintId, blueprints } = await setup();
-    const first = await blueprints.createVersion(blueprintId, content('a'), undefined, {
+    const first = await blueprints.createVersion(blueprintId, content('a'), {
       bump: 'major',
     });
     expect(first).toMatchObject({ major: 1, minor: 0 });
     await blueprints.createVersion(blueprintId, content('b'));
-    const v2 = await blueprints.createVersion(blueprintId, content('c'), undefined, {
+    const v2 = await blueprints.createVersion(blueprintId, content('c'), {
       bump: 'major',
     });
     expect(v2).toMatchObject({ major: 2, minor: 0 });
     const v21 = await blueprints.createVersion(blueprintId, content('d'));
     expect(v21).toMatchObject({ major: 2, minor: 1 });
-    const draft = await blueprints.createVersion(blueprintId, content('e'), undefined, {
+    const draft = await blueprints.createVersion(blueprintId, content('e'), {
       draft: true,
       bump: 'major',
     });
@@ -115,7 +115,7 @@ describe('blueprint draft versions (e2e)', () => {
     await blueprints.setWorkingDraft(blueprintId, working);
     expect((await blueprints.getBlueprint(blueprintId)).workingDraft).toEqual(working);
 
-    await blueprints.createVersion(blueprintId, content('unsaved edit'), undefined, {
+    await blueprints.createVersion(blueprintId, content('unsaved edit'), {
       draft: true,
     });
     expect((await blueprints.getBlueprint(blueprintId)).workingDraft).toEqual(working);
@@ -128,7 +128,7 @@ describe('blueprint draft versions (e2e)', () => {
     const { blueprintId, blueprints } = await setup();
     const runs = testApp.app.get(RunService);
     const v1 = await blueprints.createVersion(blueprintId, content('v1'));
-    await blueprints.createVersion(blueprintId, content('edit'), undefined, { draft: true });
+    await blueprints.createVersion(blueprintId, content('edit'), { draft: true });
 
     const dryRun = await runs.startDryRun(blueprintId, { major: 1, minor: 0 });
     expect(dryRun.blueprintVersionId).toBe(v1.id);
@@ -138,7 +138,7 @@ describe('blueprint draft versions (e2e)', () => {
     const { channelId, blueprintId, blueprints } = await setup();
     const runs = testApp.app.get(RunService);
     const saved = await blueprints.createVersion(blueprintId, content('v1'));
-    const snapshot = await blueprints.createVersion(blueprintId, content('edit'), undefined, {
+    const snapshot = await blueprints.createVersion(blueprintId, content('edit'), {
       draft: true,
     });
 

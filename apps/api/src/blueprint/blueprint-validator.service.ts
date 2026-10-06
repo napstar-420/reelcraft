@@ -193,9 +193,8 @@ export class BlueprintValidatorService {
   }
 
   /** §16.2 / Chunk 4 — the context-free half of per-check validation (unknown
-   * builtin key, bad params, script-compiles). Public so `TemplateService`
-   * can validate a `check`-kind template body with no graph/ctx of its own;
-   * the ref-resolution half stays inline in `validateStage`, since it needs
+   * builtin key, bad params, script-compiles). The
+   * ref-resolution half stays inline in `validateStage`, since it needs
    * `ctx`/`stageIndex`. */
   validateCheckDef(check: CheckDef, checkBase: string): ValidationIssue[] {
     const issues: ValidationIssue[] = [];

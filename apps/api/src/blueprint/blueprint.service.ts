@@ -56,7 +56,7 @@ export class BlueprintService {
   /** `POST /blueprints`: a new blueprint, refusing a name already used in the
    * channel (409 `blueprint_name_taken`, with the existing id so the UI can
    * offer to open it). `ensureBlueprint` keeps its idempotent behaviour for
-   * template instantiation and tests. */
+   * tests. */
   async createBlueprint(
     channelId: string,
     name: string,
@@ -228,7 +228,6 @@ export class BlueprintService {
   async createVersion(
     blueprintId: string,
     dto: CreateBlueprintVersionDto,
-    sourceTemplateId?: string,
     { draft = false, bump = 'minor' }: { draft?: boolean; bump?: VersionBump } = {},
   ) {
     const { issues, runnable } = await this.computeValidation(blueprintId, dto);
@@ -260,7 +259,6 @@ export class BlueprintService {
         budget: dto.budget,
         validation: issues,
         runnable,
-        sourceTemplateId,
         draft,
       });
       if (draft) return;
@@ -281,7 +279,6 @@ export class BlueprintService {
         runnable,
         issues: issues.length,
         stages: dto.graph.length,
-        sourceTemplateId,
       },
       'blueprint version created',
     );

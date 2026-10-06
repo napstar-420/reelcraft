@@ -10,7 +10,6 @@ export * from './artifact';
 export * from './blob';
 export * from './memory';
 export * from './ledger';
-export * from './template';
 export * from './provider-job';
 export * from './stage-event';
 export * from './app-setting';
