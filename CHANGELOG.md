@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.5.0](https://github.com/napstar-420/reelcraft/compare/v0.4.1...v0.5.0) (2026-10-06)
+
+
+### ⚠ BREAKING CHANGES
+
+* remove template system ([#74](https://github.com/napstar-420/reelcraft/issues/74))
+
+### refactor
+
+* remove template system ([#74](https://github.com/napstar-420/reelcraft/issues/74)) ([4c16428](https://github.com/napstar-420/reelcraft/commit/4c164287b81799930547e65b390dc785906edb7e))
+
+
+### Features
+
+* blueprint package format and signing identity ([#75](https://github.com/napstar-420/reelcraft/issues/75)) ([2a644fa](https://github.com/napstar-420/reelcraft/commit/2a644fa1497d6060ca3aced6e50aba133d33d186))
+* export blueprint versions as signed packages ([#76](https://github.com/napstar-420/reelcraft/issues/76)) ([37078de](https://github.com/napstar-420/reelcraft/commit/37078de50aa9e3cf5f0418f0b352bbbf1bda53f1))
+* import blueprint packages ([#77](https://github.com/napstar-420/reelcraft/issues/77)) ([950f54c](https://github.com/napstar-420/reelcraft/commit/950f54c10cdb157d0873212dd0fa7270dc108ee2))
+* **web:** update blueprint input schema to match output schema design ([#72](https://github.com/napstar-420/reelcraft/issues/72)) ([2274a1e](https://github.com/napstar-420/reelcraft/commit/2274a1ebd4420a0d0f801c05c40a90b73698db16))
+
 ## [0.4.1](https://github.com/napstar-420/reelcraft/compare/v0.4.0...v0.4.1) (2026-10-05)
 
 
