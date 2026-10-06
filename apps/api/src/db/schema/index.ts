@@ -15,3 +15,4 @@ export * from './stage-event';
 export * from './app-setting';
 export * from './storage-orphan';
 export * from './package-trusted-author';
+export * from './package-import';

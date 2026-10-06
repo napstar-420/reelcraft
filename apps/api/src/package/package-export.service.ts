@@ -26,6 +26,7 @@ import { EngineConfig } from '../config/engine-config';
 import { STORAGE_ADAPTER, type StorageAdapter } from '../storage/storage.adapter';
 import { IdentityService } from './identity.service';
 import { findPrivacyFlags } from './package-privacy';
+import { requiresOf } from './package-requires';
 import { sha256Hex } from './package-signing';
 
 /** Bigger files can't be bundled: the package is built in memory.
@@ -143,6 +144,7 @@ export class PackageExportService {
           key: ref.slotKey,
           label: ref.name,
           required: ref.required,
+          referenceCount: Math.max(1, chosen?.length ?? ref.files.length),
           bundled: paths
             ? {
                 name: ref.name,
@@ -371,20 +373,4 @@ function slug(name: string): string {
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-|-$/g, '') || 'blueprint'
   );
-}
-
-/** Capabilities and providers the pipeline uses, for the manifest. */
-function requiresOf(
-  graph: PackagePipeline['graph'],
-  defaults: PackagePipeline['defaults'],
-): PackageManifest['requires'] {
-  const capabilities = new Set<string>();
-  const providers = new Set<string>();
-  for (const stage of graph) {
-    capabilities.add(stage.capability);
-    if (stage.model?.provider) providers.add(stage.model.provider);
-    if (stage.qc?.model.provider) providers.add(stage.qc.model.provider);
-  }
-  if (defaults.model?.provider) providers.add(defaults.model.provider);
-  return { capabilities: [...capabilities].sort(), providers: [...providers].sort() };
 }

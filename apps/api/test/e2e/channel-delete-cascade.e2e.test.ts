@@ -3,6 +3,7 @@ import { InngestTestEngine } from '@inngest/test';
 import { eq, inArray } from 'drizzle-orm';
 import { ConflictException } from '@nestjs/common';
 import type { StageDef } from '@reelcraft/shared';
+import { ulid } from '../../src/common/ulid';
 import { ChannelService } from '../../src/channel/channel.service';
 import { BlueprintService } from '../../src/blueprint/blueprint.service';
 import { CharacterService } from '../../src/channel/character.service';
@@ -16,6 +17,7 @@ import {
   blob,
   blueprint,
   blueprintVersion,
+  packageImport,
   character,
   ledgerEntry,
   run,
@@ -141,6 +143,14 @@ describe('channel delete cascade (e2e)', () => {
       defaults: {},
       budget: { runCapUsd: 10 },
     });
+    await testDb.db.insert(packageImport).values({
+      id: ulid(),
+      blueprintId,
+      blueprintVersionId: version.id,
+      packageId: 'pkg-cascade',
+      packageVersion: '1.0',
+      contentHash: 'hash',
+    });
 
     // An open (created, not finished) run blocks the delete.
     const open = await runs.create({
@@ -176,6 +186,12 @@ describe('channel delete cascade (e2e)', () => {
     await blueprints.delete(blueprintId);
 
     await expect(blueprints.getBlueprint(blueprintId)).rejects.toThrow(/not found/);
+    expect(
+      await testDb.db
+        .select()
+        .from(packageImport)
+        .where(eq(packageImport.blueprintId, blueprintId)),
+    ).toHaveLength(0);
     expect(
       await testDb.db
         .select()
@@ -224,6 +240,14 @@ describe('channel delete cascade (e2e)', () => {
       budget: { runCapUsd: 10 },
     });
     expect(version.runnable).toBe(true);
+    await testDb.db.insert(packageImport).values({
+      id: ulid(),
+      blueprintId,
+      blueprintVersionId: version.id,
+      packageId: 'pkg-cascade',
+      packageVersion: '1.0',
+      contentHash: 'hash',
+    });
 
     const createdCharacter = await characters.create(channel.id, {
       name: 'Cascade Character',
@@ -312,6 +336,12 @@ describe('channel delete cascade (e2e)', () => {
       .from(blueprintVersion)
       .where(eq(blueprintVersion.blueprintId, blueprintId));
     expect(versionsAfter).toHaveLength(0);
+    expect(
+      await testDb.db
+        .select()
+        .from(packageImport)
+        .where(eq(packageImport.blueprintId, blueprintId)),
+    ).toHaveLength(0);
     const [runRowAfter] = await testDb.db.select().from(run).where(eq(run.id, dryRun.id));
     expect(runRowAfter).toBeUndefined();
     const executionsAfter = await testDb.db

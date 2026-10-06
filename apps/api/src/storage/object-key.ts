@@ -29,6 +29,11 @@ export const objectKey = {
   characterRef: (ownerId: string, characterId: string, blobId: string): string =>
     `${ownerId}/characters/${characterId}/refs/${blobId}.png`,
 
+  /** A `.reelpack` the browser uploaded for import; queued for cleanup once
+   * the import ends. */
+  packageUpload: (ownerId: string, uploadId: string): string =>
+    `${ownerId}/package-uploads/${uploadId}.reelpack`,
+
   /** §14.4 — ffmpeg-extracted `firstFrame`/`lastFrame` PNGs, cached on the
    * source artifact's `derived` column and stored as their own `blob` row
    * (`scope: 'run'`) so they're collected by the normal run-scoped GC sweep. */

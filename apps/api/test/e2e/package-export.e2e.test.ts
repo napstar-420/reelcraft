@@ -1,145 +1,27 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { unzipSync } from 'fflate';
-import { PackageManifest, PackagePipeline, type StageDef } from '@reelcraft/shared';
+import { PackageManifest, PackagePipeline } from '@reelcraft/shared';
 import { ulid } from '../../src/common/ulid';
-import {
-  asset,
-  blob,
-  blueprint,
-  blueprintVersion,
-  channel,
-  character,
-} from '../../src/db/schema/index';
+import { asset, blueprint, blueprintVersion } from '../../src/db/schema/index';
 import { PackageExportService } from '../../src/package/package-export.service';
 import { sha256Hex, verifyBytes } from '../../src/package/package-signing';
 import { STORAGE_ADAPTER, type StorageAdapter } from '../../src/storage/storage.adapter';
 import { buildTestApp, type TestApp } from '../support/build-app';
+import { seedSource, type SourceIds } from '../support/package-fixture';
 import { createTestDb, type TestDb } from '../support/test-db';
-
-const PNG = Buffer.from('89504e470d0a1a0a-asset-bytes', 'utf8');
-const REF_A = Buffer.from('reference-a', 'utf8');
-const REF_B = Buffer.from('reference-b', 'utf8');
 
 describe('package export (e2e)', () => {
   let testDb: TestDb;
   let testApp: TestApp;
   let exporter: PackageExportService;
-  let storage: StorageAdapter;
-  let ids: {
-    channelId: string;
-    assetId: string;
-    characterId: string;
-    blueprintId: string;
-    versionId: string;
-    refA: string;
-    refB: string;
-  };
-
-  async function seedBlob(
-    key: string,
-    body: Buffer,
-    scope: 'asset' | 'character',
-    characterId?: string,
-  ) {
-    await storage.put(key, body, { mime: 'image/png' });
-    const id = ulid();
-    await testDb.db.insert(blob).values({
-      id,
-      scope,
-      characterId: characterId ?? null,
-      bucket: 'test',
-      objectKey: key,
-      mime: 'image/png',
-      bytes: body.byteLength,
-      sha256: sha256Hex(body),
-    });
-    return id;
-  }
-
-  function stage(over: Partial<StageDef>): StageDef {
-    return {
-      key: 'img',
-      label: 'Image',
-      capability: 'text.generate',
-      config: {},
-      slots: {},
-      context: {},
-      output: { kind: 'text' },
-      checks: [],
-      ...over,
-    };
-  }
+  let ids: SourceIds;
 
   beforeAll(async () => {
     testDb = await createTestDb();
     testApp = await buildTestApp(testDb);
     exporter = testApp.app.get(PackageExportService);
-    storage = testApp.app.get(STORAGE_ADAPTER);
-    const db = testDb.db;
-
-    const channelId = ulid();
-    await db.insert(channel).values({ id: channelId, ownerId: 'local', name: 'C' });
-
-    const assetBlob = await seedBlob('local/c/assets/logo.png', PNG, 'asset');
-    const assetId = ulid();
-    await db.insert(asset).values({
-      id: assetId,
-      channelId,
-      name: 'Logo',
-      kind: 'media.image',
-      blobId: assetBlob,
-    });
-
-    const characterId = ulid();
-    await db.insert(character).values({
-      id: characterId,
-      channelId,
-      scope: 'channel',
-      name: 'Host',
-      description: 'A friendly host',
-      readiness: 'ready',
-    });
-    const refA = await seedBlob('local/chars/a.png', REF_A, 'character', characterId);
-    const refB = await seedBlob('local/chars/b.png', REF_B, 'character', characterId);
-    await db
-      .update(character)
-      .set({
-        referenceSet: [
-          { blobId: refA, view: 'front', origin: 'uploaded', order: 0 },
-          { blobId: refB, view: 'profile', origin: 'uploaded', order: 1 },
-        ],
-      })
-      .where(eq(character.id, characterId));
-
-    const blueprintId = ulid();
-    await db.insert(blueprint).values({ id: blueprintId, channelId, name: 'My Shorts!' });
-    const versionId = ulid();
-    await db.insert(blueprintVersion).values({
-      id: versionId,
-      blueprintId,
-      major: 1,
-      minor: 2,
-      graph: [
-        stage({
-          slots: {
-            logo: { from: 'coalesce', refs: [{ from: 'asset', assetId }, { from: 'prev' }] },
-          },
-          context: { who: { from: 'role', roleKey: 'host' } },
-          config: { accounts: ['me@example.com'] },
-          model: { provider: 'fake', modelId: 'fake-text-1' },
-        }),
-      ],
-      inputs: [],
-      roles: [
-        { key: 'host', label: 'Host', required: true, characterId, referenceBlobIds: [refA] },
-      ],
-      defaults: {},
-      budget: { runCapUsd: 5 },
-      validation: [],
-      runnable: true,
-    });
-    ids = { channelId, assetId, characterId, blueprintId, versionId, refA, refB };
+    ids = await seedSource(testDb, testApp.app.get<StorageAdapter>(STORAGE_ADAPTER));
   });
 
   afterAll(async () => {
@@ -189,7 +71,10 @@ describe('package export (e2e)', () => {
     const pipeline = PackagePipeline.parse(JSON.parse(raw));
     expect(pipeline.graph[0]!.slots.logo).toEqual({
       from: 'coalesce',
-      refs: [{ from: 'asset', assetId: '@slot:asset-1' }, { from: 'prev' }],
+      refs: [
+        { from: 'asset', assetId: '@slot:asset-1' },
+        { from: 'const', value: 'none' },
+      ],
     });
     expect(pipeline.roles[0]).toEqual({
       key: 'host',

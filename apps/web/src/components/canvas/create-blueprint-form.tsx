@@ -5,6 +5,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { ImportPackageDialog } from '@/components/packages/import-package-dialog';
 
 /** The existing blueprint's id when `POST /blueprints` refused a taken name. */
 function blueprintNameTaken(error: unknown): string | null {
@@ -26,6 +27,7 @@ export function CreateBlueprintForm({
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [existingId, setExistingId] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -90,6 +92,13 @@ export function CreateBlueprintForm({
             </Alert>
           )}
         </form>
+        <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
+          Or add a blueprint someone shared with you.
+          <Button type="button" variant="outline" onClick={() => setImporting(true)}>
+            Import package…
+          </Button>
+        </div>
+        <ImportPackageDialog channelId={channelId} open={importing} onOpenChange={setImporting} />
       </div>
     </div>
   );
