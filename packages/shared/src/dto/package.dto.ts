@@ -129,11 +129,6 @@ export type PackageManifest = z.infer<typeof PackageManifest>;
 export const PackagePipeline = CreateBlueprintVersionDto.omit({ budget: true });
 export type PackagePipeline = z.infer<typeof PackagePipeline>;
 
-/** `fingerprint` shown the way people read keys: `ab12 cd34 …`. */
-export function formatFingerprint(fingerprint: string): string {
-  return fingerprint.replace(/(.{4})(?=.)/g, '$1 ');
-}
-
 /** This install's signing identity. The private key never leaves the API
  * except through an explicit backup. */
 export const PackageIdentityDto = z.object({

@@ -1,7 +1,7 @@
 import { useRef } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { formatFingerprint, PackageIdentityBackupDto } from '@reelcraft/shared';
+import type { PackageIdentityBackupDto } from '@reelcraft/shared';
 import { api } from '@/api/client';
 import {
   AlertDialog,
@@ -18,6 +18,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { apiErrorMessage } from '@/lib/api-error-message';
+import { formatFingerprint } from '@/lib/format-fingerprint';
 
 const IDENTITY_KEY = ['identity'] as const;
 const TRUSTED_KEY = ['identity-trusted'] as const;
@@ -52,7 +53,8 @@ export function IdentityCard() {
   });
   const restore = useMutation({
     mutationFn: async (file: File) =>
-      api.restoreIdentity(PackageIdentityBackupDto.parse(JSON.parse(await file.text()))),
+      // The API checks that it is a real identity backup.
+      api.restoreIdentity(JSON.parse(await file.text()) as PackageIdentityBackupDto),
     onSuccess: () => {
       refresh();
       toast.success('Identity restored');
