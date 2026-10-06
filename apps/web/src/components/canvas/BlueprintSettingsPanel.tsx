@@ -12,9 +12,9 @@ import { cn } from 'cn';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../api/client';
 import { normalizeRoleReferences } from '../../lib/role-references';
-import { SchemaForm } from './SchemaForm';
+import { OutputSchemaField } from './OutputSchemaEditor';
 import { SECTION_HEADING_CLASS } from './typography';
-import type { CharacterDto, ConfigLayer, InputDef, RoleDef, JsonSchema } from '@reelcraft/shared';
+import type { CharacterDto, ConfigLayer, InputDef, RoleDef } from '@reelcraft/shared';
 import { DefaultsEditor } from '@/components/defaults/DefaultsEditor';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -30,32 +30,6 @@ import {
 } from '@/components/ui/select';
 
 const UNSET = '__unset__';
-
-/** Mirrors `StageInspector.tsx`'s own `OUTPUT_SCHEMA_META` verbatim (not
- * imported — that file has no exports today and a 15-line constant doesn't
- * justify adding one, matching this phase's existing precedent of
- * duplicating small pieces, e.g. Chunk 7b's `IssueList`). Same reasoning
- * applies here: the restricted `JsonSchema` dialect (§4.2) has no `$ref`, so
- * a schema literally describing "a `JsonSchema` value" can't recurse into
- * its own `properties`/`items` — top-level fields only. */
-const JSON_SCHEMA_META: JsonSchema = {
-  type: 'object',
-  properties: {
-    type: {
-      type: 'string',
-      enum: ['object', 'array', 'string', 'number', 'integer', 'boolean'],
-    },
-    description: { type: 'string' },
-    enum: { type: 'array', items: { type: 'string' } },
-    required: { type: 'array', items: { type: 'string' } },
-    minItems: { type: 'number' },
-    maxItems: { type: 'number' },
-    minimum: { type: 'number' },
-    maximum: { type: 'number' },
-    minLength: { type: 'number' },
-    maxLength: { type: 'number' },
-  },
-};
 
 function nextFreeInputKey(inputs: InputDef[]): string {
   const existing = new Set(inputs.map((i) => i.key));
@@ -229,18 +203,12 @@ function InputsEditor({
                 </div>
 
                 {input.accepts.kind === 'data' && (
-                  <div className="flex flex-col gap-1.5 border-l-2 border-border pl-3">
+                  <div className="flex flex-col gap-1.5">
                     <h4 className={SECTION_HEADING_CLASS}>Schema</h4>
-                    <SchemaForm
-                      schema={JSON_SCHEMA_META}
-                      value={input.accepts.schema}
+                    <OutputSchemaField
+                      schema={input.accepts.schema}
                       onChange={(next) =>
-                        update(index, {
-                          accepts: {
-                            kind: 'data',
-                            schema: (next as JsonSchema) ?? { type: 'object' },
-                          },
-                        })
+                        update(index, { accepts: { kind: 'data', schema: next } })
                       }
                     />
                   </div>
