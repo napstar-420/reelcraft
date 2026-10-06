@@ -73,7 +73,7 @@ export function ExportPackageDialog({
           <DialogTitle>Export package</DialogTitle>
           <DialogDescription>
             {preview.data
-              ? `${preview.data.name} v${preview.data.version} is saved as a signed .reelpack file you can send to someone else.`
+              ? `Saves ${preview.data.name} v${preview.data.version} as a signed .reelpack file you can send to someone else.`
               : 'Saves this version as a signed .reelpack file you can send to someone else.'}
           </DialogDescription>
         </DialogHeader>

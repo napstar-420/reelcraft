@@ -7,12 +7,13 @@ import type {
   ValidationIssue,
   VersionBump,
 } from '@reelcraft/shared';
-import { DRIZZLE, type Db } from '../db/drizzle.provider';
+import { DRIZZLE, type Db, type Tx } from '../db/drizzle.provider';
 import {
   asset,
   blob,
   blueprint,
   blueprintVersion,
+  packageImport,
   character,
   channel,
   run,
@@ -66,8 +67,8 @@ export class BlueprintService {
     return this.ensureBlueprint(channelId, name, dto);
   }
 
-  private async assertNameFree(channelId: string, name: string, exceptId?: string) {
-    const [existing] = await this.db
+  async assertNameFree(channelId: string, name: string, exceptId?: string, db: Db | Tx = this.db) {
+    const [existing] = await db
       .select({ id: blueprint.id })
       .from(blueprint)
       .where(
@@ -204,6 +205,7 @@ export class BlueprintService {
         await tx.delete(character).where(inArray(character.id, characterIds));
       }
       await tx.update(blueprint).set({ currentVersionId: null }).where(eq(blueprint.id, id));
+      await tx.delete(packageImport).where(eq(packageImport.blueprintId, id));
       await tx.delete(blueprintVersion).where(eq(blueprintVersion.blueprintId, id));
       await tx.delete(blueprint).where(eq(blueprint.id, id));
     });
@@ -228,11 +230,18 @@ export class BlueprintService {
   async createVersion(
     blueprintId: string,
     dto: CreateBlueprintVersionDto,
-    { draft = false, bump = 'minor' }: { draft?: boolean; bump?: VersionBump } = {},
+    {
+      draft = false,
+      bump = 'minor',
+      tx,
+    }: { draft?: boolean; bump?: VersionBump; tx?: Tx | undefined } = {},
   ) {
-    const { issues, runnable } = await this.computeValidation(blueprintId, dto);
+    // With `tx`, the caller's transaction sees rows it just inserted (package
+    // import creates characters and assets, then validates against them).
+    const reader = tx ?? this.db;
+    const { issues, runnable } = await this.computeValidation(blueprintId, dto, reader);
 
-    const [latest] = await this.db
+    const [latest] = await reader
       .select({ major: blueprintVersion.major, minor: blueprintVersion.minor })
       .from(blueprintVersion)
       .where(and(eq(blueprintVersion.blueprintId, blueprintId), eq(blueprintVersion.draft, false)))
@@ -247,8 +256,8 @@ export class BlueprintService {
           : { major: latest.major, minor: latest.minor + 1 };
 
     const id = ulid();
-    await this.db.transaction(async (tx) => {
-      await tx.insert(blueprintVersion).values({
+    const write = async (w: Tx) => {
+      await w.insert(blueprintVersion).values({
         id,
         blueprintId,
         ...next,
@@ -264,11 +273,12 @@ export class BlueprintService {
       if (draft) return;
       // §3.4 — insert blueprint, insert version, THEN update the pointer;
       // current_version_id has no FK in the schema (see db/schema/blueprint.ts).
-      await tx
+      await w
         .update(blueprint)
         .set({ currentVersionId: id, workingDraft: null })
         .where(eq(blueprint.id, blueprintId));
-    });
+    };
+    await (tx ? write(tx) : this.db.transaction(write));
 
     this.logger.log(
       {
@@ -282,7 +292,7 @@ export class BlueprintService {
       },
       'blueprint version created',
     );
-    return this.getVersion(id);
+    return this.getVersion(id, reader);
   }
 
   /** The no-persist half of `createVersion`, extracted so
@@ -294,8 +304,9 @@ export class BlueprintService {
   private async computeValidation(
     blueprintId: string,
     dto: CreateBlueprintVersionDto,
+    db: Db | Tx = this.db,
   ): Promise<{ issues: ValidationIssue[]; runnable: boolean }> {
-    const [blueprintRow] = await this.db
+    const [blueprintRow] = await db
       .select({ channelId: blueprint.channelId, defaults: channel.defaults })
       .from(blueprint)
       .innerJoin(channel, eq(blueprint.channelId, channel.id))
@@ -304,8 +315,8 @@ export class BlueprintService {
     if (!blueprintRow) throw new Error(`Blueprint ${blueprintId} not found`);
 
     const [assetsById, charactersById] = await Promise.all([
-      this.loadAssetsById(dto.graph),
-      this.loadCharactersById(dto.roles),
+      this.loadAssetsById(dto.graph, db),
+      this.loadCharactersById(dto.roles, db),
     ]);
 
     const validationInput: BlueprintValidationInput = {
@@ -339,8 +350,8 @@ export class BlueprintService {
     return this.computeValidation(blueprintId, dto);
   }
 
-  async getVersion(id: string) {
-    const [row] = await this.db
+  async getVersion(id: string, db: Db | Tx = this.db) {
+    const [row] = await db
       .select()
       .from(blueprintVersion)
       .where(eq(blueprintVersion.id, id))
@@ -379,6 +390,7 @@ export class BlueprintService {
    * error messages), it's the validator that rejects the channel mismatch. */
   private async loadAssetsById(
     graph: CreateBlueprintVersionDto['graph'],
+    db: Db | Tx,
   ): Promise<Map<string, AssetLookup>> {
     const assetIds = collectAssetIds(graph);
     if (assetIds.length === 0) return new Map();
@@ -386,7 +398,7 @@ export class BlueprintService {
     // read as "unknown asset" here too — excluded from the map rather than
     // special-cased, so the validator's existing "unknown asset" error
     // covers it for free.
-    const rows = await this.db
+    const rows = await db
       .select({ id: asset.id, kind: asset.kind, channelId: asset.channelId })
       .from(asset)
       .innerJoin(blob, eq(asset.blobId, blob.id))
@@ -396,10 +408,11 @@ export class BlueprintService {
 
   private async loadCharactersById(
     roles: CreateBlueprintVersionDto['roles'],
+    db: Db | Tx,
   ): Promise<Map<string, CharacterLookup>> {
     const ids = roles.flatMap((role) => (role.characterId ? [role.characterId] : []));
     if (ids.length === 0) return new Map();
-    const rows = await this.db
+    const rows = await db
       .select({
         id: character.id,
         channelId: character.channelId,

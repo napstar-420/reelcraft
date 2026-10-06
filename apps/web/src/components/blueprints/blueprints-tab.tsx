@@ -28,6 +28,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { ExportPackageDialog } from '@/components/packages/export-package-dialog';
+import { ImportPackageDialog } from '@/components/packages/import-package-dialog';
 import { PlaceholderArt } from '@/components/placeholder-art';
 import { apiErrorMessage } from '@/lib/api-error-message';
 import { Switch } from '@/components/ui/switch';
@@ -130,6 +131,7 @@ export function BlueprintsTab({ channelId }: { channelId?: string | undefined })
   const [showArchived, setShowArchived] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<BlueprintDto | null>(null);
   const [exporting, setExporting] = useState<BlueprintDto | null>(null);
+  const [importing, setImporting] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const queryClient = useQueryClient();
   const blueprints = useQuery({
@@ -174,9 +176,14 @@ export function BlueprintsTab({ channelId }: { channelId?: string | undefined })
           </p>
         </div>
         {channelId && (
-          <Button variant="outline" asChild>
-            <Link to={`/channels/${channelId}/build`}>Create custom blueprint</Link>
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" onClick={() => setImporting(true)}>
+              Import package…
+            </Button>
+            <Button variant="outline" asChild>
+              <Link to={`/channels/${channelId}/build`}>Create custom blueprint</Link>
+            </Button>
+          </div>
         )}
       </div>
 
@@ -291,6 +298,10 @@ export function BlueprintsTab({ channelId }: { channelId?: string | undefined })
       )}
 
       <BlueprintEditDialog blueprint={editing} onOpenChange={(open) => !open && setEditing(null)} />
+
+      {channelId && (
+        <ImportPackageDialog channelId={channelId} open={importing} onOpenChange={setImporting} />
+      )}
 
       <ExportPackageDialog
         versionId={exporting?.currentVersionId ?? null}

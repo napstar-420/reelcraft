@@ -3,7 +3,13 @@ import type {
   CodexLoginDto,
   CodexStatusDto,
   ConnectionTestDto,
+  CancelPackageUploadDto,
   ExportPackageDto,
+  InspectPackageDto,
+  InstallPackageDto,
+  InstallPackageResultDto,
+  PackageInspectReportDto,
+  PackageUploadDto,
   PackageExportPreviewDto,
   PackageIdentityBackupDto,
   PackageIdentityDto,
@@ -452,6 +458,20 @@ export const api = {
     request<PackageExportPreviewDto>(`/blueprint-versions/${versionId}/package/preview`),
   exportPackage: (versionId: string, dto: ExportPackageDto) =>
     requestFile(`/blueprint-versions/${versionId}/package`, dto),
+
+  requestPackageUpload: () => request<PackageUploadDto>('/packages/uploads', { method: 'POST' }),
+  cancelPackageUpload: (dto: CancelPackageUploadDto) =>
+    request<void>('/packages/uploads/cancel', { method: 'POST', body: JSON.stringify(dto) }),
+  inspectPackage: (dto: InspectPackageDto) =>
+    request<PackageInspectReportDto>('/packages/inspect', {
+      method: 'POST',
+      body: JSON.stringify(dto),
+    }),
+  installPackage: (dto: InstallPackageDto) =>
+    request<InstallPackageResultDto>('/packages/install', {
+      method: 'POST',
+      body: JSON.stringify(dto),
+    }),
 
   getIdentity: () => request<PackageIdentityStatusDto>('/identity'),
   backupIdentity: () => request<PackageIdentityBackupDto>('/identity/backup', { method: 'POST' }),

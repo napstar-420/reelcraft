@@ -73,6 +73,9 @@ export const PackageSlot = z.discriminatedUnion('kind', [
     key: z.string().min(1),
     label: z.string().min(1),
     required: z.boolean(),
+    /** How many reference images the role uses. A role must select at least
+     * one, so an importer's own character gets this many of its references. */
+    referenceCount: z.number().int().min(1).optional(),
     bundled: BundledCharacter.nullable(),
   }),
   z.object({
@@ -196,3 +199,101 @@ export const ExportPackageDto = z.object({
   choices: z.record(z.string(), z.enum(['bundle', 'slot'])).default({}),
 });
 export type ExportPackageDto = z.infer<typeof ExportPackageDto>;
+
+/** What stops or shapes an import. `block` can't be worked around, `fix`
+ * needs the importer to choose something, `warn` is shown and allowed. */
+export const PackageIssueDto = z.object({
+  severity: z.enum(['block', 'fix', 'warn']),
+  code: z.string(),
+  message: z.string(),
+  path: z.string().optional(),
+});
+export type PackageIssueDto = z.infer<typeof PackageIssueDto>;
+
+export const PackageSignerDto = z.object({
+  /** Null when the package is unsigned. */
+  fingerprint: z.string().nullable(),
+  signed: z.boolean(),
+  /** Signed by this install itself, or by an author it was told to trust. */
+  trusted: z.boolean(),
+  /** Signed by this install's own identity. */
+  own: z.boolean(),
+});
+export type PackageSignerDto = z.infer<typeof PackageSignerDto>;
+
+/** The blueprint in the target channel that already came from this package. */
+export const PackageInstalledDto = z.object({
+  blueprintId: z.string(),
+  blueprintName: z.string(),
+  /** The package version last installed, e.g. "1.2". */
+  version: z.string(),
+  relation: z.enum(['same', 'newer', 'older', 'modified', 'other-signer']),
+  /** Whether the package can be added as a new version of that blueprint. */
+  canUpdate: z.boolean(),
+  /** The blueprint has unsaved canvas edits. */
+  hasWorkingDraft: z.boolean(),
+});
+export type PackageInstalledDto = z.infer<typeof PackageInstalledDto>;
+
+export const PackageInspectReportDto = z.object({
+  /** Null when the file could not be read far enough to know. */
+  summary: z
+    .object({
+      name: z.string(),
+      description: z.string(),
+      tags: z.array(z.string()),
+      packageId: z.string(),
+      version: z.string(),
+      exportedBy: z.string(),
+    })
+    .nullable(),
+  signer: PackageSignerDto,
+  slots: z.array(PackageSlot),
+  /** Worked out from the pipeline, not taken from the manifest. */
+  requires: z.object({ capabilities: z.array(z.string()), providers: z.array(z.string()) }),
+  issues: z.array(PackageIssueDto),
+  installed: PackageInstalledDto.nullable(),
+  /** The package's name, or the first "Name (2)" not taken in the channel. */
+  suggestedName: z.string().nullable(),
+});
+export type PackageInspectReportDto = z.infer<typeof PackageInspectReportDto>;
+
+export const PackageUploadDto = z.object({ uploadUrl: z.string(), objectKey: z.string() });
+export type PackageUploadDto = z.infer<typeof PackageUploadDto>;
+
+export const InspectPackageDto = z.object({
+  objectKey: z.string().min(1),
+  channelId: z.string().min(1),
+});
+export type InspectPackageDto = z.infer<typeof InspectPackageDto>;
+
+export const CancelPackageUploadDto = z.object({ objectKey: z.string().min(1) });
+export type CancelPackageUploadDto = z.infer<typeof CancelPackageUploadDto>;
+
+export const InstallPackageDto = z.object({
+  objectKey: z.string().min(1),
+  channelId: z.string().min(1),
+  /** `new` makes a blueprint; `update` adds a version to `targetBlueprintId`. */
+  mode: z.enum(['new', 'update']),
+  targetBlueprintId: z.string().optional(),
+  name: z.string().trim().min(1),
+  /** The importer's own spending limit. A package never sets it. */
+  runCapUsd: z.number().positive(),
+  /** Per slot: `bundled` uses the media in the package, `existing` one of the
+   * importer's own characters or assets. A slot with neither bundled media
+   * nor a binding stays empty, which only an optional slot may do. */
+  bindings: z
+    .record(z.string(), z.union([z.literal('bundled'), z.object({ existing: z.string() })]))
+    .default({}),
+  trustAuthor: z.boolean().default(false),
+});
+export type InstallPackageDto = z.infer<typeof InstallPackageDto>;
+
+export const InstallPackageResultDto = z.object({
+  blueprintId: z.string(),
+  blueprintVersionId: z.string(),
+  /** Whether the new version passed validation (a missing provider key or
+   * model, for one, leaves it not runnable until fixed). */
+  runnable: z.boolean(),
+});
+export type InstallPackageResultDto = z.infer<typeof InstallPackageResultDto>;

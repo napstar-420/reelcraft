@@ -7,6 +7,7 @@ import {
   blob,
   blueprint,
   blueprintVersion,
+  packageImport,
   channel,
   character,
   run,
@@ -208,6 +209,7 @@ export class ChannelService {
           .update(blueprint)
           .set({ currentVersionId: null })
           .where(inArray(blueprint.id, blueprintIds));
+        await tx.delete(packageImport).where(inArray(packageImport.blueprintId, blueprintIds));
         await tx
           .delete(blueprintVersion)
           .where(inArray(blueprintVersion.blueprintId, blueprintIds));

@@ -4,7 +4,7 @@ import { sha256Hex } from '@/lib/sha256';
 
 export type UploadStatus = 'idle' | 'hashing' | 'uploading' | 'confirming' | 'done' | 'error';
 
-function putWithProgress(url: string, file: File, onProgress: (pct: number) => void) {
+export function putWithProgress(url: string, file: File, onProgress: (pct: number) => void) {
   return new Promise<void>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open('PUT', url);
