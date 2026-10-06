@@ -33,7 +33,7 @@ After a successful sign-in, and whenever the Neo address is saved in Settings,
 `CodexNeoRegistrar` makes sure Codex has a `browseros-neo` MCP server (`codex mcp add browseros-neo
 --url <address>`). It records the address it registered and only ever replaces that entry; an
 entry the user configured is left alone. `codex exec --profile reelcraft` works without a matching
-profile in `config.toml` (verified with codex-cli 0.159.3), so no profile is created.
+profile in `config.toml` (verified with codex-cli 0.159.3; the image now ships 0.160.0), so no profile is created.
 
 ## Local acceptance
 
