@@ -35,6 +35,36 @@ After a successful sign-in, and whenever the Neo address is saved in Settings,
 entry the user configured is left alone. `codex exec --profile reelcraft` works without a matching
 profile in `config.toml` (verified with codex-cli 0.159.3), so no profile is created.
 
+## The blueprint assistant on Codex
+
+The blueprint assistant (ADR-0009) doesn't use `codex exec`. It keeps one `codex app-server --stdio`
+running and registers Reelcraft's tools as **dynamic tools** (`thread/start`). When the model calls one,
+app-server sends `item/tool/call` and the API answers it. Threads persist in `$CODEX_HOME`, and
+`thread/resume` in a new process keeps the history and the tools. Verified on codex-cli 0.160.0.
+
+The process is locked down (`apps/api/src/assistant/agent/codex-app-server-args.ts`):
+
+- `--disable` for the features that give the model a shell, files, a browser, web search, plugins, hooks,
+  memories, sub-agents or apps. **Don't disable `code_mode_host`**: dynamic tools run through it ("code-mode
+  host is disabled" otherwise).
+- Every MCP server in Codex's config is switched off, including BrowserOS Neo. `-c mcp_servers.<name>.enabled=false`
+  alone makes Codex exit with "invalid transport", so each override repeats the server's command or url:
+  `-c 'mcp_servers.<name>={ url = "…", enabled = false }'`. At startup the agent asks `mcpServerStatus/list`
+  and refuses to run if any server still has tools or resources.
+- Threads use `sandbox: read-only`, `approvalPolicy: never` and `environments: []`. `environments` is not
+  kept across a resume, so it is sent on every `turn/start` too. The working directory is an empty temp dir.
+- Anything Codex asks us that isn't our own tool (approvals, `request_user_input`, elicitations) is denied.
+
+What is still visible to the model: Reelcraft's tools, `wait`, `request_user_input` and the `collaboration.*`
+sub-agent helpers (the instructions forbid them, and sub-agent threads can't call our tools).
+
+After a Codex upgrade, re-run the opt-in acceptance. It checks the lockdown (shell, file and env access all
+fail), that tool calls reach Reelcraft, that `ask_user` ends the turn, and that a thread resumes in a new process:
+
+```bash
+REELCRAFT_CODEX_ACCEPTANCE=1 pnpm --filter @reelcraft/api acceptance:codex-assistant
+```
+
 ## Local acceptance
 
 The real-provider smoke test is deliberately opt-in because it consumes authenticated Codex usage:

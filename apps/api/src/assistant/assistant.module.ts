@@ -9,6 +9,9 @@ import { AssistantController } from './assistant.controller';
 import { AssistantEvents } from './assistant-events';
 import { AssistantService } from './assistant.service';
 import { ASSISTANT_AGENTS } from './agent/assistant-agent.interface';
+import { CodexAssistantAgent } from './agent/codex-assistant.agent';
+import { CodexAppServerClient } from '../provider/codex/codex-app-server.client';
+import { CodexNeoRegistrar } from '../provider/codex/codex-neo-registrar';
 
 /** The blueprint assistant: chats, turns and the tools the agent calls. It reads the running
  * app through existing services and writes only proposals; `CapabilityModule` must not import it. */
@@ -25,8 +28,14 @@ import { ASSISTANT_AGENTS } from './agent/assistant-agent.interface';
   providers: [
     AssistantService,
     AssistantEvents,
-    // No agent is registered yet; the Codex agent is added in a following change.
-    { provide: ASSISTANT_AGENTS, useValue: [] },
+    // Codex first; a Claude agent would be added to this list.
+    {
+      provide: ASSISTANT_AGENTS,
+      inject: [CodexAppServerClient, CodexNeoRegistrar],
+      useFactory: (models: CodexAppServerClient, registrar: CodexNeoRegistrar) => [
+        new CodexAssistantAgent({ models, registrar }),
+      ],
+    },
   ],
 })
 export class AssistantModule {}

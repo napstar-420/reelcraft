@@ -18,6 +18,7 @@ export interface AssistantModel {
 export type AgentEvent =
   | { type: 'message.delta'; itemKey: string; text: string }
   | { type: 'message'; itemKey: string; text: string }
+  /** Tokens used so far in this turn (cumulative, not per request). */
   | { type: 'usage'; inputTokens: number; outputTokens: number };
 
 export interface AssistantTurnHandlers {
@@ -59,6 +60,8 @@ export interface AssistantAgent {
   }): Promise<void>;
   /** Best effort: forget the provider session. */
   deleteSession(sessionId: string): Promise<void>;
+  /** Stops any process the agent keeps running (API shutdown). */
+  close?(): void;
 }
 
 /** Nest token for the registered agents (Codex first, Claude later). */

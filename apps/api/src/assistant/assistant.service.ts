@@ -5,6 +5,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  type OnModuleDestroy,
   type OnModuleInit,
 } from '@nestjs/common';
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
@@ -59,7 +60,7 @@ const PROVIDER_LABELS: Record<string, string> = { codex: 'Codex', fake: 'Fake (t
  * turn cut off by a restart is marked `interrupted` at boot.
  */
 @Injectable()
-export class AssistantService implements OnModuleInit {
+export class AssistantService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(AssistantService.name);
   /** One running turn per session. */
   private readonly active = new Map<string, AbortController>();
@@ -111,6 +112,11 @@ export class AssistantService implements OnModuleInit {
       .update(assistantSession)
       .set({ status: 'idle' })
       .where(eq(assistantSession.status, 'running'));
+  }
+
+  onModuleDestroy(): void {
+    for (const controller of this.active.values()) controller.abort();
+    for (const agent of this.agents) agent.close?.();
   }
 
   // ---- providers -------------------------------------------------------------------------
@@ -212,10 +218,11 @@ export class AssistantService implements OnModuleInit {
 
     const narrowed = buildNarrowedEnums({ capabilities: this.capabilities, styles: this.styles });
     const tools = buildToolDefs(narrowed);
-    const externalSessionId = await agent.startSession({
-      instructions: this.instructionsFor(blueprint.name),
-      tools,
-    });
+    const externalSessionId = await agent
+      .startSession({ instructions: this.instructionsFor(blueprint.name), tools })
+      .catch((error: unknown) => {
+        throw new ConflictException(error instanceof Error ? error.message : String(error));
+      });
     const [row] = await this.db
       .insert(assistantSession)
       .values({

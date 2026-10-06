@@ -15,5 +15,6 @@ one, take the next number, and add a row here. Supersede an ADR instead of editi
 | [0006](0006-codex-sign-in-through-neo-with-manual-fallback.md) | "Connect Codex" signs in through BrowserOS Neo, with a manual fallback         | accepted | 2026-10-03 |
 | [0007](0007-user-guide-as-separate-docusaurus-project.md)      | The user guide is a separate Docusaurus project on GitHub Pages                | accepted | 2026-10-03 |
 | [0008](0008-blueprint-packages-signed-with-local-identity.md)  | Blueprint packages are signed with a local identity                            | accepted | 2026-10-06 |
+| [0009](0009-blueprint-assistant.md)                            | The blueprint assistant is a tool-calling agent in the canvas, Codex first     | accepted | 2026-10-06 |
 
 ADRs 0001–0007 were decided during the self-hosting work in October 2026 and recorded together on 2026-10-03, so the dates are when they were written down.

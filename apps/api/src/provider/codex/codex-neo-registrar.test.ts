@@ -84,4 +84,20 @@ describe('CodexNeoRegistrar', () => {
     await expect(registrar.status()).resolves.toBe('unknown');
     await expect(registrar.ensure()).resolves.toBe('unknown');
   });
+
+  it('lists every MCP server with the transport needed to disable it', async () => {
+    const { registrar } = fixture({
+      entries: [
+        http('http://x:1/mcp'),
+        { name: 'agentmemory', transport: { type: 'stdio', command: 'npx', args: ['-y', 'x'] } },
+        { name: 'strange', transport: { type: 'something-new' } },
+        { transport: { type: 'stdio', command: 'nameless' } },
+      ],
+    });
+    await expect(registrar.listServers()).resolves.toEqual([
+      { name: 'browseros-neo', transport: { type: 'streamable_http', url: 'http://x:1/mcp' } },
+      { name: 'agentmemory', transport: { type: 'stdio', command: 'npx' } },
+      { name: 'strange', transport: null },
+    ]);
+  });
 });
