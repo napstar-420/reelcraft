@@ -153,6 +153,33 @@ describe('executeRunLaunch', () => {
     );
   });
 
+  it('stops after the chosen stage', async () => {
+    const deps = {
+      createRun: vi.fn(async () => ({ id: 'run-1' })),
+      requestInputUpload: vi.fn(),
+      upload: vi.fn(),
+      hashFile: vi.fn(),
+      attachRunInput: vi.fn(),
+      startRun: vi.fn(async (runId: string) => ({ id: runId })),
+    };
+
+    await executeRunLaunch(
+      {
+        channelId: 'channel-1',
+        blueprintVersionId: 'version-1',
+        budgetCapUsd: 1,
+        inputDefs: [inputs[0]!],
+        values: { topic: 'otters' },
+        untilStageKey: 'script',
+      },
+      deps,
+    );
+
+    expect(deps.createRun).toHaveBeenCalledWith(
+      expect.objectContaining({ untilStageKey: 'script' }),
+    );
+  });
+
   it('wraps upload failures with the recoverable run id and phase', async () => {
     const deps = {
       createRun: vi.fn(async () => ({ id: 'run-1' })),

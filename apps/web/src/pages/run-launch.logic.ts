@@ -79,6 +79,8 @@ export type RunLaunchRequest = {
   resume?: LaunchResume;
   /** Start a dry run (fake provider) instead of a real run. */
   dryRun?: boolean;
+  /** Stop after this stage; later stages are skipped. */
+  untilStageKey?: string;
 };
 
 type CreatedRun = { id: string };
@@ -122,6 +124,7 @@ export async function executeRunLaunch<TStarted extends StartedRun>(
         roleBindings: {},
         rerunStageKeys: [],
         ...(request.dryRun && { dryRun: true }),
+        ...(request.untilStageKey && { untilStageKey: request.untilStageKey }),
       })
     ).id;
 
