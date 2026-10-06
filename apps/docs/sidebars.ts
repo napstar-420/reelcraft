@@ -33,6 +33,7 @@ const sidebars: SidebarsConfig = {
       collapsed: true,
       items: [
         'blueprints/blueprints',
+        'blueprints/assistant',
         'blueprints/versions',
         'blueprints/sharing',
         'blueprints/settings',

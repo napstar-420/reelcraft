@@ -61,6 +61,18 @@ type TurnCompleted = {
   turn: { id: string; status: string; error?: { message?: string } | null };
 };
 
+/** Codex reports some failures as the raw API body (`{"type":"error","error":{"message":…}}`). */
+export function readableCodexError(message: string): string {
+  try {
+    const parsed = JSON.parse(message) as { error?: { message?: unknown }; detail?: unknown };
+    const inner = parsed.error?.message ?? parsed.detail;
+    if (typeof inner === 'string' && inner) return inner;
+  } catch {
+    // already plain text
+  }
+  return message;
+}
+
 async function defaultLoginCheck(): Promise<CodexLoginCheck> {
   try {
     const { stdout, stderr } = await execFileAsync('codex', ['login', 'status'], {
@@ -423,7 +435,10 @@ export class CodexAssistantAgent implements AssistantAgent {
         } else {
           turn.settle({
             ok: false,
-            error: new AssistantTurnError('failed', done.error?.message ?? 'The turn failed.'),
+            error: new AssistantTurnError(
+              'failed',
+              readableCodexError(done.error?.message ?? 'The turn failed.'),
+            ),
           });
         }
         return;
