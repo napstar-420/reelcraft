@@ -18,7 +18,8 @@
     "acceptance:phase7-broll": "bash test/acceptance/run-phase7-broll.sh",
     "acceptance:codex": "pnpm build && node test/acceptance/codex-provider.mjs",
     "acceptance:codex-image": "pnpm build && node test/acceptance/codex-image.mjs",
-    "acceptance:codex-browser": "pnpm build && node test/acceptance/codex-browseros.mjs"
+    "acceptance:codex-browser": "pnpm build && node test/acceptance/codex-browseros.mjs",
+    "acceptance:codex-assistant": "pnpm build && node test/acceptance/codex-assistant.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.716.0",

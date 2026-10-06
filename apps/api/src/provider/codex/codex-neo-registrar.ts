@@ -9,7 +9,16 @@ const execFileAsync = promisify(execFile);
 
 export type RunCodex = (args: string[]) => Promise<string>;
 
-type McpEntry = { name?: unknown; transport?: { type?: unknown; url?: unknown } };
+type McpEntry = {
+  name?: unknown;
+  transport?: { type?: unknown; url?: unknown; command?: unknown };
+};
+
+/** An MCP server in Codex's config, as far as disabling it needs to know. */
+export interface CodexMcpServer {
+  name: string;
+  transport: { type: 'stdio'; command: string } | { type: 'streamable_http'; url: string };
+}
 
 /**
  * Registers BrowserOS Neo as an MCP server in Codex's own config, which is
@@ -68,6 +77,26 @@ export class CodexNeoRegistrar {
       this.logger.warn({ err: error }, 'could not register BrowserOS Neo with Codex');
       return 'unknown';
     }
+  }
+
+  /** Every MCP server in Codex's config (enabled or not). A server of a kind we can't describe
+   * is returned with `transport: null` so the caller can refuse to run rather than guess. */
+  async listServers(): Promise<Array<CodexMcpServer | { name: string; transport: null }>> {
+    const list = JSON.parse(await this.runCodex(['mcp', 'list', '--json'])) as unknown;
+    if (!Array.isArray(list)) throw new Error('codex mcp list --json returned no list');
+    const servers: Array<CodexMcpServer | { name: string; transport: null }> = [];
+    for (const item of list as McpEntry[]) {
+      if (typeof item.name !== 'string') continue;
+      const t = item.transport;
+      if (t?.type === 'stdio' && typeof t.command === 'string') {
+        servers.push({ name: item.name, transport: { type: 'stdio', command: t.command } });
+      } else if (t?.type === 'streamable_http' && typeof t.url === 'string') {
+        servers.push({ name: item.name, transport: { type: 'streamable_http', url: t.url } });
+      } else {
+        servers.push({ name: item.name, transport: null });
+      }
+    }
+    return servers;
   }
 
   private async entry(): Promise<McpEntry | undefined> {
