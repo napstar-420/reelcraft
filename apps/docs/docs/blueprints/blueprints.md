@@ -14,7 +14,8 @@ different inputs each time.
 
 1. Open a channel and select the **Blueprints** tab.
 2. Select **Create custom blueprint**.
-3. Enter a **Blueprint name** and select **Create blank blueprint**.
+3. Enter a **Blueprint name** and select **Create blank blueprint**. Or select **Import package…** to
+   add a blueprint someone sent you. See [Sharing blueprints](./sharing.md).
 
 The blueprint's canvas opens, ready for its first stage.
 
