@@ -34,6 +34,7 @@ const sidebars: SidebarsConfig = {
       items: [
         'blueprints/blueprints',
         'blueprints/versions',
+        'blueprints/sharing',
         'blueprints/settings',
         'blueprints/stages',
         'blueprints/connecting-stages',
