@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { ChevronDown, CircleCheck, Lock, RotateCcw, Save } from 'lucide-react';
 import type { BlueprintVersionDto, VersionBump } from '@reelcraft/shared';
 import { Badge } from '@/components/ui/badge';
@@ -6,10 +7,12 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { formatBlueprintVersion } from '@/lib/format-blueprint-version';
+import { ExportPackageDialog } from '@/components/packages/export-package-dialog';
 import { VersionHistory } from './version-history';
 
 type Version = { major: number; minor: number };
@@ -53,6 +56,7 @@ export function CanvasToolbar({
   /** Why Run is off, shown on hover; null when it is on. */
   runBlockedReason: string | null;
 }) {
+  const [exportOpen, setExportOpen] = useState(false);
   const readOnly = viewing !== null;
   const nextMajor = latestSaved
     ? formatBlueprintVersion({ major: latestSaved.major + 1, minor: 0 })
@@ -170,6 +174,15 @@ export function CanvasToolbar({
                     </span>
                   </DropdownMenuItem>
                 )}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem disabled={!latestSaved} onSelect={() => setExportOpen(true)}>
+                  <span className="flex flex-col">
+                    Export package…
+                    <span className="text-xs text-muted-foreground">
+                      Share the latest saved version as a signed file
+                    </span>
+                  </span>
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
@@ -178,6 +191,11 @@ export function CanvasToolbar({
           <span title={runBlockedReason ?? 'Run the latest saved version'}>{runButton}</span>
         )}
       </div>
+      <ExportPackageDialog
+        versionId={latestSaved?.id ?? null}
+        open={exportOpen}
+        onOpenChange={setExportOpen}
+      />
     </div>
   );
 }

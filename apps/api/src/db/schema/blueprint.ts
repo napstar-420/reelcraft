@@ -20,6 +20,8 @@ export const blueprint = pgTable('blueprint', {
   tags: text('tags').array().notNull().default([]), // freeform labels for search/filtering
   currentVersionId: text('current_version_id'), // id of the blueprint_version currently active (see FK note above)
   archived: boolean('archived').notNull().default(false), // whether the blueprint is archived/hidden from active use
+  packageId: text('package_id'), // stable id this blueprint's exported packages carry; set on first export
+  packageBasedOn: jsonb('package_based_on'), // { packageId, fingerprint } of the package this was imported from, if another author's
   workingDraft: jsonb('working_draft'), // CreateBlueprintVersionDto: the canvas's autosaved unsaved edits; cleared on save
 });
 

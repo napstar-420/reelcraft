@@ -1,24 +1,35 @@
 import type { Ref, StageDef } from '@reelcraft/shared';
 
-/** Walks every stage's slots/context/check-refs collecting every
- * `{from:'asset'}` ref's assetId — shared by save-time validation
- * (`blueprint.service.ts` builds `assetsById` for the validator) and
- * `run.service.ts`'s `start()` (snapshots `run.assetBindings`) so the two
- * can't drift on what "referenced" means. */
+/** Returns the graph with `fn` applied to every leaf ref: stage slots,
+ * context, `iterate.over` and script-check refs, looking inside `coalesce`
+ * branches. Shared by asset collection and by package export/import, which
+ * swap local ids for slot placeholders and back. */
+export function mapGraphRefs(graph: StageDef[], fn: (ref: Ref) => Ref): StageDef[] {
+  const mapRef = (ref: Ref): Ref =>
+    ref.from === 'coalesce' ? { ...ref, refs: ref.refs.map(mapRef) } : fn(ref);
+  const mapRecord = (record: Record<string, Ref>): Record<string, Ref> =>
+    Object.fromEntries(Object.entries(record).map(([key, ref]) => [key, mapRef(ref)]));
+  return graph.map((stage) => ({
+    ...stage,
+    slots: mapRecord(stage.slots),
+    context: mapRecord(stage.context),
+    ...(stage.iterate ? { iterate: { ...stage.iterate, over: mapRef(stage.iterate.over) } } : {}),
+    checks: stage.checks.map((check) =>
+      check.type === 'script' && check.refs ? { ...check, refs: mapRecord(check.refs) } : check,
+    ),
+  }));
+}
+
+/** Every `{from:'asset'}` ref's assetId — shared by save-time validation
+ * (`blueprint.service.ts` builds `assetsById` for the validator),
+ * `run.service.ts`'s `start()` (snapshots `run.assetBindings`) and package
+ * export, so they can't drift on what "referenced" means. */
 export function collectAssetIds(graph: StageDef[]): string[] {
   const ids = new Set<string>();
-  const visit = (ref: Ref): void => {
+  mapGraphRefs(graph, (ref) => {
     if (ref.from === 'asset') ids.add(ref.assetId);
-  };
-  for (const stage of graph) {
-    for (const ref of Object.values(stage.slots)) visit(ref);
-    for (const ref of Object.values(stage.context)) visit(ref);
-    for (const check of stage.checks) {
-      if (check.type === 'script' && check.refs) {
-        for (const ref of Object.values(check.refs)) visit(ref);
-      }
-    }
-  }
+    return ref;
+  });
   return [...ids];
 }
 

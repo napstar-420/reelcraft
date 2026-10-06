@@ -3,6 +3,8 @@ import type {
   CodexLoginDto,
   CodexStatusDto,
   ConnectionTestDto,
+  ExportPackageDto,
+  PackageExportPreviewDto,
   PackageIdentityBackupDto,
   PackageIdentityDto,
   PackageIdentityStatusDto,
@@ -92,27 +94,37 @@ export class ApiError extends Error {
 /** Typed against @reelcraft/shared DTOs — the payoff for the shared
  * package: the same shapes the API validates requests against are what
  * the UI compiles against. */
+async function failFrom(res: Response, method: string, path: string): Promise<never> {
+  let issues: unknown;
+  try {
+    const body = await res.json();
+    issues = Array.isArray(body?.message) ? body.message : body;
+  } catch {
+    // Non-JSON or empty error body — issues stays undefined.
+  }
+  throw new ApiError(`${method} ${path} failed: ${res.status}`, res.status, issues);
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`/api${path}`, {
     ...init,
     headers: { 'Content-Type': 'application/json', ...init?.headers },
   });
-  if (!res.ok) {
-    let issues: unknown;
-    try {
-      const body = await res.json();
-      issues = Array.isArray(body?.message) ? body.message : body;
-    } catch {
-      // Non-JSON or empty error body — issues stays undefined.
-    }
-    throw new ApiError(
-      `${init?.method ?? 'GET'} ${path} failed: ${res.status}`,
-      res.status,
-      issues,
-    );
-  }
+  if (!res.ok) return failFrom(res, init?.method ?? 'GET', path);
   const text = await res.text();
   return (text ? JSON.parse(text) : undefined) as T;
+}
+
+/** A POST whose response is a file: the bytes and the name the server gave it. */
+async function requestFile(path: string, body: unknown): Promise<{ blob: Blob; filename: string }> {
+  const res = await fetch(`/api${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) return failFrom(res, 'POST', path);
+  const filename = /filename="([^"]+)"/.exec(res.headers.get('Content-Disposition') ?? '')?.[1];
+  return { blob: await res.blob(), filename: filename ?? 'download' };
 }
 
 export const api = {
@@ -436,6 +448,11 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(url ? { url } : {}),
     }),
+  getPackagePreview: (versionId: string) =>
+    request<PackageExportPreviewDto>(`/blueprint-versions/${versionId}/package/preview`),
+  exportPackage: (versionId: string, dto: ExportPackageDto) =>
+    requestFile(`/blueprint-versions/${versionId}/package`, dto),
+
   getIdentity: () => request<PackageIdentityStatusDto>('/identity'),
   backupIdentity: () => request<PackageIdentityBackupDto>('/identity/backup', { method: 'POST' }),
   restoreIdentity: (backup: PackageIdentityBackupDto) =>

@@ -156,3 +156,43 @@ export const TrustedAuthorDto = z.object({
   trustedAt: z.string(),
 });
 export type TrustedAuthorDto = z.infer<typeof TrustedAuthorDto>;
+
+/** One local thing a blueprint version points at: an asset, or the
+ * character a role selects. The exporter decides, for each, whether its
+ * media travels in the package or the importer fills the slot. */
+export const PackageReferenceDto = z.object({
+  id: z.string(),
+  kind: z.enum(['asset', 'character']),
+  name: z.string(),
+  assetKind: AssetKind.optional(),
+  /** Bytes of the media that would be bundled. */
+  bytes: z.number(),
+  /** Deleted, or its file is gone: can only become an empty slot. */
+  missing: z.boolean(),
+  /** Too big to bundle: can only become a slot. */
+  tooLarge: z.boolean(),
+});
+export type PackageReferenceDto = z.infer<typeof PackageReferenceDto>;
+
+/** Something in the pipeline that looks personal or secret. The value itself
+ * is never sent back, only where it is. */
+export const PackagePrivacyFlagDto = z.object({
+  path: z.string(),
+  kind: z.enum(['email', 'secret']),
+});
+export type PackagePrivacyFlagDto = z.infer<typeof PackagePrivacyFlagDto>;
+
+export const PackageExportPreviewDto = z.object({
+  name: z.string(),
+  version: z.string(),
+  references: z.array(PackageReferenceDto),
+  privacy: z.array(PackagePrivacyFlagDto),
+});
+export type PackageExportPreviewDto = z.infer<typeof PackageExportPreviewDto>;
+
+export const ExportPackageDto = z.object({
+  /** Per reference id: ship its media (`bundle`, the default) or leave a
+   * `slot` for the importer to fill. */
+  choices: z.record(z.string(), z.enum(['bundle', 'slot'])).default({}),
+});
+export type ExportPackageDto = z.infer<typeof ExportPackageDto>;
