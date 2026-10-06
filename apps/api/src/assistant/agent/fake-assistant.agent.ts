@@ -10,7 +10,9 @@ import type { AssistantApplyMode } from '@reelcraft/shared';
 export type FakeStep =
   | { say: string }
   | { call: string; args: unknown; expect?: (result: { ok: boolean; text: string }) => void }
-  | { fail: string };
+  | { fail: string }
+  /** Wait until released or until the turn is interrupted (then throws `interrupted`). */
+  | { hold: Promise<void> };
 
 /** Deterministic agent for tests and e2e: each `runTurn` plays the next scripted turn. */
 export class FakeAssistantAgent implements AssistantAgent {
@@ -21,7 +23,14 @@ export class FakeAssistantAgent implements AssistantAgent {
   private nextSession = 1;
   private turnIndex = 0;
 
-  constructor(private readonly script: FakeStep[][] = []) {}
+  constructor(private script: FakeStep[][] = []) {}
+
+  /** Replaces the script and forgets earlier turns (a suite reusing one agent). */
+  reset(script: FakeStep[][]): void {
+    this.script = script;
+    this.turnIndex = 0;
+    this.turns.length = 0;
+  }
 
   async unavailableReason(): Promise<string | null> {
     return null;
@@ -53,6 +62,12 @@ export class FakeAssistantAgent implements AssistantAgent {
       } else if ('call' in step) {
         const result = await options.handlers.callTool(step.call, step.args);
         step.expect?.(result);
+      } else if ('hold' in step) {
+        const aborted = new Promise<'aborted'>((resolve) =>
+          options.signal.addEventListener('abort', () => resolve('aborted'), { once: true }),
+        );
+        const outcome = await Promise.race([step.hold.then(() => 'released' as const), aborted]);
+        if (outcome === 'aborted') throw new AssistantTurnError('interrupted', 'Stopped');
       } else {
         throw new AssistantTurnError('failed', step.fail);
       }

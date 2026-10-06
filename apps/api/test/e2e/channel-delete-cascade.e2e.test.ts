@@ -14,6 +14,8 @@ import type { StageExecuteEventData } from '../../src/orchestration/functions/st
 import {
   artifact,
   asset,
+  assistantItem,
+  assistantSession,
   blob,
   blueprint,
   blueprintVersion,
@@ -40,6 +42,42 @@ import { createTestDb, type TestDb } from '../support/test-db';
  * dependent table (stage_execution, stage_attempt, artifact, ledger_entry,
  * blob) has real rows to delete.
  */
+
+/** A chat with one item, so the cascade has assistant rows to delete. */
+async function seedAssistantChat(testDb: TestDb, blueprintId: string): Promise<string> {
+  const sessionId = ulid();
+  await testDb.db.insert(assistantSession).values({
+    id: sessionId,
+    blueprintId,
+    providerId: 'fake',
+    externalSessionId: 'ext-1',
+    appVersion: '0.0.0',
+    toolsHash: 'hash',
+  });
+  await testDb.db.insert(assistantItem).values({
+    id: ulid(),
+    sessionId,
+    turnId: ulid(),
+    seq: 1,
+    type: 'user_message',
+    payload: { text: 'hi' },
+  });
+  return sessionId;
+}
+
+async function assistantRowsFor(testDb: TestDb, sessionId: string, blueprintId: string) {
+  return {
+    items: await testDb.db
+      .select()
+      .from(assistantItem)
+      .where(eq(assistantItem.sessionId, sessionId)),
+    sessions: await testDb.db
+      .select()
+      .from(assistantSession)
+      .where(eq(assistantSession.blueprintId, blueprintId)),
+  };
+}
+
 describe('channel delete cascade (e2e)', () => {
   let testDb: TestDb;
   let testApp: TestApp;
@@ -151,6 +189,7 @@ describe('channel delete cascade (e2e)', () => {
       packageVersion: '1.0',
       contentHash: 'hash',
     });
+    const chatId = await seedAssistantChat(testDb, blueprintId);
 
     // An open (created, not finished) run blocks the delete.
     const open = await runs.create({
@@ -192,6 +231,9 @@ describe('channel delete cascade (e2e)', () => {
         .from(packageImport)
         .where(eq(packageImport.blueprintId, blueprintId)),
     ).toHaveLength(0);
+    const chatRowsAfter = await assistantRowsFor(testDb, chatId, blueprintId);
+    expect(chatRowsAfter.items).toHaveLength(0);
+    expect(chatRowsAfter.sessions).toHaveLength(0);
     expect(
       await testDb.db
         .select()
@@ -248,6 +290,7 @@ describe('channel delete cascade (e2e)', () => {
       packageVersion: '1.0',
       contentHash: 'hash',
     });
+    const chatId = await seedAssistantChat(testDb, blueprintId);
 
     const createdCharacter = await characters.create(channel.id, {
       name: 'Cascade Character',
@@ -342,6 +385,9 @@ describe('channel delete cascade (e2e)', () => {
         .from(packageImport)
         .where(eq(packageImport.blueprintId, blueprintId)),
     ).toHaveLength(0);
+    const chatRowsAfter = await assistantRowsFor(testDb, chatId, blueprintId);
+    expect(chatRowsAfter.items).toHaveLength(0);
+    expect(chatRowsAfter.sessions).toHaveLength(0);
     const [runRowAfter] = await testDb.db.select().from(run).where(eq(run.id, dryRun.id));
     expect(runRowAfter).toBeUndefined();
     const executionsAfter = await testDb.db
