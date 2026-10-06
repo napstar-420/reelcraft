@@ -40,6 +40,7 @@ For a fresh local stack: copy `.env.example` to `.env`, then run `docker compose
 ## Code Conventions
 
 - Use TypeScript, async/await, named exports, and kebab-case filenames. React components are PascalCase.
+- `apps/web` imports only types from `@reelcraft/shared`: it is built as CommonJS, so Vite can't import runtime values (schemas, functions) from it. Put web-only helpers in `apps/web/src/lib/`.
 - Validate external DTOs with shared Zod schemas via `ZodValidationPipe`; change shared DTOs when an API contract changes.
 - Keep Nest domain boundaries intact. `DbModule` is deliberately not global; import it explicitly where needed. `CapabilityModule` must not import `db`, `run`, or `blueprint` modules.
 - Provider keys resolve through `KEY_PROVIDER` (`SettingsKeyProvider`: the environment first, then keys saved encrypted in Settings); never read provider keys from `process.env` at the point of use. Read the BrowserOS Neo address with `SettingsService.browserOsUrl()`, not `EngineConfig`.
