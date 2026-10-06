@@ -7,7 +7,6 @@ import { SchemaValidatorService } from '../json-schema/schema-validator.service'
 import { ScriptSandboxService } from '../sandbox/script-sandbox.service';
 import type { Env } from '../config/env.schema';
 import { EngineConfig } from '../config/engine-config';
-import { HELLO_STAGE_GRAPH } from '../template/template-seed.service';
 import { BlueprintValidatorService } from './blueprint-validator.service';
 
 function fakeEngineConfig(): EngineConfig {
@@ -157,12 +156,6 @@ function hasWarning(
 describe('BlueprintValidatorService', () => {
   beforeAll(async () => {
     await sandbox.ready();
-  });
-
-  it('the seeded "Hello Stage" template validates with zero errors', () => {
-    const validator = makeValidator();
-    const issues = validator.validate({ graph: HELLO_STAGE_GRAPH, inputs: [], roles: [] });
-    expect(issues.filter((i) => i.severity === 'error')).toEqual([]);
   });
 
   it('errors on an empty graph', () => {
@@ -797,8 +790,8 @@ describe('BlueprintValidatorService', () => {
 });
 
 /** Chunk 4 — `validateCheckDef` is the extracted, context-free half of the
- * per-check validation above (no graph/ctx needed), reused directly by
- * `TemplateService.save()` for `check`-kind templates. */
+ * per-check validation above (no graph/ctx needed), used by
+ * `validateStage`. */
 describe('BlueprintValidatorService.validateCheckDef', () => {
   it('errors on an unknown builtin check key', () => {
     const validator = makeValidator();

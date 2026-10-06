@@ -18,14 +18,12 @@ import type {
   FlowAccountsDto,
   ResolveCapabilityResponseDto,
   ModelInfoDto,
-  SaveTemplateDto,
   SaveTimelineDraftDto,
   TimelineEditorSessionDto,
   CheckDef,
   JsonSchema,
   ValidationIssue,
   AssetDto,
-  TemplateSource,
   CharacterDto,
   CreateCharacterDto,
   UpdateCharacterDto,
@@ -52,38 +50,6 @@ import type {
   UpdateBlueprintDto,
   UpdateStatusDto,
 } from '@reelcraft/shared';
-
-/** `template.service.ts#list()`'s row shape: every builtin plus the
- * caller's own `source: 'user'` templates, each with its latest version's
- * `requires`. */
-export type TemplateListItem = {
-  id: string;
-  ownerId: string;
-  source: TemplateSource;
-  kind: string;
-  name: string;
-  description: string;
-  tags: string[];
-  archived: boolean;
-  requires: { capabilities: string[]; inputs: unknown[] };
-};
-
-export type TemplateVersionDto = {
-  id: string;
-  templateId: string;
-  version: number;
-  body: unknown;
-  requires: { capabilities: string[]; inputs: unknown[] };
-  createdAt: string;
-};
-
-/** `template.service.ts#instantiate()` branches on the template's own
- * `kind` (loaded server-side): `blueprint` creates a real blueprint version
- * and returns it plus `requires`; the other three kinds return the inlined
- * `body` with no DB write. */
-export type InstantiateTemplateResult =
-  | (BlueprintVersionDto & { requires: { capabilities: string[]; inputs: unknown[] } })
-  | { body: unknown; requires: { capabilities: string[]; inputs: unknown[] } };
 
 /** `check.controller.ts#listCheckTypes()`'s row shape — no shared DTO
  * exists for this response. */
@@ -271,18 +237,6 @@ export const api = {
     ),
   listModelsForProvider: (providerId: string) =>
     request<ModelInfoDto[]>(`/providers/${providerId}/models`),
-
-  saveTemplate: (dto: SaveTemplateDto) =>
-    request<unknown>('/templates', { method: 'POST', body: JSON.stringify(dto) }),
-
-  listTemplates: () => request<TemplateListItem[]>('/templates'),
-  listTemplateVersions: (templateId: string) =>
-    request<TemplateVersionDto[]>(`/templates/${templateId}/versions`),
-  instantiateTemplate: (templateId: string, channelId?: string, runCapUsd?: number) =>
-    request<InstantiateTemplateResult>(`/templates/${templateId}/instantiate`, {
-      method: 'POST',
-      body: JSON.stringify({ channelId, runCapUsd }),
-    }),
 
   listCheckTypes: () => request<CheckTypeDto[]>('/check-types'),
   testCheck: (check: CheckDef, artifactId: string) =>

@@ -3,7 +3,6 @@ import { ConfigModule } from './config/config.module';
 import { LoggingModule } from './common/logging.module';
 import { ChannelModule } from './channel/channel.module';
 import { BlueprintModule } from './blueprint/blueprint.module';
-import { TemplateModule } from './template/template.module';
 import { CapabilityModule } from './capability/capability.module';
 import { CheckModule } from './check/check.module';
 import { QcModule } from './qc/qc.module';
@@ -18,7 +17,6 @@ import { SettingsPageModule } from './settings/settings-page.module';
     LoggingModule,
     ChannelModule,
     BlueprintModule,
-    TemplateModule,
     CapabilityModule,
     CheckModule,
     QcModule,

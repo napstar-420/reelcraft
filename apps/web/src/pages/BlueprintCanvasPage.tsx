@@ -4,7 +4,7 @@ import { CreateBlueprintForm } from '../components/canvas/create-blueprint-form'
 import { EditBlueprintCanvas } from '../components/canvas/edit-blueprint-canvas';
 
 /** Route → load-or-create → the blueprint workbench. With a channel and no
- * blueprint it asks for a name (or a template) first, then hands over to the
+ * blueprint it asks for a name first, then hands over to the
  * canvas without a navigation. */
 export function BlueprintCanvasPage() {
   const { channelId, blueprintId } = useParams<{ channelId?: string; blueprintId?: string }>();

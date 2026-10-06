@@ -14,8 +14,7 @@ different inputs each time.
 
 1. Open a channel and select the **Blueprints** tab.
 2. Select **Create custom blueprint**.
-3. Enter a **Blueprint name** and select **Create blank blueprint**. Or start from a template: select
-   its card, set the **Run cap (USD)** and select **Use template**.
+3. Enter a **Blueprint name** and select **Create blank blueprint**.
 
 The blueprint's canvas opens, ready for its first stage.
 

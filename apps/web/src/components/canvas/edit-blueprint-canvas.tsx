@@ -394,7 +394,6 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
       <CanvasToolbar
         blueprintName={blueprintMeta.data?.name}
         channelName={channel.data?.name}
-        graph={draft.graph}
         latestSaved={latestSaved}
         versions={versions.data ?? []}
         viewing={viewing}

@@ -4,9 +4,8 @@ import { EngineConfig } from '../config/engine-config';
 import { createS3Client } from './s3-client.factory';
 
 /**
- * §23 — "bootstrap ensures the bucket exists, applies the CORS rule, and
- * seeds builtin templates, so a fresh clone plus `docker compose up` is a
- * working environment." Belt-and-braces alongside the `mc` one-shot in
+ * §23 — "bootstrap ensures the bucket exists, applies the CORS rule, so a
+ * fresh clone plus `docker compose up` is a working environment." Belt-and-braces alongside the `mc` one-shot in
  * docker-compose: the app should not assume a sidecar ran (§21.3 CORS is
  * required for the browser to play media directly from a second origin).
  *

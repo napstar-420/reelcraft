@@ -91,7 +91,6 @@ export const BlueprintVersionDto = z.object({
   budget: z.object({ runCapUsd: z.number() }),
   validation: z.array(ValidationIssue),
   runnable: z.boolean(),
-  sourceTemplateId: z.string().nullable(),
   createdAt: z.string(),
   draft: z.boolean(),
   /** Real (not dry or draft) runs of this version; set by the versions list. */

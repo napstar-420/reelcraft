@@ -1,0 +1,21 @@
+{
+  "graph": [
+    {
+      "key": "hello",
+      "label": "Hello",
+      "capability": "text.generate",
+      "instructions": { "template": "Say a short, friendly hello to a new video-engine project." },
+      "config": {},
+      "slots": {},
+      "context": {},
+      "output": { "kind": "text" },
+      "checks": [],
+      "retryLimit": 0,
+      "model": { "provider": "fake", "modelId": "fake-text-1", "params": { "max_tokens": 256 } }
+    }
+  ],
+  "inputs": [],
+  "roles": [],
+  "defaults": {},
+  "budget": { "runCapUsd": 1 }
+}

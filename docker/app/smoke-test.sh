@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 # End-to-end check of a built self-hosted image, run by CI before anything is
-# published: boots it on a fresh volume, runs the seeded "Hello Stage" template
-# to COMPLETED (API + Postgres + Inngest), and round-trips a file through the
-# /storage proxy (MinIO).
+# published: boots it on a fresh volume, runs a one-stage "hello" blueprint
+# (hello-blueprint.json) to COMPLETED (API + Postgres + Inngest), and
+# round-trips a file through the /storage proxy (MinIO).
 #
 # Usage: docker/app/smoke-test.sh <image> [port]
 # Needs: docker, curl, jq.
 set -euo pipefail
+
+here="$(cd "$(dirname "$0")" && pwd)"
 
 image="${1:?usage: smoke-test.sh <image> [port]}"
 port="${2:-18080}"
@@ -54,12 +56,10 @@ echo "    $health"
 step "serving the web app"
 curl -fsS "${base}/" | grep -q '<div id="root">' || fail "web app index not served"
 
-step "running the Hello Stage template"
+step "running a hello blueprint"
 channel="$(post "${api}/channels" '{"name":"Smoke test"}' | jq -r .id)"
-template="$(curl -fsS "${api}/templates" | jq -r '[.[] | select(.name == "Hello Stage")][0].id')"
-[ "$template" != null ] || fail "Hello Stage template not seeded"
-version="$(post "${api}/templates/${template}/instantiate" \
-  "{\"channelId\":\"${channel}\",\"runCapUsd\":1}" | jq -r .id)"
+blueprint="$(post "${api}/blueprints" "{\"channelId\":\"${channel}\",\"name\":\"Hello\"}" | jq -r .blueprintId)"
+version="$(post "${api}/blueprints/${blueprint}/versions" "$(cat "${here}/hello-blueprint.json")" | jq -r .id)"
 run="$(post "${api}/runs" \
   "{\"channelId\":\"${channel}\",\"blueprintVersionId\":\"${version}\",\"budgetCapUsd\":1}" | jq -r .id)"
 post "${api}/runs/${run}/start" '{}' >/dev/null

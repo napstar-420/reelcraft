@@ -128,13 +128,6 @@ export type LedgerEntryKind = z.infer<typeof LedgerEntryKind>;
 export const LedgerEntryCategory = z.enum(['stage_output', 'qc', 'check']);
 export type LedgerEntryCategory = z.infer<typeof LedgerEntryCategory>;
 
-/** §20 — 'builtin' marks engine-shipped presets seeded on migration. */
-export const TemplateSource = z.enum(['builtin', 'user']);
-export type TemplateSource = z.infer<typeof TemplateSource>;
-
-export const TemplateKind = z.enum(['blueprint', 'schema', 'check', 'stage']);
-export type TemplateKind = z.infer<typeof TemplateKind>;
-
 export const HumanWaitKind = z.enum(['approval', 'input', 'timeline_edit']);
 export type HumanWaitKind = z.infer<typeof HumanWaitKind>;
 
