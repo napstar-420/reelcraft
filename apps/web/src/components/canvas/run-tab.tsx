@@ -106,13 +106,15 @@ export function RunTab({
         </div>
         <h3 className="mt-1.5 text-[15px] font-semibold">No runs yet</h3>
         <p className="max-w-72 text-sm text-muted-foreground">
-          Save the blueprint, then run it. Each stage shows its status on the canvas, and you can
-          re-run a single stage from there.
+          Save the blueprint, then run it. To run just the first stages, pick one under Run up to.
+          After that, each stage shows its status on the canvas and you can re-run a single stage
+          from there.
         </p>
         <div className="mt-2">
           <RunLaunchDialog
             channelId={channelId}
             inputs={inputs}
+            stages={graph}
             defaultBudgetCapUsd={budgetCapUsd}
             prepareVersion={prepareRunnableVersion}
             onLaunched={onSwitchRun}

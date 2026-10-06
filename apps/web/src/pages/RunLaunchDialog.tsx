@@ -3,7 +3,7 @@ import { FlaskConical, Play } from 'lucide-react';
 import { cn } from 'cn';
 import { useMutation } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import type { InputDef } from '@reelcraft/shared';
+import type { InputDef, StageDef } from '@reelcraft/shared';
 import { api, ApiError } from '../api/client';
 import { sha256Hex } from '../lib/sha256';
 import { Alert, AlertDescription, AlertTitle } from '../components/ui/alert';
@@ -64,6 +64,7 @@ function describeError(error: unknown) {
 export function RunLaunchDialog({
   channelId,
   inputs,
+  stages = [],
   defaultBudgetCapUsd,
   prepareVersion,
   onLaunched,
@@ -71,6 +72,8 @@ export function RunLaunchDialog({
 }: {
   channelId: string;
   inputs: InputDef[];
+  /** The blueprint's stages, to offer "Run up to". */
+  stages?: Pick<StageDef, 'key' | 'label'>[];
   defaultBudgetCapUsd: number;
   prepareVersion: () => Promise<string>;
   disabled?: boolean;
@@ -85,6 +88,7 @@ export function RunLaunchDialog({
   // the free fake provider.
   const [dryRun, setDryRun] = useState(false);
   const [budgetCapUsd, setBudgetCapUsd] = useState(defaultBudgetCapUsd);
+  const [untilStageKey, setUntilStageKey] = useState('');
   const [values, setValues] = useState<LaunchValues>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [recoverable, setRecoverable] = useState<RecoverableLaunch | null>(null);
@@ -111,6 +115,7 @@ export function RunLaunchDialog({
             inputDefs: inputs,
             values,
             dryRun,
+            ...(untilStageKey && { untilStageKey }),
             ...(recoverable && {
               resume: {
                 runId: recoverable.runId,
@@ -170,6 +175,7 @@ export function RunLaunchDialog({
         setOpen(next);
         if (!next) {
           setDryRun(false);
+          setUntilStageKey('');
           setBudgetCapUsd(defaultBudgetCapUsd);
           setErrors({});
           setRecoverable(null);
@@ -235,6 +241,31 @@ export function RunLaunchDialog({
             />
             {errors.budget && <p className="text-xs text-destructive">{errors.budget}</p>}
           </div>
+
+          {stages.length > 1 && (
+            <div className="space-y-1.5">
+              <Label htmlFor="run-until-stage">Run up to</Label>
+              <select
+                id="run-until-stage"
+                value={untilStageKey}
+                disabled={recoverable !== null}
+                onChange={(event) => setUntilStageKey(event.target.value)}
+                className="h-9 w-full rounded-md border bg-transparent px-2 text-sm disabled:opacity-60"
+              >
+                <option value="">All stages</option>
+                {stages.map((stage, index) => (
+                  <option key={stage.key} value={stage.key}>
+                    {`${index + 1}. ${stage.label}`}
+                  </option>
+                ))}
+              </select>
+              {untilStageKey && (
+                <p className="text-xs text-muted-foreground">
+                  Later stages are skipped. Run again from the canvas to continue.
+                </p>
+              )}
+            </div>
+          )}
 
           {inputs.length === 0 && (
             <p className="text-sm text-muted-foreground">This blueprint has no runtime inputs.</p>

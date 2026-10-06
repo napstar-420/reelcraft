@@ -435,6 +435,7 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
             key={draftKey}
             channelId={channelId ?? ''}
             inputs={draft.inputs}
+            stages={draft.graph}
             defaultBudgetCapUsd={draft.budget.runCapUsd}
             prepareVersion={prepareSavedVersion}
             disabled={runBlocked}

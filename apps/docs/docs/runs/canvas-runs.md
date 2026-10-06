@@ -34,6 +34,12 @@ stages from the first change onwards run again. Reused stages are marked **Reuse
 Only the unbroken run of unchanged stages from the first stage is reused. If you change stage 3, stages
 3 and later run again, even if some of them wouldn't be affected.
 
+## Run only the first stages
+
+Before a blueprint has any run, there is no play button on the stages yet. Select **Run**, then pick a stage
+under **Run up to**. Reelcraft runs from the first stage to that one and skips the rest. Once the run
+exists, use the play button on any stage to re-run it (below).
+
 ## Run a single stage
 
 Select the play button next to a stage, in the **Run** tab or on its card, to run just that stage. Reelcraft reuses everything before it,
