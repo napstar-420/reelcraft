@@ -46,7 +46,8 @@ Once connected, the Codex card lists what Codex can do in Reelcraft:
 ![The Codex card when connected](/img/app/settings-codex-connected.png)
 
 - **Text**: available as soon as Codex is connected.
-- **Images**: needs Codex's `imagegen` extension. Until it is installed, the line shows the reason.
+- **Images**: uses Codex's built-in image generation (older Codex versions need the `imagegen`
+  extension instead). If it is off, the line shows the reason.
 - **Browser tasks**: needs BrowserOS Neo. Reelcraft registers Neo with Codex for you when you
   connect Codex or save the Neo address, and the card says **BrowserOS Neo is set up for Codex.**
   Neo must also be running.

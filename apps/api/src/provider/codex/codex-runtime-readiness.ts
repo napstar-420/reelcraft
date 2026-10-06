@@ -32,7 +32,7 @@ export class CodexRuntimeReadiness {
     if (!force && this.cached && this.cached.expiresAt > Date.now()) return this.cached.status;
     const modalities: Modality[] = ['text'];
     const unavailable: CodexRuntimeStatus['unavailable'] = {};
-    const [plugins, mcp] = await Promise.all([
+    const [plugins, mcp, features] = await Promise.all([
       this.codex(['plugin', 'list']).catch((error: unknown) => {
         this.logger.warn({ err: error }, 'codex plugin list failed');
         return '';
@@ -41,11 +41,21 @@ export class CodexRuntimeReadiness {
         this.logger.warn({ err: error }, 'codex mcp list failed');
         return '';
       }),
+      this.codex(['features', 'list']).catch((error: unknown) => {
+        this.logger.warn({ err: error }, 'codex features list failed');
+        return '';
+      }),
     ]);
 
-    if (this.enabledLine(plugins, this.config.codexImageExtension)) modalities.push('image');
+    // Newer Codex builds generate images with a built-in tool (feature `image_generation`);
+    // older ones needed the `imagegen` plugin.
+    if (
+      /^image_generation\s.*\strue\s*$/m.test(features) ||
+      this.enabledLine(plugins, this.config.codexImageExtension)
+    )
+      modalities.push('image');
     else
-      unavailable.image = `Codex extension "${this.config.codexImageExtension}" is not installed and enabled`;
+      unavailable.image = `Codex image generation is off: its "image_generation" feature is disabled and the "${this.config.codexImageExtension}" extension is not installed and enabled`;
 
     if (!this.enabledLine(mcp, this.config.codexBrowserExtension)) {
       unavailable.browser = `BrowserOS Neo Codex extension "${this.config.codexBrowserExtension}" is not installed and enabled`;
