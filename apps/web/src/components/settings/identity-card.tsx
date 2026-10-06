@@ -18,20 +18,10 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { apiErrorMessage } from '@/lib/api-error-message';
+import { saveBlob } from '@/lib/save-blob';
 
 const IDENTITY_KEY = ['identity'] as const;
 const TRUSTED_KEY = ['identity-trusted'] as const;
-
-function downloadJson(filename: string, data: unknown) {
-  const url = URL.createObjectURL(
-    new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }),
-  );
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-}
 
 /** This install's package-signing identity: who packages exported here say
  * they are from, and which authors' packages this install trusts. */
@@ -47,7 +37,11 @@ export function IdentityCard() {
 
   const backup = useMutation({
     mutationFn: api.backupIdentity,
-    onSuccess: (data) => downloadJson('reelcraft-identity.json', data),
+    onSuccess: (data) =>
+      saveBlob(
+        new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }),
+        'reelcraft-identity.json',
+      ),
     onError: onError('Could not back up the identity.'),
   });
   const restore = useMutation({

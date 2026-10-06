@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Archive, ArchiveRestore, MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
+import { Archive, ArchiveRestore, MoreHorizontal, Pencil, Share2, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { BlueprintDto } from '@reelcraft/shared';
 import { api } from '@/api/client';
@@ -27,6 +27,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { ExportPackageDialog } from '@/components/packages/export-package-dialog';
 import { PlaceholderArt } from '@/components/placeholder-art';
 import { apiErrorMessage } from '@/lib/api-error-message';
 import { Switch } from '@/components/ui/switch';
@@ -128,6 +129,7 @@ export function BlueprintsTab({ channelId }: { channelId?: string | undefined })
   const [editing, setEditing] = useState<BlueprintDto | null>(null);
   const [showArchived, setShowArchived] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<BlueprintDto | null>(null);
+  const [exporting, setExporting] = useState<BlueprintDto | null>(null);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const queryClient = useQueryClient();
   const blueprints = useQuery({
@@ -233,6 +235,12 @@ export function BlueprintsTab({ channelId }: { channelId?: string | undefined })
                       <DropdownMenuItem onSelect={() => setEditing(b)}>
                         <Pencil /> Edit details
                       </DropdownMenuItem>
+                      <DropdownMenuItem
+                        disabled={!b.currentVersionId}
+                        onSelect={() => setExporting(b)}
+                      >
+                        <Share2 /> Export package…
+                      </DropdownMenuItem>
                       <DropdownMenuItem onSelect={() => archive.mutate(b)}>
                         {b.archived ? <ArchiveRestore /> : <Archive />}
                         {b.archived ? 'Unarchive' : 'Archive'}
@@ -283,6 +291,12 @@ export function BlueprintsTab({ channelId }: { channelId?: string | undefined })
       )}
 
       <BlueprintEditDialog blueprint={editing} onOpenChange={(open) => !open && setEditing(null)} />
+
+      <ExportPackageDialog
+        versionId={exporting?.currentVersionId ?? null}
+        open={!!exporting}
+        onOpenChange={(open) => !open && setExporting(null)}
+      />
 
       <AlertDialog
         open={deleteTarget !== null}
