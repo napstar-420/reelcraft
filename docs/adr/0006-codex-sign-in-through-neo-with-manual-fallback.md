@@ -32,7 +32,7 @@ Codex only stores its own token in the volume.
   and browser capabilities, each with its reason when unavailable) and the registrar. **Sign out** runs
   `codex logout`.
 - No profile is created: `codex exec --profile reelcraft` works without a matching entry (checked with
-  codex-cli 0.159.3).
+  codex-cli 0.159.3; the image now ships 0.160.0).
 
 ## Alternatives Considered
 

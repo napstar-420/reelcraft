@@ -105,8 +105,9 @@ the release-please PR for 0.3.0 (Settings and the guide's in-app links) is #51.
   has optional parameters (see `provider.module.ts`).
 - **`exactOptionalPropertyTypes`** is on: optional cache fields must be typed `… | undefined` to be reset.
 - **MDX (the user guide)** rejects `<https://…>` autolinks. Use `[text](url)`.
-- **Codex CLI facts** (codex-cli 0.159.3): `login status` exits 0 only when logged in; `mcp add <name> --url
-<url>`, `mcp list --json` and `mcp remove` exist; `--profile reelcraft` works without a profile entry; the
+- **Codex CLI facts** (verified with codex-cli 0.159.3; `login status` exiting 0 when logged in and `mcp add <name> --url
+<url>`, `mcp list --json` and `mcp remove` re-checked on 0.160.0, the image's version): `login status` exits 0 only when logged in;
+  `--profile reelcraft` works without a profile entry; the
   device-auth output reads "Follow these steps to sign in with ChatGPT using device code authorization" and
   "Enter this one-time code", with the page at `https://auth.openai.com/codex/device`.
 - **`CODEX_BROWSER_OS_URL` is set by the image**, so a fresh install's Settings shows the Neo address as "From the
