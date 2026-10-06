@@ -13,6 +13,9 @@ export const SETTING = {
   /** The Neo address Reelcraft registered with Codex, so it only ever
    * replaces its own entry. */
   codexNeoMcpUrl: 'codex.neoMcpUrl',
+  /** This install's package-signing identity (Ed25519, PEM). */
+  packageIdentityPrivateKey: 'packageIdentity.privateKey',
+  packageIdentityPublicKey: 'packageIdentity.publicKey',
 } as const;
 
 /** How long a read of the table is reused. Writes through this service

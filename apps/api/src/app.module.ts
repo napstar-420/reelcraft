@@ -9,6 +9,7 @@ import { QcModule } from './qc/qc.module';
 import { RunModule } from './run/run.module';
 import { SystemModule } from './system/system.module';
 import { UpdateModule } from './update/update.module';
+import { PackageModule } from './package/package.module';
 import { SettingsPageModule } from './settings/settings-page.module';
 
 @Module({
@@ -24,6 +25,7 @@ import { SettingsPageModule } from './settings/settings-page.module';
     SystemModule,
     UpdateModule,
     SettingsPageModule,
+    PackageModule,
   ],
 })
 export class AppModule {}

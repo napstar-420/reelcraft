@@ -14,3 +14,4 @@ export * from './provider-job';
 export * from './stage-event';
 export * from './app-setting';
 export * from './storage-orphan';
+export * from './package-trusted-author';
