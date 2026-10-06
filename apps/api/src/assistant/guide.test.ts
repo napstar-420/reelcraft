@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ArtifactKind, Ref } from '@reelcraft/shared';
 import { BUILTIN_CHECKS } from '../check/builtins/index';
+import { qualityIssues } from './tools/quality-checks';
 import { BlueprintValidatorService } from '../blueprint/blueprint-validator.service';
 import { SchemaValidatorService } from '../json-schema/schema-validator.service';
 import { realCapabilities, realCapabilityRegistry } from './tools/test-support';
@@ -82,5 +83,7 @@ describe('assistant guide examples', () => {
       roles: draft.roles,
     });
     expect(issues.filter((i) => i.severity === 'error')).toEqual([]);
+    // The assistant copies the examples, so they must meet its own quality bar too.
+    expect(qualityIssues(draft)).toEqual([]);
   });
 });

@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { Modality, type CreateBlueprintVersionDto } from '@reelcraft/shared';
 import { BUILTIN_CHECKS } from '../../check/builtins/index';
 import { GUIDE_TOPICS, guideIndex, readGuide } from '../guide';
+import { qualityIssues } from './quality-checks';
 import { parseDraft } from './draft-checks';
 import { draftJsonSchema, MODALITIES, obj, str } from './json-schemas';
 import type { AssistantTool, TurnContext, ToolDeps } from './types';
@@ -180,7 +181,7 @@ const listModels: AssistantTool<z.infer<typeof ListModelsInput>> = {
   name: 'list_models',
   kind: 'read',
   description:
-    'List the models that can be used right now, per provider, with the kinds of work (modalities) each can do and why a modality is unavailable (e.g. a provider that is signed out). Use ONLY ids from here in model pins and defaults.',
+    'List the models that can be used right now, per provider, with the kinds of work (modalities) each can do and why a modality is unavailable (e.g. a provider that is signed out). Use ONLY ids from here in model pins and defaults. dataOutput: the model can write a data output (JSON matching your schema); inputKinds: file kinds it can read (attachments, or the output a QC judge looks at).',
   input: ListModelsInput,
   jsonSchema: () =>
     obj({ modality: str('Only models that can do this kind of work.', { enum: MODALITIES }) }),
@@ -206,7 +207,12 @@ const listModels: AssistantTool<z.infer<typeof ListModelsInput>> = {
               defaultReasoningEffort: model.defaultReasoningEffort,
             }),
             inputKinds: model.capabilities?.inputKinds ?? [],
-            supportsStructuredOutput: model.capabilities?.supportsStructuredOutput ?? false,
+            // Only OpenRouter needs native structured output for a data stage (the validator
+            // rejects it otherwise); Codex, ChatGPT and fake reply in JSON that Reelcraft parses
+            // and checks against the schema.
+            dataOutput:
+              providerId !== 'openrouter' ||
+              (model.capabilities?.supportsStructuredOutput ?? false),
           });
         }
       } catch (error) {
@@ -323,7 +329,7 @@ const validateDraft: AssistantTool<z.infer<typeof DraftInput>> = {
   name: 'validate_draft',
   kind: 'read',
   description:
-    'Validate a complete draft with the real blueprint validator WITHOUT proposing it. Returns the errors and warnings. Use it while building; use propose_draft when it has no errors.',
+    'Validate a complete draft with the real blueprint validator WITHOUT proposing it. Returns the errors and warnings, including the assistant quality rules (messages starting "quality:") that propose_draft enforces. Use it while building; use propose_draft when it has no errors.',
   input: DraftInput,
   jsonSchema: (n) => obj({ draft: draftJsonSchema(n) }, ['draft']),
   async handler(ctx, deps, input) {
@@ -331,7 +337,11 @@ const validateDraft: AssistantTool<z.infer<typeof DraftInput>> = {
     if (!parsed.ok)
       return { ok: false, error: 'The draft has the wrong shape.', issues: parsed.issues };
     const validation = await deps.blueprints.validateOnly(ctx.blueprintId, parsed.draft);
-    return { ok: true, result: validation };
+    const quality = qualityIssues(parsed.draft);
+    return {
+      ok: true,
+      result: { ...validation, issues: [...validation.issues, ...quality] },
+    };
   },
 };
 

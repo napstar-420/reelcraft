@@ -277,6 +277,30 @@ describe('read tools', () => {
     });
   });
 
+  it('list_models says which models can write a data output', async () => {
+    const deps = makeDeps({
+      providers: {
+        list: () => ['chatgpt', 'openrouter'],
+        get: (id: string) => ({
+          modalities: ['text'],
+          listModels: async () => [
+            { modelId: `${id}-1`, label: id, capabilities: { inputKinds: [] } },
+          ],
+        }),
+      } as unknown as ToolDeps['providers'],
+    });
+    const out = await runTool('list_models', {}, ctx(), deps);
+    expect(out).toMatchObject({
+      ok: true,
+      result: {
+        models: [
+          { providerId: 'chatgpt', dataOutput: true },
+          { providerId: 'openrouter', dataOutput: false },
+        ],
+      },
+    });
+  });
+
   it('list_models filters by modality', async () => {
     const out = await runTool('list_models', { modality: 'video' }, ctx(), makeDeps());
     expect(out).toMatchObject({ ok: true, result: { models: [] } });
@@ -341,6 +365,20 @@ describe('write tools', () => {
     expect(out).toMatchObject({ ok: false, issues: [{ message: 'required slot "x" is unbound' }] });
     expect(out.ok === false && 'item' in out).toBe(false);
     expect(c.lastProposal).toBeNull();
+  });
+
+  it('propose_draft refuses a draft that breaks the quality rules', async () => {
+    const draft = exampleScript();
+    delete draft.graph[0]!.instructions!.system;
+    const c = ctx();
+    const out = await runTool('propose_draft', { draft, summary: 's' }, c, makeDeps());
+    expect(out).toMatchObject({
+      ok: false,
+      issues: [{ path: 'stages.script.instructions.system', severity: 'error' }],
+    });
+    expect(c.lastProposal).toBeNull();
+    const validated = await runTool('validate_draft', { draft }, ctx(), makeDeps());
+    expect(JSON.stringify(validated)).toContain('quality: a text stage needs a system prompt');
   });
 
   it('propose_draft accepts a valid draft with warnings and remembers it', async () => {

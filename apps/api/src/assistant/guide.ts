@@ -81,7 +81,7 @@ Slot rules the validator enforces:
     title: 'Prompts and templates',
     body: `\`instructions: { system?: string, template: string }\` on stages that call a model (\`text.generate\`, \`image.generate\`, \`video.generate\`, \`browser.automate\`; \`audio.speech\` speaks its \`text\` slot).
 
-- \`system\` is sent as written, before the template. \`{{ }}\` values are NOT filled in there.
+- \`system\` is sent as written, before the template. \`{{ }}\` values are NOT filled in there. Every \`text.generate\` stage needs one (propose_draft refuses one without): see the \`quality\` topic for what goes in it.
 - \`template\` is the task. \`{{ name }}\` is replaced by a slot name or a context key; use dots and positions for fields: \`{{ idea.title }}\`, \`{{ scenes[0].narration }}\`. That's the whole language: no conditions, no loops, no formulas. Objects and lists are inserted as formatted JSON.
 - Every name used must be a declared slot or context key of that stage (\`template references undeclared slot/context name\`) and every path must exist in the value's shape. The one extra name is \`priorCritique\`: on a retry it holds the reasons the last attempt was rejected. If you don't write it, Reelcraft appends the reasons itself.
 - On an iterating stage the current item is NOT available as \`{{ item }}\`; bind a context entry to \`{from:'item', path:'visual'}\` and write \`{{ visual }}\`.
@@ -96,7 +96,11 @@ Slot rules the validator enforces:
 
 A \`data\` output needs a JSON Schema describing its shape (and should have \`properties\`, otherwise there's a warning). Later stages pick fields by \`path\`. The schema is a deliberately small subset: \`type\` (object, array, string, number, integer, boolean), \`description\`, \`enum\`, \`properties\`, \`required\`, \`items\`, \`minItems\`, \`maxItems\`, \`minimum\`, \`maximum\`, \`minLength\`, \`maxLength\`. NOT allowed: \`$ref\`, \`oneOf\`, \`anyOf\`, \`allOf\`, \`patternProperties\`, \`if/then/else\`, \`additionalProperties\`. For a choice between shapes use one object with optional fields or an enum.
 
-Mark the fields later stages need as \`required\`, and add a \`description\` to each field: the model reads them.
+Mark the fields later stages need as \`required\`, and add a \`description\` to each field: the model reads them. Every data output must have \`properties\` (propose_draft refuses one without).
+
+\`media.analyze\` writes a fixed shape, so declare it rather than an empty schema:
+- \`transcribe_align\` (default): \`{ transcript: string, durationSec: number, sentences: [{text, startSec, endSec}], words: [{text, startSec, endSec, confidence?}] }\`; require \`transcript\`, \`durationSec\`, \`words\`.
+- \`probe\`: \`{ container: string, durationSec: number, streams: [{type: 'video'|'audio', codec, width?, height?, fps?, sampleRate?}] }\`.
 
 \`media\` outputs accept optional \`constraints\` ({durationSec:{min,max}, aspectRatio, minWidth, audio:'required'|'optional'|'forbidden'}). A \`timeline\` output makes a text.generate stage plan an edit (tracks, clips, text, captions) that \`timeline.render\` or \`human.timeline_edit\` can use; the model writing it learns the timeline format from the engine, you don't describe it.`,
   },
@@ -130,7 +134,7 @@ A \`data\` output is always checked against its schema first.
 - \`qc.maxAttempts\`: feedback rounds after a low QC score.
 A human rejection uses none of them.
 
-A stage declaring neither checks nor qc only gets a warning. Prefer cheap checks first (length, format), QC only where quality really matters.`,
+Every stage a model writes needs at least one check, a qc or an approval (propose_draft refuses one with none; the validator itself only warns). Cheap checks first for what can be measured (length, counts, format, duration, pace); QC for what only judgement can measure (story, hook, tone, likeness, style). See the \`quality\` topic for where each belongs.`,
   },
 
   models: {
@@ -140,7 +144,8 @@ A stage declaring neither checks nor qc only gets a warning. Prefer cheap checks
 - Use ONLY provider ids and model ids that \`list_models\` returns, and only those with the needed modality that aren't marked unavailable. Never invent a model id. If nothing suitable is available, say so and ask the user.
 - A pin is \`{ provider, modelId, version?, params }\`. On a stage every field is optional (a partial pin overrides just those fields). \`defaults.models\` is a map from kind of work (\`text\`, \`image\`, \`video\`, \`audio\`, \`media\`, \`browser\`, \`compute\`, \`human\`, \`publish\`) to a partial pin.
 - \`params\` are provider-specific: Codex and ChatGPT use \`reasoningEffort\` (one of the model's supported efforts from \`list_models\`); ChatGPT also \`webSearch\`. Don't invent other params; use \`{}\` if unsure.
-- Structured \`data\` output needs a model that supports structured output (the validator reports otherwise). A text stage that attaches files needs a model whose \`inputKinds\` include those file kinds.
+- A \`data\` (or \`timeline\`) output needs a model whose \`dataOutput\` is true in \`list_models\`. Codex, ChatGPT and fake models all can: they reply in JSON that Reelcraft parses and checks against your schema, retrying on a mismatch. Only OpenRouter models without native structured output can't (the validator rejects them). Never avoid \`data\` or hard-code a fixed number of stages because of the model: check \`dataOutput\`.
+- A text stage that attaches files needs a model whose \`inputKinds\` include those file kinds. A QC judge looks at the output itself, so for images pick a judge whose \`inputKinds\` include \`media.image\`.
 - The \`fake\` provider returns free placeholder results: fine for trying a blueprint, but say so when you use it.
 - \`defaults\` (ConfigLayer) may also set \`retryLimit\`, \`qc\`, \`budget\` (runCapUsd, stageCapUsd), \`iterate\`, \`format\` (aspectRatio, resolution, fps, targetDurationSec), \`provider.preferred\` and \`polling\`. Layers merge engine → channel → blueprint → stage, and the more specific wins.`,
   },
@@ -162,6 +167,38 @@ A stage declaring neither checks nor qc only gets a warning. Prefer cheap checks
 Caption and text styles are the ids from \`list_styles\`; never invent a style id.
 
 The run's final video is the output of the LAST stage (in graph order) that makes a video, so put the assembly stage last, and consider approval on it.`,
+  },
+
+  quality: {
+    title: 'Building a high-quality blueprint',
+    body: `Read this before proposing a new blueprint or a big change. The user expects you to know Reelcraft better than they do: apply all of it without being asked, and say in your summary which quality controls you added.
+
+**Prompts**
+- Every \`text.generate\` stage gets a \`system\` prompt: who the writer is, the audience, voice and tone, hard rules (length, language, what to avoid), and how to treat \`priorCritique\` on a retry. It never changes between runs, so put it in system, not the template.
+- The \`template\` is the per-run task: the inputs (\`{{ topic }}\`), what to produce, in order.
+- Use \`output.instructions\` for the shape and style of the answer (what each field should contain, reading level, formatting).
+- Image and video prompts: describe subject, composition, lighting, style and aspect in the template; keep the style words identical on every iterated item so images match; bind the Character role to \`references\` when a recurring character appears.
+
+**Outputs**
+- Prefer \`data\` with a full schema for every text stage whose result has structure or is read by field (plans, scene lists, stories with parts, metadata). Use \`text\` only when the result is one piece of prose that a later stage needs as text (an \`audio.speech\` text slot) and \`timeline\` only for a timeline.
+- A field of a \`data\` output can't feed a \`text\` slot. When the narration lives in a data output, the narration stage is a \`text.generate\` with \`text\` output that reads the data and writes the spoken script.
+- Lists that vary in length (scenes, shots) are an array field with \`minItems\`/\`maxItems\`, written to memory and consumed by ONE stage with \`iterate\`. Never make N copies of a stage for N items.
+
+**Quality control belongs on the stage that produces the work**
+- Don't add a separate "critique", "review" or "evaluate" text stage followed by a "revise" stage. Put \`qc\` on the producing stage instead: the judge scores it, and below the threshold the same stage regenerates with the critique in \`priorCritique\`, up to \`qc.maxAttempts\`. That is cheaper, automatic, and the next stage always gets the improved version. Add a separate critique stage only if the user wants to read the critique itself.
+- Give QC concrete \`criteria\` and, for creative work, \`dimensions\` with weights (e.g. hook, clarity, pacing, payoff). Threshold 70-85; \`maxAttempts\` 2-3; \`onExhausted: 'human_review'\` when a person should decide rather than fail the run. \`includeInputs: true\` so the judge sees what was asked.
+- QC costs a judge call per attempt: use it on the stages where quality matters most (the story or script, key images such as a character reference, the timeline plan), and cheap checks everywhere else.
+- Checks on every model stage: \`non_empty\`/\`word_count\` on text, \`array_length\` on lists, \`numeric_range\` on numbers, \`duration_range\` and \`wpm\` on voice-over, \`duration_range\` on video.
+- Human \`approval\` before expensive media (after the script, before images, video and voice) and on the final video. Video output can't have QC, so approval is its quality control.
+
+**Models and cost**
+- Set \`defaults.models\` per kind once; pin a stage only when it needs a different model. The QC \`model\` is always explicit.
+- A cheap fast model is fine for formatting steps; use the strongest available model for the creative stages and for QC judges.
+- Set \`budget.runCapUsd\` to cover the paid stages, their retries and QC attempts.
+
+**Before you propose**, check every stage: system prompt (text stages), full schema (data outputs), at least one check, qc or approval (model stages), iterate instead of copies, approval before paid media. validate_draft reports the rules propose_draft enforces as errors starting with "quality:".
+
+QC block shape: \`{ criteria, threshold, model: { provider, modelId, params }, includeInputs, maxAttempts?, onExhausted?: 'fail'|'human_review', dimensions?: [{ key, description, weight }] }\` (model ids from list_models).`,
   },
 
   limits: {
@@ -191,7 +228,7 @@ The run's final video is the output of the LAST stage (in graph order) that make
 ${JSON.stringify(exampleScript(), null, 2)}
 \`\`\`
 
-2) A plan, then one image per scene (iterate over memory).
+2) A plan, then one image per scene (iterate over memory), each image approved by a person.
 \`\`\`json
 ${JSON.stringify(exampleScenesToImages(), null, 2)}
 \`\`\`
@@ -247,7 +284,9 @@ export function exampleScenesToImages(): CreateBlueprintVersionDto {
         label: 'Plan scenes',
         capability: 'text.generate',
         instructions: {
-          template: 'Plan 4 scenes for a short video about {{ topic }}. Give each a visual.',
+          system:
+            'You plan short vertical videos. Each scene is one idea, 4-8 seconds of narration, with a concrete visual a camera could film.',
+          template: 'Plan the scenes for a short video about {{ topic }}.',
         },
         config: {},
         slots: {},
@@ -294,6 +333,7 @@ export function exampleScenesToImages(): CreateBlueprintVersionDto {
           itemRetryLimit: 1,
         },
         checks: [],
+        approval: { mode: 'item' },
       },
     ],
     inputs: [{ key: 'topic', label: 'Video topic', required: true, accepts: { kind: 'text' } }],
@@ -310,7 +350,11 @@ export function exampleVoiceover(): CreateBlueprintVersionDto {
         key: 'script',
         label: 'Write script',
         capability: 'text.generate',
-        instructions: { template: 'Write a 30-second voice-over script about {{ topic }}.' },
+        instructions: {
+          system:
+            'You write voice-over scripts for vertical video: spoken English, short sentences, a hook in the first line, no stage directions.',
+          template: 'Write a 30-second voice-over script about {{ topic }}.',
+        },
         config: {},
         slots: {},
         context: { topic: { from: 'input', inputKey: 'topic' } },
