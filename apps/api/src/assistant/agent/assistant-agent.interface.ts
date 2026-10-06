@@ -13,6 +13,8 @@ export interface AssistantModel {
   label: string;
   supportedReasoningEfforts?: string[];
   defaultReasoningEffort?: string;
+  /** The model a new chat should start with. */
+  isDefault?: boolean;
 }
 
 export type AgentEvent =

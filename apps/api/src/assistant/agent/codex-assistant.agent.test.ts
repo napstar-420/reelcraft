@@ -104,6 +104,7 @@ function setup(
           label: 'GPT X',
           supportedReasoningEfforts: ['low'],
           defaultReasoningEffort: 'low',
+          isDefault: true,
         },
       ],
       onReset: (cb: () => void) => (onReset = cb),
@@ -371,6 +372,20 @@ describe('CodexAssistantAgent.runTurn', () => {
     await expect(done).rejects.toMatchObject({ kind: 'failed', message: 'usage limit reached' });
   });
 
+  it("shows a readable message for Codex's raw API errors", async () => {
+    const { agent, fakes } = await started();
+    const done = agent.runTurn(turnArgs() as never);
+    await tick();
+    fakes[0]!.notify(
+      'turn/completed',
+      completed('failed', {
+        message:
+          '{"type":"error","error":{"message":"model \'x\' is not enabled","type":"invalid_request_error"},"status":400}',
+      }),
+    );
+    await expect(done).rejects.toMatchObject({ message: "model 'x' is not enabled" });
+  });
+
   it('interrupts the turn when the signal aborts', async () => {
     const { agent, fakes } = await started();
     const fake = fakes[0]!;
@@ -505,6 +520,7 @@ describe('CodexAssistantAgent lifecycle', () => {
         label: 'GPT X',
         supportedReasoningEfforts: ['low'],
         defaultReasoningEffort: 'low',
+        isDefault: true,
       },
     ]);
   });

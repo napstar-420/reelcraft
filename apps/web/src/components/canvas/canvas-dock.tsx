@@ -1,13 +1,21 @@
-import { Maximize2, Minimize2, Play, Settings2, SlidersHorizontal, X } from 'lucide-react';
+import {
+  Maximize2,
+  Minimize2,
+  Play,
+  Settings2,
+  SlidersHorizontal,
+  Sparkles,
+  X,
+} from 'lucide-react';
 import { cn } from 'cn';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toneDotClassName, type StatusTone } from '@/lib/status';
 
-export type DockTab = 'stage' | 'run' | 'blueprint';
+export type DockTab = 'stage' | 'run' | 'blueprint' | 'assistant';
 
-/** The canvas's one side panel: the stage inspector, the run, and the
- * blueprint's settings, as tabs. Docked beside the canvas, so selecting a
+/** The canvas's one side panel: the stage inspector, the run, the
+ * blueprint's settings and the assistant, as tabs. Docked beside the canvas, so selecting a
  * stage never covers the graph the way a sheet would. On a narrow screen it
  * becomes a sheet rising from the bottom. */
 export function CanvasDock({
@@ -18,9 +26,11 @@ export function CanvasDock({
   onClose,
   runTone,
   runDisabled,
+  assistantBusy,
   stage,
   run,
   blueprint,
+  assistant,
 }: {
   tab: DockTab;
   onTabChange: (tab: DockTab) => void;
@@ -31,9 +41,12 @@ export function CanvasDock({
   runTone: StatusTone | undefined;
   /** Viewing an old version: there is no run to show. */
   runDisabled: boolean;
+  /** The assistant is working: shown as a dot on its tab. */
+  assistantBusy: boolean;
   stage: React.ReactNode;
   run: React.ReactNode;
   blueprint: React.ReactNode;
+  assistant: React.ReactNode;
 }) {
   return (
     <aside
@@ -67,6 +80,11 @@ export function CanvasDock({
               <Settings2 />
               Blueprint
             </TabsTrigger>
+            <TabsTrigger value="assistant">
+              <Sparkles />
+              Assistant
+              {assistantBusy && <span className="size-1.5 animate-pulse rounded-full bg-primary" />}
+            </TabsTrigger>
           </TabsList>
           <Button
             type="button"
@@ -98,6 +116,10 @@ export function CanvasDock({
         </TabsContent>
         <TabsContent value="blueprint" className="min-h-0 overflow-y-auto">
           {blueprint}
+        </TabsContent>
+        {/* the assistant scrolls its own message list, so the tab itself must not */}
+        <TabsContent value="assistant" className="min-h-0 overflow-hidden">
+          {assistant}
         </TabsContent>
       </Tabs>
     </aside>

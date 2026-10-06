@@ -7,6 +7,8 @@ export interface CodexModel {
   label: string;
   supportedReasoningEfforts: string[];
   defaultReasoningEffort: string;
+  /** The model to start with: the one set in the user's Codex config, else Codex's own default. */
+  isDefault: boolean;
 }
 
 export class CodexAppServerClient {
@@ -39,6 +41,20 @@ export class CodexAppServerClient {
     return models;
   }
 
+  /** The `model` in the user's Codex config, if any (best effort). */
+  private async configuredModel(connection: CodexRpcConnection): Promise<string | undefined> {
+    try {
+      const result = await connection.request<{ config?: { model?: unknown } }>('config/read', {
+        includeLayers: false,
+      });
+      const model = result.config?.model;
+      return typeof model === 'string' && model ? model : undefined;
+    } catch (error) {
+      this.logger.debug({ err: error }, 'codex config/read failed');
+      return undefined;
+    }
+  }
+
   private async queryModels(): Promise<CodexModel[]> {
     const startedAt = Date.now();
     const connection = CodexRpcConnection.open(this.spawnCodex, ['app-server', '--stdio'], {
@@ -47,6 +63,7 @@ export class CodexAppServerClient {
     });
     try {
       await initializeCodexRpc(connection);
+      const configured = await this.configuredModel(connection);
       const models: CodexModel[] = [];
       let cursor: string | null | undefined;
       do {
@@ -73,10 +90,15 @@ export class CodexAppServerClient {
               defaultReasoningEffort: String(
                 model.defaultReasoningEffort ?? efforts[0] ?? 'medium',
               ),
+              isDefault: model.isDefault === true,
             });
         }
         cursor = result.nextCursor;
       } while (cursor);
+      // Codex's own default isn't always usable on the account; the user's config is
+      if (configured && models.some((model) => model.modelId === configured)) {
+        for (const model of models) model.isDefault = model.modelId === configured;
+      }
       this.logger.debug(
         { modelCount: models.length, durationMs: Date.now() - startedAt },
         'codex models listed',

@@ -3,7 +3,7 @@ import { PassThrough } from 'node:stream';
 import { describe, expect, it, vi } from 'vitest';
 import { CodexAppServerClient } from './codex-app-server.client';
 
-function fakeProcess(pages: Array<Record<string, unknown>>) {
+function fakeProcess(pages: Array<Record<string, unknown>>, configured?: string) {
   const proc = new EventEmitter() as EventEmitter & {
     stdin: PassThrough;
     stdout: PassThrough;
@@ -20,6 +20,11 @@ function fakeProcess(pages: Array<Record<string, unknown>>) {
       const message = JSON.parse(line) as { id: number; method: string };
       if (message.method === 'initialize') {
         proc.stdout.write(`${JSON.stringify({ id: message.id, result: {} })}\n`);
+      }
+      if (message.method === 'config/read') {
+        proc.stdout.write(
+          `${JSON.stringify({ id: message.id, result: { config: { model: configured } } })}\n`,
+        );
       }
       if (message.method === 'model/list') {
         proc.stdout.write(
@@ -82,14 +87,57 @@ describe('CodexAppServerClient', () => {
         label: 'Visible',
         supportedReasoningEfforts: ['low', 'medium'],
         defaultReasoningEffort: 'medium',
+        isDefault: false,
       },
       {
         modelId: 'gpt-second',
         label: 'Second',
         supportedReasoningEfforts: ['high'],
         defaultReasoningEffort: 'high',
+        isDefault: false,
       },
     ]);
+  });
+
+  it("defaults to the model in the user's Codex config, else to Codex's own default", async () => {
+    const page = {
+      data: [
+        {
+          id: 'a',
+          model: 'gpt-codex-default',
+          displayName: 'A',
+          isDefault: true,
+          supportedReasoningEfforts: [],
+        },
+        {
+          id: 'b',
+          model: 'gpt-mine',
+          displayName: 'B',
+          isDefault: false,
+          supportedReasoningEfforts: [],
+        },
+      ],
+      nextCursor: null,
+    };
+    const configured = new CodexAppServerClient(
+      vi.fn(() => fakeProcess([page], 'gpt-mine')) as never,
+      1_000,
+    );
+    expect((await configured.listModels()).map((m) => [m.modelId, m.isDefault])).toEqual([
+      ['gpt-codex-default', false],
+      ['gpt-mine', true],
+    ]);
+    // a configured model the account doesn't list is ignored
+    const unlisted = new CodexAppServerClient(
+      vi.fn(() => fakeProcess([page], 'gpt-not-listed')) as never,
+      1_000,
+    );
+    expect((await unlisted.listModels()).map((m) => [m.modelId, m.isDefault])).toEqual([
+      ['gpt-codex-default', true],
+      ['gpt-mine', false],
+    ]);
+    const none = new CodexAppServerClient(vi.fn(() => fakeProcess([page])) as never, 1_000);
+    expect((await none.listModels())[0]!.isDefault).toBe(true);
   });
 
   it('caches the authenticated catalog briefly and refreshes after expiry', async () => {

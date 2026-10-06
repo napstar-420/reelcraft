@@ -169,6 +169,8 @@ export const AssistantProviderDto = z.object({
       label: z.string(),
       supportedReasoningEfforts: z.array(z.string()).optional(),
       defaultReasoningEffort: z.string().optional(),
+      /** The model a new chat should start with. */
+      isDefault: z.boolean().optional(),
     }),
   ),
 });

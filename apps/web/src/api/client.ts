@@ -1,4 +1,11 @@
 import type {
+  AssistantItemDto,
+  AssistantProviderDto,
+  AssistantSessionDetailDto,
+  AssistantSessionDto,
+  CreateAssistantSessionDto,
+  StartAssistantTurnDto,
+  UpdateAssistantSessionDto,
   BrowserOsSettingsDto,
   CodexLoginDto,
   CodexStatusDto,
@@ -490,4 +497,33 @@ export const api = {
   cancelCodexLogin: () =>
     request<{ login: CodexLoginDto | null }>('/codex/login', { method: 'DELETE' }),
   codexLogout: () => request<CodexStatusDto>('/codex/logout', { method: 'POST' }),
+  listAssistantProviders: () => request<AssistantProviderDto[]>('/assistant/providers'),
+  listAssistantSessions: (blueprintId: string) =>
+    request<AssistantSessionDto[]>(`/blueprints/${blueprintId}/assistant/sessions`),
+  createAssistantSession: (blueprintId: string, dto: CreateAssistantSessionDto) =>
+    request<AssistantSessionDto>(`/blueprints/${blueprintId}/assistant/sessions`, {
+      method: 'POST',
+      body: JSON.stringify(dto),
+    }),
+  getAssistantSession: (sessionId: string) =>
+    request<AssistantSessionDetailDto>(`/assistant/sessions/${sessionId}`),
+  updateAssistantSession: (sessionId: string, dto: UpdateAssistantSessionDto) =>
+    request<AssistantSessionDto>(`/assistant/sessions/${sessionId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(dto),
+    }),
+  deleteAssistantSession: (sessionId: string) =>
+    request<void>(`/assistant/sessions/${sessionId}`, { method: 'DELETE' }),
+  startAssistantTurn: (sessionId: string, dto: StartAssistantTurnDto) =>
+    request<{ turnId: string }>(`/assistant/sessions/${sessionId}/turns`, {
+      method: 'POST',
+      body: JSON.stringify(dto),
+    }),
+  interruptAssistantTurn: (sessionId: string) =>
+    request<void>(`/assistant/sessions/${sessionId}/interrupt`, { method: 'POST' }),
+  applyAssistantProposal: (sessionId: string, itemId: string) =>
+    request<AssistantItemDto>(`/assistant/sessions/${sessionId}/proposals/${itemId}/apply`, {
+      method: 'POST',
+    }),
+  assistantEventsUrl: (sessionId: string) => `/api/assistant/sessions/${sessionId}/events`,
 };

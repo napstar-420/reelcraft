@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Lock } from 'lucide-react';
@@ -9,6 +9,7 @@ import { formatBlueprintVersion } from '@/lib/format-blueprint-version';
 import { runStateTone } from '@/lib/status';
 import { useCanvasRun } from '@/hooks/useCanvasRun';
 import { useCanvasRunActions } from '@/hooks/useCanvasRunActions';
+import { useAssistant } from '@/hooks/useAssistant';
 import { inheritedDefaults } from '@/components/defaults/defaults-editor.logic';
 import {
   AlertDialog,
@@ -38,6 +39,7 @@ import type {
   ValidationIssue,
   VersionBump,
 } from '@reelcraft/shared';
+import { AssistantPanel } from './assistant/assistant-panel';
 import { BlueprintSettingsPanel } from './BlueprintSettingsPanel';
 import { CanvasDock, type DockTab } from './canvas-dock';
 import { CanvasRunSheets } from './canvas-run-sheets';
@@ -156,6 +158,24 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
   const draftKey = draft ? stableStringify(draft) : '';
   const isDirty = latestSaved === null || draftKey !== latestSaved.contentKey;
   const canvasRun = useCanvasRun(blueprintId);
+
+  // The assistant puts its proposals on the canvas the way a user edit would (so autosave,
+  // validation and Save all follow), plus an immediate write so the change survives closing the tab.
+  const replaceDraft = useCallback(
+    async (next: BlueprintDraft) => {
+      const applied = draftOf(next);
+      setDraft(applied);
+      serverHasWorkingDraft.current = true;
+      await api.setWorkingDraft(blueprintId, applied);
+    },
+    [blueprintId],
+  );
+  const assistant = useAssistant({
+    blueprintId,
+    draft,
+    replaceDraft,
+    disabled: viewing !== null,
+  });
 
   // Autosave the working copy so unsaved edits survive a reload; clear it
   // once the canvas matches the latest save again.
@@ -515,6 +535,8 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
             onClose={() => setDockOpen(false)}
             runTone={!readOnly && canvasRun.run ? runStateTone(canvasRun.run.state) : undefined}
             runDisabled={readOnly}
+            assistantBusy={assistant.running}
+            assistant={<AssistantPanel assistant={assistant} />}
             stage={
               <StagePanel
                 stageKey={selectedKey}
