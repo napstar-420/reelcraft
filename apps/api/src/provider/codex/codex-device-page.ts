@@ -50,7 +50,10 @@ const chars = args.code.replace(/[^A-Za-z0-9]/g, '');
 if (boxes.length > 1 && boxes.length >= chars.length) chars.split('').forEach((c, i) => setValue(boxes[i], c));
 else setValue(boxes[0], args.code);
 await sleep(400);
-const submit = await waitFor(() => [...document.querySelectorAll('button')].find((b) => visible(b) && !b.disabled && (b.type === 'submit' || /^(continue|submit|next)$/i.test(b.innerText.trim()))), 5000);
+const submit = await waitFor(() => {
+  const buttons = [...document.querySelectorAll('button')].filter((b) => visible(b) && !b.disabled && !/cancel|back|deny|decline/i.test(b.innerText));
+  return buttons.find((b) => /^(continue|submit|next)$/i.test(b.innerText.trim())) || buttons.find((b) => b.type === 'submit');
+}, 5000);
 if (submit) submit.click();
 else if (boxes[0].form && boxes[0].form.requestSubmit) boxes[0].form.requestSubmit();
 else return { status: 'failed', message: 'The sign-in page had no Continue button' };

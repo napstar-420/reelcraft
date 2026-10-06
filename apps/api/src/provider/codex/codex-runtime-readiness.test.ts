@@ -33,6 +33,21 @@ describe('CodexRuntimeReadiness', () => {
     });
   });
 
+  it('treats the built-in image_generation feature as image support', async () => {
+    const readiness = fixture();
+    const internals = readiness as unknown as {
+      codex(args: string[]): Promise<string>;
+      browserOsReachable(): Promise<boolean>;
+    };
+    vi.spyOn(internals, 'codex').mockImplementation(async (args: string[]) =>
+      args[0] === 'features'
+        ? 'view_image    stable   true\nimage_generation   stable   true\n'
+        : '',
+    );
+    vi.spyOn(internals, 'browserOsReachable').mockResolvedValue(false);
+    expect((await readiness.inspect(true)).modalities).toContain('image');
+  });
+
   it('returns actionable reasons when imagegen or BrowserOS Neo is unavailable', async () => {
     const readiness = fixture();
     const internals = readiness as unknown as {
