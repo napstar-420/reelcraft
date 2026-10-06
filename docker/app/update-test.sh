@@ -60,10 +60,11 @@ wait_healthy() {
 }
 
 run_hello_stage() {
-  local channel="$1" template version run state=""
-  template="$(curl -fsS "${api}/templates" | jq -r '[.[] | select(.name == "Hello Stage")][0].id')"
-  version="$(post "${api}/templates/${template}/instantiate" \
-    "{\"channelId\":\"${channel}\",\"runCapUsd\":1}" | jq -r .id)"
+  local channel="$1" blueprint version run state=""
+  blueprint="$(post "${api}/blueprints" \
+    "{\"channelId\":\"${channel}\",\"name\":\"Hello ${RANDOM}${RANDOM}\"}" | jq -r .blueprintId)"
+  version="$(post "${api}/blueprints/${blueprint}/versions" \
+    "$(cat "${repo_root}/docker/app/hello-blueprint.json")" | jq -r .id)"
   run="$(post "${api}/runs" \
     "{\"channelId\":\"${channel}\",\"blueprintVersionId\":\"${version}\",\"budgetCapUsd\":1}" | jq -r .id)"
   post "${api}/runs/${run}/start" '{}' >/dev/null
