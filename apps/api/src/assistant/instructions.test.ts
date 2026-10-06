@@ -32,6 +32,12 @@ describe('assistant instructions', () => {
     }
   });
 
+  it('make quality the default, not something the user has to ask for', () => {
+    for (const phrase of ['"quality" topic', 'system prompt', 'qc', 'iterat', 'dataOutput']) {
+      expect(text).toContain(phrase);
+    }
+  });
+
   it('state the hard limits up front, not only in the guide', () => {
     for (const phrase of ['parallel', 'enabledWhen', 'publish', 'Characters']) {
       expect(text).toContain(phrase);

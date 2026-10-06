@@ -98,6 +98,29 @@ const CASES = [
         : `expected a valid proposal with text.generate and audio.speech, got ${caps(items)}`,
   },
   {
+    // The quality bar from the guide's "quality" topic, applied without being asked.
+    name: 'quality-by-default',
+    draft: emptyDraft,
+    text: "Build a blueprint for 60-90 second illustrated mystery stories: write the story, one image per scene, a voice-over and captions. Don't ask me anything, pick sensible defaults.",
+    check: (items) => {
+      const draft = draftProposals(items).at(-1)?.payload.draft;
+      if (!draft) return 'expected a draft proposal';
+      const text = draft.graph.filter((s) => s.capability === 'text.generate');
+      const problems = [];
+      const noSystem = text.filter((s) => !s.instructions?.system).map((s) => s.key);
+      if (noSystem.length) problems.push(`no system prompt: ${noSystem}`);
+      const critique = text.filter((s) =>
+        /critiq|review|evaluat|feedback|judge/i.test(`${s.key} ${s.label}`),
+      );
+      if (critique.length) problems.push(`separate critique stage: ${critique.map((s) => s.key)}`);
+      if (!draft.graph.some((s) => s.qc)) problems.push('no qc anywhere');
+      const images = draft.graph.filter((s) => s.capability === 'image.generate' && !s.iterate);
+      if (images.length > 1) problems.push(`${images.length} non-iterating image stages`);
+      if (!draft.graph.some((s) => s.output.kind === 'data')) problems.push('no data output');
+      return problems.length ? problems.join('; ') : null;
+    },
+  },
+  {
     name: 'ambiguous-asks-a-question',
     draft: emptyDraft,
     text: 'Make me a video.',
