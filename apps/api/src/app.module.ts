@@ -11,6 +11,7 @@ import { SystemModule } from './system/system.module';
 import { UpdateModule } from './update/update.module';
 import { PackageModule } from './package/package.module';
 import { SettingsPageModule } from './settings/settings-page.module';
+import { AssistantModule } from './assistant/assistant.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { SettingsPageModule } from './settings/settings-page.module';
     UpdateModule,
     SettingsPageModule,
     PackageModule,
+    AssistantModule,
   ],
 })
 export class AppModule {}

@@ -15,6 +15,7 @@ import {
 import { ulid } from '../common/ulid';
 import { queueStorageOrphans } from '../artifact/storage-orphans';
 import { deleteRunsCascade } from '../run/run-cascade';
+import { deleteAssistantCascade } from '../assistant/assistant-cascade';
 
 @Injectable()
 export class ChannelService {
@@ -209,6 +210,7 @@ export class ChannelService {
           .update(blueprint)
           .set({ currentVersionId: null })
           .where(inArray(blueprint.id, blueprintIds));
+        await deleteAssistantCascade(tx, blueprintIds);
         await tx.delete(packageImport).where(inArray(packageImport.blueprintId, blueprintIds));
         await tx
           .delete(blueprintVersion)

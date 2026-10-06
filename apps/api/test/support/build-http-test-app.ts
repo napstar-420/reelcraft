@@ -10,6 +10,10 @@ import { STORAGE_ADAPTER } from '../../src/storage/storage.adapter';
 import { applyTestEnvDefaults } from './env';
 import { MemoryStorageAdapter } from './memory-storage.adapter';
 import type { TestDb } from './test-db';
+import {
+  ASSISTANT_AGENTS,
+  type AssistantAgent,
+} from '../../src/assistant/agent/assistant-agent.interface';
 
 export interface HttpTestApp {
   app: INestApplication;
@@ -20,13 +24,18 @@ export interface HttpTestApp {
 /** A real HTTP surface for action/race tests. Each call creates an isolated
  * Nest container, so concurrent callers share only the disposable Postgres
  * database (not services, locks, or in-process event state). */
-export async function buildHttpTestApp(testDb: TestDb): Promise<HttpTestApp> {
+export async function buildHttpTestApp(
+  testDb: TestDb,
+  options?: { assistantAgents?: AssistantAgent[] },
+): Promise<HttpTestApp> {
   applyTestEnvDefaults();
   const module = await Test.createTestingModule({ imports: [AppModule] })
     .overrideProvider(DRIZZLE)
     .useValue(testDb.db)
     .overrideProvider(STORAGE_ADAPTER)
     .useValue(new MemoryStorageAdapter())
+    .overrideProvider(ASSISTANT_AGENTS)
+    .useValue(options?.assistantAgents ?? [])
     .compile();
   const app = module.createNestApplication();
   app.use(json({ limit: '10mb' }));

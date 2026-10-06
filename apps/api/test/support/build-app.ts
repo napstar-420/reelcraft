@@ -12,6 +12,10 @@ import { MemoryStorageAdapter } from './memory-storage.adapter';
 import type { TestDb } from './test-db';
 import { MediaProbeService } from '../../src/artifact/media-probe.service';
 import { DerivedFrameService } from '../../src/artifact/derived-frame.service';
+import {
+  ASSISTANT_AGENTS,
+  type AssistantAgent,
+} from '../../src/assistant/agent/assistant-agent.interface';
 
 export interface TestApp {
   app: INestApplicationContext;
@@ -46,6 +50,9 @@ export async function buildTestApp(
     derivedFrame?: new (
       ...args: ConstructorParameters<typeof DerivedFrameService>
     ) => DerivedFrameService;
+    /** The blueprint assistant's agents. E2E never talks to a real model: pass a
+     * `FakeAssistantAgent` here (the default is none registered). */
+    assistantAgents?: AssistantAgent[];
   },
 ): Promise<TestApp> {
   applyTestEnvDefaults();
@@ -66,6 +73,7 @@ export async function buildTestApp(
   // engine-level suites independent of a host FFmpeg installation. Dedicated
   // media-output coverage passes an explicit deterministic probe.
   builder.overrideProvider(MediaProbeService).useValue(options?.mediaProbe ?? testMediaProbe());
+  builder.overrideProvider(ASSISTANT_AGENTS).useValue(options?.assistantAgents ?? []);
   if (options?.derivedFrame) {
     builder.overrideProvider(DerivedFrameService).useClass(options.derivedFrame);
   }
