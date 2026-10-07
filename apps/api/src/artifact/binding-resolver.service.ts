@@ -463,7 +463,8 @@ export class BindingResolverService {
         // Lenient on media kinds — unlike `unwrapArtifactData`, a check
         // envelope inspects `kind`/`probe` directly and shouldn't throw just
         // because `data` can't be fully unwrapped yet.
-        const data = unwrapText(row.kind as ArtifactKind, row.data);
+        const unwrapped = unwrapText(row.kind as ArtifactKind, row.data);
+        const data = ref.path ? getPath(unwrapped, ref.path) : unwrapped;
         return {
           envelope: { kind: row.kind as ArtifactKind, data, probe: row.probe ?? undefined },
           provenance: { ref, artifactId: row.id },
@@ -512,7 +513,10 @@ export class BindingResolverService {
         if (!group) {
           const row = rows[0]!;
           return {
-            envelope: { kind: row.kind as ArtifactKind, data: row.data },
+            envelope: {
+              kind: row.kind as ArtifactKind,
+              data: ref.path ? getPath(row.data, ref.path) : row.data,
+            },
             provenance: { ref, memoryKey: ref.key, memoryVersion: row.version },
           };
         }
