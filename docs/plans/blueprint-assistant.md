@@ -34,7 +34,7 @@ The user stays in control. The agent only proposes. Nothing becomes a version wi
 Model, asset and Character ids are not enums in the tool schemas (they change during a session); the
 validator, `list_models` and `get_channel_resources` cover them.
 
-## Tools (12)
+## Tools (15)
 
 Defined once (`apps/api/src/assistant/tools/`), each with a Zod input and a hand-written JSON Schema.
 `tools.test.ts` keeps the two in step (Zod 3 has no JSON Schema output, like `BUILTIN_CHECKS`).
@@ -50,6 +50,9 @@ Defined once (`apps/api/src/assistant/tools/`), each with a Zod input and a hand
 | `validate_draft`                      | read     | the validator's issues for a complete draft                                                                                                                                                        |
 | `propose_draft`                       | write    | validates, then stores a **proposal** (never the working draft)                                                                                                                                    |
 | `update_metadata`                     | write    | proposes a new name, description or tags                                                                                                                                                           |
+| `get_version`                         | read     | one saved version by label ("1.2"): its stages, inputs, role, defaults, budget, validity and run count                                                                                             |
+| `diff_drafts`                         | read     | what differs between two drafts, each "current" or a version label: stages added, removed, changed (fields with before and after), reordered, inputs, role, defaults, budget                       |
+| `get_effective_config`                | read     | one stage's merged settings (built-in, channel, blueprint, stage layers) and each layer                                                                                                            |
 | `ask_user`                            | interact | 1-4 questions with options; the UI adds a final **Other…** text option. **Ends the turn**; the answers arrive as the next turn                                                                     |
 
 After `ask_user` in a turn, the write tools are refused. The blueprint a turn works on is bound

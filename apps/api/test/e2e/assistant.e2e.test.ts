@@ -279,6 +279,55 @@ describe('blueprint assistant (e2e)', () => {
     expect(ofType(second, 'tool_call').at(-1)).toMatchObject({ state: 'failed' });
   });
 
+  it('reads older versions, diffs them, and shows the effective config and the channel context', async () => {
+    const seen: Record<string, unknown> = {};
+    const note = (name: string) => (r: { ok: boolean; text: string }) => {
+      seen[name] = r.ok ? JSON.parse(r.text) : r.text;
+    };
+    useScript([
+      [
+        { call: 'get_blueprint', args: {}, expect: note('blueprint') },
+        { call: 'get_version', args: { version: '1.0' }, expect: note('version') },
+        { call: 'diff_drafts', args: { from: '1.0', to: '1.1' }, expect: note('diff') },
+        { call: 'get_effective_config', args: { stageKey: 'script' }, expect: note('config') },
+        { call: 'get_channel_resources', args: {}, expect: note('channel') },
+        { call: 'get_version', args: { version: '7.7' }, expect: note('missing') },
+      ],
+    ]);
+    const sid = await newSession();
+    const blueprints = http.app.get(BlueprintService);
+    const v1 = exampleScript();
+    const v2 = exampleScript();
+    v2.graph[0]!.label = 'Write a punchier script';
+    await blueprints.createVersion(blueprintId, v1);
+    await blueprints.createVersion(blueprintId, v2);
+    await turn(sid, { text: 'what changed?' });
+    await waitIdle(sid);
+
+    expect(seen.blueprint).toMatchObject({
+      versionCount: 2,
+      versions: [
+        { version: '1.1', isCurrent: true },
+        { version: '1.0', isCurrent: false },
+      ],
+      draftDiffersFromLatest: false,
+    });
+    expect(seen.version).toMatchObject({ version: '1.0', draft: { graph: [{ key: 'script' }] } });
+    expect(seen.diff).toMatchObject({
+      stages: [{ key: 'script', changes: [{ field: 'label', after: 'Write a punchier script' }] }],
+    });
+    // built-in layer from the real EngineConfig, merged by the real resolver
+    expect(seen.config).toMatchObject({
+      capability: 'text.generate',
+      layers: { builtIn: { retryLimit: 0, iterate: { maxItems: expect.any(Number) } } },
+    });
+    expect(seen.channel).toMatchObject({
+      channel: { id: channelId },
+      otherBlueprints: expect.any(Array),
+    });
+    expect(String(seen.missing)).toContain('1.1, 1.0');
+  });
+
   it('asks questions, then continues with the answers as the next turn', async () => {
     let writeAfterAsk: unknown;
     useScript([

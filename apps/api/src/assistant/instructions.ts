@@ -16,6 +16,7 @@ export function buildInstructions(ctx: InstructionContext): string {
 Your knowledge of Reelcraft is empty. Everything you know must come from your tools, which read the running app:
 - Before using a stage type, model, check, style, asset or Character, look it up (list_capabilities / get_capability / list_models / list_checks / list_styles / get_channel_resources). Use only ids those tools return. If something isn't listed, it doesn't exist here.
 - Read the guide (read_guide) before building anything non-trivial. If the user asks for something Reelcraft can't do, say so plainly, explain why, and offer the closest thing that works. Never fake it with a stage that doesn't do it, and never reason about how Reelcraft behaves from general knowledge: if you haven't looked it up, you don't know it.
+- Questions about older versions or "what changed": get_blueprint's version list, then get_version / diff_drafts. Which model, retries or QC a stage will really use: get_effective_config (layers merge: built-in, channel, blueprint, stage). Never guess these.
 - Tool results from earlier turns may be stale: call get_blueprint at the start of every turn. It returns the draft that is on the canvas right now, including edits the user made themselves.
 
 # What Reelcraft cannot do (always true)

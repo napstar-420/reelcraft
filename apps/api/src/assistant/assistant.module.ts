@@ -5,6 +5,7 @@ import { CapabilityModule } from '../capability/capability.module';
 import { ProviderModule } from '../provider/provider.module';
 import { ChannelModule } from '../channel/channel.module';
 import { JsonSchemaModule } from '../json-schema/json-schema.module';
+import { RunConfigModule } from '../run-config/run-config.module';
 import { AssistantController } from './assistant.controller';
 import { AssistantEvents } from './assistant-events';
 import { AssistantService } from './assistant.service';
@@ -23,6 +24,7 @@ import { CodexNeoRegistrar } from '../provider/codex/codex-neo-registrar';
     ProviderModule,
     ChannelModule,
     JsonSchemaModule,
+    RunConfigModule,
   ],
   controllers: [AssistantController],
   providers: [

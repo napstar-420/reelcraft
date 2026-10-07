@@ -29,6 +29,11 @@ exist on your computer, in the version you run. You see these steps as a collaps
 Every proposal is checked with the same rules as **Save** before you see it. If the assistant gets
 something wrong, it is told what and fixes it. It never shows you a blueprint that isn't runnable.
 
+It can also read this blueprint's saved versions, so you can ask what changed between two of them or
+to bring back something from an older one, and it can tell you which model, retries and quality
+control a stage will really use once your channel and blueprint defaults are merged. It sees your
+channel's assets, characters and other blueprints, so it avoids name clashes and reuses what exists.
+
 When you ask for something Reelcraft can't do, it says so, instead of faking it. For example, Reelcraft
 can't publish a video to a platform, run stages in parallel, or create characters and assets for you.
 
