@@ -10,6 +10,7 @@ import type {
 } from '@reelcraft/shared';
 import { Capability } from '../capability.decorator';
 import type { CapabilityImpl, ExecCtx, ExecResult } from '../capability.interface';
+import { unwrapText } from '../../common/unwrap-text';
 import { ProviderRegistry } from '../../provider/provider.registry';
 
 interface MediaConfig {
@@ -139,6 +140,13 @@ export class AudioSpeechCapability extends ProviderMediaCapability {
   }
   slots(): SlotDef[] {
     return [{ name: 'text', accepts: ['text'], required: true, cardinality: 'one' }];
+  }
+  // A `memory` ref to a text stage's output resolves to its `{ text }` storage wrapper.
+  override prepare(ctx: ExecCtx<MediaConfig>): ExecCtx<MediaConfig> {
+    return super.prepare({
+      ...ctx,
+      slots: { ...ctx.slots, text: unwrapText('text', ctx.slots.text) },
+    });
   }
 }
 

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { ExecCtx } from '../capability.interface';
-import { ImageGenerateCapability } from './media-generate.capability';
+import { AudioSpeechCapability, ImageGenerateCapability } from './media-generate.capability';
 
 describe('ImageGenerateCapability', () => {
   it('prepares a stable identity-augmented prompt used for estimate and submission', async () => {
@@ -27,5 +27,19 @@ describe('ImageGenerateCapability', () => {
     expect(prepared.renderedPrompt).toBe('Portrait\nCharacter identity: A red-haired detective');
     expect(estimate.mock.calls[0]?.[0].renderedPrompt).toBe(prepared.renderedPrompt);
     expect(submit.mock.calls[0]?.[0].renderedPrompt).toBe(prepared.renderedPrompt);
+  });
+});
+
+describe('AudioSpeechCapability', () => {
+  it('speaks the text of a memory ref, not its { text } wrapper', () => {
+    const capability = new AudioSpeechCapability({} as never);
+    const ctx = {
+      config: { provider: 'x', modelId: 'y' },
+      slots: { text: { text: 'Hello there.' } },
+    };
+    expect(capability.prepare(ctx as never).slots.text).toBe('Hello there.');
+    expect(capability.prepare({ ...ctx, slots: { text: 'plain' } } as never).slots.text).toBe(
+      'plain',
+    );
   });
 });

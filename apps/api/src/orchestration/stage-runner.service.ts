@@ -24,6 +24,7 @@ import {
 import { ulid } from '../common/ulid';
 import { fromUsd, toUsd } from '../common/money';
 import { renderStagePrompt } from '../common/prompt-template';
+import { unwrapText } from '../common/unwrap-text';
 import { collectFileInputs, promptScopeWithRoles } from '../common/file-inputs';
 import { CapabilityRegistry } from '../capability/capability.registry';
 import {
@@ -981,10 +982,9 @@ export class StageRunnerService {
     // Generate Speech keeps the text it spoke (`{text}`, like a text output) so
     // checks such as `wpm` and quality control can compare it with the audio,
     // and the word timings when it made them (`writes: { timings: 'timing' }`).
+    const slotText = unwrapText('text', bindings.slots.text);
     const spokenText =
-      stage.capability === 'audio.speech' && typeof bindings.slots.text === 'string'
-        ? bindings.slots.text
-        : undefined;
+      stage.capability === 'audio.speech' && typeof slotText === 'string' ? slotText : undefined;
     const data =
       kind === 'text'
         ? { text: output }
