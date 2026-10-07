@@ -341,6 +341,14 @@ describe('binding resolver + memory writes (e2e)', () => {
     });
   });
 
+  it('resolveRefEnvelopes applies ref.path to a memory ref', async () => {
+    const { refs } = await bindings.resolveRefEnvelopes(
+      { title: { from: 'memory', key: 'outline', path: 'title' } },
+      { runId, inputs: {} },
+    );
+    expect(refs.title?.data).toBe('Coral Reefs 101');
+  });
+
   it('resolveRefEnvelopes tags a const/input ref "literal", distinct from the real "data" ArtifactKind', async () => {
     const { refs } = await bindings.resolveRefEnvelopes(
       { n: { from: 'const', value: 7 } },
