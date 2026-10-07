@@ -9,6 +9,7 @@ import {
   reservedParams,
 } from './model-pin-editor.logic';
 import type { Modality, PartialModelPin } from '@reelcraft/shared';
+import { SpeechEditor } from './speech/SpeechEditor';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
@@ -103,12 +104,21 @@ export type ModelPinEditorProps = {
  * `StageInspector`. Model `params` has no schema to drive `SchemaForm`
  * from (`ModelInfo.capabilities` isn't a `JsonSchema`), so `params` is a
  * generic string-valued key/value list rather than a generated form. */
-export function ModelPinEditor({
-  value,
-  onChange,
-  clearable = true,
-  modality,
-}: ModelPinEditorProps) {
+export function ModelPinEditor(props: ModelPinEditorProps) {
+  // Speech has voices and a settings form of its own, so it has its own editor.
+  if (props.modality === 'audio') {
+    return (
+      <SpeechEditor
+        value={props.value}
+        onChange={props.onChange}
+        {...(props.clearable !== undefined && { clearable: props.clearable })}
+      />
+    );
+  }
+  return <TextModelPinEditor {...props} />;
+}
+
+function TextModelPinEditor({ value, onChange, clearable = true, modality }: ModelPinEditorProps) {
   const providers = useQuery({
     queryKey: ['providers', modality ?? null],
     queryFn: () => api.listProviders(modality),

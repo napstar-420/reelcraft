@@ -1,5 +1,6 @@
 import type { JsonSchema, OutputDef, OutputKind, StageDef } from '@reelcraft/shared';
 import type { ParsedValidationPath } from '../../lib/parse-validation-path';
+import { speechPinSummary } from './speech/speech-settings.logic';
 
 function outputInstructions(output: OutputDef): string | undefined {
   return output.kind === 'text' || output.kind === 'data' ? output.instructions : undefined;
@@ -204,7 +205,10 @@ export function stageSectionSummaries(stage: StageDef): StageSectionSummaries {
     'checks-qc': stage.qc
       ? `${count(stage.checks.length, 'check')}, QC on`
       : count(stage.checks.length, 'check'),
-    model: stage.model?.modelId ?? stage.model?.provider ?? 'Inherited',
+    model:
+      stage.capability === 'audio.speech'
+        ? speechPinSummary(stage.model)
+        : (stage.model?.modelId ?? stage.model?.provider ?? 'Inherited'),
     execution: execution.length > 0 ? execution.join(', ') : 'Defaults',
     flow: flow.length > 0 ? flow.join(', ') : 'Runs once',
   };

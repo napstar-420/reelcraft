@@ -89,6 +89,8 @@ export interface CapabilityImpl<Cfg = Record<string, unknown>> {
   readonly lockedSystemPrompt?: string;
   /** The stage cannot run without a template prompt. */
   readonly requiresTemplate?: boolean;
+  /** The stage's work is fixed, so it takes no system prompt or template and the editor hides them. */
+  readonly noInstructions?: boolean;
   /** §4.2/§16.2 — the restricted-dialect shape of `StageDef.config` this
    * capability accepts, backing `GET /capabilities` (`CapabilityDto`,
    * `packages/shared/src/dto/capability.dto.ts`) and save-time validation.

@@ -131,6 +131,8 @@ export class AudioSpeechCapability extends ProviderMediaCapability {
   readonly outputKind = 'media.audio' as const;
   readonly label = 'Generate Speech';
   readonly description = 'Synthesize speech audio from text.';
+  // It speaks its `text` slot as written: nothing here is a prompt.
+  readonly noInstructions = true;
   constructor(providers: ProviderRegistry) {
     super(providers);
   }

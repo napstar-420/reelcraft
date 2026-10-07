@@ -37,7 +37,7 @@ export const GUIDE: Record<string, GuideSection> = {
 - \`text.generate\`: an LLM writes \`text\`, \`data\` (needs a schema) or a \`timeline\`. Files bound under context and listed in \`attach\` are sent to the model.
 - \`image.generate\`: an image from a prompt (\`media.image\`); optional \`references\` slot (images, a Character role).
 - \`video.generate\`: a video clip (\`media.video\`); optional \`startFrame\`, \`endFrame\`, \`references\` slots.
-- \`audio.speech\`: text to voice-over (\`media.audio\`); required \`text\` slot.
+- \`audio.speech\`: text to voice-over (\`media.audio\`); required \`text\` slot. Takes no instructions. The voice and its settings live in the model pin's \`params\`: \`voiceId\` (an ElevenLabs stage needs one; \`list_models\` shows each speech model's \`speechParams\` and \`outputFormats\`; Deepgram's voice ids look like \`thalia-en\` and its model is \`flux\`, \`aura-2\` or \`aura\`).
 - \`media.analyze\`: transcribes speech with word timings (paid, Deepgram) or probes a file; \`data\` output; required \`source\` slot (audio or video).
 - \`video.concat\`: joins clips end to end with optional crossfade, replacement audio and burned-in subtitles; free, local.
 - \`timeline.render\`: renders a \`timeline\` into a finished video; free, local.

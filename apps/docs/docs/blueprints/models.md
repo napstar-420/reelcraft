@@ -39,8 +39,8 @@ If a provider has no available model for the stage, the box says why, for exampl
 | --------------- | ------------------------------------------------------------------------------------------------ |
 | **OpenRouter**  | Text and image models from many vendors, paid by use with your OpenRouter key                    |
 | **fal**         | Video generation                                                                                 |
-| **ElevenLabs**  | Speech (voice-over)                                                                              |
-| **Deepgram**    | Transcription and word timings, for Analyze Media                                                |
+| **ElevenLabs**  | Speech (voice-over), with its own voices and settings                                            |
+| **Deepgram**    | Speech (voice-over), and transcription with word timings for Analyze Media                       |
 | **Codex**       | Text, and image and browser steps, using your ChatGPT plan. See [Connect Codex](../codex.md)     |
 | **ChatGPT**     | Text and images through a ChatGPT tab in BrowserOS Neo. See [BrowserOS Neo](../browseros-neo.md) |
 | **Fake (test)** | Free placeholder results for every kind of work                                                  |
@@ -48,6 +48,10 @@ If a provider has no available model for the stage, the box says why, for exampl
 Which providers appear depends on what you've set up in **Settings**.
 
 ## Model settings
+
+[Generate Speech](../stage-types/generate-speech.md) has its own Model section: model cards, a voice
+picker with samples and a form of the settings that model supports. The rest of this section is for
+the other stages.
 
 Which of these you see depends on the provider.
 

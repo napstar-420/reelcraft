@@ -181,7 +181,7 @@ const listModels: AssistantTool<z.infer<typeof ListModelsInput>> = {
   name: 'list_models',
   kind: 'read',
   description:
-    'List the models that can be used right now, per provider, with the kinds of work (modalities) each can do and why a modality is unavailable (e.g. a provider that is signed out). Use ONLY ids from here in model pins and defaults. dataOutput: the model can write a data output (JSON matching your schema); inputKinds: file kinds it can read (attachments, or the output a QC judge looks at).',
+    'List the models that can be used right now, per provider, with the kinds of work (modalities) each can do and why a modality is unavailable (e.g. a provider that is signed out). Use ONLY ids from here in model pins and defaults. dataOutput: the model can write a data output (JSON matching your schema); inputKinds: file kinds it can read (attachments, or the output a QC judge looks at). speechParams/outputFormats: for a speech model, the params it takes (voiceId, outputFormat and these) and its output formats.',
   input: ListModelsInput,
   jsonSchema: () =>
     obj({ modality: str('Only models that can do this kind of work.', { enum: MODALITIES }) }),
@@ -207,6 +207,18 @@ const listModels: AssistantTool<z.infer<typeof ListModelsInput>> = {
               defaultReasoningEffort: model.defaultReasoningEffort,
             }),
             inputKinds: model.capabilities?.inputKinds ?? [],
+            // A speech model's params (put them in the pin's params) and output formats.
+            ...(model.capabilities?.speech && {
+              speechParams: model.capabilities.speech.settings.map((setting) => ({
+                key: setting.key,
+                kind: setting.kind,
+                ...('min' in setting && { min: setting.min, max: setting.max }),
+                ...(setting.kind === 'choice' && {
+                  options: setting.options.map((option) => option.value),
+                }),
+              })),
+              outputFormats: model.capabilities.speech.formats.map((format) => format.value),
+            }),
             // Only OpenRouter needs native structured output for a data stage (the validator
             // rejects it otherwise); Codex, ChatGPT and fake reply in JSON that Reelcraft parses
             // and checks against the schema.

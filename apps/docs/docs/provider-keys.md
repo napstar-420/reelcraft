@@ -14,14 +14,23 @@ uses its free test provider.
 | [OpenRouter](https://openrouter.ai) | Text and image models from many vendors, through one key | [openrouter.ai/settings/keys](https://openrouter.ai/settings/keys) |
 | [fal](https://fal.ai)               | Image and video generation                               | [fal.ai/dashboard/keys](https://fal.ai/dashboard/keys)             |
 | [ElevenLabs](https://elevenlabs.io) | Voice-over (text to speech)                              | [ElevenLabs API keys](https://elevenlabs.io/app/settings/api-keys) |
-| [Deepgram](https://deepgram.com)    | Transcription and captions                               | [console.deepgram.com](https://console.deepgram.com)               |
+| [Deepgram](https://deepgram.com)    | Voice-over, transcription and captions                   | [console.deepgram.com](https://console.deepgram.com)               |
 
 Each service bills you directly for what Reelcraft uses. Most let you set a spending limit on
 their website, which is a good idea.
 
+### ElevenLabs key permissions
+
+An ElevenLabs key can be restricted to some permissions. For Generate Speech it needs **Text to
+Speech**; **Voices: Read** lets Reelcraft list your voices, **Models: Read** lists the models your
+account can use, and **Pronunciation Dictionaries: Read** lists your dictionaries. **Test** tells you
+when a working key lacks one of these. Without **Voices: Read** you can still run speech by pasting a
+voice ID in the voice picker. The simplest choice is a key with no restrictions.
+
 :::note Deepgram on a desktop install
 
-Deepgram sends the results of an [Analyze Media](./stage-types/analyze-media.md) stage back to
+Deepgram makes **speech** straight away, so [Generate Speech](./stage-types/generate-speech.md) works
+anywhere. Transcription is different: Deepgram sends the results of an [Analyze Media](./stage-types/analyze-media.md) stage back to
 Reelcraft over the internet, so it needs a public address for your Reelcraft. On a normal desktop
 install it can't reach your computer, and that stage's **Transcribe align** setting doesn't work.
 Deepgram transcripts for [quality control](./blueprints/quality-control.md#include-transcript) are not
@@ -36,7 +45,7 @@ affected.
    key there and copy it.
 3. Paste the key into the box next to the service and click **Save**.
 4. Click **Test** to check that the key works. You see **The key works.** or the reason it
-   doesn't. (fal has no test; its key is checked the first time you use it.)
+   doesn't, and for an ElevenLabs key a warning if it lacks a permission Reelcraft uses. (fal has no test; its key is checked the first time you use it.)
 
 ![The AI providers card in Settings](/img/app/settings-providers.png)
 

@@ -1181,16 +1181,18 @@ export function StageInspector({
               </AlertDialog>
             </div>
 
-            <div className="flex flex-col gap-1.5">
-              <h3 className={SECTION_HEADING_CLASS}>Instructions</h3>
-              <InstructionsEditor
-                instructions={stage.instructions}
-                lockedSystemPrompt={stageCapability?.lockedSystemPrompt}
-                templateRequired={stageCapability?.requiresTemplate}
-                onChange={(instructions) => onChange({ ...stage, instructions })}
-              />
-              <IssueList issues={instructionsIssues} />
-            </div>
+            {!stageCapability?.noInstructions && (
+              <div className="flex flex-col gap-1.5">
+                <h3 className={SECTION_HEADING_CLASS}>Instructions</h3>
+                <InstructionsEditor
+                  instructions={stage.instructions}
+                  lockedSystemPrompt={stageCapability?.lockedSystemPrompt}
+                  templateRequired={stageCapability?.requiresTemplate}
+                  onChange={(instructions) => onChange({ ...stage, instructions })}
+                />
+                <IssueList issues={instructionsIssues} />
+              </div>
+            )}
 
             {configSchema && Object.keys(configSchema.properties ?? {}).length > 0 && (
               <div className="flex flex-col gap-1.5">
