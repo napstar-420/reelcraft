@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { SpeechModelOptions } from './speech';
 
 /** §7.2/§8 — opaque to engine core; each adapter treats payload as a black box. */
 export const JobHandle = z.object({
@@ -74,6 +75,8 @@ export const ModelCapabilities = z.object({
       hasAudio: z.boolean().optional(),
     })
     .optional(),
+  /** What a text-to-speech model offers: its voices, formats and settings. */
+  speech: SpeechModelOptions.optional(),
 });
 export type ModelCapabilities = z.infer<typeof ModelCapabilities>;
 

@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { Modality, OutputKind } from '../primitives';
 import { JsonSchema } from '../json-schema';
 import { SlotDef } from '../slots';
+import { SpeechModelOptions } from '../speech';
 
 /** Backs `GET /capabilities` (§7.1) — one source for editor form generation,
  * validator type checking, and execution. */
@@ -17,6 +18,8 @@ export const CapabilityDto = z.object({
   lockedSystemPrompt: z.string().optional(),
   /** The stage cannot run without a template prompt. */
   requiresTemplate: z.boolean().optional(),
+  /** The stage takes no Instructions (system prompt or template): its work is fixed, so the editor hides them. */
+  noInstructions: z.boolean().optional(),
 });
 export type CapabilityDto = z.infer<typeof CapabilityDto>;
 
@@ -47,7 +50,11 @@ export const ModelInfoDto = z.object({
   defaultReasoningEffort: z.string().optional(),
   /** Kinds of attached file the model can read (`media.image`, `media.audio`). */
   capabilities: z
-    .object({ inputKinds: z.array(z.string()).optional() })
+    .object({
+      inputKinds: z.array(z.string()).optional(),
+      /** Set on text-to-speech models. */
+      speech: SpeechModelOptions.optional(),
+    })
     .passthrough()
     .optional(),
 });

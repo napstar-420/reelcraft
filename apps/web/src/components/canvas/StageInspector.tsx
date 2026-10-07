@@ -99,10 +99,12 @@ function nextFreeKey(existing: Record<string, unknown>, prefix: string): string 
 function WritesEditor({
   writes,
   output,
+  capability,
   onChange,
 }: {
   writes: Record<string, string> | undefined;
   output: OutputDef;
+  capability: string;
   onChange: (writes: Record<string, string>) => void;
 }) {
   const entries = Object.entries(writes ?? {});
@@ -110,6 +112,8 @@ function WritesEditor({
   const pathOptions = [
     { path: '$', type: output.kind },
     ...(output.kind === 'data' ? schemaPaths(output.schema) : []),
+    // Generate Speech keeps the word timings in its artifact when its Word timings setting is on.
+    ...(capability === 'audio.speech' ? [{ path: 'timing', type: 'word timings' }] : []),
   ];
 
   function updateKey(oldKey: string, newKey: string) {
@@ -1181,16 +1185,18 @@ export function StageInspector({
               </AlertDialog>
             </div>
 
-            <div className="flex flex-col gap-1.5">
-              <h3 className={SECTION_HEADING_CLASS}>Instructions</h3>
-              <InstructionsEditor
-                instructions={stage.instructions}
-                lockedSystemPrompt={stageCapability?.lockedSystemPrompt}
-                templateRequired={stageCapability?.requiresTemplate}
-                onChange={(instructions) => onChange({ ...stage, instructions })}
-              />
-              <IssueList issues={instructionsIssues} />
-            </div>
+            {!stageCapability?.noInstructions && (
+              <div className="flex flex-col gap-1.5">
+                <h3 className={SECTION_HEADING_CLASS}>Instructions</h3>
+                <InstructionsEditor
+                  instructions={stage.instructions}
+                  lockedSystemPrompt={stageCapability?.lockedSystemPrompt}
+                  templateRequired={stageCapability?.requiresTemplate}
+                  onChange={(instructions) => onChange({ ...stage, instructions })}
+                />
+                <IssueList issues={instructionsIssues} />
+              </div>
+            )}
 
             {configSchema && Object.keys(configSchema.properties ?? {}).length > 0 && (
               <div className="flex flex-col gap-1.5">
@@ -1419,6 +1425,7 @@ export function StageInspector({
               <WritesEditor
                 writes={stage.writes}
                 output={stage.output}
+                capability={stage.capability}
                 onChange={(writes) => onChange({ ...stage, writes })}
               />
             </div>

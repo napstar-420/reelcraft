@@ -74,6 +74,8 @@ export type TestBrowserOsDto = z.infer<typeof TestBrowserOsDto>;
 export const ConnectionTestDto = z.object({
   ok: z.boolean(),
   error: z.string().optional(),
+  /** The key works, but something Reelcraft uses with it will not (a missing permission). */
+  warning: z.string().optional(),
 });
 export type ConnectionTestDto = z.infer<typeof ConnectionTestDto>;
 

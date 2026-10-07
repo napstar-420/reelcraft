@@ -81,6 +81,16 @@ from the backup taken before the update. You can try again later, or
 **Could not check for updates** usually means Reelcraft couldn't reach GitHub. It tries again on
 its own every 6 hours.
 
+## Generate Speech fails
+
+- **"no voice is chosen"**: ElevenLabs voices belong to your account, so a Generate Speech stage needs
+  one chosen under **Model → Voice**.
+- **"Free users cannot use library voices via the API"**: your ElevenLabs plan can only use premade
+  voices through the API. Choose a premade voice or upgrade the plan.
+- **"the key was rejected"**: the key under **Settings** is wrong or lacks a permission. Click **Test**.
+
+See [Generate Speech](./stage-types/generate-speech.md#if-it-fails).
+
 ## Deepgram transcription doesn't work
 
 Deepgram needs to reach your Reelcraft over the internet, which a desktop install doesn't allow.

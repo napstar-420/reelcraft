@@ -1,7 +1,28 @@
-import type { InputDef, Ref, StageDef, ValidationIssue } from '@reelcraft/shared';
+import type { InputDef, JsonSchema, Ref, StageDef, ValidationIssue } from '@reelcraft/shared';
 import type { SourceType } from '../json-schema/source-type';
 import { narrowRefPath } from '../json-schema/schema-path';
 import type { ValidationContext } from './validation-context';
+
+const wordSchema: JsonSchema = {
+  type: 'object',
+  properties: {
+    text: { type: 'string' },
+    startSec: { type: 'number' },
+    endSec: { type: 'number' },
+  },
+  required: ['text', 'startSec', 'endSec'],
+};
+/** The shape of Generate Speech's `timing`: the same as a transcription's word timings. */
+const TIMING_SCHEMA: JsonSchema = {
+  type: 'object',
+  properties: {
+    transcript: { type: 'string' },
+    durationSec: { type: 'number' },
+    sentences: { type: 'array', items: wordSchema },
+    words: { type: 'array', items: wordSchema },
+  },
+  required: ['transcript', 'durationSec', 'sentences', 'words'],
+};
 
 export interface SourceTypeResult {
   type: SourceType;
@@ -61,6 +82,11 @@ export function sourceTypeOfRef(
 
       const writerOutput = sourceTypeOfOutput(writerStage.output);
       if (writer.path === '$') return { type: writerOutput };
+      // Generate Speech's word timings are data inside an audio artifact, which the output's
+      // own type can't describe.
+      if (writerStage.capability === 'audio.speech' && writer.path === 'timing') {
+        return { type: { kind: 'data', schema: TIMING_SCHEMA } };
+      }
       const narrowed = narrowRefPath(writerOutput, writer.path);
       if (!narrowed.ok) {
         return unresolved(`memory key "${ref.key}": ${narrowed.reason}`, issuePath);

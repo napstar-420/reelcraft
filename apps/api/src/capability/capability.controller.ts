@@ -1,4 +1,5 @@
 import {
+  BadGatewayException,
   BadRequestException,
   Body,
   Controller,
@@ -8,7 +9,12 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
-import { ResolveCapabilityRequestDto } from '@reelcraft/shared';
+import {
+  ResolveCapabilityRequestDto,
+  SpeechPreviewRequestDto,
+  VoiceQueryDto,
+} from '@reelcraft/shared';
+import { previewSpeech } from '../provider/speech/preview-speech';
 import { CapabilityRegistry } from './capability.registry';
 import { ProviderRegistry } from '../provider/provider.registry';
 import { StyleRegistry } from './style.registry';
@@ -36,6 +42,7 @@ export class CapabilityController {
       ...(impl.interaction && { interaction: impl.interaction }),
       ...(impl.lockedSystemPrompt && { lockedSystemPrompt: impl.lockedSystemPrompt }),
       ...(impl.requiresTemplate && { requiresTemplate: impl.requiresTemplate }),
+      ...(impl.noInstructions && { noInstructions: impl.noInstructions }),
     }));
   }
 
@@ -62,6 +69,48 @@ export class CapabilityController {
       providerId: id,
       modalities: model.modalities ?? provider.modalities,
     }));
+  }
+
+  /** The voices a text-to-speech provider offers, for the speech editor's voice picker. */
+  @Get('providers/:id/voices')
+  async listVoices(
+    @Param('id') id: string,
+    @Query(new ZodValidationPipe(VoiceQueryDto)) query: VoiceQueryDto,
+  ) {
+    const provider = this.providers.get(id);
+    if (!provider.listVoices) throw new NotFoundException(`${id} has no voices to list`);
+    try {
+      return await provider.listVoices(query);
+    } catch (error) {
+      throw new BadGatewayException((error as Error).message);
+    }
+  }
+
+  /** A paid, short sample of a speech model with the settings being edited. */
+  @Post('providers/:id/speech-preview')
+  async speechPreview(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(SpeechPreviewRequestDto)) dto: SpeechPreviewRequestDto,
+  ) {
+    try {
+      return await previewSpeech(this.providers.get(id), dto);
+    } catch (error) {
+      if (error instanceof BadRequestException || error instanceof NotFoundException) throw error;
+      throw new BadGatewayException((error as Error).message);
+    }
+  }
+
+  @Get('providers/:id/pronunciation-dictionaries')
+  async listPronunciationDictionaries(@Param('id') id: string) {
+    const provider = this.providers.get(id);
+    if (!provider.listPronunciationDictionaries) {
+      throw new NotFoundException(`${id} has no pronunciation dictionaries`);
+    }
+    try {
+      return await provider.listPronunciationDictionaries();
+    } catch (error) {
+      throw new BadGatewayException((error as Error).message);
+    }
   }
 
   @Post('capabilities/:key/resolve')

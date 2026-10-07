@@ -8,6 +8,7 @@ export * from './config-layer';
 export * from './qc';
 export * from './stage-def';
 export * from './provider';
+export * from './speech';
 export * from './probe';
 export * from './storage';
 export * from './character';

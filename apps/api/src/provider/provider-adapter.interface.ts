@@ -5,6 +5,9 @@ import type {
   ModelCapabilities,
   Modality,
   OutputDef,
+  PronunciationDictionaryListDto,
+  TimingMap,
+  VoiceListDto,
 } from '@reelcraft/shared';
 
 export interface ModelInfo {
@@ -26,6 +29,18 @@ export interface ProviderRequest {
   output?: OutputDef | undefined;
 }
 
+/** What the editor narrows a text-to-speech voice list by. */
+export interface VoiceQuery {
+  /** The speech model the voice is for: a provider's voices can differ per model. */
+  modelId?: string | undefined;
+  search?: string | undefined;
+  language?: string | undefined;
+  gender?: string | undefined;
+  /** From a previous page's `nextCursor`. */
+  cursor?: string | undefined;
+  limit?: number | undefined;
+}
+
 export interface ProviderAttachment {
   role: 'evidence' | 'download';
   localPath?: string;
@@ -41,6 +56,8 @@ export interface ProviderResult {
   repro: { level: 'exact' | 'approximate' | 'none'; seed?: string; providerVersion?: string };
   rawResponse: unknown;
   attachments?: ProviderAttachment[];
+  /** Speech that comes with word timings (ElevenLabs): when each word is spoken. */
+  timing?: TimingMap;
 }
 
 export interface CancelResult {
@@ -63,4 +80,10 @@ export interface ProviderAdapter {
   poll(handle: JobHandle): Promise<JobStatus>;
   fetch(handle: JobHandle): Promise<ProviderResult>;
   cancel(handle: JobHandle): Promise<CancelResult>;
+  /** Text-to-speech providers: the voices to pick from. */
+  listVoices?(query: VoiceQuery): Promise<VoiceListDto>;
+  /** Text-to-speech providers: why these params can't be used together, if they can't. */
+  speechConflict?(modelId: string, params: Record<string, unknown>): string | undefined;
+  /** Text-to-speech providers with pronunciation dictionaries in the account. */
+  listPronunciationDictionaries?(): Promise<PronunciationDictionaryListDto>;
 }

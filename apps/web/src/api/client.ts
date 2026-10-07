@@ -1,4 +1,9 @@
 import type {
+  PronunciationDictionaryListDto,
+  SpeechPreviewDto,
+  SpeechPreviewRequestDto,
+  VoiceListDto,
+  VoiceQueryDto,
   AssistantItemDto,
   AssistantProviderDto,
   AssistantSessionDetailDto,
@@ -266,6 +271,21 @@ export const api = {
     ),
   listModelsForProvider: (providerId: string) =>
     request<ModelInfoDto[]>(`/providers/${providerId}/models`),
+  listVoices: (providerId: string, query: VoiceQueryDto = {}) => {
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(query)) {
+      if (value !== undefined && value !== '') params.set(key, String(value));
+    }
+    const qs = params.toString();
+    return request<VoiceListDto>(`/providers/${providerId}/voices${qs ? `?${qs}` : ''}`);
+  },
+  previewSpeech: (providerId: string, dto: SpeechPreviewRequestDto) =>
+    request<SpeechPreviewDto>(`/providers/${providerId}/speech-preview`, {
+      method: 'POST',
+      body: JSON.stringify(dto),
+    }),
+  listPronunciationDictionaries: (providerId: string) =>
+    request<PronunciationDictionaryListDto>(`/providers/${providerId}/pronunciation-dictionaries`),
 
   listCheckTypes: () => request<CheckTypeDto[]>('/check-types'),
   testCheck: (check: CheckDef, artifactId: string) =>

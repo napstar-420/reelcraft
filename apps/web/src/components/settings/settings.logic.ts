@@ -21,7 +21,10 @@ export const PROVIDER_INFO: Record<ProviderKeyId, { use: string; keyUrl: string 
     use: 'Voice-over (text to speech).',
     keyUrl: 'https://elevenlabs.io/app/settings/api-keys',
   },
-  deepgram: { use: 'Transcription and captions.', keyUrl: 'https://console.deepgram.com' },
+  deepgram: {
+    use: 'Voice-over, transcription and captions.',
+    keyUrl: 'https://console.deepgram.com',
+  },
 };
 
 export type Tone = 'ok' | 'muted' | 'warn';

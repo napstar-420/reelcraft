@@ -418,6 +418,40 @@ describe('binding resolver + memory writes (e2e)', () => {
     expect(secondRead.provenance.memoryVersion).toBe(2);
   });
 
+  it('a speech stage can write its word timings, and a read gives them back as data', async () => {
+    const stage = textStage('speech', { writes: { voice: '$', voiceTiming: 'timing' } });
+    const timing = { transcript: 'Hi there.', durationSec: 1, sentences: [], words: [] };
+    const artifactId = await artifacts.recordAttemptArtifact({
+      runId,
+      producerStageKey: stage.key,
+      kind: 'media.audio',
+      data: { text: 'Hi there.', timing },
+      reproLevel: 'none',
+      costUsd: 0,
+    });
+    await artifacts.finalize({
+      runId,
+      stageExecutionId: ulid(),
+      producerStageKey: stage.key,
+      newArtifactId: artifactId,
+      applyWrites: memory.buildWriteCallback(stage, {
+        runId,
+        stageKey: stage.key,
+        kind: 'media.audio',
+        data: { text: 'Hi there.', timing },
+        artifactId,
+      }),
+    });
+    const read = await bindings.resolve(
+      { from: 'memory', key: 'voiceTiming' },
+      { runId, inputs: {} },
+    );
+    expect(read.value).toEqual(timing);
+    const history = await memory.listCurrent(testDb.db, runId);
+    expect(history.find((row) => row.memKey === 'voiceTiming')?.kind).toBe('data');
+    expect(history.find((row) => row.memKey === 'voice')?.artifactId).toBe(artifactId);
+  });
+
   it('lists only latest visible memory while retaining the complete append-only history', async () => {
     const current = await memory.listCurrent(testDb.db, runId);
     expect(current.some((row) => row.memKey === 'outline' && row.version === 1)).toBe(true);

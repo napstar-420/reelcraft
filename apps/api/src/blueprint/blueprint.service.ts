@@ -41,6 +41,7 @@ import { QC_VIDEO_UNAVAILABLE, judgeWatchesVideo } from '../qc/qc-video';
 import { modalityForCapability } from '../capability/modality-for-capability';
 import { stageReferenceLimit } from '../common/reference-limit';
 import type { ModelInfo } from '../provider/provider-adapter.interface';
+import { validateSpeechStages } from '../provider/speech/validate-speech-stages';
 
 @Injectable()
 export class BlueprintService {
@@ -332,6 +333,7 @@ export class BlueprintService {
     const issues = this.validator.validate(validationInput);
     issues.push(...(await this.validateReferenceLimits(dto, blueprintRow.defaults as ConfigLayer)));
     issues.push(...(await this.validateProviderPins(dto, blueprintRow.defaults as ConfigLayer)));
+    issues.push(...(await this.validateSpeechSettings(dto, blueprintRow.defaults as ConfigLayer)));
     issues.push(...(await this.validateQcTranscript(dto)));
     issues.push(...(await this.validateQcVideo(dto)));
     issues.push(
@@ -471,6 +473,26 @@ export class BlueprintService {
       }
     }
     return issues;
+  }
+
+  private async validateSpeechSettings(
+    dto: CreateBlueprintVersionDto,
+    channelDefaults: ConfigLayer,
+  ): Promise<ValidationIssue[]> {
+    if (!dto.graph.some((stage) => stage.capability === 'audio.speech')) return [];
+    const config = this.configResolver.resolveRunConfig({
+      graph: dto.graph,
+      engine: engineDefaults(this.engineConfig),
+      channelDefaults,
+      blueprintDefaults: dto.defaults,
+    });
+    try {
+      return await validateSpeechStages(dto.graph, config, this.providers);
+    } catch (error) {
+      // A provider that can't be asked is reported by the pin validation, not here.
+      this.logger.warn({ err: error }, 'speech settings validation skipped');
+      return [];
+    }
   }
 
   private async validateProviderPins(

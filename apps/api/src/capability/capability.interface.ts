@@ -7,6 +7,7 @@ import type {
   OutputKind,
   SlotDef,
   StageDef,
+  TimingMap,
   ValidationIssue,
 } from '@reelcraft/shared';
 import type { CostEstimate, JobHandle, JobStatus } from '@reelcraft/shared';
@@ -48,6 +49,8 @@ export interface ExecResult<Out = unknown> {
   costUsd: number;
   repro: { level: 'exact' | 'approximate' | 'none'; seed?: string; providerVersion?: string };
   rawResponseRef?: string;
+  /** Word timings of generated speech, kept with the audio artifact. */
+  timing?: TimingMap;
   /** Provider-side diagnostics (token usage, exit code, stderr tail…) shown
    * in the stage log. Never the output itself. */
   providerMeta?: Record<string, unknown>;
@@ -89,6 +92,8 @@ export interface CapabilityImpl<Cfg = Record<string, unknown>> {
   readonly lockedSystemPrompt?: string;
   /** The stage cannot run without a template prompt. */
   readonly requiresTemplate?: boolean;
+  /** The stage's work is fixed, so it takes no system prompt or template and the editor hides them. */
+  readonly noInstructions?: boolean;
   /** §4.2/§16.2 — the restricted-dialect shape of `StageDef.config` this
    * capability accepts, backing `GET /capabilities` (`CapabilityDto`,
    * `packages/shared/src/dto/capability.dto.ts`) and save-time validation.

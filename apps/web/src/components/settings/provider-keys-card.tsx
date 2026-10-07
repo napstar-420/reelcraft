@@ -180,9 +180,14 @@ function ProviderKeyRow({ status }: { status: ProviderKeyStatusDto }) {
 
 export function TestResult({ result, okText }: { result: ConnectionTestDto; okText: string }) {
   return result.ok ? (
-    <p className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400">
-      <CheckCircle2 className="size-3.5" /> {okText}
-    </p>
+    <div className="flex flex-col gap-1">
+      <p className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400">
+        <CheckCircle2 className="size-3.5" /> {okText}
+      </p>
+      {result.warning ? (
+        <p className="text-xs text-amber-700 dark:text-amber-400">{result.warning}</p>
+      ) : null}
+    </div>
   ) : (
     <p className="flex items-center gap-1.5 text-xs text-destructive">
       <XCircle className="size-3.5" /> {result.error ?? 'The test failed.'}

@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import type { CostEstimate, JobHandle, JobStatus } from '@reelcraft/shared';
+import type { CostEstimate, JobHandle, JobStatus, VoiceListDto } from '@reelcraft/shared';
 import { EngineConfig } from '../../config/engine-config';
 import { STORAGE_ADAPTER, type StorageAdapter } from '../../storage/storage.adapter';
 import { KEY_PROVIDER, type KeyProvider } from '../key-provider';
@@ -8,7 +8,10 @@ import type {
   ProviderAdapter,
   ProviderRequest,
   ProviderResult,
+  VoiceQuery,
 } from '../provider-adapter.interface';
+import { DeepgramSpeech } from './deepgram-speech.service';
+import { deepgramConflict, isDeepgramFamily } from './deepgram-speech';
 import { DeepgramInboxService } from './deepgram-inbox.service';
 import { DRIZZLE, type Db } from '../../db/drizzle.provider';
 import { blob } from '../../db/schema';
@@ -29,25 +32,38 @@ export function deepgramCostUsd(
 @Injectable()
 export class DeepgramAdapter implements ProviderAdapter {
   readonly id = 'deepgram';
-  readonly modalities = ['media'] as const;
+  /** `media` is transcription (Analyze Media); `audio` is Generate Speech. */
+  readonly modalities = ['media', 'audio'] as const;
   private readonly logger = new Logger(DeepgramAdapter.name);
+  private readonly speech: DeepgramSpeech;
   constructor(
     @Inject(KEY_PROVIDER) private readonly keys: KeyProvider,
     @Inject(STORAGE_ADAPTER) private readonly storage: StorageAdapter,
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly config: EngineConfig,
     private readonly inbox: DeepgramInboxService,
-  ) {}
+  ) {
+    this.speech = new DeepgramSpeech(keys);
+  }
   async listModels(): Promise<ModelInfo[]> {
     return [
       {
         modelId: 'nova-3',
         label: 'Deepgram Nova 3',
+        modalities: ['media'],
         capabilities: { supportsSeed: false, supportsIdempotency: true },
       },
+      ...this.speech.models(),
     ];
   }
+  speechConflict(modelId: string, params: Record<string, unknown>): string | undefined {
+    return isDeepgramFamily(modelId) ? deepgramConflict(modelId, params) : undefined;
+  }
+  async listVoices(query: VoiceQuery): Promise<VoiceListDto> {
+    return this.speech.voices(query.modelId ?? 'flux', query);
+  }
   async estimate(req: ProviderRequest): Promise<CostEstimate> {
+    if (req.modality === 'audio') return this.speech.estimate(req);
     const rate = Number(req.params.pricePerMinuteUsd ?? DEFAULT_PRICE_PER_MINUTE_USD);
     const expectedUsd = deepgramCostUsd(rate, await this.sourceDurationSec(req));
     return { expectedUsd, ceilingUsd: expectedUsd, basis: 'configured_ceiling' };
@@ -122,6 +138,7 @@ export class DeepgramAdapter implements ProviderAdapter {
     return Number.isFinite(fromBlob) && fromBlob > 0 ? fromBlob : undefined;
   }
   async submit(req: ProviderRequest, key: string): Promise<JobHandle> {
+    if (req.modality === 'audio') return this.speech.submit(req, key);
     const source = (req.params.slots as Record<string, { blobId?: string }> | undefined)?.source;
     if (!source?.blobId) throw new Error('Deepgram: source media binding lacks blob id');
     const [sourceBlob] = await this.db
@@ -173,6 +190,10 @@ export class DeepgramAdapter implements ProviderAdapter {
     return { providerId: this.id, externalId: job.id, payload: { jobId: job.id } };
   }
   async poll(handle: JobHandle): Promise<JobStatus> {
+    // Speech is made in `fetch`, so there is nothing to wait for.
+    if ((handle.payload as { speech?: unknown } | undefined)?.speech) {
+      return { done: true, outcome: 'succeeded' };
+    }
     const job = await this.inbox.get(handle.externalId);
     if (!job) {
       this.logger.error({ providerId: this.id, jobId: handle.externalId }, 'provider job unknown');
@@ -187,6 +208,9 @@ export class DeepgramAdapter implements ProviderAdapter {
       : { done: false, phase: 'running' };
   }
   async fetch(handle: JobHandle): Promise<ProviderResult> {
+    if ((handle.payload as { speech?: unknown } | undefined)?.speech) {
+      return this.speech.fetch(handle);
+    }
     const job = await this.inbox.get(handle.externalId);
     if (!job?.result) {
       this.logger.warn(

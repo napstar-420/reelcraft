@@ -979,7 +979,8 @@ export class StageRunnerService {
           ? 'text'
           : stage.output.kind;
     // Generate Speech keeps the text it spoke (`{text}`, like a text output) so
-    // checks such as `wpm` and quality control can compare it with the audio.
+    // checks such as `wpm` and quality control can compare it with the audio,
+    // and the word timings when it made them (`writes: { timings: 'timing' }`).
     const spokenText =
       stage.capability === 'audio.speech' && typeof bindings.slots.text === 'string'
         ? bindings.slots.text
@@ -1001,7 +1002,7 @@ export class StageRunnerService {
                 })),
               }
             : spokenText !== undefined
-              ? { text: spokenText }
+              ? { text: spokenText, ...(result.timing && { timing: result.timing }) }
               : undefined;
     const artifactId = await this.artifacts.recordAttemptArtifact({
       runId: ctx.runId,

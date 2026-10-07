@@ -15,7 +15,7 @@ on their sites.
 | [Generate Text](../stage-types/generate-text.md) with an OpenRouter model             | OpenRouter                 | By the amount of text sent and received                                 |
 | [Generate Image](../stage-types/generate-image.md) with an OpenRouter model           | OpenRouter                 | Per image, by the model                                                 |
 | [Generate Video](../stage-types/generate-video.md) (fal)                              | fal                        | Per clip. Usually the biggest cost                                      |
-| [Generate Speech](../stage-types/generate-speech.md) (ElevenLabs)                     | ElevenLabs                 | By the amount of text                                                   |
+| [Generate Speech](../stage-types/generate-speech.md) (ElevenLabs, Deepgram)           | ElevenLabs or Deepgram     | By the amount of text                                                   |
 | [Analyze Media](../stage-types/analyze-media.md) with **Transcribe align** (Deepgram) | Deepgram                   | By the length of the audio                                              |
 | [Quality control](../blueprints/quality-control.md)                                   | The judge model's provider | One call per scoring, and a transcription if the judge can't hear audio |
 

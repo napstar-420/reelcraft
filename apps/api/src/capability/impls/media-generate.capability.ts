@@ -73,6 +73,7 @@ abstract class ProviderMediaCapability implements CapabilityImpl<MediaConfig> {
       costUsd: result.costUsd,
       repro: result.repro,
       ...(result.attachments && { attachments: result.attachments }),
+      ...(result.timing && { timing: result.timing }),
     };
   }
   async cancel(handle: JobHandle) {
@@ -131,6 +132,8 @@ export class AudioSpeechCapability extends ProviderMediaCapability {
   readonly outputKind = 'media.audio' as const;
   readonly label = 'Generate Speech';
   readonly description = 'Synthesize speech audio from text.';
+  // It speaks its `text` slot as written: nothing here is a prompt.
+  readonly noInstructions = true;
   constructor(providers: ProviderRegistry) {
     super(providers);
   }
