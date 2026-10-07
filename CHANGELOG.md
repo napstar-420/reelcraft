@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.6.0](https://github.com/napstar-420/reelcraft/compare/v0.5.0...v0.6.0) (2026-10-07)
+
+
+### Features
+
+* **api:** assistant sessions, turns and SSE ([#82](https://github.com/napstar-420/reelcraft/issues/82)) ([b5c98e8](https://github.com/napstar-420/reelcraft/commit/b5c98e8e714b4ff3f449121ccc06cf729a28ba4e))
+* **api:** blueprint assistant builds quality in by default ([#90](https://github.com/napstar-420/reelcraft/issues/90)) ([449b025](https://github.com/napstar-420/reelcraft/commit/449b025ee1981081cce325967fc59c34ab5713f7))
+* **api:** blueprint assistant tools and guide ([#81](https://github.com/napstar-420/reelcraft/issues/81)) ([0c1ea29](https://github.com/napstar-420/reelcraft/commit/0c1ea29bf5cc9e894cd59f78c7c53bfebc8d8fb7))
+* **api:** Codex assistant agent ([#83](https://github.com/napstar-420/reelcraft/issues/83)) ([309e78a](https://github.com/napstar-420/reelcraft/commit/309e78ab2a6f3ebc2fe17f33ef87315de0c2cdd6))
+* **web:** blueprint assistant panel ([#84](https://github.com/napstar-420/reelcraft/issues/84)) ([c8e617b](https://github.com/napstar-420/reelcraft/commit/c8e617b0cb0c670071cc56652795c0fd2ad076c3))
+* **web:** run up to a stage from the launch dialog ([#89](https://github.com/napstar-420/reelcraft/issues/89)) ([89cf980](https://github.com/napstar-420/reelcraft/commit/89cf980136301c8a6cc2de5fff5e72cf2d42de49))
+
+
+### Bug Fixes
+
+* **api:** apply ref.path to memory and prev check refs ([#91](https://github.com/napstar-420/reelcraft/issues/91)) ([73a3d01](https://github.com/napstar-420/reelcraft/commit/73a3d018b34e9329a280a72dd55e2e1a9446c249))
+* **api:** codex sign-in button and image readiness ([#87](https://github.com/napstar-420/reelcraft/issues/87)) ([6c95307](https://github.com/napstar-420/reelcraft/commit/6c95307922fe8e45d6c570d3e36988614ea33bcf))
+
 ## [0.5.0](https://github.com/napstar-420/reelcraft/compare/v0.4.1...v0.5.0) (2026-10-06)
 
 
