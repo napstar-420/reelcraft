@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { BlueprintMetadataChanges } from '@reelcraft/shared';
 import { ConflictException } from '@nestjs/common';
+import { baselineDraft } from './current-draft';
 import { qualityIssues } from './quality-checks';
 import { parseDraft } from './draft-checks';
 import { draftJsonSchema, obj, str } from './json-schemas';
@@ -39,7 +40,10 @@ const proposeDraft: AssistantTool<z.infer<typeof ProposeInput>> = {
     if (!parsed.ok)
       return { ok: false, error: 'The draft has the wrong shape.', issues: parsed.issues };
     const validation = await deps.blueprints.validateOnly(ctx.blueprintId, parsed.draft);
-    const issues = [...validation.issues, ...qualityIssues(parsed.draft)];
+    const issues = [
+      ...validation.issues,
+      ...qualityIssues(parsed.draft, await baselineDraft(ctx, deps)),
+    ];
     const errors = issues.filter((i) => i.severity === 'error');
     if (errors.length) {
       return {
@@ -49,7 +53,7 @@ const proposeDraft: AssistantTool<z.infer<typeof ProposeInput>> = {
       };
     }
     ctx.lastProposal = parsed.draft;
-    const warnings = validation.issues.filter((i) => i.severity === 'warning');
+    const warnings = issues.filter((i) => i.severity === 'warning');
     return {
       ok: true,
       result: { status: 'proposed', warnings },

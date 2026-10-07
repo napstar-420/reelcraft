@@ -579,6 +579,29 @@ describe('write tools', () => {
     expect(JSON.stringify(validated)).toContain('quality: a text stage needs a system prompt');
   });
 
+  it('propose_draft lets a small edit through when the gaps were already in the canvas draft', async () => {
+    const canvas = exampleScript();
+    delete canvas.graph[0]!.instructions!.system; // the user's own stage, no system prompt
+    const edited = structuredClone(canvas);
+    edited.graph[0]!.checks = [
+      { type: 'builtin', key: 'word_count', params: { min: 40, max: 60 } },
+    ];
+    const c = newTurnContext('bp1', canvas);
+    const out = await runTool(
+      'propose_draft',
+      { draft: edited, summary: 'word limit' },
+      c,
+      makeDeps(),
+    );
+    expect(out).toMatchObject({
+      ok: true,
+      result: {
+        status: 'proposed',
+        warnings: [{ message: expect.stringContaining('already in this blueprint') }],
+      },
+    });
+  });
+
   it('propose_draft accepts a valid draft with warnings and remembers it', async () => {
     const warning = {
       path: 'graph.0',
