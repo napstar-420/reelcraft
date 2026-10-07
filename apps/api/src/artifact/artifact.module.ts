@@ -5,6 +5,7 @@ import { ArtifactService } from './artifact.service';
 import { BlobService } from './blob.service';
 import { BindingResolverService } from './binding-resolver.service';
 import { DerivedFrameService } from './derived-frame.service';
+import { MediaPreviewService } from './media-preview.service';
 import { MemoryService } from './memory.service';
 import { MediaProbeService } from './media-probe.service';
 import { MediaArtifactService } from './media-artifact.service';
@@ -21,6 +22,7 @@ import { ArtifactAttachmentService } from './artifact-attachment.service';
     BlobService,
     BindingResolverService,
     DerivedFrameService,
+    MediaPreviewService,
     MemoryService,
     MediaProbeService,
     MediaArtifactService,
@@ -35,6 +37,7 @@ import { ArtifactAttachmentService } from './artifact-attachment.service';
     BlobService,
     BindingResolverService,
     DerivedFrameService,
+    MediaPreviewService,
     MemoryService,
     MediaProbeService,
     MediaArtifactService,

@@ -213,6 +213,39 @@ describe('CodexAssistantAgent.runTurn', () => {
     return ctx;
   }
 
+  it('shows tool images to the model through turn/steer, not in the tool result', async () => {
+    const { agent, fakes } = await started();
+    const fake = fakes[0]!;
+    const callTool = vi.fn(async () => ({
+      ok: true,
+      text: '{"stage":"images"}',
+      images: [{ mime: 'image/jpeg' as const, base64: 'AAAA' }],
+    }));
+    const done = agent.runTurn(turnArgs({ handlers: { callTool, onEvent: vi.fn() } }) as never);
+    await tick();
+    const reply = await fake.serverRequest('item/tool/call', {
+      threadId: THREAD,
+      turnId: 'turn-1',
+      callId: 'c1',
+      namespace: null,
+      tool: 'view_stage_media',
+      arguments: {},
+    });
+    // Codex drops images inside a dynamic tool result: the result stays text
+    expect(reply.result).toEqual({
+      success: true,
+      contentItems: [{ type: 'inputText', text: '{"stage":"images"}' }],
+    });
+    const [steer] = fake.requests('turn/steer');
+    expect(steer!.params).toMatchObject({
+      threadId: THREAD,
+      expectedTurnId: 'turn-1',
+      input: [{ type: 'text' }, { type: 'image', url: 'data:image/jpeg;base64,AAAA' }],
+    });
+    fake.notify('turn/completed', completed());
+    await done;
+  });
+
   it('maps messages and usage, answers tool calls, and resolves on turn/completed', async () => {
     const { agent, fakes } = await started();
     const fake = fakes[0]!;

@@ -34,7 +34,7 @@ The user stays in control. The agent only proposes. Nothing becomes a version wi
 Model, asset and Character ids are not enums in the tool schemas (they change during a session); the
 validator, `list_models` and `get_channel_resources` cover them.
 
-## Tools (15)
+## Tools (19)
 
 Defined once (`apps/api/src/assistant/tools/`), each with a Zod input and a hand-written JSON Schema.
 `tools.test.ts` keeps the two in step (Zod 3 has no JSON Schema output, like `BUILTIN_CHECKS`).
@@ -53,6 +53,10 @@ Defined once (`apps/api/src/assistant/tools/`), each with a Zod input and a hand
 | `get_version`                         | read     | one saved version by label ("1.2"): its stages, inputs, role, defaults, budget, validity and run count                                                                                             |
 | `diff_drafts`                         | read     | what differs between two drafts, each "current" or a version label: stages added, removed, changed (fields with before and after), reordered, inputs, role, defaults, budget                       |
 | `get_effective_config`                | read     | one stage's merged settings (built-in, channel, blueprint, stage layers) and each layer                                                                                                            |
+| `list_runs`                           | read     | this blueprint's runs, newest first (version or "canvas draft", dry run, state, spend, where it stopped, failure)                                                                                  |
+| `get_run`                             | read     | one run: inputs, and per stage the state, model, attempt outcomes, cost split (output, QC, checks), failure, item counts                                                                           |
+| `get_stage`                           | read     | one stage of a run: settings, last attempts with failed checks, QC verdicts and notes, its output (also a rejected one); `full` for the whole text, `itemIndex`, `includePrompt`                   |
+| `view_stage_media`                    | read     | the pictures a stage made (images scaled to 1024 px, three frames of a video); 4 per call, 12 per turn. Sent to Codex with `turn/steer`: Codex 0.160.0 drops images in a dynamic tool result       |
 | `ask_user`                            | interact | 1-4 questions with options; the UI adds a final **Other…** text option. **Ends the turn**; the answers arrive as the next turn                                                                     |
 
 After `ask_user` in a turn, the write tools are refused. The blueprint a turn works on is bound
