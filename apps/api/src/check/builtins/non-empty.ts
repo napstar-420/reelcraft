@@ -27,6 +27,11 @@ export const nonEmpty: BuiltinCheck<z.infer<typeof Params>> = {
   description:
     'Checks a value (optionally at a JSON path) is not empty (a non-blank string, non-empty array, or non-empty object).',
   run(params, artifact) {
+    // A media output (image, audio, video) keeps its content in a file, not in
+    // `data`; a file that was stored and probed is not empty.
+    if (!params.path && artifact.kind.startsWith('media.') && !isEmpty(artifact.probe)) {
+      return { pass: true };
+    }
     const value = checkValue(artifact, params.path);
     return isEmpty(value)
       ? { pass: false, message: `non_empty: value at "${params.path ?? '$'}" is empty` }
