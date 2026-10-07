@@ -138,4 +138,24 @@ describe('validateSpeechStages', () => {
     );
     expect(issues).toEqual([]);
   });
+
+  it('asks for Word timings to be on when a stage writes them, and only where they exist', async () => {
+    const speech = { ...stage('voice'), writes: { voiceTiming: 'timing' } } as unknown as StageDef;
+    const on = { voiceId: 'v', wordTimings: true };
+    const pin = (provider: string, modelId: string, params: Record<string, unknown>) => ({
+      voice: { model: { provider, modelId, params } },
+    });
+    expect(
+      await validateSpeechStages([speech], pin('elevenlabs', 'eleven_v4', on), registry()),
+    ).toEqual([]);
+    const off = await validateSpeechStages(
+      [speech],
+      pin('elevenlabs', 'eleven_v4', { voiceId: 'v' }),
+      registry(),
+    );
+    expect(off[0]).toMatchObject({ path: 'stages.voice.writes', severity: 'error' });
+    expect(off[0]?.message).toMatch(/Word timings is off/);
+    const deepgram = await validateSpeechStages([speech], pin('deepgram', 'flux', {}), registry());
+    expect(deepgram[0]?.message).toMatch(/can't return word timings/);
+  });
 });

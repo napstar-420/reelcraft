@@ -16,7 +16,12 @@ import type {
   VoiceQuery,
 } from '../provider-adapter.interface';
 import { audioFilename, audioMime, canJoin, joinAudio } from '../speech/speech-audio';
-import { pricePerCharacter, textParam, type SpeechParams } from '../speech/speech-params';
+import {
+  boolParam,
+  pricePerCharacter,
+  textParam,
+  type SpeechParams,
+} from '../speech/speech-params';
 import { splitSpeechText } from '../speech/speech-text';
 import {
   ELEVENLABS_DEFAULT_FORMAT,
@@ -25,6 +30,8 @@ import {
   elevenLabsOptions,
   elevenLabsRequest,
   specFromLive,
+  timingFromPieces,
+  type CharacterAlignment,
   toVoiceInfo,
   type ElevenLabsModelSpec,
   type LiveElevenLabsModel,
@@ -220,6 +227,8 @@ export class ElevenLabsAdapter implements ProviderAdapter {
     const ids = { providerId: this.id, jobId: handle.externalId, model: req.modelId };
     const startedAt = Date.now();
     const audio: Buffer[] = [];
+    const aligned: { text: string; alignment: CharacterAlignment }[] = [];
+    const withTimestamps = boolParam(params, 'wordTimings') === true;
     let mime: string | undefined;
     for (const [index, piece] of pieces.entries()) {
       const { url, body } = elevenLabsRequest({
@@ -228,6 +237,7 @@ export class ElevenLabsAdapter implements ProviderAdapter {
         text: piece,
         params,
         format,
+        withTimestamps,
         ...(stitching && { previousText: pieces[index - 1], nextText: pieces[index + 1] }),
       });
       const response = await fetch(url, {
@@ -235,7 +245,7 @@ export class ElevenLabsAdapter implements ProviderAdapter {
         headers: {
           'xi-api-key': apiKey,
           'content-type': 'application/json',
-          accept: audioMime(family),
+          accept: withTimestamps ? 'application/json' : audioMime(family),
         },
         body: JSON.stringify(body),
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
@@ -257,8 +267,17 @@ export class ElevenLabsAdapter implements ProviderAdapter {
             : `ElevenLabs: ${response.status} ${reason}`,
         );
       }
-      audio.push(Buffer.from(await response.arrayBuffer()));
-      mime ??= response.headers.get('content-type') ?? undefined;
+      if (withTimestamps) {
+        const body = (await response.json()) as {
+          audio_base64: string;
+          alignment?: CharacterAlignment | null;
+        };
+        audio.push(Buffer.from(body.audio_base64, 'base64'));
+        if (body.alignment) aligned.push({ text: piece, alignment: body.alignment });
+      } else {
+        audio.push(Buffer.from(await response.arrayBuffer()));
+        mime ??= response.headers.get('content-type') ?? undefined;
+      }
     }
     const bytes = joinAudio(audio, family);
     this.logger.log(
@@ -280,6 +299,7 @@ export class ElevenLabsAdapter implements ProviderAdapter {
         filename: audioFilename(family),
       },
       costUsd: text.length * pricePerCharacter(options, params),
+      ...(aligned.length > 0 && { timing: timingFromPieces(aligned) }),
       repro: {
         level: seed === undefined ? 'none' : 'approximate',
         ...(seed !== undefined && { seed: String(seed) }),

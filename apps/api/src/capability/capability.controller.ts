@@ -9,7 +9,12 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
-import { ResolveCapabilityRequestDto, VoiceQueryDto } from '@reelcraft/shared';
+import {
+  ResolveCapabilityRequestDto,
+  SpeechPreviewRequestDto,
+  VoiceQueryDto,
+} from '@reelcraft/shared';
+import { previewSpeech } from '../provider/speech/preview-speech';
 import { CapabilityRegistry } from './capability.registry';
 import { ProviderRegistry } from '../provider/provider.registry';
 import { StyleRegistry } from './style.registry';
@@ -77,6 +82,20 @@ export class CapabilityController {
     try {
       return await provider.listVoices(query);
     } catch (error) {
+      throw new BadGatewayException((error as Error).message);
+    }
+  }
+
+  /** A paid, short sample of a speech model with the settings being edited. */
+  @Post('providers/:id/speech-preview')
+  async speechPreview(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(SpeechPreviewRequestDto)) dto: SpeechPreviewRequestDto,
+  ) {
+    try {
+      return await previewSpeech(this.providers.get(id), dto);
+    } catch (error) {
+      if (error instanceof BadRequestException || error instanceof NotFoundException) throw error;
       throw new BadGatewayException((error as Error).message);
     }
   }

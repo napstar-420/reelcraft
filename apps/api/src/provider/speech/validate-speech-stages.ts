@@ -42,6 +42,20 @@ export async function validateSpeechStages(
       continue;
     }
     const params = pin.params ?? {};
+    const writesTiming = Object.values(stage.writes ?? {}).some(
+      (path) => path === 'timing' || path.startsWith('timing.'),
+    );
+    if (writesTiming) {
+      const canTime = model.capabilities.speech.settings.some((s) => s.key === 'wordTimings');
+      const message = !canTime
+        ? `${model.label} can't return word timings. Use ElevenLabs, or add an Analyze Media stage after this one.`
+        : params.wordTimings !== true
+          ? 'This stage writes the word timings, but Word timings is off in its model settings. Turn it on.'
+          : undefined;
+      if (message) {
+        issues.push({ path: `stages.${stage.key}.writes`, message, severity: 'error' });
+      }
+    }
     for (const issue of validateSpeechParams(model.capabilities.speech, params)) {
       issues.push({
         path: `${path}.params.${issue.key}`,

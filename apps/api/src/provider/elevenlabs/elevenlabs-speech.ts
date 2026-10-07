@@ -1,5 +1,6 @@
 import type {
   PronunciationDictionaryRef,
+  TimingMap,
   SpeechFormat,
   SpeechModelOptions,
   SpeechSetting,
@@ -346,6 +347,14 @@ function settingsFor(spec: ElevenLabsModelSpec): SpeechSetting[] {
   }
   settings.push(
     {
+      kind: 'switch',
+      key: 'wordTimings',
+      label: 'Word timings',
+      description:
+        'Also gets when each word is spoken, for captions. Save it with a Memory write whose path is "timing", and a later stage can read it. It needs no transcription.',
+      default: false,
+    },
+    {
       kind: 'dictionaries',
       key: 'pronunciationDictionaries',
       label: 'Pronunciation dictionaries',
@@ -473,6 +482,8 @@ export function elevenLabsRequest(args: {
   format: string;
   previousText?: string | undefined;
   nextText?: string | undefined;
+  /** Ask for the audio together with when each character is spoken. */
+  withTimestamps?: boolean;
 }): { url: string; body: Record<string, unknown> } {
   const { params } = args;
   const query = new URLSearchParams({ output_format: args.format });
@@ -522,7 +533,7 @@ export function elevenLabsRequest(args: {
     ...(boolParam(params, 'usePvcAsIvc') && { use_pvc_as_ivc: true }),
   };
   return {
-    url: `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(args.voiceId)}?${query}`,
+    url: `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(args.voiceId)}${args.withTimestamps ? '/with-timestamps' : ''}?${query}`,
     body,
   };
 }
@@ -556,5 +567,77 @@ export function toVoiceInfo(voice: {
     ...((labels.use_case ?? labels.usecase) && { useCases: [labels.use_case ?? labels.usecase!] }),
     ...(voice.category && { category: voice.category }),
     ...(voice.preview_url && { previewUrl: voice.preview_url }),
+  };
+}
+
+/** ElevenLabs' `alignment`: one entry per character of the text. */
+export interface CharacterAlignment {
+  characters: string[];
+  character_start_times_seconds: number[];
+  character_end_times_seconds: number[];
+}
+
+const SENTENCE_END = /[.!?…。！？]["”’')\]]*$/;
+/** A delivery tag such as `[whispers]`, which the model acts on instead of speaking. */
+const TAG = /^\[[^\]]*\]$/;
+
+/** The words of one piece of speech and when each is spoken, shifted by `offsetSec`. */
+export function wordsFromAlignment(
+  alignment: CharacterAlignment,
+  offsetSec = 0,
+): TimingMap['words'] {
+  const words: TimingMap['words'] = [];
+  let text = '';
+  let start = 0;
+  let end = 0;
+  const flush = () => {
+    if (text && !TAG.test(text)) {
+      words.push({ text, startSec: round(start + offsetSec), endSec: round(end + offsetSec) });
+    }
+    text = '';
+  };
+  alignment.characters.forEach((char, i) => {
+    if (/\s/.test(char)) return flush();
+    if (!text) start = alignment.character_start_times_seconds[i] ?? end;
+    text += char;
+    end = alignment.character_end_times_seconds[i] ?? end;
+  });
+  flush();
+  return words;
+}
+
+const round = (seconds: number) => Math.round(seconds * 1000) / 1000;
+
+/** The timing map of a whole text, from the alignment of each piece it was spoken in. */
+export function timingFromPieces(
+  pieces: { text: string; alignment: CharacterAlignment }[],
+): TimingMap {
+  let offset = 0;
+  const words: TimingMap['words'] = [];
+  for (const piece of pieces) {
+    words.push(...wordsFromAlignment(piece.alignment, offset));
+    offset += Math.max(0, ...piece.alignment.character_end_times_seconds);
+  }
+  const sentences: TimingMap['sentences'] = [];
+  let run: TimingMap['words'] = [];
+  const close = () => {
+    if (!run.length) return;
+    sentences.push({
+      text: run.map((w) => w.text).join(' '),
+      startSec: run[0]!.startSec,
+      endSec: run.at(-1)!.endSec,
+    });
+    run = [];
+  };
+  for (const word of words) {
+    run.push(word);
+    if (SENTENCE_END.test(word.text)) close();
+  }
+  close();
+  return {
+    transcript: pieces.map((p) => p.text).join(' '),
+    durationSec: round(Math.max(offset, words.at(-1)?.endSec ?? 0)),
+    sentences,
+    words,
   };
 }

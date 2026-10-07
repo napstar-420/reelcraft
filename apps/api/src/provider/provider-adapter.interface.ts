@@ -6,6 +6,7 @@ import type {
   Modality,
   OutputDef,
   PronunciationDictionaryListDto,
+  TimingMap,
   VoiceListDto,
 } from '@reelcraft/shared';
 
@@ -55,6 +56,8 @@ export interface ProviderResult {
   repro: { level: 'exact' | 'approximate' | 'none'; seed?: string; providerVersion?: string };
   rawResponse: unknown;
   attachments?: ProviderAttachment[];
+  /** Speech that comes with word timings (ElevenLabs): when each word is spoken. */
+  timing?: TimingMap;
 }
 
 export interface CancelResult {

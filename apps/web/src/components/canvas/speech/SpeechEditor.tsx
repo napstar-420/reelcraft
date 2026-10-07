@@ -19,6 +19,7 @@ import {
 } from '@/components/ui/select';
 import { InfoHeading, InfoLabel } from '../info-label';
 import { SpeechModelCards } from './SpeechModelCards';
+import { SpeechPreview } from './SpeechPreview';
 import { SpeechSettingField } from './SpeechSettingField';
 import { VoicePicker } from './VoicePicker';
 import {
@@ -226,6 +227,15 @@ export function SpeechEditor({
             {options.audioTags &&
               '. This model reads delivery tags such as [whispers] in the text.'}
           </p>
+
+          {provider !== 'fake' && (
+            <SpeechPreview
+              providerId={provider}
+              modelId={model.modelId}
+              options={options}
+              params={params}
+            />
+          )}
 
           <Collapsible className="flex flex-col gap-3">
             <CollapsibleTrigger asChild>

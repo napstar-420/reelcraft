@@ -99,10 +99,12 @@ function nextFreeKey(existing: Record<string, unknown>, prefix: string): string 
 function WritesEditor({
   writes,
   output,
+  capability,
   onChange,
 }: {
   writes: Record<string, string> | undefined;
   output: OutputDef;
+  capability: string;
   onChange: (writes: Record<string, string>) => void;
 }) {
   const entries = Object.entries(writes ?? {});
@@ -110,6 +112,8 @@ function WritesEditor({
   const pathOptions = [
     { path: '$', type: output.kind },
     ...(output.kind === 'data' ? schemaPaths(output.schema) : []),
+    // Generate Speech keeps the word timings in its artifact when its Word timings setting is on.
+    ...(capability === 'audio.speech' ? [{ path: 'timing', type: 'word timings' }] : []),
   ];
 
   function updateKey(oldKey: string, newKey: string) {
@@ -1421,6 +1425,7 @@ export function StageInspector({
               <WritesEditor
                 writes={stage.writes}
                 output={stage.output}
+                capability={stage.capability}
                 onChange={(writes) => onChange({ ...stage, writes })}
               />
             </div>

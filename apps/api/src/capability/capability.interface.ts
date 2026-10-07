@@ -7,6 +7,7 @@ import type {
   OutputKind,
   SlotDef,
   StageDef,
+  TimingMap,
   ValidationIssue,
 } from '@reelcraft/shared';
 import type { CostEstimate, JobHandle, JobStatus } from '@reelcraft/shared';
@@ -48,6 +49,8 @@ export interface ExecResult<Out = unknown> {
   costUsd: number;
   repro: { level: 'exact' | 'approximate' | 'none'; seed?: string; providerVersion?: string };
   rawResponseRef?: string;
+  /** Word timings of generated speech, kept with the audio artifact. */
+  timing?: TimingMap;
   /** Provider-side diagnostics (token usage, exit code, stderr tail…) shown
    * in the stage log. Never the output itself. */
   providerMeta?: Record<string, unknown>;

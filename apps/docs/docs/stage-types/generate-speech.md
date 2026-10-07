@@ -36,6 +36,10 @@ the **Speech and audio** [default](../channels/defaults.md) for a channel or blu
    explaining it, and a slider has a reset button once you move it. A setting you never touch is not sent, so the
    provider's own default applies.
 5. Pick an **Output format** if the default MP3 or WAV isn't what you want.
+6. Select **Speak it** under **Hear a sample** to hear a short line (edit it if you like) with the voice
+   and settings as they are now. Each sample is a real, billed request: the button shows the price first
+   (well under a cent for a short line), and Reelcraft shows what it cost afterwards. It is
+   not part of any run's budget.
 
 Changing the provider clears the model, voice and settings, since each service has its own. Changing
 the model keeps the settings the new model also has and drops the rest.
@@ -64,6 +68,8 @@ Settings, where the model supports them:
 - **Style exaggeration**, **Speed** (0.7 to 1.2) and **Speaker boost**.
 - **Language**: forces the language instead of detecting it.
 - **Pronunciation dictionaries**: up to three from your ElevenLabs account.
+- **Word timings**: also gets when each word is spoken, so captions need no transcription step. See
+  [Word timings](#word-timings).
 - Under **Advanced**: **Seed** (the same seed gives nearly the same speech again), **Text
   normalisation**, **Language text normalisation** (Japanese), the instant-clone switch for
   professional voices, and **Request logging** (zero retention is an Enterprise feature).
@@ -100,6 +106,22 @@ The voice is part of the model, so choosing another model asks you to choose a v
   Deepgram's reports.
 
 For a pause in Flux, write `\{pause:1s\}` in the text (500 ms to 3 s, at most 8 per request).
+
+### Word timings
+
+With **Word timings** on (ElevenLabs only), the stage still makes the same audio, and also keeps when
+each word and sentence is spoken. To use them, open **Output & memory writes** and add a **Memory
+write** with the path `timing`, for example the key `voiceTiming` and the path `timing`. Later stages
+read it with a `memory` reference: it has the same shape as the result of **Transcribe align** in
+[Analyze Media](./analyze-media.md) (`transcript`, `durationSec`, `sentences` and `words`), so it
+works where that result does, such as [Export Subtitles](./export-subtitles.md).
+
+- It costs nothing extra: ElevenLabs sends the timings with the audio.
+- A blueprint that writes `timing` is not runnable while **Word timings** is off, or on a model that
+  can't make them (Deepgram).
+- For a text longer than the model takes at once, the pieces' timings are joined end to end, so later
+  words can drift by a fraction of a second.
+- Text such as `[whispers]` is acted out by the model and left out of the words.
 
 ### Output format
 

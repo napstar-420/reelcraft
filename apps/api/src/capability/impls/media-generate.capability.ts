@@ -73,6 +73,7 @@ abstract class ProviderMediaCapability implements CapabilityImpl<MediaConfig> {
       costUsd: result.costUsd,
       repro: result.repro,
       ...(result.attachments && { attachments: result.attachments }),
+      ...(result.timing && { timing: result.timing }),
     };
   }
   async cancel(handle: JobHandle) {

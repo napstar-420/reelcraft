@@ -1,5 +1,7 @@
 import type {
   PronunciationDictionaryListDto,
+  SpeechPreviewDto,
+  SpeechPreviewRequestDto,
   VoiceListDto,
   VoiceQueryDto,
   AssistantItemDto,
@@ -277,6 +279,11 @@ export const api = {
     const qs = params.toString();
     return request<VoiceListDto>(`/providers/${providerId}/voices${qs ? `?${qs}` : ''}`);
   },
+  previewSpeech: (providerId: string, dto: SpeechPreviewRequestDto) =>
+    request<SpeechPreviewDto>(`/providers/${providerId}/speech-preview`, {
+      method: 'POST',
+      body: JSON.stringify(dto),
+    }),
   listPronunciationDictionaries: (providerId: string) =>
     request<PronunciationDictionaryListDto>(`/providers/${providerId}/pronunciation-dictionaries`),
 

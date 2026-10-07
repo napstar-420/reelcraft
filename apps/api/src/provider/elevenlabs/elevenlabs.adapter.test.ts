@@ -6,6 +6,8 @@ import {
   elevenLabsOptions,
   elevenLabsRequest,
   specFromLive,
+  timingFromPieces,
+  wordsFromAlignment,
   toVoiceInfo,
 } from './elevenlabs-speech';
 
@@ -365,5 +367,62 @@ describe('ElevenLabsAdapter', () => {
       voices: [{ id: 'a', name: 'Ada', gender: 'female' }],
       nextCursor: 'p2',
     });
+  });
+});
+
+const alignment = (text: string, perChar = 0.1) => ({
+  characters: [...text],
+  character_start_times_seconds: [...text].map((_, i) => i * perChar),
+  character_end_times_seconds: [...text].map((_, i) => (i + 1) * perChar),
+});
+
+describe('word timings', () => {
+  it('turns character times into word times, skipping delivery tags', () => {
+    const words = wordsFromAlignment(alignment('[whispers] Hi you', 0.1));
+    expect(words).toEqual([
+      { text: 'Hi', startSec: 1.1, endSec: 1.3 },
+      { text: 'you', startSec: 1.4, endSec: 1.7 },
+    ]);
+  });
+
+  it('groups words into sentences and shifts each piece by the one before', () => {
+    const timing = timingFromPieces([
+      { text: 'One two. Three', alignment: alignment('One two. Three', 0.1) },
+      { text: 'Four.', alignment: alignment('Four.', 0.1) },
+    ]);
+    expect(timing.words.map((w) => w.text)).toEqual(['One', 'two.', 'Three', 'Four.']);
+    expect(timing.sentences.map((s) => s.text)).toEqual(['One two.', 'Three Four.']);
+    expect(timing.words[3]).toEqual({ text: 'Four.', startSec: 1.4, endSec: 1.9 });
+    expect(timing.transcript).toBe('One two. Three Four.');
+    expect(timing.durationSec).toBeCloseTo(1.9);
+  });
+
+  it('asks for timestamps and returns the timing with the audio', async () => {
+    const fetch = vi.fn(async (url: string | URL | Request, _init?: RequestInit) =>
+      String(url).endsWith('/v1/models')
+        ? json([])
+        : json({
+            audio_base64: Buffer.from('AUDIO').toString('base64'),
+            alignment: alignment('Hi there.'),
+          }),
+    );
+    vi.stubGlobal('fetch', fetch);
+    const adapter = new ElevenLabsAdapter(keys() as never);
+    const handle = await adapter.submit(
+      {
+        modality: 'audio',
+        modelId: 'eleven_multilingual_v2',
+        params: { voiceId: 'v1', wordTimings: true, slots: { text: 'Hi there.' } },
+      },
+      'job-t',
+    );
+    const result = await adapter.fetch(handle);
+    const speech = fetch.mock.calls.find(([url]) => !String(url).endsWith('/v1/models'))!;
+    expect(String(speech[0])).toContain('/v1/text-to-speech/v1/with-timestamps?');
+    expect(Buffer.from((result.output as { base64: string }).base64, 'base64').toString()).toBe(
+      'AUDIO',
+    );
+    expect(result.timing?.words.map((w) => w.text)).toEqual(['Hi', 'there.']);
+    expect(result.timing?.sentences).toHaveLength(1);
   });
 });

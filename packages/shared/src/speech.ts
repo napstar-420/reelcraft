@@ -148,3 +148,20 @@ export const VoiceQueryDto = z.object({
   limit: z.coerce.number().int().min(1).max(100).optional(),
 });
 export type VoiceQueryDto = z.infer<typeof VoiceQueryDto>;
+
+/** The body of `POST /providers/:id/speech-preview`: a short sample, spoken with the settings being edited. */
+export const SpeechPreviewRequestDto = z.object({
+  modelId: z.string().min(1),
+  params: z.record(z.string(), z.unknown()),
+  text: z.string().trim().min(1).max(300),
+});
+export type SpeechPreviewRequestDto = z.infer<typeof SpeechPreviewRequestDto>;
+
+export const SpeechPreviewDto = z.object({
+  audioBase64: z.string(),
+  mime: z.string(),
+  characters: z.number(),
+  /** What the sample cost, in USD. */
+  costUsd: z.number(),
+});
+export type SpeechPreviewDto = z.infer<typeof SpeechPreviewDto>;
