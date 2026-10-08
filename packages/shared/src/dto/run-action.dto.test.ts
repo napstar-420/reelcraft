@@ -31,6 +31,24 @@ describe('run action DTOs', () => {
     });
   });
 
+  it('rejects chosen items with their own notes, but not together with itemIndex', () => {
+    const rejection = ApprovalActionDto.parse({
+      action: 'reject',
+      note: 'overall',
+      items: [{ itemIndex: 0, note: 'redo zero' }, { itemIndex: 2 }],
+    });
+    expect(rejection).toMatchObject({
+      items: [{ itemIndex: 0, note: 'redo zero' }, { itemIndex: 2 }],
+    });
+    expect(() =>
+      ApprovalActionDto.parse({ action: 'reject', items: [{ itemIndex: 0 }], itemIndex: 1 }),
+    ).toThrow(/either items or itemIndex/);
+    expect(() => ApprovalActionDto.parse({ action: 'reject', items: [] })).toThrow();
+    expect(() =>
+      ApprovalActionDto.parse({ action: 'reject', items: [{ itemIndex: -1 }] }),
+    ).toThrow();
+  });
+
   it('requires a non-empty preview token for confirmations', () => {
     expect(() => ConfirmRunActionDto.parse({ previewToken: '' })).toThrow();
     expect(ConfirmRunActionDto.parse({ previewToken: 'token' })).toEqual({

@@ -5,6 +5,8 @@ import {
   describeApiFailure,
   heldReasonLabel,
   isApprovalStillOpen,
+  rejectLabel,
+  rejectedItems,
   rejectionPreviewSummary,
 } from './approval-review.logic';
 
@@ -95,5 +97,24 @@ describe('heldReasonLabel', () => {
     expect(heldReasonLabel('qc_failed')).toBe('Held: QC did not pass it');
     expect(heldReasonLabel('qc_error')).toBe('Held: QC could not run');
     expect(heldReasonLabel(null)).toBeNull();
+  });
+});
+
+describe('rejectedItems', () => {
+  it('orders the ticked items and keeps a note only when one was written', () => {
+    expect(rejectedItems({ 3: '  ', 0: ' make it brighter ', 2: '' })).toEqual([
+      { itemIndex: 0, note: 'make it brighter' },
+      { itemIndex: 2 },
+      { itemIndex: 3 },
+    ]);
+    expect(rejectedItems({})).toEqual([]);
+  });
+});
+
+describe('rejectLabel', () => {
+  it('rejects the whole stage until items are ticked, then says how many', () => {
+    expect(rejectLabel(0)).toBe('Reject stage');
+    expect(rejectLabel(1)).toBe('Reject 1 item');
+    expect(rejectLabel(4)).toBe('Reject 4 items');
   });
 });

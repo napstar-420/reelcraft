@@ -33,17 +33,44 @@ export const ManualArtifactEditDto = z
   });
 export type ManualArtifactEditDto = z.infer<typeof ManualArtifactEditDto>;
 
-export const ApprovalActionDto = z.discriminatedUnion('action', [
-  z.object({ action: z.literal('approve'), itemIndex: z.number().int().nonnegative().optional() }),
-  // Quality control could not run and the output is parked for review: judge it again.
-  z.object({ action: z.literal('retry_qc'), itemIndex: z.number().int().nonnegative().optional() }),
-  z.object({
-    action: z.literal('reject'),
-    note: z.string().optional(),
-    itemIndex: z.number().int().nonnegative().optional(),
-    previewToken: z.string().min(1).optional(),
-  }),
-]);
+/** Items of an iterating stage to redo, each with its own note, when the whole
+ * stage is under review (`itemIndex` is for the stage that reviews item by item). */
+export const RejectedItemsDto = z
+  .array(
+    z.object({
+      itemIndex: z.number().int().nonnegative(),
+      note: z.string().max(2000).optional(),
+    }),
+  )
+  .min(1);
+export type RejectedItemsDto = z.infer<typeof RejectedItemsDto>;
+
+export const ApprovalActionDto = z
+  .discriminatedUnion('action', [
+    z.object({
+      action: z.literal('approve'),
+      itemIndex: z.number().int().nonnegative().optional(),
+    }),
+    // Quality control could not run and the output is parked for review: judge it again.
+    z.object({
+      action: z.literal('retry_qc'),
+      itemIndex: z.number().int().nonnegative().optional(),
+    }),
+    z.object({
+      action: z.literal('reject'),
+      note: z.string().optional(),
+      itemIndex: z.number().int().nonnegative().optional(),
+      items: RejectedItemsDto.optional(),
+      previewToken: z.string().min(1).optional(),
+    }),
+  ])
+  .refine(
+    (dto) => dto.action !== 'reject' || dto.items === undefined || dto.itemIndex === undefined,
+    {
+      path: ['items'],
+      message: 'Send either items or itemIndex, not both',
+    },
+  );
 export type ApprovalActionDto = z.infer<typeof ApprovalActionDto>;
 
 export const HumanInputSubmissionDto = z

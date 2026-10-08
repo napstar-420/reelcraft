@@ -6,7 +6,7 @@ import {
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { and, asc, desc, eq, isNotNull, isNull, sql } from 'drizzle-orm';
-import { StageDef, Timeline, type HumanWaitKind } from '@reelcraft/shared';
+import { StageDef, Timeline, type HumanWaitKind, type RejectedItemsDto } from '@reelcraft/shared';
 import { ArtifactService } from '../artifact/artifact.service';
 import { BindingResolverService, type RefProvenance } from '../artifact/binding-resolver.service';
 import { MemoryService } from '../artifact/memory.service';
@@ -377,9 +377,11 @@ export class HumanActionService {
     note: string | undefined,
     previewToken?: string,
     itemIndex?: number,
+    items?: RejectedItemsDto,
   ) {
     const context = await this.loadRunContext(runId, stageKey);
     const stageReview = this.isStageReview(context.stage, context.execution);
+    if (items) this.assertRejectableItems(items, stageReview, context.execution.itemCount);
     const isItemMode = !stageReview && (await this.hasItemGate(this.db, context.execution.id));
     // phase 7 chunk 6 — Locked Decision 9: a rejected item, with no
     // `onReject.retryStageKey`, retries that same item by default — the
@@ -435,29 +437,48 @@ export class HumanActionService {
       stageKey,
       ...(note !== undefined ? { note } : {}),
       ...(resolvedItemIndex !== undefined ? { itemIndex: resolvedItemIndex } : {}),
+      ...(items ? { items } : {}),
     };
 
-    const seed: InvalidationSeed = !isItemMode
-      ? { stageKeys: [targetStageKey], forcedStageKeys: [stageKey] }
-      : (() => {
-          const items: Array<{ stageKey: string; itemIndex: number }> = [];
+    const seed: InvalidationSeed = items
+      ? (() => {
+          // Only the chosen items of this stage, and of the retry target when it
+          // iterates too; a target that doesn't iterate is redone whole.
+          const itemSeeds: Array<{ stageKey: string; itemIndex: number }> = [];
           const stageKeys: string[] = [];
-          if (targetItemIndex !== undefined) {
-            items.push({ stageKey: targetStageKey, itemIndex: targetItemIndex });
+          if (targetStage.iterate) {
+            for (const entry of items) {
+              itemSeeds.push({ stageKey: targetStageKey, itemIndex: entry.itemIndex });
+            }
           } else {
             stageKeys.push(targetStageKey);
           }
-          // Always force the rejected item itself invalid, regardless of
-          // whether the retry target's dependency chain structurally
-          // reaches it — the item-mode analogue of stage-mode's
-          // `forcedStageKeys:[stageKey]` above. `markInvalid` dedupes by
-          // key, so this is a no-op when it's the same node as above.
-          items.push({ stageKey, itemIndex: resolvedItemIndex! });
-          return {
-            ...(items.length > 0 ? { items } : {}),
-            ...(stageKeys.length > 0 ? { stageKeys } : {}),
-          };
-        })();
+          for (const entry of items) {
+            itemSeeds.push({ stageKey, itemIndex: entry.itemIndex });
+          }
+          return { items: itemSeeds, ...(stageKeys.length > 0 ? { stageKeys } : {}) };
+        })()
+      : !isItemMode
+        ? { stageKeys: [targetStageKey], forcedStageKeys: [stageKey] }
+        : (() => {
+            const items: Array<{ stageKey: string; itemIndex: number }> = [];
+            const stageKeys: string[] = [];
+            if (targetItemIndex !== undefined) {
+              items.push({ stageKey: targetStageKey, itemIndex: targetItemIndex });
+            } else {
+              stageKeys.push(targetStageKey);
+            }
+            // Always force the rejected item itself invalid, regardless of
+            // whether the retry target's dependency chain structurally
+            // reaches it — the item-mode analogue of stage-mode's
+            // `forcedStageKeys:[stageKey]` above. `markInvalid` dedupes by
+            // key, so this is a no-op when it's the same node as above.
+            items.push({ stageKey, itemIndex: resolvedItemIndex! });
+            return {
+              ...(items.length > 0 ? { items } : {}),
+              ...(stageKeys.length > 0 ? { stageKeys } : {}),
+            };
+          })();
 
     const preview = await this.invalidation.preview({ runId, seed });
     if (!previewToken) {
@@ -499,27 +520,54 @@ export class HumanActionService {
           throw new ConflictException('The approval changed; request a new preview');
         }
         const { execution } = await this.loadStageAndExecution(tx, lockedRun, stageKey);
-        const pendingItem = isItemMode
-          ? await this.resolveOpenItem(tx, execution.id, resolvedItemIndex)
-          : undefined;
-        const pending = stageReview
-          ? await this.attemptToCarryStageRejection(tx, execution.id)
-          : await this.pendingAttempt(tx, execution.id, pendingItem?.id);
-        if (!pending) throw new ConflictException('No pending approval candidate exists');
-        await tx
-          .update(stageAttempt)
-          .set({
-            outcome: 'rejected',
-            reviewNote: note ?? null,
-            critiqueTargetStageKey: targetStageKey,
-          })
-          .where(eq(stageAttempt.id, pending.id));
+        if (stageReview) {
+          // One note per rejected item, each on that item's own newest attempt,
+          // so an item re-runs with the notes that are about it.
+          const rejected: Array<{ itemIndex: number; note?: string | undefined }> =
+            items ?? (await this.allItemIndexes(tx, execution.id)).map((i) => ({ itemIndex: i }));
+          await this.markItemAttemptsRejected(
+            tx,
+            execution.id,
+            rejected.map((entry) => ({
+              itemIndex: entry.itemIndex,
+              note: entry.note ?? note ?? null,
+            })),
+            targetStageKey,
+          );
+        } else {
+          const pendingItem = isItemMode
+            ? await this.resolveOpenItem(tx, execution.id, resolvedItemIndex)
+            : undefined;
+          const pending = await this.pendingAttempt(tx, execution.id, pendingItem?.id);
+          if (!pending) throw new ConflictException('No pending approval candidate exists');
+          await tx
+            .update(stageAttempt)
+            .set({
+              outcome: 'rejected',
+              reviewNote: note ?? null,
+              critiqueTargetStageKey: targetStageKey,
+            })
+            .where(eq(stageAttempt.id, pending.id));
+        }
         await this.waits.resolve(tx, execution.id);
         await this.invalidation.apply(tx, {
           runId,
           closure: preview.closure,
           targetStageKey,
         });
+        if (stageReview) {
+          // Redoing only some items leaves this stage's row as it was; it is
+          // running again, not waiting for a review.
+          await tx
+            .update(stageExecution)
+            .set({ state: 'running' })
+            .where(
+              and(
+                eq(stageExecution.id, execution.id),
+                eq(stageExecution.state, 'awaiting_approval'),
+              ),
+            );
+        }
       },
       'run/resumed',
     );
@@ -908,17 +956,65 @@ export class HumanActionService {
     if (!wait) throw new ConflictException(`No open ${kind} wait exists`);
   }
 
-  /** Rejecting a whole iterating stage leaves one note, on one attempt: the
-   * first held item's, else the last item's, since the note is for the stage
-   * and every item re-runs with it. */
-  private async attemptToCarryStageRejection(tx: Tx, executionId: string) {
-    const items = await tx
-      .select()
+  private async allItemIndexes(tx: Tx, executionId: string): Promise<number[]> {
+    const rows = await tx
+      .select({ itemIndex: stageItem.itemIndex })
       .from(stageItem)
       .where(eq(stageItem.stageExecutionId, executionId))
       .orderBy(asc(stageItem.itemIndex));
-    const target = items.find((item) => item.state === 'awaiting_approval') ?? items.at(-1);
-    return target ? this.pendingAttempt(tx, executionId, target.id) : undefined;
+    return rows.map((row) => row.itemIndex);
+  }
+
+  /** Marks each item's newest attempt (the held candidate, or the one that
+   * passed) as rejected with its note. A note is read back only by the item it
+   * was written on, so each item that is redone sees the notes about it. */
+  private async markItemAttemptsRejected(
+    tx: Tx,
+    executionId: string,
+    entries: Array<{ itemIndex: number; note: string | null }>,
+    targetStageKey: string,
+  ): Promise<void> {
+    const rows = await tx
+      .select()
+      .from(stageItem)
+      .where(eq(stageItem.stageExecutionId, executionId));
+    for (const entry of entries) {
+      const item = rows.find((row) => row.itemIndex === entry.itemIndex);
+      const attempt = item ? await this.pendingAttempt(tx, executionId, item.id) : undefined;
+      if (!item || !attempt) {
+        throw new ConflictException(`Item ${entry.itemIndex + 1} has no output to reject`);
+      }
+      await tx
+        .update(stageAttempt)
+        .set({
+          outcome: 'rejected',
+          reviewNote: entry.note,
+          critiqueTargetStageKey: targetStageKey,
+        })
+        .where(eq(stageAttempt.id, attempt.id));
+    }
+  }
+
+  private assertRejectableItems(
+    items: RejectedItemsDto,
+    stageReview: boolean,
+    itemCount: number | null,
+  ): void {
+    if (!stageReview) {
+      throw new ConflictException(
+        'Items can only be rejected while the stage waits for a review of all its items',
+      );
+    }
+    const seen = new Set<number>();
+    for (const entry of items) {
+      if (itemCount === null || entry.itemIndex >= itemCount) {
+        throw new ConflictException(`Item ${entry.itemIndex + 1} is not part of this stage`);
+      }
+      if (seen.has(entry.itemIndex)) {
+        throw new ConflictException(`Item ${entry.itemIndex + 1} was chosen twice`);
+      }
+      seen.add(entry.itemIndex);
+    }
   }
 
   private async nextAttemptNo(tx: Tx, executionId: string): Promise<number> {

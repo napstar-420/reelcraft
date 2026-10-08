@@ -18,6 +18,8 @@ import { Textarea } from '@/components/ui/textarea';
 import {
   approveAllLabel,
   describeApiFailure,
+  rejectLabel,
+  rejectedItems,
   rejectionPreviewSummary,
 } from '@/pages/approval-review.logic';
 import { ArtifactPreview } from './artifact-preview';
@@ -39,6 +41,8 @@ export function ApprovalReviewSheet({
   const queryClient = useQueryClient();
   const [note, setNote] = useState('');
   const [preview, setPreview] = useState<RejectionPreview | null>(null);
+  // Items of a stage review ticked for rejection, each with its note.
+  const [selected, setSelected] = useState<Record<number, string>>({});
   const [error, setError] = useState<string | null>(null);
   // An iterating stage reviewed once, after its last item, waits as a whole
   // (`awaiting_approval`); one waiting on a single item stays `running`.
@@ -73,6 +77,7 @@ export function ApprovalReviewSheet({
     setNote('');
     setPreview(null);
     setError(null);
+    setSelected({});
   }, [stageKey, open]);
 
   const finish = async () => {
@@ -92,9 +97,17 @@ export function ApprovalReviewSheet({
     onSuccess: finish,
     onError: fail,
   });
+  const chosen =
+    stageReview && Object.keys(selected).length > 0 ? rejectedItems(selected) : undefined;
   const previewRejection = useMutation({
     mutationFn: () =>
-      api.previewStageRejection(runId, stageKey as string, note.trim() || undefined, itemIndex),
+      api.previewStageRejection(
+        runId,
+        stageKey as string,
+        note.trim() || undefined,
+        itemIndex,
+        chosen,
+      ),
     onSuccess: (result) => {
       setError(null);
       setPreview(result);
@@ -109,6 +122,7 @@ export function ApprovalReviewSheet({
         preview!.previewToken,
         note.trim() || undefined,
         itemIndex,
+        chosen,
       ),
     onSuccess: finish,
     onError: fail,
@@ -158,7 +172,19 @@ export function ApprovalReviewSheet({
               <AlertDescription>{describeApiFailure(loadError)}</AlertDescription>
             </Alert>
           ) : stageReview && reviewQuery.data ? (
-            <StageReviewGallery items={reviewItems} />
+            <StageReviewGallery
+              items={reviewItems}
+              selected={selected}
+              disabled={busy}
+              onSelect={(index, itemNote) =>
+                setSelected((current) => {
+                  const next = { ...current };
+                  if (itemNote === null) delete next[index];
+                  else next[index] = itemNote;
+                  return next;
+                })
+              }
+            />
           ) : candidateQuery.data ? (
             <>
               {candidateQuery.data.attempt.qcUnavailable !== null ? (
@@ -186,7 +212,8 @@ export function ApprovalReviewSheet({
           {loaded && !preview ? (
             <div className="flex flex-col gap-2 py-4">
               <label htmlFor="approval-rejection-note" className="text-sm font-medium">
-                Rejection note <span className="text-muted-foreground">(optional)</span>
+                {chosen ? 'Note for every chosen item without its own' : 'Rejection note'}{' '}
+                <span className="text-muted-foreground">(optional)</span>
               </label>
               <Textarea
                 id="approval-rejection-note"
@@ -244,7 +271,7 @@ export function ApprovalReviewSheet({
                 onClick={() => previewRejection.mutate()}
               >
                 {previewRejection.isPending ? <Loader2 className="animate-spin" /> : null}
-                Reject
+                {stageReview ? rejectLabel(Object.keys(selected).length) : 'Reject'}
               </Button>
               {qcUnavailable ? (
                 <Button disabled={busy} onClick={() => retryQc.mutate()}>

@@ -479,10 +479,22 @@ export class StageRunnerService {
         }
       }
     }
+    // An item reads only the notes about itself (and the ones written on a stage
+    // that doesn't iterate); a stage as a whole reads each distinct note once.
+    const readerItemIndex = stageItemId
+      ? (
+          await this.db
+            .select({ itemIndex: stageItem.itemIndex })
+            .from(stageItem)
+            .where(eq(stageItem.id, stageItemId))
+            .limit(1)
+        )[0]?.itemIndex
+      : undefined;
     const routed = await this.db
-      .select({ reviewNote: stageAttempt.reviewNote })
+      .select({ reviewNote: stageAttempt.reviewNote, itemIndex: stageItem.itemIndex })
       .from(stageAttempt)
       .innerJoin(stageExecution, eq(stageAttempt.stageExecutionId, stageExecution.id))
+      .leftJoin(stageItem, eq(stageAttempt.stageItemId, stageItem.id))
       .where(
         and(
           eq(stageExecution.runId, execution.runId),
@@ -491,10 +503,19 @@ export class StageRunnerService {
         ),
       )
       .orderBy(asc(stageAttempt.createdAt));
+    const seenNotes = new Set<string>();
     for (const rejection of routed) {
-      lines.push(
-        `A human reviewer rejected the output: ${rejection.reviewNote ?? 'No note provided'}`,
-      );
+      if (
+        readerItemIndex !== undefined &&
+        rejection.itemIndex !== null &&
+        rejection.itemIndex !== readerItemIndex
+      ) {
+        continue;
+      }
+      const text = `A human reviewer rejected the output: ${rejection.reviewNote ?? 'No note provided'}`;
+      if (seenNotes.has(text)) continue;
+      seenNotes.add(text);
+      lines.push(text);
     }
     return lines.join('\n');
   }
@@ -2058,7 +2079,20 @@ export class StageRunnerService {
           eq(stageItem.state, 'awaiting_approval'),
         ),
       );
-    const needsReview = approvalModeOf(stage) === 'stage' && (!!stage.approval || held.length > 0);
+    // A person who rejected an item of this stage reviews its redo too.
+    const [rejected] = await this.db
+      .select({ id: stageAttempt.id })
+      .from(stageAttempt)
+      .where(
+        and(
+          eq(stageAttempt.stageExecutionId, params.stageExecutionId),
+          isNotNull(stageAttempt.stageItemId),
+          eq(stageAttempt.outcome, 'rejected'),
+        ),
+      )
+      .limit(1);
+    const needsReview =
+      approvalModeOf(stage) === 'stage' && (!!stage.approval || held.length > 0 || !!rejected);
     if (!needsReview) {
       const finished = await this.finishIteratingStage(params.stageExecutionId);
       return { outcome: 'passed', artifactId: finished.artifactId };

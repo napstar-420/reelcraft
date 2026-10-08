@@ -33,7 +33,10 @@ quality control did not pass, or could not judge, come first, marked **Held**.
 - **Approve all** accepts every item, held ones included. The button shows how many that is, for
   example _Approve all (7, incl. 2 held)_.
 - **Retry QC** appears when quality control could not run on some items: it judges those items again.
-- **Reject** redoes the whole stage, as below.
+- **Reject stage** redoes the whole stage, as below.
+- Tick some items and select **Reject 2 items** (or however many you ticked) to redo only those. Add a
+  note under each; only that item reads it. The others keep their output, and the review opens again
+  when the redone items finish.
 
 ### When quality control could not run
 

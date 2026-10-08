@@ -77,3 +77,17 @@ export function heldReasonLabel(reason: 'qc_failed' | 'qc_error' | null) {
   if (reason === 'qc_error') return 'Held: QC could not run';
   return null;
 }
+
+/** The items ticked for rejection, as the request wants them: in order, with a
+ * note only where one was written. */
+export function rejectedItems(selected: Record<number, string>) {
+  return Object.entries(selected)
+    .map(([itemIndex, note]) => ({ itemIndex: Number(itemIndex), note: note.trim() }))
+    .sort((a, b) => a.itemIndex - b.itemIndex)
+    .map(({ itemIndex, note }) => (note ? { itemIndex, note } : { itemIndex }));
+}
+
+export function rejectLabel(selectedCount: number) {
+  if (selectedCount === 0) return 'Reject stage';
+  return selectedCount === 1 ? 'Reject 1 item' : `Reject ${selectedCount} items`;
+}

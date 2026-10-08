@@ -405,6 +405,174 @@ describe('iterating stage reviewed once, at its end (e2e)', () => {
     expect(await openWaits(ctx.execution.id)).toHaveLength(0);
   });
 
+  describe('rejecting selected items of the review', () => {
+    async function reviewedStage(approval: boolean) {
+      const ctx = await setUp(
+        [
+          shotsStage(['a', 'b', 'c']),
+          brollStage(approval ? { approval: { mode: 'stage' } } : { qc: QC_FAILS }),
+        ],
+        3,
+      );
+      return ctx;
+    }
+
+    async function reviewAllPassed() {
+      const ctx = await reviewedStage(true);
+      for (let i = 0; i < 3; i += 1) await runItem(ctx, i);
+      await ctx.runner.concludeIteratingStage(ctx.stage, {
+        runId: ctx.created.id,
+        stageExecutionId: ctx.execution.id,
+      });
+      await pauseForApproval(ctx.created.id);
+      return ctx;
+    }
+
+    async function confirmReject(
+      ctx: Awaited<ReturnType<typeof setUp>>,
+      note: string | undefined,
+      items: Array<{ itemIndex: number; note?: string }>,
+    ) {
+      const actions = testApp.app.get(HumanActionService);
+      const previewed = await actions.reject(
+        ctx.created.id,
+        'broll',
+        note,
+        undefined,
+        undefined,
+        items,
+      );
+      if (!('previewToken' in previewed)) throw new Error('expected a preview');
+      return actions.reject(
+        ctx.created.id,
+        'broll',
+        note,
+        previewed.previewToken,
+        undefined,
+        items,
+      );
+    }
+
+    it('redoes only the chosen items, each with its own note, and keeps the rest', async () => {
+      const ctx = await reviewAllPassed();
+      await confirmReject(ctx, 'overall', [{ itemIndex: 0, note: 'redo zero' }, { itemIndex: 2 }]);
+
+      const items = await itemRows(ctx.execution.id);
+      expect(items.map((i) => i.state)).toEqual(['stale', 'passed', 'stale']);
+      expect((await executionRow(ctx.execution.id)).state).toBe('running');
+      expect(await openWaits(ctx.execution.id)).toHaveLength(0);
+
+      const newestAttempt = async (itemId: string) => {
+        const rows = await testDb.db
+          .select()
+          .from(stageAttempt)
+          .where(eq(stageAttempt.stageItemId, itemId));
+        return rows.sort((a, b) => b.attemptNo - a.attemptNo)[0]!;
+      };
+      expect(await newestAttempt(items[0]!.id)).toMatchObject({
+        outcome: 'rejected',
+        reviewNote: 'redo zero',
+      });
+      expect(await newestAttempt(items[1]!.id)).toMatchObject({ outcome: 'success' });
+      // An item with no note of its own gets the overall one.
+      expect(await newestAttempt(items[2]!.id)).toMatchObject({
+        outcome: 'rejected',
+        reviewNote: 'overall',
+      });
+
+      // Each redone item reads the notes about itself, not its siblings'.
+      const critique = (itemId: string) => ctx.runner.loadCritiqueLog(ctx.execution.id, 99, itemId);
+      expect(await critique(items[0]!.id)).toContain('redo zero');
+      expect(await critique(items[0]!.id)).not.toContain('overall');
+      expect(await critique(items[2]!.id)).toContain('overall');
+      expect(await critique(items[2]!.id)).not.toContain('redo zero');
+      expect(await critique(items[1]!.id)).not.toContain('human reviewer');
+    });
+
+    it('reviews the stage again after the redone items finish', async () => {
+      const ctx = await reviewAllPassed();
+      await confirmReject(ctx, undefined, [{ itemIndex: 1 }]);
+      await testDb.db.update(run).set({ state: 'RUNNING' }).where(eq(run.id, ctx.created.id));
+      expect((await runItem(ctx, 1)).result.outcome).toBe('success');
+
+      const concluded = await ctx.runner.concludeIteratingStage(ctx.stage, {
+        runId: ctx.created.id,
+        stageExecutionId: ctx.execution.id,
+      });
+      expect(concluded.outcome).toBe('approval_required');
+      expect(await openWaits(ctx.execution.id)).toHaveLength(1);
+    });
+
+    it('also reviews the redo of a stage with no approval of its own once a person rejected an item', async () => {
+      const ctx = await reviewedStage(false);
+      const plain = withoutQc(ctx.stage, ctx.effective);
+      await runItem(ctx, 0, plain);
+      const held = await runItem(ctx, 1);
+      await ctx.runner.handOffForReview(ctx.stage, held.attempt);
+      await runItem(ctx, 2, plain);
+      await ctx.runner.concludeIteratingStage(ctx.stage, {
+        runId: ctx.created.id,
+        stageExecutionId: ctx.execution.id,
+      });
+      await pauseForApproval(ctx.created.id);
+      await confirmReject(ctx, 'try again', [{ itemIndex: 1 }]);
+      await testDb.db.update(run).set({ state: 'RUNNING' }).where(eq(run.id, ctx.created.id));
+      // The redo now passes QC, so nothing is held: the stage would pass unseen
+      // if a person's rejection did not ask to see it.
+      expect((await runItem(ctx, 1, plain)).result.outcome).toBe('success');
+
+      const concluded = await ctx.runner.concludeIteratingStage(ctx.stage, {
+        runId: ctx.created.id,
+        stageExecutionId: ctx.execution.id,
+      });
+      expect(concluded.outcome).toBe('approval_required');
+    });
+
+    it('leaves a held item that was not chosen held, and reopens the review for it', async () => {
+      const ctx = await reviewedStage(false);
+      const plain = withoutQc(ctx.stage, ctx.effective);
+      await runItem(ctx, 0, plain);
+      const held = await runItem(ctx, 1);
+      await ctx.runner.handOffForReview(ctx.stage, held.attempt);
+      await runItem(ctx, 2, plain);
+      await ctx.runner.concludeIteratingStage(ctx.stage, {
+        runId: ctx.created.id,
+        stageExecutionId: ctx.execution.id,
+      });
+      await pauseForApproval(ctx.created.id);
+      await confirmReject(ctx, undefined, [{ itemIndex: 0 }]);
+
+      expect((await itemRows(ctx.execution.id)).map((i) => i.state)).toEqual([
+        'stale',
+        'awaiting_approval',
+        'passed',
+      ]);
+    });
+
+    it('refuses items that are not part of the stage, are chosen twice, or are sent for a stage not under review', async () => {
+      const ctx = await reviewAllPassed();
+      const actions = testApp.app.get(HumanActionService);
+      await expect(
+        actions.reject(ctx.created.id, 'broll', undefined, undefined, undefined, [
+          { itemIndex: 7 },
+        ]),
+      ).rejects.toThrow(/not part of this stage/);
+      await expect(
+        actions.reject(ctx.created.id, 'broll', undefined, undefined, undefined, [
+          { itemIndex: 1 },
+          { itemIndex: 1 },
+        ]),
+      ).rejects.toThrow(/chosen twice/);
+
+      const plain = await setUp([shotsStage(['a']), brollStage()], 1);
+      await expect(
+        actions.reject(plain.created.id, 'broll', undefined, undefined, undefined, [
+          { itemIndex: 0 },
+        ]),
+      ).rejects.toThrow(/waits for a review of all its items/);
+    });
+  });
+
   it("an item-mode review still loads a QC hold ('Retry QC' needs the candidate)", async () => {
     const ctx = await setUp(
       [shotsStage(['a']), brollStage({ approval: { mode: 'item' }, qc: QC_UNAVAILABLE })],

@@ -197,7 +197,7 @@ export class RunController {
   ) {
     if (dto.action === 'approve') return this.humanActions.approve(id, key, dto.itemIndex);
     if (dto.action === 'retry_qc') return this.humanActions.retryQc(id, key, dto.itemIndex);
-    return this.humanActions.reject(id, key, dto.note, dto.previewToken, dto.itemIndex);
+    return this.humanActions.reject(id, key, dto.note, dto.previewToken, dto.itemIndex, dto.items);
   }
 
   @Post(':id/stages/:key/input')

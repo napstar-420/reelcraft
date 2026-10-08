@@ -64,6 +64,7 @@ import type {
   StageOutputDto,
   StageEventDto,
   ApprovalActionDto,
+  RejectedItemsDto,
   RunState,
   ListRunsResultDto,
   ConfirmRunActionDto,
@@ -393,7 +394,13 @@ export const api = {
         } satisfies ApprovalActionDto),
       },
     ),
-  previewStageRejection: (runId: string, stageKey: string, note?: string, itemIndex?: number) =>
+  previewStageRejection: (
+    runId: string,
+    stageKey: string,
+    note?: string,
+    itemIndex?: number,
+    items?: RejectedItemsDto,
+  ) =>
     request<{
       previewToken: string;
       expiresAt: string;
@@ -407,6 +414,7 @@ export const api = {
         action: 'reject',
         ...(note !== undefined ? { note } : {}),
         ...(itemIndex !== undefined ? { itemIndex } : {}),
+        ...(items !== undefined ? { items } : {}),
       } satisfies ApprovalActionDto),
     }),
   confirmStageRejection: (
@@ -415,6 +423,7 @@ export const api = {
     previewToken: string,
     note?: string,
     itemIndex?: number,
+    items?: RejectedItemsDto,
   ) =>
     request<{ accepted: true; revision: number }>(
       `/runs/${runId}/stages/${encodeURIComponent(stageKey)}/approve`,
@@ -425,6 +434,7 @@ export const api = {
           previewToken,
           ...(note !== undefined ? { note } : {}),
           ...(itemIndex !== undefined ? { itemIndex } : {}),
+          ...(items !== undefined ? { items } : {}),
         } satisfies ApprovalActionDto),
       },
     ),

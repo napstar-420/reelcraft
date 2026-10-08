@@ -99,8 +99,14 @@ Select **Review output** to open it. See [When a run needs you](../runs/when-a-r
 ### A stage that iterates
 
 In `stage` mode the items run one after another without stopping, and **Review output** then shows all of
-them together. **Approve all** accepts every item and the run continues. **Reject** redoes the whole stage:
-every item runs again, and your note goes into each item's prompt.
+them together. **Approve all** accepts every item and the run continues. **Reject stage** redoes the whole
+stage: every item runs again, and your note goes into each item's prompt.
+
+To redo only some items, tick the ones you don't like and write a note for each. The button becomes
+**Reject 2 items** (or however many you ticked). Only those items run again, each with the note written
+for it, and the others keep their output. A note written for one item is never given to another. Any
+note in the box at the bottom is used for the ticked items that have none of their own. When the redone
+items finish, the stage opens its review again so you can look at them.
 
 A stage that iterates also pauses once at its end when it has **no** human approval, but only if
 [quality control](./quality-control.md) gave up on an item and **Hand off to human review** is set. That
