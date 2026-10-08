@@ -22,6 +22,7 @@ import { deleteRunsCascade } from '../run/run-cascade';
 import { deleteAssistantCascade } from '../assistant/assistant-cascade';
 import { queueStorageOrphans } from '../artifact/storage-orphans';
 import { ulid } from '../common/ulid';
+import { blueprintChanged } from './blueprint-changed';
 import { BlueprintValidatorService } from './blueprint-validator.service';
 import { collectAssetIds, roleRefsOf } from './collect-asset-refs';
 import {
@@ -42,16 +43,6 @@ import { modalityForCapability } from '../capability/modality-for-capability';
 import { stageReferenceLimit } from '../common/reference-limit';
 import type { ModelInfo } from '../provider/provider-adapter.interface';
 import { validateSpeechStages } from '../provider/speech/validate-speech-stages';
-
-/** 409 for a write based on a saved version that is no longer current; the web
- * canvas reads `code` and `currentVersionId` to offer loading the newer save. */
-function blueprintChanged(currentVersionId: string | null) {
-  return new ConflictException({
-    code: 'blueprint_changed',
-    message: 'This blueprint was saved elsewhere since this page loaded.',
-    currentVersionId,
-  });
-}
 
 @Injectable()
 export class BlueprintService {
