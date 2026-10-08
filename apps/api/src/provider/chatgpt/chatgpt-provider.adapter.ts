@@ -174,23 +174,25 @@ export class ChatgptProviderAdapter implements ProviderAdapter {
       }
       if (!signIn.composer) throw new ChatgptPageError('ChatGPT composer not found');
 
-      const set = this.pageResult(
-        await this.neo.run<{ value?: number; error?: string }>(
-          setEffortScript(pageId, effort as ChatgptEffort),
-        ),
-      );
-      if (set.value !== EFFORT_STOPS[effort as ChatgptEffort]) {
-        throw new ChatgptPageError(`Could not set ChatGPT effort to "${effort}"`);
-      }
-      if (webSearch && !(await this.neo.run<boolean>(enableWebSearchScript(pageId)))) {
-        throw new ChatgptPageError('Could not turn on ChatGPT web search');
-      }
-      if (references.length > 0) await this.uploadReferences(pageId, references);
-      const sent = this.pageResult(
-        await this.neo.run<{ url?: string; error?: string }>(
-          sendPromptScript(pageId, pastedPrompt, webSearch),
-        ),
-      );
+      const sent = await this.exclusive(async () => {
+        const set = this.pageResult(
+          await this.neo.run<{ value?: number; error?: string }>(
+            setEffortScript(pageId, effort as ChatgptEffort),
+          ),
+        );
+        if (set.value !== EFFORT_STOPS[effort as ChatgptEffort]) {
+          throw new ChatgptPageError(`Could not set ChatGPT effort to "${effort}"`);
+        }
+        if (webSearch && !(await this.neo.run<boolean>(enableWebSearchScript(pageId)))) {
+          throw new ChatgptPageError('Could not turn on ChatGPT web search');
+        }
+        if (references.length > 0) await this.uploadReferences(pageId, references);
+        return this.pageResult(
+          await this.neo.run<{ url?: string; error?: string }>(
+            sendPromptScript(pageId, pastedPrompt, webSearch),
+          ),
+        );
+      });
       const payload: ChatgptJobPayload = {
         pageId,
         conversationUrl: sent.url ?? '',
@@ -431,6 +433,17 @@ export class ChatgptProviderAdapter implements ProviderAdapter {
       }
     }
     await this.close(pageId);
+  }
+
+  /** The effort slider is account-wide and is read when a prompt is sent, so
+   * tabs of items that run side by side take turns from "set effort" to
+   * "sent"; everything else about a job stays in its own tab.
+   * ponytail: per-process queue; a second API process would need its own lock. */
+  private sendTurn: Promise<unknown> = Promise.resolve();
+  private exclusive<T>(work: () => Promise<T>): Promise<T> {
+    const turn = this.sendTurn.then(work);
+    this.sendTurn = turn.catch(() => undefined);
+    return turn;
   }
 
   private async close(pageId: number): Promise<void> {

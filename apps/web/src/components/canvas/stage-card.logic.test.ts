@@ -169,6 +169,17 @@ describe('nodeRunStatus', () => {
     });
     expect(nodeRunStatus(waiting, { ...paused, cursorStageKey: 'other' })?.reviewable).toBe(false);
   });
+
+  it('says how many items of an iterating stage run at once', () => {
+    const iterate = { over: { from: 'prev' as const }, itemAlias: 'item', itemRetryLimit: 0 };
+    expect(stageFlags(stage({ iterate }))[0]?.title).toBe('Runs once per item, in order');
+    expect(stageFlags(stage({ iterate: { ...iterate, concurrency: 1 } }))[0]?.title).toBe(
+      'Runs once per item, in order',
+    );
+    expect(stageFlags(stage({ iterate: { ...iterate, concurrency: 3 } }))[0]?.title).toBe(
+      'Runs once per item, 3 at a time',
+    );
+  });
 });
 
 describe('upstreamBlocker', () => {

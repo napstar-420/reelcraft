@@ -208,6 +208,9 @@ export type ArtifactViewDto = z.infer<typeof ArtifactViewDto>;
 export const ApprovalCandidateDto = z.object({
   stageKey: z.string(),
   itemIndex: z.number().int().nonnegative().nullable(),
+  /** Every item of the stage waiting for approval, in order. More than one when the
+   * stage runs its items concurrently; the review moves on to the next after each. */
+  pendingItemIndexes: z.array(z.number().int().nonnegative()).default([]),
   attempt: z.object({
     id: z.string(),
     attemptNo: z.number(),

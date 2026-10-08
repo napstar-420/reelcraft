@@ -4,6 +4,7 @@ import {
   StreamableHTTPClientTransport,
   StreamableHTTPError,
 } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import { SettingsService } from '../../settings/settings.service';
 
 const AGENT_NAME = 'reelcraft';
@@ -54,7 +55,11 @@ export class NeoClient {
       })) as ToolResult;
     } catch (error) {
       // Drop the connection so the next call reconnects (e.g. after a Neo restart).
-      this.client = undefined;
+      // Not for a call that merely timed out or that Neo answered with an error:
+      // the connection is fine, and other tabs' calls are running on it.
+      if (!(error instanceof McpError) || error.code === ErrorCode.ConnectionClosed) {
+        this.client = undefined;
+      }
       // Neo expires idle sessions with a 404 before running anything, so that
       // one case is safe to replay on a fresh session. Never replay otherwise:
       // a timed-out call may already have clicked Send.

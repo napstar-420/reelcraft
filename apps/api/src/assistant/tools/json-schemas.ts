@@ -46,7 +46,7 @@ export function stageJsonSchema(n: NarrowedEnums): JsonObject {
     writes: freeObject('memory key → path into this stage output ("$" = whole output).'),
     output: freeObject('{ kind, … }: data (with schema), text, timeline, media.*, file.subtitles.'),
     iterate: freeObject(
-      'Run once per item of a list: { over: Ref, itemAlias, itemRetryLimit, maxItems? }.',
+      'Run once per item of a list: { over: Ref, itemAlias, itemRetryLimit, maxItems?, concurrency? } (concurrency: items run at once; not with prevItem or item approval).',
     ),
     checks: { type: 'array', items: { type: 'object' }, description: 'Builtin or script checks.' },
     checkMaxAttempts: { type: 'integer', minimum: 1 },
