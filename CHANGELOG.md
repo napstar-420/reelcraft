@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.7.0](https://github.com/napstar-420/reelcraft/compare/v0.6.0...v0.7.0) (2026-10-08)
+
+
+### Features
+
+* **api:** archive the ChatGPT chat after an image job ([#101](https://github.com/napstar-420/reelcraft/issues/101)) ([d9cdce6](https://github.com/napstar-420/reelcraft/commit/d9cdce66f4c9e7bf1b726c44cc6a692c235aea8a))
+* **api:** assistant can read runs and see what stages made ([#93](https://github.com/napstar-420/reelcraft/issues/93)) ([4091c34](https://github.com/napstar-420/reelcraft/commit/4091c3411d7021f0afa5fdd31d7d8e7fa1029fd8))
+* **api:** assistant guide, system prompt and eval overhaul ([#95](https://github.com/napstar-420/reelcraft/issues/95)) ([97899b2](https://github.com/napstar-420/reelcraft/commit/97899b2f5a8039e711b105ba050594e0f3601209))
+* **api:** assistant sees versions, effective config and channel context ([#92](https://github.com/napstar-420/reelcraft/issues/92)) ([f75be08](https://github.com/napstar-420/reelcraft/commit/f75be0811f7a82826fa0766f404561b0d44b48b3))
+* **api:** run the items of an iterating stage at the same time ([#115](https://github.com/napstar-420/reelcraft/issues/115)) ([9433455](https://github.com/napstar-420/reelcraft/commit/9433455818195547bbff77609cbac03576cf4c9b))
+* **codex:** add config.toml ([69577d0](https://github.com/napstar-420/reelcraft/commit/69577d0316f85907aca808e138cbde4780d55b5e))
+* redesign Generate Speech (ElevenLabs and Deepgram voices, settings, word timings) ([#94](https://github.com/napstar-420/reelcraft/issues/94)) ([36af823](https://github.com/napstar-420/reelcraft/commit/36af82353125a0fe26ed985e47073d64d02dde66))
+* treat a run budget cap of zero as unlimited, and default new budgets to zero ([#99](https://github.com/napstar-420/reelcraft/issues/99)) ([02e568c](https://github.com/napstar-420/reelcraft/commit/02e568c2ad29c2329f836d00b7734f48482b5231))
+
+
+### Bug Fixes
+
+* **api:** don't record a seeded run's text and data inputs twice ([#102](https://github.com/napstar-420/reelcraft/issues/102)) ([6e64ca4](https://github.com/napstar-420/reelcraft/commit/6e64ca44ceb66eb4fe497f0dace5619511900282))
+* **api:** explain and confirm when "Run this stage" has to re-run an earlier stage ([#110](https://github.com/napstar-420/reelcraft/issues/110)) ([2f26c61](https://github.com/napstar-420/reelcraft/commit/2f26c61ec1dc8f8272ece705cc1aac4e48d5f10d))
+* **api:** give timeline stages the real timeline schema and a usable captions timing handle ([#98](https://github.com/napstar-420/reelcraft/issues/98)) ([8c56717](https://github.com/napstar-420/reelcraft/commit/8c567177c916d675d4e2bafe14542b63b31aea93))
+* **api:** ignore the ChatGPT sidebar's Retry when checking for an error banner ([#103](https://github.com/napstar-420/reelcraft/issues/103)) ([a44f3a5](https://github.com/napstar-420/reelcraft/commit/a44f3a5cfe1de37eede351ca36e044e6a491c076))
+* **api:** speak and check memory-bound script text, and let non_empty accept media files ([#97](https://github.com/napstar-420/reelcraft/issues/97)) ([e62324a](https://github.com/napstar-420/reelcraft/commit/e62324a7382165e96e1097bcb06000e70f1f8f15))
+* **api:** stop a stale tab or Undo overwriting a saved blueprint ([#111](https://github.com/napstar-420/reelcraft/issues/111)) ([63e6a29](https://github.com/napstar-420/reelcraft/commit/63e6a29b7843dd9e008aaffa93e1bca85853a7a7))
+* **web:** show iteration item and order attempts by time in the attempts sheet ([57fe734](https://github.com/napstar-420/reelcraft/commit/57fe734da23766560b560819993c0e40d377a812))
+* **web:** stop the canvas loading a stale unsaved copy after a save ([#109](https://github.com/napstar-420/reelcraft/issues/109)) ([96a3daf](https://github.com/napstar-420/reelcraft/commit/96a3daf5c5cdd1377c69b91f7ad4d41696d475c8))
+
 ## [0.6.0](https://github.com/napstar-420/reelcraft/compare/v0.5.0...v0.6.0) (2026-10-07)
 
 
