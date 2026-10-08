@@ -8,7 +8,7 @@ import {
   isIdle,
   parseJsonReply,
 } from './chatgpt-provider.adapter';
-import { stripCitations, type PageState } from './chatgpt-page';
+import { archiveChatScript, pageStateScript, stripCitations, type PageState } from './chatgpt-page';
 
 /** Fake Neo: `run` answers scripted results in call order and records every script. */
 function fixture(results: unknown[], archive: unknown = { archived: true }) {
@@ -481,6 +481,28 @@ describe('decidePoll error banner', () => {
         ),
       ).toMatchObject({ done: true, outcome: 'failed', failureClass: 'provider' });
     }
+  });
+});
+
+describe('error banner detection', () => {
+  it('names what tripped it in the failure reason', () => {
+    const status = decidePoll(
+      state({ errorShown: true, errorSignal: 'button: Retry', tail: 'oops' }),
+      { modality: 'image' as const, submittedAt: 1_000 },
+      undefined,
+      0,
+    );
+    expect(status).toMatchObject({ reason: 'ChatGPT reported an error (button: Retry): oops' });
+  });
+
+  it('only looks inside <main>, not at the sidebar\'s own Retry ("Unable to load history")', () => {
+    const script = pageStateScript(7);
+    expect(script).toContain("main.querySelectorAll('button')");
+    expect(script).not.toContain("document.querySelectorAll('button')");
+  });
+
+  it('waits for a saved chat id before archiving, since a fresh chat sits on a local placeholder', () => {
+    expect(archiveChatScript(7)).toContain('await waitFor(() => location.pathname.match(');
   });
 });
 
