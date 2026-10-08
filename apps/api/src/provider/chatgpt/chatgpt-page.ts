@@ -268,6 +268,8 @@ export type PageState = {
   images: number;
   imagesLoading: boolean;
   errorShown: boolean;
+  /** What made `errorShown` true, so a false positive can be read off the failure. */
+  errorSignal?: string;
   tail: string;
 };
 
@@ -278,6 +280,11 @@ export function pageStateScript(id: number): string {
 try { const r = await fetch('/api/auth/session', { credentials: 'include' }); const j = r.ok ? await r.json() : null; signedIn = !!(j && j.user && j.accessToken); } catch {}
 const main = document.querySelector('main');
 const text = main ? main.innerText : '';
+// ChatGPT's failure banner ("Message delivery timed out. Please try again." with a Retry button).
+// Only inside <main>: the sidebar has its own "Unable to load history / Retry" that says nothing about this chat.
+const retry = main && [...main.querySelectorAll('button')].find((b) => /^(retry|try again)$/i.test((b.getAttribute('aria-label') || b.innerText || '').trim()));
+const phrase = text.slice(-600).match(/message delivery timed out|something went wrong|network error|error generating/i);
+const errorSignal = retry ? 'button: ' + (retry.getAttribute('aria-label') || retry.innerText).trim() : phrase ? 'text: ' + phrase[0] : undefined;
 const imgs = [...document.querySelectorAll(S.generatedImage)].filter((i) => i.complete && i.naturalWidth > 0);
 return {
   signedIn,
@@ -285,8 +292,8 @@ return {
   replyDone: !!main && main.querySelectorAll(S.copy).length > 0,
   images: new Set(imgs.map((i) => i.src)).size,
   imagesLoading: /(loading|creating|generating) image/i.test(text.slice(-800)),
-  // ChatGPT's failure banner ("Message delivery timed out. Please try again." with a Retry button).
-  errorShown: [...document.querySelectorAll('button')].some((b) => /^(retry|try again)$/i.test((b.getAttribute('aria-label') || b.innerText || '').trim())) || /message delivery timed out|something went wrong|network error|error generating/i.test(text.slice(-600)),
+  errorShown: !!errorSignal,
+  errorSignal,
   tail: text.slice(-400),
 };`,
   );
@@ -348,13 +355,14 @@ export type ArchiveResult = { archived: boolean; reason?: string };
 /**
  * Archives the chat this tab is showing, via the same endpoint ChatGPT's own
  * "Archive" menu item uses. The id comes from the tab's own path, so it can
- * only ever archive the chat this tab created. A just-sent chat briefly sits
- * on a placeholder `local-…` path; that is not archivable, so it is skipped.
+ * only ever archive the chat this tab created. A just-sent chat sits on a
+ * placeholder `local-…` path until ChatGPT saves it, so wait briefly for the
+ * real id (a job that fails right after sending gets here early).
  */
 export function archiveChatScript(id: number): string {
   return inPage(
     id,
-    `const m = location.pathname.match(/^\\/c\\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i);
+    `const m = await waitFor(() => location.pathname.match(/^\\/c\\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i), 8000);
 if (!m) return { archived: false, reason: 'no conversation' };
 const s = await fetch('/api/auth/session', { credentials: 'include' }).then((r) => (r.ok ? r.json() : null)).catch(() => null);
 if (!s || !s.accessToken) return { archived: false, reason: 'not signed in' };

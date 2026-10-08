@@ -490,7 +490,7 @@ export function decidePoll(
     return {
       done: true,
       outcome: 'failed',
-      reason: `ChatGPT reported an error: ${state.tail.trim().slice(-300)}`,
+      reason: `ChatGPT reported an error${state.errorSignal ? ` (${state.errorSignal})` : ''}: ${state.tail.trim().slice(-300)}`,
       retryable: true,
       failureClass: 'provider',
     };
