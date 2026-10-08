@@ -19,6 +19,7 @@ import {
 } from '../db/schema/index';
 import { LiveEvents } from '../live/live-events';
 import { describeRunNotification, type NotificationTextContext } from './notification-text';
+import { PushService } from './push.service';
 
 /** Both the connection and a transaction (or savepoint) satisfy this. */
 type Executor = Pick<Db, 'select' | 'insert'>;
@@ -77,6 +78,7 @@ export class NotificationService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly events: LiveEvents,
+    private readonly push: PushService,
   ) {}
 
   /** Writes the row and returns it, or null for a dry run (fake provider, free,
@@ -115,7 +117,9 @@ export class NotificationService {
     }
   }
 
-  /** Announces a row that is already committed. Never throws. */
+  /** Announces a row that is already committed: live to open tabs, and as a
+   * system notification to browsers that subscribed. Never throws, and never
+   * waits for the push services. */
   deliver(sent: SentNotification | null | undefined): void {
     if (!sent) return;
     try {
@@ -123,6 +127,7 @@ export class NotificationService {
     } catch (err) {
       this.logger.warn({ err }, 'notification not delivered');
     }
+    void this.push.send(sent).catch((err: unknown) => this.logger.warn({ err }, 'push not sent'));
   }
 
   /** Insert and announce, for callers outside a transaction. */

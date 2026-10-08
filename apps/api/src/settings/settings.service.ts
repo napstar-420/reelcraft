@@ -16,6 +16,9 @@ export const SETTING = {
   /** This install's package-signing identity (Ed25519, PEM). */
   packageIdentityPrivateKey: 'packageIdentity.privateKey',
   packageIdentityPublicKey: 'packageIdentity.publicKey',
+  /** Web Push (VAPID) keys that identify this install to browsers' push services. */
+  vapidPrivateKey: 'push.vapidPrivateKey',
+  vapidPublicKey: 'push.vapidPublicKey',
 } as const;
 
 /** How long a read of the table is reused. Writes through this service

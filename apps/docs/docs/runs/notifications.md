@@ -1,6 +1,6 @@
 ---
 title: Notifications
-description: Hear when a run starts, needs you, fails or finishes, from the bell in Reelcraft.
+description: Hear when a run starts, needs you, fails or finishes, from the bell in Reelcraft or as a notification on your computer.
 ---
 
 Runs take a while, and some stop to wait for you. Reelcraft tells you when something happens, so you
@@ -45,3 +45,31 @@ While you're looking at Reelcraft, a notification also appears as a pop-up in th
 To choose which ones pop up, go to **Settings** and find **Notifications**. Switch off any you don't
 want. The choice is saved in this browser only. The bell always keeps every notification, so turning one
 off here never loses it. **Run cancelled** is off by default, since you usually just did it yourself.
+
+## Browser notifications
+
+To hear about a run even when Reelcraft isn't open, turn on system notifications:
+
+1. Go to **Settings** and find **Notifications**.
+2. Switch on **Browser notifications**.
+3. When your browser asks, choose **Allow**.
+
+From then on, the notifications you've left switched on appear as notifications on your computer, even with
+every Reelcraft tab closed. Select one to open the run. If Reelcraft is already open, it comes to the front
+and goes to the right place. While this is on, the pop-up in the corner is replaced by the system
+notification, so you get one alert, not two.
+
+It is saved for this browser only. To turn it off, switch off **Browser notifications**.
+
+### If it won't turn on
+
+- **"Your browser only allows system notifications on a secure page."** Browsers only allow this on
+  `localhost` or an `https` address. If you open Reelcraft from another computer by its network address over
+  plain `http`, the bell and pop-ups still work, but system notifications don't. Open it at
+  `localhost` on the computer it runs on instead.
+- **"Notifications are blocked for this site."** You chose **Block** earlier. Allow notifications for the
+  site in your browser's site settings, then switch it on again.
+- **Nothing arrives.** The computer running Reelcraft needs to reach the internet: browsers deliver
+  notifications through their maker's push service. The bell still keeps every notification either way.
+- **iPhone and iPad** only receive notifications from sites added to the Home Screen, which Reelcraft
+  doesn't support yet.

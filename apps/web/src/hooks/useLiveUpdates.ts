@@ -11,6 +11,8 @@ import {
 } from '@/components/notifications/notifications.logic';
 import { createInvalidationBatcher, queryKeysFor } from '@/lib/live-invalidation.logic';
 import { loadNotificationPrefs } from '@/lib/notification-prefs';
+import { isPushActive } from '@/lib/push';
+import { safeInternalPath } from '@/lib/push.logic';
 import { socket } from '@/lib/socket';
 
 /** The UI is a view over server state (REQ-2.8.4): the server only says what
@@ -44,7 +46,7 @@ export function useLiveUpdates(): void {
         kind: n.kind,
         prefs: loadNotificationPrefs(),
         visible: document.visibilityState === 'visible',
-        pushActive: false,
+        pushActive: isPushActive(),
       });
       if (!toastIt) return;
       toast[toastTone(n.kind)](n.title, {
@@ -53,6 +55,15 @@ export function useLiveUpdates(): void {
         action: { label: 'Open', onClick: () => navigate(n.url) },
       });
     };
+
+    // A clicked system notification asks the page it focused to go to its link.
+    const onWorkerMessage = (event: MessageEvent) => {
+      const data = event.data as { type?: string; url?: unknown } | null;
+      const path = data?.type === 'reelcraft:navigate' ? safeInternalPath(data.url) : null;
+      if (path) navigate(path);
+    };
+    // Absent outside a secure context (plain http on a LAN address).
+    navigator.serviceWorker?.addEventListener('message', onWorkerMessage);
 
     socket.on('connect', onConnect);
     socket.on('run:updated', onRun);
@@ -63,6 +74,7 @@ export function useLiveUpdates(): void {
     if (socket.connected) connectedBefore = true;
 
     return () => {
+      navigator.serviceWorker?.removeEventListener('message', onWorkerMessage);
       socket.off('connect', onConnect);
       socket.off('run:updated', onRun);
       socket.off('stage:updated', onStage);

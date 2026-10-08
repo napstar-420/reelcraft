@@ -1,5 +1,7 @@
 import type {
   ListNotificationsResultDto,
+  PushSubscriptionDto,
+  VapidKeyDto,
   PronunciationDictionaryListDto,
   SpeechPreviewDto,
   SpeechPreviewRequestDto,
@@ -151,6 +153,11 @@ export const api = {
   markNotificationRead: (id: string) =>
     request<void>(`/notifications/${id}/read`, { method: 'POST' }),
   markAllNotificationsRead: () => request<void>('/notifications/read-all', { method: 'POST' }),
+  getVapidPublicKey: () => request<VapidKeyDto>('/push/vapid-public-key'),
+  savePushSubscription: (dto: PushSubscriptionDto) =>
+    request<void>('/push/subscription', { method: 'PUT', body: JSON.stringify(dto) }),
+  deletePushSubscription: (endpoint: string) =>
+    request<void>('/push/subscription', { method: 'DELETE', body: JSON.stringify({ endpoint }) }),
   listChannels: (params?: { includeArchived?: boolean }) => {
     const qs = new URLSearchParams();
     if (params?.includeArchived) qs.set('includeArchived', 'true');

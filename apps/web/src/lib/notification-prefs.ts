@@ -49,18 +49,25 @@ export const NOTIFICATION_KIND_INFO: Record<
 
 export const NOTIFICATION_KINDS = Object.keys(NOTIFICATION_KIND_INFO) as NotificationKind[];
 
-/** This browser's choices about which notifications interrupt it (toasts, and
- * later system notifications). The inbox always records every kind. A
+/** This browser's choices about which notifications interrupt it (toasts and
+ * system notifications). The inbox always records every kind. A
  * convenience only: storage can be missing or blocked, so every access is
  * guarded. */
 export interface NotificationPrefs {
   kinds?: Partial<Record<NotificationKind, boolean>>;
+  /** System notifications are switched on in this browser. */
+  push?: boolean;
 }
 
 const KEY = 'reelcraft.notifications';
 
 export function isKindEnabled(prefs: NotificationPrefs, kind: NotificationKind): boolean {
   return prefs.kinds?.[kind] ?? NOTIFICATION_KIND_INFO[kind].defaultOn;
+}
+
+/** The kinds this browser wants as system notifications. */
+export function enabledKinds(prefs: NotificationPrefs): NotificationKind[] {
+  return NOTIFICATION_KINDS.filter((kind) => isKindEnabled(prefs, kind));
 }
 
 export function loadNotificationPrefs(): NotificationPrefs {
