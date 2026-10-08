@@ -4,6 +4,7 @@ import { ApprovalCandidateDto, StageAttemptDto } from './run.dto';
 const attempt = {
   id: 'attempt-1',
   attemptNo: 1,
+  itemIndex: null,
   outcome: 'awaiting_approval',
   phase: 'awaiting_approval',
   actor: 'engine',

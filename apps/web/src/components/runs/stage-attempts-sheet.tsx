@@ -89,12 +89,15 @@ export function StageAttemptsSheet({
                 </div>
               ) : null}
               {[...(attempts.data ?? [])]
-                .sort((a, b) => b.attemptNo - a.attemptNo)
+                .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
                 .map((attempt, index) => (
                   <div key={attempt.id} className="rounded-lg border p-3">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="flex items-center gap-2">
-                        <span className="font-medium">Attempt {attempt.attemptNo}</span>
+                        <span className="font-medium">
+                          {attempt.itemIndex === null ? '' : `Item ${attempt.itemIndex + 1} · `}
+                          Attempt {attempt.attemptNo}
+                        </span>
                         <StatusBadge
                           tone={attemptOutcomeTone(attempt.outcome)}
                           label={formatStatusLabel(attempt.outcome)}

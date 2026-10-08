@@ -1131,6 +1131,7 @@ export class RunService {
       .select({
         id: stageAttempt.id,
         attemptNo: stageAttempt.attemptNo,
+        itemIndex: stageItem.itemIndex,
         outcome: stageAttempt.outcome,
         renderedPrompt: stageAttempt.renderedPrompt,
         phase: stageAttempt.phase,
@@ -1145,8 +1146,10 @@ export class RunService {
       })
       .from(stageAttempt)
       .innerJoin(stageExecution, eq(stageAttempt.stageExecutionId, stageExecution.id))
+      .leftJoin(stageItem, eq(stageAttempt.stageItemId, stageItem.id))
       .where(and(eq(stageExecution.runId, runId), eq(stageExecution.stageKey, stageKey)))
-      .orderBy(asc(stageAttempt.attemptNo));
+      // Attempt numbers restart for every item of an iterating stage.
+      .orderBy(asc(stageAttempt.createdAt), asc(stageAttempt.attemptNo));
     return rows.map((attempt) => ({ ...attempt, costUsd: toUsd(attempt.costUsd) }));
   }
   private async assertProviderPins(

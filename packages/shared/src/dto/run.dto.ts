@@ -110,6 +110,8 @@ export type RunInputStatusDto = z.infer<typeof RunInputStatusDto>;
 export const StageAttemptDto = z.object({
   id: z.string(),
   attemptNo: z.number(),
+  /** The iteration item this attempt belongs to (0-based); null for a stage that doesn't iterate. */
+  itemIndex: z.number().nullable(),
   outcome: AttemptOutcome,
   phase: z.enum(['created', 'reserved', 'submitting', 'submitted', 'settled', 'awaiting_approval']),
   actor: z.enum(['engine', 'user']),
