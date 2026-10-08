@@ -800,6 +800,16 @@ export class BlueprintValidatorService {
     ctx: ValidationContext,
     issues: ValidationIssue[],
   ): void {
+    // Items that run at the same time cannot read each other's output.
+    if ((stage.iterate?.concurrency ?? 1) > 1 && refUsesPrevItem(ref)) {
+      const message =
+        '{from:"prevItem"} cannot be used while iterate.concurrency is above 1: items run at ' +
+        'the same time, so item i has no finished item i-1 to read';
+      if (!issues.some((issue) => issue.path === path && issue.message === message)) {
+        issues.push({ path, message, severity: 'error' });
+      }
+    }
+
     // A `coalesce` fans out to every branch for the `prev`/`alignWith`
     // checks below (whichever branch actually fires at a given item must
     // still be internally valid) — but NOT for the bare "prevItem on a
@@ -998,4 +1008,10 @@ function iterateProducedArity(
     if (writerStage?.iterate) return 'many';
   }
   return undefined;
+}
+
+/** Whether a ref reads the previous item, directly or inside a `coalesce`. */
+function refUsesPrevItem(ref: Ref): boolean {
+  if (ref.from === 'prevItem') return true;
+  return ref.from === 'coalesce' && ref.refs.some(refUsesPrevItem);
 }

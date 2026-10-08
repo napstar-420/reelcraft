@@ -68,7 +68,10 @@ export function stageFlags(stage: StageDef): StageFlag[] {
     flags.push({
       kind: 'iterate',
       label: 'Each item',
-      title: 'Runs once per item, in order',
+      title:
+        (stage.iterate.concurrency ?? 1) > 1
+          ? `Runs once per item, ${stage.iterate.concurrency} at a time`
+          : 'Runs once per item, in order',
     });
   }
   if (stage.approval) {

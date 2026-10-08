@@ -30,6 +30,15 @@ export interface StageExecuteEventData {
  * function" decision) — this function's own step count therefore stays
  * O(itemCount), never O(itemCount × retries × steps/attempt).
  */
+/** The outcome that ends the stage after a batch: the first of the worst kind,
+ * in item order. A failure outranks everything; an item waiting for approval
+ * is the mildest reason to stop. */
+export function worstOutcome<T extends { outcome: string }>(results: T[]): T | undefined {
+  const priority = ['failed', 'budget_blocked', 'deferred', 'run_not_running', 'approval_required'];
+  const stopping = results.filter((result) => result.outcome !== 'passed');
+  return stopping.sort((a, b) => priority.indexOf(a.outcome) - priority.indexOf(b.outcome))[0];
+}
+
 export function buildStageExecuteFunction(
   client: Inngest,
   runner: StageRunnerService,
@@ -81,30 +90,59 @@ export function buildStageExecuteFunction(
           runner.ensureStageItems(data.stageExecutionId, itemCount),
         );
 
-        for (let i = 0; i < itemCount; i += 1) {
-          // §12.4 manual pause — stop after the current item rather than
+        // Items run in batches of `concurrency` (one at a time when unset). A
+        // fixed batch, not a sliding window, so the step order stays the same
+        // on every replay. Every item of a batch finishes before the next
+        // batch starts, and before a failure or an approval ends the stage.
+        const concurrency = stage.iterate.concurrency ?? 1;
+        for (let start = 0; start < itemCount; start += concurrency) {
+          // §12.4 manual pause — stop after the current batch rather than
           // running the whole iterating stage to completion.
-          const runState = await step.run(`check-runnable-item-${i}`, () =>
+          const runState = await step.run(`check-runnable-item-${start}`, () =>
             runner.getRunState(data.runId),
           );
           if (runState !== 'RUNNING') return { outcome: 'run_not_running' as const };
 
-          const item = await step.run(`check-item-${i}`, () =>
-            runner.itemState(data.stageExecutionId, i),
+          const batch = Array.from(
+            { length: Math.min(concurrency, itemCount - start) },
+            (_, offset) => start + offset,
           );
-          if (item.state === 'passed') continue;
-
-          const result = await step.invoke(`run-item-${i}`, {
-            function: stageExecuteItemFn,
-            data: {
-              runId: data.runId,
-              stageExecutionId: data.stageExecutionId,
-              stageKey: data.stageKey,
-              itemIndex: i,
-              stageItemId: item.id,
-            },
+          const items = await Promise.all(
+            batch.map((i) =>
+              step.run(`check-item-${i}`, () => runner.itemState(data.stageExecutionId, i)),
+            ),
+          );
+          // An item still waiting for a person (a sibling of one just approved
+          // or rejected) is not run again; the stage pauses for it once more.
+          const stillWaiting = items.some((item) => item.state === 'awaiting_approval');
+          const todo = batch.flatMap((i, offset) => {
+            const item = items[offset]!;
+            return item.state === 'passed' || item.state === 'awaiting_approval'
+              ? []
+              : [{ i, item }];
           });
-          if (result.outcome !== 'passed') return result;
+
+          const settled = await Promise.allSettled(
+            todo.map(({ i, item }) =>
+              step.invoke(`run-item-${i}`, {
+                function: stageExecuteItemFn,
+                data: {
+                  runId: data.runId,
+                  stageExecutionId: data.stageExecutionId,
+                  stageKey: data.stageKey,
+                  itemIndex: i,
+                  stageItemId: item.id,
+                },
+              }),
+            ),
+          );
+          const crashed = settled.find((entry) => entry.status === 'rejected');
+          if (crashed?.status === 'rejected') throw crashed.reason;
+          const worst = worstOutcome(
+            settled.flatMap((entry) => (entry.status === 'fulfilled' ? [entry.value] : [])),
+          );
+          if (worst) return worst;
+          if (stillWaiting) return { outcome: 'approval_required' as const, artifactId: '' };
         }
 
         const finished = await step.run('finish-iterating-stage', () =>

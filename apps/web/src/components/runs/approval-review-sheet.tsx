@@ -35,9 +35,12 @@ export function ApprovalReviewSheet({
   const [note, setNote] = useState('');
   const [preview, setPreview] = useState<RejectionPreview | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Which waiting item to look at, when a stage that runs items at the same
+  // time has several; empty means the first one waiting.
+  const [chosenItem, setChosenItem] = useState<number | undefined>(undefined);
   const candidateQuery = useQuery({
-    queryKey: ['approval-candidate', runId, stageKey],
-    queryFn: () => api.getApprovalCandidate(runId, stageKey as string),
+    queryKey: ['approval-candidate', runId, stageKey, chosenItem],
+    queryFn: () => api.getApprovalCandidate(runId, stageKey as string, chosenItem),
     enabled: open && Boolean(stageKey),
     retry: false,
   });
@@ -46,10 +49,21 @@ export function ApprovalReviewSheet({
     setNote('');
     setPreview(null);
     setError(null);
+    setChosenItem(undefined);
   }, [stageKey, open]);
 
-  const finish = async () => {
+  const othersWaiting = (candidateQuery.data?.pendingItemIndexes.length ?? 0) > 1;
+  /** After approving or rejecting: on to the next waiting item, or done. */
+  const finish = async (more = false) => {
     await queryClient.invalidateQueries({ queryKey: ['run', runId] });
+    if (more && othersWaiting) {
+      setNote('');
+      setPreview(null);
+      setError(null);
+      setChosenItem(undefined);
+      await queryClient.invalidateQueries({ queryKey: ['approval-candidate', runId, stageKey] });
+      return;
+    }
     onOpenChange(false);
   };
   const fail = (cause: unknown) => setError(describeApiFailure(cause));
@@ -57,12 +71,12 @@ export function ApprovalReviewSheet({
 
   const approve = useMutation({
     mutationFn: () => api.approveStage(runId, stageKey as string, itemIndex),
-    onSuccess: finish,
+    onSuccess: () => finish(true),
     onError: fail,
   });
   const retryQc = useMutation({
     mutationFn: () => api.retryStageQc(runId, stageKey as string, itemIndex),
-    onSuccess: finish,
+    onSuccess: () => finish(),
     onError: fail,
   });
   const previewRejection = useMutation({
@@ -83,7 +97,7 @@ export function ApprovalReviewSheet({
         note.trim() || undefined,
         itemIndex,
       ),
-    onSuccess: finish,
+    onSuccess: () => finish(true),
     onError: fail,
   });
   const busy =
@@ -137,6 +151,18 @@ export function ApprovalReviewSheet({
                     judged. Retry QC once the judge is back, approve it as it is, or reject it.
                   </AlertDescription>
                 </Alert>
+              ) : null}
+              {candidateQuery.data.pendingItemIndexes.length > 1 ? (
+                <WaitingItems
+                  indexes={candidateQuery.data.pendingItemIndexes}
+                  current={candidateQuery.data.itemIndex}
+                  disabled={busy}
+                  onPick={(index) => {
+                    setNote('');
+                    setPreview(null);
+                    setChosenItem(index);
+                  }}
+                />
               ) : null}
               <ApprovalCandidate candidate={candidateQuery.data} />
             </>
@@ -233,6 +259,42 @@ export function ApprovalReviewSheet({
         </SheetFooter>
       </SheetContent>
     </Sheet>
+  );
+}
+
+/** The items of a stage waiting for review together; the one on screen is marked. */
+function WaitingItems({
+  indexes,
+  current,
+  disabled,
+  onPick,
+}: {
+  indexes: number[];
+  current: number | null;
+  disabled: boolean;
+  onPick: (index: number) => void;
+}) {
+  return (
+    <div className="mt-4 flex flex-col gap-2">
+      <p className="text-sm text-muted-foreground">
+        {indexes.length} items are waiting for review.
+      </p>
+      <div className="flex flex-wrap gap-2">
+        {indexes.map((index) => (
+          <Button
+            key={index}
+            type="button"
+            size="sm"
+            variant={index === current ? 'default' : 'outline'}
+            disabled={disabled}
+            aria-pressed={index === current}
+            onClick={() => onPick(index)}
+          >
+            Item {index + 1}
+          </Button>
+        ))}
+      </div>
+    </div>
   );
 }
 

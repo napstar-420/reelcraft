@@ -24,6 +24,13 @@ costs nothing while it waits, and you can leave it as long as you like.
    - select **Approve**: the run continues;
    - or select **Reject**.
 
+### Several items waiting
+
+When a stage that iterates runs its items [at the same time](../blueprints/iterate-conditions-approval.md#concurrency),
+more than one item can be waiting for you. **Review output** shows one item and, above it, which other items
+are waiting. Approve or reject it, and the sheet moves on to the next. The run carries on once no item is
+left waiting; a rejected item is redone then, together with the next group.
+
 ### When quality control could not run
 
 If the quality control judge couldn't be reached or didn't answer, the stage doesn't fail. The run pauses as

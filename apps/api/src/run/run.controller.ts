@@ -157,8 +157,12 @@ export class RunController {
   }
 
   @Get(':id/stages/:key/approval-candidate')
-  approvalCandidate(@Param('id') id: string, @Param('key') key: string) {
-    return this.runs.approvalCandidate(id, key);
+  approvalCandidate(
+    @Param('id') id: string,
+    @Param('key') key: string,
+    @Query('itemIndex') itemIndex?: string,
+  ) {
+    return this.runs.approvalCandidate(id, key, this.parseItemIndexQuery(itemIndex));
   }
 
   @Post(':id/stages/:key/retry/confirm')

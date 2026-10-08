@@ -172,6 +172,12 @@ export const TROUBLESHOOTING: TroubleshootingEntry[] = [
     fix: 'Make the slot optional, or wrap it in a coalesce with a const for item 0.',
   },
   {
+    matches: ['cannot be used while iterate.concurrency is above 1'],
+    means:
+      '{from:"prevItem"} needs the previous item to be finished, but items run at the same time.',
+    fix: 'Stop binding prevItem in this stage, or set concurrency to 1 (items then run one at a time).',
+  },
+  {
     matches: ['is written by multiple stages'],
     means: 'Two stages write the same memory key.',
     fix: 'Use one writer per key: rename the keys.',

@@ -5,7 +5,7 @@ import {
   Logger,
   UnprocessableEntityException,
 } from '@nestjs/common';
-import { and, desc, eq, isNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, isNull, sql } from 'drizzle-orm';
 import { StageDef, Timeline, approvalModeOf, type HumanWaitKind } from '@reelcraft/shared';
 import { ArtifactService } from '../artifact/artifact.service';
 import { BindingResolverService, type RefProvenance } from '../artifact/binding-resolver.service';
@@ -55,18 +55,22 @@ export class HumanActionService {
   ) {}
 
   async approve(runId: string, stageKey: string, itemIndex?: number) {
-    const result = await this.mutation.withLockedRun(
+    const result = await this.mutation.withLockedRunMaybeWake(
       runId,
       'approve',
       ['PAUSED_APPROVAL'],
-      (tx, lockedRun) => this.approveInTransaction(tx, runId, stageKey, lockedRun, itemIndex),
+      async (tx, lockedRun) => {
+        await this.approveInTransaction(tx, runId, stageKey, lockedRun, itemIndex);
+        return { othersWaiting: (await this.waits.countOpenApprovals(tx, runId)) > 0 };
+      },
       'run/resumed',
+      (value) => !value.othersWaiting,
     );
     this.logger.log(
       { runId, stageKey, itemIndex, wakeupId: result.wakeupId, revision: result.revision },
       'stage approved',
     );
-    await this.dispatchBestEffort(result.wakeupId);
+    if (result.wakeupId) await this.dispatchBestEffort(result.wakeupId);
     return { accepted: true, revision: result.revision };
   }
 
@@ -170,7 +174,7 @@ export class HumanActionService {
             .set({ state: 'running' })
             .where(eq(stageExecution.id, execution.id));
         }
-        await this.waits.resolve(tx, execution.id);
+        await this.waits.resolve(tx, execution.id, item?.id);
       },
       'run/resumed',
     );
@@ -230,20 +234,20 @@ export class HumanActionService {
       .update(stageAttempt)
       .set({ outcome: 'success', phase: 'settled' })
       .where(eq(stageAttempt.id, pending.id));
-    await this.waits.resolve(tx, stageExecutionId);
+    await this.waits.resolve(tx, stageExecutionId, item.id);
   }
 
   /** phase 7 chunk 6 — resolves "the item currently awaiting approval" for
-   * an item-mode stage's execution. Iteration is strictly sequential, so at
-   * most one `stage_item` is ever `awaiting_approval` per execution at a
-   * time; a caller-supplied `itemIndex` is a race-safety confirmation
-   * against that open item, not something trusted blindly. */
+   * an item-mode stage's execution. A stage that runs its items one at a time
+   * has at most one; one with `iterate.concurrency` can have several waiting
+   * at once, and then the caller must say which (`itemIndex`). A given
+   * `itemIndex` is checked against the waiting items, not trusted blindly. */
   private async resolveOpenItem(
     executor: Db | Tx,
     stageExecutionId: string,
     itemIndex: number | undefined,
   ): Promise<typeof stageItem.$inferSelect> {
-    const [openItem] = await executor
+    const open = await executor
       .select()
       .from(stageItem)
       .where(
@@ -252,14 +256,24 @@ export class HumanActionService {
           eq(stageItem.state, 'awaiting_approval'),
         ),
       )
-      .limit(1);
-    if (!openItem) throw new ConflictException('No item is awaiting approval for this stage');
-    if (itemIndex !== undefined && openItem.itemIndex !== itemIndex) {
+      .orderBy(asc(stageItem.itemIndex));
+    if (open.length === 0)
+      throw new ConflictException('No item is awaiting approval for this stage');
+    if (itemIndex !== undefined) {
+      const match = open.find((item) => item.itemIndex === itemIndex);
+      if (match) return match;
       throw new ConflictException(
-        `Item ${itemIndex} is not the one awaiting approval (currently item ${openItem.itemIndex})`,
+        open.length === 1
+          ? `Item ${itemIndex} is not the one awaiting approval (currently item ${open[0]!.itemIndex})`
+          : `Item ${itemIndex} is not awaiting approval (waiting: items ${open.map((item) => item.itemIndex).join(', ')})`,
       );
     }
-    return openItem;
+    if (open.length > 1) {
+      throw new ConflictException(
+        `Several items are waiting for approval (items ${open.map((item) => item.itemIndex).join(', ')}): choose one`,
+      );
+    }
+    return open[0]!;
   }
 
   async reject(
@@ -380,7 +394,7 @@ export class HumanActionService {
     if (claims.preview.fingerprint !== preview.fingerprint) {
       throw new ConflictException('The rejection preview changed; request a new preview');
     }
-    const result = await this.mutation.withLockedRun(
+    const result = await this.mutation.withLockedRunMaybeWake(
       runId,
       'reject',
       ['PAUSED_APPROVAL'],
@@ -402,14 +416,19 @@ export class HumanActionService {
             critiqueTargetStageKey: targetStageKey,
           })
           .where(eq(stageAttempt.id, pending.id));
-        await this.waits.resolve(tx, execution.id);
+        await this.waits.resolve(tx, execution.id, pendingItem?.id);
         await this.invalidation.apply(tx, {
           runId,
           closure: preview.closure,
           targetStageKey,
         });
+        // A reject that restarts a whole stage also restarts the items still
+        // waiting in it: their waits go with them.
+        await this.waits.resolveForItemsNoLongerWaiting(tx, runId);
+        return { othersWaiting: (await this.waits.countOpenApprovals(tx, runId)) > 0 };
       },
       'run/resumed',
+      (value) => !value.othersWaiting,
     );
     this.logger.log(
       {
@@ -422,7 +441,7 @@ export class HumanActionService {
       },
       'stage rejected',
     );
-    await this.dispatchBestEffort(result.wakeupId);
+    if (result.wakeupId) await this.dispatchBestEffort(result.wakeupId);
     return { accepted: true, revision: result.revision, state: 'PENDING' as const };
   }
 

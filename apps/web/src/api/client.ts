@@ -364,9 +364,11 @@ export const api = {
     request<StageEventDto[]>(`/runs/${runId}/stages/${encodeURIComponent(stageKey)}/logs`),
   getStageOutput: (runId: string, stageKey: string) =>
     request<StageOutputDto>(`/runs/${runId}/stages/${encodeURIComponent(stageKey)}/output`),
-  getApprovalCandidate: (runId: string, stageKey: string) =>
+  getApprovalCandidate: (runId: string, stageKey: string, itemIndex?: number) =>
     request<ApprovalCandidateDto>(
-      `/runs/${runId}/stages/${encodeURIComponent(stageKey)}/approval-candidate`,
+      `/runs/${runId}/stages/${encodeURIComponent(stageKey)}/approval-candidate${
+        itemIndex === undefined ? '' : `?itemIndex=${itemIndex}`
+      }`,
     ),
   approveStage: (runId: string, stageKey: string, itemIndex?: number) =>
     request<{ accepted: true; revision: number }>(

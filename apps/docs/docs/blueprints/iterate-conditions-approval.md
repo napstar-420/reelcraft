@@ -18,7 +18,7 @@ repeats, such as one image and one video clip per scene of a script.
    **prev** also works when the previous stage's whole output is a list (a `data` output whose schema
    is an array). **prev** with a path into a field isn't accepted: it shows **iterate.over does not
    narrow to an array schema**.
-3. Optionally set **Item alias**, **Item retry limit** and **Max items**.
+3. Optionally set **Item alias**, **Item retry limit**, **Max items** and **Concurrency**.
 
 Inside the stage, use the current item by **binding** to it: add a context entry (or fill a slot) and
 choose **item** as its source, with a path to the part you want. For example, a context entry named
@@ -30,13 +30,35 @@ from the last frame of the one before, bind to **prevItem**. See
 
 How it runs:
 
-- Items run **one at a time, in order**. Nothing runs in parallel.
+- Items run **one at a time, in order**, unless you set **Concurrency** (below).
 - Each item's output is saved separately. A later stage can read all of them as a list.
 - **Item retry limit** is how many times one item tries again after a crash before the stage fails.
   It's separate from the stage's own **Retries**.
 - **Max items** limits how many items are used. Empty uses every item, up to a built-in limit of 50.
 - If one item fails for good, the stage fails. Items that already succeeded are kept, and
   [resuming](../runs/retries.md) doesn't redo them.
+
+### Concurrency
+
+**Concurrency** is how many items run at the same time. Leave it empty to run them one after another.
+With **Concurrency** 3, items 1 to 3 run together, then items 4 to 6, and so on: each group finishes
+before the next starts. Everything else about an item stays as it is: its own checks, quality control,
+retries, and, if the stage has `item` [approval](#human-approval), its own review.
+
+- It speeds up stages whose items don't depend on each other, such as one image per scene.
+- An item can't use `prevItem` (the previous item's result) when **Concurrency** is above 1, because
+  that item hasn't finished. Reelcraft shows `{from:"prevItem"} cannot be used while
+iterate.concurrency is above 1`.
+- If an item fails (a crash or a provider error, not a failed check or QC verdict), the items in the
+  same group still finish, no new group starts, and the stage fails. Items that passed are kept.
+- With `item` approval, or when quality control hands an item to human review, every item of a group
+  can be waiting for you at once. The run pauses after the group, and **Review output** takes you
+  through the waiting items one at a time (see
+  [When a run needs you](../runs/when-a-run-needs-you.md#several-items-waiting)). The run carries on
+  once none is left.
+- Reelcraft doesn't limit the number. Every running item uses the provider at once, and providers
+  have limits of their own. For [ChatGPT](../browseros-neo.md) each item opens its own browser tab, so
+  a high number may be slowed or stopped by ChatGPT. Start low, such as 3 or 5.
 
 ### Align with item
 

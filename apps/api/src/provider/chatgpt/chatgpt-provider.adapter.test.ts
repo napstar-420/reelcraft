@@ -484,6 +484,30 @@ describe('decidePoll error banner', () => {
   });
 });
 
+describe('ChatgptProviderAdapter sending in turns', () => {
+  it('lets one tab finish setting effort and sending before the next starts, and survives a failed turn', async () => {
+    const { adapter } = fixture([]);
+    const exclusive = (
+      adapter as unknown as {
+        exclusive: <T>(work: () => Promise<T>) => Promise<T>;
+      }
+    ).exclusive.bind(adapter);
+    const order: string[] = [];
+    const turn = (name: string, ms: number, fail = false) =>
+      exclusive(async () => {
+        order.push(`${name} start`);
+        await new Promise((resolve) => setTimeout(resolve, ms));
+        order.push(`${name} end`);
+        if (fail) throw new Error(`${name} failed`);
+        return name;
+      });
+
+    const results = await Promise.allSettled([turn('a', 20, true), turn('b', 5), turn('c', 1)]);
+    expect(order).toEqual(['a start', 'a end', 'b start', 'b end', 'c start', 'c end']);
+    expect(results.map((r) => r.status)).toEqual(['rejected', 'fulfilled', 'fulfilled']);
+  });
+});
+
 describe('error banner detection', () => {
   it('names what tripped it in the failure reason', () => {
     const status = decidePoll(

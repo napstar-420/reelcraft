@@ -824,7 +824,7 @@ export class RunService {
     return { scope: 'stage' as const, stageKey, stageCapUsd };
   }
 
-  async approvalCandidate(runId: string, stageKey: string) {
+  async approvalCandidate(runId: string, stageKey: string, requestedItemIndex?: number) {
     const [runRow] = await this.db
       .select({ state: run.state, cursorStageKey: run.cursorStageKey, ownerId: channel.ownerId })
       .from(run)
@@ -843,9 +843,11 @@ export class RunService {
       .limit(1);
     if (!execution) throw new NotFoundException(`Stage ${stageKey} not found in run ${runId}`);
 
-    const [wait] = await this.db
-      .select()
+    // A stage that runs its items concurrently can have several waiting at once.
+    const waits = await this.db
+      .select({ wait: humanWait, waitingItemIndex: stageItem.itemIndex })
       .from(humanWait)
+      .leftJoin(stageItem, eq(humanWait.stageItemId, stageItem.id))
       .where(
         and(
           eq(humanWait.runId, runId),
@@ -854,8 +856,22 @@ export class RunService {
           isNull(humanWait.resolvedAt),
         ),
       )
-      .limit(1);
-    if (!wait) throw new ConflictException('No open approval wait exists for this stage');
+      .orderBy(asc(stageItem.itemIndex));
+    const pendingItemIndexes = waits.flatMap((entry) =>
+      entry.waitingItemIndex === null ? [] : [entry.waitingItemIndex],
+    );
+    const chosen =
+      requestedItemIndex === undefined
+        ? waits[0]
+        : waits.find((entry) => entry.waitingItemIndex === requestedItemIndex);
+    if (!chosen) {
+      throw new ConflictException(
+        requestedItemIndex === undefined
+          ? 'No open approval wait exists for this stage'
+          : `Item ${requestedItemIndex + 1} is not waiting for approval`,
+      );
+    }
+    const wait = chosen.wait;
 
     let itemIndex: number | null = null;
     if (wait.stageItemId) {
@@ -888,7 +904,8 @@ export class RunService {
           eq(stageAttempt.stageExecutionId, execution.id),
           attemptWhere,
           eq(stageAttempt.phase, 'awaiting_approval'),
-          eq(stageAttempt.outcome, 'awaiting_approval'),
+          // A QC hold keeps `qc_error` as its outcome (so the review can offer "Retry QC").
+          inArray(stageAttempt.outcome, ['awaiting_approval', 'qc_error']),
         ),
       )
       .orderBy(desc(stageAttempt.attemptNo))
@@ -923,6 +940,7 @@ export class RunService {
     return {
       stageKey,
       itemIndex,
+      pendingItemIndexes,
       attempt: {
         id: attempt.id,
         attemptNo: attempt.attemptNo,
