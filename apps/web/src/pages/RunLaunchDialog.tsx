@@ -100,8 +100,8 @@ export function RunLaunchDialog({
         setErrors(validationErrors);
         throw new Error('Fix the highlighted run inputs before continuing.');
       }
-      if (!Number.isFinite(budgetCapUsd) || budgetCapUsd <= 0) {
-        setErrors({ budget: 'Budget cap must be greater than zero.' });
+      if (!Number.isFinite(budgetCapUsd) || budgetCapUsd < 0) {
+        setErrors({ budget: 'Budget cap cannot be negative.' });
         throw new Error('Enter a valid budget cap before continuing.');
       }
       setErrors({});
@@ -233,13 +233,17 @@ export function RunLaunchDialog({
               id="run-budget-cap"
               disabled={recoverable !== null}
               type="number"
-              min="0.01"
+              min="0"
               step="0.01"
               value={budgetCapUsd}
               aria-invalid={!!errors.budget}
               onChange={(event) => setBudgetCapUsd(Number(event.target.value))}
             />
-            {errors.budget && <p className="text-xs text-destructive">{errors.budget}</p>}
+            {errors.budget ? (
+              <p className="text-xs text-destructive">{errors.budget}</p>
+            ) : (
+              <p className="text-xs text-muted-foreground">0 means no limit.</p>
+            )}
           </div>
 
           {stages.length > 1 && (

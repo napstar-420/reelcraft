@@ -72,9 +72,10 @@ export class LedgerService {
         return { ok: false, reason: 'run_not_running' };
       }
 
-      const runAvailable =
-        toUsd(runRow.budgetCapUsd) - toUsd(runRow.reservedUsd) - toUsd(runRow.spentUsd);
-      if (params.ceilingUsd > runAvailable) {
+      // A run cap of zero means no limit.
+      const runCapUsd = toUsd(runRow.budgetCapUsd);
+      const runAvailable = runCapUsd - toUsd(runRow.reservedUsd) - toUsd(runRow.spentUsd);
+      if (runCapUsd > 0 && params.ceilingUsd > runAvailable) {
         this.logger.log(
           {
             runId: params.runId,

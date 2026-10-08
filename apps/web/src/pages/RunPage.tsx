@@ -52,6 +52,7 @@ import { StageOutputSheet } from '@/components/runs/stage-output-sheet';
 import { RunMemoryCard } from '@/components/runs/run-memory-card';
 import { isApprovalStillOpen } from './approval-review.logic';
 import { quotaPauseMessage } from '@/lib/quota-pause';
+import { formatCapUsd } from '@/lib/format-cap';
 
 export function RunPage() {
   const { runId } = useParams<{ runId: string }>();
@@ -284,7 +285,8 @@ export function RunPage() {
             ) : null}
           </div>
           <p className="text-sm text-muted-foreground">
-            ${spentUsd.toFixed(2)} spent of ${budgetCapUsd.toFixed(2)} budget
+            ${spentUsd.toFixed(2)} spent
+            {budgetCapUsd > 0 ? ` of ${formatCapUsd(budgetCapUsd)} budget` : ' (no budget limit)'}
           </p>
           {run.state === 'PAUSED_QUOTA' ? (
             <p className="text-sm text-amber-700 dark:text-amber-400">

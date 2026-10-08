@@ -13,7 +13,8 @@ export const CreateRunDto = z.object({
   blueprintVersionId: z.string(),
   inputs: z.record(z.string(), z.unknown()).default({}),
   roleBindings: z.record(z.string(), z.string()).default({}),
-  budgetCapUsd: z.number().positive(),
+  /** Zero means no limit. */
+  budgetCapUsd: z.number().nonnegative(),
   // Canvas "run a stage without re-running upstream" — an existing run whose
   // still-valid prefix of stages should be copied into this new run instead
   // of re-executed. See RunService.create's seed-run path.

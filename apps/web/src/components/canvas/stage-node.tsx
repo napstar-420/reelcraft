@@ -35,6 +35,7 @@ import {
   stageFlags,
   type NodeRunStatus,
 } from './stage-card.logic';
+import { formatCapUsd } from '@/lib/format-cap';
 
 /** Horizontal position of the memory ports along a card's bottom edge. */
 const MEMORY_PORT_INSET = 34;
@@ -367,7 +368,7 @@ function StartNodeView({ data }: NodeProps<StartFlowNode>) {
           <IoRow
             icon={<CircleDollarSign className="size-3 shrink-0" />}
             name="Run cap"
-            detail={`$${Number(data.runCapUsd).toFixed(2)}`}
+            detail={formatCapUsd(Number(data.runCapUsd))}
           />
         </div>
       </div>

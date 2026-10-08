@@ -60,7 +60,7 @@ export function ImportPackageDialog({
   const [choices, setChoices] = useState<Record<string, SlotChoice>>({});
   const [mode, setMode] = useState<'new' | 'update'>('new');
   const [name, setName] = useState('');
-  const [runCap, setRunCap] = useState('5');
+  const [runCap, setRunCap] = useState('0');
   const [trust, setTrust] = useState(false);
 
   const characters = useQuery({
@@ -274,7 +274,7 @@ export function ImportPackageDialog({
                     onChange={(e) => setRunCap(e.target.value)}
                   />
                   <p className="text-xs text-muted-foreground">
-                    The most one run may spend. Packages never set this for you.
+                    The most one run may spend; 0 means no limit. Packages never set this for you.
                   </p>
                 </div>
 

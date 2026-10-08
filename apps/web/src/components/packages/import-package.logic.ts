@@ -51,7 +51,7 @@ export function canInstall(input: {
   runCapUsd: number;
 }): boolean {
   const { report, choices, mode, name, runCapUsd } = input;
-  if (hasBlock(report) || !(runCapUsd > 0)) return false;
+  if (hasBlock(report) || !(runCapUsd >= 0)) return false;
   if (mode === 'new' && !name.trim()) return false;
   if (mode === 'update' && !report.installed?.canUpdate) return false;
   return report.slots.every((slot) => !slot.required || (choices[slot.key] ?? '') !== '');
