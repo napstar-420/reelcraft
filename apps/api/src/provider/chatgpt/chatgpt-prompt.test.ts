@@ -42,7 +42,7 @@ describe('buildChatgptPrompt', () => {
     });
     expect(prompt).not.toContain('<system_prompt>');
     expect(prompt.startsWith('<request>\nCut it\n</request>')).toBe(true);
-    expect(prompt).toContain('"durationInFrames"');
+    expect(prompt).toContain('"timingHandle"');
   });
 
   it('wraps the request with only a system prompt and no schema for text output', () => {

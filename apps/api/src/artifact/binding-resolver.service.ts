@@ -8,6 +8,7 @@ import { getPath } from '../common/path';
 import { unwrapText } from '../common/unwrap-text';
 import { DerivedFrameService } from './derived-frame.service';
 import { storedClips } from './clip-handle';
+import { timingMapOf } from './timing-map';
 import { MemoryService } from './memory.service';
 
 type ArtifactRow = typeof artifact.$inferSelect;
@@ -762,5 +763,7 @@ function mediaManifest(
     ...(video?.height !== undefined && { height: video.height }),
     ...(probe?.durationSec !== undefined && { durationSec: probe.durationSec }),
     hasAudio: probe?.streams?.some((stream) => stream.type === 'audio') ?? false,
+    // Generate Speech with word timings: this same handle is a captions `timingHandle`.
+    ...(timingMapOf(row.data) && { hasWordTiming: true }),
   };
 }

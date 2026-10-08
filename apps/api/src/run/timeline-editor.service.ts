@@ -1,14 +1,8 @@
 import { ConflictException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { and, desc, eq, isNull } from 'drizzle-orm';
-import {
-  Probe,
-  StageDef,
-  Timeline,
-  TimingMap,
-  type Ref,
-  type TimelineResource,
-} from '@reelcraft/shared';
+import { Probe, StageDef, Timeline, type Ref, type TimelineResource } from '@reelcraft/shared';
 import { BlobService } from '../artifact/blob.service';
+import { timingMapOf } from '../artifact/timing-map';
 import { clipHandle, parseArtifactHandle, storedClips } from '../artifact/clip-handle';
 import { StyleRegistry } from '../capability/style.registry';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
@@ -244,8 +238,8 @@ export class TimelineEditorService {
           const parsed = Timeline.safeParse(row.data);
           if (parsed.success) sourceTimeline = parsed.data;
         }
-        const timing = TimingMap.safeParse(row.data);
-        if (timing.success) timingMaps[handle] = timing.data;
+        const timing = timingMapOf(row.data);
+        if (timing) timingMaps[handle] = timing;
         if (!row.blobId || !row.kind?.startsWith('media.')) continue;
         const access = await this.blobs.readUrl(context.ownerId, row.blobId);
         if (access?.status !== 'live') continue;
@@ -298,8 +292,8 @@ export class TimelineEditorService {
           ),
         )
         .limit(1);
-      const parsed = TimingMap.safeParse(row?.data);
-      if (parsed.success) timingMaps[handle] = parsed.data;
+      const parsed = timingMapOf(row?.data);
+      if (parsed) timingMaps[handle] = parsed;
     }
   }
 
