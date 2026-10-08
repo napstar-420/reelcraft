@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ConflictException } from '@nestjs/common';
 import { InngestTestEngine } from '@inngest/test';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import type { InputDef, StageDef } from '@reelcraft/shared';
 import { ChannelService } from '../../src/channel/channel.service';
 import { BlueprintService } from '../../src/blueprint/blueprint.service';
@@ -482,6 +482,49 @@ describe('seeded runs — run a stage without re-running upstream (e2e)', () => 
     await actions.confirmStageRetry(run2.id, 'cover', preview2.previewToken);
     const [blobAfterSecond] = await testDb.db.select().from(blob).where(eq(blob.id, blobId));
     expect(blobAfterSecond?.gcEligible).toBe(true);
+  });
+
+  it('seeds a run whose source had a text input, without duplicating the input artifact', async () => {
+    const runs = testApp.app.get(RunService);
+    const blueprints = testApp.app.get(BlueprintService);
+    const channel = await makeChannel('Seed Input');
+    const blueprintId = await blueprints.ensureBlueprint(channel.id, 'Seed Input Blueprint');
+    const inputDefs: InputDef[] = [
+      { key: 'style', label: 'Style', required: false, accepts: { kind: 'text' } },
+    ];
+    const v1 = await blueprints.createVersion(blueprintId, {
+      graph: [topicsStage()],
+      inputs: inputDefs,
+      roles: [],
+      defaults: {},
+      budget: { runCapUsd: 10 },
+    });
+    const run1 = await runs.create({
+      channelId: channel.id,
+      blueprintVersionId: v1.id,
+      inputs: { style: 'documentary' },
+      roleBindings: {},
+      rerunStageKeys: [],
+      budgetCapUsd: 10,
+    });
+    await driveRun(run1.id, run1.stageExecutions);
+
+    const run2 = await runs.create({
+      channelId: channel.id,
+      blueprintVersionId: v1.id,
+      seedFromRunId: run1.id,
+      inputs: {},
+      roleBindings: {},
+      rerunStageKeys: [],
+      budgetCapUsd: 10,
+    });
+
+    const inputs = await testDb.db
+      .select()
+      .from(artifact)
+      .where(and(eq(artifact.runId, run2.id), eq(artifact.producerStageKey, '$input:style')));
+    expect(inputs.filter((a) => !a.stale)).toHaveLength(1);
+    expect(inputs[0]?.data).toEqual({ text: 'documentary' });
   });
 
   it('rejects a seed from a mismatched blueprint, a conflicting input value, and an unknown stage key', async () => {
