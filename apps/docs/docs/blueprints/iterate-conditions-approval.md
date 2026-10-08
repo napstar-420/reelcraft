@@ -83,7 +83,8 @@ isn't available for video outputs, and approval takes its place.
 
 1. Open the stage and select **+ add human approval**.
 2. Choose the **Mode**:
-   - `stage` pauses once, for the stage's whole output;
+   - `stage` pauses once, for the stage's whole output. On a stage that iterates, every item runs
+     first and the run pauses once, after the last one;
    - `item` pauses after **each item** of a stage that iterates.
 3. Optionally select **+ add on-reject** and choose a **Retry stage**.
 
@@ -94,6 +95,17 @@ Select **Review output** to open it. See [When a run needs you](../runs/when-a-r
 - **Reject** asks for a confirmation first, showing which stages will be redone and the estimated
   cost of redoing them. Add a **Rejection note** to explain what should change, then **Confirm
   rejection**. The note goes into the next attempt's prompt as feedback.
+
+### A stage that iterates
+
+In `stage` mode the items run one after another without stopping, and **Review output** then shows all of
+them together. **Approve all** accepts every item and the run continues. **Reject** redoes the whole stage:
+every item runs again, and your note goes into each item's prompt.
+
+A stage that iterates also pauses once at its end when it has **no** human approval, but only if
+[quality control](./quality-control.md) gave up on an item and **Hand off to human review** is set. That
+item is held, the other items carry on, and the review at the end lists the held items first. If every
+item passes, the stage never pauses.
 
 ### Retry stage
 

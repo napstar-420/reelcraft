@@ -24,6 +24,17 @@ costs nothing while it waits, and you can leave it as long as you like.
    - select **Approve**: the run continues;
    - or select **Reject**.
 
+### When a stage that iterates has finished
+
+If the stage iterates and uses `stage` approval, or quality control gave up on some of its items, the run
+pauses once, after the last item. **Review output** opens with every item side by side, and the items
+quality control did not pass, or could not judge, come first, marked **Held**.
+
+- **Approve all** accepts every item, held ones included. The button shows how many that is, for
+  example _Approve all (7, incl. 2 held)_.
+- **Retry QC** appears when quality control could not run on some items: it judges those items again.
+- **Reject** redoes the whole stage, as below.
+
 ### When quality control could not run
 
 If the quality control judge couldn't be reached or didn't answer, the stage doesn't fail. The run pauses as

@@ -34,7 +34,9 @@ Select **Remove quality control** to take it off.
   - **Fail the stage**: the stage and the run fail.
   - **Hand off to human review**: the run pauses so you can look at the last output yourself. You
     either approve it or reject it with a note, which becomes feedback for the next attempt. See
-    [When a run needs you](../runs/when-a-run-needs-you.md).
+    [When a run needs you](../runs/when-a-run-needs-you.md). On a stage that
+    [iterates](./iterate-conditions-approval.md#iterate), the item is held instead: the other items
+    keep running, and one review at the end of the stage lists the held items first.
 - **Include inputs**: also show the judge what went into the stage, its slots and context. Useful when
   the judge needs the original request to decide, such as to check a summary against its source.
 - **Include transcript**: for **Generate Speech** outputs only. See below.

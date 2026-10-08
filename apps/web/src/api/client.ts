@@ -60,6 +60,7 @@ import type {
   RequestInputUploadResultDto,
   RunInputStatusDto,
   ApprovalCandidateDto,
+  StageReviewDto,
   StageOutputDto,
   StageEventDto,
   ApprovalActionDto,
@@ -368,6 +369,8 @@ export const api = {
     request<ApprovalCandidateDto>(
       `/runs/${runId}/stages/${encodeURIComponent(stageKey)}/approval-candidate`,
     ),
+  getStageReview: (runId: string, stageKey: string) =>
+    request<StageReviewDto>(`/runs/${runId}/stages/${encodeURIComponent(stageKey)}/review`),
   approveStage: (runId: string, stageKey: string, itemIndex?: number) =>
     request<{ accepted: true; revision: number }>(
       `/runs/${runId}/stages/${encodeURIComponent(stageKey)}/approve`,

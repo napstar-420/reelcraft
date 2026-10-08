@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
-import { and, asc, desc, eq, gt, inArray, isNull, lt, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lt, sql } from 'drizzle-orm';
 import type {
   AttemptOutcome,
   HumanWaitKind,
@@ -10,6 +10,7 @@ import type {
   Ref,
 } from '@reelcraft/shared';
 import { StageDef, approvalModeOf } from '@reelcraft/shared';
+import { finishIteratingStageIn, isEndReviewItem } from '../run/iterating-stage';
 import { DRIZZLE, type Db, type Tx } from '../db/drizzle.provider';
 import {
   artifact,
@@ -1320,7 +1321,9 @@ export class StageRunnerService {
         return { outcome: 'run_not_running' as const };
       }
 
-      if (stage.approval) {
+      // An iterating stage in 'stage' mode is reviewed once, after its last
+      // item (`concludeIteratingStage`), so its items finalize as they pass.
+      if (stage.approval && !isEndReviewItem(stage, ctx)) {
         await this.openApprovalGate(tx, stage, ctx, checkResults);
         return { outcome: 'approval_required' as const, artifactId };
       }
@@ -1567,6 +1570,16 @@ export class StageRunnerService {
       .where(eq(stageAttempt.id, ctx.stageAttemptId));
 
     if (approvalModeOf(stage) === 'stage') {
+      if (ctx.stageItemId) {
+        // An item QC gave up on, in an iterating stage reviewed at its end:
+        // park it. Its siblings keep running, and `concludeIteratingStage`
+        // opens one review (held items first) once the last one has.
+        await tx
+          .update(stageItem)
+          .set({ state: 'awaiting_approval' })
+          .where(eq(stageItem.id, ctx.stageItemId));
+        return;
+      }
       await tx
         .update(stageExecution)
         .set({ state: 'awaiting_approval' })
@@ -2020,49 +2033,66 @@ export class StageRunnerService {
     return row?.state;
   }
 
-  /** Locked Decision 6 — once every item has passed, the stage_execution
-   * itself turns 'passed' and its `outputArtifactId` becomes a convenience
-   * pointer at the LAST item's artifact (not a sanctioned read path —
-   * Run Memory and `{from:'prev', alignWith:'item'}` are). */
   async finishIteratingStage(stageExecutionId: string): Promise<{ artifactId: string }> {
-    const [execution] = await this.db
-      .select({ itemCount: stageExecution.itemCount })
-      .from(stageExecution)
-      .where(eq(stageExecution.id, stageExecutionId))
-      .limit(1);
-    if (!execution || execution.itemCount === null || execution.itemCount === undefined) {
-      throw new Error(
-        `StageRunnerService.finishIteratingStage: stage execution ${stageExecutionId} has no itemCount`,
+    return finishIteratingStageIn(this.db, stageExecutionId);
+  }
+
+  /** What `stage.execute` does once every item has run. An iterating stage in
+   * 'stage' mode that has its own `approval`, or has items held for review,
+   * opens ONE review for the whole stage and pauses the run there; any other
+   * stage simply finishes. */
+  async concludeIteratingStage(
+    stage: StageDef,
+    params: { runId: string; stageExecutionId: string },
+  ): Promise<
+    | { outcome: 'passed'; artifactId: string }
+    | { outcome: 'approval_required'; artifactId: string }
+    | { outcome: 'run_not_running' }
+  > {
+    const held = await this.db
+      .select({ id: stageItem.id })
+      .from(stageItem)
+      .where(
+        and(
+          eq(stageItem.stageExecutionId, params.stageExecutionId),
+          eq(stageItem.state, 'awaiting_approval'),
+        ),
       );
+    const needsReview = approvalModeOf(stage) === 'stage' && (!!stage.approval || held.length > 0);
+    if (!needsReview) {
+      const finished = await this.finishIteratingStage(params.stageExecutionId);
+      return { outcome: 'passed', artifactId: finished.artifactId };
     }
-    if (execution.itemCount === 0) {
-      throw new Error(
-        `StageRunnerService.finishIteratingStage: stage execution ${stageExecutionId} has zero items`,
-      );
-    }
-    const [lastItem] = await this.db
+    const opened = await this.db.transaction(async (tx) => {
+      const [lockedRun] = await tx
+        .select({ state: run.state })
+        .from(run)
+        .where(eq(run.id, params.runId))
+        .for('update');
+      if (!lockedRun || lockedRun.state !== 'RUNNING') return false;
+      await tx
+        .update(stageExecution)
+        .set({ state: 'awaiting_approval' })
+        .where(eq(stageExecution.id, params.stageExecutionId));
+      await this.humanWaits.open(tx, {
+        runId: params.runId,
+        stageExecutionId: params.stageExecutionId,
+        kind: 'approval',
+      });
+      return true;
+    });
+    if (!opened) return { outcome: 'run_not_running' };
+    const [last] = await this.db
       .select({ outputArtifactId: stageItem.outputArtifactId })
       .from(stageItem)
       .where(
         and(
-          eq(stageItem.stageExecutionId, stageExecutionId),
-          eq(stageItem.itemIndex, execution.itemCount - 1),
+          eq(stageItem.stageExecutionId, params.stageExecutionId),
+          isNotNull(stageItem.outputArtifactId),
         ),
       )
+      .orderBy(desc(stageItem.itemIndex))
       .limit(1);
-    if (!lastItem?.outputArtifactId) {
-      throw new Error(
-        `StageRunnerService.finishIteratingStage: last item of ${stageExecutionId} has no outputArtifactId`,
-      );
-    }
-    await this.db
-      .update(stageExecution)
-      .set({
-        state: 'passed',
-        endedAt: new Date().toISOString(),
-        outputArtifactId: lastItem.outputArtifactId,
-      })
-      .where(eq(stageExecution.id, stageExecutionId));
-    return { artifactId: lastItem.outputArtifactId };
+    return { outcome: 'approval_required', artifactId: last?.outputArtifactId ?? '' };
   }
 }

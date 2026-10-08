@@ -15,8 +15,13 @@ import {
 } from '@/components/ui/sheet';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
-import { describeApiFailure, rejectionPreviewSummary } from '@/pages/approval-review.logic';
+import {
+  approveAllLabel,
+  describeApiFailure,
+  rejectionPreviewSummary,
+} from '@/pages/approval-review.logic';
 import { ArtifactPreview } from './artifact-preview';
+import { StageReviewGallery } from './stage-review-gallery';
 
 type RejectionPreview = Awaited<ReturnType<typeof api.previewStageRejection>>;
 
@@ -35,12 +40,34 @@ export function ApprovalReviewSheet({
   const [note, setNote] = useState('');
   const [preview, setPreview] = useState<RejectionPreview | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // An iterating stage reviewed once, after its last item, waits as a whole
+  // (`awaiting_approval`); one waiting on a single item stays `running`.
+  const runQuery = useQuery({
+    queryKey: ['run', runId],
+    queryFn: () => api.getRun(runId),
+    enabled: false,
+  });
+  const execution = runQuery.data?.stageExecutions.find((e) => e.stageKey === stageKey);
+  const stageReview = Boolean(execution?.isIterating && execution.state === 'awaiting_approval');
   const candidateQuery = useQuery({
     queryKey: ['approval-candidate', runId, stageKey],
     queryFn: () => api.getApprovalCandidate(runId, stageKey as string),
-    enabled: open && Boolean(stageKey),
+    enabled: open && Boolean(stageKey) && !stageReview,
     retry: false,
   });
+  const reviewQuery = useQuery({
+    queryKey: ['stage-review', runId, stageKey],
+    queryFn: () => api.getStageReview(runId, stageKey as string),
+    enabled: open && Boolean(stageKey) && stageReview,
+    retry: false,
+  });
+  const reviewItems = reviewQuery.data?.items ?? [];
+  const loaded = stageReview ? reviewQuery.data !== undefined : candidateQuery.data !== undefined;
+  const isLoading = stageReview ? reviewQuery.isLoading : candidateQuery.isLoading;
+  const loadError = stageReview ? reviewQuery.error : candidateQuery.error;
+  const qcUnavailable = stageReview
+    ? reviewItems.some((item) => item.attempt?.qcUnavailable)
+    : candidateQuery.data?.attempt.qcUnavailable !== null && candidateQuery.data !== undefined;
 
   useEffect(() => {
     setNote('');
@@ -53,7 +80,7 @@ export function ApprovalReviewSheet({
     onOpenChange(false);
   };
   const fail = (cause: unknown) => setError(describeApiFailure(cause));
-  const itemIndex = candidateQuery.data?.itemIndex ?? undefined;
+  const itemIndex = stageReview ? undefined : (candidateQuery.data?.itemIndex ?? undefined);
 
   const approve = useMutation({
     mutationFn: () => api.approveStage(runId, stageKey as string, itemIndex),
@@ -106,26 +133,32 @@ export function ApprovalReviewSheet({
 
   return (
     <Sheet open={open} onOpenChange={(next) => !busy && onOpenChange(next)}>
-      <SheetContent className="w-full sm:max-w-xl">
+      <SheetContent className={stageReview ? 'w-full sm:max-w-3xl' : 'w-full sm:max-w-xl'}>
         <SheetHeader className="border-b pr-12">
           <SheetTitle>Review output</SheetTitle>
           <SheetDescription>
-            {stageKey ? `Review ${stageKey} before the run continues.` : 'Review stage output.'}
+            {stageKey
+              ? stageReview
+                ? `Review all of ${stageKey} before the run continues.`
+                : `Review ${stageKey} before the run continues.`
+              : 'Review stage output.'}
           </SheetDescription>
         </SheetHeader>
 
         <ScrollArea className="min-h-0 flex-1 px-4">
-          {candidateQuery.isLoading ? (
+          {isLoading ? (
             <div className="flex flex-col gap-3 py-4">
               <Skeleton className="h-5 w-40" />
               <Skeleton className="h-52 w-full" />
             </div>
-          ) : candidateQuery.isError ? (
+          ) : loadError ? (
             <Alert variant="destructive" className="my-4">
               <AlertCircle />
               <AlertTitle>Output is no longer available</AlertTitle>
-              <AlertDescription>{describeApiFailure(candidateQuery.error)}</AlertDescription>
+              <AlertDescription>{describeApiFailure(loadError)}</AlertDescription>
             </Alert>
+          ) : stageReview && reviewQuery.data ? (
+            <StageReviewGallery items={reviewItems} />
           ) : candidateQuery.data ? (
             <>
               {candidateQuery.data.attempt.qcUnavailable !== null ? (
@@ -150,7 +183,7 @@ export function ApprovalReviewSheet({
             </Alert>
           ) : null}
 
-          {candidateQuery.data && !preview ? (
+          {loaded && !preview ? (
             <div className="flex flex-col gap-2 py-4">
               <label htmlFor="approval-rejection-note" className="text-sm font-medium">
                 Rejection note <span className="text-muted-foreground">(optional)</span>
@@ -207,26 +240,25 @@ export function ApprovalReviewSheet({
             <>
               <Button
                 variant="outline"
-                disabled={busy || !candidateQuery.data}
+                disabled={busy || !loaded}
                 onClick={() => previewRejection.mutate()}
               >
                 {previewRejection.isPending ? <Loader2 className="animate-spin" /> : null}
                 Reject
               </Button>
-              {candidateQuery.data?.attempt.qcUnavailable !== null &&
-              candidateQuery.data !== undefined ? (
+              {qcUnavailable ? (
                 <Button disabled={busy} onClick={() => retryQc.mutate()}>
                   {retryQc.isPending ? <Loader2 className="animate-spin" /> : null}
                   Retry QC
                 </Button>
               ) : null}
               <Button
-                variant={candidateQuery.data?.attempt.qcUnavailable ? 'outline' : 'default'}
-                disabled={busy || !candidateQuery.data}
+                variant={qcUnavailable ? 'outline' : 'default'}
+                disabled={busy || !loaded}
                 onClick={() => approve.mutate()}
               >
                 {approve.isPending ? <Loader2 className="animate-spin" /> : null}
-                Approve
+                {stageReview ? approveAllLabel(reviewItems) : 'Approve'}
               </Button>
             </>
           )}

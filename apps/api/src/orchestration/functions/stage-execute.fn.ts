@@ -1,4 +1,5 @@
 import type { Inngest } from 'inngest';
+import { approvalModeOf } from '@reelcraft/shared';
 import type { StageRunnerService } from '../stage-runner.service';
 import { runStageAttemptLoop } from './stage-attempt-loop';
 import type { buildStageExecuteItemFunction } from './stage-execute-item.fn';
@@ -81,6 +82,10 @@ export function buildStageExecuteFunction(
           runner.ensureStageItems(data.stageExecutionId, itemCount),
         );
 
+        // 'stage' mode: the items run without pausing; one QC gave up on is
+        // held, and a single review opens after the last item.
+        const endReview = approvalModeOf(stage) === 'stage';
+
         for (let i = 0; i < itemCount; i += 1) {
           // §12.4 manual pause — stop after the current item rather than
           // running the whole iterating stage to completion.
@@ -93,6 +98,7 @@ export function buildStageExecuteFunction(
             runner.itemState(data.stageExecutionId, i),
           );
           if (item.state === 'passed') continue;
+          if (endReview && item.state === 'awaiting_approval') continue;
 
           const result = await step.invoke(`run-item-${i}`, {
             function: stageExecuteItemFn,
@@ -104,13 +110,16 @@ export function buildStageExecuteFunction(
               stageItemId: item.id,
             },
           });
+          if (endReview && result.outcome === 'approval_required') continue;
           if (result.outcome !== 'passed') return result;
         }
 
-        const finished = await step.run('finish-iterating-stage', () =>
-          runner.finishIteratingStage(data.stageExecutionId),
+        return step.run('conclude-iterating-stage', () =>
+          runner.concludeIteratingStage(stage, {
+            runId: data.runId,
+            stageExecutionId: data.stageExecutionId,
+          }),
         );
-        return { outcome: 'passed' as const, artifactId: finished.artifactId };
       }
 
       return runStageAttemptLoop({

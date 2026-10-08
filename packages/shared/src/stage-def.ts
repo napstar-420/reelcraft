@@ -64,9 +64,12 @@ export const StageDef = z.object({
 });
 export type StageDef = z.infer<typeof StageDef>;
 
-/** Approval granularity for a stage's review gate — its own `approval.mode`,
- * or (for a gate opened by `qc.onExhausted: 'human_review'` on a stage with
- * no `approval`) per item when it iterates, per stage otherwise. */
+/** Approval granularity for a stage's review gate: its own `approval.mode`,
+ * or `'stage'` for a gate opened by `qc.onExhausted: 'human_review'` on a
+ * stage with no `approval`. An iterating stage in `'stage'` mode never
+ * pauses between items: it runs them all, then opens one review for the
+ * whole stage (items QC gave up on are held for it). `'item'` is an explicit
+ * choice and pauses after each item. */
 export function approvalModeOf(stage: StageDef): 'stage' | 'item' {
-  return stage.approval?.mode ?? (stage.iterate ? 'item' : 'stage');
+  return stage.approval?.mode ?? 'stage';
 }

@@ -118,7 +118,7 @@ Mark the fields later stages need as \`required\`, and add a \`description\` to 
 
 **enabledWhen**: \`{ input: '<inputKey>', equals: string|number|boolean }\` skips the stage unless the run's input equals the value (exact comparison; a missing input skips). The input must be declared. Stages after a skipped stage still run, so those reading its output need the same enabledWhen. This is the ONLY branching Reelcraft has.
 
-**approval**: \`{ mode: 'stage'|'item', onReject?: { retryStageKey } }\` pauses the run for the user to approve or reject. \`item\` mode needs \`iterate\`. A rejection note goes to the next attempt's prompt. \`onReject.retryStageKey\` must be this stage or an EARLIER one and should have an instructions template. Approval is how video outputs are controlled, because QC isn't available on video: video stages should declare approval (otherwise a warning).`,
+**approval**: \`{ mode: 'stage'|'item', onReject?: { retryStageKey } }\` pauses the run for the user to approve or reject. \`item\` mode needs \`iterate\` and pauses after each item. On an iterating stage, \`stage\` mode runs every item first and pauses once at the end for all of them; a stage with no \`approval\` and \`qc.onExhausted: 'human_review'\` holds an item QC gave up on and pauses once at the end too (nothing else pauses it). A rejection note goes to the next attempt's prompt. \`onReject.retryStageKey\` must be this stage or an EARLIER one and should have an instructions template. Approval is how video outputs are controlled, because QC isn't available on video: video stages should declare approval (otherwise a warning).`,
   },
 
   'checks-qc': {

@@ -183,6 +183,23 @@ export const ApprovalCandidateDto = z.object({
 });
 export type ApprovalCandidateDto = z.infer<typeof ApprovalCandidateDto>;
 
+/** An iterating stage waiting for review once, after its last item: every
+ * item's output, the ones QC gave up on (held) first. */
+export const StageReviewDto = z.object({
+  stageKey: z.string(),
+  items: z.array(
+    z.object({
+      itemIndex: z.number().int().nonnegative(),
+      /** QC could not pass or judge this item; approving the stage accepts it as it is. */
+      held: z.boolean(),
+      heldReason: z.enum(['qc_failed', 'qc_error']).nullable(),
+      attempt: ApprovalCandidateDto.shape.attempt.nullable(),
+      artifact: ArtifactViewDto,
+    }),
+  ),
+});
+export type StageReviewDto = z.infer<typeof StageReviewDto>;
+
 export const StageEventLevel = z.enum(['debug', 'info', 'warn', 'error']);
 export type StageEventLevel = z.infer<typeof StageEventLevel>;
 

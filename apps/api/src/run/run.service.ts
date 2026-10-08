@@ -888,7 +888,8 @@ export class RunService {
           eq(stageAttempt.stageExecutionId, execution.id),
           attemptWhere,
           eq(stageAttempt.phase, 'awaiting_approval'),
-          eq(stageAttempt.outcome, 'awaiting_approval'),
+          // A QC hold keeps `qc_error` as its outcome (so the review can offer "Retry QC").
+          inArray(stageAttempt.outcome, ['awaiting_approval', 'qc_error']),
         ),
       )
       .orderBy(desc(stageAttempt.attemptNo))
@@ -937,6 +938,109 @@ export class RunService {
       },
       artifact: await this.toArtifactView(runRow.ownerId, candidate),
     };
+  }
+
+  /** The review of an iterating stage that waits for one approval after its
+   * last item: each item's output, with the ones QC gave up on first. */
+  async stageReview(runId: string, stageKey: string) {
+    const [runRow] = await this.db
+      .select({ state: run.state, cursorStageKey: run.cursorStageKey, ownerId: channel.ownerId })
+      .from(run)
+      .innerJoin(channel, eq(channel.id, run.channelId))
+      .where(eq(run.id, runId))
+      .limit(1);
+    if (!runRow) throw new NotFoundException(`Run ${runId} not found`);
+    if (runRow.state !== 'PAUSED_APPROVAL' || runRow.cursorStageKey !== stageKey) {
+      throw new ConflictException(`Run ${runId} is not awaiting approval at ${stageKey}`);
+    }
+    const [execution] = await this.db
+      .select()
+      .from(stageExecution)
+      .where(and(eq(stageExecution.runId, runId), eq(stageExecution.stageKey, stageKey)))
+      .limit(1);
+    if (!execution) throw new NotFoundException(`Stage ${stageKey} not found in run ${runId}`);
+    if (!execution.isIterating || execution.state !== 'awaiting_approval') {
+      throw new ConflictException(`Stage ${stageKey} is not waiting for a review of all its items`);
+    }
+    const [wait] = await this.db
+      .select({ id: humanWait.id })
+      .from(humanWait)
+      .where(
+        and(
+          eq(humanWait.stageExecutionId, execution.id),
+          eq(humanWait.kind, 'approval'),
+          isNull(humanWait.resolvedAt),
+          isNull(humanWait.stageItemId),
+        ),
+      )
+      .limit(1);
+    if (!wait) throw new ConflictException('No open approval wait exists for this stage');
+
+    const items = await this.db
+      .select()
+      .from(stageItem)
+      .where(eq(stageItem.stageExecutionId, execution.id))
+      .orderBy(asc(stageItem.itemIndex));
+    const entries = await Promise.all(
+      items.map(async (item) => {
+        const held = item.state === 'awaiting_approval';
+        const [attempt] = await this.db
+          .select()
+          .from(stageAttempt)
+          .where(
+            and(
+              eq(stageAttempt.stageExecutionId, execution.id),
+              eq(stageAttempt.stageItemId, item.id),
+              held
+                ? and(
+                    eq(stageAttempt.phase, 'awaiting_approval'),
+                    inArray(stageAttempt.outcome, ['awaiting_approval', 'qc_error']),
+                  )
+                : item.outputArtifactId
+                  ? eq(stageAttempt.artifactId, item.outputArtifactId)
+                  : undefined,
+            ),
+          )
+          .orderBy(desc(stageAttempt.attemptNo))
+          .limit(1);
+        const artifactId = held ? attempt?.artifactId : item.outputArtifactId;
+        if (!artifactId) {
+          throw new ConflictException(`Item ${item.itemIndex + 1} has no output to review`);
+        }
+        const [row] = await this.db
+          .select()
+          .from(artifact)
+          .where(and(eq(artifact.id, artifactId), eq(artifact.runId, runId)))
+          .limit(1);
+        if (!row) throw new ConflictException(`Item ${item.itemIndex + 1} has no output to review`);
+        return {
+          itemIndex: item.itemIndex,
+          held,
+          heldReason: !held
+            ? null
+            : attempt?.outcome === 'qc_error'
+              ? ('qc_error' as const)
+              : ('qc_failed' as const),
+          attempt: attempt
+            ? {
+                id: attempt.id,
+                attemptNo: attempt.attemptNo,
+                checkResults: attempt.checkResults,
+                qcVerdict: attempt.qcVerdict,
+                qcUnavailable:
+                  attempt.outcome === 'qc_error'
+                    ? (attempt.reviewNote ?? 'Quality control could not run')
+                    : null,
+                costUsd: toUsd(attempt.costUsd),
+                createdAt: attempt.createdAt,
+              }
+            : null,
+          artifact: await this.toArtifactView(runRow.ownerId, row),
+        };
+      }),
+    );
+    entries.sort((a, b) => Number(b.held) - Number(a.held) || a.itemIndex - b.itemIndex);
+    return { stageKey, items: entries };
   }
 
   /** The current (non-stale) output of a stage, one entry per item for an

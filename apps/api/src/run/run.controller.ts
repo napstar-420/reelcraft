@@ -161,6 +161,11 @@ export class RunController {
     return this.runs.approvalCandidate(id, key);
   }
 
+  @Get(':id/stages/:key/review')
+  stageReview(@Param('id') id: string, @Param('key') key: string) {
+    return this.runs.stageReview(id, key);
+  }
+
   @Post(':id/stages/:key/retry/confirm')
   retryConfirm(
     @Param('id') id: string,

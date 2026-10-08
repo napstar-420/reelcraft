@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { StageDef } from './stage-def';
+import { StageDef, approvalModeOf } from './stage-def';
 
 describe('StageDef', () => {
   it('round-trips the §25.1 worked example\'s "script" stage', () => {
@@ -51,5 +51,29 @@ describe('StageDef', () => {
         retryLimit: 0,
       }),
     ).toThrow();
+  });
+});
+
+describe('approvalModeOf', () => {
+  const base: StageDef = {
+    key: 'shots',
+    label: 'Shots',
+    capability: 'image.generate',
+    config: {},
+    slots: {},
+    context: {},
+    output: { kind: 'media.image' },
+    checks: [],
+  };
+  const iterate = { over: { from: 'prev' as const }, itemAlias: 'shot', itemRetryLimit: 0 };
+
+  it("reviews an iterating stage once, at its end, unless 'item' is asked for", () => {
+    expect(approvalModeOf({ ...base, iterate })).toBe('stage');
+    expect(approvalModeOf({ ...base, iterate, approval: { mode: 'stage' } })).toBe('stage');
+    expect(approvalModeOf({ ...base, iterate, approval: { mode: 'item' } })).toBe('item');
+  });
+
+  it('is stage for a stage that does not iterate', () => {
+    expect(approvalModeOf(base)).toBe('stage');
   });
 });

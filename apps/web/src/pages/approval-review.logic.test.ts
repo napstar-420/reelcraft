@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   approvalCandidateView,
+  approveAllLabel,
   describeApiFailure,
+  heldReasonLabel,
   isApprovalStillOpen,
   rejectionPreviewSummary,
 } from './approval-review.logic';
@@ -76,5 +78,22 @@ describe('approval review logic', () => {
   it('gives conflicts a useful message and preserves ordinary errors', () => {
     expect(describeApiFailure({ status: 409 })).toMatch(/already resolved/i);
     expect(describeApiFailure(new Error('network unavailable'))).toBe('network unavailable');
+  });
+});
+
+describe('approveAllLabel', () => {
+  it('counts the items, and the held ones when there are any', () => {
+    expect(approveAllLabel([{ held: false }, { held: false }])).toBe('Approve all (2)');
+    expect(approveAllLabel([{ held: true }, { held: false }, { held: true }])).toBe(
+      'Approve all (3, incl. 2 held)',
+    );
+  });
+});
+
+describe('heldReasonLabel', () => {
+  it('names why an item is held, and nothing for a passed one', () => {
+    expect(heldReasonLabel('qc_failed')).toBe('Held: QC did not pass it');
+    expect(heldReasonLabel('qc_error')).toBe('Held: QC could not run');
+    expect(heldReasonLabel(null)).toBeNull();
   });
 });

@@ -5,8 +5,8 @@ import {
   Logger,
   UnprocessableEntityException,
 } from '@nestjs/common';
-import { and, desc, eq, isNull, sql } from 'drizzle-orm';
-import { StageDef, Timeline, approvalModeOf, type HumanWaitKind } from '@reelcraft/shared';
+import { and, asc, desc, eq, isNotNull, isNull, sql } from 'drizzle-orm';
+import { StageDef, Timeline, type HumanWaitKind } from '@reelcraft/shared';
 import { ArtifactService } from '../artifact/artifact.service';
 import { BindingResolverService, type RefProvenance } from '../artifact/binding-resolver.service';
 import { MemoryService } from '../artifact/memory.service';
@@ -27,6 +27,7 @@ import {
 import { SchemaValidatorService } from '../json-schema/schema-validator.service';
 import { ConfigResolverService } from '../run-config/config-resolver.service';
 import { InvalidationService } from './invalidation.service';
+import { finishIteratingStageIn } from './iterating-stage';
 import type { InvalidationSeed } from './invalidation-closure';
 import { HumanWaitService } from './human-wait.service';
 import { PreviewTokenService } from './preview-token.service';
@@ -84,7 +85,12 @@ export class HumanActionService {
     }
     const { stage, execution } = await this.loadStageAndExecution(tx, lockedRun, stageKey);
 
-    if (approvalModeOf(stage) === 'item') {
+    if (this.isStageReview(stage, execution)) {
+      await this.approveStageReviewInTransaction(tx, runId, stageKey, stage, execution.id);
+      return;
+    }
+
+    if (await this.hasItemGate(tx, execution.id)) {
       const item = await this.resolveOpenItem(tx, execution.id, itemIndex);
       await this.approveItemInTransaction(tx, runId, stageKey, stage, execution.id, item);
       return;
@@ -143,10 +149,13 @@ export class HumanActionService {
           );
         }
         const { stage, execution } = await this.loadStageAndExecution(tx, lockedRun, stageKey);
-        const item =
-          approvalModeOf(stage) === 'item'
-            ? await this.resolveOpenItem(tx, execution.id, itemIndex)
-            : undefined;
+        if (this.isStageReview(stage, execution)) {
+          await this.releaseHeldQcInStageReview(tx, execution.id);
+          return;
+        }
+        const item = (await this.hasItemGate(tx, execution.id))
+          ? await this.resolveOpenItem(tx, execution.id, itemIndex)
+          : undefined;
         const pending = await this.pendingAttempt(tx, execution.id, item?.id);
         if (
           !pending?.artifactId ||
@@ -195,6 +204,22 @@ export class HumanActionService {
     stageExecutionId: string,
     item: typeof stageItem.$inferSelect,
   ): Promise<void> {
+    await this.requireOpenWait(tx, stageExecutionId, 'approval', item.id);
+    await this.finalizeHeldItem(tx, runId, stageKey, stage, stageExecutionId, item);
+    await this.waits.resolve(tx, stageExecutionId);
+  }
+
+  /** Accepts the output parked for one item (held by QC or by item-mode
+   * approval): finalizes it, settles the attempt. Leaves the wait and
+   * `stage_execution` to the caller. */
+  private async finalizeHeldItem(
+    tx: Tx,
+    runId: string,
+    stageKey: string,
+    stage: StageDef,
+    stageExecutionId: string,
+    item: typeof stageItem.$inferSelect,
+  ): Promise<void> {
     const pending = await this.pendingAttempt(tx, stageExecutionId, item.id);
     if (!pending?.artifactId || pending.phase !== 'awaiting_approval') {
       throw new ConflictException('No pending approval candidate exists');
@@ -205,7 +230,6 @@ export class HumanActionService {
       .where(eq(artifact.id, pending.artifactId))
       .limit(1);
     if (!candidate || !candidate.stale) throw new ConflictException('Approval candidate is stale');
-    await this.requireOpenWait(tx, stageExecutionId, 'approval', item.id);
 
     await this.artifacts.finalize(
       {
@@ -230,7 +254,92 @@ export class HumanActionService {
       .update(stageAttempt)
       .set({ outcome: 'success', phase: 'settled' })
       .where(eq(stageAttempt.id, pending.id));
-    await this.waits.resolve(tx, stageExecutionId);
+  }
+
+  /** An iterating stage in 'stage' mode, reviewed once after its last item
+   * (`StageRunnerService.concludeIteratingStage`): approving accepts every
+   * held item as it is and passes the stage. */
+  private async approveStageReviewInTransaction(
+    tx: Tx,
+    runId: string,
+    stageKey: string,
+    stage: StageDef,
+    executionId: string,
+  ): Promise<void> {
+    await this.requireOpenWait(tx, executionId, 'approval');
+    const held = await tx
+      .select()
+      .from(stageItem)
+      .where(
+        and(eq(stageItem.stageExecutionId, executionId), eq(stageItem.state, 'awaiting_approval')),
+      )
+      .orderBy(asc(stageItem.itemIndex));
+    for (const item of held) {
+      await this.finalizeHeldItem(tx, runId, stageKey, stage, executionId, item);
+    }
+    await finishIteratingStageIn(tx, executionId);
+    await this.waits.resolve(tx, executionId);
+  }
+
+  /** "Retry QC" on a stage review: every held item QC could not judge goes
+   * back to be judged again; items QC rejected for good stay held. */
+  private async releaseHeldQcInStageReview(tx: Tx, executionId: string): Promise<void> {
+    await this.requireOpenWait(tx, executionId, 'approval');
+    const held = await tx
+      .select()
+      .from(stageItem)
+      .where(
+        and(eq(stageItem.stageExecutionId, executionId), eq(stageItem.state, 'awaiting_approval')),
+      );
+    let released = 0;
+    for (const item of held) {
+      const pending = await this.pendingAttempt(tx, executionId, item.id);
+      if (
+        !pending?.artifactId ||
+        pending.phase !== 'awaiting_approval' ||
+        pending.outcome !== 'qc_error'
+      ) {
+        continue;
+      }
+      await tx
+        .update(stageAttempt)
+        .set({ phase: 'settled' })
+        .where(eq(stageAttempt.id, pending.id));
+      await tx.update(stageItem).set({ state: 'running' }).where(eq(stageItem.id, item.id));
+      released += 1;
+    }
+    if (released === 0) {
+      throw new ConflictException('Quality control did not fail on this output');
+    }
+    await tx
+      .update(stageExecution)
+      .set({ state: 'running' })
+      .where(eq(stageExecution.id, executionId));
+    await this.waits.resolve(tx, executionId);
+  }
+
+  /** Whether the open approval is the stage's own review (the stage waits as
+   * a whole) rather than one item's. */
+  private isStageReview(stage: StageDef, execution: typeof stageExecution.$inferSelect) {
+    return !!stage.iterate && execution.state === 'awaiting_approval';
+  }
+
+  /** An item-mode approval (`approval.mode: 'item'`) parks one item behind
+   * its own wait; read from the wait itself, not from the stage's config. */
+  private async hasItemGate(executor: Db | Tx, executionId: string): Promise<boolean> {
+    const [wait] = await executor
+      .select({ id: humanWait.id })
+      .from(humanWait)
+      .where(
+        and(
+          eq(humanWait.stageExecutionId, executionId),
+          eq(humanWait.kind, 'approval'),
+          isNull(humanWait.resolvedAt),
+          isNotNull(humanWait.stageItemId),
+        ),
+      )
+      .limit(1);
+    return !!wait;
   }
 
   /** phase 7 chunk 6 — resolves "the item currently awaiting approval" for
@@ -270,7 +379,8 @@ export class HumanActionService {
     itemIndex?: number,
   ) {
     const context = await this.loadRunContext(runId, stageKey);
-    const isItemMode = approvalModeOf(context.stage) === 'item';
+    const stageReview = this.isStageReview(context.stage, context.execution);
+    const isItemMode = !stageReview && (await this.hasItemGate(this.db, context.execution.id));
     // phase 7 chunk 6 — Locked Decision 9: a rejected item, with no
     // `onReject.retryStageKey`, retries that same item by default — the
     // item-mode analogue of stage-mode's existing "retry myself" default.
@@ -392,7 +502,9 @@ export class HumanActionService {
         const pendingItem = isItemMode
           ? await this.resolveOpenItem(tx, execution.id, resolvedItemIndex)
           : undefined;
-        const pending = await this.pendingAttempt(tx, execution.id, pendingItem?.id);
+        const pending = stageReview
+          ? await this.attemptToCarryStageRejection(tx, execution.id)
+          : await this.pendingAttempt(tx, execution.id, pendingItem?.id);
         if (!pending) throw new ConflictException('No pending approval candidate exists');
         await tx
           .update(stageAttempt)
@@ -794,6 +906,19 @@ export class HumanActionService {
       )
       .limit(1);
     if (!wait) throw new ConflictException(`No open ${kind} wait exists`);
+  }
+
+  /** Rejecting a whole iterating stage leaves one note, on one attempt: the
+   * first held item's, else the last item's, since the note is for the stage
+   * and every item re-runs with it. */
+  private async attemptToCarryStageRejection(tx: Tx, executionId: string) {
+    const items = await tx
+      .select()
+      .from(stageItem)
+      .where(eq(stageItem.stageExecutionId, executionId))
+      .orderBy(asc(stageItem.itemIndex));
+    const target = items.find((item) => item.state === 'awaiting_approval') ?? items.at(-1);
+    return target ? this.pendingAttempt(tx, executionId, target.id) : undefined;
   }
 
   private async nextAttemptNo(tx: Tx, executionId: string): Promise<number> {

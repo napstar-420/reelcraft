@@ -62,3 +62,18 @@ export function describeApiFailure(error: unknown) {
   if (error instanceof Error) return error.message;
   return 'The approval action failed. Please try again.';
 }
+
+/** The button that accepts a whole iterating stage, saying how many items it
+ * takes and how many of them QC did not pass or judge. */
+export function approveAllLabel(items: Array<{ held: boolean }>) {
+  const held = items.filter((item) => item.held).length;
+  return held > 0
+    ? `Approve all (${items.length}, incl. ${held} held)`
+    : `Approve all (${items.length})`;
+}
+
+export function heldReasonLabel(reason: 'qc_failed' | 'qc_error' | null) {
+  if (reason === 'qc_failed') return 'Held: QC did not pass it';
+  if (reason === 'qc_error') return 'Held: QC could not run';
+  return null;
+}
