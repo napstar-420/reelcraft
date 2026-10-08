@@ -181,6 +181,12 @@ export function describeToolCall(call: ToolCallPayload, state: string | null): s
     switch (call.tool) {
       case 'get_blueprint':
         return 'Read the blueprint';
+      case 'get_version':
+        return `Read version ${typeof args.version === 'string' ? args.version : ''}`.trim();
+      case 'diff_drafts':
+        return 'Compared two versions';
+      case 'get_effective_config':
+        return `Checked the settings of ${typeof args.stageKey === 'string' ? args.stageKey : 'a stage'}`;
       case 'list_capabilities':
         return 'Listed the stage types';
       case 'get_capability':

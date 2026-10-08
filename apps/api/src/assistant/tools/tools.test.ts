@@ -4,6 +4,7 @@ import { ConflictException } from '@nestjs/common';
 import { AskUserInput, CreateBlueprintVersionDto, StageDef } from '@reelcraft/shared';
 import type { CreateBlueprintVersionDto as Draft } from '@reelcraft/shared';
 import { SchemaValidatorService } from '../../json-schema/schema-validator.service';
+import { ConfigResolverService } from '../../run-config/config-resolver.service';
 import { StyleRegistry } from '../../capability/style.registry';
 import { exampleScenesToImages, exampleScript } from '../guide';
 import { ASSISTANT_TOOLS, buildNarrowedEnums, buildToolDefs, runTool, toolsHash } from './registry';
@@ -24,13 +25,46 @@ const BLUEPRINT = {
   description: null,
   tags: ['a'],
   workingDraft: null as unknown,
+  currentVersionId: 'v2',
+  archived: false,
+  runCount: 4,
+  packageId: null as string | null,
+  packageBasedOn: null as unknown,
 };
+
+// newest first, like BlueprintService.listVersions
+const asVersion = (draft: Draft, id: string, major: number, minor: number, runCount: number) => ({
+  ...draft,
+  id,
+  major,
+  minor,
+  runnable: true,
+  createdAt: '2026-10-01T00:00:00.000Z',
+  validation: { issues: [], runnable: true },
+  runCount,
+});
+const VERSIONS = [
+  asVersion(exampleScenesToImages(), 'v2', 1, 1, 3),
+  asVersion(exampleScript(), 'v1', 1, 0, 1),
+];
 
 function makeDeps(overrides: Partial<ToolDeps> = {}): ToolDeps {
   return {
     blueprints: {
       getBlueprint: vi.fn(async () => BLUEPRINT),
-      listVersions: vi.fn(async () => []),
+      listVersions: vi.fn(async () => VERSIONS),
+      listByChannel: vi.fn(async () => [
+        { id: 'bp1', name: 'Reel', description: null, tags: [], runCount: 0, archived: false },
+        {
+          id: 'bp2',
+          name: 'Other reel',
+          description: 'd',
+          tags: ['t'],
+          runCount: 3,
+          archived: false,
+        },
+        { id: 'bp3', name: 'Old', description: null, tags: [], runCount: 1, archived: true },
+      ]),
       validateOnly: vi.fn(async () => ({ issues: [], runnable: true })),
       assertNameFree: vi.fn(async () => undefined),
     } as unknown as ToolDeps['blueprints'],
@@ -65,6 +99,8 @@ function makeDeps(overrides: Partial<ToolDeps> = {}): ToolDeps {
       ]),
     } as never,
     schemas: new SchemaValidatorService(),
+    configResolver: new ConfigResolverService({} as never, {} as never),
+    engineLayer: () => ({ retryLimit: 0, iterate: { maxItems: 50 } }),
     ...overrides,
   };
 }
@@ -72,15 +108,18 @@ function makeDeps(overrides: Partial<ToolDeps> = {}): ToolDeps {
 const ctx = () => newTurnContext('bp1', null);
 
 describe('tool registry', () => {
-  it('has the 12 tools, each with a unique name and a kind', () => {
+  it('has the 15 tools, each with a unique name and a kind', () => {
     const names = ASSISTANT_TOOLS.map((t) => t.name);
     expect(new Set(names).size).toBe(names.length);
     expect(names.sort()).toEqual(
       [
         'ask_user',
+        'diff_drafts',
         'get_blueprint',
         'get_capability',
         'get_channel_resources',
+        'get_effective_config',
+        'get_version',
         'list_capabilities',
         'list_checks',
         'list_models',
@@ -150,6 +189,9 @@ describe('JSON Schemas stay in sync with the Zod inputs (drift guard)', () => {
     list_checks: {},
     list_styles: {},
     get_channel_resources: {},
+    get_version: { version: '1.1' },
+    diff_drafts: { from: '1.0', to: 'current' },
+    get_effective_config: { stageKey: 'script' },
     read_guide: { topic: 'limits' },
     validate_draft: { draft: exampleScript() },
     propose_draft: { draft: exampleScenesToImages(), summary: 'Plan then images' },
@@ -220,7 +262,16 @@ describe('read tools', () => {
       result: { draftSource: 'proposal in this turn' },
     });
     expect(await runTool('get_blueprint', {}, ctx(), deps)).toMatchObject({
-      result: { draftSource: 'empty' },
+      result: { draftSource: 'latest saved version' },
+    });
+    const none = makeDeps({
+      blueprints: {
+        ...makeDeps().blueprints,
+        listVersions: async () => [],
+      } as unknown as ToolDeps['blueprints'],
+    });
+    expect(await runTool('get_blueprint', {}, ctx(), none)).toMatchObject({
+      result: { draftSource: 'empty', versionCount: 0, draftDiffersFromLatest: false },
     });
   });
 
@@ -238,6 +289,133 @@ describe('read tools', () => {
     expect(out).toMatchObject({
       result: { draftSource: 'latest saved version', versions: [{ version: '1.2' }] },
     });
+  });
+
+  it('get_blueprint reports versions, the current one, provenance and the memory flow', async () => {
+    const draft = exampleScenesToImages();
+    const deps = makeDeps({
+      blueprints: {
+        ...makeDeps().blueprints,
+        getBlueprint: async () => ({
+          ...BLUEPRINT,
+          packageId: 'pkg1',
+          packageBasedOn: { packageId: 'other', fingerprint: 'abc' },
+        }),
+      } as unknown as ToolDeps['blueprints'],
+    });
+    const out = await runTool('get_blueprint', {}, newTurnContext('bp1', draft), deps);
+    expect(out).toMatchObject({
+      ok: true,
+      result: {
+        archived: false,
+        runCount: 4,
+        sharedAsPackageId: 'pkg1',
+        importedFrom: { packageId: 'other' },
+        versionCount: 2,
+        versions: [
+          { version: '1.1', isCurrent: true, runCount: 3 },
+          { version: '1.0', isCurrent: false, runCount: 1 },
+        ],
+        // the canvas draft IS version 1.1, so nothing is unsaved
+        draftDiffersFromLatest: false,
+        memoryFlow: [{ key: 'scenes', writtenBy: ['plan'], readBy: ['images'] }],
+      },
+    });
+    const changed = structuredClone(draft);
+    changed.graph[1]!.label = 'Renamed';
+    const diff = await runTool('get_blueprint', {}, newTurnContext('bp1', changed), deps);
+    expect(diff).toMatchObject({ result: { draftDiffersFromLatest: true } });
+  });
+
+  it('get_version returns the saved content, and lists the labels when one is unknown', async () => {
+    const deps = makeDeps();
+    const out = await runTool('get_version', { version: '1.0' }, ctx(), deps);
+    expect(out).toMatchObject({
+      ok: true,
+      result: {
+        version: '1.0',
+        isLatest: false,
+        runCount: 1,
+        draft: { graph: [{ key: 'script' }] },
+      },
+    });
+    expect(await runTool('get_version', { version: '9.9' }, ctx(), deps)).toMatchObject({
+      ok: false,
+      error: expect.stringContaining('1.1, 1.0'),
+    });
+  });
+
+  it('diff_drafts compares versions and the current draft, field by field', async () => {
+    const deps = makeDeps();
+    const current = exampleScenesToImages();
+    current.graph[0]!.label = 'Plan the story';
+    const c = newTurnContext('bp1', current);
+    const out = await runTool('diff_drafts', { from: '1.1', to: 'current' }, c, deps);
+    expect(out).toMatchObject({
+      ok: true,
+      result: {
+        identical: false,
+        stages: [
+          {
+            key: 'plan',
+            kind: 'changed',
+            changes: [{ field: 'label', before: 'Plan scenes', after: 'Plan the story' }],
+          },
+        ],
+        reordered: false,
+        budgetChanged: false,
+      },
+    });
+    expect(await runTool('diff_drafts', { from: '1.0', to: '1.1' }, ctx(), deps)).toMatchObject({
+      result: {
+        stages: expect.arrayContaining([
+          expect.objectContaining({ key: 'script', kind: 'removed' }),
+          expect.objectContaining({ key: 'plan', kind: 'added' }),
+        ]),
+        budgetChanged: true,
+      },
+    });
+    expect(await runTool('diff_drafts', { from: '1.1', to: '1.1' }, ctx(), deps)).toMatchObject({
+      result: { identical: true },
+    });
+    expect(await runTool('diff_drafts', { from: 'nope', to: 'current' }, c, deps)).toMatchObject({
+      ok: false,
+    });
+  });
+
+  it('get_effective_config merges the layers, the model default for the kind of work first', async () => {
+    const draft = exampleScript();
+    draft.defaults = { models: { text: { provider: 'fake', modelId: 'fake-text-1' } } } as never;
+    const deps = makeDeps({
+      channels: {
+        get: async () => ({ id: 'ch1', name: 'C', defaults: { retryLimit: 2 } }),
+      } as never,
+    });
+    const out = await runTool(
+      'get_effective_config',
+      { stageKey: 'script' },
+      newTurnContext('bp1', draft),
+      deps,
+    );
+    expect(out).toMatchObject({
+      ok: true,
+      result: {
+        capability: 'text.generate',
+        effective: { retryLimit: 2, model: { provider: 'fake', modelId: 'fake-text-1' } },
+        layers: {
+          builtIn: { retryLimit: 0 },
+          channel: { retryLimit: 2 },
+        },
+      },
+    });
+    expect(
+      await runTool(
+        'get_effective_config',
+        { stageKey: 'zzz' },
+        newTurnContext('bp1', draft),
+        deps,
+      ),
+    ).toMatchObject({ ok: false, error: expect.stringContaining('Stages: script') });
   });
 
   it('list_capabilities lists only registered capabilities', async () => {
@@ -312,6 +490,8 @@ describe('read tools', () => {
       ok: true,
       result: {
         channel: { defaults: { x: 1 } },
+        // this blueprint and archived ones are left out
+        otherBlueprints: [{ name: 'Other reel', runCount: 3 }],
         assets: [{ id: 'a1' }],
         characters: [{ id: 'c1', referenceCount: 2 }],
       },

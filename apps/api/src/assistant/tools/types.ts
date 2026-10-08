@@ -5,6 +5,7 @@ import type {
   CreateBlueprintVersionDto,
   DraftProposalPayload,
   MetadataProposalPayload,
+  ConfigLayer,
   ValidationIssue,
 } from '@reelcraft/shared';
 import type { BlueprintService } from '../../blueprint/blueprint.service';
@@ -14,6 +15,7 @@ import type { ProviderRegistry } from '../../provider/provider.registry';
 import type { ChannelService } from '../../channel/channel.service';
 import type { AssetService } from '../../channel/asset.service';
 import type { CharacterService } from '../../channel/character.service';
+import type { ConfigResolverService } from '../../run-config/config-resolver.service';
 import type { SchemaValidatorService } from '../../json-schema/schema-validator.service';
 
 /** Per-turn state shared by the tools of one turn. The agent never touches the database: every
@@ -38,7 +40,7 @@ export function newTurnContext(
 export interface ToolDeps {
   blueprints: Pick<
     BlueprintService,
-    'getBlueprint' | 'listVersions' | 'validateOnly' | 'assertNameFree'
+    'getBlueprint' | 'listVersions' | 'listByChannel' | 'validateOnly' | 'assertNameFree'
   >;
   capabilities: Pick<CapabilityRegistry, 'list' | 'get'>;
   providers: Pick<ProviderRegistry, 'list' | 'get'>;
@@ -47,6 +49,9 @@ export interface ToolDeps {
   assets: Pick<AssetService, 'list'>;
   characters: Pick<CharacterService, 'list'>;
   schemas: Pick<SchemaValidatorService, 'validate'>;
+  configResolver: Pick<ConfigResolverService, 'resolveRunConfig'>;
+  /** Reelcraft's built-in bottom config layer. */
+  engineLayer: () => ConfigLayer;
 }
 
 /** What the service stores as a transcript item (it adds the ids). */

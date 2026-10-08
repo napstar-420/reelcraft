@@ -3,6 +3,7 @@ import { BUILTIN_CHECKS } from '../../check/builtins/index';
 import { GUIDE_TOPICS } from '../guide';
 import type { AssistantToolDef } from '../agent/assistant-agent.interface';
 import { askUser } from './ask-user';
+import { BLUEPRINT_TOOLS } from './blueprint-tools';
 import { zodIssues } from './draft-checks';
 import { READ_TOOLS } from './read-tools';
 import { WRITE_TOOLS } from './write-tools';
@@ -10,6 +11,7 @@ import type { AssistantTool, NarrowedEnums, ToolDeps, ToolOutcome, TurnContext }
 
 export const ASSISTANT_TOOLS: ReadonlyArray<AssistantTool<never>> = [
   ...READ_TOOLS,
+  ...BLUEPRINT_TOOLS,
   ...WRITE_TOOLS,
   askUser as unknown as AssistantTool<never>,
 ];

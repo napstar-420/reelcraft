@@ -33,6 +33,8 @@ import { ChannelService } from '../channel/channel.service';
 import { AssetService } from '../channel/asset.service';
 import { CharacterService } from '../channel/character.service';
 import { SchemaValidatorService } from '../json-schema/schema-validator.service';
+import { ConfigResolverService } from '../run-config/config-resolver.service';
+import { engineDefaults } from '../run-config/engine-defaults';
 import { AssistantEvents } from './assistant-events';
 import {
   ASSISTANT_AGENTS,
@@ -78,6 +80,7 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
     assets: AssetService,
     characters: CharacterService,
     schemas: SchemaValidatorService,
+    configResolver: ConfigResolverService,
     private readonly config: EngineConfig,
     private readonly events: AssistantEvents,
   ) {
@@ -90,6 +93,8 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
       assets,
       characters,
       schemas,
+      configResolver,
+      engineLayer: () => engineDefaults(config),
     };
   }
 
