@@ -7,6 +7,8 @@ import { ChannelService } from '../../src/channel/channel.service';
 import { BlueprintService } from '../../src/blueprint/blueprint.service';
 import { RunService } from '../../src/run/run.service';
 import { RunActionService } from '../../src/run/run-action.service';
+import { HumanActionService } from '../../src/run/human-action.service';
+import { StageRunnerService } from '../../src/orchestration/stage-runner.service';
 import type { StageExecuteEventData } from '../../src/orchestration/functions/stage-execute.fn';
 import {
   artifact,
@@ -610,5 +612,102 @@ describe('seeded runs — run a stage without re-running upstream (e2e)', () => 
         budgetCapUsd: 10,
       }),
     ).rejects.toThrow(ConflictException);
+  });
+
+  it('refuses to start a stage that needs an unapproved earlier stage re-run, says why when asked to anyway, and reuses it once approved', async () => {
+    const runs = testApp.app.get(RunService);
+    const blueprints = testApp.app.get(BlueprintService);
+    const channel = await makeChannel('Seed Upstream Rerun');
+    const blueprintId = await blueprints.ensureBlueprint(channel.id, 'Seed Upstream Blueprint');
+    const v1 = await blueprints.createVersion(blueprintId, {
+      graph: [{ ...topicsStage(), approval: { mode: 'stage' } }, scriptStage()],
+      inputs: [],
+      roles: [],
+      defaults: {},
+      budget: { runCapUsd: 10 },
+    });
+    const run1 = await runs.create({
+      channelId: channel.id,
+      blueprintVersionId: v1.id,
+      inputs: {},
+      roleBindings: {},
+      rerunStageKeys: [],
+      budgetCapUsd: 10,
+    });
+
+    // Park `topics` behind its approval gate, as a real run does.
+    await testDb.db.update(run).set({ state: 'RUNNING' }).where(eq(run.id, run1.id));
+    const runner = testApp.app.get(StageRunnerService);
+    const { stage, effective, prevStageKey } = await runner.loadStageContext(run1.id, 'topics');
+    const attempt = await runner.beginAttempt({
+      runId: run1.id,
+      stageExecutionId: run1.stageExecutions.find((e) => e.stageKey === 'topics')!.id,
+      stageKey: 'topics',
+    });
+    const submitted = await runner.reserveAndSubmit(stage, attempt, prevStageKey, effective);
+    if (submitted.outcome !== 'submitted') throw new Error('expected submission');
+    const parked = await runner.fetchAndFinalize(
+      stage,
+      attempt,
+      submitted.handle,
+      prevStageKey,
+      effective,
+    );
+    expect(parked.outcome).toBe('approval_required');
+    await testDb.db
+      .update(run)
+      .set({ state: 'PAUSED_APPROVAL', cursorStageKey: 'topics' })
+      .where(eq(run.id, run1.id));
+
+    const runSeeded = (expectReusedBefore?: string) =>
+      runs.create({
+        channelId: channel.id,
+        blueprintVersionId: v1.id,
+        seedFromRunId: run1.id,
+        inputs: {},
+        roleBindings: {},
+        rerunStageKeys: ['script'],
+        untilStageKey: 'script',
+        budgetCapUsd: 10,
+        ...(expectReusedBefore && { expectReusedBefore }),
+      });
+    const countRuns = async () =>
+      (await testDb.db.select().from(run).where(eq(run.channelId, channel.id))).length;
+
+    // 1. "Run script" while `topics` waits for approval: refused, nothing created.
+    const before = await countRuns();
+    const refused = await runSeeded('script').catch((error: unknown) => error);
+    expect(refused).toBeInstanceOf(ConflictException);
+    expect((refused as ConflictException).getResponse()).toMatchObject({
+      code: 'upstream_rerun',
+      plan: { reused: [], stop: { stageKey: 'topics', reason: 'awaiting_approval' } },
+    });
+    expect(await countRuns()).toBe(before);
+
+    // 2. Insisting re-runs `topics` and records why on it.
+    const forced = await runSeeded();
+    const topicsExec = forced.stageExecutions.find((e) => e.stageKey === 'topics')!;
+    expect(topicsExec.state).toBe('pending');
+    const reasons = (
+      await testDb.db.select().from(stageEvent).where(eq(stageEvent.runId, forced.id))
+    ).filter((e) => e.type === 'stage.rerun_reason');
+    expect(reasons).toHaveLength(1);
+    expect(reasons[0]).toMatchObject({
+      stageExecutionId: topicsExec.id,
+      level: 'info',
+      message: 'Re-running "topics": it was awaiting approval in the source run',
+    });
+
+    // 3. Approve `topics` in the source run, and `script` can build on it.
+    await testApp.app.get(HumanActionService).approve(run1.id, 'topics');
+    const reused = await runSeeded('script');
+    expect(reused.stageExecutions.find((e) => e.stageKey === 'topics')?.state).toBe('passed');
+    expect(reused.stageExecutions.find((e) => e.stageKey === 'script')?.state).toBe('pending');
+    const events = await testDb.db.select().from(stageEvent).where(eq(stageEvent.runId, reused.id));
+    expect(events.filter((e) => e.type === 'stage.reused')).toHaveLength(1);
+    expect(events.filter((e) => e.type === 'stage.rerun_reason')).toHaveLength(1);
+    expect(events.find((e) => e.type === 'stage.rerun_reason')).toMatchObject({
+      message: 'Re-running "script": it was requested to run again',
+    });
   });
 });

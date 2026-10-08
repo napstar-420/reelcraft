@@ -514,7 +514,7 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
             onAddStage={addStage}
             onOpenBlueprintSettings={openBlueprintSettings}
             runActions={{
-              onRunStage: (key) => runActions.runStage.mutate(key),
+              onRunStage: (stageKey) => runActions.runStage.mutate({ stageKey }),
               onCancelRun: () => runActions.setConfirmCancel(true),
               onReviewStage: runActions.setApprovalStageKey,
               onMoveStage: (key, delta) => {

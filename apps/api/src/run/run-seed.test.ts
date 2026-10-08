@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { StageDef } from '@reelcraft/shared';
 import {
+  describeSeedStop,
   reusableStageKeys,
   remapProvenance,
   remapTimelineHandles,
@@ -48,26 +49,50 @@ describe('reusableStageKeys', () => {
     const p = baseParams({
       newGraph: [stage('topics'), stage('selector'), stage('script')],
     });
-    expect(reusableStageKeys(p)).toEqual(['topics', 'selector']);
+    expect(reusableStageKeys(p)).toEqual({
+      keys: ['topics', 'selector'],
+      stop: { stageKey: 'script', reason: 'not_in_source' },
+    });
+  });
+
+  it('reuses everything, with no stop, when nothing differs', () => {
+    expect(reusableStageKeys(baseParams())).toEqual({ keys: ['topics', 'selector'] });
   });
 
   it('cuts the prefix where a middle stage was edited', () => {
     const p = baseParams({
       newGraph: [stage('topics'), stage('selector', { label: 'Selector v2' })],
     });
-    expect(reusableStageKeys(p)).toEqual(['topics']);
+    expect(reusableStageKeys(p)).toEqual({
+      keys: ['topics'],
+      stop: { stageKey: 'selector', reason: 'definition_changed' },
+    });
   });
 
   it('cuts at an explicit rerun key', () => {
     const p = baseParams({ rerunStageKeys: ['topics'] });
-    expect(reusableStageKeys(p)).toEqual([]);
+    expect(reusableStageKeys(p)).toEqual({
+      keys: [],
+      stop: { stageKey: 'topics', reason: 'rerun_requested' },
+    });
+  });
+
+  it('leaves the stage before a rerun key reused', () => {
+    const p = baseParams({ rerunStageKeys: ['selector'] });
+    expect(reusableStageKeys(p)).toEqual({
+      keys: ['topics'],
+      stop: { stageKey: 'selector', reason: 'rerun_requested' },
+    });
   });
 
   it('cuts where resolved config plus overrides differ', () => {
     const p = baseParams({
       newResolvedConfig: { selector: { model: { provider: 'openrouter', modelId: 'x' } } },
     });
-    expect(reusableStageKeys(p)).toEqual(['topics']);
+    expect(reusableStageKeys(p)).toEqual({
+      keys: ['topics'],
+      stop: { stageKey: 'selector', reason: 'config_changed' },
+    });
   });
 
   it('cuts where asset bindings differ', () => {
@@ -83,27 +108,58 @@ describe('reusableStageKeys', () => {
       sourceAssetBindings: { 'asset-1': { blobId: 'blob-a', kind: 'image' } },
       newAssetBindings: { 'asset-1': { blobId: 'blob-b', kind: 'image' } },
     });
-    expect(reusableStageKeys(p)).toEqual(['topics']);
+    expect(reusableStageKeys(p)).toEqual({
+      keys: ['topics'],
+      stop: { stageKey: 'selector', reason: 'assets_changed' },
+    });
   });
 
-  it('cuts at a source stage that is not passed', () => {
+  it.each([
+    ['failed', 'failed'],
+    ['cancelled', 'cancelled'],
+    ['awaiting_approval', 'awaiting_approval'],
+    ['awaiting_input', 'awaiting_input'],
+    ['running', 'not_run'],
+    ['pending', 'not_run'],
+    ['skipped', 'not_run'],
+    ['stale', 'not_run'],
+  ] as const)('cuts at a source stage that is %s (%s)', (state, reason) => {
     const p = baseParams({
       sourceExecutions: [
         { stageKey: 'topics', state: 'passed', needsItemWork: false },
-        { stageKey: 'selector', state: 'failed', needsItemWork: false },
+        { stageKey: 'selector', state, needsItemWork: false },
       ],
     });
-    expect(reusableStageKeys(p)).toEqual(['topics']);
+    expect(reusableStageKeys(p)).toEqual({
+      keys: ['topics'],
+      stop: { stageKey: 'selector', reason },
+    });
   });
 
-  it('cuts at a source stage that still needs item work', () => {
+  it('cuts at a source stage that passed but still needs item work', () => {
     const p = baseParams({
       sourceExecutions: [
         { stageKey: 'topics', state: 'passed', needsItemWork: false },
         { stageKey: 'selector', state: 'passed', needsItemWork: true },
       ],
     });
-    expect(reusableStageKeys(p)).toEqual(['topics']);
+    expect(reusableStageKeys(p)).toEqual({
+      keys: ['topics'],
+      stop: { stageKey: 'selector', reason: 'items_incomplete' },
+    });
+  });
+
+  it('reports an item-mode approval wait (stage still running) as awaiting approval', () => {
+    const p = baseParams({
+      sourceExecutions: [
+        { stageKey: 'topics', state: 'passed', needsItemWork: false },
+        { stageKey: 'selector', state: 'running', needsItemWork: true, itemAwaitingApproval: true },
+      ],
+    });
+    expect(reusableStageKeys(p)).toEqual({
+      keys: ['topics'],
+      stop: { stageKey: 'selector', reason: 'awaiting_approval' },
+    });
   });
 
   it('reuses nothing when roles changed', () => {
@@ -111,14 +167,64 @@ describe('reusableStageKeys', () => {
       sourceRoles: [],
       newRoles: [{ key: 'host', characterId: 'char-1' } as never],
     });
-    expect(reusableStageKeys(p)).toEqual([]);
+    expect(reusableStageKeys(p)).toEqual({
+      keys: [],
+      stop: { stageKey: 'topics', reason: 'roles_changed' },
+    });
   });
 
   it('cuts where keys were reordered', () => {
     const p = baseParams({
       newGraph: [stage('selector'), stage('topics')],
     });
-    expect(reusableStageKeys(p)).toEqual([]);
+    expect(reusableStageKeys(p)).toEqual({
+      keys: [],
+      stop: { stageKey: 'selector', reason: 'not_in_source' },
+    });
+  });
+
+  it('ignores iterate.concurrency when comparing stage definitions', () => {
+    const iterate = {
+      over: { from: 'memory' as const, key: 'shots' },
+      itemAlias: 'item',
+      itemRetryLimit: 0,
+    };
+    const withConcurrency = (n: number) =>
+      stage('selector', { iterate: { ...iterate, concurrency: n } as never });
+    const p = baseParams({
+      sourceGraph: [stage('topics'), withConcurrency(1)],
+      newGraph: [stage('topics'), withConcurrency(3)],
+    });
+    expect(reusableStageKeys(p)).toEqual({ keys: ['topics', 'selector'] });
+  });
+
+  it('still cuts when another part of an iterating stage changed', () => {
+    const iterate = { over: { from: 'memory' as const, key: 'shots' }, itemAlias: 'item' };
+    const p = baseParams({
+      sourceGraph: [
+        stage('topics'),
+        stage('selector', { iterate: { ...iterate, itemRetryLimit: 0 } }),
+      ],
+      newGraph: [
+        stage('topics'),
+        stage('selector', { iterate: { ...iterate, itemRetryLimit: 2 } }),
+      ],
+    });
+    expect(reusableStageKeys(p).stop).toEqual({
+      stageKey: 'selector',
+      reason: 'definition_changed',
+    });
+  });
+});
+
+describe('describeSeedStop', () => {
+  it('names the stage and the reason', () => {
+    expect(describeSeedStop({ stageKey: 'A', reason: 'awaiting_approval' })).toBe(
+      'Re-running "A": it was awaiting approval in the source run',
+    );
+    expect(describeSeedStop({ stageKey: 'A', reason: 'failed' }, 'Would re-run')).toBe(
+      'Would re-run "A": it failed in the source run',
+    );
   });
 });
 

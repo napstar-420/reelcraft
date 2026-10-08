@@ -3,11 +3,13 @@ import type {
   OutputDef,
   Ref,
   RunDetailDto,
+  SeedStop,
   StageDef,
   StageExecutionDto,
   StageExecutionState,
 } from '@reelcraft/shared';
 import { stageExecutionStateTone, type StatusTone } from '../../lib/status';
+import { describeSeedStop } from '../../pages/canvas-run.logic';
 import { formatRunDuration } from '../../pages/runs-page.logic';
 
 /** Where a slot or context value comes from, as short as it can be said
@@ -180,6 +182,43 @@ export function nodeRunStatus(
       run.cursorStageKey === execution.stageKey &&
       execution.state === 'awaiting_approval',
   };
+}
+
+/** The first stage before `stageKey` that "Run this stage" would have to run
+ * again, because the active run did not finish it. A hint only: the server
+ * decides (it also compares the stage definitions), so this never blocks. */
+export function upstreamBlocker(
+  run: Pick<RunDetailDto, 'state' | 'cursorStageKey' | 'stageExecutions'> | undefined,
+  graph: Pick<StageDef, 'key'>[],
+  stageKey: string,
+): SeedStop | undefined {
+  if (!run) return undefined;
+  for (const { key } of graph) {
+    if (key === stageKey) return undefined;
+    const execution = run.stageExecutions.find((e) => e.stageKey === key);
+    if (!execution) return { stageKey: key, reason: 'not_in_source' };
+    if (execution.state === 'passed') continue;
+    // An item-mode approval leaves the stage `running`; only the run knows.
+    const waitingForReview =
+      execution.state === 'awaiting_approval' ||
+      (run.state === 'PAUSED_APPROVAL' && run.cursorStageKey === key);
+    if (waitingForReview) return { stageKey: key, reason: 'awaiting_approval' };
+    if (execution.state === 'awaiting_input') return { stageKey: key, reason: 'awaiting_input' };
+    if (execution.state === 'failed') return { stageKey: key, reason: 'failed' };
+    if (execution.state === 'cancelled') return { stageKey: key, reason: 'cancelled' };
+    return { stageKey: key, reason: 'not_run' };
+  }
+  return undefined;
+}
+
+/** Tooltip for a stage's play button. */
+export function runStageTitle(
+  blocker: SeedStop | undefined,
+  labelOf: (stageKey: string) => string,
+): string {
+  return blocker
+    ? `Run this stage. ${describeSeedStop(blocker, labelOf(blocker.stageKey))}, so it would run again first.`
+    : 'Run this stage';
 }
 
 /** The capabilities that match `query`, in display order (grouped, then as
