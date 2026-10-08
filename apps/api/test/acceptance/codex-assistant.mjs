@@ -4,6 +4,7 @@
 // Checks, against the real Codex CLI: the lockdown (no shell, files or env, no MCP tools), tool
 // calls reaching Reelcraft, ask_user ending the turn, and a thread resuming in a NEW process.
 import 'reflect-metadata';
+import zlib from 'node:zlib';
 import { CodexAppServerClient } from '../../dist/provider/codex/codex-app-server.client.js';
 import { CodexNeoRegistrar } from '../../dist/provider/codex/codex-neo-registrar.js';
 import { CodexAssistantAgent } from '../../dist/assistant/agent/codex-assistant.agent.js';
@@ -74,6 +75,43 @@ function turnOptions(agent, sessionId, text, calls, messages) {
   };
 }
 
+function png(w, h, [r, g, b]) {
+  const crc = (buf) => {
+    let c,
+      crc = ~0;
+    for (const byte of buf) {
+      c = (crc ^ byte) & 0xff;
+      for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+      crc = (crc >>> 8) ^ c;
+    }
+    return ~crc >>> 0;
+  };
+  const chunk = (type, data) => {
+    const len = Buffer.alloc(4);
+    len.writeUInt32BE(data.length);
+    const body = Buffer.concat([Buffer.from(type), data]);
+    const sum = Buffer.alloc(4);
+    sum.writeUInt32BE(crc(body));
+    return Buffer.concat([len, body, sum]);
+  };
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(w, 0);
+  ihdr.writeUInt32BE(h, 4);
+  ihdr[8] = 8;
+  ihdr[9] = 2;
+  const row = Buffer.concat([
+    Buffer.from([0]),
+    Buffer.from(Array.from({ length: w }, () => [r, g, b]).flat()),
+  ]);
+  const raw = Buffer.concat(Array.from({ length: h }, () => row));
+  return Buffer.concat([
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    chunk('IHDR', ihdr),
+    chunk('IDAT', zlib.deflateSync(raw)),
+    chunk('IEND', Buffer.alloc(0)),
+  ]);
+}
+
 let models = [];
 const agent = makeAgent();
 const reason = await agent.unavailableReason();
@@ -141,6 +179,37 @@ try {
   );
   if (!resumedCalls.includes('get_blueprint')) throw new Error('A resumed thread lost its tools');
   console.log('resume in a new process ok:', resumedMessages.join(' ').slice(0, 160));
+
+  // 4. a picture from a tool reaches the model. Codex (0.160.0) drops an image inside a dynamic
+  // tool result, so the agent sends it with turn/steer; the model must name its colour.
+  const imageSession = await second.startSession({
+    instructions: 'You are a test assistant. Use only the provided tool.',
+    tools: [
+      {
+        name: 'show_image',
+        description: 'Returns a picture for you to look at.',
+        inputSchema: { type: 'object', properties: {} },
+      },
+    ],
+  });
+  const imageMessages = [];
+  await second.runTurn({
+    ...turnOptions(second, imageSession, '', [], imageMessages),
+    text: 'Call show_image, then tell me the single dominant colour of the picture it returned, in one word. If you cannot see any picture say NOPICTURE.',
+    handlers: {
+      callTool: async () => ({
+        ok: true,
+        text: '{"shown":"one picture"}',
+        images: [{ mime: 'image/png', base64: png(96, 96, [0, 160, 0]).toString('base64') }],
+      }),
+      onEvent: (event) => event.type === 'message' && imageMessages.push(event.text),
+    },
+  });
+  const sawGreen =
+    /green/i.test(imageMessages.join(' ')) && !/NOPICTURE/.test(imageMessages.join(' '));
+  if (!sawGreen) throw new Error(`The model did not see the picture: ${imageMessages.join(' ')}`);
+  console.log('a tool picture reaches the model ok');
+  await second.deleteSession(imageSession).catch(() => undefined);
   await second.deleteSession(sessionId).catch(() => undefined);
   second.close();
   console.log('Codex assistant acceptance passed');

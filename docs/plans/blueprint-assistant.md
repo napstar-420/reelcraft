@@ -20,21 +20,21 @@ The user stays in control. The agent only proposes. Nothing becomes a version wi
 
 ## No hallucination: how
 
-| Mechanism                                                                                                                                                                                                                                                                | Guarantee                                                   |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------- |
-| Instructions say the model knows nothing and must look everything up                                                                                                                                                                                                     | The default path is a tool call, not memory                 |
-| Tools read the running app's registries                                                                                                                                                                                                                                  | Always matches the installed version; no per-release sync   |
-| Tool inputs are narrowed to the live registries (capability keys, check keys, style ids, guide topics)                                                                                                                                                                   | An unknown stage type is rejected before any handler runs   |
-| `propose_draft` runs the real validator and refuses drafts with errors; it also reports invented fields that Zod would silently drop                                                                                                                                     | The model fixes its own mistakes in the same turn           |
-| An authoring guide (`read_guide`), including **what Reelcraft cannot do**                                                                                                                                                                                                | Semantics the schemas can't express; honest "can't" answers |
-| `guide.test.ts` fails CI when a capability, builtin check, Ref kind or artifact kind is missing from the guide, and validates the guide's example drafts with the real validator                                                                                         | The guide can't fall behind the code                        |
-| An assistant-only quality gate (`tools/quality-checks.ts`): `propose_draft` refuses text stages without a system prompt, data outputs without properties, and model stages with no check, QC or approval; the guide's `quality` topic teaches where each control belongs | Good blueprints by default, not only valid ones             |
-| A human applies (or auto-apply with Undo)                                                                                                                                                                                                                                | Nothing reaches a version unreviewed                        |
+| Mechanism                                                                                                                                                                                                                                                                                                                                                   | Guarantee                                                   |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| Instructions say the model knows nothing and must look everything up                                                                                                                                                                                                                                                                                        | The default path is a tool call, not memory                 |
+| Tools read the running app's registries                                                                                                                                                                                                                                                                                                                     | Always matches the installed version; no per-release sync   |
+| Tool inputs are narrowed to the live registries (capability keys, check keys, style ids, guide topics)                                                                                                                                                                                                                                                      | An unknown stage type is rejected before any handler runs   |
+| `propose_draft` runs the real validator and refuses drafts with errors; it also reports invented fields that Zod would silently drop                                                                                                                                                                                                                        | The model fixes its own mistakes in the same turn           |
+| An authoring guide (`read_guide`), including **what Reelcraft cannot do**                                                                                                                                                                                                                                                                                   | Semantics the schemas can't express; honest "can't" answers |
+| `guide.test.ts` fails CI when a capability, builtin check, Ref kind or artifact kind is missing from the guide, and validates the guide's example drafts with the real validator                                                                                                                                                                            | The guide can't fall behind the code                        |
+| An assistant-only quality gate (`tools/quality-checks.ts`): `propose_draft` refuses a stage it adds or changes that has no system prompt (text), a data output without properties, or no check, QC or approval (model stages); gaps already in the user's stages are warnings, not blockers; the guide's `quality` topic teaches where each control belongs | Good blueprints by default, not only valid ones             |
+| A human applies (or auto-apply with Undo)                                                                                                                                                                                                                                                                                                                   | Nothing reaches a version unreviewed                        |
 
 Model, asset and Character ids are not enums in the tool schemas (they change during a session); the
 validator, `list_models` and `get_channel_resources` cover them.
 
-## Tools (12)
+## Tools (19)
 
 Defined once (`apps/api/src/assistant/tools/`), each with a Zod input and a hand-written JSON Schema.
 `tools.test.ts` keeps the two in step (Zod 3 has no JSON Schema output, like `BUILTIN_CHECKS`).
@@ -50,6 +50,13 @@ Defined once (`apps/api/src/assistant/tools/`), each with a Zod input and a hand
 | `validate_draft`                      | read     | the validator's issues for a complete draft                                                                                                                                                        |
 | `propose_draft`                       | write    | validates, then stores a **proposal** (never the working draft)                                                                                                                                    |
 | `update_metadata`                     | write    | proposes a new name, description or tags                                                                                                                                                           |
+| `get_version`                         | read     | one saved version by label ("1.2"): its stages, inputs, role, defaults, budget, validity and run count                                                                                             |
+| `diff_drafts`                         | read     | what differs between two drafts, each "current" or a version label: stages added, removed, changed (fields with before and after), reordered, inputs, role, defaults, budget                       |
+| `get_effective_config`                | read     | one stage's merged settings (built-in, channel, blueprint, stage layers) and each layer                                                                                                            |
+| `list_runs`                           | read     | this blueprint's runs, newest first (version or "canvas draft", dry run, state, spend, where it stopped, failure)                                                                                  |
+| `get_run`                             | read     | one run: inputs, and per stage the state, model, attempt outcomes, cost split (output, QC, checks), failure, item counts                                                                           |
+| `get_stage`                           | read     | one stage of a run: settings, last attempts with failed checks, QC verdicts and notes, its output (also a rejected one); `full` for the whole text, `itemIndex`, `includePrompt`                   |
+| `view_stage_media`                    | read     | the pictures a stage made (images scaled to 1024 px, three frames of a video); 4 per call, 12 per turn. Sent to Codex with `turn/steer`: Codex 0.160.0 drops images in a dynamic tool result       |
 | `ask_user`                            | interact | 1-4 questions with options; the UI adds a final **Other…** text option. **Ends the turn**; the answers arrive as the next turn                                                                     |
 
 After `ask_user` in a turn, the write tools are refused. The blueprint a turn works on is bound
@@ -106,6 +113,17 @@ upgrade, run `acceptance:codex-assistant`.
 Not a separate package: every tool calls Nest services in `apps/api`, and packages can't import from
 `apps/*`. A separate package would fit a future local stdio MCP server for Claude Desktop or Claude
 Code, which would talk to the API over HTTP.
+
+## Guide, system prompt and evals
+
+The standing instructions (`apps/api/src/assistant/instructions.ts`) are sectioned (who you are, where your
+knowledge comes from, what Reelcraft cannot do, how you work, build quality, runs, versions, untrusted data,
+talking to the user); `instructions.test.ts` pins the sections, the tool names and the guide topics they point
+at. The guide (`guide.ts`, `guide-recipes.ts`, `guide-troubleshooting.ts`) has topics for recipes (validated
+example blueprints), prompting, quality, config layers, versions, troubleshooting (every validator message and
+its fix; a test scans the validator's source so a new message can't ship without an entry), diagnose, glossary
+(the app's labels) and limits. `acceptance/assistant-eval.mjs` runs ~25 cases against a real Codex (opt-in;
+use a separate database: another API process's startup marks running turns interrupted).
 
 ## Later
 

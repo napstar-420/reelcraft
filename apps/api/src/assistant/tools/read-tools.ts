@@ -1,58 +1,23 @@
 import { z } from 'zod';
-import { Modality, type CreateBlueprintVersionDto } from '@reelcraft/shared';
+import { Modality } from '@reelcraft/shared';
 import { BUILTIN_CHECKS } from '../../check/builtins/index';
 import { GUIDE_TOPICS, guideIndex, readGuide } from '../guide';
 import { qualityIssues } from './quality-checks';
 import { parseDraft } from './draft-checks';
+import { baselineDraft, currentDraft } from './current-draft';
+import { sameDraft } from './draft-diff';
+import { memoryFlow } from './memory-flow';
 import { draftJsonSchema, MODALITIES, obj, str } from './json-schemas';
-import type { AssistantTool, TurnContext, ToolDeps } from './types';
+import type { AssistantTool } from './types';
 
 const NoInput = z.object({});
 const noInputSchema = () => obj({});
-
-export const EMPTY_DRAFT: CreateBlueprintVersionDto = {
-  graph: [],
-  inputs: [],
-  roles: [],
-  defaults: {},
-  budget: { runCapUsd: 0 },
-};
-
-type DraftSource =
-  'proposal in this turn' | 'canvas' | 'working draft' | 'latest saved version' | 'empty';
-
-async function currentDraft(
-  ctx: TurnContext,
-  deps: ToolDeps,
-): Promise<{ draft: CreateBlueprintVersionDto; source: DraftSource }> {
-  if (ctx.lastProposal) return { draft: ctx.lastProposal, source: 'proposal in this turn' };
-  if (ctx.baseDraft) return { draft: ctx.baseDraft, source: 'canvas' };
-  const blueprint = await deps.blueprints.getBlueprint(ctx.blueprintId);
-  if (blueprint.workingDraft) {
-    return { draft: blueprint.workingDraft as CreateBlueprintVersionDto, source: 'working draft' };
-  }
-  const [latest] = await deps.blueprints.listVersions(ctx.blueprintId);
-  if (latest) {
-    return {
-      // jsonb columns come back untyped; they were validated when the version was saved
-      draft: {
-        graph: latest.graph,
-        inputs: latest.inputs,
-        roles: latest.roles,
-        defaults: latest.defaults,
-        budget: latest.budget,
-      } as CreateBlueprintVersionDto,
-      source: 'latest saved version',
-    };
-  }
-  return { draft: EMPTY_DRAFT, source: 'empty' };
-}
 
 const getBlueprint: AssistantTool = {
   name: 'get_blueprint',
   kind: 'read',
   description:
-    "Return the blueprint you are working on: name, description, tags, its CURRENT draft (what is on the canvas right now, or your last proposal in this turn), the draft's validation issues and its saved versions. Call this at the start of every turn and never rely on an earlier result.",
+    "Return the blueprint you are working on: name, description, tags, where it came from, its CURRENT draft (what is on the canvas right now, or your last proposal in this turn), the draft's validation issues, how its memory keys flow between stages, and its saved versions (label, which is current, runs, whether the draft differs from the latest save). Call this at the start of every turn and never rely on an earlier result. Use get_version to read an older version.",
   input: NoInput,
   jsonSchema: noInputSchema,
   async handler(ctx, deps) {
@@ -64,13 +29,15 @@ const getBlueprint: AssistantTool = {
     } catch (error) {
       validation = { error: error instanceof Error ? error.message : String(error) };
     }
-    const versions = (await deps.blueprints.listVersions(ctx.blueprintId))
-      .slice(0, 10)
-      .map((v) => ({
-        version: `${v.major}.${v.minor}`,
-        runnable: v.runnable,
-        createdAt: v.createdAt,
-      }));
+    const allVersions = await deps.blueprints.listVersions(ctx.blueprintId);
+    const latest = allVersions[0];
+    const versions = allVersions.slice(0, 20).map((v) => ({
+      version: `${v.major}.${v.minor}`,
+      isCurrent: v.id === blueprint.currentVersionId,
+      runnable: v.runnable,
+      runCount: v.runCount,
+      createdAt: v.createdAt,
+    }));
     return {
       ok: true,
       result: {
@@ -78,10 +45,28 @@ const getBlueprint: AssistantTool = {
         name: blueprint.name,
         description: blueprint.description,
         tags: blueprint.tags,
+        archived: blueprint.archived,
+        runCount: blueprint.runCount,
+        // provenance: `packageId` is set once this blueprint has been exported as a package;
+        // `importedFrom` says which other author's package it was imported from
+        ...(blueprint.packageId ? { sharedAsPackageId: blueprint.packageId } : {}),
+        ...(blueprint.packageBasedOn ? { importedFrom: blueprint.packageBasedOn } : {}),
         draftSource: source,
         draft,
         validation,
+        memoryFlow: memoryFlow(draft.graph),
         versions,
+        versionCount: allVersions.length,
+        // false when the draft is exactly the latest saved version
+        draftDiffersFromLatest: latest
+          ? !sameDraft(draft, {
+              graph: latest.graph,
+              inputs: latest.inputs,
+              roles: latest.roles,
+              defaults: latest.defaults,
+              budget: latest.budget,
+            } as typeof draft)
+          : draft.graph.length > 0,
       },
     };
   },
@@ -188,10 +173,15 @@ const listModels: AssistantTool<z.infer<typeof ListModelsInput>> = {
   async handler(_ctx, deps, input) {
     const models: unknown[] = [];
     const providerErrors: Array<{ providerId: string; error: string }> = [];
+    // every provider, including ones with no usable model, so "why can't I use X" has an answer
+    const providers: Array<{ providerId: string; modalities: string[]; usableModels: number }> = [];
     for (const providerId of deps.providers.list()) {
       try {
         const provider = deps.providers.get(providerId);
+        const entry = { providerId, modalities: [...provider.modalities], usableModels: 0 };
+        providers.push(entry);
         for (const model of await provider.listModels()) {
+          entry.usableModels += 1;
           const modalities = model.modalities ?? provider.modalities;
           if (input.modality && !modalities.includes(input.modality)) continue;
           models.push({
@@ -234,7 +224,7 @@ const listModels: AssistantTool<z.infer<typeof ListModelsInput>> = {
         });
       }
     }
-    return { ok: true, result: { models, providerErrors } };
+    return { ok: true, result: { providers, models, providerErrors } };
   },
 };
 
@@ -285,27 +275,55 @@ const getChannelResources: AssistantTool = {
   name: 'get_channel_resources',
   kind: 'read',
   description:
-    "The blueprint's channel: its default settings (models etc.), its assets (id, name, kind) and its Characters (id, name, readiness). Asset and Character ids in a draft must come from here.",
+    "The blueprint's channel: its name, description, theme and default settings (models etc.), its assets (id, name, kind, file details such as size, dimensions and duration), its Characters (id, name, description, readiness, and their reference images: a role needs a Character id and at least one of its reference blobIds) and the channel's other blueprints (name, description, tags: so you can avoid name clashes and say like your other blueprint; you can read only THIS blueprint's contents). Asset and Character ids in a draft must come from here.",
   input: NoInput,
   jsonSchema: noInputSchema,
   async handler(ctx, deps) {
     const { channelId } = await deps.blueprints.getBlueprint(ctx.blueprintId);
-    const [channel, assets, characters] = await Promise.all([
+    const [channel, assets, characters, siblings] = await Promise.all([
       deps.channels.get(channelId),
       deps.assets.list(channelId),
       deps.characters.list(channelId),
+      deps.blueprints.listByChannel(channelId),
     ]);
     return {
       ok: true,
       result: {
-        channel: { id: channel.id, name: channel.name, defaults: channel.defaults },
-        assets: assets.map((a) => ({ id: a.id, name: a.name, kind: a.kind, tags: a.tags })),
+        channel: {
+          id: channel.id,
+          name: channel.name,
+          description: channel.description,
+          theme: channel.theme,
+          defaults: channel.defaults,
+        },
+        otherBlueprints: siblings
+          .filter((b) => b.id !== ctx.blueprintId && !b.archived)
+          .map((b) => ({
+            name: b.name,
+            description: b.description,
+            tags: b.tags,
+            runCount: b.runCount,
+          })),
+        assets: assets.map((a) => ({
+          id: a.id,
+          name: a.name,
+          kind: a.kind,
+          tags: a.tags,
+          file: a.file,
+        })),
         characters: characters.map((c) => ({
           id: c.id,
           name: c.name,
           description: c.description,
           readiness: c.readiness,
           referenceCount: Array.isArray(c.referenceSet) ? c.referenceSet.length : 0,
+          // a role must name at least one of these reference images (role.referenceBlobIds)
+          references: Array.isArray(c.referenceSet)
+            ? (c.referenceSet as Array<{ blobId: string; view?: string; caption?: string }>).map(
+                (r) => ({ blobId: r.blobId, view: r.view, caption: r.caption }),
+              )
+            : [],
+          primaryReferenceId: c.primaryRefId,
         })),
       },
     };
@@ -318,7 +336,7 @@ const readGuideTool: AssistantTool<z.infer<typeof ReadGuideInput>> = {
   name: 'read_guide',
   kind: 'read',
   description:
-    'Read a section of the Reelcraft authoring guide: how stages connect, prompts, outputs, iterate, checks/QC/retries, models, inputs, assembly, and WHAT REELCRAFT CANNOT DO (topic "limits"). Read the relevant topics before building anything non-trivial.',
+    "Read a section of the Reelcraft guide: proven blueprint shapes (recipes), writing prompts, the quality bar, how stages connect, outputs, iterate, checks/QC/retries, models, how settings merge (config-layers), versions, what each validator message means and how to fix it (troubleshooting), using run results (diagnose), the app's own words (glossary) and WHAT REELCRAFT CANNOT DO (limits). Read the topics that apply before building anything non-trivial; omit the topic for the index.",
   input: ReadGuideInput,
   jsonSchema: (n) =>
     obj({ topic: str('Guide topic; omit for the index.', { enum: n.guideTopics }) }),
@@ -349,7 +367,7 @@ const validateDraft: AssistantTool<z.infer<typeof DraftInput>> = {
     if (!parsed.ok)
       return { ok: false, error: 'The draft has the wrong shape.', issues: parsed.issues };
     const validation = await deps.blueprints.validateOnly(ctx.blueprintId, parsed.draft);
-    const quality = qualityIssues(parsed.draft);
+    const quality = qualityIssues(parsed.draft, await baselineDraft(ctx, deps));
     return {
       ok: true,
       result: { ...validation, issues: [...validation.issues, ...quality] },

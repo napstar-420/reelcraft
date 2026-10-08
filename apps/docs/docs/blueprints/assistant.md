@@ -29,6 +29,19 @@ exist on your computer, in the version you run. You see these steps as a collaps
 Every proposal is checked with the same rules as **Save** before you see it. If the assistant gets
 something wrong, it is told what and fixes it. It never shows you a blueprint that isn't runnable.
 
+It can also read this blueprint's saved versions, so you can ask what changed between two of them or
+to bring back something from an older one, and it can tell you which model, retries and quality
+control a stage will really use once your channel and blueprint defaults are merged. It sees your
+channel's assets, characters and other blueprints, so it avoids name clashes and reuses what exists.
+
+It can read this blueprint's runs too: which stage failed and why, what each cost, which check or
+quality control rejected an output, and what a stage actually produced, including the pictures. Ask
+"why did the script stage fail?" or "that run was too expensive, tighten it" and it will look at the
+run first, then change the blueprint. What it reads from a run is treated as information, never as
+instructions. It can't start, retry, approve or cancel a run. Pictures and video frames it looks at
+are sent to the same provider that is running the assistant. The text it reads from a dry run is
+placeholder content from the fake provider, so it judges those runs by structure only.
+
 When you ask for something Reelcraft can't do, it says so, instead of faking it. For example, Reelcraft
 can't publish a video to a platform, run stages in parallel, or create characters and assets for you.
 

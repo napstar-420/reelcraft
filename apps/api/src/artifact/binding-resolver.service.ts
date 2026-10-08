@@ -8,6 +8,7 @@ import { getPath } from '../common/path';
 import { unwrapText } from '../common/unwrap-text';
 import { DerivedFrameService } from './derived-frame.service';
 import { storedClips } from './clip-handle';
+import { timingMapOf } from './timing-map';
 import { MemoryService } from './memory.service';
 
 type ArtifactRow = typeof artifact.$inferSelect;
@@ -241,11 +242,15 @@ export class BindingResolverService {
             return ref.path ? getPath(row.data, ref.path) : row.data;
           }),
         );
+        const mediaIds = rows.flatMap((row) => (row.artifactId ? [row.artifactId] : []));
         return {
           value: values,
           provenance: {
             ref,
             memoryKey: ref.key,
+            // A media group's items are addressed `memory:<key>#<i>`; the handle
+            // canonicalizer needs their artifacts to map those to `artifact:<id>`.
+            ...(mediaIds.length === rows.length && { artifactIds: mediaIds }),
             memoryVersions: rows.map((row) => ({
               itemIndex: itemIndexOf(row, ref.key),
               version: row.version,
@@ -762,5 +767,7 @@ function mediaManifest(
     ...(video?.height !== undefined && { height: video.height }),
     ...(probe?.durationSec !== undefined && { durationSec: probe.durationSec }),
     hasAudio: probe?.streams?.some((stream) => stream.type === 'audio') ?? false,
+    // Generate Speech with word timings: this same handle is a captions `timingHandle`.
+    ...(timingMapOf(row.data) && { hasWordTiming: true }),
   };
 }

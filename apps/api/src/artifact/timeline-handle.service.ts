@@ -30,6 +30,10 @@ export class TimelineHandleService {
   }
 
   private addMappings(mappings: Map<string, string>, ref: Ref, source: RefProvenance) {
+    // The manifests list `artifactId` beside `handle`; a model may bind the bare id.
+    for (const id of [source.artifactId, ...(source.artifactIds ?? [])]) {
+      if (id) mappings.set(id, `artifact:${id}`);
+    }
     const base = relativeHandle(ref);
     if (!base) return;
     if (ref.from === 'asset') {

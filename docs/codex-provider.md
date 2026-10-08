@@ -55,11 +55,17 @@ The process is locked down (`apps/api/src/assistant/agent/codex-app-server-args.
   kept across a resume, so it is sent on every `turn/start` too. The working directory is an empty temp dir.
 - Anything Codex asks us that isn't our own tool (approvals, `request_user_input`, elicitations) is denied.
 
+**Pictures.** An image returned inside a dynamic tool result (`inputImage` content item) is silently dropped
+by Codex 0.160.0: the model answers about a picture it never saw (verified: it named the wrong colour). An image
+sent with `turn/steer` (`{ type: 'image', url: 'data:…' }`) while the tool call is pending does reach the model, so
+`view_stage_media` returns text and the agent steers the pictures in (`CodexAssistantAgent.showImages`). The
+acceptance below checks this; if a Codex upgrade starts honouring tool-result images, that step can be removed.
+
 What is still visible to the model: Reelcraft's tools, `wait`, `request_user_input` and the `collaboration.*`
 sub-agent helpers (the instructions forbid them, and sub-agent threads can't call our tools).
 
 After a Codex upgrade, re-run the opt-in acceptance. It checks the lockdown (shell, file and env access all
-fail), that tool calls reach Reelcraft, that `ask_user` ends the turn, and that a thread resumes in a new process:
+fail), that tool calls reach Reelcraft, that `ask_user` ends the turn, that a thread resumes in a new process, and that a picture from a tool reaches the model:
 
 ```bash
 REELCRAFT_CODEX_ACCEPTANCE=1 pnpm --filter @reelcraft/api acceptance:codex-assistant

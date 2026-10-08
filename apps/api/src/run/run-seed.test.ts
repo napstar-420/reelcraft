@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { StageDef } from '@reelcraft/shared';
-import { reusableStageKeys, remapProvenance, untilStageIndex } from './run-seed';
+import {
+  reusableStageKeys,
+  remapProvenance,
+  remapTimelineHandles,
+  untilStageIndex,
+} from './run-seed';
 import type { RefProvenance } from '../artifact/binding-resolver.service';
 
 function stage(key: string, overrides: Partial<StageDef> = {}): StageDef {
@@ -151,5 +156,33 @@ describe('untilStageIndex', () => {
 
   it('is undefined for an unknown key', () => {
     expect(untilStageIndex(graph, 'nope')).toBeUndefined();
+  });
+});
+
+describe('remapTimelineHandles', () => {
+  it('points copied timeline handles (and clip positions) at the new artifacts', () => {
+    const idMap = new Map([['OLD1', 'NEW1']]);
+    const data = {
+      tracks: [
+        {
+          items: [
+            { handle: 'artifact:OLD1' },
+            { handle: 'artifact:OLD1#2' },
+            { handle: 'asset:A' },
+          ],
+        },
+      ],
+    };
+    expect(remapTimelineHandles(data, idMap)).toEqual({
+      tracks: [
+        {
+          items: [
+            { handle: 'artifact:NEW1' },
+            { handle: 'artifact:NEW1#2' },
+            { handle: 'asset:A' },
+          ],
+        },
+      ],
+    });
   });
 });

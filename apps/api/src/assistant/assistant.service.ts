@@ -33,6 +33,10 @@ import { ChannelService } from '../channel/channel.service';
 import { AssetService } from '../channel/asset.service';
 import { CharacterService } from '../channel/character.service';
 import { SchemaValidatorService } from '../json-schema/schema-validator.service';
+import { RunInsightService } from '../run/run-insight.service';
+import { MediaPreviewService } from '../artifact/media-preview.service';
+import { ConfigResolverService } from '../run-config/config-resolver.service';
+import { engineDefaults } from '../run-config/engine-defaults';
 import { AssistantEvents } from './assistant-events';
 import {
   ASSISTANT_AGENTS,
@@ -78,6 +82,9 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
     assets: AssetService,
     characters: CharacterService,
     schemas: SchemaValidatorService,
+    configResolver: ConfigResolverService,
+    runs: RunInsightService,
+    media: MediaPreviewService,
     private readonly config: EngineConfig,
     private readonly events: AssistantEvents,
   ) {
@@ -90,6 +97,10 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
       assets,
       characters,
       schemas,
+      configResolver,
+      runs,
+      media,
+      engineLayer: () => engineDefaults(config),
     };
   }
 
@@ -509,11 +520,24 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
       const forModel = outcome.ok
         ? { ...(isRecord(outcome.result) ? outcome.result : { result: outcome.result }), ...extra }
         : { error: outcome.error, ...(outcome.issues && { issues: outcome.issues }) };
+      const images = outcome.ok ? outcome.images : undefined;
       await this.updateItem(callItem.id, {
         state: outcome.ok ? 'completed' : 'failed',
-        payload: { tool, args, ok: outcome.ok, result: truncateForDisplay(forModel) },
+        payload: {
+          tool,
+          args,
+          ok: outcome.ok,
+          result: truncateForDisplay(forModel),
+          // the pictures go to the model only: the transcript keeps their count and size
+          ...(images?.length && {
+            images: images.map((image) => ({
+              mime: image.mime,
+              kb: Math.round((image.base64.length * 3) / 4 / 1024),
+            })),
+          }),
+        },
       });
-      return { ok: outcome.ok, text: JSON.stringify(forModel) };
+      return { ok: outcome.ok, text: JSON.stringify(forModel), ...(images?.length && { images }) };
     };
 
     const timer = setTimeout(() => {

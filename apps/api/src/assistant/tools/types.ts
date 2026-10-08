@@ -5,8 +5,10 @@ import type {
   CreateBlueprintVersionDto,
   DraftProposalPayload,
   MetadataProposalPayload,
+  ConfigLayer,
   ValidationIssue,
 } from '@reelcraft/shared';
+import type { ToolImage } from '../agent/assistant-agent.interface';
 import type { BlueprintService } from '../../blueprint/blueprint.service';
 import type { CapabilityRegistry } from '../../capability/capability.registry';
 import type { StyleRegistry } from '../../capability/style.registry';
@@ -14,6 +16,9 @@ import type { ProviderRegistry } from '../../provider/provider.registry';
 import type { ChannelService } from '../../channel/channel.service';
 import type { AssetService } from '../../channel/asset.service';
 import type { CharacterService } from '../../channel/character.service';
+import type { RunInsightService } from '../../run/run-insight.service';
+import type { MediaPreviewService } from '../../artifact/media-preview.service';
+import type { ConfigResolverService } from '../../run-config/config-resolver.service';
 import type { SchemaValidatorService } from '../../json-schema/schema-validator.service';
 
 /** Per-turn state shared by the tools of one turn. The agent never touches the database: every
@@ -26,19 +31,21 @@ export interface TurnContext {
   lastProposal: CreateBlueprintVersionDto | null;
   /** `ask_user` ends the turn: write tools are refused once it has run. */
   questionAsked: boolean;
+  /** Pictures `view_stage_media` has shown so far this turn (there is a per-turn limit). */
+  imagesShown: number;
 }
 
 export function newTurnContext(
   blueprintId: string,
   baseDraft: CreateBlueprintVersionDto | null,
 ): TurnContext {
-  return { blueprintId, baseDraft, lastProposal: null, questionAsked: false };
+  return { blueprintId, baseDraft, lastProposal: null, questionAsked: false, imagesShown: 0 };
 }
 
 export interface ToolDeps {
   blueprints: Pick<
     BlueprintService,
-    'getBlueprint' | 'listVersions' | 'validateOnly' | 'assertNameFree'
+    'getBlueprint' | 'listVersions' | 'listByChannel' | 'validateOnly' | 'assertNameFree'
   >;
   capabilities: Pick<CapabilityRegistry, 'list' | 'get'>;
   providers: Pick<ProviderRegistry, 'list' | 'get'>;
@@ -47,6 +54,14 @@ export interface ToolDeps {
   assets: Pick<AssetService, 'list'>;
   characters: Pick<CharacterService, 'list'>;
   schemas: Pick<SchemaValidatorService, 'validate'>;
+  runs: Pick<
+    RunInsightService,
+    'listForBlueprint' | 'getForBlueprint' | 'stageForBlueprint' | 'mediaForBlueprint'
+  >;
+  media: Pick<MediaPreviewService, 'imageFromBlob' | 'framesOfVideo'>;
+  configResolver: Pick<ConfigResolverService, 'resolveRunConfig'>;
+  /** Reelcraft's built-in bottom config layer. */
+  engineLayer: () => ConfigLayer;
 }
 
 /** What the service stores as a transcript item (it adds the ids). */
@@ -58,7 +73,7 @@ export type ToolItem =
   | { type: 'question'; payload: AskUserInput };
 
 export type ToolOutcome =
-  | { ok: true; result: unknown; item?: ToolItem }
+  | { ok: true; result: unknown; item?: ToolItem; images?: ToolImage[] }
   | { ok: false; error: string; issues?: ValidationIssue[] };
 
 /** Values the tool schemas are narrowed to. Only registries that change with an app release;
