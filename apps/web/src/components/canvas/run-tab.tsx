@@ -11,6 +11,7 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import { ArtifactPreview } from '@/components/runs/artifact-preview';
 import { RunMemoryCard } from '@/components/runs/run-memory-card';
 import type { CanvasRunActions } from '@/hooks/useCanvasRunActions';
+import { runStageTitle, upstreamBlocker } from '@/components/canvas/stage-card.logic';
 import { RunLaunchDialog } from '@/pages/RunLaunchDialog';
 import { formatRunDuration } from '@/pages/runs-page.logic';
 import { isRunActionAllowed } from '@/lib/run-action-policy';
@@ -128,6 +129,7 @@ export function RunTab({
     );
   }
 
+  const labelOf = actions.stageLabel;
   const spent = Number(run.spentUsd);
   const cap = Number(run.budgetCapUsd);
   const percent = cap > 0 ? Math.min(100, (spent / cap) * 100) : 0;
@@ -210,11 +212,17 @@ export function RunTab({
                 <Button
                   size="icon-xs"
                   variant="ghost"
-                  title={stoppable ? 'Cancel run' : 'Run this stage'}
+                  title={
+                    stoppable
+                      ? 'Cancel run'
+                      : runStageTitle(upstreamBlocker(run, graph, stage.key), labelOf)
+                  }
                   aria-label={stoppable ? 'Cancel run' : 'Run this stage'}
                   disabled={stoppable ? actions.cancel.isPending : actions.runStage.isPending}
                   onClick={() =>
-                    stoppable ? actions.setConfirmCancel(true) : actions.runStage.mutate(stage.key)
+                    stoppable
+                      ? actions.setConfirmCancel(true)
+                      : actions.runStage.mutate({ stageKey: stage.key })
                   }
                 >
                   {stoppable ? <Square /> : <Play />}

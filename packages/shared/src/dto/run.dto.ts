@@ -8,6 +8,42 @@ import { OutputDef } from '../output';
  * origin when a self-hosted install proxies storage (`/storage/...`). */
 export const BrowserMediaUrl = z.union([z.string().url(), z.string().regex(/^\/(?!\/)/)]);
 
+/** Why a seeded run could not reuse a stage (and so re-runs it and everything
+ * after it); see `reusableStageKeys` on the API side. */
+export const SeedStopReason = z.enum([
+  'roles_changed',
+  'definition_changed',
+  'config_changed',
+  'assets_changed',
+  'not_in_source',
+  'awaiting_approval',
+  'awaiting_input',
+  'failed',
+  'cancelled',
+  'not_run',
+  'items_incomplete',
+  'rerun_requested',
+]);
+export type SeedStopReason = z.infer<typeof SeedStopReason>;
+
+/** The first stage a seeded run re-runs instead of reusing, and why. */
+export const SeedStop = z.object({ stageKey: z.string(), reason: SeedStopReason });
+export type SeedStop = z.infer<typeof SeedStop>;
+
+/** What a seeded run would reuse: the stages copied from the source run, then
+ * the stage where reuse stopped. */
+export const SeedPlanDto = z.object({ reused: z.array(z.string()), stop: SeedStop });
+export type SeedPlanDto = z.infer<typeof SeedPlanDto>;
+
+/** Body of the 409 `RunService.create` answers with when `expectReusedBefore`
+ * is set and a stage before it would be re-run. */
+export const UpstreamRerunDto = z.object({
+  code: z.literal('upstream_rerun'),
+  message: z.string(),
+  plan: SeedPlanDto,
+});
+export type UpstreamRerunDto = z.infer<typeof UpstreamRerunDto>;
+
 export const CreateRunDto = z.object({
   channelId: z.string(),
   blueprintVersionId: z.string(),
@@ -26,6 +62,10 @@ export const CreateRunDto = z.object({
   // Stop the run after this stage; later stages are created 'skipped'
   // rather than 'pending', so the run completes without executing them.
   untilStageKey: z.string().optional(),
+  // With `seedFromRunId`: refuse (409 `upstream_rerun`, nothing created) if any
+  // stage before this one would be re-run rather than reused, so "run this
+  // stage" can ask first instead of silently running an earlier stage.
+  expectReusedBefore: z.string().optional(),
   /** A dry run: every model is forced to the free fake provider (see
    * `RunService.applyDryRunOverride`). Media inputs upload as for a real run. */
   dryRun: z.boolean().optional(),

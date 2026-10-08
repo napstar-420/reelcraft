@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import type { StageDef, StageExecutionDto } from '@reelcraft/shared';
+import type { RunDetailDto, StageDef, StageExecutionDto } from '@reelcraft/shared';
 import {
   capabilityGroup,
   describeOutputKind,
   describeRef,
   nodeRunStatus,
+  runStageTitle,
   stageFlags,
+  upstreamBlocker,
 } from './stage-card.logic';
 
 function stage(patch: Partial<StageDef> = {}): StageDef {
@@ -166,5 +168,72 @@ describe('nodeRunStatus', () => {
       reviewable: true,
     });
     expect(nodeRunStatus(waiting, { ...paused, cursorStageKey: 'other' })?.reviewable).toBe(false);
+  });
+});
+
+describe('upstreamBlocker', () => {
+  const graph = [{ key: 'a' }, { key: 'b' }, { key: 'c' }];
+  function runWith(
+    states: Record<string, StageExecutionDto['state']>,
+    patch: Partial<Pick<RunDetailDto, 'state' | 'cursorStageKey'>> = {},
+  ) {
+    return {
+      state: 'COMPLETED',
+      cursorStageKey: null,
+      ...patch,
+      stageExecutions: Object.entries(states).map(([stageKey, state]) => ({ stageKey, state })),
+    } as Pick<RunDetailDto, 'state' | 'cursorStageKey' | 'stageExecutions'>;
+  }
+
+  it('has no blocker without a run, for the first stage, or when everything before passed', () => {
+    expect(upstreamBlocker(undefined, graph, 'c')).toBeUndefined();
+    expect(upstreamBlocker(runWith({ a: 'failed' }), graph, 'a')).toBeUndefined();
+    expect(upstreamBlocker(runWith({ a: 'passed', b: 'passed', c: 'failed' }), graph, 'c')).toBe(
+      undefined,
+    );
+  });
+
+  it('names the first earlier stage the run did not finish, and why', () => {
+    const blocked = (states: Record<string, StageExecutionDto['state']>) =>
+      upstreamBlocker(runWith(states), graph, 'c');
+    expect(blocked({ a: 'passed', b: 'awaiting_approval' })).toEqual({
+      stageKey: 'b',
+      reason: 'awaiting_approval',
+    });
+    expect(blocked({ a: 'awaiting_input', b: 'failed' })).toEqual({
+      stageKey: 'a',
+      reason: 'awaiting_input',
+    });
+    expect(blocked({ a: 'passed', b: 'failed' })).toEqual({ stageKey: 'b', reason: 'failed' });
+    expect(blocked({ a: 'cancelled', b: 'passed' })).toEqual({
+      stageKey: 'a',
+      reason: 'cancelled',
+    });
+    expect(blocked({ a: 'passed', b: 'skipped' })).toEqual({ stageKey: 'b', reason: 'not_run' });
+    expect(blocked({ a: 'passed', b: 'running' })).toEqual({ stageKey: 'b', reason: 'not_run' });
+    expect(blocked({ a: 'passed' })).toEqual({ stageKey: 'b', reason: 'not_in_source' });
+  });
+
+  it('treats a running stage the run is parked on for approval as awaiting approval', () => {
+    const run = runWith(
+      { a: 'running', b: 'pending' },
+      { state: 'PAUSED_APPROVAL', cursorStageKey: 'a' },
+    );
+    expect(upstreamBlocker(run, graph, 'c')).toEqual({
+      stageKey: 'a',
+      reason: 'awaiting_approval',
+    });
+  });
+});
+
+describe('runStageTitle', () => {
+  it('is plain when nothing upstream blocks', () => {
+    expect(runStageTitle(undefined, (key) => key)).toBe('Run this stage');
+  });
+
+  it('says which earlier stage would run again, by label', () => {
+    expect(runStageTitle({ stageKey: 'a', reason: 'awaiting_approval' }, () => 'Script')).toBe(
+      'Run this stage. "Script" is waiting for your review, so it would run again first.',
+    );
   });
 });

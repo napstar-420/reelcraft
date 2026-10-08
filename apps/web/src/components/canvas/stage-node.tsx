@@ -47,6 +47,8 @@ export type StageNodeData = {
   capabilityLabel: string;
   issues?: ValidationIssue[] | undefined;
   runStatus?: NodeRunStatus | undefined;
+  /** Tooltip for the play button (says if an earlier stage would run again). */
+  runTitle?: string | undefined;
   readOnly: boolean;
 };
 export type StageFlowNode = Node<StageNodeData, 'stage'>;
@@ -67,7 +69,15 @@ function IoRow({ icon, name, detail }: { icon: React.ReactNode; name: string; de
   );
 }
 
-function RunFooter({ stageKey, status }: { stageKey: string; status: NodeRunStatus }) {
+function RunFooter({
+  stageKey,
+  status,
+  runTitle,
+}: {
+  stageKey: string;
+  status: NodeRunStatus;
+  runTitle: string | undefined;
+}) {
   const actions = useCanvasActions();
   const running = status.state === 'running';
   return (
@@ -98,7 +108,7 @@ function RunFooter({ stageKey, status }: { stageKey: string; status: NodeRunStat
           variant="ghost"
           size="icon-xs"
           className="nodrag nopan"
-          title={running ? 'Cancel run' : 'Run this stage'}
+          title={running ? 'Cancel run' : (runTitle ?? 'Run this stage')}
           aria-label={running ? 'Cancel run' : 'Run this stage'}
           onClick={() => (running ? actions.onCancelRun() : actions.onRunStage(stageKey))}
         >
@@ -110,7 +120,7 @@ function RunFooter({ stageKey, status }: { stageKey: string; status: NodeRunStat
 }
 
 function StageNodeView({ data, selected }: NodeProps<StageFlowNode>) {
-  const { stage, index, count, capabilityLabel, issues, runStatus, readOnly } = data;
+  const { stage, index, count, capabilityLabel, issues, runStatus, runTitle, readOnly } = data;
   const actions = useCanvasActions();
   const style = capabilityStyle(stage.capability);
   const Icon = style.icon;
@@ -299,7 +309,7 @@ function StageNodeView({ data, selected }: NodeProps<StageFlowNode>) {
         </div>
       )}
 
-      {runStatus ? <RunFooter stageKey={stage.key} status={runStatus} /> : null}
+      {runStatus ? <RunFooter stageKey={stage.key} status={runStatus} runTitle={runTitle} /> : null}
     </div>
   );
 }

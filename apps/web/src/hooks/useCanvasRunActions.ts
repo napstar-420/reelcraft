@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import type { RunDetailDto, StageDef } from '@reelcraft/shared';
+import type { RunDetailDto, SeedPlanDto, StageDef } from '@reelcraft/shared';
 import { api } from '@/api/client';
-import { buildRunAllDto, buildRunStageDto } from '@/pages/canvas-run.logic';
+import { buildRunAllDto, buildRunStageDto, upstreamRerunPlan } from '@/pages/canvas-run.logic';
 import { describeRunActionError } from '@/lib/describe-run-action-error';
 
 /** The canvas's run actions (run one stage, run all, pause/resume/cancel) and
@@ -27,6 +27,13 @@ export function useCanvasRunActions({
   const [attemptsSheetKey, setAttemptsSheetKey] = useState<string | null>(null);
   const [approvalStageKey, setApprovalStageKey] = useState<string | null>(null);
   const [confirmCancel, setConfirmCancel] = useState(false);
+  /** "Run this stage" was refused because an earlier stage would run again;
+   * the sheet asks whether to go ahead. */
+  const [upstreamRerun, setUpstreamRerun] = useState<{
+    stageKey: string;
+    plan: SeedPlanDto;
+    sourceRunId: string;
+  } | null>(null);
 
   const stageLabel = (stageKey: string) => graph.find((s) => s.key === stageKey)?.label ?? stageKey;
 
@@ -36,15 +43,21 @@ export function useCanvasRunActions({
   }
 
   const runStage = useMutation({
-    mutationFn: async (stageKey: string) => {
+    mutationFn: async ({ stageKey, anyway }: { stageKey: string; anyway?: boolean }) => {
       const blueprintVersionId = await prepareRunnableVersion();
       if (!run) throw new Error('No previous run to build on yet.');
-      const created = await api.createRun(buildRunStageDto(run, blueprintVersionId, stageKey));
+      const created = await api.createRun(
+        buildRunStageDto(run, blueprintVersionId, stageKey, { anyway }),
+      );
       await api.startRun(created.id);
       return created.id;
     },
     onSuccess: afterStart,
-    onError: (error) => toast.error(describeRunActionError(error, 'Could not start the stage.')),
+    onError: (error, { stageKey }) => {
+      const plan = upstreamRerunPlan(error);
+      if (plan && run) setUpstreamRerun({ stageKey, plan, sourceRunId: run.id });
+      else toast.error(describeRunActionError(error, 'Could not start the stage.'));
+    },
   });
 
   const runAll = useMutation({
@@ -85,6 +98,8 @@ export function useCanvasRunActions({
     setApprovalStageKey,
     confirmCancel,
     setConfirmCancel,
+    upstreamRerun,
+    setUpstreamRerun,
   };
 }
 

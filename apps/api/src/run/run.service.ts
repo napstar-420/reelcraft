@@ -7,6 +7,7 @@ import type {
   RoleDef,
   ListRunsQueryDto,
   Probe,
+  SeedStop,
 } from '@reelcraft/shared';
 import { InputDef, RoleDef as RoleDefSchema, StageDef } from '@reelcraft/shared';
 import { RUN_ACTION_ALLOWED_STATES } from './run-action-policy';
@@ -49,6 +50,7 @@ import type { RoleBinding } from '../artifact/binding-resolver.service';
 import { canonicalJson } from '../json-schema/schema-hash';
 import {
   copyReusedStages,
+  describeSeedStop,
   reusableStageKeys,
   untilStageIndex,
   type SourceExecutionSummary,
@@ -123,7 +125,11 @@ export class RunService {
     }
 
     const graphKeys = new Set(graph.map((s) => s.key));
-    for (const key of [...dto.rerunStageKeys, ...(dto.untilStageKey ? [dto.untilStageKey] : [])]) {
+    for (const key of [
+      ...dto.rerunStageKeys,
+      ...(dto.untilStageKey ? [dto.untilStageKey] : []),
+      ...(dto.expectReusedBefore ? [dto.expectReusedBefore] : []),
+    ]) {
       if (!graphKeys.has(key)) {
         throw new ConflictException(`Stage "${key}" is not part of this blueprint version`);
       }
@@ -134,6 +140,7 @@ export class RunService {
     // run-stages-from-canvas plan. Copies a still-valid prefix of a previous
     // run's finished stages into this new run instead of re-executing them.
     let seed: { sourceRunId: string; stageKeys: string[] } | undefined;
+    let seedStop: SeedStop | undefined;
     let mergedInputs = dto.inputs;
     if (dto.seedFromRunId) {
       const source = await this.get(dto.seedFromRunId);
@@ -177,9 +184,10 @@ export class RunService {
         .filter((e) => e.isIterating)
         .map((e) => e.id);
       const nonPassedItemExecutionIds = new Set<string>();
+      const awaitingApprovalItemExecutionIds = new Set<string>();
       if (iteratingExecutionIds.length > 0) {
         const rows = await this.db
-          .select({ stageExecutionId: stageItem.stageExecutionId })
+          .select({ stageExecutionId: stageItem.stageExecutionId, state: stageItem.state })
           .from(stageItem)
           .where(
             and(
@@ -187,15 +195,21 @@ export class RunService {
               sql`${stageItem.state} != 'passed'`,
             ),
           );
-        for (const row of rows) nonPassedItemExecutionIds.add(row.stageExecutionId);
+        for (const row of rows) {
+          nonPassedItemExecutionIds.add(row.stageExecutionId);
+          if (row.state === 'awaiting_approval') {
+            awaitingApprovalItemExecutionIds.add(row.stageExecutionId);
+          }
+        }
       }
       const sourceExecutions: SourceExecutionSummary[] = source.stageExecutions.map((e) => ({
         stageKey: e.stageKey,
         state: e.state,
         needsItemWork: nonPassedItemExecutionIds.has(e.id),
+        itemAwaitingApproval: awaitingApprovalItemExecutionIds.has(e.id),
       }));
 
-      const stageKeys = reusableStageKeys({
+      const { keys: stageKeys, stop } = reusableStageKeys({
         sourceGraph,
         newGraph: graph,
         sourceResolvedConfig: source.resolvedConfig as Record<string, ConfigLayer>,
@@ -212,6 +226,20 @@ export class RunService {
         rerunStageKeys: dto.rerunStageKeys,
       });
       if (stageKeys.length > 0) seed = { sourceRunId: dto.seedFromRunId, stageKeys };
+      seedStop = stop;
+
+      // Before anything is inserted: "run this stage" must not silently start
+      // an earlier stage instead of (or before) the one that was asked for.
+      const expectedIndex = dto.expectReusedBefore
+        ? graph.findIndex((s) => s.key === dto.expectReusedBefore)
+        : -1;
+      if (stop && stageKeys.length < expectedIndex) {
+        throw new ConflictException({
+          code: 'upstream_rerun',
+          message: describeSeedStop(stop, `Running "${dto.expectReusedBefore}" would first re-run`),
+          plan: { reused: stageKeys, stop },
+        });
+      }
     }
 
     await this.db.transaction(async (tx) => {
@@ -228,6 +256,7 @@ export class RunService {
       });
 
       const newExecutionIdByKey = new Map<string, string>();
+      const stateByKey = new Map<string, 'passed' | 'skipped' | 'pending'>();
       const reusedKeys = new Set(seed?.stageKeys ?? []);
       for (const [index, stage] of graph.entries()) {
         const id = ulid();
@@ -237,6 +266,7 @@ export class RunService {
           : stopIndex !== undefined && index > stopIndex
             ? 'skipped'
             : 'pending';
+        stateByKey.set(stage.key, state);
         await tx.insert(stageExecution).values({ id, runId, stageKey: stage.key, state });
       }
 
@@ -251,6 +281,24 @@ export class RunService {
             newExecutionIdByKey,
           })
         : undefined;
+      // Say why the first non-reused stage runs again (not when this run stops
+      // before it, so it never runs).
+      const stopExecutionId =
+        seedStop && stateByKey.get(seedStop.stageKey) === 'pending'
+          ? newExecutionIdByKey.get(seedStop.stageKey)
+          : undefined;
+      if (seedStop && stopExecutionId) {
+        await tx.insert(stageEvent).values({
+          id: ulid(),
+          runId,
+          stageExecutionId: stopExecutionId,
+          level: 'info',
+          type: 'stage.rerun_reason',
+          message: describeSeedStop(seedStop),
+          data: { sourceRunId: dto.seedFromRunId, reason: seedStop.reason },
+          createdAt: new Date().toISOString(),
+        });
+      }
       const toRecord = copied
         ? Object.fromEntries(
             Object.entries(mergedInputs).filter(([key]) => !copied.copiedInputKeys.has(key)),

@@ -1,4 +1,4 @@
-import type { CreateRunDto, RunDetailDto } from '@reelcraft/shared';
+import type { CreateRunDto, RunDetailDto, SeedPlanDto, SeedStop } from '@reelcraft/shared';
 
 /** Pure DTO builders for the canvas run dock's three actions — kept
  * separate from `useCanvasRunActions.ts` so they're testable without React.
@@ -46,11 +46,13 @@ function fromSource(
 /** "Run this stage" — reuse everything reusable up to `stageKey`, force
  * `stageKey` itself to run even if it would otherwise be considered
  * unchanged (the user clicked it because they want a fresh result), and
- * stop right after it. */
+ * stop right after it. The server refuses (409 `upstream_rerun`) if that
+ * would also re-run an earlier stage, unless `anyway` says that is fine. */
 export function buildRunStageDto(
   source: CanvasRunSource,
   blueprintVersionId: string,
   stageKey: string,
+  { anyway = false }: { anyway?: boolean | undefined } = {},
 ): CreateRunDto {
   return {
     ...fromSource(source, blueprintVersionId),
@@ -58,7 +60,50 @@ export function buildRunStageDto(
     seedFromRunId: source.id,
     rerunStageKeys: [stageKey],
     untilStageKey: stageKey,
+    ...(!anyway && { expectReusedBefore: stageKey }),
   };
+}
+
+/** The reuse plan out of a 409 `upstream_rerun` rejection (`ApiError.issues`
+ * carries the response body), or undefined for any other error. */
+export function upstreamRerunPlan(error: unknown): SeedPlanDto | undefined {
+  const { status, issues } = (error ?? {}) as { status?: unknown; issues?: unknown };
+  if (status !== 409 || !issues || typeof issues !== 'object') return undefined;
+  const { code, plan } = issues as { code?: unknown; plan?: SeedPlanDto };
+  return code === 'upstream_rerun' && plan?.stop ? plan : undefined;
+}
+
+/** Why an earlier stage has to run again, as a sentence about `stageLabel`
+ * (no trailing period). Shared by the run confirmation and the play-button
+ * hint. */
+export function describeSeedStop(stop: SeedStop, stageLabel: string): string {
+  const name = `"${stageLabel}"`;
+  switch (stop.reason) {
+    case 'roles_changed':
+      return "The blueprint's roles changed since the current run";
+    case 'definition_changed':
+      return `${name} changed since the current run`;
+    case 'config_changed':
+      return `${name}'s settings changed since the current run`;
+    case 'assets_changed':
+      return `An asset ${name} uses changed since the current run`;
+    case 'not_in_source':
+      return `${name} is not part of the current run`;
+    case 'awaiting_approval':
+      return `${name} is waiting for your review`;
+    case 'awaiting_input':
+      return `${name} is waiting for your input`;
+    case 'failed':
+      return `${name} failed in the current run`;
+    case 'cancelled':
+      return `${name} was cancelled in the current run`;
+    case 'not_run':
+      return `${name} has not finished running in the current run`;
+    case 'items_incomplete':
+      return `Some items of ${name} have not finished in the current run`;
+    case 'rerun_requested':
+      return `${name} was asked to run again`;
+  }
 }
 
 /** "Run all" — reuse everything reusable, run every stage after that. */

@@ -5,7 +5,11 @@ import type {
   TrunkEdgeData,
   TrunkFlowEdge,
 } from '../components/canvas/stage-edges';
-import { nodeRunStatus } from '../components/canvas/stage-card.logic';
+import {
+  nodeRunStatus,
+  runStageTitle,
+  upstreamBlocker,
+} from '../components/canvas/stage-card.logic';
 import { memoryLinks } from './canvas-graph.logic';
 import { NODE_TOP_Y, START_NODE_X, stageX } from './canvas-layout.logic';
 
@@ -39,6 +43,7 @@ export function buildStageGraph(input: StageGraphInput): { nodes: FlowNode[]; ed
   const labelOf = new Map(input.capabilities.map((c) => [c.key, c.label]));
   const executions = new Map(input.run?.stageExecutions.map((e) => [e.stageKey, e]));
   const keys = new Set(graph.map((s) => s.key));
+  const labelOfStage = (key: string) => graph.find((s) => s.key === key)?.label ?? key;
 
   const nodes: FlowNode[] = [
     {
@@ -62,6 +67,9 @@ export function buildStageGraph(input: StageGraphInput): { nodes: FlowNode[]; ed
         capabilityLabel: labelOf.get(stage.capability) ?? stage.capability,
         issues: input.issuesByStage.get(stage.key),
         runStatus: readOnly ? undefined : nodeRunStatus(executions.get(stage.key), input.run),
+        runTitle: readOnly
+          ? undefined
+          : runStageTitle(upstreamBlocker(input.run, graph, stage.key), labelOfStage),
         readOnly,
       },
     })),

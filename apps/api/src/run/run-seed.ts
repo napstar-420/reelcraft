@@ -1,5 +1,5 @@
 import { and, eq, inArray } from 'drizzle-orm';
-import type { ConfigLayer, RoleDef, StageDef } from '@reelcraft/shared';
+import type { ConfigLayer, RoleDef, SeedStop, SeedStopReason, StageDef } from '@reelcraft/shared';
 import { canonicalJson } from '../json-schema/schema-hash';
 import { mergeLayer } from '../run-config/layer-merge';
 import { collectAssetIds } from '../blueprint/collect-asset-refs';
@@ -22,6 +22,9 @@ export interface SourceExecutionSummary {
   stageKey: string;
   state: string;
   needsItemWork: boolean;
+  /** An item-mode approval wait leaves the execution `running` and only the
+   * item `awaiting_approval`. */
+  itemAwaitingApproval?: boolean;
 }
 
 export interface ReusableStageKeysParams {
@@ -39,13 +42,51 @@ export interface ReusableStageKeysParams {
   rerunStageKeys: string[];
 }
 
+/** `iterate.concurrency` only changes how fast items run, not what they
+ * produce, so a change to it must not break reuse. */
+function comparableStage(stage: StageDef): unknown {
+  if (!stage.iterate || !('concurrency' in stage.iterate)) return stage;
+  const iterate: Record<string, unknown> = { ...stage.iterate };
+  delete iterate.concurrency;
+  return { ...stage, iterate };
+}
+
+function sourceStopReason(e: SourceExecutionSummary): SeedStopReason {
+  if (e.state === 'awaiting_approval' || e.itemAwaitingApproval) return 'awaiting_approval';
+  if (e.state === 'awaiting_input') return 'awaiting_input';
+  if (e.state === 'failed') return 'failed';
+  if (e.state === 'cancelled') return 'cancelled';
+  return e.needsItemWork ? 'items_incomplete' : 'not_run';
+}
+
+const SEED_STOP_CLAUSES: Record<SeedStopReason, string> = {
+  roles_changed: 'the blueprint roles changed since the source run',
+  definition_changed: 'its definition changed since the source run',
+  config_changed: 'its settings changed since the source run',
+  assets_changed: 'an asset it uses changed since the source run',
+  not_in_source: 'it is not in the source run',
+  awaiting_approval: 'it was awaiting approval in the source run',
+  awaiting_input: 'it was awaiting input in the source run',
+  failed: 'it failed in the source run',
+  cancelled: 'it was cancelled in the source run',
+  not_run: 'it had not finished running in the source run',
+  items_incomplete: 'some of its items had not finished in the source run',
+  rerun_requested: 'it was requested to run again',
+};
+
+/** Why a seeded run re-runs `stop.stageKey`, as a sentence. */
+export function describeSeedStop(stop: SeedStop, lead = 'Re-running'): string {
+  return `${lead} "${stop.stageKey}": ${SEED_STOP_CLAUSES[stop.reason]}`;
+}
+
 /**
  * The longest PREFIX of `newGraph` that can be copied verbatim from the
  * source run, per the plan's "longest unchanged prefix" rule: stages run
  * strictly in array order and `prev` only ever looks at the immediately
  * preceding stage (`stage-runner.service.ts`'s `prevStageKey`), so once one
  * stage in the prefix differs, every stage from there on must re-run —
- * there's no need for a dependency graph to get this right.
+ * there's no need for a dependency graph to get this right. `stop` names the
+ * first stage that is not reused and why (absent when everything is).
  *
  * ponytail: prefix-only reuse. Inserting a stage in the MIDDLE of an
  * otherwise-unchanged graph re-runs everything after it, even stages that
@@ -54,42 +95,58 @@ export interface ReusableStageKeysParams {
  * of "index i matches" — not needed for the common case (append a stage, or
  * edit one stage) this feature targets.
  */
-export function reusableStageKeys(p: ReusableStageKeysParams): string[] {
-  if (canonicalJson(p.sourceRoles) !== canonicalJson(p.newRoles)) return [];
+export function reusableStageKeys(p: ReusableStageKeysParams): {
+  keys: string[];
+  stop?: SeedStop;
+} {
+  const first = p.newGraph[0];
+  if (first && canonicalJson(p.sourceRoles) !== canonicalJson(p.newRoles)) {
+    return { keys: [], stop: { stageKey: first.key, reason: 'roles_changed' } };
+  }
 
   const sourceByKey = new Map(p.sourceExecutions.map((e) => [e.stageKey, e]));
   const rerunSet = new Set(p.rerunStageKeys);
-  const reused: string[] = [];
+  const keys: string[] = [];
 
   for (let i = 0; i < p.newGraph.length; i++) {
     const newStage = p.newGraph[i]!;
     const sourceStage = p.sourceGraph[i];
-    if (!sourceStage || sourceStage.key !== newStage.key) break;
-    if (canonicalJson(sourceStage) !== canonicalJson(newStage)) break;
+    const sourceExecution = sourceByKey.get(newStage.key);
+    const stopAt = (reason: SeedStopReason) => ({
+      keys,
+      stop: { stageKey: newStage.key, reason },
+    });
+
+    if (!sourceStage || sourceStage.key !== newStage.key || !sourceExecution) {
+      return stopAt('not_in_source');
+    }
+    if (rerunSet.has(newStage.key)) return stopAt('rerun_requested');
+    if (canonicalJson(comparableStage(sourceStage)) !== canonicalJson(comparableStage(newStage))) {
+      return stopAt('definition_changed');
+    }
 
     const sourceLayer = mergeLayer(
       p.sourceResolvedConfig[newStage.key] ?? {},
       p.sourceOverrides[newStage.key] ?? {},
     );
-    if (canonicalJson(sourceLayer) !== canonicalJson(p.newResolvedConfig[newStage.key] ?? {}))
-      break;
+    if (canonicalJson(sourceLayer) !== canonicalJson(p.newResolvedConfig[newStage.key] ?? {})) {
+      return stopAt('config_changed');
+    }
 
     const assetIds = collectAssetIds([newStage]);
     const bindingsMatch = assetIds.every(
       (id) => canonicalJson(p.sourceAssetBindings[id]) === canonicalJson(p.newAssetBindings[id]),
     );
-    if (!bindingsMatch) break;
+    if (!bindingsMatch) return stopAt('assets_changed');
 
-    const sourceExecution = sourceByKey.get(newStage.key);
-    if (!sourceExecution || sourceExecution.state !== 'passed' || sourceExecution.needsItemWork)
-      break;
+    if (sourceExecution.state !== 'passed' || sourceExecution.needsItemWork) {
+      return stopAt(sourceStopReason(sourceExecution));
+    }
 
-    if (rerunSet.has(newStage.key)) break;
-
-    reused.push(newStage.key);
+    keys.push(newStage.key);
   }
 
-  return reused;
+  return { keys };
 }
 
 /** Deep-remaps every `artifactId`/`artifactIds` inside a `resolvedInputs`
