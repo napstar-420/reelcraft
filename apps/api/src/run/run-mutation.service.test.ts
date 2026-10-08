@@ -1,5 +1,5 @@
 import { ConflictException, NotFoundException } from '@nestjs/common';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { RunActionPolicy } from './run-action-policy';
 import { RunMutationService } from './run-mutation.service';
 
@@ -14,7 +14,11 @@ function queryResult<T>(rows: T[]) {
   return query;
 }
 
+const events = { publish: vi.fn() };
+
 describe('RunMutationService', () => {
+  beforeEach(() => events.publish.mockClear());
+
   it('locks, mutates, increments once, and inserts the revision-bound wakeup atomically', async () => {
     const lockedRun = {
       id: 'run-1',
@@ -34,7 +38,7 @@ describe('RunMutationService', () => {
     const db = {
       transaction: vi.fn(async (callback: (arg: typeof tx) => unknown) => callback(tx)),
     };
-    const service = new RunMutationService(db as never, new RunActionPolicy());
+    const service = new RunMutationService(db as never, new RunActionPolicy(), events as never);
     const mutate = vi.fn().mockResolvedValue({ changed: true });
 
     const result = await service.withLockedRun(
@@ -63,6 +67,7 @@ describe('RunMutationService', () => {
       revision: 5,
       wakeupId: expect.any(String),
     });
+    expect(events.publish).toHaveBeenCalledWith({ type: 'run', runId: 'run-1' });
   });
 
   it('does not invoke the mutation or write a wakeup when policy rejects the state', async () => {
@@ -76,7 +81,7 @@ describe('RunMutationService', () => {
       transaction: vi.fn(async (callback: (arg: typeof tx) => unknown) => callback(tx)),
     };
     const mutate = vi.fn();
-    const service = new RunMutationService(db as never, new RunActionPolicy());
+    const service = new RunMutationService(db as never, new RunActionPolicy(), events as never);
 
     await expect(
       service.withLockedRun('run-1', 'resume', ['FAILED'], mutate, 'run/resumed'),
@@ -84,6 +89,7 @@ describe('RunMutationService', () => {
     expect(mutate).not.toHaveBeenCalled();
     expect(tx.update).not.toHaveBeenCalled();
     expect(tx.insert).not.toHaveBeenCalled();
+    expect(events.publish).not.toHaveBeenCalled();
   });
 
   it('reports a missing run without invoking the callback', async () => {
@@ -92,7 +98,7 @@ describe('RunMutationService', () => {
       transaction: vi.fn(async (callback: (arg: typeof tx) => unknown) => callback(tx)),
     };
     const mutate = vi.fn();
-    const service = new RunMutationService(db as never, new RunActionPolicy());
+    const service = new RunMutationService(db as never, new RunActionPolicy(), events as never);
 
     await expect(
       service.withLockedRun('missing', 'resume', ['FAILED'], mutate, 'run/resumed'),

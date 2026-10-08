@@ -34,7 +34,7 @@ function MemoryValue({ entry }: { entry: RunMemoryEntryDto }) {
 
 /** The run's memory: every current value with who wrote it and when, then
  * the writes the blueprint declares that haven't landed yet. The query key
- * sits under `['run', runId]`, so `useRun`'s SSE invalidation refreshes it. */
+ * sits under `['run', runId]`, so the live-update invalidation of the run refreshes it. */
 export function RunMemoryCard({
   run,
   onOpenStage,

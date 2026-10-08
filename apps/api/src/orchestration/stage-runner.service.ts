@@ -1716,6 +1716,19 @@ export class StageRunnerService {
       .from(stageExecution)
       .where(eq(stageExecution.id, stageExecutionId))
       .limit(1);
+    // The state is written first so the live update the log event triggers
+    // refetches the failed stage, not the one before the failure.
+    if (stageItemId) {
+      await this.db
+        .update(stageItem)
+        .set({ state: 'failed', failure: { reason } })
+        .where(eq(stageItem.id, stageItemId));
+    } else {
+      await this.db
+        .update(stageExecution)
+        .set({ state: 'failed', failure: { reason }, endedAt: new Date().toISOString() })
+        .where(eq(stageExecution.id, stageExecutionId));
+    }
     if (execution) {
       await this.events.record(
         { ...execution, stageExecutionId },
@@ -1725,17 +1738,6 @@ export class StageRunnerService {
         { reason },
       );
     }
-    if (stageItemId) {
-      await this.db
-        .update(stageItem)
-        .set({ state: 'failed', failure: { reason } })
-        .where(eq(stageItem.id, stageItemId));
-      return;
-    }
-    await this.db
-      .update(stageExecution)
-      .set({ state: 'failed', failure: { reason }, endedAt: new Date().toISOString() })
-      .where(eq(stageExecution.id, stageExecutionId));
   }
 
   /** For a thrown exception (transport error, unexpected throw) on an
@@ -2026,7 +2028,11 @@ export class StageRunnerService {
    * Run Memory and `{from:'prev', alignWith:'item'}` are). */
   async finishIteratingStage(stageExecutionId: string): Promise<{ artifactId: string }> {
     const [execution] = await this.db
-      .select({ itemCount: stageExecution.itemCount })
+      .select({
+        itemCount: stageExecution.itemCount,
+        runId: stageExecution.runId,
+        stageKey: stageExecution.stageKey,
+      })
       .from(stageExecution)
       .where(eq(stageExecution.id, stageExecutionId))
       .limit(1);
@@ -2063,6 +2069,7 @@ export class StageRunnerService {
         outputArtifactId: lastItem.outputArtifactId,
       })
       .where(eq(stageExecution.id, stageExecutionId));
+    this.events.publishStageChanged(execution.runId, execution.stageKey);
     return { artifactId: lastItem.outputArtifactId };
   }
 }

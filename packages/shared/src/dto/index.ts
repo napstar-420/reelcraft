@@ -12,3 +12,4 @@ export * from './update.dto';
 export * from './settings.dto';
 export * from './package.dto';
 export * from './assistant.dto';
+export * from './live.dto';

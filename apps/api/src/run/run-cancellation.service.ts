@@ -4,6 +4,7 @@ import { StageDef, type JobHandle } from '@reelcraft/shared';
 import { LedgerService } from '../budget/ledger.service';
 import { CapabilityRegistry } from '../capability/capability.registry';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
+import { LiveEvents } from '../live/live-events';
 import { blueprintVersion, run, stageAttempt, stageExecution } from '../db/schema/index';
 import { HumanWaitService } from './human-wait.service';
 import { RunMutationService } from './run-mutation.service';
@@ -21,6 +22,7 @@ export class RunCancellationService {
     @Optional() @Inject(DRIZZLE) private readonly db?: Db,
     @Optional() private readonly capabilities?: CapabilityRegistry,
     @Optional() private readonly ledger?: LedgerService,
+    @Optional() private readonly events?: LiveEvents,
   ) {}
 
   async cancel(runId: string) {
@@ -42,6 +44,8 @@ export class RunCancellationService {
       'run cancelled',
     );
     await this.settleOutstanding(runId);
+    // `withLockedRun` already announced the run; settling changed its stages after that.
+    this.events?.publish({ type: 'run', runId });
     try {
       await this.dispatcher.dispatch(result.wakeupId);
     } catch (error) {

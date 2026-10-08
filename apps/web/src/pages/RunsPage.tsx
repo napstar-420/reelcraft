@@ -98,7 +98,6 @@ export function RunsPage({ channelId: fixedChannelId }: { channelId?: string } =
         limit: RUNS_PAGE_LIMIT,
         offset,
       }),
-    refetchInterval: 5000,
   });
 
   function onRowActionSettled(runId: string) {

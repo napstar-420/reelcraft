@@ -8,10 +8,8 @@ import {
   Post,
   Put,
   Query,
-  Sse,
   UsePipes,
 } from '@nestjs/common';
-import { map, type Observable } from 'rxjs';
 import {
   CreateRunDto,
   RaiseBudgetDto,
@@ -28,7 +26,6 @@ import {
   ListRunsQueryDto,
 } from '@reelcraft/shared';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
-import { InProcessRunEvents, type RunEvent } from '../orchestration/run-events';
 import { RunService } from './run.service';
 import { RunInputService } from './run-input.service';
 import { RunActionService } from './run-action.service';
@@ -43,7 +40,6 @@ export class RunController {
   constructor(
     private readonly runs: RunService,
     private readonly runInputs: RunInputService,
-    private readonly events: InProcessRunEvents,
     private readonly actions: RunActionService,
     private readonly invalidation: InvalidationService,
     private readonly humanActions: HumanActionService,
@@ -255,11 +251,5 @@ export class RunController {
       ...(dto.sourceArtifactId !== undefined && { sourceArtifactId: dto.sourceArtifactId }),
       ...(dto.previewToken !== undefined && { previewToken: dto.previewToken }),
     });
-  }
-
-  /** REQ-2.8.4 — the UI is a view over Run state, not the driver of it. */
-  @Sse(':id/events')
-  stream(@Param('id') id: string): Observable<{ data: RunEvent }> {
-    return this.events.stream(id).pipe(map((event) => ({ data: event })));
   }
 }

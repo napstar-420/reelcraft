@@ -26,7 +26,13 @@ function serviceFor(wakeup: object, run: object) {
   const db = {
     transaction: vi.fn(async (callback: (arg: typeof tx) => unknown) => callback(tx)),
   };
-  return { service: new RunWakeupClaimService(db as never, new RunActionPolicy()), tx, updateSet };
+  const events = { publish: vi.fn() };
+  return {
+    service: new RunWakeupClaimService(db as never, new RunActionPolicy(), events as never),
+    tx,
+    updateSet,
+    events,
+  };
 }
 
 describe('RunWakeupClaimService', () => {
@@ -47,20 +53,21 @@ describe('RunWakeupClaimService', () => {
   };
 
   it('claims only an exact persisted event and atomically enters RUNNING', async () => {
-    const { service, tx, updateSet } = serviceFor(wakeup, {
+    const { service, tx, updateSet, events } = serviceFor(wakeup, {
       id: 'run-1',
       state: 'FAILED',
       revision: 7,
     });
 
     await expect(service.claim(event)).resolves.toEqual({ claimed: true, runId: 'run-1' });
+    expect(events.publish).toHaveBeenCalledWith({ type: 'run', runId: 'run-1' });
     expect(tx.update).toHaveBeenCalledTimes(2);
     expect(updateSet).toHaveBeenCalledWith({ state: 'RUNNING', endedAt: null });
     expect(updateSet).toHaveBeenCalledWith({ claimedAt: expect.any(String) });
   });
 
   it('ignores a delayed wakeup whose revision no longer matches', async () => {
-    const { service, tx } = serviceFor(wakeup, {
+    const { service, tx, events } = serviceFor(wakeup, {
       id: 'run-1',
       state: 'CANCELLED',
       revision: 8,
@@ -70,6 +77,7 @@ describe('RunWakeupClaimService', () => {
       claimed: false,
       reason: 'stale_revision',
     });
+    expect(events.publish).not.toHaveBeenCalled();
     expect(tx.update).not.toHaveBeenCalled();
   });
 

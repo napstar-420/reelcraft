@@ -11,7 +11,7 @@ import { inngestClientProvider } from './inngest.client';
 import { StageRunnerService } from './stage-runner.service';
 import { StageEventService } from './stage-event.service';
 import { RunStateService } from './run-state.service';
-import { InProcessRunEvents } from './run-events';
+import { LiveModule } from '../live/live.module';
 import { HumanWaitService } from '../run/human-wait.service';
 
 @Module({
@@ -24,13 +24,13 @@ import { HumanWaitService } from '../run/human-wait.service';
     JsonSchemaModule,
     CheckModule,
     QcModule,
+    LiveModule,
   ],
   providers: [
     inngestClientProvider,
     StageRunnerService,
     StageEventService,
     RunStateService,
-    InProcessRunEvents,
     HumanWaitService,
   ],
   exports: [
@@ -38,7 +38,6 @@ import { HumanWaitService } from '../run/human-wait.service';
     StageRunnerService,
     StageEventService,
     RunStateService,
-    InProcessRunEvents,
     HumanWaitService,
   ],
 })

@@ -105,7 +105,6 @@ export function CanvasRunSheets({
         runId={run.id}
         stageKey={attemptsSheetKey}
         stageLabel={attemptsSheetKey && actions.stageLabel(attemptsSheetKey)}
-        stageRunning={running(attemptsSheetKey)}
         open={attemptsSheetKey !== null}
         onOpenChange={(open) => !open && actions.setAttemptsSheetKey(null)}
       />

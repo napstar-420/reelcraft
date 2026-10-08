@@ -9,6 +9,7 @@ import { EditorPage } from './pages/EditorPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { AppShell } from './components/app-shell';
 import { Skeleton } from './components/ui/skeleton';
+import { useLiveUpdates } from './hooks/useLiveUpdates';
 
 const TimelineEditorPage = lazy(() =>
   import('./pages/TimelineEditorPage').then((module) => ({ default: module.TimelineEditorPage })),
@@ -24,6 +25,7 @@ function RoutedShell({ children }: { children: React.ReactNode }) {
 }
 
 export function App() {
+  useLiveUpdates();
   return (
     <RoutedShell>
       <Routes>
