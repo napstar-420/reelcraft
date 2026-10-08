@@ -31,6 +31,7 @@ import {
 } from '@/pages/canvas-graph.logic';
 import { RunLaunchDialog } from '@/pages/RunLaunchDialog';
 import type {
+  BlueprintDto,
   BlueprintVersionDto,
   ConfigLayer,
   InputDef,
@@ -42,6 +43,7 @@ import type {
 import { AssistantPanel } from './assistant/assistant-panel';
 import { BlueprintSettingsPanel } from './BlueprintSettingsPanel';
 import { CanvasDock, type DockTab } from './canvas-dock';
+import { withWorkingDraft } from './canvas-draft.logic';
 import { CanvasRunSheets } from './canvas-run-sheets';
 import { CanvasToolbar } from './canvas-toolbar';
 import { CanvasWorkspace } from './canvas-workspace';
@@ -132,10 +134,22 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
   const [viewing, setViewing] = useState<BlueprintVersionDto | null>(null);
   const [confirmRestore, setConfirmRestore] = useState(false);
 
+  /** Keeps the cached blueprint in step with what this canvas wrote, so a later
+   * visit doesn't load (and autosave) an unsaved copy a save already replaced. */
+  const cacheWorkingDraft = useCallback(
+    (workingDraft: BlueprintDraft | null, currentVersionId?: string) =>
+      queryClient.setQueryData<BlueprintDto>(['blueprint', blueprintId], (old) =>
+        withWorkingDraft(old, workingDraft, currentVersionId),
+      ),
+    [queryClient, blueprintId],
+  );
+
   // Load once: the autosaved working copy if there is one, else the latest
-  // saved version. `latestSaved` is what Run executes.
+  // saved version. `latestSaved` is what Run executes. Only from data fetched
+  // since this page mounted: the cache can still hold an older unsaved copy.
   useEffect(() => {
     if (draft || !versions.data || !blueprintMeta.data) return;
+    if (!versions.isFetchedAfterMount || !blueprintMeta.isFetchedAfterMount) return;
     // The API lists saved versions newest first (major, then minor).
     const latest = versions.data[0] ?? null;
     const saved = latest ? draftOf(latest) : emptyDraft();
@@ -151,7 +165,13 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
     }
     serverHasWorkingDraft.current = working !== null;
     setDraft(working ? draftOf(working) : saved);
-  }, [draft, versions.data, blueprintMeta.data]);
+  }, [
+    draft,
+    versions.data,
+    blueprintMeta.data,
+    versions.isFetchedAfterMount,
+    blueprintMeta.isFetchedAfterMount,
+  ]);
 
   /** Content equality, not referential identity (and key-order independent,
    * since both sides may have round-tripped through `jsonb`). */
@@ -167,8 +187,9 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
       setDraft(applied);
       serverHasWorkingDraft.current = true;
       await api.setWorkingDraft(blueprintId, applied);
+      cacheWorkingDraft(applied);
     },
-    [blueprintId],
+    [blueprintId, cacheWorkingDraft],
   );
   const assistant = useAssistant({
     blueprintId,
@@ -184,9 +205,11 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
     const timer = window.setTimeout(() => {
       if (isDirty) {
         serverHasWorkingDraft.current = true;
+        cacheWorkingDraft(draft);
         void api.setWorkingDraft(blueprintId, draft);
       } else if (serverHasWorkingDraft.current) {
         serverHasWorkingDraft.current = false;
+        cacheWorkingDraft(null);
         void api.setWorkingDraft(blueprintId, null);
       }
     }, 1000);
@@ -217,6 +240,7 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
     setLatestSaved(version);
     setSavedDraft(saved);
     serverHasWorkingDraft.current = false;
+    cacheWorkingDraft(null, version.id);
     void queryClient.invalidateQueries({ queryKey: ['blueprint-versions', blueprintId] });
   }
 
@@ -271,6 +295,7 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
     setDraft(savedDraft);
     setSelectedStageKey(null);
     serverHasWorkingDraft.current = false;
+    cacheWorkingDraft(null);
     void api.setWorkingDraft(blueprintId, null);
   }
 
