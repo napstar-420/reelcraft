@@ -142,7 +142,10 @@ export interface CopyReusedStagesParams {
  * "seeded run" design in the run-stages-from-canvas plan. Must run inside
  * the same transaction as the new run's `stage_execution` inserts.
  */
-export async function copyReusedStages(tx: Tx, p: CopyReusedStagesParams): Promise<void> {
+export async function copyReusedStages(
+  tx: Tx,
+  p: CopyReusedStagesParams,
+): Promise<{ copiedInputKeys: Set<string> }> {
   const stageKeySet = new Set(p.stageKeys);
   const idMap = new Map<string, string>();
 
@@ -153,7 +156,12 @@ export async function copyReusedStages(tx: Tx, p: CopyReusedStagesParams): Promi
   const reusedArtifacts = sourceArtifacts.filter(
     (a) => a.producerStageKey.startsWith('$input:') || stageKeySet.has(a.producerStageKey),
   );
-  if (reusedArtifacts.length === 0) return;
+  const copiedInputKeys = new Set(
+    reusedArtifacts
+      .filter((a) => a.producerStageKey.startsWith('$input:'))
+      .map((a) => a.producerStageKey.slice('$input:'.length)),
+  );
+  if (reusedArtifacts.length === 0) return { copiedInputKeys };
 
   for (const src of reusedArtifacts) idMap.set(src.id, ulid());
   for (const src of reusedArtifacts) {
@@ -260,6 +268,7 @@ export async function copyReusedStages(tx: Tx, p: CopyReusedStagesParams): Promi
       artifactId: row.artifactId ? (idMap.get(row.artifactId) ?? row.artifactId) : null,
     });
   }
+  return { copiedInputKeys };
 }
 
 /** Picks the same "active" attempt `InvalidationService` would

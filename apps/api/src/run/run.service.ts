@@ -240,16 +240,24 @@ export class RunService {
         await tx.insert(stageExecution).values({ id, runId, stageKey: stage.key, state });
       }
 
-      if (seed) {
-        await copyReusedStages(tx, {
-          sourceRunId: seed.sourceRunId,
-          runId,
-          stageKeys: seed.stageKeys,
-          newExecutionIdByKey,
-        });
-      }
+      // A seed already carries the source run's input artifacts (their values
+      // are the same, see the conflict check above); recording them again would
+      // add a second active `$input:` artifact per key.
+      const copied = seed
+        ? await copyReusedStages(tx, {
+            sourceRunId: seed.sourceRunId,
+            runId,
+            stageKeys: seed.stageKeys,
+            newExecutionIdByKey,
+          })
+        : undefined;
+      const toRecord = copied
+        ? Object.fromEntries(
+            Object.entries(mergedInputs).filter(([key]) => !copied.copiedInputKeys.has(key)),
+          )
+        : mergedInputs;
 
-      await this.runInputs.recordProvidedInputs(tx, runId, inputDefs, mergedInputs);
+      await this.runInputs.recordProvidedInputs(tx, runId, inputDefs, toRecord);
     });
     this.logger.log(
       {
