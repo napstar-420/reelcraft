@@ -63,6 +63,12 @@ It is saved for this browser only. To turn it off, switch off **Browser notifica
 
 ### If it won't turn on
 
+- **No prompt appears.** Your browser asks next to the address bar, and some browsers show only a small
+  bell icon there instead of a pop-up. Select the icon and choose **Allow**. Reelcraft says
+  **Waiting for your answer** until you do. A browser built into another app, such as an editor, can't ask:
+  open Reelcraft in your regular browser instead.
+- **"The permission prompt was closed without an answer."** You closed the prompt without choosing. Switch
+  **Browser notifications** on again and choose **Allow**.
 - **"Your browser only allows system notifications on a secure page."** Browsers only allow this on
   `localhost` or an `https` address. If you open Reelcraft from another computer by its network address over
   plain `http`, the bell and pop-ups still work, but system notifications don't. Open it at

@@ -22,8 +22,11 @@ const SUPPORT_MESSAGE: Record<Exclude<PushSupport, 'ready'>, string> = {
     'Your browser only allows system notifications on a secure page. Open Reelcraft at localhost, or over https.',
   unsupported: "This browser doesn't support system notifications.",
   denied:
-    "Notifications are blocked for this site. Allow them in your browser's site settings, then try again.",
+    "Notifications are blocked for this site. Allow them in your browser's site settings, then try again. A browser built into another app can't ask: open Reelcraft in your regular browser.",
 };
+
+const DISMISSED_MESSAGE =
+  'The permission prompt was closed without an answer. Switch it on again and choose Allow.';
 
 /** Which notifications interrupt this browser, as pop-ups and, once switched
  * on, as system notifications that arrive even with every tab closed. The bell
@@ -32,6 +35,7 @@ const SUPPORT_MESSAGE: Record<Exclude<PushSupport, 'ready'>, string> = {
 export function NotificationsCard() {
   const [prefs, setPrefs] = useState<NotificationPrefs>(() => loadNotificationPrefs());
   const [busy, setBusy] = useState(false);
+  const [asking, setAsking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const support = pushSupport();
   const pushOn = isPushActive();
@@ -47,10 +51,13 @@ export function NotificationsCard() {
   async function setPush(on: boolean) {
     setBusy(true);
     setError(null);
+    // Only `default` can show the prompt; once granted or blocked it never appears.
+    setAsking(on && Notification.permission === 'default');
     try {
       if (on) {
         const result = await enablePush(enabledKinds(prefs));
         if (result === 'denied') setError(SUPPORT_MESSAGE.denied);
+        if (result === 'dismissed') setError(DISMISSED_MESSAGE);
       } else {
         await disablePush();
       }
@@ -62,6 +69,7 @@ export function NotificationsCard() {
       );
     } finally {
       setPrefs(loadNotificationPrefs());
+      setAsking(false);
       setBusy(false);
     }
   }
@@ -91,6 +99,12 @@ export function NotificationsCard() {
               Get the events below as system notifications, even when Reelcraft isn&apos;t open.
               Needs this computer to reach the internet.
             </p>
+            {asking ? (
+              <p role="status" className="text-xs text-foreground">
+                Waiting for your answer. Your browser asks next to the address bar: choose Allow. If
+                you don&apos;t see a pop-up, look for a bell icon there and select it.
+              </p>
+            ) : null}
             {support !== 'ready' && !pushOn ? (
               <p className="text-xs text-muted-foreground">{SUPPORT_MESSAGE[support]}</p>
             ) : null}

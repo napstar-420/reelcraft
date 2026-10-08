@@ -16,6 +16,14 @@ export function decidePushSupport(env: {
   return 'ready';
 }
 
+/** What the user's answer to the permission prompt means. `default` is not a
+ * refusal: the prompt was closed without choosing, so asking again is fine. */
+export function permissionOutcome(
+  result: NotificationPermission,
+): 'granted' | 'denied' | 'dismissed' {
+  return result === 'granted' ? 'granted' : result === 'denied' ? 'denied' : 'dismissed';
+}
+
 /** True when a system notification already covers this browser, so a toast
  * would be a second alert for the same event. */
 export function isPushActive(

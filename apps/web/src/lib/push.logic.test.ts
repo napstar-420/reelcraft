@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   decidePushSupport,
   isPushActive,
+  permissionOutcome,
   safeInternalPath,
   sameKey,
   urlBase64ToUint8Array,
@@ -35,6 +36,14 @@ describe('decidePushSupport', () => {
 
   it('says denied when the user blocked the site', () => {
     expect(decidePushSupport({ ...capable, permission: 'denied' })).toBe('denied');
+  });
+});
+
+describe('permissionOutcome', () => {
+  it('tells a closed prompt from a refusal', () => {
+    expect(permissionOutcome('granted')).toBe('granted');
+    expect(permissionOutcome('denied')).toBe('denied');
+    expect(permissionOutcome('default')).toBe('dismissed');
   });
 });
 

@@ -8,6 +8,7 @@ import {
 import {
   decidePushSupport,
   isPushActive as pushActiveFor,
+  permissionOutcome,
   sameKey,
   urlBase64ToUint8Array,
   type PushSupport,
@@ -61,9 +62,14 @@ async function subscribe(kinds: NotificationKind[]): Promise<void> {
 
 /** Call from the click that turns the switch on: the permission prompt needs a
  * user gesture. */
-export async function enablePush(kinds: NotificationKind[]): Promise<'enabled' | 'denied'> {
+export async function enablePush(
+  kinds: NotificationKind[],
+): Promise<'enabled' | 'denied' | 'dismissed'> {
   if (Notification.permission !== 'granted') {
-    if ((await Notification.requestPermission()) !== 'granted') return 'denied';
+    // Stays pending until the user answers, which can be a while: browsers often
+    // show only a small icon in the address bar rather than a pop-up.
+    const outcome = permissionOutcome(await Notification.requestPermission());
+    if (outcome !== 'granted') return outcome;
   }
   await subscribe(kinds);
   saveNotificationPrefs({ push: true });
