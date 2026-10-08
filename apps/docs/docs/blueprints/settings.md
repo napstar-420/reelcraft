@@ -10,7 +10,7 @@ like everything else on the canvas.
 ## Budget
 
 **Run cap (USD)** is the usual spending limit for one run of this blueprint. The run dialog starts
-with this amount, and you can change it there for each run. See
+with this amount, and you can change it there for each run. New blueprints start at 0, which means no limit. See
 [Budget and costs](../runs/budget-and-costs.md).
 
 ## Inputs

@@ -176,6 +176,22 @@ describe('LedgerService (e2e)', () => {
       expect(toUsd(after.reservedUsd)).toBe(0);
     });
 
+    it('treats a run cap of zero as no limit', async () => {
+      const runId = await seedRun(0);
+      const stageAttemptId = await seedAttempt(runId, 'outline');
+
+      const result = await ledger.reserve({
+        runId,
+        stageKey: 'outline',
+        stageAttemptId,
+        category: 'stage_output',
+        ceilingUsd: 1000,
+        preSubmitTtlSec: 600,
+      });
+
+      expect(result.ok).toBe(true);
+    });
+
     it('rejects on a stage cap even when the run cap has room', async () => {
       const runId = await seedRun(10);
       const a1 = await seedAttempt(runId, 'outline');

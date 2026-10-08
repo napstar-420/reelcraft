@@ -85,7 +85,8 @@ function BudgetEditor({
         />
       </div>
       <p className="text-xs text-muted-foreground">
-        A run pauses when its next model call would pass this cap. Dry runs are capped at $1.
+        A run pauses when its next model call would pass this cap. 0 means no limit. Dry runs are
+        capped at $1.
       </p>
     </div>
   );

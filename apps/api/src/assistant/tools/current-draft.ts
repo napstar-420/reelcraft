@@ -6,7 +6,7 @@ export const EMPTY_DRAFT: CreateBlueprintVersionDto = {
   inputs: [],
   roles: [],
   defaults: {},
-  budget: { runCapUsd: 5 },
+  budget: { runCapUsd: 0 },
 };
 
 export type DraftSource =

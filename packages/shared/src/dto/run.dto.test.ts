@@ -19,8 +19,8 @@ describe('CreateRunDto', () => {
     expect(CreateRunDto.parse(validRun)).toMatchObject(validRun);
   });
 
-  it('rejects a non-positive budget cap', () => {
-    expect(() => CreateRunDto.parse({ ...validRun, budgetCapUsd: 0 })).toThrow();
+  it('accepts a zero budget cap (no limit) and rejects a negative one', () => {
+    expect(CreateRunDto.parse({ ...validRun, budgetCapUsd: 0 }).budgetCapUsd).toBe(0);
     expect(() => CreateRunDto.parse({ ...validRun, budgetCapUsd: -1 })).toThrow();
   });
 });

@@ -4,7 +4,7 @@ description: How Reelcraft keeps a run within a spending limit, and what to do w
 ---
 
 Paid stages charge your AI providers directly, so every run has a **budget cap**: the most it may spend.
-Reelcraft never knowingly goes over it.
+Reelcraft never knowingly goes over it. A budget cap of **0** means no limit, and it is the default for new blueprints.
 
 ## The limits
 

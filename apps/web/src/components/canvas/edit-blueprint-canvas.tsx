@@ -58,7 +58,7 @@ type BlueprintDraft = {
 };
 
 function emptyDraft(): BlueprintDraft {
-  return { graph: [], inputs: [], roles: [], defaults: {}, budget: { runCapUsd: 5 } };
+  return { graph: [], inputs: [], roles: [], defaults: {}, budget: { runCapUsd: 0 } };
 }
 
 type SavedVersion = { id: string; major: number; minor: number; contentKey: string };

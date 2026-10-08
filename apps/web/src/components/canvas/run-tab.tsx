@@ -15,6 +15,7 @@ import { RunLaunchDialog } from '@/pages/RunLaunchDialog';
 import { formatRunDuration } from '@/pages/runs-page.logic';
 import { isRunActionAllowed } from '@/lib/run-action-policy';
 import { runStateTone, stageExecutionStateTone, toneDotClassName } from '@/lib/status';
+import { formatCapUsd } from '@/lib/format-cap';
 
 /** One reused-stage badge per row, driven by the `stage.reused` event
  * `run-seed.ts`'s `copyReusedStages` writes — fetched lazily per run since
@@ -151,7 +152,7 @@ export function RunTab({
           <Progress value={percent} aria-label="Spend against the run cap" />
           <div className="flex justify-between font-mono text-xs text-muted-foreground">
             <span>${spent.toFixed(2)} spent</span>
-            <span>cap ${cap.toFixed(2)}</span>
+            <span>cap {formatCapUsd(cap)}</span>
           </div>
         </div>
         <div className="flex flex-wrap gap-2">

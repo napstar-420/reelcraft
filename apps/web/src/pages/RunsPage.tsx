@@ -46,6 +46,7 @@ import {
   formatRunDuration,
   type RunsListFilters,
 } from './runs-page.logic';
+import { formatCapUsd } from '@/lib/format-cap';
 
 const ALL = '__all__';
 const CLEARED_FILTERS: RunsListFilters = {
@@ -307,7 +308,7 @@ export function RunsPage({ channelId: fixedChannelId }: { channelId?: string } =
                       <StatusBadge tone={runStateTone(run.state)} label={run.state} />
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
-                      ${run.spentUsd.toFixed(2)} / ${run.budgetCapUsd.toFixed(2)}
+                      ${run.spentUsd.toFixed(2)} / {formatCapUsd(run.budgetCapUsd)}
                     </TableCell>
                     <TableCell className="tabular-nums">
                       {new Date(run.startedAt).toLocaleString()}

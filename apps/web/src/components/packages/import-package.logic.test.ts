@@ -60,13 +60,13 @@ describe('canInstall', () => {
     );
   });
 
-  it('is never possible with a blocking problem, a blank name or no run cap', () => {
+  it('is never possible with a blocking problem, a blank name or a negative run cap', () => {
     const slots = [asset()];
     const choices = { logo: 'bundled' };
     const blocked = report(slots, [{ severity: 'block', code: 'x', message: 'x' }]);
     expect(canInstall({ ...base, report: blocked, choices })).toBe(false);
     expect(canInstall({ ...base, report: report(slots), choices, name: '  ' })).toBe(false);
-    expect(canInstall({ ...base, report: report(slots), choices, runCapUsd: 0 })).toBe(false);
+    expect(canInstall({ ...base, report: report(slots), choices, runCapUsd: -1 })).toBe(false);
     expect(canInstall({ ...base, report: report(slots), choices })).toBe(true);
   });
 
