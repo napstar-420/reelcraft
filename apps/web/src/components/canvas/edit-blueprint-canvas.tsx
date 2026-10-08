@@ -43,10 +43,17 @@ import type {
 import { AssistantPanel } from './assistant/assistant-panel';
 import { BlueprintSettingsPanel } from './BlueprintSettingsPanel';
 import { CanvasDock, type DockTab } from './canvas-dock';
-import { withWorkingDraft } from './canvas-draft.logic';
+import {
+  blueprintChanged,
+  newerSaved,
+  outdatedEditor,
+  pickInitialDraft,
+  withWorkingDraft,
+} from './canvas-draft.logic';
 import { CanvasRunSheets } from './canvas-run-sheets';
 import { CanvasToolbar } from './canvas-toolbar';
 import { CanvasWorkspace } from './canvas-workspace';
+import { OrphanDraftBanner, SavedElsewhereBanner } from './draft-banners';
 import { RunTab } from './run-tab';
 import { createStage } from './stage-factory.logic';
 import { StagePanel } from './stage-panel';
@@ -133,19 +140,67 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
   /** An older saved version opened read-only from the Versions menu. */
   const [viewing, setViewing] = useState<BlueprintVersionDto | null>(null);
   const [confirmRestore, setConfirmRestore] = useState(false);
+  /** Unsaved edits the server held that were made from an older version than the
+   * one loaded: the user opens or discards them. Autosave leaves the server's copy
+   * alone until then. */
+  const [orphan, setOrphan] = useState<{
+    draft: BlueprintDraft;
+    baseVersionId: string | null;
+  } | null>(null);
+  const [orphanBusy, setOrphanBusy] = useState(false);
+  const [elsewhereBusy, setElsewhereBusy] = useState(false);
+
+  /** The saved version this canvas is based on: what every draft write and Save
+   * names, so the server can refuse one made from a version a newer save replaced.
+   * A ref, so a callback that outlives a save (the assistant's Undo) still sends it. */
+  const baseId = latestSaved?.id ?? null;
+  const baseRef = useRef(baseId);
+  baseRef.current = baseId;
+  /** A save in flight can race an autosave; the latter's 409 is then no conflict. */
+  const savingRef = useRef(false);
 
   /** Keeps the cached blueprint in step with what this canvas wrote, so a later
    * visit doesn't load (and autosave) an unsaved copy a save already replaced. */
   const cacheWorkingDraft = useCallback(
-    (workingDraft: BlueprintDraft | null, currentVersionId?: string) =>
+    (
+      workingDraft: BlueprintDraft | null,
+      baseVersionId: string | null,
+      currentVersionId?: string,
+    ) =>
       queryClient.setQueryData<BlueprintDto>(['blueprint', blueprintId], (old) =>
-        withWorkingDraft(old, workingDraft, currentVersionId),
+        withWorkingDraft(old, workingDraft, baseVersionId, currentVersionId),
       ),
     [queryClient, blueprintId],
   );
+  const refreshVersions = useCallback(
+    () => queryClient.invalidateQueries({ queryKey: ['blueprint-versions', blueprintId] }),
+    [queryClient, blueprintId],
+  );
 
-  // Load once: the autosaved working copy if there is one, else the latest
-  // saved version. `latestSaved` is what Run executes. Only from data fetched
+  /** Handles a refused draft write; false when it was some other failure. A 409 means a
+   * newer save exists (the versions list, refetched, then raises the banner); a 400 means
+   * this page's code predates the server's rules. */
+  const draftWriteRefused = useCallback(
+    (error: unknown): boolean => {
+      if (outdatedEditor(error)) {
+        toast.error('Your blueprint editor is out of date, reload the page', {
+          id: 'blueprint-editor-out-of-date',
+        });
+        return true;
+      }
+      const changed = blueprintChanged(error);
+      if (!changed) return false;
+      if (changed.currentVersionId !== baseRef.current && !savingRef.current) {
+        void refreshVersions();
+      }
+      return true;
+    },
+    [refreshVersions],
+  );
+
+  // Load once: the autosaved working copy if it was made from the latest save, else
+  // the latest saved version (an unsaved copy made from an older one is offered
+  // as `orphan`). `latestSaved` is what Run executes. Only from data fetched
   // since this page mounted: the cache can still hold an older unsaved copy.
   useEffect(() => {
     if (draft || !versions.data || !blueprintMeta.data) return;
@@ -153,7 +208,8 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
     // The API lists saved versions newest first (major, then minor).
     const latest = versions.data[0] ?? null;
     const saved = latest ? draftOf(latest) : emptyDraft();
-    const working = blueprintMeta.data.workingDraft;
+    const { workingDraft: working, workingDraftBaseVersionId: workingBaseId } = blueprintMeta.data;
+    const pick = pickInitialDraft({ latestSavedId: latest?.id ?? null, working, workingBaseId });
     setSavedDraft(saved);
     if (latest) {
       setLatestSaved({
@@ -163,8 +219,9 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
         contentKey: stableStringify(saved),
       });
     }
-    serverHasWorkingDraft.current = working !== null;
-    setDraft(working ? draftOf(working) : saved);
+    serverHasWorkingDraft.current = pick.draft === 'working';
+    setDraft(pick.draft === 'working' && working ? draftOf(working) : saved);
+    if (pick.orphan) setOrphan({ draft: draftOf(pick.orphan), baseVersionId: workingBaseId });
   }, [
     draft,
     versions.data,
@@ -186,10 +243,16 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
       const applied = draftOf(next);
       setDraft(applied);
       serverHasWorkingDraft.current = true;
-      await api.setWorkingDraft(blueprintId, applied);
-      cacheWorkingDraft(applied);
+      try {
+        await api.setWorkingDraft(blueprintId, applied, baseRef.current);
+      } catch (error) {
+        // The canvas has the change; the banner says why the server doesn't.
+        if (draftWriteRefused(error)) return;
+        throw error;
+      }
+      cacheWorkingDraft(applied, baseRef.current);
     },
-    [blueprintId, cacheWorkingDraft],
+    [blueprintId, cacheWorkingDraft, draftWriteRefused],
   );
   const assistant = useAssistant({
     blueprintId,
@@ -197,24 +260,6 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
     replaceDraft,
     disabled: viewing !== null,
   });
-
-  // Autosave the working copy so unsaved edits survive a reload; clear it
-  // once the canvas matches the latest save again.
-  useEffect(() => {
-    if (!draft) return;
-    const timer = window.setTimeout(() => {
-      if (isDirty) {
-        serverHasWorkingDraft.current = true;
-        cacheWorkingDraft(draft);
-        void api.setWorkingDraft(blueprintId, draft);
-      } else if (serverHasWorkingDraft.current) {
-        serverHasWorkingDraft.current = false;
-        cacheWorkingDraft(null);
-        void api.setWorkingDraft(blueprintId, null);
-      }
-    }, 1000);
-    return () => window.clearTimeout(timer);
-  }, [blueprintId, draftKey, isDirty]);
 
   /** Canvas runs: the saved version when nothing changed, otherwise a draft
    * snapshot — never a new version. Reuses the snapshot while the canvas
@@ -240,8 +285,17 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
     setLatestSaved(version);
     setSavedDraft(saved);
     serverHasWorkingDraft.current = false;
-    cacheWorkingDraft(null, version.id);
-    void queryClient.invalidateQueries({ queryKey: ['blueprint-versions', blueprintId] });
+    cacheWorkingDraft(null, null, version.id);
+    void refreshVersions();
+  }
+
+  /** The conflict a refused Save or Restore reports: the versions list (refetched)
+   * raises the banner. */
+  function saveRefused(error: unknown) {
+    if (!blueprintChanged(error)) return false;
+    void refreshVersions();
+    toast.error(apiErrorMessage(error, 'This blueprint was saved elsewhere.'));
+    return true;
   }
 
   const save = useMutation({
@@ -250,7 +304,7 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
     mutationFn: async (bump: VersionBump) => {
       if (!draft) throw new Error('Blueprint is still loading.');
       const sent = { draft, contentKey: draftKey };
-      const version = await api.createBlueprintVersion(blueprintId, sent.draft, bump);
+      const version = await api.createBlueprintVersion(blueprintId, sent.draft, bump, baseId);
       return { version, ...sent };
     },
     onSuccess: ({ version, draft: sent, contentKey }) => {
@@ -260,6 +314,7 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
       );
     },
     onError: (error) => {
+      if (saveRefused(error)) return;
       const issues = error instanceof ApiError ? (error.issues as ValidationIssue[]) : undefined;
       const detail = Array.isArray(issues)
         ? issues
@@ -276,7 +331,7 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
   const restore = useMutation({
     mutationFn: async (version: BlueprintVersionDto) => {
       const restored = draftOf(version);
-      const saved = await api.createBlueprintVersion(blueprintId, restored, 'minor');
+      const saved = await api.createBlueprintVersion(blueprintId, restored, 'minor', baseId);
       return { saved, restored, from: version };
     },
     onSuccess: ({ saved, restored, from }) => {
@@ -288,15 +343,116 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
       setConfirmRestore(false);
       toast.success(`Restored ${formatBlueprintVersion(from)} as ${formatBlueprintVersion(saved)}`);
     },
-    onError: (error) => toast.error(apiErrorMessage(error, 'Could not restore this version.')),
+    onError: (error) => {
+      if (saveRefused(error)) return;
+      toast.error(apiErrorMessage(error, 'Could not restore this version.'));
+    },
   });
 
   function discardChanges() {
     setDraft(savedDraft);
     setSelectedStageKey(null);
     serverHasWorkingDraft.current = false;
-    cacheWorkingDraft(null);
-    void api.setWorkingDraft(blueprintId, null);
+    cacheWorkingDraft(null, null);
+    void api.setWorkingDraft(blueprintId, null, baseId).catch(draftWriteRefused);
+  }
+
+  // Someone else saved a newer version (another tab, or a restore there) since this
+  // canvas loaded. Not while this canvas is saving: its own save shows up in the list too.
+  const savingNow = save.isPending || restore.isPending;
+  savingRef.current = savingNow;
+  const newer = draft ? newerSaved(latestSaved, versions.data) : null;
+  const elsewhere = savingNow ? null : newer;
+  const autosavePaused = newer !== null || orphan !== null;
+
+  // Autosave the working copy so unsaved edits survive a reload; clear it
+  // once the canvas matches the latest save again. Held back while the canvas
+  // is out of step with the server, so it can't overwrite what the banner offers.
+  useEffect(() => {
+    if (!draft || autosavePaused) return;
+    const timer = window.setTimeout(() => {
+      if (isDirty) {
+        serverHasWorkingDraft.current = true;
+        cacheWorkingDraft(draft, baseId);
+        void api.setWorkingDraft(blueprintId, draft, baseId).catch(draftWriteRefused);
+      } else if (serverHasWorkingDraft.current) {
+        serverHasWorkingDraft.current = false;
+        cacheWorkingDraft(null, null);
+        void api.setWorkingDraft(blueprintId, null, baseId).catch(draftWriteRefused);
+      }
+    }, 1000);
+    return () => window.clearTimeout(timer);
+  }, [blueprintId, draftKey, isDirty, autosavePaused, baseId]);
+
+  /** Makes a saved version the one this canvas is based on. */
+  function rebaseOnto(version: BlueprintVersionDto) {
+    const saved = draftOf(version);
+    setLatestSaved({
+      id: version.id,
+      major: version.major,
+      minor: version.minor,
+      contentKey: stableStringify(saved),
+    });
+    setSavedDraft(saved);
+    return saved;
+  }
+
+  /** "Load vY" / "Discard my edits": the canvas shows the newer save. */
+  function loadNewer(version: BlueprintVersionDto) {
+    setDraft(rebaseOnto(version));
+    setSelectedStageKey(null);
+    setViewing(null);
+    serverHasWorkingDraft.current = false;
+    cacheWorkingDraft(null, null, version.id);
+  }
+
+  /** "Keep my edits": the draft stays and becomes an edit of the newer save, which
+   * the server is told now rather than at the next autosave. */
+  async function keepEditsOn(version: BlueprintVersionDto) {
+    if (!draft) return;
+    const saved = draftOf(version);
+    const changed = stableStringify(draft) !== stableStringify(saved);
+    setElsewhereBusy(true);
+    try {
+      await api.setWorkingDraft(blueprintId, changed ? draft : null, version.id);
+    } catch (error) {
+      if (!draftWriteRefused(error))
+        toast.error(apiErrorMessage(error, 'Could not keep your edits.'));
+      return;
+    } finally {
+      setElsewhereBusy(false);
+    }
+    rebaseOnto(version);
+    serverHasWorkingDraft.current = changed;
+    cacheWorkingDraft(changed ? draft : null, version.id, version.id);
+  }
+
+  async function openOrphan() {
+    if (!orphan) return;
+    setOrphanBusy(true);
+    try {
+      await replaceDraft(orphan.draft);
+      setSelectedStageKey(null);
+      setOrphan(null);
+    } catch (error) {
+      toast.error(apiErrorMessage(error, 'Could not open the unsaved edits.'));
+    } finally {
+      setOrphanBusy(false);
+    }
+  }
+
+  async function discardOrphan() {
+    setOrphanBusy(true);
+    try {
+      await api.setWorkingDraft(blueprintId, null, baseId);
+      cacheWorkingDraft(null, null);
+      setOrphan(null);
+    } catch (error) {
+      if (!draftWriteRefused(error))
+        toast.error(apiErrorMessage(error, 'Could not discard the unsaved edits.'));
+    } finally {
+      setOrphanBusy(false);
+    }
   }
 
   useEffect(() => {
@@ -426,6 +582,7 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
     setDraft((prev) => prev && { ...prev, ...patch });
   }
 
+  const orphanBase = orphan && versions.data?.find((v) => v.id === orphan.baseVersionId);
   const runBlocked = isDirty || latestSaved === null;
   const runBlockedReason = !runBlocked
     ? null
@@ -467,6 +624,25 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
           />
         }
       />
+
+      {orphan && (
+        <OrphanDraftBanner
+          basedOn={orphanBase ? formatBlueprintVersion(orphanBase) : null}
+          replacesChanges={isDirty}
+          busy={orphanBusy}
+          onOpen={() => void openOrphan()}
+          onDiscard={() => void discardOrphan()}
+        />
+      )}
+      {elsewhere && (
+        <SavedElsewhereBanner
+          version={formatBlueprintVersion(elsewhere)}
+          hasEdits={draftKey !== stableStringify(savedDraft)}
+          busy={elsewhereBusy}
+          onLoad={() => loadNewer(elsewhere)}
+          onKeepEdits={() => void keepEditsOn(elsewhere)}
+        />
+      )}
 
       {viewing && (
         <div className="flex shrink-0 flex-wrap items-center gap-3 border-b bg-primary/10 px-4 py-2 text-sm text-primary">

@@ -25,6 +25,7 @@ const BLUEPRINT = {
   description: null,
   tags: ['a'],
   workingDraft: null as unknown,
+  workingDraftBaseVersionId: null as string | null,
   currentVersionId: 'v2',
   archived: false,
   runCount: 4,

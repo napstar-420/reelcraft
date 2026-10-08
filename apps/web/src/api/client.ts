@@ -183,20 +183,32 @@ export const api = {
     blueprintId: string,
     dto: CreateBlueprintVersionDto,
     bump: VersionBump = 'minor',
+    /** The saved version `dto` was edited from (`null`: none yet). The save is refused (409)
+     * if another save has replaced it since. */
+    base?: string | null,
   ) =>
-    request<BlueprintVersionDto>(`/blueprints/${blueprintId}/versions?bump=${bump}`, {
-      method: 'POST',
-      body: JSON.stringify(dto),
-    }),
+    request<BlueprintVersionDto>(
+      `/blueprints/${blueprintId}/versions?bump=${bump}${
+        base === undefined ? '' : `&base=${encodeURIComponent(base ?? '')}`
+      }`,
+      { method: 'POST', body: JSON.stringify(dto) },
+    ),
   createDraftVersion: (blueprintId: string, dto: CreateBlueprintVersionDto) =>
     request<BlueprintVersionDto>(`/blueprints/${blueprintId}/versions/draft`, {
       method: 'POST',
       body: JSON.stringify(dto),
     }),
-  setWorkingDraft: (blueprintId: string, workingDraft: CreateBlueprintVersionDto | null) =>
+  /** `baseVersionId`: the saved version the draft was edited from (`null`: none yet).
+   * Refused (409) if another save has replaced it, so a stale tab can't put an old
+   * graph over a newer save. */
+  setWorkingDraft: (
+    blueprintId: string,
+    workingDraft: CreateBlueprintVersionDto | null,
+    baseVersionId: string | null,
+  ) =>
     request<BlueprintDto>(`/blueprints/${blueprintId}/working-draft`, {
       method: 'PUT',
-      body: JSON.stringify({ workingDraft }),
+      body: JSON.stringify({ workingDraft, baseVersionId }),
     }),
   listBlueprintVersions: (blueprintId: string) =>
     request<BlueprintVersionDto[]>(`/blueprints/${blueprintId}/versions`),

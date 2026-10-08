@@ -71,7 +71,8 @@ server-side: the model can't address another one.
   still matches.
 - The browser applies draft proposals through the canvas's own `replaceDraft` path (autosave,
   validation and Save work as usual, plus an immediate working-draft write). The server never writes
-  `workingDraft`: it can't see unsaved edits, and `PUT working-draft` is a blind overwrite. Metadata
+  `workingDraft`: it can't see unsaved edits, and it would race the canvas's autosave (`PUT working-draft`
+  only accepts a draft based on the blueprint's current saved version, else 409). Metadata
   proposals are applied by the server on `…/apply` (name conflict → 409).
 - Items (user message, agent message, tool call, proposal, question, turn status) are stored in
   `assistant_item` in `seq` order; text deltas stream but aren't stored. Events go over SSE; a

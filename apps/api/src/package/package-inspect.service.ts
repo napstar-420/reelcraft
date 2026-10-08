@@ -205,7 +205,7 @@ export class PackageInspectService {
       issues.push({
         severity: 'warn',
         code: 'working_draft',
-        message: `"${installed.blueprintName}" has unsaved edits on its canvas. They stay as a draft on top of the new version.`,
+        message: `"${installed.blueprintName}" has unsaved edits on its canvas. They are kept as a draft on the version it has now; the canvas asks whether to open them.`,
       });
     }
 

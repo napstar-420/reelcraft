@@ -211,6 +211,13 @@
       "when": 1791269766236,
       "tag": "0029_ambiguous_talisman",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1791448235037,
+      "tag": "0030_even_lucky_pierre",
+      "breakpoints": true
     }
   ]
 }

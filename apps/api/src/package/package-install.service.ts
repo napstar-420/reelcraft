@@ -294,7 +294,7 @@ export class PackageInstallService {
             defaults: pipeline.defaults,
             budget: { runCapUsd: dto.runCapUsd },
           },
-          { bump, tx },
+          { bump, tx, keepWorkingDraft: true },
         );
         await tx.insert(packageImport).values({
           id: ulid(),

@@ -76,8 +76,9 @@ If the channel already has a blueprint that came from the same package, the dial
 offers two choices:
 
 - **Add as a new version**: saves the package as the next version of that blueprint. Your earlier
-  versions stay, so you can compare them or restore one. Any unsaved edits on its canvas stay as a
-  draft on top. This is only offered when the package is a newer or older version signed by the same
+  versions stay, so you can compare them or restore one. Any unsaved edits on its canvas are kept as
+  a draft of the version it had before, and the canvas asks whether to open them (see
+  [Edited elsewhere](./versions.md#edited-elsewhere)). This is only offered when the package is a newer or older version signed by the same
   author.
 - **Install as a separate copy**: makes a new blueprint, named for example “My Shorts (2)”.
 
