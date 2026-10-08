@@ -46,11 +46,11 @@ before the next starts.
 
 - It speeds up stages whose items don't depend on each other, such as one image per scene.
 - An item can't use `prevItem` (the previous item's result) when **Concurrency** is above 1, because
-  that item hasn't finished. Reelcraft shows **{from:"prevItem"} cannot be used while
-  iterate.concurrency is above 1**.
+  that item hasn't finished. Reelcraft shows `{from:"prevItem"} cannot be used while
+iterate.concurrency is above 1`.
 - It can't be combined with approval mode `item`, which pauses after each item. Use mode `stage` to
-  review them together. Reelcraft shows **iterate.concurrency above 1 cannot be combined with
-  approval.mode "item"**.
+  review them together. Reelcraft shows `iterate.concurrency above 1 cannot be combined with
+approval.mode "item"`.
 - If an item fails (a crash or a provider error, not a failed check or QC verdict), the items in the
   same group still finish, no new group starts, and the stage fails. Items that passed are kept.
 - Reelcraft doesn't limit the number. Every running item uses the provider at once, and providers
