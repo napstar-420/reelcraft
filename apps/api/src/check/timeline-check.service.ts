@@ -150,10 +150,11 @@ export class TimelineCheckService {
     const audioEnd = maxTrackEnd(timeline, 'audio', resources);
     const tolerance = input.toleranceSec ?? 0.25;
     results.push(
-      videoEnd > 0 && audioEnd > 0 && Math.abs(videoEnd - audioEnd) > tolerance
+      // Video may run past the audio (a closing hold); audio cut off by the video may not.
+      videoEnd > 0 && audioEnd > 0 && audioEnd - videoEnd > tolerance
         ? failed(
             'timeline.av_alignment',
-            `audio ends at ${audioEnd.toFixed(3)}s and video ends at ${videoEnd.toFixed(3)}s`,
+            `audio ends at ${audioEnd.toFixed(3)}s, after the video ends at ${videoEnd.toFixed(3)}s`,
           )
         : passed('timeline.av_alignment'),
     );

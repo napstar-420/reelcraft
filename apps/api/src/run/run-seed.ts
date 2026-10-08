@@ -115,6 +115,19 @@ export function remapProvenance(
   return remapped;
 }
 
+/** A timeline names its media as `artifact:<id>` handles into the run that made
+ * it, and the renderer only resolves a run's own artifacts, so a copied
+ * timeline must point at the copies. */
+export function remapTimelineHandles(data: unknown, idMap: Map<string, string>): unknown {
+  if (data === null || data === undefined) return data;
+  return JSON.parse(
+    JSON.stringify(data).replace(/artifact:([0-9A-Za-z]+)/g, (match, id: string) => {
+      const copy = idMap.get(id);
+      return copy ? `artifact:${copy}` : match;
+    }),
+  );
+}
+
 export interface CopyReusedStagesParams {
   sourceRunId: string;
   runId: string;
@@ -142,15 +155,15 @@ export async function copyReusedStages(tx: Tx, p: CopyReusedStagesParams): Promi
   );
   if (reusedArtifacts.length === 0) return;
 
+  for (const src of reusedArtifacts) idMap.set(src.id, ulid());
   for (const src of reusedArtifacts) {
-    const newId = ulid();
-    idMap.set(src.id, newId);
     await tx.insert(artifact).values({
       ...src,
-      id: newId,
+      id: idMap.get(src.id)!,
       runId: p.runId,
       stale: false,
       costUsd: '0',
+      ...(src.kind === 'timeline' && { data: remapTimelineHandles(src.data, idMap) }),
     });
   }
 

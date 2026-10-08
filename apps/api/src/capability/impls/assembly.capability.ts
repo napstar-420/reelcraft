@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { Injectable } from '@nestjs/common';
-import { Timeline, TimingMap } from '@reelcraft/shared';
+import { Timeline } from '@reelcraft/shared';
+import { timingMapOf } from '../../artifact/timing-map';
 import type {
   CostEstimate,
   JobHandle,
@@ -226,11 +227,9 @@ export class TimelineRenderCapability extends LocalComputeCapability<RenderConfi
     const timingMaps: Record<string, import('@reelcraft/shared').TimingMap> = {};
     let index = 0;
     for (const [handle, resource] of Object.entries(resources)) {
-      if (!resource.kind.startsWith('media.')) {
-        const timing = TimingMap.safeParse(resource.data);
-        if (timing.success) timingMaps[handle] = timing.data;
-        continue;
-      }
+      const timing = timingMapOf(resource.data);
+      if (timing) timingMaps[handle] = timing;
+      if (!resource.kind.startsWith('media.')) continue;
       if (!resource.sourceKey) continue;
       const sourceExtension = path.extname(resource.sourceKey).replace(/^\./, '');
       const fallbackExtension =
