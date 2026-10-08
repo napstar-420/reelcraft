@@ -23,9 +23,22 @@ export type AgentEvent =
   /** Tokens used so far in this turn (cumulative, not per request). */
   | { type: 'usage'; inputTokens: number; outputTokens: number };
 
+/** An image a tool wants the model to look at. Never stored: the transcript keeps only its size. */
+export interface ToolImage {
+  mime: 'image/jpeg' | 'image/png';
+  base64: string;
+}
+
+/** What the model reads after a tool call: text, plus any images. */
+export interface ToolResult {
+  ok: boolean;
+  text: string;
+  images?: ToolImage[];
+}
+
 export interface AssistantTurnHandlers {
   /** Runs a Reelcraft tool for the model. Resolves with what the model should read. */
-  callTool(tool: string, args: unknown): Promise<{ ok: boolean; text: string }>;
+  callTool(tool: string, args: unknown): Promise<ToolResult>;
   onEvent(event: AgentEvent): void;
 }
 

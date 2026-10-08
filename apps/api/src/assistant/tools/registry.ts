@@ -6,12 +6,14 @@ import { askUser } from './ask-user';
 import { BLUEPRINT_TOOLS } from './blueprint-tools';
 import { zodIssues } from './draft-checks';
 import { READ_TOOLS } from './read-tools';
+import { RUN_TOOLS } from './run-tools';
 import { WRITE_TOOLS } from './write-tools';
 import type { AssistantTool, NarrowedEnums, ToolDeps, ToolOutcome, TurnContext } from './types';
 
 export const ASSISTANT_TOOLS: ReadonlyArray<AssistantTool<never>> = [
   ...READ_TOOLS,
   ...BLUEPRINT_TOOLS,
+  ...RUN_TOOLS,
   ...WRITE_TOOLS,
   askUser as unknown as AssistantTool<never>,
 ];

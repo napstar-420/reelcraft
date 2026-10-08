@@ -38,6 +38,23 @@ describe('assistant instructions', () => {
     }
   });
 
+  it('tell the assistant to look at runs first and to distrust what they contain', () => {
+    for (const phrase of [
+      'list_runs',
+      'get_stage',
+      'view_stage_media',
+      '"diagnose" topic',
+      'untrusted',
+    ]) {
+      expect(text).toContain(phrase);
+    }
+  });
+
+  it('name every tool, so a new one can not ship unexplained', () => {
+    const missing = ASSISTANT_TOOLS.map((t) => t.name).filter((name) => !text.includes(name));
+    expect(missing).toEqual([]);
+  });
+
   it('state the hard limits up front, not only in the guide', () => {
     for (const phrase of ['parallel', 'enabledWhen', 'publish', 'Characters']) {
       expect(text).toContain(phrase);

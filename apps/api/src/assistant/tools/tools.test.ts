@@ -99,6 +99,16 @@ function makeDeps(overrides: Partial<ToolDeps> = {}): ToolDeps {
       ]),
     } as never,
     schemas: new SchemaValidatorService(),
+    runs: {
+      listForBlueprint: vi.fn(async () => ({ runs: [], total: 0 })),
+      getForBlueprint: vi.fn(async () => null),
+      stageForBlueprint: vi.fn(async () => null),
+      mediaForBlueprint: vi.fn(async () => null),
+    },
+    media: {
+      imageFromBlob: vi.fn(async () => null),
+      framesOfVideo: vi.fn(async () => []),
+    },
     configResolver: new ConfigResolverService({} as never, {} as never),
     engineLayer: () => ({ retryLimit: 0, iterate: { maxItems: 50 } }),
     ...overrides,
@@ -108,7 +118,7 @@ function makeDeps(overrides: Partial<ToolDeps> = {}): ToolDeps {
 const ctx = () => newTurnContext('bp1', null);
 
 describe('tool registry', () => {
-  it('has the 15 tools, each with a unique name and a kind', () => {
+  it('has the 19 tools, each with a unique name and a kind', () => {
     const names = ASSISTANT_TOOLS.map((t) => t.name);
     expect(new Set(names).size).toBe(names.length);
     expect(names.sort()).toEqual(
@@ -120,6 +130,10 @@ describe('tool registry', () => {
         'get_channel_resources',
         'get_effective_config',
         'get_version',
+        'list_runs',
+        'get_run',
+        'get_stage',
+        'view_stage_media',
         'list_capabilities',
         'list_checks',
         'list_models',
@@ -192,6 +206,10 @@ describe('JSON Schemas stay in sync with the Zod inputs (drift guard)', () => {
     get_version: { version: '1.1' },
     diff_drafts: { from: '1.0', to: 'current' },
     get_effective_config: { stageKey: 'script' },
+    list_runs: { limit: 5 },
+    get_run: { runId: 'r1' },
+    get_stage: { runId: 'r1', stageKey: 'script', itemIndex: 0, full: true, includePrompt: true },
+    view_stage_media: { runId: 'r1', stageKey: 'images', itemIndex: 0 },
     read_guide: { topic: 'limits' },
     validate_draft: { draft: exampleScript() },
     propose_draft: { draft: exampleScenesToImages(), summary: 'Plan then images' },

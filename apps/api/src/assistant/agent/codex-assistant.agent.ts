@@ -17,6 +17,7 @@ import {
   type AssistantModel,
   type AssistantToolDef,
   type AssistantTurnHandlers,
+  type ToolResult,
 } from './assistant-agent.interface';
 import { buildAssistantAppServerArgs } from './codex-app-server-args';
 
@@ -448,6 +449,37 @@ export class CodexAssistantAgent implements AssistantAgent {
     }
   }
 
+  /** Codex (0.160.0) drops an image returned in a dynamic tool result: the model answers about a
+   * picture it never saw. `turn/steer` adds input to the running turn, and an image sent that way
+   * does reach the model (verified with `acceptance/probe-image.mjs`), so pictures go that way. */
+  private async showImages(
+    turn: ActiveTurn,
+    threadId: string,
+    images: NonNullable<ToolResult['images']>,
+  ): Promise<boolean> {
+    try {
+      await this.connection?.request(
+        'turn/steer',
+        {
+          threadId,
+          expectedTurnId: turn.turnId,
+          input: [
+            { type: 'text', text: 'The picture(s) from the tool call you just made follow.' },
+            ...images.map((image) => ({
+              type: 'image',
+              url: `data:${image.mime};base64,${image.base64}`,
+            })),
+          ],
+        },
+        15_000,
+      );
+      return true;
+    } catch (error) {
+      this.logger.warn({ err: error }, 'could not show images to the model');
+      return false;
+    }
+  }
+
   /** The only request we answer is our own tools' `item/tool/call`, and only for a turn we are
    * running. Approvals, user-input prompts and everything else are denied. */
   private async onServerRequest(method: string, raw: unknown): Promise<unknown> {
@@ -462,12 +494,26 @@ export class CodexAssistantAgent implements AssistantAgent {
       this.logger.warn({ method, threadId: params.threadId }, 'denied a request from codex');
       throw new Error('Denied by Reelcraft');
     }
-    let result: { ok: boolean; text: string };
+    let result: ToolResult;
     try {
       result = await turn.handlers.callTool(params.tool, params.arguments);
     } catch (error) {
       result = { ok: false, text: error instanceof Error ? error.message : String(error) };
     }
-    return { success: result.ok, contentItems: [{ type: 'inputText', text: result.text }] };
+    const shown = result.images?.length
+      ? await this.showImages(turn, params.threadId!, result.images)
+      : null;
+    return {
+      success: result.ok,
+      contentItems: [
+        {
+          type: 'inputText',
+          text:
+            shown === false
+              ? `${result.text}\n(The pictures could not be shown to you.)`
+              : result.text,
+        },
+      ],
+    };
   }
 }

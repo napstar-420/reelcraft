@@ -3,13 +3,14 @@ import {
   type AssistantAgent,
   type AssistantModel,
   type AssistantToolDef,
+  type ToolResult,
 } from './assistant-agent.interface';
 import type { AssistantApplyMode } from '@reelcraft/shared';
 
 /** One scripted step of a fake turn. */
 export type FakeStep =
   | { say: string }
-  | { call: string; args: unknown; expect?: (result: { ok: boolean; text: string }) => void }
+  | { call: string; args: unknown; expect?: (result: ToolResult) => void }
   | { fail: string }
   /** Wait until released or until the turn is interrupted (then throws `interrupted`). */
   | { hold: Promise<void> };

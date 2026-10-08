@@ -24,6 +24,7 @@ import { ArtifactEditService } from './artifact-edit.service';
 import { HumanReminderService } from './human-reminder.service';
 import { TimelineEditorService } from './timeline-editor.service';
 import { ProviderModule } from '../provider/provider.module';
+import { RunInsightService } from './run-insight.service';
 
 const runControlProviders = [
   PreviewTokenService,
@@ -53,8 +54,8 @@ const runControlProviders = [
     CheckModule,
     ProviderModule,
   ],
-  providers: [RunService, RunInputService, ...runControlProviders],
+  providers: [RunService, RunInsightService, RunInputService, ...runControlProviders],
   controllers: [RunController],
-  exports: [RunService, RunInputService, ...runControlProviders],
+  exports: [RunService, RunInsightService, RunInputService, ...runControlProviders],
 })
 export class RunModule {}

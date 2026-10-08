@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ArtifactKind, Ref } from '@reelcraft/shared';
 import { BUILTIN_CHECKS } from '../check/builtins/index';
+import { attemptOutcomeEnum } from '../db/schema/execution';
 import { qualityIssues } from './tools/quality-checks';
 import { BlueprintValidatorService } from '../blueprint/blueprint-validator.service';
 import { SchemaValidatorService } from '../json-schema/schema-validator.service';
@@ -40,6 +41,19 @@ describe('assistant guide coverage', () => {
     const keys = realCapabilities().map((c) => c.key);
     expect(keys.length).toBeGreaterThan(10);
     expect(keys.filter((k) => !covered(k))).toEqual([]);
+  });
+
+  it('teaches what to do about every attempt outcome', () => {
+    const outcomes = attemptOutcomeEnum.enumValues;
+    expect(outcomes.length).toBeGreaterThan(8);
+    expect(outcomes.filter((o) => !GUIDE.diagnose!.body.includes(`\`${o}\``))).toEqual([]);
+  });
+
+  it('says what the assistant can and cannot do with runs', () => {
+    const limits = GUIDE.limits!.body;
+    expect(limits).toContain('get_run');
+    expect(limits).toMatch(/Starting, retrying, approving or cancelling runs/);
+    expect(limits).not.toContain("you can't. You only know");
   });
 
   it('mentions every builtin check', () => {
