@@ -8,13 +8,13 @@ import { api } from '@/api/client';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
 import { unreadLabel } from './notifications.logic';
 
 export const NOTIFICATIONS_KEY = ['notifications'] as const;
 
-/** The inbox. The server keeps every notification, so a closed tab or a second
+/** The inbox. The list scrolls in a plain div: Radix ScrollArea needs a fixed height, and with
+ * only a max-height its viewport grows past the popover. The server keeps every notification, so a closed tab or a second
  * browser sees the same list; live updates only say when to refetch it. */
 export function NotificationBell() {
   const [open, setOpen] = useState(false);
@@ -82,7 +82,7 @@ export function NotificationBell() {
             {inbox.isPending ? 'Loading…' : 'Nothing yet. Runs that need you will show up here.'}
           </p>
         ) : (
-          <ScrollArea className="max-h-96">
+          <div className="max-h-96 overflow-y-auto overscroll-contain">
             <ul>
               {items.map((item) => (
                 <li key={item.id} className="border-b last:border-b-0">
@@ -119,7 +119,7 @@ export function NotificationBell() {
                 </li>
               ))}
             </ul>
-          </ScrollArea>
+          </div>
         )}
       </PopoverContent>
     </Popover>
