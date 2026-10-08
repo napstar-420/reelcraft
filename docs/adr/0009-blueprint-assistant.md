@@ -25,8 +25,9 @@ computer with no login (ADR-0002) and must not be put on the internet.
 - **The agent only proposes.** `propose_draft` and `update_metadata` store a proposal; they never write the
   working draft or save a version. In **manual** mode the user clicks Apply; in **auto** mode the open canvas
   applies a valid proposal itself (if the canvas still matches the draft it was built on) and offers Undo.
-  The server never writes `workingDraft`: the browser holds the unsaved edits, and `PUT working-draft` is a
-  blind overwrite.
+  The server never writes `workingDraft`: the browser holds the unsaved edits. `PUT working-draft` names the
+  saved version the draft was based on and is refused (409) once a newer save exists, so a stale tab or an
+  Undo can't put an old graph over a save; a server-side write would also race the canvas's autosave.
 - **Questions are a Reelcraft tool, `ask_user`, that ends the turn.** The UI shows the options plus a free-text
   "Other…"; the answers arrive as the next turn. Codex's own `request_user_input` is denied. Nothing blocks, so
   interrupt, API restart and chat deletion need no special handling.

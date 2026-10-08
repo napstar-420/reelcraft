@@ -22,6 +22,7 @@ import { deleteRunsCascade } from '../run/run-cascade';
 import { deleteAssistantCascade } from '../assistant/assistant-cascade';
 import { queueStorageOrphans } from '../artifact/storage-orphans';
 import { ulid } from '../common/ulid';
+import { blueprintChanged } from './blueprint-changed';
 import { BlueprintValidatorService } from './blueprint-validator.service';
 import { collectAssetIds, roleRefsOf } from './collect-asset-refs';
 import {
@@ -229,7 +230,13 @@ export class BlueprintService {
    * `bump: 'major'` goes to (major + 1).0. `draft: true` stores an immutable
    * snapshot for a canvas run of unsaved edits: it reuses the latest saved
    * number (0.0 if none), never becomes `currentVersionId`, and is hidden
-   * from `listVersions`. Saving clears `workingDraft`. */
+   * from `listVersions`. Saving clears `workingDraft`, unless `keepWorkingDraft`
+   * (package install): the unsaved edits then stay tied to the version they were
+   * made on, which the canvas offers as an orphan draft.
+   *
+   * `expectedCurrent` is the saved version the caller's edits are based on (`null`:
+   * none yet); a save from a tab that missed a newer one is refused with 409
+   * `blueprint_changed`. Omitted: no check. */
   async createVersion(
     blueprintId: string,
     dto: CreateBlueprintVersionDto,
@@ -237,7 +244,15 @@ export class BlueprintService {
       draft = false,
       bump = 'minor',
       tx,
-    }: { draft?: boolean; bump?: VersionBump; tx?: Tx | undefined } = {},
+      expectedCurrent,
+      keepWorkingDraft = false,
+    }: {
+      draft?: boolean;
+      bump?: VersionBump;
+      tx?: Tx | undefined;
+      expectedCurrent?: string | null | undefined;
+      keepWorkingDraft?: boolean;
+    } = {},
   ) {
     // With `tx`, the caller's transaction sees rows it just inserted (package
     // import creates characters and assets, then validates against them).
@@ -260,6 +275,19 @@ export class BlueprintService {
 
     const id = ulid();
     const write = async (w: Tx) => {
+      if (!draft && expectedCurrent !== undefined) {
+        // Locked, so a concurrent save either finishes first (and this one is refused)
+        // or waits for this one.
+        const [row] = await w
+          .select({ currentVersionId: blueprint.currentVersionId })
+          .from(blueprint)
+          .where(eq(blueprint.id, blueprintId))
+          .for('update');
+        if (!row) throw new NotFoundException(`Blueprint ${blueprintId} not found`);
+        if (row.currentVersionId !== expectedCurrent) {
+          throw blueprintChanged(row.currentVersionId);
+        }
+      }
       await w.insert(blueprintVersion).values({
         id,
         blueprintId,
@@ -278,7 +306,10 @@ export class BlueprintService {
       // current_version_id has no FK in the schema (see db/schema/blueprint.ts).
       await w
         .update(blueprint)
-        .set({ currentVersionId: id, workingDraft: null })
+        .set({
+          currentVersionId: id,
+          ...(!keepWorkingDraft && { workingDraft: null, workingDraftBaseVersionId: null }),
+        })
         .where(eq(blueprint.id, blueprintId));
     };
     await (tx ? write(tx) : this.db.transaction(write));
@@ -379,9 +410,29 @@ export class BlueprintService {
     return rows.map((row) => ({ ...row.version, runCount: row.runCount }));
   }
 
-  async setWorkingDraft(id: string, workingDraft: CreateBlueprintVersionDto | null) {
-    await this.getBlueprint(id);
-    await this.db.update(blueprint).set({ workingDraft }).where(eq(blueprint.id, id));
+  /** Stores (or, with `null`, clears) the canvas's unsaved copy, but only while
+   * `baseVersionId` (the saved version the caller edited; `null`: none yet) is still
+   * the blueprint's current one. A stale tab, or an Undo that outlived a save, would
+   * otherwise put an old graph back over the newer save: 409 `blueprint_changed`. */
+  async setWorkingDraft(
+    id: string,
+    workingDraft: CreateBlueprintVersionDto | null,
+    baseVersionId: string | null,
+  ) {
+    const updated = await this.db
+      .update(blueprint)
+      .set({ workingDraft, workingDraftBaseVersionId: workingDraft ? baseVersionId : null })
+      .where(
+        and(
+          eq(blueprint.id, id),
+          sql`${blueprint.currentVersionId} is not distinct from ${baseVersionId}`,
+        ),
+      )
+      .returning({ id: blueprint.id });
+    if (updated.length === 0) {
+      const current = await this.getBlueprint(id); // 404 when it doesn't exist
+      throw blueprintChanged(current.currentVersionId);
+    }
     return this.getBlueprint(id);
   }
 

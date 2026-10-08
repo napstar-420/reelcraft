@@ -67,7 +67,11 @@ export class BlueprintController {
     @Body(new ZodValidationPipe(CreateBlueprintVersionDto)) dto: CreateBlueprintVersionDto,
     @Query(new ZodValidationPipe(CreateVersionQueryDto)) query: CreateVersionQueryDto,
   ) {
-    return this.blueprints.createVersion(id, dto, { bump: query.bump });
+    return this.blueprints.createVersion(id, dto, {
+      bump: query.bump,
+      // `?base=` (empty: no saved version yet) guards against a stale tab; omitted skips it.
+      expectedCurrent: query.base === undefined ? undefined : query.base || null,
+    });
   }
 
   /** Canvas runs of unsaved edits — a snapshot that never enters version history. */
@@ -84,7 +88,7 @@ export class BlueprintController {
     @Param('id') id: string,
     @Body(new ZodValidationPipe(SetWorkingDraftDto)) dto: SetWorkingDraftDto,
   ) {
-    return this.blueprints.setWorkingDraft(id, dto.workingDraft);
+    return this.blueprints.setWorkingDraft(id, dto.workingDraft, dto.baseVersionId);
   }
 
   @Get(':id/versions')

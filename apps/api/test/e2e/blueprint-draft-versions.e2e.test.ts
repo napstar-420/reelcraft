@@ -4,6 +4,7 @@ import { ChannelService } from '../../src/channel/channel.service';
 import { BlueprintService } from '../../src/blueprint/blueprint.service';
 import { RunService } from '../../src/run/run.service';
 import { buildTestApp, type TestApp } from '../support/build-app';
+import { buildHttpTestApp, type HttpTestApp } from '../support/build-http-test-app';
 import { createTestDb, type TestDb } from '../support/test-db';
 
 /** Canvas runs of unsaved edits use draft snapshot versions: they never take
@@ -12,14 +13,17 @@ import { createTestDb, type TestDb } from '../support/test-db';
 describe('blueprint draft versions (e2e)', () => {
   let testDb: TestDb;
   let testApp: TestApp;
+  let http: HttpTestApp;
 
   beforeAll(async () => {
     testDb = await createTestDb();
     testApp = await buildTestApp(testDb);
+    http = await buildHttpTestApp(testDb);
   });
 
   afterAll(async () => {
     try {
+      await http?.close();
       await testApp?.close();
     } finally {
       await testDb.teardown();
@@ -112,7 +116,8 @@ describe('blueprint draft versions (e2e)', () => {
     await blueprints.createVersion(blueprintId, content('v1'));
 
     const working = content('unsaved edit');
-    await blueprints.setWorkingDraft(blueprintId, working);
+    const base = (await blueprints.getBlueprint(blueprintId)).currentVersionId;
+    await blueprints.setWorkingDraft(blueprintId, working, base);
     expect((await blueprints.getBlueprint(blueprintId)).workingDraft).toEqual(working);
 
     await blueprints.createVersion(blueprintId, content('unsaved edit'), {
@@ -121,7 +126,166 @@ describe('blueprint draft versions (e2e)', () => {
     expect((await blueprints.getBlueprint(blueprintId)).workingDraft).toEqual(working);
 
     await blueprints.createVersion(blueprintId, working);
-    expect((await blueprints.getBlueprint(blueprintId)).workingDraft).toBeNull();
+    expect(await blueprints.getBlueprint(blueprintId)).toMatchObject({
+      workingDraft: null,
+      workingDraftBaseVersionId: null,
+    });
+  });
+
+  describe('working draft base version', () => {
+    const conflict = (currentVersionId: string | null) => ({
+      status: 409,
+      response: { code: 'blueprint_changed', currentVersionId },
+    });
+
+    it('stores the draft with its base while that version is current', async () => {
+      const { blueprintId, blueprints } = await setup();
+      // No saved version yet: a null base is the current state.
+      await blueprints.setWorkingDraft(blueprintId, content('first'), null);
+      expect(await blueprints.getBlueprint(blueprintId)).toMatchObject({
+        workingDraft: content('first'),
+        workingDraftBaseVersionId: null,
+      });
+
+      const v1 = await blueprints.createVersion(blueprintId, content('v1'));
+      await blueprints.setWorkingDraft(blueprintId, content('edit'), v1.id);
+      expect(await blueprints.getBlueprint(blueprintId)).toMatchObject({
+        workingDraft: content('edit'),
+        workingDraftBaseVersionId: v1.id,
+      });
+    });
+
+    it('refuses a draft based on a version a newer save replaced, and keeps the stored one', async () => {
+      const { blueprintId, blueprints } = await setup();
+      const v1 = await blueprints.createVersion(blueprintId, content('v1'));
+      await blueprints.setWorkingDraft(blueprintId, content('edit'), v1.id);
+      const v2 = await blueprints.createVersion(blueprintId, content('v2'));
+      expect((await blueprints.getBlueprint(blueprintId)).workingDraft).toBeNull();
+
+      await expect(
+        blueprints.setWorkingDraft(blueprintId, content('stale tab'), v1.id),
+      ).rejects.toMatchObject(conflict(v2.id));
+      // A tab that loaded before the first save thinks nothing was saved.
+      await expect(
+        blueprints.setWorkingDraft(blueprintId, content('older tab'), null),
+      ).rejects.toMatchObject(conflict(v2.id));
+      expect(await blueprints.getBlueprint(blueprintId)).toMatchObject({
+        workingDraft: null,
+        workingDraftBaseVersionId: null,
+      });
+
+      // The other tab's edits survive a stale tab trying to clear them.
+      await blueprints.setWorkingDraft(blueprintId, content('other tab'), v2.id);
+      await expect(blueprints.setWorkingDraft(blueprintId, null, v1.id)).rejects.toMatchObject(
+        conflict(v2.id),
+      );
+      expect((await blueprints.getBlueprint(blueprintId)).workingDraft).toEqual(
+        content('other tab'),
+      );
+
+      // Clearing with the right base works and drops the base too.
+      await blueprints.setWorkingDraft(blueprintId, null, v2.id);
+      expect(await blueprints.getBlueprint(blueprintId)).toMatchObject({
+        workingDraft: null,
+        workingDraftBaseVersionId: null,
+      });
+    });
+
+    it('is a 404 for a blueprint that does not exist', async () => {
+      const { blueprints } = await setup();
+      await expect(blueprints.setWorkingDraft('nope', content('x'), null)).rejects.toMatchObject({
+        status: 404,
+      });
+    });
+
+    it('rejects a PUT without baseVersionId (an old browser bundle) with 400, then 409 when stale', async () => {
+      const { blueprintId, blueprints } = await setup();
+      const v1 = await blueprints.createVersion(blueprintId, content('v1'));
+      const put = (body: unknown) =>
+        fetch(`${http.baseUrl}/blueprints/${blueprintId}/working-draft`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+
+      expect((await put({ workingDraft: content('old bundle') })).status).toBe(400);
+      expect((await blueprints.getBlueprint(blueprintId)).workingDraft).toBeNull();
+
+      const ok = await put({ workingDraft: content('edit'), baseVersionId: v1.id });
+      expect(ok.status).toBe(200);
+      expect(await ok.json()).toMatchObject({ workingDraftBaseVersionId: v1.id });
+
+      const v2 = await blueprints.createVersion(blueprintId, content('v2'));
+      const stale = await put({ workingDraft: content('stale'), baseVersionId: v1.id });
+      expect(stale.status).toBe(409);
+      expect(await stale.json()).toMatchObject({
+        code: 'blueprint_changed',
+        currentVersionId: v2.id,
+      });
+    });
+
+    it('refuses a save from a tab that missed a newer one, and saves without a base', async () => {
+      const { blueprintId, blueprints } = await setup();
+      const v1 = await blueprints.createVersion(blueprintId, content('v1'), {
+        expectedCurrent: null,
+      });
+      const v2 = await blueprints.createVersion(blueprintId, content('v2'), {
+        expectedCurrent: v1.id,
+      });
+
+      await expect(
+        blueprints.createVersion(blueprintId, content('stale'), { expectedCurrent: v1.id }),
+      ).rejects.toMatchObject(conflict(v2.id));
+      await expect(
+        blueprints.createVersion(blueprintId, content('stale'), { expectedCurrent: null }),
+      ).rejects.toMatchObject(conflict(v2.id));
+      expect((await blueprints.listVersions(blueprintId)).map((v) => v.id)).toEqual([v2.id, v1.id]);
+
+      const v3 = await blueprints.createVersion(blueprintId, content('unchecked'));
+      expect(v3).toMatchObject({ major: 1, minor: 2 });
+    });
+
+    it('guards POST /versions with ?base= (empty means no saved version yet)', async () => {
+      const { blueprintId, blueprints } = await setup();
+      const post = (base: string | undefined) =>
+        fetch(
+          `${http.baseUrl}/blueprints/${blueprintId}/versions${base === undefined ? '' : `?base=${base}`}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(content('x')),
+          },
+        );
+
+      const first = await post('');
+      expect(first.status).toBe(201);
+      const v1 = (await first.json()) as { id: string };
+
+      const stale = await post('');
+      expect(stale.status).toBe(409);
+      expect(await stale.json()).toMatchObject({
+        code: 'blueprint_changed',
+        currentVersionId: v1.id,
+      });
+      expect((await post(v1.id)).status).toBe(201);
+      expect((await post(undefined)).status).toBe(201);
+      expect(await blueprints.listVersions(blueprintId)).toHaveLength(3);
+    });
+
+    it('can keep the draft across a save (package install), still tied to the old base', async () => {
+      const { blueprintId, blueprints } = await setup();
+      const v1 = await blueprints.createVersion(blueprintId, content('v1'));
+      await blueprints.setWorkingDraft(blueprintId, content('edit'), v1.id);
+
+      const v2 = await blueprints.createVersion(blueprintId, content('package'), {
+        keepWorkingDraft: true,
+      });
+      expect(await blueprints.getBlueprint(blueprintId)).toMatchObject({
+        currentVersionId: v2.id,
+        workingDraft: content('edit'),
+        workingDraftBaseVersionId: v1.id,
+      });
+    });
   });
 
   it('dry run by version number never resolves to a draft snapshot', async () => {

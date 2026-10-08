@@ -1,0 +1,1 @@
+ALTER TABLE "blueprint" ADD COLUMN "working_draft_base_version_id" text;

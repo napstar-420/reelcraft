@@ -23,6 +23,26 @@ After a save you'll see, for example, **Saved as v1.3 (runnable)**.
 
 To throw away your unsaved changes and go back to the last save, select **Discard** in the top bar.
 
+## Edited elsewhere
+
+Reelcraft never lets an out-of-date tab overwrite a newer save. If you have the same blueprint open
+in two tabs (or two browsers) and save in one, the other shows a bar when you switch to it:
+**This blueprint was saved elsewhere (v1.3).** Autosave pauses until you choose:
+
+- If you hadn't changed anything in that tab, select **Load v1.3** to show the new version.
+- If you had unsaved edits there, select **Keep my edits** to keep working on them. They now count as
+  changes to v1.3. Reelcraft doesn't merge them: saving makes a new version with your edits as they
+  are, without what changed in v1.3. Or select **Discard my edits** to throw them away and load v1.3.
+
+**Save** and **Restore this version** from the out-of-date tab are refused, with a message that the
+blueprint was saved elsewhere, until you choose, so nothing is overwritten by accident.
+
+Unsaved edits can also be left behind on an older version, for example when you add a package as a
+new version of a blueprint with unsaved edits, or after an update. When you open that blueprint, the
+canvas shows its latest version and the bar **Unsaved edits based on v1.2 were found.** Select
+**Open them** to put them on the canvas (replacing what's there), or **Discard** to delete them.
+Edits from before Reelcraft tracked this say "based on an earlier version".
+
 ## Runnable or not
 
 Reelcraft checks the blueprint while you edit. The top bar shows:

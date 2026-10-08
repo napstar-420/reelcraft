@@ -23,6 +23,7 @@ export const blueprint = pgTable('blueprint', {
   packageId: text('package_id'), // stable id this blueprint's exported packages carry; set on first export
   packageBasedOn: jsonb('package_based_on'), // { packageId, fingerprint } of the package this was imported from, if another author's
   workingDraft: jsonb('working_draft'), // CreateBlueprintVersionDto: the canvas's autosaved unsaved edits; cleared on save
+  workingDraftBaseVersionId: text('working_draft_base_version_id'), // the saved version (current_version_id when written, null = none yet) `working_draft` was edited from; no FK, like current_version_id
 });
 
 export const blueprintVersion = pgTable(

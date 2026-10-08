@@ -1,7 +1,11 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { zipSync, unzipSync } from 'fflate';
-import type { InstallPackageDto, PackageManifest } from '@reelcraft/shared';
+import type {
+  CreateBlueprintVersionDto,
+  InstallPackageDto,
+  PackageManifest,
+} from '@reelcraft/shared';
 import { ulid } from '../../src/common/ulid';
 import {
   asset,
@@ -11,6 +15,7 @@ import {
   packageImport,
   storageOrphan,
 } from '../../src/db/schema/index';
+import { BlueprintService } from '../../src/blueprint/blueprint.service';
 import { IdentityService } from '../../src/package/identity.service';
 import { PackageExportService } from '../../src/package/package-export.service';
 import { PackageInspectService } from '../../src/package/package-inspect.service';
@@ -187,11 +192,32 @@ describe('package export → import (e2e)', () => {
     expect(report.installed).toMatchObject({ relation: 'newer', canUpdate: true });
 
     const installed = report.installed!;
+    // Unsaved canvas edits on the blueprint survive the update.
+    const blueprints = testApp.app.get(BlueprintService);
+    const edits = {
+      graph: [],
+      inputs: [],
+      roles: [],
+      defaults: {},
+      budget: { runCapUsd: 1 },
+    } satisfies CreateBlueprintVersionDto;
+    const oldVersionId = (await blueprints.getBlueprint(installed.blueprintId)).currentVersionId;
+    await blueprints.setWorkingDraft(installed.blueprintId, edits, oldVersionId);
+    const withEdits = await inspector.inspect('local', key, target);
+    expect(withEdits.report.issues).toContainEqual(
+      expect.objectContaining({ code: 'working_draft', severity: 'warn' }),
+    );
+
     const result = await installer.install(
       'local',
       request(key, { mode: 'update', targetBlueprintId: installed.blueprintId }),
     );
     expect(result.blueprintId).toBe(installed.blueprintId);
+    expect(await blueprints.getBlueprint(installed.blueprintId)).toMatchObject({
+      currentVersionId: result.blueprintVersionId,
+      workingDraft: edits,
+      workingDraftBaseVersionId: oldVersionId,
+    });
     const versions = await testDb.db
       .select()
       .from(blueprintVersion)

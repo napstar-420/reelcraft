@@ -62,13 +62,22 @@ export const BlueprintDto = z.object({
   archived: z.boolean(),
   /** The canvas's autosaved unsaved edits; `null` when it matches the latest save. */
   workingDraft: CreateBlueprintVersionDto.nullable(),
+  /** The saved version `workingDraft` was edited from (`null`: none existed yet,
+   * or an older draft that never recorded one). The draft only belongs on the
+   * canvas while this is the blueprint's `currentVersionId`. */
+  workingDraftBaseVersionId: z.string().nullable(),
   runCount: z.number(),
   latestPosterBlobId: z.string().nullable(),
 });
 export type BlueprintDto = z.infer<typeof BlueprintDto>;
 
+/** `baseVersionId` is the saved version the caller's draft is based on (`null`:
+ * none saved yet). Required, so an out-of-date browser bundle gets a 400 rather
+ * than overwriting. The write is refused with 409 `blueprint_changed` unless it
+ * is still the blueprint's `currentVersionId`. */
 export const SetWorkingDraftDto = z.object({
   workingDraft: CreateBlueprintVersionDto.nullable(),
+  baseVersionId: z.string().nullable(),
 });
 export type SetWorkingDraftDto = z.infer<typeof SetWorkingDraftDto>;
 
@@ -76,7 +85,13 @@ export type SetWorkingDraftDto = z.infer<typeof SetWorkingDraftDto>;
 export const VersionBump = z.enum(['minor', 'major']);
 export type VersionBump = z.infer<typeof VersionBump>;
 
-export const CreateVersionQueryDto = z.object({ bump: VersionBump.default('minor') });
+/** `base`: the saved version the caller's edits are based on; the save is refused
+ * with 409 `blueprint_changed` unless it is still current. Empty means no saved
+ * version yet; omitted skips the check. */
+export const CreateVersionQueryDto = z.object({
+  bump: VersionBump.default('minor'),
+  base: z.string().optional(),
+});
 export type CreateVersionQueryDto = z.infer<typeof CreateVersionQueryDto>;
 
 export const BlueprintVersionDto = z.object({

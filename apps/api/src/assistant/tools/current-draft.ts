@@ -21,7 +21,11 @@ export async function currentDraft(
     return { draft: ctx.lastProposal, source: 'proposal in this turn' };
   if (ctx.baseDraft) return { draft: ctx.baseDraft, source: 'canvas' };
   const blueprint = await deps.blueprints.getBlueprint(ctx.blueprintId);
-  if (blueprint.workingDraft) {
+  // A working draft saved against an older version is not what the canvas shows.
+  if (
+    blueprint.workingDraft &&
+    blueprint.workingDraftBaseVersionId === blueprint.currentVersionId
+  ) {
     return { draft: blueprint.workingDraft as CreateBlueprintVersionDto, source: 'working draft' };
   }
   const [latest] = await deps.blueprints.listVersions(ctx.blueprintId);
