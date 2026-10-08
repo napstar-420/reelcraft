@@ -242,11 +242,15 @@ export class BindingResolverService {
             return ref.path ? getPath(row.data, ref.path) : row.data;
           }),
         );
+        const mediaIds = rows.flatMap((row) => (row.artifactId ? [row.artifactId] : []));
         return {
           value: values,
           provenance: {
             ref,
             memoryKey: ref.key,
+            // A media group's items are addressed `memory:<key>#<i>`; the handle
+            // canonicalizer needs their artifacts to map those to `artifact:<id>`.
+            ...(mediaIds.length === rows.length && { artifactIds: mediaIds }),
             memoryVersions: rows.map((row) => ({
               itemIndex: itemIndexOf(row, ref.key),
               version: row.version,
