@@ -34,6 +34,9 @@ None of its own. The format, such as the aspect ratio, comes from the model. See
 
 Paid per image by the provider, or your ChatGPT plan for Codex and ChatGPT. Fake is free.
 
+ChatGPT image chats are archived automatically after each image, so they don't pile up in your ChatGPT
+history. You can still find them under Settings > Data controls > Archived chats.
+
 ## Tips
 
 - To make one image per scene, [iterate](../blueprints/iterate-conditions-approval.md#iterate) over

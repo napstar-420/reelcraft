@@ -11,12 +11,16 @@ import {
 import { stripCitations, type PageState } from './chatgpt-page';
 
 /** Fake Neo: `run` answers scripted results in call order and records every script. */
-function fixture(results: unknown[]) {
+function fixture(results: unknown[], archive: unknown = { archived: true }) {
   const scripts: string[] = [];
   const neo = {
     run: vi.fn(async (code: string) => {
       scripts.push(code);
       if (code.includes('browser.pages.close')) return true;
+      if (code.includes('is_archived')) {
+        if (archive instanceof Error) throw archive;
+        return archive;
+      }
       if (results.length === 0) throw new Error(`unexpected script: ${code.slice(0, 80)}`);
       const next = results.shift();
       if (next instanceof Error) throw next;
@@ -30,7 +34,12 @@ function fixture(results: unknown[]) {
   };
   const adapter = new ChatgptProviderAdapter(neo as never, storage as never);
   const closed = () => scripts.filter((s) => s.includes('browser.pages.close')).length;
-  return { adapter, neo, storage, scripts, closed };
+  const archived = () => scripts.filter((s) => s.includes('is_archived')).length;
+  /** Whether the archive ran before the (only) tab close. */
+  const archivedBeforeClose = () =>
+    scripts.findIndex((s) => s.includes('is_archived')) <
+    scripts.findIndex((s) => s.includes('browser.pages.close'));
+  return { adapter, neo, storage, scripts, closed, archived, archivedBeforeClose };
 }
 
 const signedIn = { signedIn: true, composer: true };
@@ -300,6 +309,55 @@ describe('ChatgptProviderAdapter.fetch', () => {
       { role: 'download', base64: 'BBB', mime: 'image/webp', filename: 'chatgpt-image-2.webp' },
     ]);
     expect(closed()).toBe(1);
+  });
+});
+
+describe('ChatgptProviderAdapter image chat archive', () => {
+  const imageJob = () => job({ modality: 'image', outputKind: 'media.image' });
+  const download = [{ mime: 'image/png', length: 3 }, 'AAA', null];
+
+  it('archives the chat before closing the tab, once the images are downloaded', async () => {
+    const { adapter, closed, archived, archivedBeforeClose } = fixture([...download]);
+    const result = await adapter.fetch(imageJob());
+    expect(result.output).toMatchObject({ kind: 'media.image', base64: 'AAA' });
+    expect(archived()).toBe(1);
+    expect(closed()).toBe(1);
+    expect(archivedBeforeClose()).toBe(true);
+  });
+
+  it('still returns the image and closes the tab when archiving fails', async () => {
+    for (const archive of [new Error('boom'), { archived: false, reason: 'HTTP 403' }]) {
+      const { adapter, closed } = fixture([...download], archive);
+      await expect(adapter.fetch(imageJob())).resolves.toMatchObject({
+        output: { base64: 'AAA' },
+      });
+      expect(closed()).toBe(1);
+    }
+  });
+
+  it('never archives a text job, which already used a temporary chat', async () => {
+    const { adapter, archived } = fixture(['hello']);
+    await adapter.fetch(job());
+    expect(archived()).toBe(0);
+  });
+
+  it('archives an image chat whose generation failed', async () => {
+    const { adapter, closed, archived, archivedBeforeClose } = fixture([
+      state({ errorShown: true }),
+    ]);
+    const status = await adapter.poll(imageJob());
+    expect(status).toMatchObject({ done: true, outcome: 'failed' });
+    expect(archived()).toBe(1);
+    expect(closed()).toBe(1);
+    expect(archivedBeforeClose()).toBe(true);
+  });
+
+  it('archives an image chat on cancel', async () => {
+    const { adapter, closed, archived, archivedBeforeClose } = fixture([true]);
+    await adapter.cancel(imageJob());
+    expect(archived()).toBe(1);
+    expect(closed()).toBe(1);
+    expect(archivedBeforeClose()).toBe(true);
   });
 });
 

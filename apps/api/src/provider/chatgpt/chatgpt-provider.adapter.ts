@@ -13,6 +13,7 @@ import { loadReferenceFiles, type ReferenceFile } from '../reference-files';
 import { buildChatgptPrompt } from './chatgpt-prompt';
 import {
   EFFORT_STOPS,
+  archiveChatScript,
   attachFilesScript,
   chatUrl,
   closePageScript,
@@ -30,6 +31,7 @@ import {
   UPLOAD_CHUNK,
   stripCitations,
   enableWebSearchScript,
+  type ArchiveResult,
   type ChatgptEffort,
   type PageState,
   type SignInState,
@@ -203,7 +205,7 @@ export class ChatgptProviderAdapter implements ProviderAdapter {
       );
       return { providerId: this.id, externalId: idempotencyKey, payload };
     } catch (error) {
-      await this.close(pageId);
+      await this.closeJob(pageId, modality);
       if (error instanceof ChatgptPageError) {
         throw new Error(`${error.message} — the ChatGPT UI may have changed`);
       }
@@ -242,7 +244,7 @@ export class ChatgptProviderAdapter implements ProviderAdapter {
       if (Date.now() - since < IDLE_STALL_MS) return status;
       this.idleSince.delete(handle.externalId);
       this.logger.warn({ pageId: job.pageId, tail: state.tail.slice(-200) }, 'chatgpt tab stalled');
-      await this.close(job.pageId);
+      await this.closeJob(job.pageId, job.modality);
       return {
         done: true,
         outcome: 'failed',
@@ -260,7 +262,7 @@ export class ChatgptProviderAdapter implements ProviderAdapter {
       state.replyDone && status.failureClass !== 'user_action'
         ? await this.copyReply(job.pageId).catch(() => undefined)
         : undefined;
-    await this.close(job.pageId);
+    await this.closeJob(job.pageId, job.modality);
     return reply ? { ...status, reason: `${status.reason}: ${reply.slice(0, 500)}` } : status;
   }
 
@@ -307,7 +309,7 @@ export class ChatgptProviderAdapter implements ProviderAdapter {
         job.outputKind === 'data' || job.outputKind === 'timeline' ? parseJsonReply(reply) : reply;
       return { output, costUsd: 0, repro, rawResponse };
     } finally {
-      await this.close(job.pageId);
+      await this.closeJob(job.pageId, job.modality);
     }
   }
 
@@ -319,7 +321,7 @@ export class ChatgptProviderAdapter implements ProviderAdapter {
     } catch (error) {
       this.logger.warn({ err: error, pageId: job.pageId }, 'chatgpt stop failed');
     }
-    await this.close(job.pageId);
+    await this.closeJob(job.pageId, job.modality);
     return { confirmed: true, billed: false };
   }
 
@@ -411,6 +413,24 @@ export class ChatgptProviderAdapter implements ProviderAdapter {
     if (payload?.signedOut) return undefined;
     if (typeof payload?.pageId !== 'number') throw new Error('Invalid ChatGPT job handle');
     return payload as ChatgptJobPayload;
+  }
+
+  /**
+   * Image chats can't be temporary, so they would pile up in the user's
+   * history: archive one before its tab closes. Best-effort, like `close`.
+   */
+  private async closeJob(pageId: number, modality: ChatgptModality): Promise<void> {
+    if (modality === 'image') {
+      try {
+        const result = await this.neo.run<ArchiveResult>(archiveChatScript(pageId));
+        if (!result.archived && result.reason !== 'no conversation') {
+          this.logger.warn({ pageId, reason: result.reason }, 'chatgpt chat archive failed');
+        }
+      } catch (error) {
+        this.logger.warn({ err: error, pageId }, 'chatgpt chat archive failed');
+      }
+    }
+    await this.close(pageId);
   }
 
   private async close(pageId: number): Promise<void> {

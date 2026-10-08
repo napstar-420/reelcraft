@@ -343,6 +343,33 @@ export function readParkedImageScript(id: number, from: number, to: number): str
 return text;`;
 }
 
+export type ArchiveResult = { archived: boolean; reason?: string };
+
+/**
+ * Archives the chat this tab is showing, via the same endpoint ChatGPT's own
+ * "Archive" menu item uses. The id comes from the tab's own path, so it can
+ * only ever archive the chat this tab created. A just-sent chat briefly sits
+ * on a placeholder `local-…` path; that is not archivable, so it is skipped.
+ */
+export function archiveChatScript(id: number): string {
+  return inPage(
+    id,
+    `const m = location.pathname.match(/^\\/c\\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i);
+if (!m) return { archived: false, reason: 'no conversation' };
+const s = await fetch('/api/auth/session', { credentials: 'include' }).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+if (!s || !s.accessToken) return { archived: false, reason: 'not signed in' };
+const r = await fetch('/backend-api/conversation/' + m[1], {
+  method: 'PATCH',
+  credentials: 'include',
+  headers: { 'content-type': 'application/json', authorization: 'Bearer ' + s.accessToken },
+  body: JSON.stringify({ is_archived: true }),
+});
+// ChatGPT's chat lists lag this by up to a minute, so the reply is the only immediate signal.
+const body = r.ok ? await r.json().catch(() => null) : null;
+return body && body.success ? { archived: true } : { archived: false, reason: 'HTTP ' + r.status };`,
+  );
+}
+
 export function stopGeneratingScript(id: number): string {
   return inPage(id, `const b = document.querySelector(S.stop); if (b) b.click(); return !!b;`);
 }
