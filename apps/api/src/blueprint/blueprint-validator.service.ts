@@ -745,6 +745,15 @@ export class BlueprintValidatorService {
     issues: ValidationIssue[],
   ): void {
     if (!stage.iterate) return;
+    if ((stage.iterate.concurrency ?? 1) > 1 && stage.approval?.mode === 'item') {
+      issues.push({
+        path: `stages.${stage.key}.iterate.concurrency`,
+        message:
+          'iterate.concurrency above 1 cannot be combined with approval.mode "item": several ' +
+          'items would wait for review at once. Use approval mode "stage" to review them together',
+        severity: 'error',
+      });
+    }
     const path = `stages.${stage.key}.iterate.over`;
     const overRef = stage.iterate.over;
 
@@ -800,6 +809,17 @@ export class BlueprintValidatorService {
     ctx: ValidationContext,
     issues: ValidationIssue[],
   ): void {
+    // Items that run at the same time cannot read each other's output.
+    const concurrent = (stage.iterate?.concurrency ?? 1) > 1;
+    if (concurrent && refUsesPrevItem(ref)) {
+      const message =
+        '{from:"prevItem"} cannot be used while iterate.concurrency is above 1: items run at ' +
+        'the same time, so item i has no finished item i-1 to read';
+      if (!issues.some((issue) => issue.path === path && issue.message === message)) {
+        issues.push({ path, message, severity: 'error' });
+      }
+    }
+
     // A `coalesce` fans out to every branch for the `prev`/`alignWith`
     // checks below (whichever branch actually fires at a given item must
     // still be internally valid) — but NOT for the bare "prevItem on a
@@ -998,4 +1018,10 @@ function iterateProducedArity(
     if (writerStage?.iterate) return 'many';
   }
   return undefined;
+}
+
+/** Whether a ref reads the previous item, directly or inside a `coalesce`. */
+function refUsesPrevItem(ref: Ref): boolean {
+  if (ref.from === 'prevItem') return true;
+  return ref.from === 'coalesce' && ref.refs.some(refUsesPrevItem);
 }

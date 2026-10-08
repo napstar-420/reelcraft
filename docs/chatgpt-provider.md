@@ -45,7 +45,15 @@ response as `pastedPrompt`.
   chats. Archiving is best-effort: if it fails, a warning is logged and the image is still returned.
   ChatGPT's chat lists lag an archive by up to a minute, so the sidebar may show the chat briefly.
 - **Effort is sticky account-wide** in ChatGPT. Every job sets it explicitly, and your ChatGPT app
-  keeps whatever the last job used.
+  keeps whatever the last job used. Jobs that run side by side (an iterating stage with
+  `iterate.concurrency` above 1) take turns from "set effort" to "sent", so each prompt goes out with
+  its own effort; everything else about a job stays in its own tab.
+- **Concurrency is not capped.** Each running item is its own tab and its own chat, started within
+  seconds of the others. Three at once was tried and worked (all images generated and downloaded);
+  more is untested, and ChatGPT may rate-limit or show captchas for many image chats at once. Start
+  with 2 or 3.
+- The one Neo connection is shared by all jobs. A call that only times out no longer drops it, so a
+  slow upload in one tab does not reconnect the others.
 - Web search is turned on from the composer's "+" menu, which ignores synthetic clicks, so two
   trusted mouse clicks are sent over CDP (they work in a background tab). The old `hints=search`
   URL hint was dropped by ChatGPT. The "Web search" pill then sits inside the composer text.

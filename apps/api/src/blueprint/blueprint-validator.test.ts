@@ -938,6 +938,82 @@ describe('BlueprintValidatorService — iterate (Phase 7, §14/§16.2)', () => {
     ).toBe(false);
   });
 
+  describe('iterate.concurrency', () => {
+    const concurrent = (extra: Partial<StageDef>, concurrency = 3) =>
+      stage({
+        key: 'a',
+        iterate: {
+          over: { from: 'input', inputKey: 'list' },
+          itemAlias: 'x',
+          itemRetryLimit: 1,
+          concurrency,
+        },
+        ...extra,
+      });
+
+    it('is fine on its own, and with approval at the end of the stage', () => {
+      const validator = makeValidator({ 'text.generate': llmGenerate });
+      for (const extra of [{}, { approval: { mode: 'stage' as const } }]) {
+        const issues = validator.validate({
+          graph: [concurrent(extra)],
+          inputs: [listInput],
+          roles: [],
+        });
+        expect(issues.filter((i) => i.severity === 'error')).toEqual([]);
+      }
+    });
+
+    it('errors when combined with per-item approval, but not at concurrency 1', () => {
+      const validator = makeValidator({ 'text.generate': llmGenerate });
+      const withItemApproval = { approval: { mode: 'item' as const } };
+      expect(
+        hasError(
+          validator.validate({
+            graph: [concurrent(withItemApproval)],
+            inputs: [listInput],
+            roles: [],
+          }),
+          'stages.a.iterate.concurrency',
+        ),
+      ).toBe(true);
+      expect(
+        hasError(
+          validator.validate({
+            graph: [concurrent(withItemApproval, 1)],
+            inputs: [listInput],
+            roles: [],
+          }),
+          'stages.a.iterate.concurrency',
+        ),
+      ).toBe(false);
+    });
+
+    it('errors when an item reads the previous item, directly or inside a coalesce', () => {
+      const validator = makeValidator({ 'text.generate': withRequiredSlot });
+      const direct = concurrent({ context: { before: { from: 'prevItem' } } });
+      const wrapped = concurrent({
+        slots: {
+          topic: {
+            from: 'coalesce',
+            refs: [{ from: 'prevItem' }, { from: 'const', value: 'seed topic' }],
+          },
+        },
+      });
+      expect(
+        hasError(
+          validator.validate({ graph: [direct], inputs: [listInput], roles: [] }),
+          'stages.a.context.before',
+        ),
+      ).toBe(true);
+      expect(
+        hasError(
+          validator.validate({ graph: [wrapped], inputs: [listInput], roles: [] }),
+          'stages.a.slots.topic',
+        ),
+      ).toBe(true);
+    });
+  });
+
   it('errors when coalesce branches resolve to different non-literal kinds', () => {
     const validator = makeValidator({ 'video.generate': videoGenWithStartFrameSlot });
     const graph = [

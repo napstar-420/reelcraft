@@ -172,6 +172,17 @@ export const TROUBLESHOOTING: TroubleshootingEntry[] = [
     fix: 'Make the slot optional, or wrap it in a coalesce with a const for item 0.',
   },
   {
+    matches: ['iterate.concurrency above 1 cannot be combined with approval.mode "item"'],
+    means: 'Items run at the same time, but approval mode "item" pauses after each item.',
+    fix: 'Use approval mode "stage" (one review after the last item, where items can be rejected one by one), or set concurrency to 1.',
+  },
+  {
+    matches: ['cannot be used while iterate.concurrency is above 1'],
+    means:
+      '{from:"prevItem"} needs the previous item to be finished, but items run at the same time.',
+    fix: 'Stop binding prevItem in this stage, or set concurrency to 1 (items then run one at a time).',
+  },
+  {
     matches: ['is written by multiple stages'],
     means: 'Two stages write the same memory key.',
     fix: 'Use one writer per key: rename the keys.',

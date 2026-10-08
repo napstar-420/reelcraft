@@ -22,7 +22,7 @@ export const GUIDE: Record<string, GuideSection> = {
     title: 'How a blueprint works',
     body: `A blueprint is a recipe for a video: an ordered list of **stages** (\`graph\`), the **inputs** a run asks for, an optional **role** (a channel Character), a **defaults** layer and a **budget** (\`runCapUsd\`).
 
-- A run executes the stages one at a time, in order. Nothing runs in parallel.
+- A run executes the stages one at a time, in order. Stages never run in parallel; the items of an iterating stage can (\`iterate.concurrency\`).
 - Each stage has a type (\`capability\`), \`slots\` (the inputs the type asks for), \`context\` (extra values for the prompt), an \`output\` and optional checks, quality control, approval, iterate and enabledWhen.
 - Stage \`key\`s must be unique. Pick short descriptive keys such as \`script\`, \`scenes\`, \`images\`, \`voice\`. Once saved, runs refer to a stage by its key, so don't rename keys of existing stages without a reason.
 - Always send the COMPLETE draft (every stage, inputs, roles, defaults, budget). A draft is not a patch.
@@ -109,7 +109,7 @@ Mark the fields later stages need as \`required\`, and add a \`description\` to 
 
   iterate: {
     title: 'Iterate, enabledWhen and approval',
-    body: `**iterate**: \`{ over: Ref, itemAlias: string, itemRetryLimit: number, maxItems?: number }\` runs the stage once per item of a list, one after another, in order (item i may use item i-1 through \`prevItem\`). Never in parallel.
+    body: `**iterate**: \`{ over: Ref, itemAlias: string, itemRetryLimit: number, maxItems?: number, concurrency?: number }\` runs the stage once per item of a list, in order (item i may use item i-1 through \`prevItem\`). Items run one at a time unless \`concurrency\` is set: then they run in batches of that many, and an item cannot use \`prevItem\` or \`approval.mode: 'item'\` (use mode 'stage'). The engine does not cap it; each running item uses the provider at once (ChatGPT: one browser tab each), so suggest a low number such as 2 or 3 for image stages that do not depend on each other.
 - \`over\` must resolve to an array. The reliable way: the producing stage writes the list to memory (\`writes: {"scenes":"scenes"}\`) and \`over\` is \`{from:'memory', key:'scenes'}\`. \`{from:'prev'}\` works only when the previous stage's WHOLE output is an array; \`prev\` with a path into a field is rejected (\`iterate.over does not narrow to an array schema\`).
 - Iterating over a many-cardinality set of media files is not supported. \`groupKey\` is reserved and ignored: don't set it.
 - Use the current item by binding context or a slot to \`{from:'item', path}\`.
@@ -350,7 +350,7 @@ ${renderTroubleshooting()}`,
     body: `If the user asks for any of these, do NOT build something that pretends to do it. Say plainly that Reelcraft can't, why, and suggest the closest thing that works.
 
 - **Publish or upload anywhere** (YouTube, TikTok, Instagram…): \`publish.stub\` is a placeholder that does nothing.
-- **Parallel work**: stages run strictly one after another, and iterate items too.
+- **Parallel stages**: stages run strictly one after another. Only the items of one iterating stage can run together (\`iterate.concurrency\`).
 - **Branching**: the only conditional is \`enabledWhen\` (a run input equals a value). No if/else, loops over stages, or computed conditions.
 - **Iterate** over a many-cardinality media set, or use \`groupKey\` (ignored); \`iterate.over\` must be an array from memory or a whole-output array from prev.
 - **QC on video output or on \`human.input\`** (use approval); QC \`includeTranscript\` outside audio.

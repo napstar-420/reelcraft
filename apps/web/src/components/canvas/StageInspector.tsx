@@ -903,6 +903,22 @@ function IterateEditor({
           onChange={(e) => set({ maxItems: toNumberOrUndefined(e.target.value) })}
         />
       </div>
+      <div className="flex flex-col gap-1.5">
+        <InfoLabel info="How many items run at the same time; leave blank to run them one after another. Every running item uses the provider at once (for ChatGPT, a browser tab each), so a high number can hit the provider's own limits. Not available with per-item approval, or when an item reads the previous item.">
+          Concurrency
+        </InfoLabel>
+        <Input
+          type="number"
+          className="w-32"
+          min={1}
+          placeholder="1"
+          value={iterate.concurrency ?? ''}
+          onChange={(e) => {
+            const value = toNumberOrUndefined(e.target.value);
+            set({ concurrency: value === undefined ? undefined : Math.max(1, Math.floor(value)) });
+          }}
+        />
+      </div>
 
       <Button
         type="button"
@@ -1577,7 +1593,7 @@ export function StageInspector({
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <InfoHeading info="Loops this stage once per item in an array, in order — item i may consume item i-1's result, but nothing runs in parallel. Leave unset to run this stage once.">
+              <InfoHeading info="Loops this stage once per item in an array, in order — item i may consume item i-1's result. Set Concurrency to run several items at once. Leave unset to run this stage once.">
                 Iterate
               </InfoHeading>
               <IterateEditor

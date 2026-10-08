@@ -13,7 +13,8 @@ export type EnabledWhen = z.infer<typeof EnabledWhen>;
 
 /**
  * §3.5 — a user-defined unit of work. `iterate` (renamed from v4's `fanOut`)
- * loops in order, item i may consume item i-1; nothing runs in parallel.
+ * loops in order, item i may consume item i-1, unless `iterate.concurrency`
+ * runs several items at once (then no item may read another).
  */
 export const StageDef = z.object({
   key: z.string(),
@@ -38,6 +39,9 @@ export const StageDef = z.object({
       alignWith: z.literal('item').optional(),
       itemRetryLimit: z.number(),
       maxItems: z.number().optional(),
+      /** Items run at the same time, in batches of this many. Unset runs them one
+       * after another. Not capped by the engine: each provider has its own limits. */
+      concurrency: z.number().int().min(1).optional(),
     })
     .optional(),
   checks: z.array(CheckDef),
