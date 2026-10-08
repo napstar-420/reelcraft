@@ -26,6 +26,7 @@ import { TimelineEditorService } from './timeline-editor.service';
 import { ProviderModule } from '../provider/provider.module';
 import { RunInsightService } from './run-insight.service';
 import { LiveModule } from '../live/live.module';
+import { NotificationModule } from '../notification/notification.module';
 
 const runControlProviders = [
   PreviewTokenService,
@@ -55,6 +56,7 @@ const runControlProviders = [
     CheckModule,
     ProviderModule,
     LiveModule,
+    NotificationModule,
   ],
   providers: [RunService, RunInsightService, RunInputService, ...runControlProviders],
   controllers: [RunController],

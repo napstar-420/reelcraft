@@ -50,6 +50,24 @@ describe('LiveGateway.route', () => {
   });
 });
 
+describe('LiveGateway notification events', () => {
+  it('sends a notification to its recipient without looking up a run', async () => {
+    const { gateway, to, emit, limit } = setup([]);
+    const notification = { id: 'n1', title: 'Run completed' } as never;
+    await gateway.route({ type: 'notification', recipientId: 'u2', notification });
+    expect(to).toHaveBeenCalledWith('user:u2');
+    expect(emit).toHaveBeenCalledWith('notification:created', notification);
+    expect(limit).not.toHaveBeenCalled();
+  });
+
+  it('tells the recipient their read state changed', async () => {
+    const { gateway, to, emit } = setup([]);
+    await gateway.route({ type: 'notifications', recipientId: 'local' });
+    expect(to).toHaveBeenCalledWith('user:local');
+    expect(emit).toHaveBeenCalledWith('notifications:changed');
+  });
+});
+
 describe('LiveGateway bus subscription', () => {
   it('survives a failing lookup without throwing out of the subscriber', async () => {
     const { gateway, events, limit } = setup([]);

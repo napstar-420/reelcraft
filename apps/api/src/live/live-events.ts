@@ -1,8 +1,14 @@
 import { Injectable } from '@nestjs/common';
 import { Subject, type Observable } from 'rxjs';
+import type { NotificationDto } from '@reelcraft/shared';
 
 export type LiveEvent =
-  { type: 'run'; runId: string } | { type: 'stage'; runId: string; stageKey: string };
+  | { type: 'run'; runId: string }
+  | { type: 'stage'; runId: string; stageKey: string }
+  /** A notification row was committed for this user. */
+  | { type: 'notification'; recipientId: string; notification: NotificationDto }
+  /** Read state changed; other tabs refetch the list. */
+  | { type: 'notifications'; recipientId: string };
 
 /**
  * §21.2 — in-process RxJS subject that feeds the Socket.IO gateway. Services

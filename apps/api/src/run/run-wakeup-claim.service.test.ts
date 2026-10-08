@@ -27,11 +27,18 @@ function serviceFor(wakeup: object, run: object) {
     transaction: vi.fn(async (callback: (arg: typeof tx) => unknown) => callback(tx)),
   };
   const events = { publish: vi.fn() };
+  const notifications = { insertSafely: vi.fn().mockResolvedValue(null), deliver: vi.fn() };
   return {
-    service: new RunWakeupClaimService(db as never, new RunActionPolicy(), events as never),
+    service: new RunWakeupClaimService(
+      db as never,
+      new RunActionPolicy(),
+      events as never,
+      notifications as never,
+    ),
     tx,
     updateSet,
     events,
+    notifications,
   };
 }
 
@@ -112,5 +119,67 @@ describe('RunWakeupClaimService', () => {
     });
     expect(tx.select).toHaveBeenCalledTimes(1);
     expect(tx.update).not.toHaveBeenCalled();
+  });
+
+  describe('notifications', () => {
+    const sent = { recipientId: 'local', notification: { id: 'n1' } };
+
+    it('records and announces "run started" for a start wakeup, keyed by the wakeup', async () => {
+      const startWakeup = { ...wakeup, action: 'start', sourceState: 'CREATED' };
+      const { service, tx, notifications } = serviceFor(startWakeup, {
+        id: 'run-1',
+        state: 'CREATED',
+        revision: 7,
+      });
+      notifications.insertSafely.mockResolvedValue(sent);
+
+      await service.claim({ ...event, action: 'start', sourceState: 'CREATED' });
+
+      expect(notifications.insertSafely).toHaveBeenCalledWith(tx, {
+        runId: 'run-1',
+        kind: 'run_started',
+        dedupeKey: 'run_started:wake-1',
+      });
+      expect(notifications.deliver).toHaveBeenCalledWith(sent);
+    });
+
+    it('records "auto resumed" only for the timed wakeup of a quota pause', async () => {
+      const timed = { ...wakeup, sourceState: 'PAUSED_QUOTA', notBefore: '2026-10-09T00:00:00Z' };
+      const { service, notifications } = serviceFor(timed, {
+        id: 'run-1',
+        state: 'PAUSED_QUOTA',
+        revision: 7,
+      });
+
+      await service.claim({ ...event, sourceState: 'PAUSED_QUOTA' });
+
+      expect(notifications.insertSafely).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ kind: 'auto_resumed', dedupeKey: 'auto_resumed:wake-1' }),
+      );
+    });
+
+    it('stays quiet when the user resumes a quota pause by hand', async () => {
+      const manual = { ...wakeup, sourceState: 'PAUSED_QUOTA', notBefore: null };
+      const { service, notifications } = serviceFor(manual, {
+        id: 'run-1',
+        state: 'PAUSED_QUOTA',
+        revision: 7,
+      });
+
+      await service.claim({ ...event, sourceState: 'PAUSED_QUOTA' });
+
+      expect(notifications.insertSafely).not.toHaveBeenCalled();
+    });
+
+    it('stays quiet for an ordinary resume and for a claim that was rejected', async () => {
+      const ordinary = serviceFor(wakeup, { id: 'run-1', state: 'FAILED', revision: 7 });
+      await ordinary.service.claim(event);
+      expect(ordinary.notifications.insertSafely).not.toHaveBeenCalled();
+
+      const stale = serviceFor(wakeup, { id: 'run-1', state: 'CANCELLED', revision: 8 });
+      await stale.service.claim(event);
+      expect(stale.notifications.deliver).not.toHaveBeenCalled();
+    });
   });
 });
