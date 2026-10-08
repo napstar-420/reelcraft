@@ -571,5 +571,4 @@ export const api = {
     request<AssistantItemDto>(`/assistant/sessions/${sessionId}/proposals/${itemId}/apply`, {
       method: 'POST',
     }),
-  assistantEventsUrl: (sessionId: string) => `/api/assistant/sessions/${sessionId}/events`,
 };

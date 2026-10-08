@@ -10,3 +10,5 @@ export function resolveSocketUser(_handshake: Handshake): string {
 }
 
 export const userRoom = (userId: string): string => `user:${userId}`;
+
+export const assistantRoom = (sessionId: string): string => `assistant:${sessionId}`;

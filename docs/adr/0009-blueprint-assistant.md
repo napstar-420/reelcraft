@@ -72,4 +72,4 @@ computer with no login (ADR-0002) and must not be put on the internet.
   terms and usage limits. Provider keys and settings never do.
 - Only one `codex app-server` serves all chats, so a crash fails the turns running on it. It restarts on the
   next turn, and three crashes within a minute make the assistant unavailable for a minute.
-- Chats live in one API process (the event stream is in memory, like run events).
+- Chats live in one API process (the event stream is in memory and reaches the browser over Socket.IO, ADR-0010).

@@ -34,6 +34,12 @@ the same events, so the transport has to know who each event is for.
   (ADR-0002), so any web page could otherwise connect to a local Reelcraft and read run data. engine.io's
   `allowRequest` accepts a handshake with no `Origin` (not a browser) or an `Origin` whose host equals `Host`
   (or the first `X-Forwarded-Host`), and rejects everything else.
+- **The assistant chat uses the same socket, with a room per chat.** Streamed text arrives token by token, so
+  those events carry their data instead of a hint, and only sockets that asked for a chat get them. A socket
+  sends `assistant:watch` and the server answers after it has joined the chat's room, but only if the chat
+  belongs to the socket's user. The client refetches the chat on that answer, so catching up after a
+  reconnect (rooms are lost with the connection) cannot miss an event. A `watch` that is overtaken by an
+  `unwatch` while its owner lookup runs does not join.
 - **Still polled on purpose:** the update status (the API restarts mid-update, so the socket drops) and the
   Codex sign-in (a short device flow).
 
@@ -44,7 +50,7 @@ the same events, so the transport has to know who each event is for.
 - **Push full objects over the socket.** Faster to render, but duplicates every DTO and needs ordering and
   conflict handling. Refetching one query is cheap here.
 - **A room per run.** Fewer messages, but a per-user room already bounds fan-out, and a run's events are
-  tiny. Per-session rooms are used where volume justifies it (assistant token deltas).
+  tiny. A room per chat is used where volume justifies it (assistant token deltas).
 - **Postgres LISTEN/NOTIFY or Redis now.** Multiple users are not multiple replicas. See below.
 
 ## Consequences

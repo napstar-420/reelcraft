@@ -37,7 +37,7 @@ import { RunInsightService } from '../run/run-insight.service';
 import { MediaPreviewService } from '../artifact/media-preview.service';
 import { ConfigResolverService } from '../run-config/config-resolver.service';
 import { engineDefaults } from '../run-config/engine-defaults';
-import { AssistantEvents } from './assistant-events';
+import { LiveEvents } from '../live/live-events';
 import {
   ASSISTANT_AGENTS,
   AssistantTurnError,
@@ -86,7 +86,7 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
     runs: RunInsightService,
     media: MediaPreviewService,
     private readonly config: EngineConfig,
-    private readonly events: AssistantEvents,
+    private readonly events: LiveEvents,
   ) {
     this.toolDeps = {
       blueprints,
@@ -271,7 +271,7 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
       .where(eq(assistantSession.id, id))
       .returning();
     const session = this.toSessionDto(row!);
-    this.events.publish(id, { type: 'session', session });
+    this.publish(id, { type: 'session', session });
     return session;
   }
 
@@ -303,7 +303,7 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
   }
 
   private publish(sessionId: string, event: AssistantStreamEvent): void {
-    this.events.publish(sessionId, event);
+    this.events.publish({ type: 'assistant', sessionId, event });
   }
 
   private async createItem(
@@ -630,10 +630,6 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
       await this.blueprints.update(session.blueprintId, payload.changes);
     }
     return this.updateItem(itemId, { state: 'applied' });
-  }
-
-  streamEvents(sessionId: string) {
-    return this.events.stream(sessionId);
   }
 }
 
