@@ -3,6 +3,8 @@
 //
 //   pnpm --filter @reelcraft/api build && node apps/api/dist/main.js   # in another terminal
 //   REELCRAFT_CODEX_ACCEPTANCE=1 node apps/api/test/acceptance/assistant-eval.mjs [caseName ...]
+//   Optional: REELCRAFT_API=http://localhost:3001/api  EVAL_MODEL=gpt-6-astra  EVAL_EFFORT=low
+//             REELCRAFT_EVAL_RUNS=1 adds the cases that need a finished run (needs Inngest running).
 //
 // Prints one verdict per case. PASS/FAIL is a heuristic on the assistant's own words and on what it
 // proposed; read the transcript lines for the cases that matter.
@@ -28,16 +30,25 @@ if (!provider)
   throw new Error(
     `No assistant provider is available: ${providers.map((p) => p.unavailableReason)}`,
   );
-const model = provider.models.find((m) => m.isDefault) ?? provider.models[0];
+const model =
+  provider.models.find((m) => m.modelId === process.env.EVAL_MODEL) ??
+  provider.models.find((m) => m.isDefault) ??
+  provider.models[0];
 
 const channel = await call('/channels', {
   method: 'POST',
   body: JSON.stringify({ name: `zz-assistant-eval-${Date.now()}`, theme: {}, defaults: {} }),
 });
-const { blueprintId } = await call('/blueprints', {
-  method: 'POST',
-  body: JSON.stringify({ channelId: channel.id, name: 'Eval blueprint' }),
-});
+const newBlueprint = async (name) =>
+  (
+    await call('/blueprints', {
+      method: 'POST',
+      body: JSON.stringify({ channelId: channel.id, name }),
+    })
+  ).blueprintId;
+const saveVersion = (blueprintId, draft) =>
+  call(`/blueprints/${blueprintId}/versions`, { method: 'POST', body: JSON.stringify(draft) });
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const emptyDraft = { graph: [], inputs: [], roles: [], defaults: {}, budget: { runCapUsd: 5 } };
 const scriptDraft = {
@@ -82,8 +93,81 @@ const caps = (items) =>
   draftProposals(items)
     .at(-1)
     ?.payload.draft.graph.map((s) => s.capability) ?? [];
+const toolNames = (items) => items.filter((i) => i.type === 'tool_call').map((i) => i.payload.tool);
+const called = (items, name) => toolNames(items).includes(name);
+const lastDraft = (items) => draftProposals(items).at(-1)?.payload.draft;
+const stageOf = (draft, cap) => draft?.graph.filter((s) => s.capability === cap) ?? [];
 const declines =
   /can(?:'|’)?t|cannot|isn(?:'|’)?t (?:supported|possible|available)|not (?:supported|possible|available)|no way|unable|doesn(?:'|’)?t (?:support|exist|have)|don(?:'|’)?t (?:support|have)|only one at a time|sequential|one after another|one at a time|placeholder|nothing/i;
+
+/** Cases that need a finished run. They start a dry run (the free fake provider) of a blueprint whose
+ * script can never pass its word-count check, and wait for it to fail. Needs Inngest running. */
+function runCases() {
+  const failingDraft = {
+    ...scriptDraft,
+    graph: [
+      {
+        ...scriptDraft.graph[0],
+        checks: [{ type: 'builtin', key: 'word_count', params: { min: 5000, max: 6000 } }],
+      },
+      scriptDraft.graph[1],
+    ],
+  };
+  const failedRun = async (bp) => {
+    await saveVersion(bp, failingDraft);
+    const run = await call(`/blueprints/${bp}/versions/1.0/dry-run`, {
+      method: 'POST',
+      body: JSON.stringify({ budgetCapUsd: 1 }),
+    });
+    for (let i = 0; i < 120; i++) {
+      const detail = await call(`/runs/${run.id}`);
+      if (['FAILED', 'COMPLETED', 'CANCELLED'].includes(detail.state))
+        return { runId: run.id, state: detail.state };
+      await sleep(2000);
+    }
+    throw new Error('the seeded dry run never finished (is Inngest running?)');
+  };
+  return [
+    {
+      name: 'diagnoses-a-failed-run',
+      setup: failedRun,
+      draft: failingDraft,
+      text: 'Why did the last run fail?',
+      check: (items) =>
+        (called(items, 'get_run') || called(items, 'get_stage')) &&
+        /word|count|check|5000/i.test(said(items))
+          ? null
+          : `did not read the run and name the failing check (tools: ${toolNames(items)}): "${said(items).slice(0, 200)}"`,
+    },
+    {
+      name: 'fixes-from-the-run',
+      setup: failedRun,
+      draft: failingDraft,
+      text: 'The last run failed. Fix the blueprint so it can pass.',
+      check: (items) => {
+        const draft = lastDraft(items);
+        if (!draft) return 'expected a draft proposal';
+        if (!called(items, 'get_stage') && !called(items, 'get_run'))
+          return 'proposed without looking at the run';
+        const script = draft.graph.find((s) => s.key === 'script');
+        const bar = script?.checks.find((c) => c.type === 'builtin' && c.key === 'word_count');
+        return !bar || (bar.params.min ?? 0) < 1000
+          ? null
+          : 'left an impossible word-count bar in place';
+      },
+    },
+    {
+      name: 'treats-dry-run-output-as-placeholder',
+      setup: failedRun,
+      draft: failingDraft,
+      text: 'Is the text the last run produced any good?',
+      check: (items) =>
+        /dry run|fake|placeholder|test provider/i.test(said(items))
+          ? null
+          : `did not say a dry run's text is a placeholder: "${said(items).slice(0, 200)}"`,
+    },
+  ];
+}
 
 const CASES = [
   {
@@ -200,12 +284,196 @@ const CASES = [
         : 'did not add a word_count check';
     },
   },
+
+  // ---- versions: the assistant can read old versions and compare them ----
+  {
+    name: 'reads-an-old-version',
+    // 1.0 = script + voice-over, 1.1 = script only
+    setup: async (bp) => {
+      await saveVersion(bp, scriptDraft);
+      await saveVersion(bp, { ...scriptDraft, graph: [scriptDraft.graph[0]] });
+    },
+    draft: { ...scriptDraft, graph: [scriptDraft.graph[0]] },
+    text: 'What stages did version 1.0 have? Answer from the saved version.',
+    check: (items) =>
+      called(items, 'get_version') && /voice/i.test(said(items)) && /script/i.test(said(items))
+        ? null
+        : `did not read version 1.0 and name its stages (tools: ${toolNames(items)}): "${said(items).slice(0, 200)}"`,
+  },
+  {
+    name: 'diffs-versions',
+    setup: async (bp) => {
+      await saveVersion(bp, scriptDraft);
+      await saveVersion(bp, { ...scriptDraft, graph: [scriptDraft.graph[0]] });
+    },
+    draft: { ...scriptDraft, graph: [scriptDraft.graph[0]] },
+    text: 'What changed between version 1.0 and 1.1?',
+    check: (items) =>
+      (called(items, 'diff_drafts') || called(items, 'get_version')) &&
+      /voice/i.test(said(items)) &&
+      /(remov|dropp|delet|no longer|gone|without)/i.test(said(items))
+        ? null
+        : `did not say the voice-over stage was removed (tools: ${toolNames(items)}): "${said(items).slice(0, 200)}"`,
+  },
+  {
+    name: 'restores-part-of-an-old-version',
+    setup: async (bp) => {
+      await saveVersion(bp, scriptDraft);
+      await saveVersion(bp, { ...scriptDraft, graph: [scriptDraft.graph[0]] });
+    },
+    draft: { ...scriptDraft, graph: [scriptDraft.graph[0]] },
+    text: 'Bring back the voice-over stage from version 1.0 and keep everything else as it is now.',
+    check: (items) => {
+      const draft = lastDraft(items);
+      if (!draft) return 'expected a draft proposal';
+      if (!called(items, 'get_version')) return 'proposed without reading version 1.0';
+      return stageOf(draft, 'audio.speech').length === 1 &&
+        stageOf(draft, 'text.generate').length === 1
+        ? null
+        : `expected the script and one voice-over stage, got ${draft.graph.map((s) => s.capability)}`;
+    },
+  },
+
+  // ---- config: the assistant can say what a stage will really use ----
+  {
+    name: 'says-which-model-a-stage-uses',
+    draft: {
+      ...scriptDraft,
+      defaults: { models: { text: { provider: 'fake', modelId: 'fake-text-1' } } },
+    },
+    text: 'Which model will the script stage use, and where does that come from?',
+    check: (items) =>
+      called(items, 'get_effective_config') && /fake-text-1/.test(said(items))
+        ? null
+        : `did not look up the effective config and name fake-text-1 (tools: ${toolNames(items)}): "${said(items).slice(0, 200)}"`,
+  },
+
+  // ---- channel: it knows the channel's other blueprints ----
+  {
+    name: 'avoids-a-name-clash',
+    setup: async () => {
+      await newBlueprint('Clash target');
+    },
+    draft: scriptDraft,
+    text: 'Rename this blueprint to "Clash target".',
+    check: (items) => {
+      const meta = proposals(items).find((p) => p.payload.kind === 'metadata');
+      if (meta?.payload.changes.name === 'Clash target')
+        return 'proposed a name that another blueprint in the channel already uses';
+      return /already|taken|exists|in use|another blueprint/i.test(said(items))
+        ? null
+        : `did not say the name is taken: "${said(items).slice(0, 200)}"`;
+    },
+  },
+  {
+    name: 'knows-the-other-blueprints',
+    setup: async () => {
+      await newBlueprint('Orbit notes');
+    },
+    draft: scriptDraft,
+    text: 'Do I have other blueprints in this channel? Name them.',
+    check: (items) =>
+      /orbit notes/i.test(said(items))
+        ? null
+        : `did not name the other blueprint: "${said(items).slice(0, 200)}"`,
+  },
+
+  // ---- building well ----
+  {
+    name: 'one-iterating-stage-not-copies',
+    draft: emptyDraft,
+    text: "Make a blueprint for an illustrated story with one picture per scene. The story decides how many scenes it has. Don't ask me anything, choose sensible defaults.",
+    check: (items) => {
+      const draft = lastDraft(items);
+      if (!draft) return 'expected a draft proposal';
+      const images = stageOf(draft, 'image.generate');
+      if (images.length !== 1) return `expected ONE image stage, got ${images.length}`;
+      if (!images[0].iterate) return 'the image stage does not iterate';
+      const plan = draft.graph.find((s) => s.output.kind === 'data' && s.writes);
+      return plan ? null : 'no data stage writes the scene list for the iterate to read';
+    },
+  },
+  {
+    name: 'quality-control-not-a-critique-stage',
+    draft: scriptDraft,
+    text: "I want the script reviewed for quality and improved automatically if it is weak. Don't ask me anything, choose sensible defaults.",
+    check: (items) => {
+      const draft = lastDraft(items);
+      if (!draft) return 'expected a draft proposal';
+      const script = draft.graph.find((s) => s.key === 'script');
+      if (!script?.qc) return 'did not put qc on the script stage';
+      const extra = draft.graph.filter((s) =>
+        /critiq|review|evaluat|rewrit|revis/i.test(`${s.key} ${s.label}`),
+      );
+      return extra.length ? `added a separate review stage: ${extra.map((s) => s.key)}` : null;
+    },
+  },
+  {
+    name: 'fixes-validation-errors',
+    // the voice-over has no text bound: a required slot is unbound
+    draft: {
+      ...scriptDraft,
+      graph: [scriptDraft.graph[0], { ...scriptDraft.graph[1], slots: {} }],
+    },
+    text: 'The blueprint shows an error. Fix it.',
+    check: (items) => {
+      const draft = lastDraft(items);
+      if (!draft) return 'expected a fixed draft proposal';
+      const voice = draft.graph.find((s) => s.capability === 'audio.speech');
+      return voice && voice.slots.text ? null : 'the voice-over still has no text bound';
+    },
+  },
+  {
+    name: 'adds-qc-to-one-stage',
+    draft: scriptDraft,
+    text: 'Add quality control to the script stage only.',
+    check: (items) => {
+      const draft = lastDraft(items);
+      if (!draft) return 'expected a draft proposal';
+      const script = draft.graph.find((s) => s.key === 'script');
+      const voice = draft.graph.find((s) => s.key === 'voice');
+      if (!script?.qc) return 'no qc on the script stage';
+      if (voice?.qc) return 'also added qc to the voice-over stage';
+      return script.qc.criteria && script.qc.model?.modelId
+        ? null
+        : 'qc is missing criteria or a model';
+    },
+  },
+
+  // ---- more things Reelcraft cannot do ----
+  {
+    name: 'refuses-talking-head',
+    draft: scriptDraft,
+    text: 'Add an avatar that lip-syncs the voice-over, like a talking head.',
+    check: (items) =>
+      declines.test(said(items)) &&
+      !draftProposals(items).some((p) =>
+        /avatar|lip|talking/i.test(JSON.stringify(p.payload.draft)),
+      )
+        ? null
+        : `did not decline a talking head: "${said(items).slice(0, 200)}"`,
+  },
+  {
+    name: 'cannot-run-the-blueprint',
+    draft: scriptDraft,
+    text: 'Run this blueprint now and tell me how it went.',
+    check: (items) =>
+      declines.test(said(items)) && !called(items, 'propose_draft')
+        ? null
+        : `did not say it can't run a blueprint: "${said(items).slice(0, 200)}"`,
+  },
+
+  // ---- runs (opt-in: need Inngest, to execute a dry run) ----
+  ...(process.env.REELCRAFT_EVAL_RUNS === '1' ? runCases() : []),
 ];
 
 const only = process.argv.slice(2);
 const selected = only.length ? CASES.filter((c) => only.includes(c.name)) : CASES;
 
 async function runCase(testCase) {
+  const blueprintId = await newBlueprint(`Eval ${testCase.name}`);
+  const info = (await testCase.setup?.(blueprintId)) ?? {};
+  const draft = typeof testCase.draft === 'function' ? testCase.draft(info) : testCase.draft;
   const session = await call(`/blueprints/${blueprintId}/assistant/sessions`, {
     method: 'POST',
     body: JSON.stringify({ providerId: provider.id, applyMode: 'manual' }),
@@ -214,9 +482,11 @@ async function runCase(testCase) {
     method: 'POST',
     body: JSON.stringify({
       text: testCase.text,
-      draft: testCase.draft,
+      draft,
       model: model.modelId,
-      ...(model.defaultReasoningEffort && { effort: model.defaultReasoningEffort }),
+      ...((process.env.EVAL_EFFORT ?? model.defaultReasoningEffort) && {
+        effort: process.env.EVAL_EFFORT ?? model.defaultReasoningEffort,
+      }),
     }),
   });
   const deadline = Date.now() + 6 * 60_000;
@@ -241,6 +511,7 @@ async function runCase(testCase) {
     steps: toolCalls.length,
     refused: toolCalls.filter((i) => i.state === 'failed').length,
     sessionId: session.id,
+    info,
   };
 }
 
@@ -251,13 +522,14 @@ try {
     let verdict;
     try {
       const run = await runCase(testCase);
-      const problem = testCase.check(run.items);
+      const problem = testCase.check(run.items, run.info);
       verdict = {
         name: testCase.name,
         pass: !problem,
         note: problem ?? 'ok',
         steps: run.steps,
         refusedToolCalls: run.refused,
+        tools: toolNames(run.items).join(', '),
         said: said(run.items).replace(/\s+/g, ' ').slice(0, 400),
       };
     } catch (error) {
@@ -276,6 +548,7 @@ try {
       `${verdict.pass ? 'PASS' : 'FAIL'}  ${verdict.name}  (${verdict.steps} tool calls, ${verdict.refusedToolCalls} refused, ${verdict.seconds}s)`,
     );
     if (!verdict.pass) console.log(`      ${verdict.note}`);
+    if (!verdict.pass && verdict.tools) console.log(`      tools: ${verdict.tools}`);
     console.log(`      said: ${verdict.said}`);
   }
 } finally {

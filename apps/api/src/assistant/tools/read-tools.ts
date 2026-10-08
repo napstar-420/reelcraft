@@ -4,7 +4,7 @@ import { BUILTIN_CHECKS } from '../../check/builtins/index';
 import { GUIDE_TOPICS, guideIndex, readGuide } from '../guide';
 import { qualityIssues } from './quality-checks';
 import { parseDraft } from './draft-checks';
-import { currentDraft } from './current-draft';
+import { baselineDraft, currentDraft } from './current-draft';
 import { sameDraft } from './draft-diff';
 import { memoryFlow } from './memory-flow';
 import { draftJsonSchema, MODALITIES, obj, str } from './json-schemas';
@@ -275,7 +275,7 @@ const getChannelResources: AssistantTool = {
   name: 'get_channel_resources',
   kind: 'read',
   description:
-    "The blueprint's channel: its name, description, theme and default settings (models etc.), its assets (id, name, kind, file details such as size, dimensions and duration), its Characters (id, name, description, readiness, references) and the channel's other blueprints (name, description, tags: so you can avoid name clashes and say like your other blueprint; you can read only THIS blueprint's contents). Asset and Character ids in a draft must come from here.",
+    "The blueprint's channel: its name, description, theme and default settings (models etc.), its assets (id, name, kind, file details such as size, dimensions and duration), its Characters (id, name, description, readiness, and their reference images: a role needs a Character id and at least one of its reference blobIds) and the channel's other blueprints (name, description, tags: so you can avoid name clashes and say like your other blueprint; you can read only THIS blueprint's contents). Asset and Character ids in a draft must come from here.",
   input: NoInput,
   jsonSchema: noInputSchema,
   async handler(ctx, deps) {
@@ -317,6 +317,13 @@ const getChannelResources: AssistantTool = {
           description: c.description,
           readiness: c.readiness,
           referenceCount: Array.isArray(c.referenceSet) ? c.referenceSet.length : 0,
+          // a role must name at least one of these reference images (role.referenceBlobIds)
+          references: Array.isArray(c.referenceSet)
+            ? (c.referenceSet as Array<{ blobId: string; view?: string; caption?: string }>).map(
+                (r) => ({ blobId: r.blobId, view: r.view, caption: r.caption }),
+              )
+            : [],
+          primaryReferenceId: c.primaryRefId,
         })),
       },
     };
@@ -329,7 +336,7 @@ const readGuideTool: AssistantTool<z.infer<typeof ReadGuideInput>> = {
   name: 'read_guide',
   kind: 'read',
   description:
-    'Read a section of the Reelcraft authoring guide: how stages connect, prompts, outputs, iterate, checks/QC/retries, models, inputs, assembly, and WHAT REELCRAFT CANNOT DO (topic "limits"). Read the relevant topics before building anything non-trivial.',
+    "Read a section of the Reelcraft guide: proven blueprint shapes (recipes), writing prompts, the quality bar, how stages connect, outputs, iterate, checks/QC/retries, models, how settings merge (config-layers), versions, what each validator message means and how to fix it (troubleshooting), using run results (diagnose), the app's own words (glossary) and WHAT REELCRAFT CANNOT DO (limits). Read the topics that apply before building anything non-trivial; omit the topic for the index.",
   input: ReadGuideInput,
   jsonSchema: (n) =>
     obj({ topic: str('Guide topic; omit for the index.', { enum: n.guideTopics }) }),
@@ -360,7 +367,7 @@ const validateDraft: AssistantTool<z.infer<typeof DraftInput>> = {
     if (!parsed.ok)
       return { ok: false, error: 'The draft has the wrong shape.', issues: parsed.issues };
     const validation = await deps.blueprints.validateOnly(ctx.blueprintId, parsed.draft);
-    const quality = qualityIssues(parsed.draft);
+    const quality = qualityIssues(parsed.draft, await baselineDraft(ctx, deps));
     return {
       ok: true,
       result: { ...validation, issues: [...validation.issues, ...quality] },

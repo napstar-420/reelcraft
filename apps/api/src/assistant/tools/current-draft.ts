@@ -15,8 +15,10 @@ export type DraftSource =
 export async function currentDraft(
   ctx: TurnContext,
   deps: ToolDeps,
+  { ignoreProposal = false }: { ignoreProposal?: boolean } = {},
 ): Promise<{ draft: CreateBlueprintVersionDto; source: DraftSource }> {
-  if (ctx.lastProposal) return { draft: ctx.lastProposal, source: 'proposal in this turn' };
+  if (ctx.lastProposal && !ignoreProposal)
+    return { draft: ctx.lastProposal, source: 'proposal in this turn' };
   if (ctx.baseDraft) return { draft: ctx.baseDraft, source: 'canvas' };
   const blueprint = await deps.blueprints.getBlueprint(ctx.blueprintId);
   if (blueprint.workingDraft) {
@@ -37,4 +39,13 @@ export async function currentDraft(
     };
   }
   return { draft: EMPTY_DRAFT, source: 'empty' };
+}
+
+/** The draft the USER has (canvas, else working draft, else latest save), ignoring any proposal
+ * the assistant made in this turn: what a proposal is measured against. */
+export async function baselineDraft(
+  ctx: TurnContext,
+  deps: ToolDeps,
+): Promise<CreateBlueprintVersionDto> {
+  return (await currentDraft(ctx, deps, { ignoreProposal: true })).draft;
 }

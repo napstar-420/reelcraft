@@ -26,6 +26,35 @@ const draft = (...graph: StageDef[]): CreateBlueprintVersionDto => ({
 
 const paths = (d: CreateBlueprintVersionDto) => qualityIssues(d).map((i) => i.path);
 
+describe('qualityIssues against the draft the user had', () => {
+  const bare = stage({ instructions: { template: 'Write.' }, checks: [] });
+
+  it('does not block on gaps that were already there, but warns about them', () => {
+    const issues = qualityIssues(draft(bare), draft(bare));
+    expect(issues.map((i) => i.severity)).toEqual(['warning', 'warning']);
+    expect(issues[0]!.message).toContain('already in this blueprint');
+  });
+
+  it('blocks a gap the assistant adds to a stage that did not have it', () => {
+    const before = stage({});
+    const issues = qualityIssues(draft(bare), draft(before));
+    expect(issues.map((i) => i.severity)).toEqual(['error', 'error']);
+  });
+
+  it('treats a new stage as new, whatever the base held', () => {
+    const issues = qualityIssues(draft(stage({ key: 'other', checks: [] })), draft(stage({})));
+    expect(issues).toMatchObject([{ path: 'stages.other', severity: 'error' }]);
+  });
+
+  it('only forgives the rule that was already broken', () => {
+    const noCheck = stage({ checks: [] });
+    const noCheckNoSystem = stage({ checks: [], instructions: { template: 'x' } });
+    const issues = qualityIssues(draft(noCheckNoSystem), draft(noCheck));
+    expect(issues.find((i) => i.path.endsWith('instructions.system'))!.severity).toBe('error');
+    expect(issues.find((i) => i.path === 'stages.s')!.severity).toBe('warning');
+  });
+});
+
 describe('qualityIssues', () => {
   it('accepts a stage with a system prompt and a check', () => {
     expect(paths(draft(stage({})))).toEqual([]);

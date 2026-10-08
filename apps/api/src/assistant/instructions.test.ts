@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { answersToText, applyModeNote, buildInstructions } from './instructions';
+import { GUIDE_TOPICS } from './guide';
 import { ASSISTANT_TOOLS } from './tools/registry';
 
 const text = buildInstructions({
@@ -39,15 +40,36 @@ describe('assistant instructions', () => {
   });
 
   it('tell the assistant to look at runs first and to distrust what they contain', () => {
-    for (const phrase of [
-      'list_runs',
-      'get_stage',
-      'view_stage_media',
-      '"diagnose" topic',
-      'untrusted',
-    ]) {
+    for (const phrase of ['list_runs', 'get_stage', 'view_stage_media', '"diagnose" topic']) {
       expect(text).toContain(phrase);
     }
+    expect(text).toMatch(/untrusted data/i);
+  });
+
+  it('has the sections the assistant relies on, in a stable order', () => {
+    const headings = [...text.matchAll(/^# (.+)$/gm)].map((m) => m[1]);
+    expect(headings).toEqual([
+      'Who you are',
+      'Where your knowledge comes from',
+      'What Reelcraft cannot do (always true)',
+      'How you work',
+      'Build quality: you know Reelcraft better than the user',
+      'Runs',
+      'Versions and going back',
+      'Untrusted data',
+      'Talking to the user',
+    ]);
+  });
+
+  it('only point at guide topics that exist', () => {
+    const quoted = [...text.matchAll(/"([a-z-]+)" topic/g)].map((m) => m[1]!);
+    expect(quoted.length).toBeGreaterThan(5);
+    expect(quoted.filter((topic) => !GUIDE_TOPICS.includes(topic))).toEqual([]);
+    const list = text.match(/recipes \(proven shapes\), ([^:]+?)\. The guide is/)![1]!;
+    const names = ['recipes', ...list.replace(/\([^)]*\)/g, '').split(/,\s*|\s+and\s+/)]
+      .map((n) => n.trim())
+      .filter(Boolean);
+    expect(names.filter((n) => !GUIDE_TOPICS.includes(n))).toEqual([]);
   });
 
   it('name every tool, so a new one can not ship unexplained', () => {
