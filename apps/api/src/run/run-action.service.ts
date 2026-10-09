@@ -1,9 +1,17 @@
-import { ConflictException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { and, eq } from 'drizzle-orm';
+import {
+  BadRequestException,
+  ConflictException,
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
+import { and, asc, eq, lt } from 'drizzle-orm';
 import {
   ConfigLayer,
   StageDef,
   type ConfigLayer as ConfigLayerType,
+  type RetryItems,
   type RetryScope,
 } from '@reelcraft/shared';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
@@ -37,11 +45,17 @@ interface RetryTokenPreview {
 
 /** The token binds the scope, so a confirm can't swap it after the preview.
  * The default scope is left out, keeping the pre-scope payload shape. */
-function retryPayload(stageKey: string, itemIndex: number | undefined, scope: RetryScope) {
+function retryPayload(
+  stageKey: string,
+  itemIndex: number | undefined,
+  scope: RetryScope,
+  items?: RetryItems,
+) {
   return {
     stageKey,
     ...(itemIndex !== undefined ? { itemIndex } : {}),
     ...(scope !== 'dependents' ? { scope } : {}),
+    ...(items ? { items } : {}),
   };
 }
 
@@ -66,8 +80,9 @@ export class RunActionService {
     stageKey: string,
     itemIndex?: number,
     scope: RetryScope = 'dependents',
+    items?: RetryItems,
   ) {
-    return this.buildStagePreview(runId, stageKey, 'retry', itemIndex, scope);
+    return this.buildStagePreview(runId, stageKey, 'retry', itemIndex, scope, items);
   }
 
   async confirmStageRetry(
@@ -76,8 +91,9 @@ export class RunActionService {
     previewToken: string,
     itemIndex?: number,
     scope: RetryScope = 'dependents',
+    items?: RetryItems,
   ) {
-    const payload = retryPayload(stageKey, itemIndex, scope);
+    const payload = retryPayload(stageKey, itemIndex, scope, items);
     const revision = await this.currentRevision(runId);
     const claims = this.tokens.verify<RetryTokenPreview>(previewToken, {
       action: 'retry',
@@ -85,7 +101,7 @@ export class RunActionService {
       runRevision: revision,
       proposedPayload: payload,
     });
-    const seed = await this.resolveRetrySeed(runId, stageKey, itemIndex, scope);
+    const seed = await this.resolveRetrySeed(runId, stageKey, itemIndex, scope, items);
     const preview = await this.invalidation.preview({ runId, seed });
     if (claims.preview.fingerprint !== preview.fingerprint) {
       throw new ConflictException('The invalidation preview changed; request a new preview');
@@ -114,6 +130,7 @@ export class RunActionService {
         stageKey,
         itemIndex,
         scope,
+        items,
         wakeupId: result.wakeupId,
         revision: result.revision,
         invalidatedStageCount: preview.closure.affectedStageKeys.length,
@@ -135,8 +152,9 @@ export class RunActionService {
     stageKey: string,
     itemIndex: number | undefined,
     scope: RetryScope = 'dependents',
+    items?: RetryItems,
   ): Promise<InvalidationSeed> {
-    const target = await this.resolveRetryTarget(runId, stageKey, itemIndex);
+    const target = await this.resolveRetryTarget(runId, stageKey, itemIndex, items);
     if (scope === 'stage') return { ...target, cascade: false };
     if (scope === 'downstream') {
       const graph = await this.runGraph(runId);
@@ -162,7 +180,14 @@ export class RunActionService {
     runId: string,
     stageKey: string,
     itemIndex: number | undefined,
+    items?: RetryItems,
   ): Promise<InvalidationSeed> {
+    if (items) {
+      if (itemIndex !== undefined) {
+        throw new BadRequestException('itemIndex and items cannot be combined');
+      }
+      return this.resolveFailedItems(runId, stageKey);
+    }
     if (itemIndex === undefined) return { stageKeys: [stageKey] };
 
     const graph = await this.runGraph(runId);
@@ -196,6 +221,41 @@ export class RunActionService {
     }
 
     return { items: [{ stageKey, itemIndex }] };
+  }
+
+  /** The `items: 'failed'` seed: every live failed item of an iterating stage,
+   * read from the DB so the caller can't name items that didn't fail. */
+  private async resolveFailedItems(runId: string, stageKey: string): Promise<InvalidationSeed> {
+    const graph = await this.runGraph(runId);
+    const stage = graph.find((candidate) => candidate.key === stageKey);
+    if (!stage) throw new ConflictException(`Stage ${stageKey} not found`);
+    if (!stage.iterate) {
+      throw new ConflictException(`Stage ${stageKey} does not iterate; it has no items to retry`);
+    }
+    const [execution] = await this.db
+      .select({ id: stageExecution.id, itemCount: stageExecution.itemCount })
+      .from(stageExecution)
+      .where(and(eq(stageExecution.runId, runId), eq(stageExecution.stageKey, stageKey)))
+      .limit(1);
+    if (!execution) throw new ConflictException(`Execution ${stageKey} not found`);
+
+    // An item at or past the current itemCount is an orphan of an earlier,
+    // larger count and belongs to no live item.
+    const failed = await this.db
+      .select({ itemIndex: stageItem.itemIndex })
+      .from(stageItem)
+      .where(
+        and(
+          eq(stageItem.stageExecutionId, execution.id),
+          eq(stageItem.state, 'failed'),
+          ...(execution.itemCount === null ? [] : [lt(stageItem.itemIndex, execution.itemCount)]),
+        ),
+      )
+      .orderBy(asc(stageItem.itemIndex));
+    if (failed.length === 0) {
+      throw new ConflictException(`Stage ${stageKey} has no failed items to retry`);
+    }
+    return { items: failed.map((row) => ({ stageKey, itemIndex: row.itemIndex })) };
   }
 
   async patchOverrides(
@@ -299,11 +359,12 @@ export class RunActionService {
     action: string,
     itemIndex?: number,
     scope: RetryScope = 'dependents',
+    items?: RetryItems,
   ) {
     const revision = await this.currentRevision(runId);
-    const seed = await this.resolveRetrySeed(runId, stageKey, itemIndex, scope);
+    const seed = await this.resolveRetrySeed(runId, stageKey, itemIndex, scope, items);
     const preview = await this.invalidation.preview({ runId, seed });
-    const payload = retryPayload(stageKey, itemIndex, scope);
+    const payload = retryPayload(stageKey, itemIndex, scope, items);
     const issued = this.tokens.issue({
       action,
       runId,
@@ -329,9 +390,14 @@ export class RunActionService {
       else artifactIdsByStage.set(item.stageKey, [item.artifactId]);
     }
 
+    const rerunItems = preview.closure.affectedItems.flatMap((item) =>
+      item.itemIndex === undefined ? [] : [{ stageKey: item.stageKey, itemIndex: item.itemIndex }],
+    );
+
     return {
       previewToken,
       expiresAt,
+      ...(rerunItems.length > 0 ? { items: rerunItems } : {}),
       affected: preview.closure.affectedStageKeys.map((stageKey, index) => {
         const artifactId = artifactIdsByStage.get(stageKey)?.[0];
         const cost = preview.costs

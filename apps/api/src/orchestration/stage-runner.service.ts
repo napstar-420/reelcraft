@@ -301,14 +301,22 @@ export class StageRunnerService {
       .where(eq(stageExecution.id, ctx.stageExecutionId));
 
     // The UI's only signal that a stage is actively executing (as opposed
-    // to not started yet) — flip 'pending' -> 'running' here, once. Scoped
-    // to 'pending' so a replayed step, a retry, or an item-mode attempt that
-    // finds the stage already in some other state (e.g. 'awaiting_approval'
-    // from a sibling item) never clobbers it.
+    // to not started yet) — flip 'pending' -> 'running' here. A resumed
+    // 'failed' stage or a retried 'stale' one runs again too, so they flip
+    // as well (clearing the failure and end time they left behind). Scoped
+    // to those states so a replayed step, or an attempt that finds the stage
+    // in some other state (e.g. 'awaiting_approval'), never clobbers it. One
+    // conditional UPDATE: concurrent items of a batch serialize on the row
+    // and the later ones match nothing.
     await this.db
       .update(stageExecution)
-      .set({ state: 'running' })
-      .where(and(eq(stageExecution.id, ctx.stageExecutionId), eq(stageExecution.state, 'pending')));
+      .set({ state: 'running', failure: null, endedAt: null })
+      .where(
+        and(
+          eq(stageExecution.id, ctx.stageExecutionId),
+          inArray(stageExecution.state, ['pending', 'failed', 'stale']),
+        ),
+      );
 
     // phase 7 chunk 4 — an item's first attempt (and every retry of it)
     // marks the stage_item 'running'. Idempotent to repeat on a replayed
@@ -316,7 +324,7 @@ export class StageRunnerService {
     if (ctx.stageItemId) {
       await this.db
         .update(stageItem)
-        .set({ state: 'running' })
+        .set({ state: 'running', startedAt: sql`coalesce(${stageItem.startedAt}, now())` })
         .where(eq(stageItem.id, ctx.stageItemId));
     }
 
@@ -368,8 +376,9 @@ export class StageRunnerService {
    * A round starts over after a human rejection of this scope's output
    * (attempts after the latest `rejected` row) and after any invalidation —
    * manual retry or a routed rejection — which clears
-   * `stage_execution.startedAt` for `beginAttempt` to restamp. Without that
-   * reset a manually retried stage would inherit an already-spent cap and
+   * `stage_execution.startedAt` (or the item's own `stage_item.startedAt`,
+   * for an item) for `beginAttempt` to restamp. Without that reset a
+   * manually retried stage or item would inherit an already-spent cap and
    * fail on its first rejection. */
   async countRoundAttempts(
     stageExecutionId: string,
@@ -389,6 +398,9 @@ export class StageRunnerService {
           eq(stageAttempt.outcome, 'rejected'),
         ),
       );
+    const roundStart = stageItemId
+      ? sql`(select ${stageItem.startedAt} from ${stageItem} where ${stageItem.id} = ${stageItemId})`
+      : sql`${stageExecution.startedAt}`;
     const [row] = await this.db
       .select({ count: sql<number>`count(*)::int` })
       .from(stageAttempt)
@@ -399,7 +411,7 @@ export class StageRunnerService {
           scopePredicate,
           inArray(stageAttempt.outcome, [...outcomes]),
           gt(stageAttempt.attemptNo, lastRejection?.attemptNo ?? 0),
-          sql`(${stageExecution.startedAt} is null or ${stageAttempt.createdAt} >= ${stageExecution.startedAt})`,
+          sql`(${roundStart} is null or ${stageAttempt.createdAt} >= ${roundStart})`,
         ),
       );
     return row?.count ?? 0;
@@ -1913,11 +1925,11 @@ export class StageRunnerService {
    * `stage_attempt` row (in `fetchAndFinalize`) and don't need
    * `recordFailure`'s attempt-row-writing half. */
   /** phase 7 chunk 4 — when `stageItemId` is given, the failure is this
-   * item's alone: `stage_item` goes `'failed'`, `stage_execution` is left
-   * untouched (another item earlier in the sequence may already be
-   * 'passed', and the stage as a whole never reaches a terminal state via
-   * this path — `stage.execute`'s outer loop returns `{outcome:'failed'}`
-   * directly to `run.orchestrate` without a further stage_execution write). */
+   * item's alone: `stage_item` goes `'failed'` and `stage_execution` is left
+   * untouched, because sibling items of the batch may still be running.
+   * `stage.execute`'s outer loop then calls this again WITHOUT an item id once
+   * the batch has settled, which is what marks the stage itself failed (and
+   * `beginAttempt` flips it back to 'running' on a resume or retry). */
   async failStageExecution(
     stageExecutionId: string,
     reason: string,
@@ -2277,6 +2289,7 @@ export class StageRunnerService {
       .update(stageExecution)
       .set({
         state: 'passed',
+        failure: null,
         endedAt: new Date().toISOString(),
         outputArtifactId: lastItem.outputArtifactId,
       })

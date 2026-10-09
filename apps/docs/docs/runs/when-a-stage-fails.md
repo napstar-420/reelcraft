@@ -5,7 +5,8 @@ description: Read why a stage or a run failed, and what to do about each kind of
 
 When a stage can't finish, the run's status becomes **Failed** and the stage shows **Failed**. To find out
 why, open the stage's **Attempts** and read the log. The last lines say what happened, such as **Stage
-failed: …**.
+failed: …**. For a stage that repeats for each item, the log also has an **Item failed: …** line for each
+failed item, and the stage's own line starts with the number of the first item that failed.
 
 Reading it is easier if you know the kinds of failure.
 
@@ -91,6 +92,7 @@ Running into a budget limit pauses the run, it doesn't fail it. See
 2. If you changed the blueprint, remember a run uses the version it started with. To use your changes,
    save a new version and **Rerun**, or [run stages from the canvas](./canvas-runs.md).
 3. If you only fixed something outside the blueprint, such as a key or your credit, select **Resume**, or
-   **Retry** the failed stage. See [Retries](./retries.md).
+   **Retry** the failed stage. If the stage repeats for each item and only some items failed, choose
+   **Only the failed items** to keep the ones that passed. See [Retries](./retries.md).
 
 Still stuck? See [Troubleshooting](../troubleshooting.md).

@@ -8,10 +8,16 @@ import { ConfigLayer } from '../config-layer';
 export const RetryScope = z.enum(['dependents', 'stage', 'downstream']);
 export type RetryScope = z.infer<typeof RetryScope>;
 
+/** Which items of an iterating stage a retry targets, instead of one `itemIndex`:
+ * - `failed`: every item that failed (passed items keep their outputs) */
+export const RetryItems = z.enum(['failed']);
+export type RetryItems = z.infer<typeof RetryItems>;
+
 export const ConfirmRunActionDto = z.object({
   previewToken: z.string().min(1),
   itemIndex: z.number().int().nonnegative().optional(),
   scope: RetryScope.optional(),
+  items: RetryItems.optional(),
 });
 export type ConfirmRunActionDto = z.infer<typeof ConfirmRunActionDto>;
 
@@ -68,6 +74,10 @@ export const InvalidationPreviewDto = z.object({
   previewToken: z.string(),
   expiresAt: z.string(),
   affected: z.array(InvalidationAffectedDto),
+  /** Every item of an iterating stage the action would re-run, when it is item-precise. */
+  items: z
+    .array(z.object({ stageKey: z.string(), itemIndex: z.number().int().nonnegative() }))
+    .optional(),
   spentUsd: z.number(),
   estimatedRerunUsd: z.number(),
 });

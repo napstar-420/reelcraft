@@ -232,6 +232,85 @@ describe('iterate.concurrency (real Inngest steps, e2e)', () => {
     // Items 0 and 2 ran to the end beside the failing one; 3 and 4 never started.
     expect(events).toEqual(expect.arrayContaining(['end 0', 'end 1', 'end 2']));
     expect(events.some((e) => e === 'start 3' || e === 'start 4')).toBe(false);
+    // The stage itself is marked failed, with the item's reason, once the batch settled.
+    const broll = (
+      await testDb.db.select().from(stageExecution).where(eq(stageExecution.runId, created.id))
+    ).find((e) => e.stageKey === 'broll');
+    expect(broll?.state).toBe('failed');
+    expect(broll?.failure).toEqual({ reason: 'Item 2: ChatGPT is signed out' });
+    expect(broll?.endedAt).not.toBeNull();
+  });
+
+  it('names how many items failed when several do', async () => {
+    const created = await setUp([shotsStage(['a', 'b', 'c', 'd', 'e']), brollStage(3)]);
+    await executeStage(created, 5, {
+      0: { outcome: 'failed', reason: 'first' },
+      2: { outcome: 'failed', reason: 'second' },
+    });
+    const broll = (
+      await testDb.db.select().from(stageExecution).where(eq(stageExecution.runId, created.id))
+    ).find((e) => e.stageKey === 'broll');
+    expect(broll?.failure).toEqual({ reason: '2 items failed; first, item 1: first' });
+  });
+
+  describe('beginAttempt on a stage that ran before', () => {
+    async function brollRow(runId: string) {
+      const rows = await testDb.db
+        .select()
+        .from(stageExecution)
+        .where(eq(stageExecution.runId, runId));
+      return rows.find((e) => e.stageKey === 'broll')!;
+    }
+
+    it('flips a failed stage back to running, clearing its failure, for concurrent items', async () => {
+      const created = await setUp([shotsStage(['a', 'b', 'c']), brollStage(3)]);
+      const execution = await brollRow(created.id);
+      await testDb.db
+        .update(stageExecution)
+        .set({ state: 'failed', failure: { reason: 'x' }, endedAt: new Date().toISOString() })
+        .where(eq(stageExecution.id, execution.id));
+      const runner = testApp.app.get(StageRunnerService);
+      await runner.ensureStageItems(execution.id, 3);
+
+      const attempts = await Promise.all(
+        [0, 1, 2].map(async (i) =>
+          runner.beginAttempt({
+            runId: created.id,
+            stageExecutionId: execution.id,
+            stageKey: 'broll',
+            itemIndex: i,
+            stageItemId: (await runner.itemState(execution.id, i)).id,
+          }),
+        ),
+      );
+
+      expect(new Set(attempts.map((a) => a.stageAttemptId)).size).toBe(3);
+      const row = await brollRow(created.id);
+      expect(row.state).toBe('running');
+      expect(row.failure).toBeNull();
+      expect(row.endedAt).toBeNull();
+    });
+
+    it('leaves a stage that is awaiting approval alone', async () => {
+      const created = await setUp([shotsStage(['a', 'b']), brollStage(2)]);
+      const execution = await brollRow(created.id);
+      await testDb.db
+        .update(stageExecution)
+        .set({ state: 'awaiting_approval' })
+        .where(eq(stageExecution.id, execution.id));
+      const runner = testApp.app.get(StageRunnerService);
+      await runner.ensureStageItems(execution.id, 2);
+
+      await runner.beginAttempt({
+        runId: created.id,
+        stageExecutionId: execution.id,
+        stageKey: 'broll',
+        itemIndex: 0,
+        stageItemId: (await runner.itemState(execution.id, 0)).id,
+      });
+
+      expect((await brollRow(created.id)).state).toBe('awaiting_approval');
+    });
   });
 
   it('keeps running one item at a time when concurrency is not set', async () => {

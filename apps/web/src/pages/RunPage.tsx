@@ -13,7 +13,7 @@ import {
   RotateCcw,
   Wallet,
 } from 'lucide-react';
-import type { RetryScope } from '@reelcraft/shared';
+import type { RetryItems, RetryScope } from '@reelcraft/shared';
 import { api } from '../api/client';
 import { useRun } from '../hooks/useRun';
 import { formatRunDuration } from './runs-page.logic';
@@ -62,7 +62,11 @@ export function RunPage() {
   const { data: run, isLoading, isFetching } = useRun(runId);
   const queryClient = useQueryClient();
   const [reviewStageKey, setReviewStageKey] = useState<string | null>(null);
-  const [retry, setRetry] = useState<{ stageKey: string; scope: RetryScope } | null>(null);
+  const [retry, setRetry] = useState<{
+    stageKey: string;
+    scope: RetryScope;
+    items?: RetryItems;
+  } | null>(null);
   const [formInputStageKey, setFormInputStageKey] = useState<string | null>(null);
   const [attemptsStageKey, setAttemptsStageKey] = useState<string | null>(null);
   const [outputStageKey, setOutputStageKey] = useState<string | null>(null);
@@ -169,6 +173,7 @@ export function RunPage() {
         runId={run.id}
         stageKey={retry?.stageKey ?? null}
         scope={retry?.scope ?? 'dependents'}
+        {...(retry?.items && { items: retry.items })}
         open={retry !== null}
         onOpenChange={(open) => !open && setRetry(null)}
       />
@@ -384,6 +389,19 @@ export function RunPage() {
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
+                      {se.isIterating && se.state === 'failed' ? (
+                        <DropdownMenuItem
+                          onSelect={() =>
+                            setRetry({
+                              stageKey: se.stageKey,
+                              scope: 'dependents',
+                              items: 'failed',
+                            })
+                          }
+                        >
+                          Only the failed items
+                        </DropdownMenuItem>
+                      ) : null}
                       <DropdownMenuItem
                         onSelect={() => setRetry({ stageKey: se.stageKey, scope: 'dependents' })}
                       >

@@ -50,6 +50,14 @@ describe('run action DTOs', () => {
     expect(() => ConfirmRunActionDto.parse({ previewToken: 'token', itemIndex: 1.5 })).toThrow();
   });
 
+  it('accepts items: failed on the retry-confirmation DTO and rejects any other selector', () => {
+    expect(ConfirmRunActionDto.parse({ previewToken: 'token', items: 'failed' })).toEqual({
+      previewToken: 'token',
+      items: 'failed',
+    });
+    expect(() => ConfirmRunActionDto.parse({ previewToken: 'token', items: 'all' })).toThrow();
+  });
+
   it('validates sparse per-stage overrides', () => {
     expect(
       PatchRunOverridesDto.parse({

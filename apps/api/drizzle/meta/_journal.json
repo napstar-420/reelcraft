@@ -239,6 +239,13 @@
       "when": 1791510062622,
       "tag": "0033_big_saracen",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1791527363374,
+      "tag": "0034_stage_item_started_at",
+      "breakpoints": true
     }
   ]
 }

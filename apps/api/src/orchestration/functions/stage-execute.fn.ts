@@ -141,6 +141,23 @@ export function buildStageExecuteFunction(
           const worst = worstOutcome(
             settled.flatMap((entry) => (entry.status === 'fulfilled' ? [entry.value] : [])),
           );
+          // The items already marked themselves failed; now that the whole
+          // batch has settled, the stage must not keep showing as running.
+          const failures = settled.flatMap((entry, k) =>
+            entry.status === 'fulfilled' && entry.value.outcome === 'failed'
+              ? [{ item: todo[k]!.i + 1, reason: entry.value.reason }]
+              : [],
+          );
+          if (failures.length > 0) {
+            const first = failures[0]!;
+            const reason =
+              failures.length === 1
+                ? `Item ${first.item}: ${first.reason}`
+                : `${failures.length} items failed; first, item ${first.item}: ${first.reason}`;
+            await step.run(`fail-stage-items-${start}`, () =>
+              runner.failStageExecution(data.stageExecutionId, reason),
+            );
+          }
           if (worst) return worst;
           if (stillWaiting) return { outcome: 'approval_required' as const, artifactId: '' };
         }
