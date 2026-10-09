@@ -1,0 +1,1 @@
+ALTER TYPE "public"."artifact_kind" ADD VALUE 'media.image_list' BEFORE 'file.subtitles';

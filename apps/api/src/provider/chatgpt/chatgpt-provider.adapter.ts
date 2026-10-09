@@ -68,6 +68,8 @@ export type ChatgptJobPayload = {
   outputKind?: string | undefined;
   submittedAt: number;
   pastedPrompt: string;
+  /** Image stages: how many images were asked for (above 1 for an image list). */
+  imageCount?: number | undefined;
 };
 
 type Readiness = {
@@ -152,10 +154,15 @@ export class ChatgptProviderAdapter implements ProviderAdapter {
       maxBytes: MAX_REFERENCE_BYTES,
       label: 'ChatGPT',
     });
+    const imageCount =
+      modality === 'image' && typeof req.params.count === 'number' && req.params.count > 1
+        ? req.params.count
+        : undefined;
     const pastedPrompt = buildChatgptPrompt({
       system: req.system,
       renderedPrompt: req.renderedPrompt,
       output: req.output,
+      imageCount,
     });
     if (!pastedPrompt.trim()) throw new Error('ChatGPT stage rendered an empty prompt');
 
@@ -200,6 +207,7 @@ export class ChatgptProviderAdapter implements ProviderAdapter {
         outputKind: req.output?.kind,
         submittedAt: Date.now(),
         pastedPrompt,
+        ...(imageCount && { imageCount }),
       };
       this.logger.log(
         { providerId: this.id, pageId, modality, effort, webSearch },
@@ -284,7 +292,26 @@ export class ChatgptProviderAdapter implements ProviderAdapter {
       const rawResponse = { conversationUrl: job.conversationUrl, pastedPrompt: job.pastedPrompt };
       const repro = { level: 'none' as const, providerVersion: 'chatgpt-web' };
       if (job.modality === 'image') {
-        const [first, ...rest] = await this.downloadImages(job.pageId);
+        const downloaded = await this.downloadImages(job.pageId);
+        if (job.imageCount) {
+          // An image list: every image in the reply, up to the number asked for.
+          if (downloaded.length === 0)
+            throw new Error('ChatGPT reply contained no generated image');
+          return {
+            output: {
+              images: downloaded.slice(0, job.imageCount).map((image, index) => ({
+                kind: 'media.image',
+                base64: image.base64,
+                mime: image.mime,
+                filename: `chatgpt-image-${index + 1}${imageExtension(image.mime)}`,
+              })),
+            },
+            costUsd: 0,
+            repro,
+            rawResponse,
+          };
+        }
+        const [first, ...rest] = downloaded;
         if (!first) throw new Error('ChatGPT reply contained no generated image');
         const attachments: ProviderAttachment[] = rest.map((image, index) => ({
           role: 'download',

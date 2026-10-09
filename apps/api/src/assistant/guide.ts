@@ -37,7 +37,7 @@ export const GUIDE: Record<string, GuideSection> = {
     body: `Use \`list_capabilities\` for the live list and \`get_capability\` for one type's config schema, slots and allowed outputs. Never use a key that isn't listed. What each does:
 
 - \`text.generate\`: an LLM writes \`text\`, \`data\` (needs a schema) or a \`timeline\`. Files bound under context and listed in \`attach\` are sent to the model.
-- \`image.generate\`: an image from a prompt (\`media.image\`); optional \`references\` slot (images, a Character role).
+- \`image.generate\`: an image from a prompt (\`media.image\`); optional \`references\` slot (images, a Character role). For several images from ONE prompt use output \`media.image_list\` with \`config.count\` (2 to 8) and optional \`config.onShortfall\` (\`warn\` keeps what came back, \`fail\` retries); the list feeds a \`many\` slot such as \`references\`, and a QC judge accepts or rejects the whole set.
 - \`video.generate\`: a video clip (\`media.video\`); optional \`startFrame\`, \`endFrame\`, \`references\` slots.
 - \`audio.speech\`: text to voice-over (\`media.audio\`); required \`text\` slot. Takes no instructions. The voice and its settings live in the model pin's \`params\`: \`voiceId\` (an ElevenLabs stage needs one; \`list_models\` shows each speech model's \`speechParams\` and \`outputFormats\`; With ElevenLabs, \`wordTimings: true\` plus a stage \`writes\` entry with path \`timing\` saves word timings (the same shape as media.analyze's data) that later stages read from memory, so no media.analyze is needed. Deepgram's voice ids look like \`thalia-en\` and its model is \`flux\`, \`aura-2\` or \`aura\`).
 - \`media.analyze\`: transcribes speech with word timings (paid, Deepgram) or probes a file; \`data\` output; required \`source\` slot (audio or video).
@@ -50,7 +50,7 @@ export const GUIDE: Record<string, GuideSection> = {
 - \`browser.flow_video\`: makes clips in Google Flow with Codex and the user's Flow accounts (\`media.video_list\`). Only if they ask for it.
 - \`publish.stub\`: a placeholder that publishes NOTHING. Never describe it as publishing.
 
-An output kind must be one the capability allows (\`get_capability\` → allowedOutputs). Output kinds: \`data\`, \`text\`, \`media.image\`, \`media.video\`, \`media.audio\`, \`media.video_list\`, \`file.subtitles\`, \`timeline\`. A new stage's output must be one of the capability's allowed kinds.`,
+An output kind must be one the capability allows (\`get_capability\` → allowedOutputs). Output kinds: \`data\`, \`text\`, \`media.image\`, \`media.video\`, \`media.audio\`, \`media.video_list\`, \`media.image_list\`, \`file.subtitles\`, \`timeline\`. A new stage's output must be one of the capability's allowed kinds.`,
   },
 
   refs: {
@@ -94,7 +94,7 @@ Slot rules the validator enforces:
 
   outputs: {
     title: 'Outputs and data schemas',
-    body: `\`output\` is one of: \`{kind:'text'}\`, \`{kind:'data', schema}\`, \`{kind:'timeline'}\`, \`{kind:'media.image'|'media.video'|'media.audio'|'media.video_list', constraints?}\`, \`{kind:'file.subtitles'}\`. The capability must allow the kind.
+    body: `\`output\` is one of: \`{kind:'text'}\`, \`{kind:'data', schema}\`, \`{kind:'timeline'}\`, \`{kind:'media.image'|'media.video'|'media.audio'|'media.video_list'|'media.image_list', constraints?}\`, \`{kind:'file.subtitles'}\`. The capability must allow the kind.
 
 A \`data\` output needs a JSON Schema describing its shape (and should have \`properties\`, otherwise there's a warning). Later stages pick fields by \`path\`. The schema is a deliberately small subset: \`type\` (object, array, string, number, integer, boolean), \`description\`, \`enum\`, \`properties\`, \`required\`, \`items\`, \`minItems\`, \`maxItems\`, \`minimum\`, \`maximum\`, \`minLength\`, \`maxLength\`. NOT allowed: \`$ref\`, \`oneOf\`, \`anyOf\`, \`allOf\`, \`patternProperties\`, \`if/then/else\`, \`additionalProperties\`. For a choice between shapes use one object with optional fields or an enum.
 
@@ -288,6 +288,7 @@ When a request mixes shapes (a story with a few real clips, a voice-over plus mu
 - Keep ONE shared art-direction sentence (a \`style\` field the planning stage writes, or a constant) and put it in the template of every iterated item, so the pictures match. Name the medium and palette once and repeat them exactly.
 - For a recurring person, use a Character role in \`references\` instead of describing the face.
 - Text inside pictures is unreliable: avoid asking for words in the image, add captions in the timeline.
+- Several pictures from one prompt (variations): output \`media.image_list\` and \`config: { count: 4 }\`. It cannot iterate or write to memory, and a rejected set is made again in full. For one picture per scene, iterate over the scenes instead.
 - Put "no text, no watermark" in the template when the style allows it; QC with a judge that can see images catches distorted figures.
 
 **Video stages (\`video.generate\`)**

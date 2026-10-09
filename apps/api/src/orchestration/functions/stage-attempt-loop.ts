@@ -104,6 +104,7 @@ export async function runStageAttemptLoop(
     fetched: FetchAndFinalizeResult,
     attemptCtx: StageAttemptContext,
     iteration: number,
+    isLastAttempt = false,
   ): Promise<StageAttemptOutcome | undefined> => {
     if (fetched.outcome === 'success') {
       return { outcome: 'passed' as const, artifactId: fetched.artifactId };
@@ -119,6 +120,16 @@ export async function runStageAttemptLoop(
 
     if (fetched.outcome === 'deferred') {
       return { outcome: 'deferred' as const, resumeAt: fetched.resumeAt };
+    }
+
+    if (fetched.outcome === 'output_rejected') {
+      // Recorded as a provider error (the call was billed and settled), so it
+      // spends the crash retry budget exactly as a thrown error would.
+      if (!isLastAttempt) return undefined;
+      await step.run(`fail-stage-${stageKey}`, () =>
+        runner.failStageExecution(stageExecutionId, fetched.reason, stageItemId),
+      );
+      return { outcome: 'failed' as const, reason: fetched.reason };
     }
 
     if (fetched.outcome === 'qc_error' || fetched.outcome === 'model_error') {
@@ -311,7 +322,7 @@ export async function runStageAttemptLoop(
         runner.fetchAndFinalize(stage, attemptCtx, handle, prevStageKey, effective),
       );
 
-      const settled = await settleFetched(fetched, attemptCtx, iteration);
+      const settled = await settleFetched(fetched, attemptCtx, iteration, isLastAttempt);
       if (settled) return settled;
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);

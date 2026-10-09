@@ -22,8 +22,15 @@ export function buildChatgptPrompt(input: {
   system?: string | undefined;
   renderedPrompt?: string | undefined;
   output?: OutputDef | undefined;
+  /** An image request for several images (above 1). ChatGPT has no count
+   * setting, so the number is asked for in the message. */
+  imageCount?: number | undefined;
 }): string {
-  const request = input.renderedPrompt ?? '';
+  const asked = input.renderedPrompt ?? '';
+  const request =
+    input.imageCount && input.imageCount > 1
+      ? `${asked}\n\nMake ${input.imageCount} different images from this request. Generate each as its own image in your reply.`
+      : asked;
   const system = input.system?.trim() ? input.system : undefined;
   const schema = outputSchema(input.output);
   if (!system && !schema) return request;

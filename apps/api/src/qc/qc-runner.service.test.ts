@@ -252,4 +252,105 @@ describe('QcRunner', () => {
     expect(outcome.status).toBe('failed');
     if (outcome.status === 'failed') expect(outcome.verdict.failedClips).toEqual([2]);
   });
+
+  it('judges an image list as one set with one verdict', async () => {
+    const registry = new ProviderRegistry();
+    const submit = vi.fn(async (_req: ProviderRequest, _key: string) => ({
+      providerId: 'stub-images',
+      externalId: 'job-1',
+    }));
+    registry.register({
+      id: 'stub-images',
+      modalities: ['text'],
+      listModels: async () => [],
+      estimate: async () => ({ expectedUsd: 0, ceilingUsd: 0, basis: 'configured_ceiling' }),
+      submit,
+      poll: async () => ({ done: true, outcome: 'succeeded' }),
+      fetch: async () => ({
+        output: JSON.stringify({
+          score: 85,
+          critique: 'Image 2 is off style but the set works.',
+          // Only a clip list can name pieces to redo; a whole set is one verdict.
+          failedClips: [1],
+        }),
+        costUsd: 0,
+        repro: { level: 'none' },
+        rawResponse: {},
+      }),
+      cancel: async () => ({ confirmed: true }),
+    } as ProviderAdapter);
+    const envelope = buildQcEnvelope({
+      criteria: 'One consistent look',
+      artifactKind: 'media.image_list',
+      artifactData: { images: [] },
+      includeInputs: false,
+      images: [
+        { sourceKey: 'run/a/1.png', mime: 'image/png', index: 0, label: 'Image 1' },
+        { sourceKey: 'run/a/2.png', mime: 'image/png', index: 1, label: 'Image 2' },
+      ],
+    });
+
+    const outcome = await new QcRunner(registry).run({
+      envelope,
+      judge: { provider: 'stub-images', modelId: 'stub', params: {} },
+      threshold: 70,
+      idempotencyKey: 'qc-images-1',
+    });
+
+    const [request] = submit.mock.calls[0]!;
+    expect(request.params).toMatchObject({
+      slots: { qcImage1: { sourceKey: 'run/a/1.png' }, qcImage2: { sourceKey: 'run/a/2.png' } },
+    });
+    // A judge other than Codex gets the images attached, not asked to open files.
+    expect(request.params).not.toHaveProperty('__inspectFiles');
+    expect(request.system).toContain('set of 2 images');
+    expect(request.system).toContain('Image 1 (index 0), Image 2 (index 1)');
+    expect(request.system).toContain('accepted or rejected together');
+    expect(request.system).not.toContain('Add "failedClips"');
+    expect(outcome.status).toBe('passed');
+    if (outcome.status === 'passed') expect(outcome.verdict).not.toHaveProperty('failedClips');
+  });
+
+  it('has a Codex judge open the images of a list itself', async () => {
+    const registry = new ProviderRegistry();
+    const submit = vi.fn(async (_req: ProviderRequest, _key: string) => ({
+      providerId: 'codex',
+      externalId: 'job-1',
+    }));
+    registry.register({
+      id: 'codex',
+      modalities: ['text'],
+      listModels: async () => [],
+      estimate: async () => ({ expectedUsd: 0, ceilingUsd: 0, basis: 'configured_ceiling' }),
+      submit,
+      poll: async () => ({ done: true, outcome: 'succeeded' }),
+      fetch: async () => ({
+        output: JSON.stringify({ score: 90, critique: 'fine' }),
+        costUsd: 0,
+        repro: { level: 'none' },
+        rawResponse: {},
+      }),
+      cancel: async () => ({ confirmed: true }),
+    } as ProviderAdapter);
+    const envelope = buildQcEnvelope({
+      criteria: 'One consistent look',
+      artifactKind: 'media.image_list',
+      artifactData: { images: [] },
+      includeInputs: false,
+      images: [{ sourceKey: 'run/a/1.png', mime: 'image/png', index: 0, label: 'Image 1' }],
+    });
+
+    await new QcRunner(registry).run({
+      envelope,
+      judge: { provider: 'codex', modelId: 'gpt-example', params: {} },
+      threshold: 70,
+      idempotencyKey: 'qc-images-codex',
+    });
+
+    const [request] = submit.mock.calls[0]!;
+    expect(request.params).toMatchObject({
+      __inspectFiles: true,
+      slots: { qcImage1: { sourceKey: 'run/a/1.png' } },
+    });
+  });
 });

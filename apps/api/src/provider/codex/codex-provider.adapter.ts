@@ -11,7 +11,7 @@ import type {
   ProviderResult,
 } from '../provider-adapter.interface';
 import type { EngineConfig } from '../../config/engine-config';
-import { buildCodexPrompt, strictJsonSchema } from './codex-command';
+import { buildCodexPrompt, requestedImageCount, strictJsonSchema } from './codex-command';
 import type { CodexAppServerClient, CodexModel } from './codex-app-server.client';
 import type { CodexJobLauncher } from './codex-job-launcher';
 import { timelineOutputSchema } from '../timeline-output-schema';
@@ -314,16 +314,28 @@ export class CodexProviderAdapter implements ProviderAdapter {
     const text = await readFile(resultPath, 'utf8');
     if (modality === 'image') {
       const manifest = this.parseToolManifest(text);
+      const imageMimes = ['image/png', 'image/jpeg', 'image/webp'];
+      const listed = (manifest.output as { images?: unknown } | null)?.images;
+      if (Array.isArray(listed)) {
+        const images = await Promise.all(
+          listed.map(async (image) => ({
+            kind: 'media.image' as const,
+            ...(await this.validatedOutputFile(jobDir, image ?? {}, imageMimes)),
+          })),
+        );
+        return {
+          output: { images },
+          costUsd: 0,
+          repro: { level: 'none', providerVersion: 'codex-cli' },
+          rawResponse: await this.sanitizedMetadata(jobDir, status),
+        };
+      }
       const image = manifest.output as {
         path?: unknown;
         mime?: unknown;
         filename?: unknown;
       };
-      const source = await this.validatedOutputFile(jobDir, image, [
-        'image/png',
-        'image/jpeg',
-        'image/webp',
-      ]);
+      const source = await this.validatedOutputFile(jobDir, image, imageMimes);
       return {
         output: { kind: 'media.image', ...source },
         costUsd: 0,
@@ -426,19 +438,30 @@ export class CodexProviderAdapter implements ProviderAdapter {
 
   private outputSchema(req: ProviderRequest): JsonSchema | undefined {
     if (req.modality === 'image') {
+      const file: JsonSchema = {
+        type: 'object',
+        properties: {
+          path: { type: 'string' },
+          mime: { type: 'string', enum: ['image/png', 'image/jpeg', 'image/webp'] },
+          filename: { type: 'string' },
+        },
+        required: ['path', 'mime', 'filename'],
+      };
+      const count = requestedImageCount(req.params);
       return {
         type: 'object',
         properties: {
           version: { type: 'number', enum: [1] },
-          output: {
-            type: 'object',
-            properties: {
-              path: { type: 'string' },
-              mime: { type: 'string', enum: ['image/png', 'image/jpeg', 'image/webp'] },
-              filename: { type: 'string' },
-            },
-            required: ['path', 'mime', 'filename'],
-          },
+          output:
+            count > 1
+              ? {
+                  type: 'object',
+                  properties: {
+                    images: { type: 'array', items: file, minItems: 1, maxItems: count },
+                  },
+                  required: ['images'],
+                }
+              : file,
         },
         required: ['version', 'output'],
       };

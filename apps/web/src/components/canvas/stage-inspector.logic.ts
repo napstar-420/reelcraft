@@ -23,6 +23,7 @@ export function buildStageOutput(kind: OutputKind, previous: OutputDef): OutputD
     case 'media.video':
     case 'media.audio':
     case 'media.video_list':
+    case 'media.image_list':
       return { kind };
     case 'file.subtitles':
       return { kind: 'file.subtitles' };
@@ -275,9 +276,74 @@ export function filterAccounts(accounts: FlowAccountChoice[], query: string): Fl
   );
 }
 
+/** Generate Image makes several images from one prompt when its output is an
+ * image list. How many, and what to do when fewer come back, are two config
+ * values with their own controls under Output, so they stay out of the Config
+ * form. Mirrors `MAX_IMAGE_COUNT` in `@reelcraft/shared`, whose runtime values
+ * the web app cannot import. */
+export const IMAGE_CAPABILITY = 'image.generate';
+export const IMAGE_LIST_KIND = 'media.image_list';
+const IMAGE_COUNT_KEY = 'count';
+const IMAGE_SHORTFALL_KEY = 'onShortfall';
+export const MIN_IMAGE_COUNT = 2;
+export const MAX_IMAGE_COUNT = 8;
+export const DEFAULT_IMAGE_COUNT = 4;
+
+export type ImageShortfall = 'warn' | 'fail';
+
+export const IMAGE_SHORTFALL_OPTIONS: Array<{ value: ImageShortfall; label: string }> = [
+  { value: 'warn', label: 'Warn and continue' },
+  { value: 'fail', label: 'Fail and retry' },
+];
+
+export function imageCount(config: Record<string, unknown>): number {
+  const count = config[IMAGE_COUNT_KEY];
+  return typeof count === 'number' ? count : DEFAULT_IMAGE_COUNT;
+}
+
+export function imageShortfall(config: Record<string, unknown>): ImageShortfall {
+  return config[IMAGE_SHORTFALL_KEY] === 'fail' ? 'fail' : 'warn';
+}
+
+/** The stage with `count` images, kept within the allowed range. */
+export function withImageCount(stage: StageDef, count: number): StageDef {
+  const next = Math.min(Math.max(Math.trunc(count), MIN_IMAGE_COUNT), MAX_IMAGE_COUNT);
+  return { ...stage, config: { ...stage.config, [IMAGE_COUNT_KEY]: next } };
+}
+
+/** "Warn and continue" is the default, so it is stored as no value at all. */
+export function withImageShortfall(stage: StageDef, mode: ImageShortfall): StageDef {
+  const rest = { ...stage.config };
+  delete rest[IMAGE_SHORTFALL_KEY];
+  return { ...stage, config: mode === 'fail' ? { ...rest, [IMAGE_SHORTFALL_KEY]: mode } : rest };
+}
+
+/** The stage with its output switched to `kind`. For Generate Image that also
+ * sets up or clears the image-list settings, which only an image list may have. */
+export function withOutputKind(stage: StageDef, kind: OutputKind): StageDef {
+  const switched: StageDef = { ...stage, output: buildStageOutput(kind, stage.output) };
+  if (stage.capability !== IMAGE_CAPABILITY) return switched;
+  if (kind === IMAGE_LIST_KIND) {
+    return stage.config[IMAGE_COUNT_KEY] === undefined
+      ? withImageCount(switched, DEFAULT_IMAGE_COUNT)
+      : switched;
+  }
+  const rest = { ...switched.config };
+  delete rest[IMAGE_COUNT_KEY];
+  delete rest[IMAGE_SHORTFALL_KEY];
+  return { ...switched, config: rest };
+}
+
 /** The config schema as the Config form should show it. */
 export function visibleConfigSchema(capability: string, schema: JsonSchema): JsonSchema {
-  if (capability !== FLOW_CAPABILITY || !schema.properties) return schema;
+  if (!schema.properties) return schema;
+  if (capability === IMAGE_CAPABILITY) {
+    const properties = { ...schema.properties };
+    delete properties[IMAGE_COUNT_KEY];
+    delete properties[IMAGE_SHORTFALL_KEY];
+    return { ...schema, properties };
+  }
+  if (capability !== FLOW_CAPABILITY) return schema;
   const properties = { ...schema.properties };
   delete properties[INGREDIENT_COUNT_KEY];
   delete properties[ACCOUNTS_KEY];

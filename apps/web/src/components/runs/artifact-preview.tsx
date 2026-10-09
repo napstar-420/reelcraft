@@ -5,6 +5,7 @@ import { approvalCandidateView } from '@/pages/approval-review.logic';
 import { CopyButton } from './artifact-views/copy-button';
 import { ClipListView } from './artifact-views/clip-list-view';
 import { DataView } from './artifact-views/data-view';
+import { ImageListView } from './artifact-views/image-list-view';
 import { MediaView } from './artifact-views/media-view';
 import { SubtitlesView } from './artifact-views/subtitles-view';
 import { TimelineView } from './artifact-views/timeline-view';
@@ -21,6 +22,8 @@ export function ArtifactPreview({ artifact }: { artifact: ArtifactViewDto }) {
           <TimelineView timeline={artifact.data} />
         ) : artifact.kind === 'media.video_list' ? (
           <ClipListView clips={artifact.clips ?? []} />
+        ) : artifact.kind === 'media.image_list' ? (
+          <ImageListView images={artifact.images ?? []} />
         ) : artifact.kind === 'file.subtitles' ? (
           <SubtitlesView data={artifact.data} url={artifact.previewUrl} />
         ) : view.kind === 'text' ? (

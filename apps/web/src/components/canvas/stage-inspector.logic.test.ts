@@ -2,13 +2,21 @@ import { describe, expect, it } from 'vitest';
 import type { StageDef } from '@reelcraft/shared';
 import {
   buildStageOutput,
+  DEFAULT_IMAGE_COUNT,
+  MAX_IMAGE_COUNT,
+  MIN_IMAGE_COUNT,
   filterAccounts,
   flowAccounts,
   toggleAccount,
   withFlowAccounts,
   ingredientCount,
   ingredientSlotName,
+  imageCount,
+  imageShortfall,
   visibleConfigSchema,
+  withImageCount,
+  withImageShortfall,
+  withOutputKind,
   withIngredientCount,
   inferSchemaFromValue,
   isOutputInstructionsIssue,
@@ -304,5 +312,55 @@ describe('Flow stage accounts', () => {
     expect(filterAccounts(choices, ' WORK ')).toEqual([choices[1]]);
     expect(filterAccounts(choices, 'stone')).toEqual([choices[0]]);
     expect(filterAccounts(choices, 'zzz')).toEqual([]);
+  });
+});
+
+describe('Generate Image image list', () => {
+  const stage = (
+    config: StageDef['config'] = {},
+    output: StageDef['output'] = { kind: 'media.image' },
+  ) => ({ key: 's', capability: 'image.generate', slots: {}, config, output }) as StageDef;
+
+  it('switching to an image list starts at four images and keeps a count already set', () => {
+    const next = withOutputKind(stage(), 'media.image_list');
+    expect(next.output).toEqual({ kind: 'media.image_list' });
+    expect(next.config).toEqual({ count: DEFAULT_IMAGE_COUNT });
+    expect(withOutputKind(stage({ count: 6 }), 'media.image_list').config).toEqual({ count: 6 });
+  });
+
+  it('switching back to one image drops the image list settings and nothing else', () => {
+    const list = stage({ count: 5, onShortfall: 'fail', style: 'x' }, { kind: 'media.image_list' });
+    const next = withOutputKind(list, 'media.image');
+    expect(next.output).toEqual({ kind: 'media.image' });
+    expect(next.config).toEqual({ style: 'x' });
+  });
+
+  it('leaves other capabilities config alone when the output changes', () => {
+    const other = { ...stage({ count: 5 }), capability: 'video.generate' } as StageDef;
+    expect(withOutputKind(other, 'media.video').config).toEqual({ count: 5 });
+  });
+
+  it('keeps the count within the allowed range', () => {
+    expect(imageCount({})).toBe(DEFAULT_IMAGE_COUNT);
+    expect(withImageCount(stage(), 99).config).toEqual({ count: MAX_IMAGE_COUNT });
+    expect(withImageCount(stage(), 0).config).toEqual({ count: MIN_IMAGE_COUNT });
+    expect(withImageCount(stage(), 3.7).config).toEqual({ count: 3 });
+  });
+
+  it('stores only a non-default shortfall mode', () => {
+    expect(imageShortfall({})).toBe('warn');
+    const failing = withImageShortfall(stage({ count: 3 }), 'fail');
+    expect(failing.config).toEqual({ count: 3, onShortfall: 'fail' });
+    expect(imageShortfall(failing.config)).toBe('fail');
+    expect(withImageShortfall(failing, 'warn').config).toEqual({ count: 3 });
+  });
+
+  it('hides count and onShortfall from the generic Config form', () => {
+    const schema = {
+      type: 'object',
+      properties: { count: { type: 'integer' }, onShortfall: { type: 'string' } },
+    } as const;
+    expect(visibleConfigSchema('image.generate', schema as never).properties).toEqual({});
+    expect(visibleConfigSchema('video.generate', schema as never)).toBe(schema);
   });
 });

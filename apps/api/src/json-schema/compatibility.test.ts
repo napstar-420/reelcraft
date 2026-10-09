@@ -129,6 +129,18 @@ describe('isCompatible', () => {
   });
 });
 
+describe('isCompatible with an image list', () => {
+  it('lets an image list satisfy an image slot, and nothing else', () => {
+    const list: SourceType = { kind: 'media.image_list' };
+    expect(isCompatible(list, ['media.image'], deps).compatible).toBe(true);
+    expect(isCompatible(list, ['media.video'], deps).compatible).toBe(false);
+    expect(isCompatible({ kind: 'media.image' }, ['media.image'], deps).compatible).toBe(true);
+    expect(isCompatible({ kind: 'media.video_list' }, ['media.image'], deps).compatible).toBe(
+      false,
+    );
+  });
+});
+
 describe('isCompatible with a video list', () => {
   it('lets a video list satisfy a video slot, and nothing else', () => {
     const list: SourceType = { kind: 'media.video_list' };

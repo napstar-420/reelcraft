@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { TimelineHandleService } from './timeline-handle.service';
-import { clipHandle, parseArtifactHandle, storedClips } from './clip-handle';
+import {
+  clipHandle,
+  isListKind,
+  listItemKind,
+  parseArtifactHandle,
+  storedClips,
+  storedImages,
+  storedListItems,
+} from './clip-handle';
 
 describe('clip handles', () => {
   it('round-trips a clip handle and still reads a plain artifact handle', () => {
@@ -17,6 +25,24 @@ describe('clip handles', () => {
     expect(storedClips({ clips: [{ index: 1 }] })).toHaveLength(1);
     expect(storedClips(null)).toEqual([]);
     expect(storedClips({ clips: 'no' })).toEqual([]);
+  });
+});
+
+describe('list artifacts', () => {
+  it('reads the items of either list kind from where each keeps them', () => {
+    const data = { clips: [{ index: 1 }], images: [{ index: 0 }, { index: 1 }] };
+    expect(storedListItems('media.video_list', data)).toHaveLength(1);
+    expect(storedListItems('media.image_list', data)).toHaveLength(2);
+    expect(storedImages(null)).toEqual([]);
+    expect(storedImages({ images: 'no' })).toEqual([]);
+  });
+
+  it('knows the list kinds and what their items are', () => {
+    expect(isListKind('media.video_list')).toBe(true);
+    expect(isListKind('media.image_list')).toBe(true);
+    expect(isListKind('media.image')).toBe(false);
+    expect(listItemKind('media.image_list')).toBe('media.image');
+    expect(listItemKind('media.video_list')).toBe('media.video');
   });
 });
 

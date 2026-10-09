@@ -100,6 +100,28 @@ describe('Codex command construction', () => {
     expect(prompt).toContain('Persistent progress directory: progress/');
   });
 
+  it('asks an image job for the whole list when several images are wanted', () => {
+    const one = buildCodexPrompt({ modality: 'image', params: {} });
+    expect(one).toContain('Write exactly one final image');
+    const several = buildCodexPrompt({ modality: 'image', params: { count: 3 } });
+    expect(several).toContain('Make 3 different final images');
+    expect(several).toContain('"images" list of 3 entries');
+    expect(several).not.toContain('exactly one final image');
+  });
+
+  it('keeps the image count out of the Codex config overrides', () => {
+    const args = buildCodexArgs({
+      modelId: 'gpt-example',
+      reasoningEffort: 'low',
+      jobDir: '/tmp/job',
+      resultPath: '/tmp/job/result.json',
+      profile: 'reelcraft',
+      params: { reasoningEffort: 'low', count: 3, personality: 'concise' },
+    });
+    expect(args.join(' ')).not.toContain('count=');
+    expect(args).toContain('personality="concise"');
+  });
+
   it('tells a text judge to open its input files itself', () => {
     const prompt = buildCodexPrompt({
       modality: 'text',

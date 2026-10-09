@@ -39,6 +39,7 @@ import { EngineConfig } from '../config/engine-config';
 import { engineDefaults } from '../run-config/engine-defaults';
 import { PINNED_PROVIDERS, PROVIDER_LABELS, ProviderRegistry } from '../provider/provider.registry';
 import { QC_VIDEO_UNAVAILABLE, judgeWatchesVideo } from '../qc/qc-video';
+import { judgeImagesProblem } from '../qc/qc-images';
 import { modalityForCapability } from '../capability/modality-for-capability';
 import { stageReferenceLimit } from '../common/reference-limit';
 import type { ModelInfo } from '../provider/provider-adapter.interface';
@@ -367,6 +368,7 @@ export class BlueprintService {
     issues.push(...(await this.validateSpeechSettings(dto, blueprintRow.defaults as ConfigLayer)));
     issues.push(...(await this.validateQcTranscript(dto)));
     issues.push(...(await this.validateQcVideo(dto)));
+    issues.push(...(await this.validateQcImages(dto)));
     issues.push(
       ...(await this.validateFileInputs(
         dto,
@@ -521,6 +523,24 @@ export class BlueprintService {
           message: QC_VIDEO_UNAVAILABLE,
           severity: 'error',
         });
+      }
+    }
+    return issues;
+  }
+
+  /** QC on an image list needs a judge that can look at all the images at once. */
+  private async validateQcImages(dto: CreateBlueprintVersionDto): Promise<ValidationIssue[]> {
+    const issues: ValidationIssue[] = [];
+    for (const stage of dto.graph) {
+      if (!stage.qc || stage.output.kind !== 'media.image_list') continue;
+      const count = (stage.config as { count?: unknown }).count;
+      const problem = await judgeImagesProblem(
+        this.providers,
+        stage.qc.model,
+        typeof count === 'number' ? count : 1,
+      );
+      if (problem) {
+        issues.push({ path: `stages.${stage.key}.qc.model`, message: problem, severity: 'error' });
       }
     }
     return issues;

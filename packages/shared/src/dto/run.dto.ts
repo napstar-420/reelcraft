@@ -175,6 +175,7 @@ export const ArtifactViewDto = z.object({
     'media.video',
     'media.audio',
     'media.video_list',
+    'media.image_list',
     'file.subtitles',
     'timeline',
   ]),
@@ -193,6 +194,17 @@ export const ArtifactViewDto = z.object({
   ),
   /** The clips of a `media.video_list` artifact, in order. */
   clips: z
+    .array(
+      z.object({
+        index: z.number().int(),
+        label: z.string().nullable(),
+        url: BrowserMediaUrl,
+        probe: Probe.nullable(),
+      }),
+    )
+    .optional(),
+  /** The images of a `media.image_list` artifact, in order. */
+  images: z
     .array(
       z.object({
         index: z.number().int(),

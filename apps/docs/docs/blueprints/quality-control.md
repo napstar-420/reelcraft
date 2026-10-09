@@ -63,7 +63,8 @@ The judge sees only:
 - the output's technical details for media, such as its length;
 - the stage's inputs, only if you ticked **Include inputs**;
 - for audio, the transcript or the audio itself, if you ticked **Include transcript**;
-- for a video list, every clip itself, in order (see below).
+- for a video list, every clip itself, in order (see below);
+- for an image list, every image itself, in order (see below).
 
 It never sees the stage's own prompt, which model made the output, what it cost, how many attempts
 there have been, earlier verdicts or the threshold. This keeps the judgement honest.
@@ -100,6 +101,21 @@ whole set.
   critique names each bad clip and says what's wrong with it.
 - If the judge fails the set without naming clips, or a person rejects it without saying which, the next
   attempt makes every clip again.
+
+## Image lists
+
+A [Generate Image](../stage-types/generate-image.md) stage with the `media.image_list` output makes
+several images from one prompt, and quality control can judge them. The judge **looks at every image
+together, in order**, and gives **one score for the whole set**.
+
+- The set is accepted or rejected **as a whole**. There is no per-image verdict. On a failed score the
+  critique, which names any image that is a problem, is added to the next attempt's prompt, and the next
+  attempt makes **every image again**.
+- The judge must be able to look at images, and at as many as the stage makes. **Codex** can: it opens the
+  files itself with its local tools, so the machine running Codex needs **ffmpeg**. Any other model must
+  accept image input, and some take only a few at once (a ChatGPT judge takes 5). Otherwise the blueprint
+  shows **This judge model can't look at images.** or **This judge model can look at 5 images at a time,
+  fewer than this stage makes.**
 
 ## Cost
 

@@ -435,6 +435,13 @@ export class BlueprintValidatorService {
             severity: 'error',
           });
         }
+        if (boundType.kind === 'media.image_list' && slotDef.cardinality === 'one') {
+          issues.push({
+            path: `${base}.slots.${slotDef.name}`,
+            message: "an image list needs a cardinality:'many' slot",
+            severity: 'error',
+          });
+        }
 
         // §16.2 — cardinality vs. an iterate-derived producer's real arity.
         // Scoped to memory-group/iterate-derived refs only (Locked Decision

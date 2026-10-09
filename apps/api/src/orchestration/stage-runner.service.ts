@@ -27,6 +27,7 @@ import { renderStagePrompt } from '../common/prompt-template';
 import { unwrapText } from '../common/unwrap-text';
 import { collectFileInputs, promptScopeWithRoles } from '../common/file-inputs';
 import { CapabilityRegistry } from '../capability/capability.registry';
+import type { ImageListOutput } from '../capability/capability.interface';
 import {
   BindingResolverService,
   type RefEnvelope,
@@ -97,6 +98,9 @@ export type FetchAndFinalizeResult =
   | { outcome: 'qc_failed'; checkResults: CheckResult[]; qcVerdict: QcVerdict }
   | { outcome: 'qc_error'; reason: string }
   | { outcome: 'model_error'; reason: string }
+  /** The capability billed the call but rejected its output (`ExecResult.rejection`):
+   * recorded as a provider error, so it is retried like a crash. */
+  | { outcome: 'output_rejected'; reason: string }
   | { outcome: 'deferred'; resumeAt: string }
   | { outcome: 'qc_budget_exhausted'; checkResults: CheckResult[] };
 
@@ -109,7 +113,7 @@ export type SubmitOutcome =
   | { outcome: 'budget_blocked'; reason: 'run_cap_exceeded' | 'stage_cap_exceeded' }
   | { outcome: 'run_not_running' };
 
-/** One clip a capability hands back for a `media.video_list` output. */
+/** One item of a `media.video_list` or `media.image_list` output: a clip, or an image. */
 interface ClipOutput {
   index: number;
   label?: string;
@@ -117,8 +121,28 @@ interface ClipOutput {
   source: import('@reelcraft/shared').MediaSource;
 }
 
+function isImageItem(clip: ClipOutput): boolean {
+  return clip.source.kind === 'media.image';
+}
+
 function clipFilename(clip: ClipOutput): string {
-  return clip.source.filename ?? `clip-${clip.index}.mp4`;
+  return (
+    clip.source.filename ??
+    (isImageItem(clip) ? `image-${clip.index + 1}.png` : `clip-${clip.index}.mp4`)
+  );
+}
+
+function clipMime(clip: ClipOutput): string {
+  return clip.source.mime ?? (isImageItem(clip) ? 'image/png' : 'video/mp4');
+}
+
+/** The images a Generate Image stage made, in order. */
+function imageItems(output: unknown): ClipOutput[] {
+  // A capability that wasn't asked for a list hands back one source.
+  const images = Array.isArray((output as ImageListOutput).images)
+    ? (output as ImageListOutput).images
+    : [output as import('@reelcraft/shared').MediaSource];
+  return images.map((source, index) => ({ index, label: `Image ${index + 1}`, source }));
 }
 
 type PersistedClip = { clip: ClipOutput } & Awaited<ReturnType<MediaArtifactService['persist']>>;
@@ -140,7 +164,7 @@ interface Candidate {
     probe: MediaProbe;
     mime?: string | undefined;
   };
-  /** A clip list's clips, ready for the judge. */
+  /** A clip or image list's items, ready for the judge. */
   clips: Array<{ sourceKey: string; mime: string; index: number; label: string }>;
 }
 
@@ -892,6 +916,33 @@ export class StageRunnerService {
       return { outcome: 'model_error', reason };
     }
 
+    if (result.rejection) {
+      // The call was billed but its output can't be used (fewer images than
+      // asked for, with "Fail and retry"). Settle the true cost, then record
+      // a provider error: that is what a crash is, so `retryLimit` governs.
+      await this.ledger.settleSuccess({
+        runId: ctx.runId,
+        stageKey: stage.key,
+        stageAttemptId: ctx.stageAttemptId,
+        reservationId: await this.ledger.reservationIdFor(ctx.stageAttemptId),
+        actualUsd: result.costUsd,
+      });
+      await this.db
+        .update(stageAttempt)
+        .set({
+          outcome: 'provider_error',
+          phase: 'settled',
+          rawResponseRef,
+          costUsd: fromUsd(result.costUsd),
+          reviewNote: result.rejection,
+        })
+        .where(eq(stageAttempt.id, ctx.stageAttemptId));
+      await this.finishAttempt(ctx, 'error', 'provider_error', result.rejection, {
+        ...result.providerMeta,
+      });
+      return { outcome: 'output_rejected', reason: result.rejection };
+    }
+
     if (result.deferUntil) {
       // Out of provider quota: nothing to persist. The attempt is parked as
       // `deferred` (it spends no retry) and the run pauses until the quota
@@ -924,11 +975,16 @@ export class StageRunnerService {
     }
 
     const isClipList = stage.output.kind === 'media.video_list';
+    const isImageList = stage.output.kind === 'media.image_list';
     const mediaOutput =
-      stage.output.kind.startsWith('media.') && !isClipList
+      stage.output.kind.startsWith('media.') && !isClipList && !isImageList
         ? (output as import('@reelcraft/shared').MediaSource)
         : undefined;
-    const clipOutputs = isClipList ? (output as { clips: Array<ClipOutput> }).clips : undefined;
+    const clipOutputs = isClipList
+      ? (output as { clips: Array<ClipOutput> }).clips
+      : isImageList
+        ? imageItems(output)
+        : undefined;
     const fileOutput =
       stage.output.kind === 'file.subtitles'
         ? (output as import('@reelcraft/shared').FileSource)
@@ -985,25 +1041,26 @@ export class StageRunnerService {
     const slotText = unwrapText('text', bindings.slots.text);
     const spokenText =
       stage.capability === 'audio.speech' && typeof slotText === 'string' ? slotText : undefined;
+    const storedItems = persistedClips.map(({ clip, blobId, probe }) => ({
+      index: clip.index,
+      label: clip.label ?? null,
+      prompt: clip.prompt ?? null,
+      filename: clipFilename(clip),
+      blobId,
+      probe,
+    }));
     const data =
       kind === 'text'
         ? { text: output }
         : kind === 'data' || kind === 'timeline'
           ? output
           : kind === 'media.video_list'
-            ? {
-                clips: persistedClips.map(({ clip, blobId, probe }) => ({
-                  index: clip.index,
-                  label: clip.label ?? null,
-                  prompt: clip.prompt ?? null,
-                  filename: clipFilename(clip),
-                  blobId,
-                  probe,
-                })),
-              }
-            : spokenText !== undefined
-              ? { text: spokenText, ...(result.timing && { timing: result.timing }) }
-              : undefined;
+            ? { clips: storedItems }
+            : kind === 'media.image_list'
+              ? { images: storedItems }
+              : spokenText !== undefined
+                ? { text: spokenText, ...(result.timing && { timing: result.timing }) }
+                : undefined;
     const artifactId = await this.artifacts.recordAttemptArtifact({
       runId: ctx.runId,
       producerStageKey: stage.key,
@@ -1028,7 +1085,7 @@ export class StageRunnerService {
         persistedClips.map(({ clip, blobId }) => ({
           blobId,
           filename: clipFilename(clip),
-          mime: clip.source.mime ?? 'video/mp4',
+          mime: clipMime(clip),
         })),
       );
     }
@@ -1081,9 +1138,9 @@ export class StageRunnerService {
         }),
         clips: persistedClips.map(({ clip, storageKey }) => ({
           sourceKey: storageKey,
-          mime: clip.source.mime ?? 'video/mp4',
+          mime: clipMime(clip),
           index: clip.index,
-          label: clip.label || `Clip ${clip.index}`,
+          label: clip.label || `${isImageItem(clip) ? 'Image' : 'Clip'} ${clip.index}`,
         })),
       },
     });
@@ -1256,8 +1313,10 @@ export class StageRunnerService {
         if (audioError)
           return this.holdForQcRetry(stage, ctx, checkResults, audioError, artifactId);
       }
-      // A clip list is judged as every clip, in order, as video files.
-      const qcClips = candidate.clips;
+      // A clip list is judged as every clip, in order, as video files; an
+      // image list as every image together, one verdict for the whole set.
+      const qcClips = kind === 'media.video_list' ? candidate.clips : undefined;
+      const qcImages = kind === 'media.image_list' ? candidate.clips : undefined;
       const qcOutcome = await this.runQcWithRetries(
         stage.qc,
         effective.qc,
@@ -1267,6 +1326,7 @@ export class StageRunnerService {
         qcMedia,
         qcTranscript,
         qcClips,
+        qcImages,
       );
 
       if (qcOutcome.status === 'error') {
@@ -1499,21 +1559,23 @@ export class StageRunnerService {
       if (!row) throw new Error(`StageRunnerService: blob ${blobId} not found`);
       return row;
     };
-    const storedClips = (
+    const isImageList = stored.kind === 'media.image_list';
+    const storedItems = (
       (
         stored.data as {
           clips?: Array<{ index: number; label: string | null; blobId: string }>;
+          images?: Array<{ index: number; label: string | null; blobId: string }>;
         } | null
-      )?.clips ?? []
-    ).filter(() => stored.kind === 'media.video_list');
+      )?.[isImageList ? 'images' : 'clips'] ?? []
+    ).filter(() => stored.kind === 'media.video_list' || isImageList);
     const clips = await Promise.all(
-      storedClips.map(async (clip) => {
+      storedItems.map(async (clip) => {
         const file = await keyOf(clip.blobId);
         return {
           sourceKey: file.objectKey,
           mime: file.mime,
           index: clip.index,
-          label: clip.label || `Clip ${clip.index}`,
+          label: clip.label || `${isImageList ? 'Image' : 'Clip'} ${clip.index}`,
         };
       }),
     );
@@ -1658,6 +1720,7 @@ export class StageRunnerService {
     media: { sourceKey: string; mime: string } | undefined,
     transcript?: string,
     clips?: Array<{ sourceKey: string; mime: string; index: number; label: string }>,
+    images?: Array<{ sourceKey: string; mime: string; index: number; label: string }>,
   ): Promise<QcOutcome> {
     const envelope = buildQcEnvelope({
       criteria: qcDef.criteria,
@@ -1671,6 +1734,7 @@ export class StageRunnerService {
       ...(media !== undefined && { media }),
       ...(transcript !== undefined && { transcript }),
       ...(clips?.length && { clips }),
+      ...(images?.length && { images }),
     });
 
     const maxAttempts = 1 + this.engineConfig.qcErrorRetries;

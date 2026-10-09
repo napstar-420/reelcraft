@@ -1,9 +1,16 @@
 import { ConflictException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { and, desc, eq, isNull } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull } from 'drizzle-orm';
 import { Probe, StageDef, Timeline, type Ref, type TimelineResource } from '@reelcraft/shared';
 import { BlobService } from '../artifact/blob.service';
 import { timingMapOf } from '../artifact/timing-map';
-import { clipHandle, parseArtifactHandle, storedClips } from '../artifact/clip-handle';
+import {
+  LIST_KINDS,
+  clipHandle,
+  isListKind,
+  listItemKind,
+  parseArtifactHandle,
+  storedListItems,
+} from '../artifact/clip-handle';
 import { StyleRegistry } from '../capability/style.registry';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
 import {
@@ -312,23 +319,25 @@ export class TimelineEditorService {
       if (!parsed) continue;
       if (parsed.clipPosition !== undefined) {
         const [list] = await this.db
-          .select({ data: artifact.data })
+          .select({ data: artifact.data, kind: artifact.kind })
           .from(artifact)
           .where(
             and(
               eq(artifact.id, parsed.artifactId),
               eq(artifact.runId, context.run.id),
-              eq(artifact.kind, 'media.video_list'),
+              inArray(artifact.kind, [...LIST_KINDS]),
               eq(artifact.stale, false),
             ),
           )
           .limit(1);
-        const clip = storedClips(list?.data)[parsed.clipPosition];
+        const listKind =
+          list?.kind === 'media.image_list' ? 'media.image_list' : 'media.video_list';
+        const clip = storedListItems(listKind, list?.data)[parsed.clipPosition];
         const access = clip ? await this.blobs.readUrl(context.ownerId, clip.blobId) : undefined;
         if (clip && access?.status === 'live') {
           resources.push({
             handle,
-            kind: 'media.video',
+            kind: listItemKind(listKind),
             url: access.url,
             ...(clip.probe !== null && clip.probe !== undefined ? { probe: clip.probe } : {}),
           });
@@ -488,14 +497,14 @@ export class TimelineEditorService {
   }
 }
 
-/** A `media.video_list` artifact is offered to the editor as one source per clip. */
+/** A `media.video_list` or `media.image_list` artifact is offered to the editor as one source per item. */
 function toSourceRows(row: typeof artifact.$inferSelect): SourceRow[] {
-  if (row.kind !== 'media.video_list') return [toSourceRow(row)];
-  return storedClips(row.data).map((clip, position) => ({
+  if (!isListKind(row.kind)) return [toSourceRow(row)];
+  return storedListItems(row.kind, row.data).map((clip, position) => ({
     artifactId: row.id,
     clipPosition: position,
     blobId: clip.blobId,
-    kind: 'media.video',
+    kind: listItemKind(row.kind as 'media.video_list' | 'media.image_list'),
     probe: clip.probe,
     data: undefined,
   }));

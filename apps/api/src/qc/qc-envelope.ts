@@ -22,6 +22,8 @@ export interface QcEnvelope {
   media?: { sourceKey: string; mime: string };
   /** Clip lists only: every clip as a video file, in order. */
   clips?: QcClip[];
+  /** Image lists only: every image, in order, judged together as one set. */
+  images?: QcClip[];
 }
 
 export interface QcClip {
@@ -43,6 +45,7 @@ export interface QcEnvelopeSource {
   transcript?: string;
   media?: { sourceKey: string; mime: string };
   clips?: QcClip[];
+  images?: QcClip[];
 }
 
 /**
@@ -81,6 +84,14 @@ export function buildQcEnvelope(source: QcEnvelopeSource): QcEnvelope {
   }
   if (source.clips !== undefined) {
     envelope.clips = source.clips.map((c) => ({
+      sourceKey: c.sourceKey,
+      mime: c.mime,
+      index: c.index,
+      label: c.label,
+    }));
+  }
+  if (source.images !== undefined) {
+    envelope.images = source.images.map((c) => ({
       sourceKey: c.sourceKey,
       mime: c.mime,
       index: c.index,

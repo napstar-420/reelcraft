@@ -125,6 +125,8 @@ export interface MediaTarget {
   probe: unknown;
   /** `media.video_list`: the clips, by label and duration. */
   clips: Array<{ index: number; label: string; durationSec: number | null }>;
+  /** `media.image_list`: the images, in order. */
+  images?: Array<{ index: number; label: string; blobId: string }>;
 }
 
 export type MediaLookup =
@@ -455,6 +457,20 @@ export class RunInsightService {
               };
             })
           : [];
+        const images = Array.isArray(asRecord(a.data).images)
+          ? (asRecord(a.data).images as unknown[]).flatMap((c) => {
+              const image = asRecord(c);
+              return typeof image.blobId === 'string'
+                ? [
+                    {
+                      index: typeof image.index === 'number' ? image.index : 0,
+                      label: typeof image.label === 'string' ? image.label : '',
+                      blobId: image.blobId,
+                    },
+                  ]
+                : [];
+            })
+          : [];
         return {
           itemIndex: a.itemIndex,
           artifactId: a.id,
@@ -462,6 +478,7 @@ export class RunInsightService {
           blobId: a.blobId,
           probe: a.probe,
           clips,
+          images,
         };
       }),
     };

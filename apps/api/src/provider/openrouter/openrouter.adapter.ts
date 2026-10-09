@@ -41,6 +41,7 @@ interface OpenRouterJob {
 
 const OWNED_REQUEST_FIELDS = new Set([
   '__mediaKind',
+  'count',
   'messages',
   'model',
   'prompt',
@@ -49,6 +50,12 @@ const OWNED_REQUEST_FIELDS = new Set([
   'slots',
   'stream',
 ]);
+
+/** `params.count`: how many images the stage asked for (1 when unset). */
+function requestedImages(params: Record<string, unknown>): number {
+  const count = params.count;
+  return typeof count === 'number' && Number.isInteger(count) && count > 1 ? count : 1;
+}
 
 function forwardedParams(params: Record<string, unknown>): Record<string, unknown> {
   return Object.fromEntries(
@@ -124,7 +131,7 @@ export class OpenRouterAdapter implements ProviderAdapter {
 
   async estimate(req: ProviderRequest): Promise<CostEstimate> {
     if (req.params.__mediaKind === 'media.image') {
-      const expectedUsd = Number(req.params.priceUsd ?? 0.04);
+      const expectedUsd = Number(req.params.priceUsd ?? 0.04) * requestedImages(req.params);
       return { expectedUsd, ceilingUsd: expectedUsd, basis: 'configured_ceiling' };
     }
     const maxTokens = req.params.max_tokens;
@@ -260,12 +267,18 @@ export class OpenRouterAdapter implements ProviderAdapter {
 
   private async fetchImage(req: ProviderRequest, apiKey: string): Promise<ProviderResult> {
     const params = forwardedParams(req.params);
+    const requested = requestedImages(req.params);
     const ids = { providerId: this.id, model: req.modelId };
     const startedAt = Date.now();
     const response = await fetch('https://openrouter.ai/api/v1/images/generations', {
       method: 'POST',
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...params, model: req.modelId, prompt: req.renderedPrompt ?? '' }),
+      body: JSON.stringify({
+        ...params,
+        model: req.modelId,
+        prompt: req.renderedPrompt ?? '',
+        ...(requested > 1 && { n: requested }),
+      }),
     });
     if (!response.ok) {
       this.logger.warn(
@@ -278,23 +291,31 @@ export class OpenRouterAdapter implements ProviderAdapter {
       data?: Array<{ b64_json?: string; url?: string }>;
       usage?: { total_cost?: number };
     };
-    const image = body.data?.[0];
-    if (!image?.b64_json && !image?.url) {
+    const generated = (body.data ?? []).filter((image) => image.b64_json || image.url);
+    const image = generated[0];
+    if (!image) {
       this.logger.warn(ids, 'provider returned no image');
       throw new Error('OpenRouter image: missing generated image');
     }
-    this.logger.log({ ...ids, durationMs: Date.now() - startedAt }, 'provider job completed');
+    const source = (item: { b64_json?: string; url?: string }, position: number) => ({
+      kind: 'media.image' as const,
+      ...(item.b64_json ? { base64: item.b64_json } : { sourceUrl: item.url! }),
+      mime: 'image/png',
+      filename: position === 0 ? 'image.png' : `image-${position + 1}.png`,
+    });
+    this.logger.log(
+      { ...ids, images: generated.length, durationMs: Date.now() - startedAt },
+      'provider job completed',
+    );
     return {
-      output: {
-        kind: 'media.image',
-        ...(image.b64_json ? { base64: image.b64_json } : { sourceUrl: image.url! }),
-        mime: 'image/png',
-        filename: 'image.png',
-      },
-      costUsd: body.usage?.total_cost ?? Number(req.params.priceUsd ?? 0.04),
+      output:
+        requested > 1 ? { images: generated.slice(0, requested).map(source) } : source(image, 0),
+      costUsd:
+        body.usage?.total_cost ??
+        Number(req.params.priceUsd ?? 0.04) * Math.min(requested, generated.length),
       repro: { level: 'none', providerVersion: req.modelId },
       rawResponse: {
-        data: image.url ? [{ url: image.url }] : [{ b64_json: '[stored]' }],
+        data: generated.map((item) => (item.url ? { url: item.url } : { b64_json: '[stored]' })),
         usage: body.usage,
       },
     };
