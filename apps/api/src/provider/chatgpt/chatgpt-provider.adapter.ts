@@ -526,7 +526,7 @@ export function isIdle(state: PageState): boolean {
  */
 export function decidePoll(
   state: PageState,
-  job: Pick<ChatgptJobPayload, 'modality' | 'submittedAt'>,
+  job: Pick<ChatgptJobPayload, 'modality' | 'submittedAt' | 'imageCount'>,
   imagelessSince: number | undefined,
   now: number,
 ): JobStatus | 'imageless' {
@@ -545,7 +545,16 @@ export function decidePoll(
   }
   if (state.generating) return running(job);
   if (job.modality === 'image') {
-    if (state.images > 0) return { done: true, outcome: 'succeeded' };
+    if (state.images > 0) {
+      // Fewer images than asked for may still be on their way: closing the tab
+      // would cut the rest off, so give them the same grace an imageless reply gets.
+      const fewer = job.imageCount !== undefined && state.images < job.imageCount;
+      if (!fewer) return { done: true, outcome: 'succeeded' };
+      if (imagelessSince === undefined) return 'imageless';
+      return now - imagelessSince >= IMAGE_GRACE_MS
+        ? { done: true, outcome: 'succeeded' }
+        : running(job);
+    }
     if (state.imagesLoading) return running(job);
   } else if (state.replyDone) {
     return { done: true, outcome: 'succeeded' };
