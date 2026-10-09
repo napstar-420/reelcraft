@@ -16,6 +16,8 @@ export const JudgeResponse = z.object({
   critique: z.string(),
   /** Clip lists only: the index of every clip that should be made again. */
   failedClips: z.array(z.number().int()).optional(),
+  /** Candidate images only: the index of the best image, the one that was scored. */
+  bestImage: z.number().int().optional(),
 });
 export type JudgeResponse = z.infer<typeof JudgeResponse>;
 

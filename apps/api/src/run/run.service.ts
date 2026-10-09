@@ -13,6 +13,7 @@ import { InputDef, RoleDef as RoleDefSchema, StageDef } from '@reelcraft/shared'
 import { RUN_ACTION_ALLOWED_STATES } from './run-action-policy';
 import { stageReferenceLimit } from '../common/reference-limit';
 import { findFinalVideo } from '../artifact/final-video';
+import { storedCandidates } from '../artifact/clip-handle';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
 import {
   asset,
@@ -1063,7 +1064,7 @@ export class RunService {
         }),
       )
     ).filter((value) => value !== undefined);
-    const listItems = async (key: 'clips' | 'images') =>
+    const listItems = async (key: 'clips' | 'images' | 'candidates') =>
       (
         await Promise.all(
           (
@@ -1087,11 +1088,20 @@ export class RunService {
       ).filter((item) => item !== undefined);
     const images = row.kind === 'media.image_list' ? await listItems('images') : undefined;
     const clips = row.kind === 'media.video_list' ? await listItems('clips') : undefined;
+    const selectedIndex = (row.data as { selectedIndex?: number } | null)?.selectedIndex;
+    const candidates =
+      row.kind === 'media.image' && storedCandidates(row.data).length > 0
+        ? (await listItems('candidates')).map((item) => ({
+            ...item,
+            selected: item.index === selectedIndex,
+          }))
+        : undefined;
     return {
       id: row.id,
       kind: row.kind,
       ...(clips && { clips }),
       ...(images && { images }),
+      ...(candidates && { candidates }),
       // Subtitle cues are shown inline, so their (small) text rides along
       // with the view rather than the browser fetching the presigned URL.
       data:

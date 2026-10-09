@@ -6,6 +6,7 @@ import {
   listItemKind,
   parseArtifactHandle,
   storedClips,
+  storedCandidates,
   storedImages,
   storedListItems,
 } from './clip-handle';
@@ -35,6 +36,9 @@ describe('list artifacts', () => {
     expect(storedListItems('media.image_list', data)).toHaveLength(2);
     expect(storedImages(null)).toEqual([]);
     expect(storedImages({ images: 'no' })).toEqual([]);
+    expect(storedCandidates({ candidates: [{ index: 2 }] })).toHaveLength(1);
+    expect(storedCandidates(null)).toEqual([]);
+    expect(storedCandidates({ candidates: 'no' })).toEqual([]);
   });
 
   it('knows the list kinds and what their items are', () => {

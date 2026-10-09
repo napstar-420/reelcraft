@@ -11,6 +11,8 @@ export interface QcVerdict {
   dimensions?: Array<{ key: string; score: number; critique?: string }>;
   /** Clip lists only: indexes of the clips to make again. */
   failedClips?: number[];
+  /** Candidate images only: the index of the image the judge chose and scored. */
+  selectedImage?: number;
 }
 
 export type QcOutcome =
@@ -124,7 +126,18 @@ export class QcRunner {
       };
     }
 
-    const verdict = toVerdict(parsed, args.envelope);
+    const selectedImage = selectedImageOf(parsed, args.envelope);
+    if (args.envelope.selectBest && selectedImage === undefined) {
+      return {
+        status: 'error',
+        reason: 'qc judge did not choose one of the candidate images',
+        costUsd: result.costUsd,
+      };
+    }
+    const verdict = {
+      ...toVerdict(parsed, args.envelope),
+      ...(selectedImage !== undefined && { selectedImage }),
+    };
     return verdict.score >= args.threshold
       ? { status: 'passed', verdict, costUsd: result.costUsd }
       : { status: 'failed', verdict, costUsd: result.costUsd };
@@ -169,6 +182,15 @@ function failedClipsOf(response: JudgeResponse, envelope: QcEnvelope): number[] 
   if (!envelope.clips) return undefined;
   const known = new Set(envelope.clips.map((clip) => clip.index));
   return [...new Set((response.failedClips ?? []).filter((index) => known.has(index)))];
+}
+
+/** The candidate the judge chose, when it was asked to choose; only an index it was shown counts. */
+function selectedImageOf(response: JudgeResponse, envelope: QcEnvelope): number | undefined {
+  if (!envelope.selectBest) return undefined;
+  const chosen = response.bestImage;
+  return chosen !== undefined && envelope.images?.some((image) => image.index === chosen)
+    ? chosen
+    : undefined;
 }
 
 function toVerdict(response: JudgeResponse, envelope: QcEnvelope): QcVerdict {

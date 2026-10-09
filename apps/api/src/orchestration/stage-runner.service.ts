@@ -50,6 +50,7 @@ import type { CheckArtifact, CheckResult } from '../check/check.types';
 import { QcRunner, type QcOutcome, type QcVerdict } from '../qc/qc-runner.service';
 import { QcAudioService } from '../qc/qc-audio';
 import { buildQcEnvelope } from '../qc/qc-envelope';
+import { storedCandidates } from '../artifact/clip-handle';
 import { HumanWaitService } from '../run/human-wait.service';
 import { TimelineCheckService } from '../check/timeline-check.service';
 import { TimelineHandleService } from '../artifact/timeline-handle.service';
@@ -166,6 +167,23 @@ interface Candidate {
   };
   /** A clip or image list's items, ready for the judge. */
   clips: Array<{ sourceKey: string; mime: string; index: number; label: string }>;
+  /** An Image output made as several candidates for quality control to pick from. */
+  pick?: PickItem[];
+}
+
+/** One candidate image of a stage that picks the best of several. */
+interface PickItem {
+  index: number;
+  label: string;
+  sourceKey: string;
+  mime: string;
+  blobId: string;
+  probe: MediaProbe;
+}
+
+/** Whether a capability handed back several images (`{ images }`) rather than one source. */
+function isImageSet(output: unknown): boolean {
+  return Array.isArray((output as Partial<ImageListOutput> | null)?.images);
 }
 
 function isUniqueViolation(err: unknown): boolean {
@@ -976,13 +994,16 @@ export class StageRunnerService {
 
     const isClipList = stage.output.kind === 'media.video_list';
     const isImageList = stage.output.kind === 'media.image_list';
+    // An Image output that came back as several images: they are candidates,
+    // and quality control picks the one the artifact becomes.
+    const isPick = stage.output.kind === 'media.image' && isImageSet(output);
     const mediaOutput =
-      stage.output.kind.startsWith('media.') && !isClipList && !isImageList
+      stage.output.kind.startsWith('media.') && !isClipList && !isImageList && !isPick
         ? (output as import('@reelcraft/shared').MediaSource)
         : undefined;
     const clipOutputs = isClipList
       ? (output as { clips: Array<ClipOutput> }).clips
-      : isImageList
+      : isImageList || isPick
         ? imageItems(output)
         : undefined;
     const fileOutput =
@@ -1016,6 +1037,8 @@ export class StageRunnerService {
     } finally {
       if (clipOutputs?.length) await capability.cleanup?.(handle);
     }
+    // Until quality control picks, the artifact is the first candidate.
+    if (isPick) persistedMedia = persistedClips[0];
     let persistedFile: Awaited<ReturnType<FileArtifactService['persist']>> | undefined;
     try {
       persistedFile = fileOutput
@@ -1058,9 +1081,11 @@ export class StageRunnerService {
             ? { clips: storedItems }
             : kind === 'media.image_list'
               ? { images: storedItems }
-              : spokenText !== undefined
-                ? { text: spokenText, ...(result.timing && { timing: result.timing }) }
-                : undefined;
+              : isPick
+                ? { candidates: storedItems, selectedIndex: persistedClips[0]?.clip.index ?? 0 }
+                : spokenText !== undefined
+                  ? { text: spokenText, ...(result.timing && { timing: result.timing }) }
+                  : undefined;
     const artifactId = await this.artifacts.recordAttemptArtifact({
       runId: ctx.runId,
       producerStageKey: stage.key,
@@ -1133,8 +1158,18 @@ export class StageRunnerService {
           media: {
             storageKey: persistedMedia.storageKey,
             probe: persistedMedia.probe,
-            mime: mediaOutput?.mime,
+            mime: mediaOutput?.mime ?? persistedClips[0]?.clip.source.mime,
           },
+        }),
+        ...(isPick && {
+          pick: persistedClips.map(({ clip, storageKey, blobId, probe }) => ({
+            index: clip.index,
+            label: clip.label ?? `Image ${clip.index + 1}`,
+            sourceKey: storageKey,
+            mime: clipMime(clip),
+            blobId,
+            probe,
+          })),
         }),
         clips: persistedClips.map(({ clip, storageKey }) => ({
           sourceKey: storageKey,
@@ -1159,7 +1194,8 @@ export class StageRunnerService {
     candidate: Candidate;
   }): Promise<FetchAndFinalizeResult> {
     const { stage, ctx, effective, prevStageKey, bindings, candidate } = p;
-    const { kind, data, output, artifactId } = candidate;
+    const { kind, output, artifactId } = candidate;
+    let { data } = candidate;
     const persistedMedia = candidate.media;
     const checkArtifact: CheckArtifact = {
       kind,
@@ -1192,12 +1228,39 @@ export class StageRunnerService {
       .set({ resolvedInputs: { ...bindings.provenance, ...checkProvenance } })
       .where(eq(stageAttempt.id, ctx.stageAttemptId));
 
-    const checkResults = await this.checks.run({
-      checks: stage.checks,
-      artifact: checkArtifact,
-      resolvedRefs,
-      ...(stage.output.kind === 'data' && { outputSchema: stage.output.schema }),
-    });
+    // Several candidates: each is checked on its own, and only the ones that
+    // pass go on to quality control.
+    let survivors = candidate.pick;
+    let checkResults: CheckResult[];
+    if (candidate.pick) {
+      checkResults = [];
+      survivors = [];
+      for (const item of candidate.pick) {
+        const results = await this.checks.run({
+          checks: stage.checks,
+          artifact: { kind, data: undefined, probe: item.probe },
+          resolvedRefs,
+        });
+        checkResults.push(...results.map((r) => ({ ...r, name: `${item.label}: ${r.name}` })));
+        if (results.every((r) => r.pass)) survivors.push(item);
+      }
+      const dropped = candidate.pick.filter((item) => !survivors!.includes(item));
+      if (dropped.length && survivors.length) {
+        await this.events.record(
+          ctx,
+          'warn',
+          'checks.dropped',
+          `${dropped.map((item) => item.label).join(', ')} failed checks and will not be judged`,
+        );
+      }
+    } else {
+      checkResults = await this.checks.run({
+        checks: stage.checks,
+        artifact: checkArtifact,
+        resolvedRefs,
+        ...(stage.output.kind === 'data' && { outputSchema: stage.output.schema }),
+      });
+    }
     if (stage.output.kind === 'timeline') {
       const config = effective.capabilityConfig as {
         allowGaps?: boolean;
@@ -1229,7 +1292,9 @@ export class StageRunnerService {
       }
     }
 
-    const failedChecks = checkResults.filter((r) => !r.pass);
+    // With candidates, a failing one is only dropped; the checks fail the
+    // attempt when none is left.
+    const failedChecks = survivors?.length ? [] : checkResults.filter((r) => !r.pass);
     if (checkResults.length > 0) {
       await this.events.record(
         ctx,
@@ -1254,6 +1319,7 @@ export class StageRunnerService {
       return { outcome: 'check_failed', checkResults };
     }
 
+    let picked = false;
     if (stage.qc && effective.qc) {
       // §10.4 — "qc.capUsd is spent and an artifact cannot be judged...
       // does not spend past the cap": a cumulative-spend check against
@@ -1277,7 +1343,7 @@ export class StageRunnerService {
       }
 
       let qcMedia =
-        stage.output.kind === 'media.image' && persistedMedia
+        stage.output.kind === 'media.image' && persistedMedia && !candidate.pick
           ? { sourceKey: persistedMedia.storageKey, mime: persistedMedia.mime ?? 'image/png' }
           : undefined;
       // "Include transcript" on an audio output: the judge listens to the
@@ -1316,7 +1382,15 @@ export class StageRunnerService {
       // A clip list is judged as every clip, in order, as video files; an
       // image list as every image together, one verdict for the whole set.
       const qcClips = kind === 'media.video_list' ? candidate.clips : undefined;
-      const qcImages = kind === 'media.image_list' ? candidate.clips : undefined;
+      const qcImages =
+        kind === 'media.image_list'
+          ? candidate.clips
+          : survivors?.map(({ index, label, sourceKey, mime }) => ({
+              index,
+              label,
+              sourceKey,
+              mime,
+            }));
       const qcOutcome = await this.runQcWithRetries(
         stage.qc,
         effective.qc,
@@ -1327,6 +1401,7 @@ export class StageRunnerService {
         qcTranscript,
         qcClips,
         qcImages,
+        candidate.pick !== undefined,
       );
 
       if (qcOutcome.status === 'error') {
@@ -1340,6 +1415,19 @@ export class StageRunnerService {
         category: 'qc',
         amountUsd: qcOutcome.costUsd,
       });
+
+      // The judge chose a candidate: the artifact becomes that image, whether
+      // or not it scored well enough (a person reviewing it sees the best one).
+      if (candidate.pick && qcOutcome.verdict.selectedImage !== undefined) {
+        data = await this.applyPick(
+          ctx,
+          artifactId,
+          candidate.pick,
+          data,
+          qcOutcome.verdict.selectedImage,
+        );
+        picked = true;
+      }
 
       if (qcOutcome.status === 'failed') {
         await this.db
@@ -1359,6 +1447,15 @@ export class StageRunnerService {
         .update(stageAttempt)
         .set({ qcVerdict: qcOutcome.verdict })
         .where(eq(stageAttempt.id, ctx.stageAttemptId));
+    }
+
+    if (candidate.pick && !picked) {
+      await this.events.record(
+        ctx,
+        'warn',
+        'qc.pick',
+        `Quality control did not choose an image; kept ${candidate.pick[0]?.label ?? 'the first image'}`,
+      );
     }
 
     const finalized = await this.db.transaction(async (tx) => {
@@ -1432,6 +1529,32 @@ export class StageRunnerService {
       await this.finishAttempt(ctx, 'info', 'success', 'Attempt succeeded');
     }
     return finalized;
+  }
+
+  /** Makes the artifact the candidate quality control chose: its file and
+   * probe replace the provisional first candidate's. The artifact is still
+   * unfinalized (born stale), so this is a plain update. Returns the new data. */
+  private async applyPick(
+    ctx: StageAttemptContext,
+    artifactId: string,
+    items: PickItem[],
+    data: unknown,
+    selectedIndex: number,
+  ): Promise<unknown> {
+    const chosen = items.find((item) => item.index === selectedIndex);
+    if (!chosen) return data;
+    const next = { ...(data as Record<string, unknown>), selectedIndex };
+    await this.db
+      .update(artifact)
+      .set({ blobId: chosen.blobId, probe: chosen.probe, data: next })
+      .where(eq(artifact.id, artifactId));
+    await this.events.record(
+      ctx,
+      'info',
+      'qc.pick',
+      `Quality control chose ${chosen.label} of ${items.length}`,
+    );
+    return next;
   }
 
   /** Quality control could not run (the judge was unreachable, stuck or
@@ -1580,6 +1703,20 @@ export class StageRunnerService {
       }),
     );
     const mediaBlob = stored.blobId ? await keyOf(stored.blobId) : undefined;
+    const candidates = stored.kind === 'media.image' ? storedCandidates(stored.data) : [];
+    const pick: PickItem[] = await Promise.all(
+      candidates.map(async (item) => {
+        const file = await keyOf(item.blobId);
+        return {
+          index: item.index,
+          label: item.label || `Image ${item.index + 1}`,
+          sourceKey: file.objectKey,
+          mime: file.mime,
+          blobId: item.blobId,
+          probe: item.probe as MediaProbe,
+        };
+      }),
+    );
     const bindings = await this.resolveBindings(stage, ctx.runId, prevStageKey, ctx.itemIndex);
     return this.judgeAndFinalize({
       stage,
@@ -1603,6 +1740,7 @@ export class StageRunnerService {
             }
           : {}),
         clips,
+        ...(pick.length && { pick }),
       },
     });
   }
@@ -1721,6 +1859,7 @@ export class StageRunnerService {
     transcript?: string,
     clips?: Array<{ sourceKey: string; mime: string; index: number; label: string }>,
     images?: Array<{ sourceKey: string; mime: string; index: number; label: string }>,
+    selectBest = false,
   ): Promise<QcOutcome> {
     const envelope = buildQcEnvelope({
       criteria: qcDef.criteria,
@@ -1735,6 +1874,7 @@ export class StageRunnerService {
       ...(transcript !== undefined && { transcript }),
       ...(clips?.length && { clips }),
       ...(images?.length && { images }),
+      ...(selectBest && { selectBest }),
     });
 
     const maxAttempts = 1 + this.engineConfig.qcErrorRetries;
