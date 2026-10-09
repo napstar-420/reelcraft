@@ -77,6 +77,118 @@ describe('runStageAttemptLoop user_action failures', () => {
   });
 });
 
+describe('runStageAttemptLoop abandoned jobs', () => {
+  const handle = (externalId: string) => ({ providerId: 'chatgpt', externalId });
+
+  function runner(over: Record<string, unknown> = {}) {
+    return {
+      findHeldQcAttempt: vi.fn().mockResolvedValue(undefined),
+      beginAttempt: vi.fn().mockResolvedValue({ attemptNo: 1 }),
+      countRoundAttempts: vi.fn().mockResolvedValue(0),
+      reserveAndSubmit: vi
+        .fn()
+        .mockResolvedValueOnce({ outcome: 'submitted', handle: handle('first') })
+        .mockResolvedValue({ outcome: 'submitted', handle: handle('second') }),
+      pollOnce: vi.fn().mockResolvedValue({ done: true, outcome: 'succeeded' }),
+      fetchAndFinalize: vi.fn().mockResolvedValue({ outcome: 'success', artifactId: 'a1' }),
+      cancelJob: vi.fn().mockResolvedValue(undefined),
+      recordAttemptError: vi.fn(),
+      recordFailure: vi.fn(),
+      ...over,
+    };
+  }
+
+  function loop(r: object, retryLimit: number) {
+    const warn = vi.fn();
+    const result = runStageAttemptLoop({
+      step: { run: (_id: string, fn: () => unknown) => fn(), sleep: vi.fn() } as never,
+      logger: { warn } as never,
+      runner: r as never,
+      stage: { checks: [] } as never,
+      effective: { polling: { maxWaitSec: 60 } } as never,
+      prevStageKey: undefined,
+      runId: 'run',
+      stageExecutionId: 'exec',
+      stageKey: 'draft',
+      retryLimit,
+    });
+    return { result, warn };
+  }
+
+  it('cancels the job of an attempt whose fetch threw, before recording the error, then retries', async () => {
+    const r = runner({
+      fetchAndFinalize: vi
+        .fn()
+        .mockRejectedValueOnce(new Error('run exceeded 30000ms'))
+        .mockResolvedValue({ outcome: 'success', artifactId: 'a1' }),
+    });
+    const { result } = loop(r, 3);
+
+    await expect(result).resolves.toEqual({ outcome: 'passed', artifactId: 'a1' });
+    expect(r.cancelJob).toHaveBeenCalledTimes(1);
+    expect(r.cancelJob).toHaveBeenCalledWith(expect.anything(), handle('first'));
+    expect(r.cancelJob.mock.invocationCallOrder[0]).toBeLessThan(
+      r.recordAttemptError.mock.invocationCallOrder[0]!,
+    );
+    expect(r.recordAttemptError).toHaveBeenCalledWith(expect.anything(), 'run exceeded 30000ms');
+  });
+
+  it('cancels the job, then records the failure, when the last attempt threw', async () => {
+    const r = runner({ fetchAndFinalize: vi.fn().mockRejectedValue(new Error('boom')) });
+    const { result } = loop(r, 0);
+
+    await expect(result).resolves.toEqual({ outcome: 'failed', reason: 'boom' });
+    expect(r.cancelJob).toHaveBeenCalledTimes(1);
+    expect(r.cancelJob.mock.invocationCallOrder[0]).toBeLessThan(
+      r.recordFailure.mock.invocationCallOrder[0]!,
+    );
+  });
+
+  it('does not cancel when the submit itself threw', async () => {
+    const r = runner({ reserveAndSubmit: vi.fn().mockRejectedValue(new Error('no tab')) });
+    const { result } = loop(r, 0);
+
+    await expect(result).resolves.toEqual({ outcome: 'failed', reason: 'no tab' });
+    expect(r.cancelJob).not.toHaveBeenCalled();
+  });
+
+  it('does not cancel a job its provider already reported as failed', async () => {
+    const r = runner({
+      pollOnce: vi.fn().mockResolvedValue({
+        done: true,
+        outcome: 'failed',
+        reason: 'ChatGPT reported an error',
+        retryable: true,
+        failureClass: 'provider',
+      }),
+      settleFailedPoll: vi.fn(),
+      stopIfRunNotRunning: vi.fn().mockResolvedValue(false),
+    });
+    const { result } = loop(r, 0);
+
+    await expect(result).resolves.toEqual({
+      outcome: 'failed',
+      reason: 'ChatGPT reported an error',
+    });
+    expect(r.cancelJob).not.toHaveBeenCalled();
+  });
+
+  it('keeps going when the cleanup itself fails', async () => {
+    const r = runner({
+      fetchAndFinalize: vi.fn().mockRejectedValue(new Error('boom')),
+      cancelJob: vi.fn().mockRejectedValue(new Error('neo is down')),
+    });
+    const { result, warn } = loop(r, 0);
+
+    await expect(result).resolves.toEqual({ outcome: 'failed', reason: 'boom' });
+    expect(r.recordFailure).toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledWith(
+      expect.objectContaining({ err: expect.any(Error) }),
+      'abandoned job cleanup failed',
+    );
+  });
+});
+
 describe('runStageAttemptLoop feedback retries', () => {
   /** A runner whose every fetch ends in `outcome`; `countRoundAttempts`
    * counts from the attempts recorded so far, like the real DB query. */

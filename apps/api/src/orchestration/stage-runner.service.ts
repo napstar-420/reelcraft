@@ -778,6 +778,14 @@ export class StageRunnerService {
     );
   }
 
+  /** Releases a submitted job whose attempt was given up after a throw (a
+   * failed fetch leaves a browser provider's tab open for its retry). Same
+   * call a timeout or stall makes, and safe on a finished job; writes nothing
+   * to the ledger. */
+  async cancelJob(stage: StageDef, handle: JobHandle): Promise<void> {
+    await this.capabilities.get(stage.capability).cancel?.(handle);
+  }
+
   /** A self-timed provider job (browser providers) ran past its own deadline:
    * cancels it, settles the reservation like a timeout, and records an
    * infrastructure error so the loop retries without spending `retryLimit`. */

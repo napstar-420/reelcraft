@@ -47,8 +47,13 @@ function pageId(id: number): number {
 /** Neo writes `evaluate` results over ~6 KB to a local file instead of returning them. */
 const EVALUATE_CHUNK = 4_000;
 const PARALLEL_CHUNKS = 25;
-/** Neo also caps one `run` result at 2 MB, so big payloads span several `run` calls. */
-export const RUN_RESULT_BUDGET = 1_500_000;
+/**
+ * Characters read back per `run`: three rounds of `PARALLEL_CHUNKS` slices. Neo
+ * caps a `run` at 30 s (and its result at 2 MB), and a round takes 1-2 s with
+ * several tabs reading at once, so big payloads span several short `run` calls.
+ * 1.5M (15 rounds) timed out on 2026-10-09.
+ */
+export const RUN_RESULT_BUDGET = 3 * PARALLEL_CHUNKS * EVALUATE_CHUNK;
 const OUT_NODE = '__reelcraft_out';
 const IMAGE_NODE = '__reelcraft_image';
 
@@ -316,8 +321,8 @@ return copied;`,
 
 /**
  * Downloads generated image `index` into a hidden node as base64 and returns
- * its size; read it with `readParkedImageScript` (images exceed one `run`'s
- * 2 MB result cap).
+ * its size; read it with `readParkedImageScript` in `RUN_RESULT_BUDGET` slices
+ * (an image takes several `run` calls, each capped at 30 s).
  */
 export function parkImageScript(id: number, index: number): string {
   return inPage(
@@ -372,7 +377,7 @@ const r = await fetch('/backend-api/conversation/' + m[1], {
   headers: { 'content-type': 'application/json', authorization: 'Bearer ' + s.accessToken },
   body: JSON.stringify({ is_archived: true }),
 });
-// ChatGPT's chat lists lag this by up to a minute, so the reply is the only immediate signal.
+// ChatGPT's chat list can keep showing the chat for many minutes, so the reply is the only immediate signal.
 const body = r.ok ? await r.json().catch(() => null) : null;
 return body && body.success ? { archived: true } : { archived: false, reason: 'HTTP ' + r.status };`,
   );

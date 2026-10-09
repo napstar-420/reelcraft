@@ -1,6 +1,6 @@
 import type { Context, Logger } from 'inngest';
 import { DEFAULT_FEEDBACK_MAX_ATTEMPTS } from '@reelcraft/shared';
-import type { JobStatus, StageDef } from '@reelcraft/shared';
+import type { JobHandle, JobStatus, StageDef } from '@reelcraft/shared';
 import { CONSUMES_RETRY_LIMIT } from '../attempt-outcome';
 import type {
   FetchAndFinalizeResult,
@@ -217,6 +217,9 @@ export async function runStageAttemptLoop(
       runner.countRoundAttempts(stageExecutionId, ['infra_error'], stageItemId),
     );
 
+    // The job this attempt submitted, while its provider tab/process may still
+    // be open: a throw gives it up, and the catch below cancels it.
+    let submittedHandle: JobHandle | undefined;
     try {
       const submission = await step.run(`submit-${stageKey}-${iteration}`, () =>
         runner.reserveAndSubmit(stage, attemptCtx, prevStageKey, effective),
@@ -229,6 +232,7 @@ export async function runStageAttemptLoop(
         return { outcome: 'run_not_running' as const };
       }
       const handle = submission.handle;
+      submittedHandle = handle;
 
       // The "still inside the provider's own deadline" check reads the clock,
       // so it runs inside the poll step and its answer is saved with the
@@ -315,6 +319,8 @@ export async function runStageAttemptLoop(
           }
           continue;
         }
+        // The provider already cleaned up a job it reported as failed.
+        submittedHandle = undefined;
         throw new Error(status.reason);
       }
 
@@ -330,6 +336,16 @@ export async function runStageAttemptLoop(
         { runId, stageKey, attemptNo: attemptCtx.attemptNo, itemIndex, isLastAttempt, err },
         'stage attempt threw',
       );
+      // A failed fetch leaves a browser provider's tab open so its step retry
+      // could read it again; now that the attempt is given up, release it.
+      if (submittedHandle) {
+        const abandoned = submittedHandle;
+        await step.run(`abandon-job-${stageKey}-${iteration}`, () =>
+          runner.cancelJob(stage, abandoned).catch((cleanupErr: unknown) => {
+            logger.warn({ runId, stageKey, err: cleanupErr }, 'abandoned job cleanup failed');
+          }),
+        );
+      }
       if (isLastAttempt) {
         await step.run(`record-failure-${stageKey}`, () =>
           runner.recordFailure(attemptCtx, reason),

@@ -8,7 +8,13 @@ import {
   isIdle,
   parseJsonReply,
 } from './chatgpt-provider.adapter';
-import { archiveChatScript, pageStateScript, stripCitations, type PageState } from './chatgpt-page';
+import {
+  RUN_RESULT_BUDGET,
+  archiveChatScript,
+  pageStateScript,
+  stripCitations,
+  type PageState,
+} from './chatgpt-page';
 
 /** Fake Neo: `run` answers scripted results in call order and records every script. */
 function fixture(results: unknown[], archive: unknown = { archived: true }) {
@@ -284,6 +290,12 @@ describe('ChatgptProviderAdapter.fetch', () => {
     expect(closed()).toBe(1);
   });
 
+  it('keeps a text tab open when the reply is not valid JSON', async () => {
+    const { adapter, closed } = fixture(['not json']);
+    await expect(adapter.fetch(job({ outputKind: 'data' }))).rejects.toThrow(/not valid JSON/);
+    expect(closed()).toBe(0);
+  });
+
   it('parses JSON replies for data output, tolerating code fences', async () => {
     const { adapter } = fixture(['```json\n{"title":"x"}\n```']);
     const result = await adapter.fetch(job({ outputKind: 'data' }));
@@ -340,10 +352,11 @@ describe('ChatgptProviderAdapter.fetch', () => {
   });
 
   it('fails a list request whose reply has no image', async () => {
-    const { adapter } = fixture([null]);
+    const { adapter, closed } = fixture([null]);
     await expect(
       adapter.fetch(job({ modality: 'image', outputKind: 'media.image_list', imageCount: 2 })),
     ).rejects.toThrow('no generated image');
+    expect(closed()).toBe(0);
   });
 });
 
@@ -398,7 +411,7 @@ describe('ChatgptProviderAdapter image chat archive', () => {
 
 describe('ChatgptProviderAdapter image download', () => {
   it('reads an image bigger than one run result across several runs', async () => {
-    const big = 1_500_000;
+    const big = RUN_RESULT_BUDGET;
     const { adapter, scripts } = fixture([
       { mime: 'image/png', length: big + 3 },
       'a'.repeat(big),
@@ -411,11 +424,32 @@ describe('ChatgptProviderAdapter image download', () => {
     expect(scripts.filter((code) => code.includes('__reelcraft_image'))).toHaveLength(4);
   });
 
-  it('rejects a truncated download', async () => {
-    const { adapter } = fixture([{ mime: 'image/png', length: 5 }, 'abc']);
+  it('rejects a truncated download and leaves the tab open for the retry', async () => {
+    const { adapter, closed } = fixture([{ mime: 'image/png', length: 5 }, 'abc']);
     await expect(
       adapter.fetch(job({ modality: 'image', outputKind: 'media.image' })),
     ).rejects.toThrow(/incomplete/);
+    expect(closed()).toBe(0);
+  });
+
+  it('keeps the tab open when a read fails, so the retried fetch reads the same tab and then archives', async () => {
+    const { adapter, closed, archived, archivedBeforeClose } = fixture([
+      { mime: 'image/png', length: 3 },
+      new Error('BrowserOS Neo script failed: run exceeded 30000ms'),
+      { mime: 'image/png', length: 3 },
+      'AAA',
+      null,
+    ]);
+    const handle = job({ modality: 'image', outputKind: 'media.image' });
+    await expect(adapter.fetch(handle)).rejects.toThrow('run exceeded 30000ms');
+    expect(closed()).toBe(0);
+    expect(archived()).toBe(0);
+
+    const result = await adapter.fetch(handle);
+    expect((result.output as { base64: string }).base64).toBe('AAA');
+    expect(archived()).toBe(1);
+    expect(closed()).toBe(1);
+    expect(archivedBeforeClose()).toBe(true);
   });
 });
 
