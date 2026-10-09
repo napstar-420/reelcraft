@@ -310,6 +310,41 @@ describe('ChatgptProviderAdapter.fetch', () => {
     ]);
     expect(closed()).toBe(1);
   });
+
+  it('returns every image of the reply as a list when several were asked for', async () => {
+    const { adapter, closed } = fixture([
+      { mime: 'image/png', length: 3 },
+      'AAA',
+      { mime: 'image/webp', length: 3 },
+      'BBB',
+      { mime: 'image/png', length: 3 },
+      'CCC',
+      null,
+    ]);
+    const result = await adapter.fetch(
+      job({ modality: 'image', outputKind: 'media.image_list', imageCount: 2 }),
+    );
+    expect(result.output).toEqual({
+      images: [
+        { kind: 'media.image', base64: 'AAA', mime: 'image/png', filename: 'chatgpt-image-1.png' },
+        {
+          kind: 'media.image',
+          base64: 'BBB',
+          mime: 'image/webp',
+          filename: 'chatgpt-image-2.webp',
+        },
+      ],
+    });
+    expect(result.attachments).toBeUndefined();
+    expect(closed()).toBe(1);
+  });
+
+  it('fails a list request whose reply has no image', async () => {
+    const { adapter } = fixture([null]);
+    await expect(
+      adapter.fetch(job({ modality: 'image', outputKind: 'media.image_list', imageCount: 2 })),
+    ).rejects.toThrow('no generated image');
+  });
 });
 
 describe('ChatgptProviderAdapter image chat archive', () => {

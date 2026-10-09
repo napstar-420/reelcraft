@@ -139,10 +139,17 @@ function shapeOutput(o: StageOutputView, full: boolean) {
           };
         })
       : undefined;
+    const images = Array.isArray(data.images)
+      ? data.images.map((c) => {
+          const imageRow = asRecord(c);
+          return { index: imageRow.index, label: imageRow.label };
+        })
+      : undefined;
     return {
       ...base,
       probe: capped(o.probe, CAP.probe),
       ...(clips && { clips }),
+      ...(images && { images }),
       attachments: o.attachments,
       note: 'Media: use view_stage_media to look at it.',
     };
@@ -397,6 +404,22 @@ const viewStageMedia: AssistantTool<z.infer<typeof ViewMediaInput>> = {
         const frames = await deps.media.framesOfVideo(target.artifactId);
         // several items: one frame each, so more items fit
         previews = single ? frames : frames.filter((f) => f.label.includes('third')).slice(0, 1);
+      } else if (target.kind === 'media.image_list') {
+        // An image list shows as many of its images as there is room for.
+        const found = await Promise.all(
+          (target.images ?? [])
+            .slice(0, room - images.length)
+            .map((image) =>
+              deps.media.imageFromBlob(image.blobId, image.label || `image ${image.index + 1}`),
+            ),
+        );
+        previews = found.filter((preview) => preview !== null);
+        if ((target.images?.length ?? 0) > previews.length) {
+          notShown.push({
+            ...details,
+            reason: `${(target.images?.length ?? 0) - previews.length} more images in this list: picture limit reached`,
+          });
+        }
       } else if (target.kind === 'media.video_list') {
         notShown.push({
           ...details,

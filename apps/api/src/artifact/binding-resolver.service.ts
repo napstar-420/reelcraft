@@ -7,7 +7,7 @@ import type { StageDef } from '@reelcraft/shared';
 import { getPath } from '../common/path';
 import { unwrapText } from '../common/unwrap-text';
 import { DerivedFrameService } from './derived-frame.service';
-import { storedClips } from './clip-handle';
+import { isListKind, listItemKind, storedListItems } from './clip-handle';
 import { timingMapOf } from './timing-map';
 import { MemoryService } from './memory.service';
 
@@ -61,8 +61,8 @@ export interface RefProvenance {
   ref: Ref;
   artifactId?: string;
   artifactIds?: string[];
-  /** How many clips a `media.video_list` artifact contributed (they are
-   * addressed `artifact:<artifactId>#<position>`). */
+  /** How many items a `media.video_list` or `media.image_list` artifact
+   * contributed (they are addressed `artifact:<artifactId>#<position>`). */
   clipCount?: number;
   memoryKey?: string;
   memoryVersion?: number;
@@ -183,7 +183,7 @@ export class BindingResolverService {
           provenance: {
             ref,
             artifactId: row.id,
-            ...(row.kind === 'media.video_list' && { clipCount: (value as unknown[]).length }),
+            ...(isListKind(row.kind) && { clipCount: (value as unknown[]).length }),
           },
         };
       }
@@ -630,7 +630,7 @@ export class BindingResolverService {
     path: string | undefined,
     handle: string,
   ): Promise<unknown> {
-    if (row.kind === 'media.video_list') return this.clipManifests(row, handle);
+    if (isListKind(row.kind)) return this.listManifests(row, handle);
     if ((row.kind as ArtifactKind).startsWith('media.')) {
       return this.mediaManifest(row, handle);
     }
@@ -686,9 +686,11 @@ export class BindingResolverService {
   }
 
   /** A `media.video_list` artifact binds as the ordered array of its clips,
-   * each a `media.video` manifest. */
-  private async clipManifests(row: typeof artifact.$inferSelect, handle: string) {
-    const clips = storedClips(row.data);
+   * each a `media.video` manifest; a `media.image_list` as its images, each a
+   * `media.image` manifest. */
+  private async listManifests(row: typeof artifact.$inferSelect, handle: string) {
+    const itemKind = listItemKind(row.kind as 'media.video_list' | 'media.image_list');
+    const clips = storedListItems(row.kind as 'media.video_list' | 'media.image_list', row.data);
     const blobs = clips.length
       ? await this.db
           .select({ id: blob.id, objectKey: blob.objectKey })
@@ -703,7 +705,7 @@ export class BindingResolverService {
     const keys = new Map(blobs.map((row) => [row.id, row.objectKey]));
     return clips.map((clip, position) =>
       mediaManifest(
-        { ...row, kind: 'media.video', probe: clip.probe },
+        { ...row, kind: itemKind, probe: clip.probe },
         `${handle}#${position}`,
         keys.get(clip.blobId),
       ),

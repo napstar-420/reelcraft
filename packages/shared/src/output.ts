@@ -11,6 +11,9 @@ export const MediaConstraints = z.object({
 });
 export type MediaConstraints = z.infer<typeof MediaConstraints>;
 
+/** The most images one Generate Image run can be asked for (`config.count`). */
+export const MAX_IMAGE_COUNT = 8;
+
 const OutputInstructions = z.string().max(4_000).optional();
 
 /** §4.2 — the closed artifact kinds a Stage may declare as its output. */
@@ -23,7 +26,13 @@ export const OutputDef = z.discriminatedUnion('kind', [
   }),
   z.object({ kind: z.literal('text'), instructions: OutputInstructions }),
   z.object({
-    kind: z.enum(['media.image', 'media.video', 'media.audio', 'media.video_list']),
+    kind: z.enum([
+      'media.image',
+      'media.video',
+      'media.audio',
+      'media.video_list',
+      'media.image_list',
+    ]),
     constraints: MediaConstraints.optional(),
   }),
   z.object({ kind: z.literal('file.subtitles') }),

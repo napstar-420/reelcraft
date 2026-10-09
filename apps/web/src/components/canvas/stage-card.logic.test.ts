@@ -55,6 +55,7 @@ describe('describeOutputKind', () => {
     expect(describeOutputKind('file.subtitles')).toBe('subtitles');
     expect(describeOutputKind('data')).toBe('data');
     expect(describeOutputKind('media.video_list')).toBe('videos');
+    expect(describeOutputKind('media.image_list')).toBe('images');
   });
 });
 

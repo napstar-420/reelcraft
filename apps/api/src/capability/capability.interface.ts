@@ -1,6 +1,7 @@
 import type {
   ConfigLayer,
   JsonSchema,
+  MediaSource,
   ModelCapabilities,
   ModelError,
   OutputDef,
@@ -54,6 +55,10 @@ export interface ExecResult<Out = unknown> {
   /** Provider-side diagnostics (token usage, exit code, stderr tail…) shown
    * in the stage log. Never the output itself. */
   providerMeta?: Record<string, unknown>;
+  /** The output can't be used (e.g. fewer images than asked for) but the call
+   * was billed: its cost is settled, the attempt is recorded as a provider
+   * error, and it is retried like a crash (`retryLimit`). Nothing is persisted. */
+  rejection?: string;
   /** The model declined the task with a structured error reply; the stage
    * fails with this message instead of persisting `output`. */
   modelError?: ModelError;
@@ -68,6 +73,12 @@ export interface ExecResult<Out = unknown> {
     mime: string;
     filename: string;
   }>;
+}
+
+/** What Generate Image hands back for an Images output (`config.count` above 1),
+ * and what a provider returns for a request with `count` above 1. */
+export interface ImageListOutput {
+  images: MediaSource[];
 }
 
 export interface CancelResult {

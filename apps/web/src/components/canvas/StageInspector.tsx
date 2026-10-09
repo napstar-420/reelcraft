@@ -14,13 +14,22 @@ import { PathInput } from './PathInput';
 import { TypedValueInput } from './TypedValueInput';
 import { schemaPaths } from '../../lib/ref-paths';
 import {
-  buildStageOutput,
   isOutputInstructionsIssue,
   stageSectionSummaries,
   supportsOutputInstructions,
   updateDataOutputSchema,
   FLOW_CAPABILITY,
+  IMAGE_CAPABILITY,
+  IMAGE_LIST_KIND,
+  IMAGE_SHORTFALL_OPTIONS,
+  MAX_IMAGE_COUNT,
   MAX_INGREDIENTS,
+  MIN_IMAGE_COUNT,
+  imageCount,
+  imageShortfall,
+  withImageCount,
+  withImageShortfall,
+  withOutputKind,
   ingredientCount,
   ingredientSlotName,
   visibleConfigSchema,
@@ -663,6 +672,13 @@ function QcEditor({
           running Codex has ffmpeg.
         </p>
       ) : null}
+      {outputKind === IMAGE_LIST_KIND ? (
+        <p className="text-xs text-muted-foreground">
+          The judge looks at all the images together and accepts or rejects the whole set. A
+          rejected set is made again in full. Use Codex (it opens the files itself) or a model that
+          accepts image input, and one that can take as many images as this stage makes.
+        </p>
+      ) : null}
 
       <div className="flex flex-col gap-1.5">
         <InfoHeading info="Which model judges this stage's output against Criteria. Required — unlike a stage's own Model, quality control has no default to fall back to.">
@@ -1214,32 +1230,34 @@ export function StageInspector({
               </div>
             )}
 
-            {configSchema && Object.keys(configSchema.properties ?? {}).length > 0 && (
-              <div className="flex flex-col gap-1.5">
-                <InfoHeading info="Settings defined by the selected capability, such as a video's transition or a render's quality. Not every capability has any. The model is chosen under Model, not here.">
-                  Config
-                </InfoHeading>
-                <SchemaForm
-                  schema={visibleConfigSchema(stage.capability, configSchema)}
-                  value={stage.config}
-                  onChange={(next) =>
-                    onChange({ ...stage, config: (next as Record<string, unknown>) ?? {} })
-                  }
-                />
-                {stage.capability === FLOW_CAPABILITY && (
-                  <div className="flex flex-col gap-1.5">
-                    <InfoLabel info="The Google accounts this stage uses, in this order: when one runs out of credits the next is used, and when all do the run pauses until they reset. Pick from the accounts signed in to BrowserOS Neo. With none picked, Flow uses whichever account it is signed in with.">
-                      Flow accounts
-                    </InfoLabel>
-                    <FlowAccountsPicker
-                      value={flowAccounts(stage.config)}
-                      onChange={(accounts) => onChange(withFlowAccounts(stage, accounts))}
-                    />
-                  </div>
-                )}
-                <IssueList issues={configIssues} />
-              </div>
-            )}
+            {configSchema &&
+              Object.keys(visibleConfigSchema(stage.capability, configSchema).properties ?? {})
+                .length > 0 && (
+                <div className="flex flex-col gap-1.5">
+                  <InfoHeading info="Settings defined by the selected capability, such as a video's transition or a render's quality. Not every capability has any. The model is chosen under Model, not here.">
+                    Config
+                  </InfoHeading>
+                  <SchemaForm
+                    schema={visibleConfigSchema(stage.capability, configSchema)}
+                    value={stage.config}
+                    onChange={(next) =>
+                      onChange({ ...stage, config: (next as Record<string, unknown>) ?? {} })
+                    }
+                  />
+                  {stage.capability === FLOW_CAPABILITY && (
+                    <div className="flex flex-col gap-1.5">
+                      <InfoLabel info="The Google accounts this stage uses, in this order: when one runs out of credits the next is used, and when all do the run pauses until they reset. Pick from the accounts signed in to BrowserOS Neo. With none picked, Flow uses whichever account it is signed in with.">
+                        Flow accounts
+                      </InfoLabel>
+                      <FlowAccountsPicker
+                        value={flowAccounts(stage.config)}
+                        onChange={(accounts) => onChange(withFlowAccounts(stage, accounts))}
+                      />
+                    </div>
+                  )}
+                  <IssueList issues={configIssues} />
+                </div>
+              )}
           </AccordionContent>
         </AccordionItem>
 
@@ -1370,12 +1388,7 @@ export function StageInspector({
               </InfoHeading>
               <Select
                 value={output.kind}
-                onValueChange={(next) =>
-                  onChange({
-                    ...stage,
-                    output: buildStageOutput(next as OutputKind, output),
-                  })
-                }
+                onValueChange={(next) => onChange(withOutputKind(stage, next as OutputKind))}
               >
                 <SelectTrigger size="sm" className="w-48">
                   <SelectValue />
@@ -1392,6 +1405,52 @@ export function StageInspector({
                 </SelectContent>
               </Select>
               <IssueList issues={outputKindIssues} />
+              {stage.capability === IMAGE_CAPABILITY && output.kind === IMAGE_LIST_KIND && (
+                <div className="flex flex-col gap-3">
+                  <div className="flex flex-col gap-1.5">
+                    <InfoLabel
+                      info={`How many images one run makes from the prompt, ${MIN_IMAGE_COUNT} to ${MAX_IMAGE_COUNT}. They are stored as one list, used by the next stage as a list of images, and judged, approved and made again together.`}
+                    >
+                      Number of images
+                    </InfoLabel>
+                    <Input
+                      type="number"
+                      className="w-24"
+                      min={MIN_IMAGE_COUNT}
+                      max={MAX_IMAGE_COUNT}
+                      step={1}
+                      value={imageCount(stage.config)}
+                      onChange={(e) =>
+                        e.target.value !== '' &&
+                        onChange(withImageCount(stage, Number(e.target.value)))
+                      }
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <InfoLabel info="What to do when the provider returns fewer images than asked for. Warn and continue keeps the images that came back and notes the shortfall in the stage log. Fail and retry counts the attempt as a provider error and tries again, like any other crash, until the stage's retries run out.">
+                      If fewer images come back
+                    </InfoLabel>
+                    <Select
+                      value={imageShortfall(stage.config)}
+                      onValueChange={(next) =>
+                        onChange(withImageShortfall(stage, next === 'fail' ? 'fail' : 'warn'))
+                      }
+                    >
+                      <SelectTrigger size="sm" className="w-48">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {IMAGE_SHORTFALL_OPTIONS.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <IssueList issues={configIssues} />
+                </div>
+              )}
               <IssueList issues={outputIssues} />
               {output.kind === 'data' && (
                 <OutputSchemaField

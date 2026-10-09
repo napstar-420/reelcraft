@@ -27,6 +27,11 @@ interface FakeJobPayload {
    * `undefined` preserves the original hardcoded `0.001` for every existing
    * caller that doesn't pass it. */
   costUsd?: number | undefined;
+  /** `params.count`: how many images a `fake-image-*` run was asked for. */
+  imageCount?: number | undefined;
+  /** `params.fakeImageCount`: how many it actually returns (default: all), to
+   * exercise a provider that comes back short. */
+  fakeImageCount?: number | undefined;
   /** §24 "slow, costly fake" — `slow:<N>` modelId suffix's remaining poll
    * count, decremented each `poll()` call. `undefined`/`0` means "not slow",
    * same as every other knob here defaulting to off. */
@@ -176,6 +181,8 @@ export class FakeProviderAdapter implements ProviderAdapter {
       failuresRemaining: parsed?.count,
       output: req.params.fakeOutput,
       costUsd: req.params.fakeCostUsd as number | undefined,
+      imageCount: req.params.count as number | undefined,
+      fakeImageCount: req.params.fakeImageCount as number | undefined,
       pollsRemaining: this.parseSlow(req.modelId),
     };
     // The fake is used by the local restart acceptance harness. Persist the
@@ -267,14 +274,21 @@ export class FakeProviderAdapter implements ProviderAdapter {
       };
     }
     if (job.modelId.startsWith('fake-image-')) {
+      const image = (position: number) => ({
+        kind: 'media.image' as const,
+        mime: 'image/png',
+        filename: position === 0 ? 'fixture.png' : `fixture-${position + 1}.png`,
+        base64:
+          'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL8WQAAAABJRU5ErkJggg==',
+      });
+      // More than one image was asked for: hand back the list.
+      const requested = job.imageCount ?? 1;
+      const returned = job.fakeImageCount ?? requested;
       return {
-        output: {
-          kind: 'media.image',
-          mime: 'image/png',
-          filename: 'fixture.png',
-          base64:
-            'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL8WQAAAABJRU5ErkJggg==',
-        },
+        output:
+          requested > 1
+            ? { images: Array.from({ length: returned }, (_, i) => image(i)) }
+            : image(0),
         costUsd: job.costUsd ?? 0,
         repro: { level: 'exact', seed: '42', providerVersion: job.modelId },
         rawResponse: { fake: true, fixture: 'png' },

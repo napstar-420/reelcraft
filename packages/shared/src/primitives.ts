@@ -25,6 +25,8 @@ export const ArtifactKind = z.enum([
   'media.audio',
   /** An ordered list of video clips in one artifact (e.g. a Flow stage's clips). */
   'media.video_list',
+  /** An ordered list of images from one Generate Image run (`config.count` > 1). */
+  'media.image_list',
   'file.subtitles',
   'timeline',
 ]);

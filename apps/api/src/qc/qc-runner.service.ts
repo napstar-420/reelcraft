@@ -82,7 +82,7 @@ export class QcRunner {
       {
         modality: 'text',
         modelId: args.judge.modelId,
-        params: qcParams(params, args.envelope),
+        params: qcParams(params, args.envelope, args.judge.provider),
         renderedPrompt: prompt.user,
         system: prompt.system,
       },
@@ -132,14 +132,30 @@ export class QcRunner {
 }
 
 /** The judge's request params: the attached image or audio, or a clip list's
- * videos. A judge given clips must open the files itself (`__inspectFiles`). */
-function qcParams(params: Record<string, unknown>, envelope: QcEnvelope): Record<string, unknown> {
+ * videos or an image list's images. A judge given clips must open the files
+ * itself (`__inspectFiles`); so must Codex given images, while other judges
+ * get the images attached. */
+function qcParams(
+  params: Record<string, unknown>,
+  envelope: QcEnvelope,
+  judgeProvider: string,
+): Record<string, unknown> {
   if (envelope.clips?.length) {
     return {
       ...params,
       __inspectFiles: true,
       slots: Object.fromEntries(
         envelope.clips.map((clip, i) => [`qcClip${i + 1}`, { sourceKey: clip.sourceKey }]),
+      ),
+    };
+  }
+  if (envelope.images?.length) {
+    return {
+      ...params,
+      // Codex can't be sent files; it opens them itself. Other judges get them attached.
+      ...(judgeProvider === 'codex' && { __inspectFiles: true }),
+      slots: Object.fromEntries(
+        envelope.images.map((image, i) => [`qcImage${i + 1}`, { sourceKey: image.sourceKey }]),
       ),
     };
   }

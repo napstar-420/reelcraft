@@ -57,10 +57,13 @@ function isCompatibleWithOne(
   }
 
   if (!isSchema) {
-    // A video list binds as its array of clips, so it satisfies a video slot
-    // (the slot must take many; the validator checks that).
+    // A video list binds as its array of clips, and an image list as its array
+    // of images, so each satisfies a slot of its item kind (the slot must take
+    // many; the validator checks that).
     const sameKind =
-      source.kind === accept || (source.kind === 'media.video_list' && accept === 'media.video');
+      source.kind === accept ||
+      (source.kind === 'media.video_list' && accept === 'media.video') ||
+      (source.kind === 'media.image_list' && accept === 'media.image');
     return sameKind
       ? { compatible: true }
       : {

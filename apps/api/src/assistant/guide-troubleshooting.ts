@@ -98,11 +98,13 @@ export const TROUBLESHOOTING: TroubleshootingEntry[] = [
   {
     matches: [
       'a video list needs a cardinality',
+      'an image list needs a cardinality',
       "cardinality:'many' slot bound to a scalar source",
       "cardinality:'one' slot bound to an iterating producer",
       "cannot bind an iterating stage's output",
     ],
-    means: 'A many-slot got one value, or a one-slot got the list an iterating stage produces.',
+    means:
+      'A many-slot got one value, or a one-slot got a list: what an iterating stage produces, or a video or image list.',
     fix: "Give a many-slot a list (an iterating stage's output saved to memory with writes {key:'$'}, read with {from:'memory'}). For a one-slot fed by an iterating stage, iterate this stage too with alignWith:'item', or read the list from memory.",
   },
   {

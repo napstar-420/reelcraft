@@ -9,7 +9,7 @@ what the stage does, what inputs (slots) and settings it has, and what it can ou
 | Type                                                      | What it does                                                    | Output                     | Cost                       |
 | --------------------------------------------------------- | --------------------------------------------------------------- | -------------------------- | -------------------------- |
 | [Generate Text](./generate-text.md)                       | Writes text, structured data or a timeline with an AI model     | `text`, `data`, `timeline` | Paid, or your ChatGPT plan |
-| [Generate Image](./generate-image.md)                     | Makes an image from a prompt                                    | `media.image`              | Paid, or your ChatGPT plan |
+| [Generate Image](./generate-image.md)                     | Makes an image, or several, from a prompt                       | `media.image`, image list  | Paid, or your ChatGPT plan |
 | [Generate Video](./generate-video.md)                     | Makes a short video clip                                        | `media.video`              | Paid                       |
 | [Generate Speech](./generate-speech.md)                   | Turns text into a voice-over                                    | `media.audio`              | Paid                       |
 | [Analyze Media](./analyze-media.md)                       | Transcribes speech with word timings, or reads a file's details | `data`                     | Paid, or free              |

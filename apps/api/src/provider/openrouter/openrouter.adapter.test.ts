@@ -244,6 +244,63 @@ describe('OpenRouterAdapter structured output', () => {
     });
   });
 
+  it('asks for n images, returns each one, and prices them all', async () => {
+    const fetch = vi.fn().mockResolvedValue(
+      response({
+        data: [{ b64_json: 'one' }, { url: 'https://img.test/2.png' }, { b64_json: 'three' }],
+        usage: { total_cost: 0.12 },
+      }),
+    );
+    vi.stubGlobal('fetch', fetch);
+    const { adapter } = fixture();
+    const request = {
+      modelId: 'image-model',
+      renderedPrompt: 'Engine prompt',
+      params: { __mediaKind: 'media.image', count: 3, priceUsd: 0.04 },
+    };
+    await expect(adapter.estimate(request)).resolves.toMatchObject({
+      expectedUsd: 0.04 * 3,
+      ceilingUsd: 0.04 * 3,
+    });
+    const handle = await adapter.submit(request, 'image-list-job');
+    const result = await adapter.fetch(handle);
+
+    const body = JSON.parse(String((fetch.mock.calls[0]?.[1] as RequestInit).body));
+    expect(body).toEqual({ model: 'image-model', prompt: 'Engine prompt', n: 3, priceUsd: 0.04 });
+    expect(result.output).toEqual({
+      images: [
+        { kind: 'media.image', base64: 'one', mime: 'image/png', filename: 'image.png' },
+        {
+          kind: 'media.image',
+          sourceUrl: 'https://img.test/2.png',
+          mime: 'image/png',
+          filename: 'image-2.png',
+        },
+        { kind: 'media.image', base64: 'three', mime: 'image/png', filename: 'image-3.png' },
+      ],
+    });
+    expect(result.costUsd).toBe(0.12);
+  });
+
+  it('prices a list by the images that came back when the provider reports no cost', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(response({ data: [{ b64_json: 'a' }, { b64_json: 'b' }] })),
+    );
+    const { adapter } = fixture();
+    const handle = await adapter.submit(
+      {
+        modelId: 'image-model',
+        renderedPrompt: 'p',
+        params: { __mediaKind: 'media.image', count: 4, priceUsd: 0.05 },
+      },
+      'image-short-job',
+    );
+    const result = await adapter.fetch(handle);
+    expect((result.output as { images: unknown[] }).images).toHaveLength(2);
+    expect(result.costUsd).toBeCloseTo(0.1);
+  });
+
   it('omits max_tokens from the request body when it is absent from params', async () => {
     const fetch = vi
       .fn()

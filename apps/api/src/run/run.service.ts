@@ -1059,34 +1059,35 @@ export class RunService {
         }),
       )
     ).filter((value) => value !== undefined);
-    const clips =
-      row.kind === 'media.video_list'
-        ? (
-            await Promise.all(
-              (
-                ((row.data as { clips?: unknown[] } | null)?.clips ?? []) as Array<{
-                  index: number;
-                  label: string | null;
-                  blobId: string;
-                  probe: Probe | null;
-                }>
-              ).map(async (clip) => {
-                const access = await this.blobs.readUrl(ownerId, clip.blobId);
-                if (access?.status !== 'live') return undefined;
-                return {
-                  index: clip.index,
-                  label: clip.label,
-                  url: access.url,
-                  probe: clip.probe ?? null,
-                };
-              }),
-            )
-          ).filter((clip) => clip !== undefined)
-        : undefined;
+    const listItems = async (key: 'clips' | 'images') =>
+      (
+        await Promise.all(
+          (
+            ((row.data as Record<string, unknown[]> | null)?.[key] ?? []) as Array<{
+              index: number;
+              label: string | null;
+              blobId: string;
+              probe: Probe | null;
+            }>
+          ).map(async (item) => {
+            const access = await this.blobs.readUrl(ownerId, item.blobId);
+            if (access?.status !== 'live') return undefined;
+            return {
+              index: item.index,
+              label: item.label,
+              url: access.url,
+              probe: item.probe ?? null,
+            };
+          }),
+        )
+      ).filter((item) => item !== undefined);
+    const images = row.kind === 'media.image_list' ? await listItems('images') : undefined;
+    const clips = row.kind === 'media.video_list' ? await listItems('clips') : undefined;
     return {
       id: row.id,
       kind: row.kind,
       ...(clips && { clips }),
+      ...(images && { images }),
       // Subtitle cues are shown inline, so their (small) text rides along
       // with the view rather than the browser fetching the presigned URL.
       data:

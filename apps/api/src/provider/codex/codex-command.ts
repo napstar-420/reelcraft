@@ -55,6 +55,7 @@ const RESERVED_CONFIG_KEYS = new Set([
   'ephemeral',
   'slots',
   '__mediaKind',
+  'count',
   'startUrl',
   'maxSteps',
   'timeoutMs',
@@ -108,6 +109,12 @@ export function buildCodexArgs(input: {
   return args;
 }
 
+/** `params.count`: how many images an image request asks for (1 when unset). */
+export function requestedImageCount(params: Record<string, unknown> | undefined): number {
+  const count = params?.count;
+  return typeof count === 'number' && Number.isInteger(count) && count > 1 ? count : 1;
+}
+
 export function buildCodexPrompt(input: {
   modality: Modality;
   params?: Record<string, unknown>;
@@ -115,9 +122,12 @@ export function buildCodexPrompt(input: {
   renderedPrompt?: string | undefined;
   output?: OutputDef | undefined;
 }): string {
+  const imageCount = requestedImageCount(input.params);
   const modalityInstruction =
     input.modality === 'image'
-      ? 'Use the installed image-generation extension. Write exactly one final image under outputs/ and return the supplied result manifest with its relative path, MIME type, and filename.'
+      ? imageCount > 1
+        ? `Use the installed image-generation extension. Make ${imageCount} different final images from the prompt, one at a time, and write each under outputs/. Return the supplied result manifest with an "images" list of ${imageCount} entries, in order, each with its relative path, MIME type, and filename.`
+        : 'Use the installed image-generation extension. Write exactly one final image under outputs/ and return the supplied result manifest with its relative path, MIME type, and filename.'
       : input.modality === 'browser'
         ? 'Use BrowserOS Neo exclusively. Call its name_session operation first with the supplied session name, work only in tabs created for this task, close or detach only those tabs when finished, and return the supplied manifest containing the structured result plus any screenshot or download evidence written under outputs/. Do not fall back to another browser tool.'
         : undefined;

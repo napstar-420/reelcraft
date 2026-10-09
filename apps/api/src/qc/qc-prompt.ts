@@ -29,6 +29,16 @@ export function buildQcPrompt(envelope: QcEnvelope): { system: string; user: str
           'Add "failedClips" to your JSON: the index of every clip that must be made again (an empty list when none). Name those clips and what is wrong with each in the critique. Do not list a clip that is acceptable.',
         ]
       : []),
+    ...(envelope.images
+      ? [
+          `The artifact is a set of ${envelope.images.length} images, attached to this message in this order: ${envelope.images
+            .map((c) => `${c.label} (index ${c.index})`)
+            .join(
+              ', ',
+            )}. Look at every image and evaluate the set as a whole against the criteria.`,
+          'Give one verdict for the whole set: the set is accepted or rejected together. Name any image that is a problem, and what is wrong with it, in the critique.',
+        ]
+      : []),
     ...(envelope.transcript !== undefined
       ? ['A transcript of the artifact audio is included as "transcript".']
       : []),

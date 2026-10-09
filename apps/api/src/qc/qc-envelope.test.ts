@@ -104,4 +104,13 @@ describe('buildQcEnvelope', () => {
     expect(envelope.clips![0]).not.toBe(clips[0]);
     expect('clips' in buildQcEnvelope(baseSource)).toBe(false);
   });
+
+  it('includes the images of an image list, copied field by field', () => {
+    const images = [{ sourceKey: 'k/1.png', mime: 'image/png', index: 0, label: 'Image 1' }];
+    const envelope = buildQcEnvelope({ ...baseSource, images });
+    expect(envelope.images).toEqual(images);
+    expect(envelope.images![0]).not.toBe(images[0]);
+    expect('images' in buildQcEnvelope(baseSource)).toBe(false);
+    expect('clips' in envelope).toBe(false);
+  });
 });

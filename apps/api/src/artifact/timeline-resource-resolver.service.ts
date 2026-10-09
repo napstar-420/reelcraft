@@ -1,9 +1,9 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { Timeline } from '@reelcraft/shared';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
 import { artifact, blob, run } from '../db/schema';
-import { parseArtifactHandle, storedClips } from './clip-handle';
+import { LIST_KINDS, listItemKind, parseArtifactHandle, storedListItems } from './clip-handle';
 
 export type ResolvedTimelineResource = {
   handle: string;
@@ -111,7 +111,7 @@ export class TimelineResourceResolverService {
     return result;
   }
 
-  /** One clip of a `media.video_list` artifact (`artifact:<id>#<position>`). */
+  /** One item of a `media.video_list` or `media.image_list` artifact (`artifact:<id>#<position>`). */
   private async resolveClip(
     runId: string,
     handle: string,
@@ -119,18 +119,19 @@ export class TimelineResourceResolverService {
     position: number,
   ): Promise<ResolvedTimelineResource | undefined> {
     const [row] = await this.db
-      .select({ data: artifact.data })
+      .select({ data: artifact.data, kind: artifact.kind })
       .from(artifact)
       .where(
         and(
           eq(artifact.id, artifactId),
           eq(artifact.runId, runId),
-          eq(artifact.kind, 'media.video_list'),
+          inArray(artifact.kind, [...LIST_KINDS]),
           eq(artifact.stale, false),
         ),
       )
       .limit(1);
-    const clip = storedClips(row?.data)[position];
+    const listKind = row?.kind === 'media.image_list' ? 'media.image_list' : 'media.video_list';
+    const clip = storedListItems(listKind, row?.data)[position];
     const [blobRow] = clip
       ? await this.db.select().from(blob).where(eq(blob.id, clip.blobId)).limit(1)
       : [];
@@ -143,7 +144,7 @@ export class TimelineResourceResolverService {
     }
     return {
       handle,
-      kind: 'media.video',
+      kind: listItemKind(listKind),
       sourceKey: blobRow.objectKey,
       ...(clip.probe !== null && clip.probe !== undefined && { probe: clip.probe }),
     };

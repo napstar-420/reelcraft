@@ -50,4 +50,15 @@ describe('buildChatgptPrompt', () => {
     expect(prompt).toContain('<system_prompt>\nBe terse\n</system_prompt>');
     expect(prompt.endsWith('<request>\nHi\n</request>')).toBe(true);
   });
+
+  it('asks for several images in the message when an image list is wanted', () => {
+    const prompt = buildChatgptPrompt({ renderedPrompt: 'A red fox', imageCount: 4 });
+    expect(prompt).toContain('A red fox');
+    expect(prompt).toContain('Make 4 different images from this request');
+  });
+
+  it('leaves a single-image request as it was', () => {
+    expect(buildChatgptPrompt({ renderedPrompt: 'A red fox', imageCount: 1 })).toBe('A red fox');
+    expect(buildChatgptPrompt({ renderedPrompt: 'A red fox' })).toBe('A red fox');
+  });
 });

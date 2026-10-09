@@ -83,6 +83,75 @@ describe('CodexProviderAdapter', () => {
     );
   });
 
+  it('returns a list of generated images, each confined to the output directory', async () => {
+    const { adapter, launcher } = await fixture();
+    let schema: { properties: { output: unknown } } | undefined;
+    launcher.launch.mockImplementationOnce(async ({ jobDir }: { jobDir: string }) => {
+      schema = JSON.parse(await readFile(join(jobDir, 'schema.json'), 'utf8'));
+      await writeFile(join(jobDir, 'outputs', 'a.png'), 'a');
+      await writeFile(join(jobDir, 'outputs', 'b.webp'), 'b');
+      await writeFile(
+        join(jobDir, 'result.json'),
+        JSON.stringify({
+          version: 1,
+          output: {
+            images: [
+              { path: 'outputs/a.png', mime: 'image/png', filename: 'a.png' },
+              { path: 'outputs/b.webp', mime: 'image/webp', filename: 'b.webp' },
+            ],
+          },
+        }),
+      );
+      await writeFile(join(jobDir, 'status.json'), JSON.stringify({ state: 'succeeded' }));
+      return 322;
+    });
+    const handle = await adapter.submit(
+      {
+        modality: 'image',
+        modelId: 'gpt-example',
+        params: { reasoningEffort: 'low', count: 2 },
+        output: { kind: 'media.image' },
+      },
+      'image-list-key',
+    );
+    expect(schema?.properties.output).toMatchObject({
+      properties: { images: { type: 'array', minItems: 1, maxItems: 2 } },
+    });
+    const result = await adapter.fetch(handle);
+    expect(result.output).toEqual({
+      images: [
+        expect.objectContaining({ kind: 'media.image', mime: 'image/png', filename: 'a.png' }),
+        expect.objectContaining({ kind: 'media.image', mime: 'image/webp', filename: 'b.webp' }),
+      ],
+    });
+  });
+
+  it('refuses a listed image that escapes the output directory', async () => {
+    const { adapter, launcher } = await fixture();
+    launcher.launch.mockImplementationOnce(async ({ jobDir }: { jobDir: string }) => {
+      await writeFile(join(jobDir, 'secret.png'), 'x');
+      await writeFile(
+        join(jobDir, 'result.json'),
+        JSON.stringify({
+          version: 1,
+          output: { images: [{ path: 'secret.png', mime: 'image/png', filename: 'secret.png' }] },
+        }),
+      );
+      await writeFile(join(jobDir, 'status.json'), JSON.stringify({ state: 'succeeded' }));
+      return 323;
+    });
+    const handle = await adapter.submit(
+      {
+        modality: 'image',
+        modelId: 'gpt-example',
+        params: { reasoningEffort: 'low', count: 2 },
+        output: { kind: 'media.image' },
+      },
+      'image-list-escape-key',
+    );
+    await expect(adapter.fetch(handle)).rejects.toThrow('escapes');
+  });
+
   it('returns structured browser data and supporting evidence', async () => {
     const { adapter, launcher } = await fixture();
     launcher.launch.mockImplementationOnce(async ({ jobDir }: { jobDir: string }) => {

@@ -48,6 +48,7 @@ const OUTPUT_LABELS: Record<OutputDef['kind'], string> = {
   'media.video': 'video',
   'media.audio': 'audio',
   'media.video_list': 'videos',
+  'media.image_list': 'images',
   'file.subtitles': 'subtitles',
   timeline: 'timeline',
 };
