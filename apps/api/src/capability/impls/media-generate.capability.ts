@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { MAX_IMAGE_COUNT } from '@reelcraft/shared';
+import { MAX_IMAGE_COUNT, MAX_PICK_IMAGE_COUNT } from '@reelcraft/shared';
 import type {
   CostEstimate,
   JobHandle,
@@ -131,13 +131,13 @@ export class ImageGenerateCapability extends ProviderMediaCapability {
         type: 'integer',
         minimum: 2,
         maximum: MAX_IMAGE_COUNT,
-        description: `How many images to make from the prompt, 2 to ${MAX_IMAGE_COUNT}. Only for an Images output.`,
+        description: `How many images to make from the prompt. An Images output keeps them all: 2 to ${MAX_IMAGE_COUNT}. An Image output makes them as candidates for quality control to pick the best from: 2 to ${MAX_PICK_IMAGE_COUNT}, and the stage needs quality control.`,
       },
       onShortfall: {
         type: 'string',
         enum: ['warn', 'fail'],
         description:
-          'If fewer images come back than asked for. Warn and continue keeps the images that came back and notes the shortfall in the stage log. Fail and retry counts the attempt as a provider error and tries again, like any other crash. Defaults to warn.',
+          'If fewer images come back than asked for (needs a number of images). Warn and continue keeps the images that came back and notes the shortfall in the stage log. Fail and retry counts the attempt as a provider error and tries again, like any other crash. Defaults to warn.',
       },
     },
   };
@@ -178,17 +178,28 @@ export class ImageGenerateCapability extends ProviderMediaCapability {
         });
       }
     } else {
-      if (count !== undefined && count !== 1) {
-        issues.push({
-          path: 'config.count',
-          message: 'Number of images only applies to an Images output',
-          severity: 'error',
-        });
-      }
-      if (cfg?.onShortfall !== undefined) {
+      // An Image output with several candidates: quality control picks the best.
+      const picking = count !== undefined && count !== 1;
+      if (picking) {
+        if (!Number.isInteger(count) || count < 2 || count > MAX_PICK_IMAGE_COUNT) {
+          issues.push({
+            path: 'config.count',
+            message: `Candidates to pick from needs a number of images, 2 to ${MAX_PICK_IMAGE_COUNT}`,
+            severity: 'error',
+          });
+        }
+        if (!stage.qc) {
+          issues.push({
+            path: 'config.count',
+            message:
+              'Picking the best of several images needs quality control: turn on quality control for this stage',
+            severity: 'error',
+          });
+        }
+      } else if (cfg?.onShortfall !== undefined) {
         issues.push({
           path: 'config.onShortfall',
-          message: 'If fewer images come back only applies to an Images output',
+          message: 'If fewer images come back only applies when several images are made',
           severity: 'error',
         });
       }

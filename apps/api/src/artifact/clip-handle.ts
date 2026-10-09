@@ -53,6 +53,12 @@ export function storedImages(data: unknown): StoredClip[] {
   return Array.isArray(images) ? (images as StoredClip[]) : [];
 }
 
+/** A picked `media.image` artifact keeps the candidates it was chosen from in `data.candidates`. */
+export function storedCandidates(data: unknown): StoredClip[] {
+  const candidates = (data as { candidates?: unknown } | null)?.candidates;
+  return Array.isArray(candidates) ? (candidates as StoredClip[]) : [];
+}
+
 /** The items of a stored list artifact of either kind, in order. */
 export function storedListItems(kind: ListKind, data: unknown): StoredClip[] {
   return kind === 'media.image_list' ? storedImages(data) : storedClips(data);

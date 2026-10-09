@@ -311,6 +311,80 @@ describe('QcRunner', () => {
     if (outcome.status === 'passed') expect(outcome.verdict).not.toHaveProperty('failedClips');
   });
 
+  describe('picking the best of several candidate images', () => {
+    function judgeReturning(output: Record<string, unknown>) {
+      const registry = new ProviderRegistry();
+      const submit = vi.fn(async (_req: ProviderRequest, _key: string) => ({
+        providerId: 'stub-pick',
+        externalId: 'job-1',
+      }));
+      registry.register({
+        id: 'stub-pick',
+        modalities: ['text'],
+        listModels: async () => [],
+        estimate: async () => ({ expectedUsd: 0, ceilingUsd: 0, basis: 'configured_ceiling' }),
+        submit,
+        poll: async () => ({ done: true, outcome: 'succeeded' }),
+        fetch: async () => ({
+          output: JSON.stringify(output),
+          costUsd: 0,
+          repro: { level: 'none' },
+          rawResponse: {},
+        }),
+        cancel: async () => ({ confirmed: true }),
+      } as ProviderAdapter);
+      return { runner: new QcRunner(registry), submit };
+    }
+    const envelope = buildQcEnvelope({
+      criteria: 'Sharp',
+      artifactKind: 'media.image',
+      artifactData: undefined,
+      includeInputs: false,
+      selectBest: true,
+      images: [
+        { sourceKey: 'run/a/1.png', mime: 'image/png', index: 0, label: 'Image 1' },
+        { sourceKey: 'run/a/3.png', mime: 'image/png', index: 2, label: 'Image 3' },
+      ],
+    });
+    const run = (runner: QcRunner) =>
+      runner.run({
+        envelope,
+        judge: { provider: 'stub-pick', modelId: 'stub', params: {} },
+        threshold: 70,
+        idempotencyKey: 'qc-pick-1',
+      });
+
+    it('asks the judge to choose and returns the image it chose', async () => {
+      const { runner, submit } = judgeReturning({ score: 90, critique: 'Best', bestImage: 2 });
+      const outcome = await run(runner);
+      const [request] = submit.mock.calls[0]!;
+      expect(request.system).toContain('2 candidates');
+      expect(request.system).toContain('"bestImage"');
+      expect(request.params).toMatchObject({
+        slots: { qcImage1: { sourceKey: 'run/a/1.png' }, qcImage2: { sourceKey: 'run/a/3.png' } },
+      });
+      expect(outcome.status).toBe('passed');
+      if (outcome.status === 'passed') expect(outcome.verdict.selectedImage).toBe(2);
+    });
+
+    it('still reports the best candidate when it scores under the threshold', async () => {
+      const { runner } = judgeReturning({ score: 40, critique: 'All soft', bestImage: 0 });
+      const outcome = await run(runner);
+      expect(outcome.status).toBe('failed');
+      if (outcome.status === 'failed') expect(outcome.verdict.selectedImage).toBe(0);
+    });
+
+    it('is a judge error when it names no candidate, or one it was not shown', async () => {
+      for (const output of [
+        { score: 90, critique: 'Fine' },
+        { score: 90, critique: 'Fine', bestImage: 1 },
+      ]) {
+        const outcome = await run(judgeReturning(output).runner);
+        expect(outcome.status).toBe('error');
+      }
+    });
+  });
+
   it('has a Codex judge open the images of a list itself', async () => {
     const registry = new ProviderRegistry();
     const submit = vi.fn(async (_req: ProviderRequest, _key: string) => ({

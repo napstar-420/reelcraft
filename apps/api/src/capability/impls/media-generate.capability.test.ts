@@ -128,8 +128,45 @@ describe('ImageGenerateCapability images', () => {
       const single = imageStage({ output: { kind: 'media.image' } });
       expect(messages({}, single)).toEqual([]);
       expect(messages({ count: 1 }, single)).toEqual([]);
-      expect(messages({ count: 3 }, single)).toEqual(['config.count']);
       expect(messages({ onShortfall: 'warn' }, single)).toEqual(['config.onShortfall']);
+    });
+
+    describe('picking the best of several candidates', () => {
+      const qc = {
+        criteria: 'Sharp',
+        threshold: 70,
+        model: { provider: 'codex', modelId: 'gpt-example', params: {} },
+        includeInputs: false,
+      } as const;
+      const picking = (overrides: Partial<StageDef> = {}) =>
+        imageStage({ output: { kind: 'media.image' }, qc, ...overrides });
+
+      it('accepts 2 to 4 candidates with quality control', () => {
+        for (const count of [2, 3, 4]) expect(messages({ count }, picking())).toEqual([]);
+        expect(messages({ count: 3, onShortfall: 'fail' }, picking())).toEqual([]);
+      });
+
+      it('may iterate and write to memory', () => {
+        const stage = picking({
+          iterate: { over: { from: 'const', value: [] }, itemAlias: 'x', itemRetryLimit: 0 },
+          writes: { image: '$' },
+        });
+        expect(messages({ count: 3 }, stage)).toEqual([]);
+      });
+
+      it('allows at most 4 candidates', () => {
+        expect(messages({ count: 5 }, picking())).toEqual(['config.count']);
+        expect(messages({ count: 2.5 }, picking())).toEqual(['config.count']);
+      });
+
+      it('needs quality control to pick', () => {
+        const issues = capability.validate({ count: 3 } as never, picking({ qc: undefined }));
+        expect(issues).toHaveLength(1);
+        expect(issues[0]).toMatchObject({
+          path: 'config.count',
+          message: expect.stringContaining('needs quality control'),
+        });
+      });
     });
   });
 

@@ -14,6 +14,10 @@ export type MediaConstraints = z.infer<typeof MediaConstraints>;
 /** The most images one Generate Image run can be asked for (`config.count`). */
 export const MAX_IMAGE_COUNT = 8;
 
+/** The most candidates a Generate Image stage with an Image output makes for
+ * quality control to pick the best from (`config.count`). */
+export const MAX_PICK_IMAGE_COUNT = 4;
+
 const OutputInstructions = z.string().max(4_000).optional();
 
 /** §4.2 — the closed artifact kinds a Stage may declare as its output. */

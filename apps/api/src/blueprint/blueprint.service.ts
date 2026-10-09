@@ -528,12 +528,15 @@ export class BlueprintService {
     return issues;
   }
 
-  /** QC on an image list needs a judge that can look at all the images at once. */
+  /** QC on an image list, or on an Image output made as several candidates,
+   * needs a judge that can look at all the images at once. */
   private async validateQcImages(dto: CreateBlueprintVersionDto): Promise<ValidationIssue[]> {
     const issues: ValidationIssue[] = [];
     for (const stage of dto.graph) {
-      if (!stage.qc || stage.output.kind !== 'media.image_list') continue;
+      if (!stage.qc) continue;
       const count = (stage.config as { count?: unknown }).count;
+      const picks = stage.output.kind === 'media.image' && typeof count === 'number' && count > 1;
+      if (stage.output.kind !== 'media.image_list' && !picks) continue;
       const problem = await judgeImagesProblem(
         this.providers,
         stage.qc.model,

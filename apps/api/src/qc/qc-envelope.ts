@@ -24,6 +24,8 @@ export interface QcEnvelope {
   clips?: QcClip[];
   /** Image lists only: every image, in order, judged together as one set. */
   images?: QcClip[];
+  /** With `images`: they are candidates for one image, and the judge picks the best. */
+  selectBest?: true;
 }
 
 export interface QcClip {
@@ -46,6 +48,7 @@ export interface QcEnvelopeSource {
   media?: { sourceKey: string; mime: string };
   clips?: QcClip[];
   images?: QcClip[];
+  selectBest?: boolean;
 }
 
 /**
@@ -98,5 +101,6 @@ export function buildQcEnvelope(source: QcEnvelopeSource): QcEnvelope {
       label: c.label,
     }));
   }
+  if (source.selectBest && envelope.images) envelope.selectBest = true;
   return envelope;
 }

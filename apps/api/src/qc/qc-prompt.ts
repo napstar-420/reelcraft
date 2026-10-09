@@ -11,7 +11,7 @@ export function buildQcPrompt(envelope: QcEnvelope): { system: string; user: str
           .map((d) => `"${d.key}" (${d.description})`)
           .join(', ')}.`
       : 'Provide a single overall score from 0-100.',
-    'Respond with JSON only, matching: {"dimensions"?: [{"key": string, "score": number, "critique"?: string}], "score"?: number, "critique": string, "failedClips"?: number[]}.',
+    'Respond with JSON only, matching: {"dimensions"?: [{"key": string, "score": number, "critique"?: string}], "score"?: number, "critique": string, "failedClips"?: number[], "bestImage"?: number}.',
     ...(envelope.media
       ? [
           envelope.media.mime.startsWith('audio/')
@@ -30,14 +30,23 @@ export function buildQcPrompt(envelope: QcEnvelope): { system: string; user: str
         ]
       : []),
     ...(envelope.images
-      ? [
-          `The artifact is a set of ${envelope.images.length} images, attached to this message in this order: ${envelope.images
-            .map((c) => `${c.label} (index ${c.index})`)
-            .join(
-              ', ',
-            )}. Look at every image and evaluate the set as a whole against the criteria.`,
-          'Give one verdict for the whole set: the set is accepted or rejected together. Name any image that is a problem, and what is wrong with it, in the critique.',
-        ]
+      ? envelope.selectBest
+        ? [
+            `The artifact is one image, and there are ${envelope.images.length} candidates for it, attached to this message in this order: ${envelope.images
+              .map((c) => `${c.label} (index ${c.index})`)
+              .join(
+                ', ',
+              )}. Look at every candidate, choose the single best one, and evaluate that image against the criteria.`,
+            'Add "bestImage" to your JSON: the index of the candidate you chose. The score and the critique are for that image alone. Give a low score when none of the candidates is acceptable, and say in the critique what is wrong with them.',
+          ]
+        : [
+            `The artifact is a set of ${envelope.images.length} images, attached to this message in this order: ${envelope.images
+              .map((c) => `${c.label} (index ${c.index})`)
+              .join(
+                ', ',
+              )}. Look at every image and evaluate the set as a whole against the criteria.`,
+            'Give one verdict for the whole set: the set is accepted or rejected together. Name any image that is a problem, and what is wrong with it, in the critique.',
+          ]
       : []),
     ...(envelope.transcript !== undefined
       ? ['A transcript of the artifact audio is included as "transcript".']

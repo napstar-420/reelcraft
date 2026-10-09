@@ -288,6 +288,10 @@ const IMAGE_SHORTFALL_KEY = 'onShortfall';
 export const MIN_IMAGE_COUNT = 2;
 export const MAX_IMAGE_COUNT = 8;
 export const DEFAULT_IMAGE_COUNT = 4;
+/** An Image output can also make several candidates for quality control to
+ * pick the best from. Mirrors `MAX_PICK_IMAGE_COUNT` in `@reelcraft/shared`. */
+export const MAX_PICK_IMAGE_COUNT = 4;
+export const DEFAULT_PICK_IMAGE_COUNT = 3;
 
 export type ImageShortfall = 'warn' | 'fail';
 
@@ -309,6 +313,26 @@ export function imageShortfall(config: Record<string, unknown>): ImageShortfall 
 export function withImageCount(stage: StageDef, count: number): StageDef {
   const next = Math.min(Math.max(Math.trunc(count), MIN_IMAGE_COUNT), MAX_IMAGE_COUNT);
   return { ...stage, config: { ...stage.config, [IMAGE_COUNT_KEY]: next } };
+}
+
+/** How many candidates an Image output makes for quality control to pick from,
+ * or `undefined` when it makes just the one image. */
+export function pickCount(config: Record<string, unknown>): number | undefined {
+  const count = config[IMAGE_COUNT_KEY];
+  return typeof count === 'number' && count > 1 ? count : undefined;
+}
+
+/** The stage making `count` candidates to pick from (kept within the allowed
+ * range), or one image again when `count` is `undefined`. */
+export function withPickCount(stage: StageDef, count: number | undefined): StageDef {
+  const rest = { ...stage.config };
+  delete rest[IMAGE_COUNT_KEY];
+  if (count === undefined) {
+    delete rest[IMAGE_SHORTFALL_KEY];
+    return { ...stage, config: rest };
+  }
+  const next = Math.min(Math.max(Math.trunc(count), MIN_IMAGE_COUNT), MAX_PICK_IMAGE_COUNT);
+  return { ...stage, config: { ...rest, [IMAGE_COUNT_KEY]: next } };
 }
 
 /** "Warn and continue" is the default, so it is stored as no value at all. */

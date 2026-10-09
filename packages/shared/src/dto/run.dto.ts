@@ -214,6 +214,19 @@ export const ArtifactViewDto = z.object({
       }),
     )
     .optional(),
+  /** The candidates a `media.image` artifact was picked from (Generate Image with
+   * several candidates), in order; `selected` marks the one the artifact is. */
+  candidates: z
+    .array(
+      z.object({
+        index: z.number().int(),
+        label: z.string().nullable(),
+        url: BrowserMediaUrl,
+        probe: Probe.nullable(),
+        selected: z.boolean(),
+      }),
+    )
+    .optional(),
 });
 export type ArtifactViewDto = z.infer<typeof ArtifactViewDto>;
 
