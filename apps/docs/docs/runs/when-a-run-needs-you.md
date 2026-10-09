@@ -80,5 +80,7 @@ arrange the timeline. See [Timeline editor](../video/timeline-editor.md).
 
 ## Reminders
 
-Reelcraft doesn't send notifications. Keep the run page open, or check the [Runs list](./runs-list.md)
-for runs in a **Paused** state.
+Reelcraft [notifies you](./notifications.md) when a run needs you: from the bell at the top of the page,
+and as a pop-up while you're looking at Reelcraft. If a run is still waiting after 24 hours, you get
+**Still waiting for you**, and again at 48 hours. You can also check the [Runs list](./runs-list.md) for
+runs in a **Paused** state.

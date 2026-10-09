@@ -5,6 +5,7 @@ import { LedgerService } from '../budget/ledger.service';
 import { CapabilityRegistry } from '../capability/capability.registry';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
 import { LiveEvents } from '../live/live-events';
+import { NotificationService } from '../notification/notification.service';
 import { blueprintVersion, run, stageAttempt, stageExecution } from '../db/schema/index';
 import { HumanWaitService } from './human-wait.service';
 import { RunMutationService } from './run-mutation.service';
@@ -23,6 +24,7 @@ export class RunCancellationService {
     @Optional() private readonly capabilities?: CapabilityRegistry,
     @Optional() private readonly ledger?: LedgerService,
     @Optional() private readonly events?: LiveEvents,
+    @Optional() private readonly notifications?: NotificationService,
   ) {}
 
   async cancel(runId: string) {
@@ -36,6 +38,11 @@ export class RunCancellationService {
           .set({ state: 'CANCELLED', endedAt: new Date().toISOString() })
           .where(eq(run.id, runId));
         await this.waits.resolveAll(tx, runId);
+        return this.notifications?.insertSafely(tx, {
+          runId,
+          kind: 'cancelled',
+          dedupeKey: `cancelled:${runId}`,
+        });
       },
       'run/cancelled',
     );
@@ -46,6 +53,7 @@ export class RunCancellationService {
     await this.settleOutstanding(runId);
     // `withLockedRun` already announced the run; settling changed its stages after that.
     this.events?.publish({ type: 'run', runId });
+    this.notifications?.deliver(result.value);
     try {
       await this.dispatcher.dispatch(result.wakeupId);
     } catch (error) {

@@ -6,6 +6,7 @@ import {
   blob,
   humanWait,
   ledgerEntry,
+  notification,
   run,
   runMemory,
   runWakeup,
@@ -45,6 +46,7 @@ export async function deleteRunsCascade(
   await tx.delete(ledgerEntry).where(inArray(ledgerEntry.runId, runIds));
   await tx.delete(humanWait).where(inArray(humanWait.runId, runIds));
   await tx.delete(runWakeup).where(inArray(runWakeup.runId, runIds));
+  await tx.delete(notification).where(inArray(notification.runId, runIds));
   await tx.delete(runMemory).where(inArray(runMemory.runId, runIds));
   if (artifactIds.length) {
     await tx.delete(artifactAttachment).where(inArray(artifactAttachment.artifactId, artifactIds));

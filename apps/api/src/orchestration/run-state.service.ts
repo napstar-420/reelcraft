@@ -36,7 +36,7 @@ export class RunStateService {
    * bound to the run's revision, so a manual resume or any other operator
    * action in the meantime makes it stale and it is dropped. A run that is
    * no longer RUNNING (cancelled, paused by hand) is left alone. */
-  async pauseForQuota(runId: string, resumeAt: string): Promise<void> {
+  async pauseForQuota(runId: string, resumeAt: string): Promise<boolean> {
     const paused = await this.db.transaction(async (tx) => {
       const [row] = await tx
         .update(run)
@@ -55,9 +55,10 @@ export class RunStateService {
       });
       return true;
     });
-    if (!paused) return;
+    if (!paused) return false;
     this.logger.log({ runId, toState: 'PAUSED_QUOTA', resumeAt }, 'run state changed');
     this.events.publish({ type: 'run', runId });
+    return true;
   }
 
   async setCursor(runId: string, stageKey: string | null): Promise<void> {

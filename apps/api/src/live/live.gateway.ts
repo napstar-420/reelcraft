@@ -57,6 +57,14 @@ export class LiveGateway implements OnGatewayInit, OnGatewayConnection, OnModule
 
   async route(event: LiveEvent): Promise<void> {
     if (this.server.engine.clientsCount === 0) return;
+    if (event.type === 'notification') {
+      this.server.to(userRoom(event.recipientId)).emit('notification:created', event.notification);
+      return;
+    }
+    if (event.type === 'notifications') {
+      this.server.to(userRoom(event.recipientId)).emit('notifications:changed');
+      return;
+    }
     const owner = await this.ownerOf(event.runId);
     if (owner === undefined) return;
     const room = this.server.to(userRoom(owner));

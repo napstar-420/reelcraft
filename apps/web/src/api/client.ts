@@ -1,4 +1,5 @@
 import type {
+  ListNotificationsResultDto,
   PronunciationDictionaryListDto,
   SpeechPreviewDto,
   SpeechPreviewRequestDto,
@@ -146,6 +147,10 @@ async function requestFile(path: string, body: unknown): Promise<{ blob: Blob; f
 }
 
 export const api = {
+  listNotifications: () => request<ListNotificationsResultDto>('/notifications'),
+  markNotificationRead: (id: string) =>
+    request<void>(`/notifications/${id}/read`, { method: 'POST' }),
+  markAllNotificationsRead: () => request<void>('/notifications/read-all', { method: 'POST' }),
   listChannels: (params?: { includeArchived?: boolean }) => {
     const qs = new URLSearchParams();
     if (params?.includeArchived) qs.set('includeArchived', 'true');
