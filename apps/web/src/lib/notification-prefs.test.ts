@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   NOTIFICATION_KINDS,
+  enabledKinds,
   isKindEnabled,
   loadNotificationPrefs,
   saveNotificationPrefs,
@@ -31,6 +32,16 @@ describe('isKindEnabled', () => {
     expect(isKindEnabled({ kinds: { failed: false } }, 'failed')).toBe(false);
     expect(isKindEnabled({ kinds: { cancelled: true } }, 'cancelled')).toBe(true);
     expect(isKindEnabled({ kinds: { failed: false } }, 'completed')).toBe(true);
+  });
+});
+
+describe('enabledKinds', () => {
+  it('lists what interrupts this browser', () => {
+    expect(enabledKinds({})).toHaveLength(NOTIFICATION_KINDS.length - 1);
+    expect(enabledKinds({})).not.toContain('cancelled');
+    const some = enabledKinds({ kinds: { failed: false, cancelled: true } });
+    expect(some).not.toContain('failed');
+    expect(some).toContain('cancelled');
   });
 });
 

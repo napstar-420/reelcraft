@@ -113,6 +113,11 @@ the release-please PR for 0.3.0 (Settings and the guide's in-app links) is #51.
 - **`CODEX_BROWSER_OS_URL` is set by the image**, so a fresh install's Settings shows the Neo address as "From the
   container environment". That's expected, not a user override.
 - **A Linux host without Docker Desktop** needs `--add-host=host.docker.internal:host-gateway` to reach Neo.
+- **Browser notifications** (Web Push, ADR-0011) work only on `localhost` or `https`: a service worker can't
+  register on a plain-`http` LAN address, so there the bell and pop-ups work but system notifications don't. The
+  container also needs outbound internet to reach the browser vendor's push service. The VAPID key is made on
+  first use and saved in Settings (`push.vapidPrivateKey`, sealed with `secrets.env` like provider keys); if
+  `secrets.env` is lost it is replaced and each browser resubscribes on its next page load.
 - **Deepgram** needs to reach the instance (`PUBLIC_API_BASE_URL`), so it doesn't work on a desktop install.
 - **Cloud sandboxes**: outbound traffic goes through a proxy that blocks some hosts (for example
   `auth.openai.com`), so real Codex sign-in and BrowserOS docs couldn't be checked from there. Docker needs

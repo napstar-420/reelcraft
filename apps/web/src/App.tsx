@@ -1,4 +1,4 @@
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { Routes, Route, useLocation } from 'react-router-dom';
 import { ChannelsPage } from './pages/ChannelsPage';
 import { BlueprintsPage } from './pages/BlueprintsPage';
@@ -10,6 +10,7 @@ import { SettingsPage } from './pages/SettingsPage';
 import { AppShell } from './components/app-shell';
 import { Skeleton } from './components/ui/skeleton';
 import { useLiveUpdates } from './hooks/useLiveUpdates';
+import { syncPushFromPrefs } from './lib/push';
 
 const TimelineEditorPage = lazy(() =>
   import('./pages/TimelineEditorPage').then((module) => ({ default: module.TimelineEditorPage })),
@@ -26,6 +27,9 @@ function RoutedShell({ children }: { children: React.ReactNode }) {
 
 export function App() {
   useLiveUpdates();
+  useEffect(() => {
+    void syncPushFromPrefs();
+  }, []);
   return (
     <RoutedShell>
       <Routes>
