@@ -26,8 +26,13 @@ Use this when one stage failed, or when you don't like what it made and want to 
    | **Only this stage**                 | Redoes just this stage. Later stages keep their current outputs |
    | **This and all later stages**       | Redoes this stage and every stage after it                      |
 
+   A stage that repeats for each item, such as one that makes an image for every scene, and that has
+   failed items also offers **Only the failed items**. It redoes just those items, each with its full
+   **Retries** again, and keeps the items that passed and their outputs.
+
 3. A summary appears, with the **Affected stages**, what is **Already spent** and the **Estimated rerun
-   cost**. Select **Confirm re-run**, or **Cancel**.
+   cost**. For **Only the failed items** it also lists the **Items** it will redo. Select **Confirm
+   re-run**, or **Cancel**.
 
 The run then continues from that stage. Earlier attempts stay in the stage's **Attempts** list. The
 stages whose outputs depended on the old result are marked **Stale** until they run again.
@@ -41,7 +46,8 @@ is **Running** or after it was **Paused** by hand. See [Run statuses](../referen
 ## Resume
 
 A **Failed** run can sometimes simply **Resume** where it stopped, after you fix the cause, for example by
-raising the budget, adding a model or topping up credit. It keeps all the work that succeeded. See
+raising the budget, adding a model or topping up credit. It keeps all the work that succeeded. In a stage
+that repeats for each item, it tries the failed items once more and then carries on with the rest. See
 [Pause, resume and cancel](./pause-resume-cancel.md).
 
 ## Start over with Rerun

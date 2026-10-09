@@ -313,9 +313,9 @@ describe('phase 7 chunk 4 — iterating stage per-item loop (e2e)', () => {
       .select()
       .from(stageExecution)
       .where(eq(stageExecution.id, brollExecution.id));
-    // The outer loop bubbles the failure straight up without ever writing
-    // to stage_execution itself — that stays whatever `stage.execute`'s
-    // caller (run.orchestrate) decides.
+    // This hand-driven loop only runs items; the real `stage.execute` also
+    // marks the stage failed once a batch settles (covered in
+    // iterate-concurrency.e2e.test.ts).
     expect(executionAfterFailure?.state).not.toBe('passed');
 
     // --- "Fix" the underlying issue and partial-resume ---

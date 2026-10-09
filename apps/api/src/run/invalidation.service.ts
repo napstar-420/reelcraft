@@ -378,13 +378,13 @@ export class InvalidationService {
           if (row.isIterating) {
             await tx
               .update(stageItem)
-              .set({ state: 'stale', outputArtifactId: null, failure: null })
+              .set({ state: 'stale', outputArtifactId: null, failure: null, startedAt: null })
               .where(eq(stageItem.stageExecutionId, row.id));
           }
         } else {
           await tx
             .update(stageItem)
-            .set({ state: 'stale', outputArtifactId: null, failure: null })
+            .set({ state: 'stale', outputArtifactId: null, failure: null, startedAt: null })
             .where(
               and(
                 eq(stageItem.stageExecutionId, row.id),

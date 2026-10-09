@@ -105,6 +105,7 @@ export const stageItem = pgTable(
     outputArtifactId: text('output_artifact_id').references(() => artifact.id), // artifact produced for this item
     costUsd: numeric('cost_usd', { precision: 12, scale: 4 }).notNull().default('0'), // total cost accrued by this item
     failure: jsonb('failure'), // mirrors stage_execution.failure (§14)
+    startedAt: timestamptz('started_at'), // when this item's current retry round began; null again once the item is invalidated
   },
   (t) => [
     uniqueIndex('stage_item_stage_execution_id_item_index_uq').on(t.stageExecutionId, t.itemIndex),

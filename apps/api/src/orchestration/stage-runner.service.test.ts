@@ -85,7 +85,7 @@ describe('StageRunnerService output-instruction prompt delivery', () => {
 });
 
 describe('StageRunnerService.beginAttempt', () => {
-  it('flips stage_execution to running, guarded to pending, on the first attempt', async () => {
+  it('flips stage_execution to running, clearing a leftover failure, on an attempt', async () => {
     const setCalls: Array<{ values: Record<string, unknown> }> = [];
     const db = {
       update: vi.fn().mockImplementation(() => ({
@@ -112,7 +112,7 @@ describe('StageRunnerService.beginAttempt', () => {
       stageKey: 'draft',
     });
 
-    expect(setCalls).toContainEqual({ values: { state: 'running' } });
+    expect(setCalls).toContainEqual({ values: { state: 'running', failure: null, endedAt: null } });
   });
 });
 

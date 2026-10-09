@@ -137,7 +137,8 @@ function sequencedDb(resultsByCall: unknown[][]) {
       from: vi.fn(() => chain),
       innerJoin: vi.fn(() => chain),
       where: vi.fn(() => chain),
-      orderBy: vi.fn(() => chain),
+      // A query that ends at `orderBy` is awaited directly, without a `limit`.
+      orderBy: vi.fn(() => ({ then: (resolve: (rows: unknown[]) => unknown) => resolve(result) })),
       limit: vi.fn().mockResolvedValue(result),
     };
     return chain;
@@ -164,6 +165,8 @@ function serviceWithDb(resultsByCall: unknown[][]) {
         runId: string,
         stageKey: string,
         itemIndex: number | undefined,
+        scope?: 'dependents' | 'stage' | 'downstream',
+        items?: 'failed',
       ) => Promise<unknown>;
     }
   ).resolveRetrySeed.bind(service);
@@ -217,4 +220,48 @@ describe('RunActionService.resolveRetrySeed (item-scoped retry seed)', () => {
       await expect(resolveRetrySeed('run-1', 'broll', 0)).rejects.toThrow(/cannot be retried yet/);
     },
   );
+});
+
+describe('RunActionService.resolveRetrySeed (items: failed)', () => {
+  it('seeds exactly the failed items, in order', async () => {
+    const { resolveRetrySeed } = serviceWithDb([
+      [{ graph: [iteratingStage] }], // graph load
+      [{ id: 'execution-broll', itemCount: 5 }], // stage_execution lookup
+      [{ itemIndex: 1 }, { itemIndex: 3 }], // failed stage_item rows
+    ]);
+
+    await expect(
+      resolveRetrySeed('run-1', 'broll', undefined, 'dependents', 'failed'),
+    ).resolves.toEqual({
+      items: [
+        { stageKey: 'broll', itemIndex: 1 },
+        { stageKey: 'broll', itemIndex: 3 },
+      ],
+    });
+  });
+
+  it('throws when no item failed', async () => {
+    const { resolveRetrySeed } = serviceWithDb([
+      [{ graph: [iteratingStage] }],
+      [{ id: 'execution-broll', itemCount: 5 }],
+      [],
+    ]);
+    await expect(
+      resolveRetrySeed('run-1', 'broll', undefined, 'dependents', 'failed'),
+    ).rejects.toThrow(/has no failed items to retry/);
+  });
+
+  it('throws for a stage that does not iterate', async () => {
+    const { resolveRetrySeed } = serviceWithDb([[{ graph: [nonIteratingStage] }]]);
+    await expect(
+      resolveRetrySeed('run-1', 'draft', undefined, 'dependents', 'failed'),
+    ).rejects.toThrow(/does not iterate/);
+  });
+
+  it('rejects an itemIndex given together with items', async () => {
+    const { resolveRetrySeed } = serviceWithDb([]);
+    await expect(resolveRetrySeed('run-1', 'broll', 2, 'dependents', 'failed')).rejects.toThrow(
+      /cannot be combined/,
+    );
+  });
 });

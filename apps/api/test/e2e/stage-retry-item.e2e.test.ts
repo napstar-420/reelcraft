@@ -296,6 +296,138 @@ describe('phase 7 MEDIUM #3 — item-scoped stage retry preview/confirm (e2e)', 
     expect(item1Final.state).toBe('passed');
   });
 
+  describe('retrying only the failed items', () => {
+    /** Four items passed, then items 1 and 2 are made to look like a failed run:
+     * each spent its crash retry, has no output, and the stage and run are failed. */
+    async function failedRun() {
+      const graph = [shotsStage(['a', 'b', 'c', 'd']), brollStage(1)];
+      const ctx = await setUpBroll(graph);
+      const { created, runner, brollExecution, stage, effective, prevStageKey } = ctx;
+      await driveAllItemsToPassed(
+        runner,
+        created.id,
+        brollExecution.id,
+        stage,
+        effective,
+        prevStageKey,
+        4,
+      );
+      const items = await itemRows(brollExecution.id);
+      for (const i of [1, 2]) {
+        await testDb.db
+          .update(stageItem)
+          .set({ state: 'failed', outputArtifactId: null, failure: { reason: 'boom' } })
+          .where(eq(stageItem.id, items[i]!.id));
+        await testDb.db
+          .update(stageAttempt)
+          .set({ outcome: 'provider_error' })
+          .where(eq(stageAttempt.stageItemId, items[i]!.id));
+      }
+      await testDb.db
+        .update(stageExecution)
+        .set({ state: 'failed', failure: { reason: 'Item 2: boom' } })
+        .where(eq(stageExecution.id, brollExecution.id));
+      await testDb.db.update(run).set({ state: 'FAILED' }).where(eq(run.id, created.id));
+      return { ...ctx, items };
+    }
+
+    it('previews exactly the failed items, then stales only them and gives each a fresh retry round', async () => {
+      const { created, runner, brollExecution, stage, effective, prevStageKey, items } =
+        await failedRun();
+      const actions = testApp.app.get(RunActionService);
+      const spentBefore = await runner.countRoundAttempts(
+        brollExecution.id,
+        ['provider_error'],
+        items[1]!.id,
+      );
+      expect(spentBefore).toBe(1);
+
+      const preview = await actions.previewStageRetry(
+        created.id,
+        'broll',
+        undefined,
+        'dependents',
+        'failed',
+      );
+      expect(preview.items).toEqual([
+        { stageKey: 'broll', itemIndex: 1 },
+        { stageKey: 'broll', itemIndex: 2 },
+      ]);
+      expect(preview.estimatedRerunUsd).toBe(0);
+
+      // The token is bound to the items mode: it can't confirm a whole-stage retry.
+      await expect(
+        actions.confirmStageRetry(created.id, 'broll', preview.previewToken),
+      ).rejects.toThrow();
+
+      const confirmed = await actions.confirmStageRetry(
+        created.id,
+        'broll',
+        preview.previewToken,
+        undefined,
+        'dependents',
+        'failed',
+      );
+      expect(confirmed.accepted).toBe(true);
+
+      const after = await itemRows(brollExecution.id);
+      expect(after.map((row) => row.state)).toEqual(['passed', 'stale', 'stale', 'passed']);
+      expect(after[1]?.startedAt).toBeNull();
+      expect(after[2]?.startedAt).toBeNull();
+      expect(after[0]?.outputArtifactId).toBe(items[0]!.outputArtifactId);
+      expect(after[3]?.outputArtifactId).toBe(items[3]!.outputArtifactId);
+      const [runRow] = await testDb.db.select().from(run).where(eq(run.id, created.id));
+      expect(runRow?.cursorStageKey).toBe('broll');
+
+      // The next attempt of a retried item starts a fresh round: the spent crash
+      // no longer counts, and the failed stage reads as running again.
+      await resumeRunning(created.id);
+      await runOneItemAttempt(
+        runner,
+        created.id,
+        brollExecution.id,
+        stage,
+        effective,
+        prevStageKey,
+        1,
+        after[1]!.id,
+      );
+      expect(
+        await runner.countRoundAttempts(brollExecution.id, ['provider_error'], after[1]!.id),
+      ).toBe(0);
+      expect(await attemptsFor(after[1]!.id)).toHaveLength(2);
+      expect((await runner.itemState(brollExecution.id, 1)).state).toBe('passed');
+      const [executionRow] = await testDb.db
+        .select()
+        .from(stageExecution)
+        .where(eq(stageExecution.id, brollExecution.id));
+      expect(executionRow?.state).toBe('running');
+      expect(executionRow?.failure).toBeNull();
+    });
+
+    it('refuses when no item failed', async () => {
+      const graph = [shotsStage(['a', 'b']), brollStage(0)];
+      const { created, runner, brollExecution, stage, effective, prevStageKey } =
+        await setUpBroll(graph);
+      await driveAllItemsToPassed(
+        runner,
+        created.id,
+        brollExecution.id,
+        stage,
+        effective,
+        prevStageKey,
+        2,
+      );
+      await testDb.db.update(run).set({ state: 'COMPLETED' }).where(eq(run.id, created.id));
+
+      await expect(
+        testApp.app
+          .get(RunActionService)
+          .previewStageRetry(created.id, 'broll', undefined, 'dependents', 'failed'),
+      ).rejects.toThrow(/no failed items/);
+    });
+  });
+
   it('rejects confirming a preview token issued for one itemIndex against a different itemIndex or no itemIndex at all (token-scoping regression)', async () => {
     const graph = [shotsStage(['ok0', 'ok1']), brollStage(0)];
     const { created, runner, brollExecution, stage, effective, prevStageKey } =

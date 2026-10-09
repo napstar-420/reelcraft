@@ -69,6 +69,7 @@ import type {
   RunState,
   ListRunsResultDto,
   ConfirmRunActionDto,
+  RetryItems,
   RetryScope,
   InvalidationPreviewDto,
   HumanInputSubmissionDto,
@@ -361,11 +362,16 @@ export const api = {
   previewStageRetry: (
     runId: string,
     stageKey: string,
-    { itemIndex, scope }: { itemIndex?: number; scope?: RetryScope } = {},
+    {
+      itemIndex,
+      scope,
+      items,
+    }: { itemIndex?: number; scope?: RetryScope; items?: RetryItems } = {},
   ) => {
     const qs = new URLSearchParams();
     if (itemIndex !== undefined) qs.set('itemIndex', String(itemIndex));
     if (scope) qs.set('scope', scope);
+    if (items) qs.set('items', items);
     const query = qs.toString();
     return request<InvalidationPreviewDto>(
       `/runs/${runId}/stages/${encodeURIComponent(stageKey)}/retry${query ? `?${query}` : ''}`,

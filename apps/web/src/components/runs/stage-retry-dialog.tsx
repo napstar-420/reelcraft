@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Loader2 } from 'lucide-react';
-import type { RetryScope } from '@reelcraft/shared';
+import type { RetryItems, RetryScope } from '@reelcraft/shared';
 import { api } from '@/api/client';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -30,11 +30,17 @@ const SCOPE_COPY: Record<RetryScope, { title: string; description: string }> = {
   },
 };
 
+const FAILED_ITEMS_COPY = {
+  title: 'Retry failed items of',
+  description: 'Re-runs only the items that failed. Items that passed keep their outputs.',
+};
+
 export function StageRetryDialog({
   runId,
   stageKey,
   stageLabel,
   scope = 'dependents',
+  items,
   open,
   onOpenChange,
 }: {
@@ -42,13 +48,16 @@ export function StageRetryDialog({
   stageKey: string | null;
   stageLabel?: string | null;
   scope?: RetryScope;
+  /** `failed`: re-run only the stage's failed items, instead of the whole stage. */
+  items?: RetryItems;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
   const queryClient = useQueryClient();
   const preview = useQuery({
-    queryKey: ['stage-retry-preview', runId, stageKey, scope],
-    queryFn: () => api.previewStageRetry(runId, stageKey as string, { scope }),
+    queryKey: ['stage-retry-preview', runId, stageKey, scope, items],
+    queryFn: () =>
+      api.previewStageRetry(runId, stageKey as string, { scope, ...(items && { items }) }),
     enabled: open && Boolean(stageKey),
     retry: false,
   });
@@ -58,6 +67,7 @@ export function StageRetryDialog({
       api.confirmStageRetry(runId, stageKey as string, {
         previewToken: preview.data!.previewToken,
         scope,
+        ...(items && { items }),
       }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['run', runId] });
@@ -68,15 +78,17 @@ export function StageRetryDialog({
   const affectedStageKeys = preview.data
     ? [...new Set(preview.data.affected.map((entry) => entry.stageKey))]
     : [];
+  const itemNumbers = (preview.data?.items ?? []).map((entry) => entry.itemIndex + 1);
+  const copy = items === 'failed' ? FAILED_ITEMS_COPY : SCOPE_COPY[scope];
 
   return (
     <Dialog open={open} onOpenChange={(next) => !confirm.isPending && onOpenChange(next)}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>
-            {SCOPE_COPY[scope].title} {stageLabel ?? stageKey}
+            {copy.title} {stageLabel ?? stageKey}
           </DialogTitle>
-          <DialogDescription>{SCOPE_COPY[scope].description}</DialogDescription>
+          <DialogDescription>{copy.description}</DialogDescription>
         </DialogHeader>
 
         {preview.isLoading ? (
@@ -97,6 +109,12 @@ export function StageRetryDialog({
               <dt className="text-muted-foreground">Affected stages</dt>
               <dd className="font-medium">{affectedStageKeys.join(', ') || stageKey}</dd>
             </div>
+            {items === 'failed' && itemNumbers.length > 0 ? (
+              <div>
+                <dt className="text-muted-foreground">Items</dt>
+                <dd className="font-medium">{itemNumbers.join(', ')}</dd>
+              </div>
+            ) : null}
             <div>
               <dt className="text-muted-foreground">Already spent</dt>
               <dd className="font-medium">${preview.data.spentUsd.toFixed(4)}</dd>
