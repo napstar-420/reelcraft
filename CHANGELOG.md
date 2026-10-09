@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.8.0](https://github.com/napstar-420/reelcraft/compare/v0.7.0...v0.8.0) (2026-10-09)
+
+
+### Features
+
+* **api:** let quality control pick the best of several generated images ([#119](https://github.com/napstar-420/reelcraft/issues/119)) ([f8269f8](https://github.com/napstar-420/reelcraft/commit/f8269f894ce09f4e57b95563f4d291685ee87b03))
+* **api:** make several images from one Generate Image prompt ([#117](https://github.com/napstar-420/reelcraft/issues/117)) ([e41d5b7](https://github.com/napstar-420/reelcraft/commit/e41d5b7960aebb47517f435ffbe2f736429c7c14))
+* browser push notifications ([#106](https://github.com/napstar-420/reelcraft/issues/106)) ([43486a4](https://github.com/napstar-420/reelcraft/commit/43486a432445f8384d56f096cd13e01438be0682))
+* live run updates over Socket.IO ([#104](https://github.com/napstar-420/reelcraft/issues/104)) ([63691ff](https://github.com/napstar-420/reelcraft/commit/63691fff911a18cfc25efb35a9a6c828025bd910))
+* notification inbox with a bell and toasts ([#105](https://github.com/napstar-420/reelcraft/issues/105)) ([a7a5625](https://github.com/napstar-420/reelcraft/commit/a7a5625a800165762c612f42aac8a4e4cbe47a3c))
+
+
+### Bug Fixes
+
+* **api:** download every image of a multi-image ChatGPT reply ([#122](https://github.com/napstar-420/reelcraft/issues/122)) ([64eb1e8](https://github.com/napstar-420/reelcraft/commit/64eb1e89d8bffd59bd9f3f2fc7134da3594994b7))
+* **api:** keep the ChatGPT tab open on a failed fetch and read images in smaller runs ([#120](https://github.com/napstar-420/reelcraft/issues/120)) ([3f8b61a](https://github.com/napstar-420/reelcraft/commit/3f8b61a38b32d3aa6bb81390e67f643b5f522d25))
+* mark an iterating stage failed when an item fails, and retry only the failed items ([#121](https://github.com/napstar-420/reelcraft/issues/121)) ([a48a97c](https://github.com/napstar-420/reelcraft/commit/a48a97c00513bcfaa2d06fb614d856b29a5f0995))
+
 ## [0.7.0](https://github.com/napstar-420/reelcraft/compare/v0.6.0...v0.7.0) (2026-10-08)
 
 
