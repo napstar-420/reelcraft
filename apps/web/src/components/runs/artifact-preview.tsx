@@ -5,6 +5,7 @@ import { approvalCandidateView } from '@/pages/approval-review.logic';
 import { CopyButton } from './artifact-views/copy-button';
 import { ClipListView } from './artifact-views/clip-list-view';
 import { DataView } from './artifact-views/data-view';
+import { ImageCandidatesView } from './artifact-views/image-candidates-view';
 import { ImageListView } from './artifact-views/image-list-view';
 import { MediaView } from './artifact-views/media-view';
 import { SubtitlesView } from './artifact-views/subtitles-view';
@@ -51,6 +52,10 @@ export function ArtifactPreview({ artifact }: { artifact: ArtifactViewDto }) {
           <p className="p-4 text-sm text-muted-foreground">No inline preview is available.</p>
         )}
       </div>
+
+      {artifact.candidates && artifact.candidates.length > 1 ? (
+        <ImageCandidatesView candidates={artifact.candidates} />
+      ) : null}
 
       {artifact.attachments.length > 0 ? (
         <div className="flex flex-col gap-2">

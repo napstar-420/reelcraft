@@ -13,10 +13,14 @@ import {
   ingredientSlotName,
   imageCount,
   imageShortfall,
+  pickCount,
   visibleConfigSchema,
   withImageCount,
   withImageShortfall,
+  withPickCount,
   withOutputKind,
+  MAX_PICK_IMAGE_COUNT,
+  DEFAULT_PICK_IMAGE_COUNT,
   withIngredientCount,
   inferSchemaFromValue,
   isOutputInstructionsIssue,
@@ -362,5 +366,33 @@ describe('Generate Image image list', () => {
     } as const;
     expect(visibleConfigSchema('image.generate', schema as never).properties).toEqual({});
     expect(visibleConfigSchema('video.generate', schema as never)).toBe(schema);
+  });
+});
+
+describe('Generate Image candidates for quality control to pick from', () => {
+  const stage = (config: StageDef['config'] = {}) =>
+    ({
+      key: 's',
+      capability: 'image.generate',
+      slots: {},
+      config,
+      output: { kind: 'media.image' },
+    }) as StageDef;
+
+  it('reads no candidates until a count above one is set', () => {
+    expect(pickCount({})).toBeUndefined();
+    expect(pickCount({ count: 1 })).toBeUndefined();
+    expect(pickCount({ count: DEFAULT_PICK_IMAGE_COUNT })).toBe(DEFAULT_PICK_IMAGE_COUNT);
+  });
+
+  it('keeps the count within 2 to 4', () => {
+    expect(withPickCount(stage(), 99).config).toEqual({ count: MAX_PICK_IMAGE_COUNT });
+    expect(withPickCount(stage(), 0).config).toEqual({ count: MIN_IMAGE_COUNT });
+    expect(withPickCount(stage(), 3.7).config).toEqual({ count: 3 });
+  });
+
+  it('turning candidates off drops count and onShortfall and nothing else', () => {
+    const picking = stage({ count: 3, onShortfall: 'fail', style: 'x' });
+    expect(withPickCount(picking, undefined).config).toEqual({ style: 'x' });
   });
 });

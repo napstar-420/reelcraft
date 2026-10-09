@@ -22,11 +22,15 @@ import {
   IMAGE_CAPABILITY,
   IMAGE_LIST_KIND,
   IMAGE_SHORTFALL_OPTIONS,
+  DEFAULT_PICK_IMAGE_COUNT,
   MAX_IMAGE_COUNT,
+  MAX_PICK_IMAGE_COUNT,
   MAX_INGREDIENTS,
   MIN_IMAGE_COUNT,
   imageCount,
   imageShortfall,
+  pickCount,
+  withPickCount,
   withImageCount,
   withImageShortfall,
   withOutputKind,
@@ -546,13 +550,51 @@ function useTranscriptAvailability(judge: QcDef['model'] | undefined) {
   };
 }
 
+/** "If fewer images come back": what a Generate Image stage does when the
+ * provider returns fewer images than it asked for. */
+function ShortfallField({
+  stage,
+  onChange,
+}: {
+  stage: StageDef;
+  onChange: (stage: StageDef) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <InfoLabel info="What to do when the provider returns fewer images than asked for. Warn and continue keeps the images that came back and notes the shortfall in the stage log. Fail and retry counts the attempt as a provider error and tries again, like any other crash, until the stage's retries run out.">
+        If fewer images come back
+      </InfoLabel>
+      <Select
+        value={imageShortfall(stage.config)}
+        onValueChange={(next) =>
+          onChange(withImageShortfall(stage, next === 'fail' ? 'fail' : 'warn'))
+        }
+      >
+        <SelectTrigger size="sm" className="w-48">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {IMAGE_SHORTFALL_OPTIONS.map((option) => (
+            <SelectItem key={option.value} value={option.value}>
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
+
 function QcEditor({
   qc,
   outputKind,
+  picking = false,
   onChange,
 }: {
   qc: QcDef | undefined;
   outputKind: string;
+  /** The stage makes several candidate images for the judge to pick from. */
+  picking?: boolean;
   onChange: (qc: QcDef | undefined) => void;
 }) {
   const transcript = useTranscriptAvailability(qc?.model);
@@ -670,6 +712,14 @@ function QcEditor({
           The judge watches every clip, in order, and can name the clips to make again. Use Codex
           (it opens the files itself) or a model that accepts video input. Make sure the machine
           running Codex has ffmpeg.
+        </p>
+      ) : null}
+      {picking ? (
+        <p className="text-xs text-muted-foreground">
+          The judge looks at all the candidates together, picks the best one, and scores that image.
+          The stage's output is that one image. If it scores below the threshold, every candidate is
+          made again. Use Codex (it opens the files itself) or a model that accepts image input, and
+          one that can take as many images as this stage makes.
         </p>
       ) : null}
       {outputKind === IMAGE_LIST_KIND ? (
@@ -1426,29 +1476,56 @@ export function StageInspector({
                       }
                     />
                   </div>
-                  <div className="flex flex-col gap-1.5">
-                    <InfoLabel info="What to do when the provider returns fewer images than asked for. Warn and continue keeps the images that came back and notes the shortfall in the stage log. Fail and retry counts the attempt as a provider error and tries again, like any other crash, until the stage's retries run out.">
-                      If fewer images come back
-                    </InfoLabel>
-                    <Select
-                      value={imageShortfall(stage.config)}
-                      onValueChange={(next) =>
-                        onChange(withImageShortfall(stage, next === 'fail' ? 'fail' : 'warn'))
-                      }
-                    >
-                      <SelectTrigger size="sm" className="w-48">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {IMAGE_SHORTFALL_OPTIONS.map((option) => (
-                          <SelectItem key={option.value} value={option.value}>
-                            {option.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
+                  <ShortfallField stage={stage} onChange={onChange} />
                   <IssueList issues={configIssues} />
+                </div>
+              )}
+              {stage.capability === IMAGE_CAPABILITY && output.kind === 'media.image' && (
+                <div className="flex flex-col gap-3">
+                  <Label className="font-normal">
+                    <Checkbox
+                      checked={pickCount(stage.config) !== undefined}
+                      onCheckedChange={(checked) =>
+                        onChange(
+                          withPickCount(
+                            stage,
+                            checked === true ? DEFAULT_PICK_IMAGE_COUNT : undefined,
+                          ),
+                        )
+                      }
+                    />
+                    Make several candidates and let quality control pick the best
+                  </Label>
+                  {pickCount(stage.config) !== undefined && (
+                    <>
+                      <div className="flex flex-col gap-1.5">
+                        <InfoLabel
+                          info={`How many candidate images one attempt makes from the prompt, ${MIN_IMAGE_COUNT} to ${MAX_PICK_IMAGE_COUNT}. Quality control (below) looks at all of them and picks the best one, which becomes this stage's image. If none is good enough, all are made again. Every attempt pays for all the candidates.`}
+                        >
+                          Number of candidates
+                        </InfoLabel>
+                        <Input
+                          type="number"
+                          className="w-24"
+                          min={MIN_IMAGE_COUNT}
+                          max={MAX_PICK_IMAGE_COUNT}
+                          step={1}
+                          value={pickCount(stage.config)}
+                          onChange={(e) =>
+                            e.target.value !== '' &&
+                            onChange(withPickCount(stage, Number(e.target.value)))
+                          }
+                        />
+                      </div>
+                      <ShortfallField stage={stage} onChange={onChange} />
+                      {!stage.qc && (
+                        <p className="text-xs text-muted-foreground">
+                          Picking needs Quality control: turn it on below.
+                        </p>
+                      )}
+                      <IssueList issues={configIssues} />
+                    </>
+                  )}
                 </div>
               )}
               <IssueList issues={outputIssues} />
@@ -1552,6 +1629,11 @@ export function StageInspector({
               <QcEditor
                 qc={stage.qc}
                 outputKind={stage.output.kind}
+                picking={
+                  stage.capability === IMAGE_CAPABILITY &&
+                  stage.output.kind === 'media.image' &&
+                  pickCount(stage.config) !== undefined
+                }
                 onChange={(qc) => onChange({ ...stage, qc })}
               />
               <IssueList issues={qcIssues} />
