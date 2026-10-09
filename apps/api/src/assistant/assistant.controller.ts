@@ -1,10 +1,8 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Sse } from '@nestjs/common';
-import { map, type Observable } from 'rxjs';
+import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post } from '@nestjs/common';
 import {
   CreateAssistantSessionDto,
   StartAssistantTurnDto,
   UpdateAssistantSessionDto,
-  type AssistantStreamEvent,
 } from '@reelcraft/shared';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { AssistantService } from './assistant.service';
@@ -68,10 +66,5 @@ export class AssistantController {
   @Post('assistant/sessions/:sid/proposals/:itemId/apply')
   apply(@Param('sid') sessionId: string, @Param('itemId') itemId: string) {
     return this.assistant.applyProposal(sessionId, itemId);
-  }
-
-  @Sse('assistant/sessions/:sid/events')
-  events(@Param('sid') sessionId: string): Observable<{ data: AssistantStreamEvent }> {
-    return this.assistant.streamEvents(sessionId).pipe(map((data) => ({ data })));
   }
 }

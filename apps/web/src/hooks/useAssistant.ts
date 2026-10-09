@@ -15,6 +15,7 @@ import type {
 import { api } from '@/api/client';
 import { apiErrorMessage } from '@/lib/api-error-message';
 import { loadAssistantPrefs, saveAssistantPrefs } from '@/lib/assistant-prefs';
+import { socket } from '@/lib/socket';
 import {
   appendDelta,
   decideDraftApply,
@@ -76,8 +77,6 @@ export function useAssistant({
     queryKey: sessionKey(activeSessionId),
     queryFn: () => api.getAssistantSession(activeSessionId!),
     enabled: !!activeSessionId,
-    // a safety net if the event stream drops silently
-    refetchInterval: (query) => (query.state.data?.status === 'running' ? 3000 : false),
   });
   const session = detail.data;
   const items = session?.items ?? [];
@@ -86,18 +85,9 @@ export function useAssistant({
 
   useEffect(() => {
     if (!activeSessionId) return;
-    const source = new EventSource(api.assistantEventsUrl(activeSessionId));
-    // also fires on every automatic reconnect: refetch to catch up on what was missed
-    source.onopen = () => {
-      void queryClient.invalidateQueries({ queryKey: sessionKey(activeSessionId) });
-    };
-    source.onmessage = (message) => {
-      let event: AssistantStreamEvent;
-      try {
-        event = JSON.parse(message.data as string) as AssistantStreamEvent;
-      } catch {
-        return;
-      }
+    const onEvent = (payload: { sessionId: string; event: AssistantStreamEvent }) => {
+      if (payload.sessionId !== activeSessionId) return;
+      const { event } = payload;
       queryClient.setQueryData<AssistantSessionDetailDto>(sessionKey(activeSessionId), (old) => {
         if (!old) return old;
         if (event.type === 'item') return { ...old, items: upsertItem(old.items, event.item) };
@@ -110,7 +100,22 @@ export function useAssistant({
         void queryClient.invalidateQueries({ queryKey: sessionsKey(blueprintId) });
       }
     };
-    return () => source.close();
+    // A socket's rooms are lost when it reconnects, so ask again on every connect.
+    // The server answers after it has joined the room, so the refetch that catches up
+    // on what was missed cannot itself miss anything.
+    const watch = () => {
+      socket.emit('assistant:watch', activeSessionId, () => {
+        void queryClient.invalidateQueries({ queryKey: sessionKey(activeSessionId) });
+      });
+    };
+    socket.on('assistant:event', onEvent);
+    socket.on('connect', watch);
+    if (socket.connected) watch();
+    return () => {
+      socket.off('assistant:event', onEvent);
+      socket.off('connect', watch);
+      if (socket.connected) socket.emit('assistant:unwatch', activeSessionId);
+    };
   }, [activeSessionId, blueprintId, queryClient]);
 
   // ---- provider, model, effort -----------------------------------------------------------

@@ -8,8 +8,8 @@ import { JsonSchemaModule } from '../json-schema/json-schema.module';
 import { RunConfigModule } from '../run-config/run-config.module';
 import { RunModule } from '../run/run.module';
 import { ArtifactModule } from '../artifact/artifact.module';
+import { LiveModule } from '../live/live.module';
 import { AssistantController } from './assistant.controller';
-import { AssistantEvents } from './assistant-events';
 import { AssistantService } from './assistant.service';
 import { ASSISTANT_AGENTS } from './agent/assistant-agent.interface';
 import { CodexAssistantAgent } from './agent/codex-assistant.agent';
@@ -29,11 +29,11 @@ import { CodexNeoRegistrar } from '../provider/codex/codex-neo-registrar';
     RunConfigModule,
     RunModule,
     ArtifactModule,
+    LiveModule,
   ],
   controllers: [AssistantController],
   providers: [
     AssistantService,
-    AssistantEvents,
     // Codex first; a Claude agent would be added to this list.
     {
       provide: ASSISTANT_AGENTS,

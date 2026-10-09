@@ -1,5 +1,6 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
+import { io, type Socket } from 'socket.io-client';
 import type { AssistantItemDto, AssistantSessionDetailDto } from '@reelcraft/shared';
 import { ulid } from '../../src/common/ulid';
 import { ChannelService } from '../../src/channel/channel.service';
@@ -55,6 +56,28 @@ describe('blueprint assistant (e2e)', () => {
       await testDb.teardown();
     }
   });
+
+  const sockets: Socket[] = [];
+  afterEach(() => {
+    for (const socket of sockets.splice(0)) socket.disconnect();
+  });
+
+  function connectSocket(): Promise<Socket> {
+    const socket = io(new URL(http.baseUrl).origin, {
+      path: '/api/socket.io',
+      transports: ['websocket'],
+      reconnection: false,
+    });
+    sockets.push(socket);
+    return new Promise((resolve, reject) => {
+      socket.once('connect', () => resolve(socket));
+      socket.once('connect_error', reject);
+    });
+  }
+
+  /** Resolves with the server's answer, sent after the socket has joined the chat's room. */
+  const watchChat = (socket: Socket, sessionId: string) =>
+    new Promise<boolean>((resolve) => socket.emit('assistant:watch', sessionId, resolve));
 
   async function newBlueprint(): Promise<string> {
     blueprintCount += 1;
@@ -702,45 +725,63 @@ describe('blueprint assistant (e2e)', () => {
     });
   });
 
-  it('streams items and text deltas over SSE', async () => {
+  it('streams items and text deltas over Socket.IO to a socket watching the chat', async () => {
     useScript([[{ say: 'Hello there' }]]);
     const sid = await newSession();
-    const controller = new AbortController();
-    const response = await fetch(`${http.baseUrl}/assistant/sessions/${sid}/events`, {
-      signal: controller.signal,
-    });
-    expect(response.headers.get('content-type')).toContain('text/event-stream');
-    const reader = response.body!.getReader();
-    const decoder = new TextDecoder();
-    const events: Array<{ type: string; item?: AssistantItemDto }> = [];
-    const reading = (async () => {
-      let buffer = '';
-      for (;;) {
-        const { value, done } = await reader.read();
-        if (done) return;
-        buffer += decoder.decode(value, { stream: true });
-        for (const chunk of buffer.split('\n\n').slice(0, -1)) {
-          const line = chunk.split('\n').find((l) => l.startsWith('data:'));
-          if (line) events.push(JSON.parse(line.slice(5)));
-        }
-        buffer = buffer.slice(buffer.lastIndexOf('\n\n') + 2);
-        if (events.some((e) => e.item?.type === 'turn_status' && e.item.state === 'completed'))
-          return;
-      }
-    })();
-    await new Promise((r) => setTimeout(r, 50)); // let the stream subscribe
-    await turn(sid, { text: 'hi' });
-    await Promise.race([
-      reading,
-      new Promise((_, rej) => setTimeout(() => rej(new Error('no SSE events')), 5000)),
-    ]);
-    controller.abort();
+    const watcher = await connectSocket();
+    const bystander = await connectSocket(); // connected, but never asked to watch this chat
+    const events: Array<{ sessionId: string; event: { type: string; item?: AssistantItemDto } }> =
+      [];
+    const stranger: unknown[] = [];
+    watcher.on('assistant:event', (payload: (typeof events)[number]) => events.push(payload));
+    bystander.on('assistant:event', (payload: unknown) => stranger.push(payload));
+    await expect(watchChat(watcher, sid)).resolves.toBe(true);
 
-    const types = events.map((e) => e.type);
+    await turn(sid, { text: 'hi' });
+    await expect
+      .poll(
+        () =>
+          events.some(
+            (e) => e.event.item?.type === 'turn_status' && e.event.item.state === 'completed',
+          ),
+        { timeout: 5000 },
+      )
+      .toBe(true);
+
+    expect(events.every((e) => e.sessionId === sid)).toBe(true);
+    const types = events.map((e) => e.event.type);
     expect(types).toContain('session');
-    expect(events.filter((e) => e.type === 'item').map((e) => e.item!.type)).toEqual(
+    expect(events.filter((e) => e.event.type === 'item').map((e) => e.event.item!.type)).toEqual(
       expect.arrayContaining(['user_message', 'turn_status', 'agent_message']),
     );
+    expect(stranger).toHaveLength(0);
+  });
+
+  it('stops sending a chat’s events after the socket unwatches it', async () => {
+    useScript([[{ say: 'one' }], [{ say: 'two' }]]);
+    const sid = await newSession();
+    const socket = await connectSocket();
+    const seen: unknown[] = [];
+    socket.on('assistant:event', (payload: unknown) => seen.push(payload));
+    await watchChat(socket, sid);
+    await turn(sid, { text: 'first' });
+    await waitIdle(sid);
+    const before = seen.length;
+    expect(before).toBeGreaterThan(0);
+
+    socket.emit('assistant:unwatch', sid);
+    await new Promise((r) => setTimeout(r, 100));
+    await turn(sid, { text: 'second' });
+    await waitIdle(sid);
+    await new Promise((r) => setTimeout(r, 100));
+
+    expect(seen).toHaveLength(before);
+  });
+
+  it('refuses to watch a chat that does not exist', async () => {
+    const socket = await connectSocket();
+    await expect(watchChat(socket, 'no-such-chat')).resolves.toBe(false);
+    await expect(watchChat(socket, 'x'.repeat(200))).resolves.toBe(false);
   });
 
   it('marks a chat stale when its tool set no longer matches', async () => {

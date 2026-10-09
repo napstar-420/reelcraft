@@ -150,7 +150,7 @@
       "file": "apps/web/src/hooks/useRun.ts",
       "line": 5,
       "title": "useRun: the concrete shape of 'UI is a view, not a driver'",
-      "description": "SITUATION: this hook is the clearest single piece of evidence for the project's core UI rule (stated explicitly in its own comment, citing REQ-2.8.4).\n\nMECHANISM: it only reads — `useQuery` fetches Run state, an `EventSource` subscribes to server-sent Run events and invalidates the query cache on each message, and a 3-second `setInterval` is a belt-and-suspenders fallback in case SSE drops silently. Nothing here calls a mutation or advances state.\n\nIMPLICATION: if you're tempted to make the UI 'smarter' by having it compute or predict Run progress client-side, that would violate the pattern this hook exists to enforce — always let a fetch from the server be the source of truth, even if that means a brief lag."
+      "description": "SITUATION: this hook is the clearest single piece of evidence for the project's core UI rule (stated explicitly in its own comment, citing REQ-2.8.4).\n\nMECHANISM: it only reads — `useQuery` fetches Run state, and `useLiveUpdates` (mounted once at the app root) listens on the app's Socket.IO connection for hints that a run changed and invalidates the affected queries; after a reconnect it invalidates everything. Nothing here calls a mutation or advances state.\n\nIMPLICATION: if you're tempted to make the UI 'smarter' by having it compute or predict Run progress client-side, that would violate the pattern this hook exists to enforce — always let a fetch from the server be the source of truth, even if that means a brief lag."
     },
     {
       "directory": "apps/web/src/components/canvas",

@@ -124,7 +124,7 @@ Agreed with the user:
 
 Extend `ServerToClientEvents` with `notification:created` and `notifications:changed`.
 
-**Schema:** `db/schema/notification.ts`, re-exported from `index.ts`, migration **0030** via `pnpm db:generate`:
+**Schema:** `db/schema/notification.ts`, re-exported from `index.ts`, migration **0031** via `pnpm db:generate`:
 
 - Columns:
   - `id` (ULID primary key)
@@ -224,7 +224,7 @@ Plus the cascade e2e and the web logic tests.
 - `DeletePushSubscriptionDto {endpoint}`.
 - `VapidKeyDto {publicKey}`.
 
-**Schema:** `db/schema/push-subscription.ts`, migration **0031**:
+**Schema:** `db/schema/push-subscription.ts`, migration **0032**:
 
 - Columns: `endpoint` (primary key), `recipient_id`, `p256dh`, `auth`, `kinds` (jsonb), `created_at`, `updated_at`.
 - It has no FK into the run graph, so it is not part of the cascade.
