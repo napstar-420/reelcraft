@@ -22,6 +22,7 @@ import {
   packageImport,
   character,
   ledgerEntry,
+  notification,
   run,
   stageAttempt,
   stageEvent,
@@ -42,6 +43,20 @@ import { createTestDb, type TestDb } from '../support/test-db';
  * dependent table (stage_execution, stage_attempt, artifact, ledger_entry,
  * blob) has real rows to delete.
  */
+
+/** Notifications reference their run, so the cascade must delete them first.
+ * Dry runs never notify on their own, so the row is inserted directly. */
+async function seedNotification(testDb: TestDb, runId: string): Promise<void> {
+  await testDb.db.insert(notification).values({
+    id: ulid(),
+    runId,
+    kind: 'completed',
+    title: 'Run completed',
+    body: 'cascade check',
+    url: `/runs/${runId}`,
+    dedupeKey: `cascade:${runId}`,
+  });
+}
 
 /** A chat with one item, so the cascade has assistant rows to delete. */
 async function seedAssistantChat(testDb: TestDb, blueprintId: string): Promise<string> {
@@ -209,6 +224,7 @@ describe('channel delete cascade (e2e)', () => {
     const dryRun = await runs.startDryRun(blueprintId, version);
     const { error } = await runThroughRealPipeline(dryRun.id, dryRun.stageExecutions);
     expect(error).toBeUndefined();
+    await seedNotification(testDb, dryRun.id);
     await addRunFile(dryRun.id);
     const runBlobKeys = (
       await testDb.db
@@ -248,6 +264,9 @@ describe('channel delete cascade (e2e)', () => {
     ).toHaveLength(0);
     expect(
       await testDb.db.select().from(artifact).where(eq(artifact.runId, dryRun.id)),
+    ).toHaveLength(0);
+    expect(
+      await testDb.db.select().from(notification).where(eq(notification.runId, dryRun.id)),
     ).toHaveLength(0);
     const queued = await testDb.db
       .select({ objectKey: storageOrphan.objectKey })
@@ -347,6 +366,7 @@ describe('channel delete cascade (e2e)', () => {
       .where(eq(blob.id, createdAsset.blobId));
     expect(assetBlobBefore).toHaveLength(1);
 
+    await seedNotification(testDb, dryRun.id);
     await addRunFile(dryRun.id);
     const runBlobKeys = (
       await testDb.db
@@ -390,6 +410,9 @@ describe('channel delete cascade (e2e)', () => {
     expect(chatRowsAfter.sessions).toHaveLength(0);
     const [runRowAfter] = await testDb.db.select().from(run).where(eq(run.id, dryRun.id));
     expect(runRowAfter).toBeUndefined();
+    expect(
+      await testDb.db.select().from(notification).where(eq(notification.runId, dryRun.id)),
+    ).toHaveLength(0);
     const executionsAfter = await testDb.db
       .select()
       .from(stageExecution)

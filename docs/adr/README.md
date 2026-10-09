@@ -16,5 +16,7 @@ one, take the next number, and add a row here. Supersede an ADR instead of editi
 | [0007](0007-user-guide-as-separate-docusaurus-project.md)      | The user guide is a separate Docusaurus project on GitHub Pages                | accepted | 2026-10-03 |
 | [0008](0008-blueprint-packages-signed-with-local-identity.md)  | Blueprint packages are signed with a local identity                            | accepted | 2026-10-06 |
 | [0009](0009-blueprint-assistant.md)                            | The blueprint assistant is a tool-calling agent in the canvas, Codex first     | accepted | 2026-10-06 |
+| [0010](0010-live-updates-over-socket-io.md)                    | Live updates over Socket.IO, as invalidation hints                             | accepted | 2026-10-08 |
+| [0011](0011-notifications-inbox-and-web-push.md)               | Notifications: a server inbox, Web Push, and per-browser choices               | accepted | 2026-10-08 |
 
 ADRs 0001–0007 were decided during the self-hosting work in October 2026 and recorded together on 2026-10-03, so the dates are when they were written down.

@@ -4,6 +4,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { api } from '@/api/client';
 import { AppSidebar } from '@/components/app-sidebar';
 import { ModeToggle } from '@/components/mode-toggle';
+import { NotificationBell } from '@/components/notifications/notification-bell';
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -59,6 +60,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </BreadcrumbList>
           </Breadcrumb>
           <div className="ml-auto flex items-center gap-2">
+            <NotificationBell />
             <ModeToggle />
           </div>
         </header>

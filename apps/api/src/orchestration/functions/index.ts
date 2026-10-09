@@ -18,6 +18,7 @@ import { BlobService } from '../../artifact/blob.service';
 import { DerivedFrameService } from '../../artifact/derived-frame.service';
 import { buildHumanReminderSweepFunction } from './human-reminder-sweep.fn';
 import { ComputeJobService } from '../../storage/compute-job.service';
+import { NotificationService } from '../../notification/notification.service';
 
 /**
  * §13.1 — resolves services from the container and closes Inngest functions
@@ -36,6 +37,7 @@ export function buildInngestFunctions(app: INestApplicationContext) {
   const blobs = app.get(BlobService);
   const computeJobs = app.get(ComputeJobService);
   const derivedFrames = app.get(DerivedFrameService);
+  const notifications = app.get(NotificationService);
 
   const stageExecuteItem = buildStageExecuteItemFunction(client, runner);
   const stageExecute = buildStageExecuteFunction(client, runner, stageExecuteItem);
@@ -46,6 +48,7 @@ export function buildInngestFunctions(app: INestApplicationContext) {
     stageExecute,
     wakeupClaim,
     derivedFrames,
+    notifications,
   );
   const runWakeupDispatch = buildRunWakeupDispatchFunction(client, wakeupDispatcher);
   const humanReminderSweep = buildHumanReminderSweepFunction(client, reminders);

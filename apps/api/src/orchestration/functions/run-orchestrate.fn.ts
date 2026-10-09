@@ -9,6 +9,8 @@ import { buildStageExecuteFunction } from './stage-execute.fn';
 import type { RunWakeupClaimService, RunWakeupEventData } from '../../run/run-wakeup-claim.service';
 import type { DerivedFrameService } from '../../artifact/derived-frame.service';
 import { findFinalVideo } from '../../artifact/final-video';
+import type { NotificationService } from '../../notification/notification.service';
+import type { NotificationKind } from '@reelcraft/shared';
 
 /** Shared shape for both triggers below — `run/resumed` (§12.4, sent by
  * `RunService.resume()`) carries the identical `{runId}` payload. */
@@ -69,6 +71,7 @@ export function buildRunOrchestrateFunction(
   stageExecuteFn: ReturnType<typeof buildStageExecuteFunction>,
   wakeupClaim?: RunWakeupClaimService,
   derivedFrames?: DerivedFrameService,
+  notifications?: NotificationService,
 ) {
   return client.createFunction(
     {
@@ -77,9 +80,28 @@ export function buildRunOrchestrateFunction(
       cancelOn: [{ event: 'run/cancelled', match: 'data.runId' }],
     },
     [{ event: 'run/started' }, { event: 'run/resumed' }],
-    async ({ event, step, logger }) => {
+    async ({ event, step, logger, runId: invocationId }) => {
       const data = event.data as RunStartedEventData;
       const { runId } = data;
+
+      // Notifications are appended right before each `return`, never between
+      // existing steps: a step added mid-function would run for the first time
+      // on a run already in flight when the API restarts, and announce
+      // something that happened hours ago. The key makes a replay a no-op, and
+      // a failure here must never change how the run ends (same stance as
+      // `extract-poster` below).
+      const notify = (kind: NotificationKind) =>
+        step
+          .run(`notify-${kind}`, () =>
+            notifications?.notifyRun({
+              runId,
+              kind,
+              dedupeKey: `${kind}:${data.wakeupId ?? invocationId}`,
+            }),
+          )
+          .catch((err: unknown) => {
+            logger.warn({ runId, kind, err }, 'notification step failed');
+          });
 
       if (
         data.wakeupId &&
@@ -195,6 +217,7 @@ export function buildRunOrchestrateFunction(
           // deliberately left pointing at this stage (set just above) so a
           // resumed invocation naturally re-enters here.
           await step.run('mark-paused-budget', () => runState.transition(runId, 'PAUSED_BUDGET'));
+          await notify('paused_budget');
           return { state: 'PAUSED_BUDGET' as const };
         }
 
@@ -202,7 +225,11 @@ export function buildRunOrchestrateFunction(
           // The provider is out of quota (e.g. every Flow account's credits).
           // The pause carries its own timed wakeup, so the run resumes by itself.
           const { resumeAt } = result;
-          await step.run('mark-paused-quota', () => runState.pauseForQuota(runId, resumeAt));
+          const paused = await step.run('mark-paused-quota', () =>
+            runState.pauseForQuota(runId, resumeAt),
+          );
+          // False when the run was no longer RUNNING (cancelled or paused by hand).
+          if (paused) await notify('paused_quota');
           return { state: 'PAUSED_QUOTA' as const };
         }
 
@@ -225,16 +252,19 @@ export function buildRunOrchestrateFunction(
           await step.run('mark-paused-approval', () =>
             runState.transition(runId, 'PAUSED_APPROVAL'),
           );
+          await notify('awaiting_approval');
           return { state: 'PAUSED_APPROVAL' as const };
         }
 
         if (result.outcome === 'input_required') {
           await step.run('mark-paused-input', () => runState.transition(runId, 'PAUSED_INPUT'));
+          await notify('awaiting_input');
           return { state: 'PAUSED_INPUT' as const };
         }
 
         if (result.outcome === 'failed') {
           await step.run('mark-failed', () => runState.transition(runId, 'FAILED'));
+          await notify('failed');
           return { state: 'FAILED' as const };
         }
       }
@@ -262,6 +292,8 @@ export function buildRunOrchestrateFunction(
             logger.warn({ runId, err }, 'extract-poster step failed; run stays COMPLETED');
           });
       }
+
+      await notify('completed');
 
       return { state: 'COMPLETED' as const };
     },

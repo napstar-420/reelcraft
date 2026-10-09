@@ -78,6 +78,7 @@ const sidebars: SidebarsConfig = {
         'runs/runs-list',
         'runs/run-page',
         'runs/when-a-run-needs-you',
+        'runs/notifications',
         'runs/retries',
         'runs/budget-and-costs',
         'runs/pause-resume-cancel',

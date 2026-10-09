@@ -28,6 +28,26 @@ describe('RunCancellationService', () => {
     expect(dispatcher.dispatch).toHaveBeenCalledWith('wake-cancel');
   });
 
+  it('announces the run again after settling its stages', async () => {
+    const mutation = {
+      withLockedRun: vi.fn(async () => ({ wakeupId: 'wake-cancel', revision: 8 })),
+    };
+    const events = { publish: vi.fn() };
+    const service = new RunCancellationService(
+      mutation as never,
+      { dispatch: vi.fn() } as never,
+      { resolveAll: vi.fn() } as never,
+      undefined,
+      undefined,
+      undefined,
+      events as never,
+    );
+
+    await service.cancel('run-1');
+
+    expect(events.publish).toHaveBeenCalledWith({ type: 'run', runId: 'run-1' });
+  });
+
   it('reads its allowed states from the shared policy table, not a private copy', async () => {
     // Regression guard for the drift this service used to have: a
     // hand-maintained `CANCELLABLE_STATES` that didn't import

@@ -32,7 +32,6 @@ export function StageOutputSheet({
     queryKey: ['stage-output', runId, stageKey],
     queryFn: () => api.getStageOutput(runId, stageKey as string),
     enabled: open && Boolean(stageKey),
-    refetchInterval: stageRunning ? 3000 : false,
   });
   const items = output.data?.items ?? [];
 

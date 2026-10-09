@@ -4,6 +4,8 @@ export * from './asset';
 export * from './blueprint';
 export * from './run';
 export * from './run-wakeup';
+export * from './notification';
+export * from './push-subscription';
 export * from './human-wait';
 export * from './execution';
 export * from './artifact';

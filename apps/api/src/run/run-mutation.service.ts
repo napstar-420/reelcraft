@@ -2,6 +2,7 @@ import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import type { RunState } from '@reelcraft/shared';
 import { eq, sql } from 'drizzle-orm';
 import { ulid } from '../common/ulid';
+import { LiveEvents } from '../live/live-events';
 import { DRIZZLE, type Db, type Tx } from '../db/drizzle.provider';
 import { run, runWakeup } from '../db/schema/index';
 import { RunActionPolicy, type RunAction } from './run-action-policy';
@@ -26,6 +27,7 @@ export class RunMutationService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly policy: RunActionPolicy,
+    private readonly events: LiveEvents,
   ) {}
 
   async withLockedRun<T>(
@@ -56,7 +58,7 @@ export class RunMutationService {
     eventName: string,
     wake: (value: T) => boolean,
   ): Promise<MaybeWokenRunMutationResult<T>> {
-    return this.db.transaction(async (tx) => {
+    const result = await this.db.transaction(async (tx) => {
       const [lockedRun] = await tx.select().from(run).where(eq(run.id, runId)).for('update');
       if (!lockedRun) throw new NotFoundException(`Run ${runId} not found`);
 
@@ -85,5 +87,10 @@ export class RunMutationService {
 
       return { value, revision: updated.revision, wakeupId };
     });
+    // Every operator action (start, pause, resume, cancel, approve, ...) passes
+    // through here, so this one publish covers them all, woken or not: the
+    // mutation and the revision bump have committed either way.
+    this.events.publish({ type: 'run', runId });
+    return result;
   }
 }

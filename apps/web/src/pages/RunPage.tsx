@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Ban,
@@ -51,13 +51,15 @@ import { StageAttemptsSheet } from '@/components/runs/stage-attempts-sheet';
 import { StageOutputSheet } from '@/components/runs/stage-output-sheet';
 import { RunMemoryCard } from '@/components/runs/run-memory-card';
 import { isApprovalStillOpen } from './approval-review.logic';
+import { deepLinkTarget } from './run-deep-link.logic';
 import { quotaPauseMessage } from '@/lib/quota-pause';
 import { formatCapUsd } from '@/lib/format-cap';
 
 export function RunPage() {
   const { runId } = useParams<{ runId: string }>();
   const navigate = useNavigate();
-  const { data: run, isLoading } = useRun(runId);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const { data: run, isLoading, isFetching } = useRun(runId);
   const queryClient = useQueryClient();
   const [reviewStageKey, setReviewStageKey] = useState<string | null>(null);
   const [retry, setRetry] = useState<{ stageKey: string; scope: RetryScope } | null>(null);
@@ -71,6 +73,21 @@ export function RunPage() {
       setReviewStageKey(null);
     }
   }, [reviewStageKey, run]);
+
+  // A notification links here with `?review=<stage>` or `?input=<stage>`. Open
+  // what is still waiting, then drop the param so a refresh or a later visit
+  // does not reopen it.
+  useEffect(() => {
+    const review = searchParams.get('review');
+    const input = searchParams.get('input');
+    // Wait for the fetch to settle: a cached copy from an earlier visit can be
+    // out of date, and would make a link to a waiting stage look already answered.
+    if (!run || isFetching || (!review && !input)) return;
+    const target = deepLinkTarget({ review, input }, run);
+    if (target.review) setReviewStageKey(target.review);
+    if (target.input) setFormInputStageKey(target.input);
+    setSearchParams({}, { replace: true });
+  }, [run, isFetching, searchParams, setSearchParams]);
 
   const cancelRun = useMutation({
     mutationFn: () => api.cancelRun(runId!),
@@ -166,7 +183,6 @@ export function RunPage() {
       <StageAttemptsSheet
         runId={run.id}
         stageKey={attemptsStageKey}
-        stageRunning={isStageRunning(attemptsStageKey)}
         open={attemptsStageKey !== null}
         onOpenChange={(open) => !open && setAttemptsStageKey(null)}
       />

@@ -1,4 +1,7 @@
 import type {
+  ListNotificationsResultDto,
+  PushSubscriptionDto,
+  VapidKeyDto,
   PronunciationDictionaryListDto,
   SpeechPreviewDto,
   SpeechPreviewRequestDto,
@@ -146,6 +149,15 @@ async function requestFile(path: string, body: unknown): Promise<{ blob: Blob; f
 }
 
 export const api = {
+  listNotifications: () => request<ListNotificationsResultDto>('/notifications'),
+  markNotificationRead: (id: string) =>
+    request<void>(`/notifications/${id}/read`, { method: 'POST' }),
+  markAllNotificationsRead: () => request<void>('/notifications/read-all', { method: 'POST' }),
+  getVapidPublicKey: () => request<VapidKeyDto>('/push/vapid-public-key'),
+  savePushSubscription: (dto: PushSubscriptionDto) =>
+    request<void>('/push/subscription', { method: 'PUT', body: JSON.stringify(dto) }),
+  deletePushSubscription: (endpoint: string) =>
+    request<void>('/push/subscription', { method: 'DELETE', body: JSON.stringify({ endpoint }) }),
   listChannels: (params?: { includeArchived?: boolean }) => {
     const qs = new URLSearchParams();
     if (params?.includeArchived) qs.set('includeArchived', 'true');
@@ -559,5 +571,4 @@ export const api = {
     request<AssistantItemDto>(`/assistant/sessions/${sessionId}/proposals/${itemId}/apply`, {
       method: 'POST',
     }),
-  assistantEventsUrl: (sessionId: string) => `/api/assistant/sessions/${sessionId}/events`,
 };

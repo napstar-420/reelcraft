@@ -12,6 +12,8 @@ import { UpdateModule } from './update/update.module';
 import { PackageModule } from './package/package.module';
 import { SettingsPageModule } from './settings/settings-page.module';
 import { AssistantModule } from './assistant/assistant.module';
+import { LiveModule } from './live/live.module';
+import { NotificationModule } from './notification/notification.module';
 
 @Module({
   imports: [
@@ -28,6 +30,8 @@ import { AssistantModule } from './assistant/assistant.module';
     SettingsPageModule,
     PackageModule,
     AssistantModule,
+    LiveModule,
+    NotificationModule,
   ],
 })
 export class AppModule {}
