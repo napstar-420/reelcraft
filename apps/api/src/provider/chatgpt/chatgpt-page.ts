@@ -28,7 +28,9 @@ const S = {
   modelButton: 'button[aria-label="Select ChatGPT model"]',
   effortRow: '[data-reasoning-slider="true"]',
   addButton: 'button[aria-label="Add files and more"]',
-  generatedImage: 'main img[alt^="Generated image"]',
+  generatedImage: 'img[alt^="Generated image"]',
+  /** A reply with several images: one large image plus a strip of thumbnails. */
+  imageGroup: '[role="group"][aria-label="Generated images"]',
 };
 
 /** Effort slider stops, left to right. */
@@ -37,7 +39,20 @@ export type ChatgptEffort = keyof typeof EFFORT_STOPS;
 
 const PAGE_PRELUDE = `const S = ${JSON.stringify(S)};
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const waitFor = async (fn, ms) => { const end = Date.now() + ms; while (Date.now() < end) { const v = fn(); if (v) return v; await sleep(200); } return null; };`;
+const waitFor = async (fn, ms) => { const end = Date.now() + ms; while (Date.now() < end) { const v = fn(); if (v) return v; await sleep(200); } return null; };
+// Every loaded generated image of the chat, in order. A reply with several images shows one large
+// image (the selected one) plus a strip of thumbnails, and each thumbnail already holds its own
+// full-size image, so they are read straight from the strip with no clicking.
+const generatedImages = () => {
+  const main = document.querySelector('main');
+  if (!main) return [];
+  const ok = (i) => i.complete && i.naturalWidth > 0;
+  const grouped = [...main.querySelectorAll(S.imageGroup + ' img')].filter(ok);
+  const groupedSrcs = new Set(grouped.map((i) => i.src));
+  const singles = [...main.querySelectorAll(S.generatedImage)].filter((i) => ok(i) && !groupedSrcs.has(i.src));
+  const all = [...grouped, ...singles].sort((a, b) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
+  return [...new Map(all.map((i) => [i.src, i])).values()];
+};`;
 
 function pageId(id: number): number {
   if (!Number.isInteger(id) || id < 0) throw new Error(`Invalid BrowserOS page id ${id}`);
@@ -290,12 +305,11 @@ const text = main ? main.innerText : '';
 const retry = main && [...main.querySelectorAll('button')].find((b) => /^(retry|try again)$/i.test((b.getAttribute('aria-label') || b.innerText || '').trim()));
 const phrase = text.slice(-600).match(/message delivery timed out|something went wrong|network error|error generating/i);
 const errorSignal = retry ? 'button: ' + (retry.getAttribute('aria-label') || retry.innerText).trim() : phrase ? 'text: ' + phrase[0] : undefined;
-const imgs = [...document.querySelectorAll(S.generatedImage)].filter((i) => i.complete && i.naturalWidth > 0);
 return {
   signedIn,
   generating: !!document.querySelector(S.stop),
   replyDone: !!main && main.querySelectorAll(S.copy).length > 0,
-  images: new Set(imgs.map((i) => i.src)).size,
+  images: generatedImages().length,
   imagesLoading: /(loading|creating|generating) image/i.test(text.slice(-800)),
   errorShown: !!errorSignal,
   errorSignal,
@@ -327,10 +341,9 @@ return copied;`,
 export function parkImageScript(id: number, index: number): string {
   return inPage(
     id,
-    `const loaded = () => [...new Set([...document.querySelectorAll(S.generatedImage)].filter((i) => i.complete && i.naturalWidth > 0).map((i) => i.src))];
-// ChatGPT swaps its preview for the final image, briefly leaving none loaded.
-const srcs = (await waitFor(() => (loaded().length ? loaded() : null), 15000)) || [];
-const src = srcs[args.index];
+    `// ChatGPT swaps its preview for the final image, briefly leaving none loaded.
+const imgs = (await waitFor(() => { const l = generatedImages(); return l.length ? l : null; }, 15000)) || [];
+const src = imgs[args.index] && imgs[args.index].src;
 if (!src) return null;
 const blob = await (await fetch(src)).blob();
 const buf = new Uint8Array(await blob.arrayBuffer());

@@ -12,6 +12,7 @@ import {
   RUN_RESULT_BUDGET,
   archiveChatScript,
   pageStateScript,
+  parkImageScript,
   stripCitations,
   type PageState,
 } from './chatgpt-page';
@@ -248,6 +249,23 @@ describe('decidePoll', () => {
     });
   });
 
+  it('waits for the rest of a multi-image reply, then accepts what arrived', () => {
+    const list = { ...image, imageCount: 3 };
+    const two = state({ images: 2, replyDone: true });
+    expect(decidePoll(state({ images: 3, replyDone: true }), list, undefined, 0)).toEqual({
+      done: true,
+      outcome: 'succeeded',
+    });
+    expect(decidePoll(two, list, undefined, 0)).toBe('imageless');
+    expect(decidePoll(two, list, 0, 10_000)).toMatchObject({ done: false });
+    expect(decidePoll(two, list, 0, 30_000)).toEqual({ done: true, outcome: 'succeeded' });
+    // A single-image request is never held back.
+    expect(decidePoll(state({ images: 1, replyDone: true }), image, undefined, 0)).toEqual({
+      done: true,
+      outcome: 'succeeded',
+    });
+  });
+
   it('gives an imageless image reply a grace period before failing', () => {
     const finished = state({ replyDone: true });
     expect(decidePoll(finished, image, undefined, 0)).toBe('imageless');
@@ -406,6 +424,17 @@ describe('ChatgptProviderAdapter image chat archive', () => {
     expect(archived()).toBe(1);
     expect(closed()).toBe(1);
     expect(archivedBeforeClose()).toBe(true);
+  });
+});
+
+describe('chatgpt page image lookup', () => {
+  it('reads every image of a multi-image reply from its thumbnail strip, in order, and falls back to the lone image', () => {
+    // Both the poll and the download share one page-side lookup.
+    for (const script of [pageStateScript(7), parkImageScript(7, 1)]) {
+      expect(script).toContain('generatedImages()');
+      expect(script).toContain('Generated images');
+      expect(script).toContain('img[alt^=');
+    }
   });
 });
 
