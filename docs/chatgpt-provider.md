@@ -17,12 +17,12 @@ in to ChatGPT…" and does not retry. Sign in, then use re-run stage.
 
 ## How a job runs
 
-| Step     | What happens                                                                                                                                                                                                         |
-| -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `submit` | Open a tab: a **temporary chat** for text; a **regular chat** for images, because image generation is unavailable in temporary chats. Check sign-in, set effort, attach references, type, send.                      |
-| `poll`   | Read the tab: Stop button means running; the reply's Copy button means text is done; a loaded `Generated image` means an image is done.                                                                              |
-| `fetch`  | Text: capture what ChatGPT's own Copy button writes (markdown), strip web-search citation tokens, and parse JSON for `data`/`timeline`. Image: download every generated image, then archive the chat. Close the tab. |
-| `cancel` | Click Stop, archive the chat (images), and close the tab.                                                                                                                                                            |
+| Step     | What happens                                                                                                                                                                                                                                                                                               |
+| -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `submit` | Open a tab: a **temporary chat** for text; a **regular chat** for images, because image generation is unavailable in temporary chats. Check sign-in, set effort, attach references, type, send.                                                                                                            |
+| `poll`   | Read the tab: Stop button means running; the reply's Copy button means text is done; a loaded `Generated image` means an image is done.                                                                                                                                                                    |
+| `fetch`  | Text: capture what ChatGPT's own Copy button writes (markdown), strip web-search citation tokens, and parse JSON for `data`/`timeline`. Image: download every generated image, then archive the chat. Close the tab, but only once the result is in hand: a failed read leaves the tab open for the retry. |
+| `cancel` | Click Stop, archive the chat (images), and close the tab.                                                                                                                                                                                                                                                  |
 
 Costs settle at `$0`. The job handle holds only the Neo page id, and Neo tabs outlive API
 restarts, so a restart mid-job keeps polling the same tab.
@@ -41,9 +41,12 @@ response as `pastedPrompt`.
 - **Image chats are archived automatically.** Text chats are temporary and never appear in your
   history. Image generation does not work in temporary chats, so each image job opens a regular chat.
   Before closing its tab, Reelcraft archives that chat (the same call as ChatGPT's own **Archive**
-  menu item), including on failure or cancel. Find them under Settings > Data controls > Archived
-  chats. Archiving is best-effort: if it fails, a warning is logged and the image is still returned.
-  ChatGPT's chat lists lag an archive by up to a minute, so the sidebar may show the chat briefly.
+  menu item), including on failure or cancel. A failed download is retried in the same tab first, and
+  the chat is archived when the attempt is given up. Find them under Settings > Data controls >
+  Archived chats. Archiving is best-effort: if it fails, a warning is logged and the image is still
+  returned. ChatGPT archives the chat at once (its conversation endpoint reports `is_archived`), but
+  its sidebar and chat list can keep showing it for many minutes (still listed 9 minutes later on
+  2026-10-09).
 - **Effort is sticky account-wide** in ChatGPT. Every job sets it explicitly, and your ChatGPT app
   keeps whatever the last job used. Jobs that run side by side (an iterating stage with
   `iterate.concurrency` above 1) take turns from "set effort" to "sent", so each prompt goes out with
@@ -74,6 +77,6 @@ With `pnpm dev` running and Neo signed in:
 2. Text stage, High, web search on: the reply cites current information, with no
    `:chatgpt-content-reference` tokens.
 3. `data` stage with a system prompt: the output parses and validates.
-4. Image stage with one reference: a media artifact appears, and the chat is under Archived chats (not in the sidebar, give it a minute).
+4. Image stage with one reference: a media artifact appears, and the chat is under Archived chats (the sidebar may still list it for a while).
 5. Cancel mid-generation: the tab closes and the attempt is cancelled.
 6. Sign out of ChatGPT in Neo: the pin editor and Run show the sign-in message.

@@ -92,7 +92,8 @@ You pay for all the candidates on every attempt, including the attempts that are
 Paid per image by the provider, or your ChatGPT plan for Codex and ChatGPT. Fake is free.
 
 ChatGPT image chats are archived automatically after each image, so they don't pile up in your ChatGPT
-history. You can still find them under Settings > Data controls > Archived chats.
+history. You can still find them under Settings > Data controls > Archived chats. ChatGPT archives a chat
+at once, but its sidebar can keep listing it for many minutes.
 
 ## Using an image list
 

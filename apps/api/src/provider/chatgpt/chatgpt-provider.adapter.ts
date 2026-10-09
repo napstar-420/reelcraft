@@ -97,10 +97,11 @@ export class ChatgptProviderAdapter implements ProviderAdapter {
   /** externalId → when the tab first looked idle (nothing generating, no reply). */
   private readonly idleSince = new Map<string, number>();
   /**
-   * externalId → in-flight/completed fetch(). `fetch()` closes the Neo tab
-   * as a side effect, so a second call for the same handle (an Inngest step
-   * retry after fetchAndFinalize's post-fetch DB/storage writes throw) must
-   * not re-touch the now-closed page — it replays the first call's result.
+   * externalId → in-flight/completed fetch(). A successful `fetch()` closes
+   * the Neo tab, so a second call for the same handle (an Inngest step retry
+   * after fetchAndFinalize's post-fetch DB/storage writes throw) must not
+   * re-touch the now-closed page — it replays the first call's result. A
+   * failed fetch leaves the tab open and is dropped, so its retry reads again.
    */
   private readonly fetchResults = new Map<string, Promise<ProviderResult>>();
 
@@ -285,61 +286,68 @@ export class ChatgptProviderAdapter implements ProviderAdapter {
     return promise;
   }
 
+  /**
+   * The tab is closed (and an image chat archived) only once the result is in
+   * hand. A failed read leaves it open: Inngest retries the fetch step, and
+   * that retry has to find the same tab, or it fails with "Unknown page" and
+   * hides the real error. The loop cancels the job when the attempt is given up.
+   */
   private async doFetch(handle: JobHandle): Promise<ProviderResult> {
     const job = this.job(handle);
     if (!job) throw new Error(CHATGPT_SIGN_IN_MESSAGE);
-    try {
-      const rawResponse = { conversationUrl: job.conversationUrl, pastedPrompt: job.pastedPrompt };
-      const repro = { level: 'none' as const, providerVersion: 'chatgpt-web' };
-      if (job.modality === 'image') {
-        const downloaded = await this.downloadImages(job.pageId);
-        if (job.imageCount) {
-          // An image list: every image in the reply, up to the number asked for.
-          if (downloaded.length === 0)
-            throw new Error('ChatGPT reply contained no generated image');
-          return {
-            output: {
-              images: downloaded.slice(0, job.imageCount).map((image, index) => ({
-                kind: 'media.image',
-                base64: image.base64,
-                mime: image.mime,
-                filename: `chatgpt-image-${index + 1}${imageExtension(image.mime)}`,
-              })),
-            },
-            costUsd: 0,
-            repro,
-            rawResponse,
-          };
-        }
-        const [first, ...rest] = downloaded;
-        if (!first) throw new Error('ChatGPT reply contained no generated image');
-        const attachments: ProviderAttachment[] = rest.map((image, index) => ({
-          role: 'download',
-          base64: image.base64,
-          mime: image.mime,
-          filename: `chatgpt-image-${index + 2}${imageExtension(image.mime)}`,
-        }));
+    const result = await this.readResult(job);
+    await this.closeJob(job.pageId, job.modality);
+    return result;
+  }
+
+  private async readResult(job: ChatgptJobPayload): Promise<ProviderResult> {
+    const rawResponse = { conversationUrl: job.conversationUrl, pastedPrompt: job.pastedPrompt };
+    const repro = { level: 'none' as const, providerVersion: 'chatgpt-web' };
+    if (job.modality === 'image') {
+      const downloaded = await this.downloadImages(job.pageId);
+      if (job.imageCount) {
+        // An image list: every image in the reply, up to the number asked for.
+        if (downloaded.length === 0) throw new Error('ChatGPT reply contained no generated image');
         return {
           output: {
-            kind: 'media.image',
-            base64: first.base64,
-            mime: first.mime,
-            filename: `chatgpt-image-1${imageExtension(first.mime)}`,
+            images: downloaded.slice(0, job.imageCount).map((image, index) => ({
+              kind: 'media.image',
+              base64: image.base64,
+              mime: image.mime,
+              filename: `chatgpt-image-${index + 1}${imageExtension(image.mime)}`,
+            })),
           },
-          ...(attachments.length > 0 && { attachments }),
           costUsd: 0,
           repro,
           rawResponse,
         };
       }
-      const reply = await this.copyReply(job.pageId);
-      if (reply === undefined) throw new Error('Could not copy the ChatGPT reply');
-      const output =
-        job.outputKind === 'data' || job.outputKind === 'timeline' ? parseJsonReply(reply) : reply;
-      return { output, costUsd: 0, repro, rawResponse };
-    } finally {
-      await this.closeJob(job.pageId, job.modality);
+      const [first, ...rest] = downloaded;
+      if (!first) throw new Error('ChatGPT reply contained no generated image');
+      const attachments: ProviderAttachment[] = rest.map((image, index) => ({
+        role: 'download',
+        base64: image.base64,
+        mime: image.mime,
+        filename: `chatgpt-image-${index + 2}${imageExtension(image.mime)}`,
+      }));
+      return {
+        output: {
+          kind: 'media.image',
+          base64: first.base64,
+          mime: first.mime,
+          filename: `chatgpt-image-1${imageExtension(first.mime)}`,
+        },
+        ...(attachments.length > 0 && { attachments }),
+        costUsd: 0,
+        repro,
+        rawResponse,
+      };
     }
+    const reply = await this.copyReply(job.pageId);
+    if (reply === undefined) throw new Error('Could not copy the ChatGPT reply');
+    const output =
+      job.outputKind === 'data' || job.outputKind === 'timeline' ? parseJsonReply(reply) : reply;
+    return { output, costUsd: 0, repro, rawResponse };
   }
 
   async cancel(handle: JobHandle): Promise<CancelResult> {
