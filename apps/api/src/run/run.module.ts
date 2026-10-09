@@ -25,6 +25,7 @@ import { HumanReminderService } from './human-reminder.service';
 import { TimelineEditorService } from './timeline-editor.service';
 import { ProviderModule } from '../provider/provider.module';
 import { RunInsightService } from './run-insight.service';
+import { LiveModule } from '../live/live.module';
 
 const runControlProviders = [
   PreviewTokenService,
@@ -53,6 +54,7 @@ const runControlProviders = [
     ArtifactModule,
     CheckModule,
     ProviderModule,
+    LiveModule,
   ],
   providers: [RunService, RunInsightService, RunInputService, ...runControlProviders],
   controllers: [RunController],

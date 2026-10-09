@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { RunState } from '@reelcraft/shared';
 import { eq } from 'drizzle-orm';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
+import { LiveEvents } from '../live/live-events';
 import { run, runWakeup } from '../db/schema/index';
 import { RUN_ACTION_ALLOWED_STATES, RunActionPolicy, type RunAction } from './run-action-policy';
 
@@ -40,13 +41,16 @@ export class RunWakeupClaimService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly policy: RunActionPolicy,
+    private readonly events: LiveEvents,
   ) {}
 
   async claim(event: RunWakeupEventData): Promise<RunWakeupClaimResult> {
     const result = await this.claimInTransaction(event);
     const ids = { runId: event.runId, wakeupId: event.wakeupId, action: event.action };
-    if (result.claimed) this.logger.debug(ids, 'run wakeup claimed');
-    else if (result.reason === 'already_claimed')
+    if (result.claimed) {
+      this.logger.debug(ids, 'run wakeup claimed');
+      this.events.publish({ type: 'run', runId: event.runId });
+    } else if (result.reason === 'already_claimed')
       this.logger.debug(ids, 'run wakeup already claimed');
     else this.logger.warn({ ...ids, reason: result.reason }, 'run wakeup claim rejected');
     return result;

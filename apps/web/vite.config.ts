@@ -3,6 +3,9 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 
+/** Lets a second checkout run its own API next to the default one. */
+const apiTarget = process.env.API_PROXY_TARGET ?? 'http://localhost:3000';
+
 /** §1.4 — Vite proxies /api, single origin in dev. */
 export default defineConfig({
   plugins: [react(), tailwindcss()],
@@ -13,7 +16,10 @@ export default defineConfig({
   },
   server: {
     proxy: {
-      '/api': { target: 'http://localhost:3000', changeOrigin: true },
+      // Before '/api' (first match wins). `changeOrigin: false` keeps the Host the
+      // browser sent, which the API's same-origin check compares to Origin.
+      '/api/socket.io': { target: apiTarget, ws: true, changeOrigin: false },
+      '/api': { target: apiTarget, changeOrigin: true },
     },
   },
 });

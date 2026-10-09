@@ -15,7 +15,7 @@ plan (via `/plan`) written just before it starts — this table is the index.
 | 8   | Characters               | done              | `docs/plans/phase-8-characters.md`       | #18                    |
 | 9   | Editor & templates       | done              | `docs/plans/phase-9-editor-templates.md` | #19                    |
 | 9.5 | Visual graph canvas      | done              | `docs/plans/phase-9.5-visual-canvas.md`  | #20                    |
-| 10  | Live updates (Socket.IO) | pending           |                                          |                        |
+| 10  | Live updates (Socket.IO) | in progress       | `docs/plans/phase-10-live-updates.md`    |                        |
 | —   | Blueprint assistant      | in review         | `docs/plans/blueprint-assistant.md`      | #80–#85                |
 
 ## Phase scope (one-liners, from design spec §24)

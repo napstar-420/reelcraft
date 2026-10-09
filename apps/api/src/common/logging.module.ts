@@ -3,14 +3,9 @@ import { LoggerModule } from 'nestjs-pino';
 import type { IncomingMessage } from 'node:http';
 import { EngineConfig } from '../config/engine-config';
 
-// Inngest step calls, long-lived SSE streams, presigned-blob redirects and
-// the container healthcheck would drown the access log.
-const QUIET_PATHS = [
-  /^\/api\/inngest(\/|\?|$)/,
-  /^\/api\/runs\/[^/]+\/events(\?|$)/,
-  /^\/api\/blobs\//,
-  /^\/api\/system\/health(\?|$)/,
-];
+// Inngest step calls, presigned-blob redirects and the container
+// healthcheck would drown the access log.
+const QUIET_PATHS = [/^\/api\/inngest(\/|\?|$)/, /^\/api\/blobs\//, /^\/api\/system\/health(\?|$)/];
 
 export function isQuietRequest(url: string | undefined): boolean {
   return QUIET_PATHS.some((pattern) => pattern.test(url ?? ''));

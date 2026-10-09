@@ -46,6 +46,7 @@ import { RunWakeupDispatcher } from './run-wakeup-dispatcher.service';
 import { PINNED_PROVIDERS, PROVIDER_LABELS, ProviderRegistry } from '../provider/provider.registry';
 import { modalityForCapability } from '../capability/modality-for-capability';
 import { BlobService } from '../artifact/blob.service';
+import { LiveEvents } from '../live/live-events';
 import type { RoleBinding } from '../artifact/binding-resolver.service';
 import { canonicalJson } from '../json-schema/schema-hash';
 import {
@@ -77,6 +78,7 @@ export class RunService {
     private readonly wakeupDispatcher: RunWakeupDispatcher,
     private readonly providers: ProviderRegistry,
     private readonly blobs: BlobService,
+    private readonly events: LiveEvents,
   ) {}
 
   /** §6.2/§21 — inserts the run in `CREATED` without sending `run/started`.
@@ -316,6 +318,7 @@ export class RunService {
       },
       'run created',
     );
+    this.events.publish({ type: 'run', runId });
 
     return this.get(runId);
   }
@@ -637,6 +640,7 @@ export class RunService {
     if (stageKey) await this.ledger.raiseStageCap({ runId, stageKey, newCapUsd: capUsd });
     else await this.ledger.raiseBudget({ runId, newCapUsd: capUsd });
     this.logger.log({ runId, capUsd, stageKey }, 'run budget raised');
+    this.events.publish({ type: 'run', runId });
     // A run paused for budget continues straight away; in any other state
     // raising a cap only widens it.
     const current = await this.get(runId);

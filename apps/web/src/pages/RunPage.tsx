@@ -166,7 +166,6 @@ export function RunPage() {
       <StageAttemptsSheet
         runId={run.id}
         stageKey={attemptsStageKey}
-        stageRunning={isStageRunning(attemptsStageKey)}
         open={attemptsStageKey !== null}
         onOpenChange={(open) => !open && setAttemptsStageKey(null)}
       />

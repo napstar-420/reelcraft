@@ -21,30 +21,25 @@ export function StageAttemptsSheet({
   runId,
   stageKey,
   stageLabel,
-  stageRunning,
   open,
   onOpenChange,
 }: {
   runId: string;
   stageKey: string | null;
   stageLabel?: string | null;
-  stageRunning: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
   const [showDebug, setShowDebug] = useState(false);
-  const refetchInterval = stageRunning ? 3000 : false;
   const attempts = useQuery({
     queryKey: ['stage-attempts', runId, stageKey],
     queryFn: () => api.listStageAttempts(runId, stageKey as string),
     enabled: open && Boolean(stageKey),
-    refetchInterval,
   });
   const logs = useQuery({
     queryKey: ['stage-logs', runId, stageKey],
     queryFn: () => api.listStageLogs(runId, stageKey as string),
     enabled: open && Boolean(stageKey),
-    refetchInterval,
   });
   const stageLevelLines = stageLogLines(logs.data ?? [], null, showDebug);
 

@@ -2,15 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { accessLogLevel, isQuietRequest } from './logging.module';
 
 describe('access log policy', () => {
-  it('skips inngest, SSE streams, blob redirects and healthchecks only', () => {
+  it('skips inngest, blob redirects and healthchecks only', () => {
     expect(isQuietRequest('/api/inngest')).toBe(true);
     expect(isQuietRequest('/api/inngest?fnId=x')).toBe(true);
-    expect(isQuietRequest('/api/runs/01ABC/events')).toBe(true);
     expect(isQuietRequest('/api/blobs/01ABC')).toBe(true);
     expect(isQuietRequest('/api/system/health')).toBe(true);
     expect(isQuietRequest('/api/system/healthy')).toBe(false);
     expect(isQuietRequest('/api/runs/01ABC')).toBe(false);
-    expect(isQuietRequest('/api/runs/01ABC/events-log')).toBe(false);
     expect(isQuietRequest('/api/inngestion')).toBe(false);
     expect(isQuietRequest(undefined)).toBe(false);
   });

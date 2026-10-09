@@ -4,7 +4,7 @@ import type { RunState } from '@reelcraft/shared';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
 import { ulid } from '../common/ulid';
 import { run, runWakeup, stageExecution } from '../db/schema/index';
-import { InProcessRunEvents } from './run-events';
+import { LiveEvents } from '../live/live-events';
 
 @Injectable()
 export class RunStateService {
@@ -12,7 +12,7 @@ export class RunStateService {
 
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly events: InProcessRunEvents,
+    private readonly events: LiveEvents,
   ) {}
 
   async transition(runId: string, state: RunState): Promise<void> {
@@ -28,7 +28,7 @@ export class RunStateService {
       .set({ state, ...timestamps })
       .where(eq(run.id, runId));
     this.logger.log({ runId, toState: state }, 'run state changed');
-    this.events.publish({ runId, type: 'state_changed', state });
+    this.events.publish({ type: 'run', runId });
   }
 
   /** Pauses a RUNNING run until `resumeAt` and queues the wakeup that resumes
@@ -57,7 +57,7 @@ export class RunStateService {
     });
     if (!paused) return;
     this.logger.log({ runId, toState: 'PAUSED_QUOTA', resumeAt }, 'run state changed');
-    this.events.publish({ runId, type: 'state_changed', state: 'PAUSED_QUOTA' });
+    this.events.publish({ type: 'run', runId });
   }
 
   async setCursor(runId: string, stageKey: string | null): Promise<void> {
@@ -72,6 +72,7 @@ export class RunStateService {
       .set({ state: 'skipped', endedAt: new Date().toISOString() })
       .where(eq(stageExecution.id, stageExecutionId));
     this.logger.log({ runId, stageKey }, 'stage skipped: enabledWhen did not match');
+    this.events.publish({ type: 'stage', runId, stageKey });
   }
 
   /** §12.4 — manual-pause runnability check: read without locking, since the

@@ -4,6 +4,7 @@ import { DRIZZLE, type Db } from '../db/drizzle.provider';
 import { stageEvent } from '../db/schema/index';
 import { sanitizeForLog } from '../common/redact';
 import { ulid } from '../common/ulid';
+import { LiveEvents } from '../live/live-events';
 
 export type StageEventLevel = 'debug' | 'info' | 'warn' | 'error';
 
@@ -28,6 +29,7 @@ export class StageEventService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly logger: PinoLogger,
+    private readonly live: LiveEvents,
   ) {
     this.logger.setContext(StageEventService.name);
   }
@@ -67,5 +69,13 @@ export class StageEventService {
     } catch (error) {
       this.logger.warn({ err: error, runId: ctx.runId, event: type }, 'stage event write failed');
     }
+    // Every stage state change is followed by an event, so this doubles as
+    // the signal that the stage's rows, attempts and logs changed.
+    this.publishStageChanged(ctx.runId, ctx.stageKey);
+  }
+
+  /** For stage state changes that log nothing of their own. */
+  publishStageChanged(runId: string, stageKey: string): void {
+    this.live.publish({ type: 'stage', runId, stageKey });
   }
 }
