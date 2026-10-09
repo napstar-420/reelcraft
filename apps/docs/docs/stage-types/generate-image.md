@@ -13,6 +13,8 @@ To get several pictures from one prompt, open **Output & memory writes** and cha
 `media.image_list`. The stage then makes an **image list**: all its images in order, stored together. Each
 image shows in the stage's output, where you can open or download it.
 
+To make several candidates and keep only the best one, see [Pick the best of several](#pick-the-best-of-several).
+
 ## Providers and models
 
 OpenRouter image models, **Codex** (needs its image extension, see [Connect Codex](../codex.md)),
@@ -56,6 +58,35 @@ An image list can't [iterate](../blueprints/iterate-conditions-approval.md#itera
 memory. Bind it from the next stage with **Previous stage**. To make a different picture for each
 scene, iterate with a single `media.image` output instead.
 
+## Pick the best of several
+
+Keep the **Output** as `media.image` (one image) and let [quality control](../blueprints/quality-control.md#picking-the-best-image)
+choose between candidates:
+
+1. Under **Output & memory writes**, with **Output** on `media.image`, tick **Make several candidates
+   and let quality control pick the best**.
+2. Set **Number of candidates**, from 2 to 4. It starts at 3.
+3. Turn on **Quality control** for the stage, with a judge that can look at images. Without it the
+   blueprint shows **Picking the best of several images needs quality control**.
+
+Each attempt makes all the candidates. The judge looks at them together, picks the best one, and scores
+that image against your criteria.
+
+- If the score reaches the **Threshold**, the stage's output is **that one image**. It is a normal
+  image, so a later stage can use it anywhere an image fits, such as `startFrame`, and the stage can
+  [iterate](../blueprints/iterate-conditions-approval.md#iterate) or write to memory. The run page shows
+  it with the other candidates beside it, the chosen one marked **Chosen**.
+- If the score is below the **Threshold**, every candidate is rejected and **all are made again**, with
+  the judge's critique added to the prompt, up to the quality control **Max attempts**. When those run
+  out, the stage fails, or goes to a person if **When attempts run out** is **Hand off to human review**. The
+  person sees the best candidate of the last round.
+- Your **Checks** run on every candidate first. A candidate that fails a check is dropped and the judge
+  doesn't see it. If every candidate fails, the attempt fails its checks and is made again.
+- **If fewer images come back** works as it does for an image list. The judge picks from the candidates
+  that did come back.
+
+You pay for all the candidates on every attempt, including the attempts that are rejected.
+
 ## Cost
 
 Paid per image by the provider, or your ChatGPT plan for Codex and ChatGPT. Fake is free.
@@ -81,7 +112,8 @@ made again, and you pay for all of it. If you need to redo pictures one by one, 
 - For the same character in every image, bind a [role](../channels/characters.md) to `references`.
 - [Quality control](../blueprints/quality-control.md) can look at the image: the judge sees the
   picture itself. For an image list it sees every image together and accepts or rejects the whole set.
-  See [Image lists](../blueprints/quality-control.md#image-lists).
+  See [Image lists](../blueprints/quality-control.md#image-lists). To keep the best of a few tries as one
+  image, see [Pick the best of several](#pick-the-best-of-several).
 
 ## Example
 

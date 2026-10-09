@@ -117,6 +117,22 @@ together, in order**, and gives **one score for the whole set**.
   shows **This judge model can't look at images.** or **This judge model can look at 5 images at a time,
   fewer than this stage makes.**
 
+## Picking the best image
+
+A [Generate Image](../stage-types/generate-image.md) stage with the `media.image` output can make 2 to 4
+**candidates** in one attempt (**Make several candidates and let quality control pick the best**). The
+judge **looks at all the candidates together, picks the best one, and scores that image**. Unlike an image
+list, the stage's output is one image.
+
+- A score at or above the **Threshold** keeps the chosen image as the stage's output. The other candidates
+  are kept beside it on the run page.
+- A score below it rejects **all** the candidates: the critique goes into the next attempt's prompt and
+  every candidate is made again, up to **Max attempts**.
+- Quality control is required for this. The judge needs to look at images, and at as many as the stage
+  makes, like an image list (see above).
+- If the judge can't run, the run pauses for review as usual. **Retry QC** picks again from the
+  candidates already made, without making new ones.
+
 ## Cost
 
 Each scoring is a call to the judge model. A stage that fails its score several times makes several
