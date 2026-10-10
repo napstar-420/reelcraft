@@ -10,7 +10,7 @@ import type {
   ProviderResult,
   VoiceQuery,
 } from '../provider-adapter.interface';
-import { DeepgramSpeech } from './deepgram-speech.service';
+import { DeepgramSpeech, errorReason } from './deepgram-speech.service';
 import { deepgramConflict, isDeepgramFamily } from './deepgram-speech';
 import { DeepgramInboxService } from './deepgram-inbox.service';
 import { DRIZZLE, type Db } from '../../db/drizzle.provider';
@@ -94,11 +94,12 @@ export class DeepgramAdapter implements ProviderAdapter {
       },
     );
     if (!response.ok) {
+      const reason = errorReason(await response.text());
       this.logger.warn(
-        { providerId: this.id, model: modelId, statusCode: response.status },
+        { providerId: this.id, model: modelId, statusCode: response.status, reason },
         'provider transcription failed',
       );
-      throw new Error(`Deepgram transcription: ${response.status} ${response.statusText}`);
+      throw new Error(`Deepgram transcription: ${response.status} ${reason}`);
     }
     const output = normalize(await response.json());
     this.logger.log(
@@ -169,11 +170,18 @@ export class DeepgramAdapter implements ProviderAdapter {
       },
     );
     if (!response.ok) {
+      const reason = errorReason(await response.text());
       this.logger.warn(
-        { providerId: this.id, jobId: job.id, model: req.modelId, statusCode: response.status },
+        {
+          providerId: this.id,
+          jobId: job.id,
+          model: req.modelId,
+          statusCode: response.status,
+          reason,
+        },
         'provider job submit failed',
       );
-      throw new Error(`Deepgram submit: ${response.status} ${response.statusText}`);
+      throw new Error(`Deepgram submit: ${response.status} ${reason}`);
     }
     const body = (await response.json()) as { request_id?: string };
     await this.inbox.markSubmitted(job.id, body.request_id ?? job.id);
