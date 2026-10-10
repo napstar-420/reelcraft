@@ -1,3 +1,4 @@
+import { Readable } from 'node:stream';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ProviderRequest } from '../provider-adapter.interface';
 import { DeepgramAdapter } from './deepgram.adapter';
@@ -5,17 +6,18 @@ import { DeepgramAdapter } from './deepgram.adapter';
 function adapter(): DeepgramAdapter {
   const db = {
     select: () => ({
-      from: () => ({ where: () => ({ limit: () => Promise.resolve([{ objectKey: 'k/a.wav' }]) }) }),
+      from: () => ({
+        where: () => ({
+          limit: () => Promise.resolve([{ objectKey: 'k/a.wav', mime: 'audio/wav' }]),
+        }),
+      }),
     }),
   };
   return new DeepgramAdapter(
     { get: () => Promise.resolve('dg-key') } as never,
-    { presignGet: () => Promise.resolve('http://media.test/a.wav') } as never,
+    { getStream: () => Promise.resolve(Readable.from([Buffer.from('wav-bytes')])) } as never,
     db as never,
-    { publicApiBaseUrl: 'http://localhost:3000' } as never,
-    {
-      createOrGet: () => Promise.resolve({ id: 'job-1', callbackToken: 'tok' }),
-    } as never,
+    {} as never,
   );
 }
 
@@ -28,22 +30,61 @@ const request: ProviderRequest = {
 
 afterEach(() => vi.unstubAllGlobals());
 
-describe('DeepgramAdapter.submit', () => {
+describe('DeepgramAdapter transcription', () => {
+  it('uploads the audio bytes instead of a URL, so no public address is needed', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      Response.json({
+        metadata: { duration: 1.5 },
+        results: {
+          channels: [
+            {
+              alternatives: [
+                {
+                  transcript: 'hello world',
+                  words: [
+                    { word: 'hello', start: 0, end: 0.5 },
+                    { word: 'world', start: 0.6, end: 1.2 },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const deepgram = adapter();
+
+    const handle = await deepgram.submit(request, 'key-1');
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(await deepgram.poll(handle)).toEqual({ done: true, outcome: 'succeeded' });
+    const result = await deepgram.fetch(handle);
+
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(url).not.toContain('callback');
+    expect(init.headers['Content-Type']).toBe('audio/wav');
+    expect(Buffer.from(init.body).toString()).toBe('wav-bytes');
+    expect(result.output).toMatchObject({
+      transcript: 'hello world',
+      durationSec: 1.5,
+      words: [
+        { text: 'hello', startSec: 0, endSec: 0.5 },
+        { text: 'world', startSec: 0.6, endSec: 1.2 },
+      ],
+    });
+  });
+
   it("puts Deepgram's reason in the error when the request is rejected", async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValue(
-        new Response(
-          JSON.stringify({ err_code: 'INVALID_CALLBACK', err_msg: 'Invalid callback URL' }),
-          {
-            status: 400,
-            statusText: 'Bad Request',
-          },
+      vi
+        .fn()
+        .mockResolvedValue(
+          Response.json({ err_code: 'BAD_REQUEST', err_msg: 'Bad audio' }, { status: 400 }),
         ),
-      ),
     );
-    await expect(adapter().submit(request, 'key-1')).rejects.toThrow(
-      'Deepgram submit: 400 Invalid callback URL',
-    );
+    const deepgram = adapter();
+    const handle = await deepgram.submit(request, 'key-1');
+    await expect(deepgram.fetch(handle)).rejects.toThrow('Deepgram transcription: 400 Bad audio');
   });
 });

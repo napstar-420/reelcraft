@@ -1,6 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { CostEstimate, JobHandle, JobStatus, VoiceListDto } from '@reelcraft/shared';
-import { EngineConfig } from '../../config/engine-config';
 import { STORAGE_ADAPTER, type StorageAdapter } from '../../storage/storage.adapter';
 import { KEY_PROVIDER, type KeyProvider } from '../key-provider';
 import type {
@@ -18,6 +17,14 @@ import { blob } from '../../db/schema';
 import { eq } from 'drizzle-orm';
 
 const DEFAULT_PRICE_PER_MINUTE_USD = 0.0043;
+
+/** What Analyze Media's transcription needs at `fetch` time. */
+interface TranscribeJob {
+  objectKey: string;
+  mime: string;
+  modelId: string;
+  pricePerMinuteUsd: number;
+}
 
 /** Deepgram bills by audio length: the per-minute price times the minutes
  * transcribed. With no known length, one minute is assumed. */
@@ -40,7 +47,6 @@ export class DeepgramAdapter implements ProviderAdapter {
     @Inject(KEY_PROVIDER) private readonly keys: KeyProvider,
     @Inject(STORAGE_ADAPTER) private readonly storage: StorageAdapter,
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly config: EngineConfig,
     private readonly inbox: DeepgramInboxService,
   ) {
     this.speech = new DeepgramSpeech(keys);
@@ -71,12 +77,12 @@ export class DeepgramAdapter implements ProviderAdapter {
 
   /** Transcribes a stored audio file in one request by uploading its bytes
    * (no callback, so it also works when Deepgram can't reach this install).
-   * Used by quality control's Include transcript. */
+   * Used by quality control's Include transcript and by Analyze Media. */
   async transcribeStored(
     objectKey: string,
     mime: string,
     options: { modelId?: string; pricePerMinuteUsd?: number } = {},
-  ): Promise<{ transcript: string; durationSec: number; costUsd: number }> {
+  ): Promise<ReturnType<typeof normalize> & { costUsd: number; raw: unknown }> {
     const apiKey = await this.keys.get(this.id);
     if (!apiKey) throw new Error('Deepgram: no API key configured');
     const chunks: Buffer[] = [];
@@ -101,7 +107,8 @@ export class DeepgramAdapter implements ProviderAdapter {
       );
       throw new Error(`Deepgram transcription: ${response.status} ${reason}`);
     }
-    const output = normalize(await response.json());
+    const raw: unknown = await response.json();
+    const output = normalize(raw);
     this.logger.log(
       {
         providerId: this.id,
@@ -112,12 +119,12 @@ export class DeepgramAdapter implements ProviderAdapter {
       'provider transcription completed',
     );
     return {
-      transcript: output.transcript,
-      durationSec: output.durationSec,
+      ...output,
       costUsd: deepgramCostUsd(
         options.pricePerMinuteUsd ?? DEFAULT_PRICE_PER_MINUTE_USD,
         output.durationSec,
       ),
+      raw,
     };
   }
 
@@ -143,65 +150,26 @@ export class DeepgramAdapter implements ProviderAdapter {
     const source = (req.params.slots as Record<string, { blobId?: string }> | undefined)?.source;
     if (!source?.blobId) throw new Error('Deepgram: source media binding lacks blob id');
     const [sourceBlob] = await this.db
-      .select({ objectKey: blob.objectKey })
+      .select({ objectKey: blob.objectKey, mime: blob.mime })
       .from(blob)
       .where(eq(blob.id, source.blobId))
       .limit(1);
     if (!sourceBlob) throw new Error('Deepgram: source media blob no longer exists');
-    const job = await this.inbox.createOrGet(key, req);
-    if ('externalId' in job && job.externalId) {
-      this.logger.debug(
-        { providerId: this.id, jobId: job.id, model: req.modelId },
-        'provider job already submitted',
-      );
-      return { providerId: this.id, externalId: job.id, payload: { jobId: job.id } };
-    }
-    const apiKey = await this.keys.get(this.id);
-    if (!apiKey) throw new Error('Deepgram: no API key configured');
-    const callback = `${this.config.publicApiBaseUrl}/api/providers/deepgram/callback?token=${job.callbackToken}`;
-    const url = await this.storage.presignGet(sourceBlob.objectKey, 900, { external: true });
-    const startedAt = Date.now();
-    const response = await fetch(
-      `https://api.deepgram.com/v1/listen?model=${encodeURIComponent(req.modelId)}&smart_format=true&utterances=true&callback=${encodeURIComponent(callback)}`,
-      {
-        method: 'POST',
-        headers: { Authorization: `Token ${apiKey}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url }),
-      },
-    );
-    if (!response.ok) {
-      const reason = errorReason(await response.text());
-      this.logger.warn(
-        {
-          providerId: this.id,
-          jobId: job.id,
-          model: req.modelId,
-          statusCode: response.status,
-          reason,
-        },
-        'provider job submit failed',
-      );
-      throw new Error(`Deepgram submit: ${response.status} ${reason}`);
-    }
-    const body = (await response.json()) as { request_id?: string };
-    await this.inbox.markSubmitted(job.id, body.request_id ?? job.id);
-    this.logger.log(
-      {
-        providerId: this.id,
-        jobId: job.id,
-        externalId: body.request_id,
-        model: req.modelId,
-        durationMs: Date.now() - startedAt,
-      },
-      'provider job submitted',
-    );
-    return { providerId: this.id, externalId: job.id, payload: { jobId: job.id } };
+    // The audio goes up with the request in `fetch`, so Deepgram needs no
+    // public URL for it and no callback into this install.
+    const transcribe: TranscribeJob = {
+      objectKey: sourceBlob.objectKey,
+      mime: sourceBlob.mime,
+      modelId: req.modelId,
+      pricePerMinuteUsd: Number(req.params.pricePerMinuteUsd ?? DEFAULT_PRICE_PER_MINUTE_USD),
+    };
+    return { providerId: this.id, externalId: key, payload: { transcribe } };
   }
   async poll(handle: JobHandle): Promise<JobStatus> {
-    // Speech is made in `fetch`, so there is nothing to wait for.
-    if ((handle.payload as { speech?: unknown } | undefined)?.speech) {
-      return { done: true, outcome: 'succeeded' };
-    }
+    // Speech and transcription are made in `fetch`, so there is nothing to wait for.
+    const payload = handle.payload as { speech?: unknown; transcribe?: unknown } | undefined;
+    if (payload?.speech || payload?.transcribe) return { done: true, outcome: 'succeeded' };
+    // Jobs submitted by URL before transcription uploaded its bytes.
     const job = await this.inbox.get(handle.externalId);
     if (!job) {
       this.logger.error({ providerId: this.id, jobId: handle.externalId }, 'provider job unknown');
@@ -218,6 +186,20 @@ export class DeepgramAdapter implements ProviderAdapter {
   async fetch(handle: JobHandle): Promise<ProviderResult> {
     if ((handle.payload as { speech?: unknown } | undefined)?.speech) {
       return this.speech.fetch(handle);
+    }
+    const transcribe = (handle.payload as { transcribe?: TranscribeJob } | undefined)?.transcribe;
+    if (transcribe) {
+      const { raw, costUsd, ...output } = await this.transcribeStored(
+        transcribe.objectKey,
+        transcribe.mime,
+        transcribe,
+      );
+      return {
+        output,
+        costUsd,
+        repro: { level: 'none', providerVersion: transcribe.modelId },
+        rawResponse: raw,
+      };
     }
     const job = await this.inbox.get(handle.externalId);
     if (!job?.result) {

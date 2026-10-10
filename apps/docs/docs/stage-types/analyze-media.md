@@ -37,14 +37,8 @@ For **Transcribe align**: **Deepgram** (Nova 3) or **Fake (test)**. It needs a D
 Transcribing is billed by Deepgram **by the length of the audio**. Reelcraft estimates the cost from
 the file's length before it starts. Probe costs nothing.
 
-:::warning Deepgram on a desktop install
-
-Deepgram sends its transcript back to Reelcraft over the internet, so it needs a public address for
-your Reelcraft. On a normal desktop install it can't reach your computer, and **Transcribe align**
-doesn't work. **Probe** always works. (Deepgram transcripts for [quality
-control](../blueprints/quality-control.md#include-transcript) are not affected.)
-
-:::
+Reelcraft sends the audio to Deepgram itself, so **Transcribe align** works on a desktop install
+too: Deepgram doesn't need to reach your computer.
 
 ## Tips
 

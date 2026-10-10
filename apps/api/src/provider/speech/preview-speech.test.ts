@@ -13,7 +13,7 @@ function adapter(fetchBody: string) {
       text: async () => fetchBody,
     }),
   );
-  return new DeepgramAdapter({ get: async () => 'key' }, stub, stub, stub, stub);
+  return new DeepgramAdapter({ get: async () => 'key' }, stub, stub, stub);
 }
 
 describe('previewSpeech', () => {
