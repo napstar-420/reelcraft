@@ -14,7 +14,9 @@ export interface MemoryWriteSource {
   /** The finalized artifact's `data` — the value `StageDef.writes` paths
    * resolve against. `'$'` means "the whole value". */
   data: unknown;
-  artifactId?: string;
+  /** The artifact being finalized. Required: a media write stores only this
+   * reference, so leaving it out writes a row that points at no file. */
+  artifactId: string;
 }
 
 export interface InvalidatedMemoryWriter {

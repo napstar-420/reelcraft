@@ -93,15 +93,12 @@ describe('BindingResolverService — media manifests carry blobId', () => {
   function serviceWith(...results: unknown[][]): BindingResolverService {
     const queue = [...results];
     const next = () => Promise.resolve(queue.shift() ?? []);
-    const select = () => ({
-      from: () => ({
-        where: () => ({
-          limit: next,
-          orderBy: next,
-          then: (resolve: (rows: unknown[]) => unknown) => next().then(resolve),
-        }),
-      }),
-    });
+    const query: object = {
+      limit: next,
+      orderBy: () => query,
+      then: (resolve: (rows: unknown[]) => unknown) => next().then(resolve),
+    };
+    const select = () => ({ from: () => ({ where: () => query }) });
     return Object.assign(Object.create(BindingResolverService.prototype) as object, {
       db: { select },
       logger: { warn: () => undefined, debug: () => undefined },
@@ -146,5 +143,19 @@ describe('BindingResolverService — media manifests carry blobId', () => {
       { blobId: 'blob-a', sourceKey: 'k/a.png' },
       { blobId: 'blob-b', sourceKey: 'k/b.png' },
     ]);
+  });
+
+  it('{from:"memory"} on a media row with no artifact throws instead of resolving null', async () => {
+    const row = {
+      memKey: 'narration_audio',
+      version: 1,
+      kind: 'media.audio',
+      artifactId: null,
+      data: null,
+      tombstone: false,
+    };
+    await expect(
+      serviceWith([row]).resolve({ from: 'memory', key: 'narration_audio' }, ctx),
+    ).rejects.toThrow('memory media "narration_audio" has no file');
   });
 });

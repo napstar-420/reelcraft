@@ -649,6 +649,19 @@ export class BindingResolverService {
     ref: Extract<Ref, { from: 'memory' }>,
     ctx: BindingScope,
   ): Promise<{ rows: MemoryRow[]; group: boolean }> {
+    const found = await this.findMemoryRows(ref, ctx);
+    // A media row stores only its artifact; without one the stage would get `null`.
+    const orphan = found.rows.find((row) => row.kind.startsWith('media.') && !row.artifactId);
+    if (orphan) {
+      throw new Error(`BindingResolverService: memory media "${orphan.memKey}" has no file`);
+    }
+    return found;
+  }
+
+  private async findMemoryRows(
+    ref: Extract<Ref, { from: 'memory' }>,
+    ctx: BindingScope,
+  ): Promise<{ rows: MemoryRow[]; group: boolean }> {
     const [exact] = await this.db
       .select()
       .from(runMemory)

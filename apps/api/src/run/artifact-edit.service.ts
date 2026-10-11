@@ -142,6 +142,7 @@ export class ArtifactEditService {
               stageKey,
               kind: context.stage.output.kind,
               data,
+              artifactId: newArtifactId,
             }),
           },
           tx,
