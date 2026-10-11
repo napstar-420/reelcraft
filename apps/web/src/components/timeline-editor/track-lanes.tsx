@@ -24,8 +24,13 @@ type Drag = {
   moved: boolean;
 };
 
-const labelOf = (item: TimelineItem) =>
-  item.type === 'media' ? item.handle : item.type === 'text' ? item.text : 'Captions';
+/** What a clip shows: the media's name when the editor knows one, never its raw handle if it can help it. */
+const itemLabel = (item: TimelineItem, mediaLabel: (handle: string) => string | undefined) =>
+  item.type === 'media'
+    ? (mediaLabel(item.handle) ?? item.handle)
+    : item.type === 'text'
+      ? item.text
+      : 'Captions';
 
 /** The tracks view. Drag a clip or title to move it; drag its left or right
  * edge to trim it. Edges snap to other clips and to tenths of a second. A
@@ -36,6 +41,7 @@ export function TrackLanes({
   selection,
   readOnly,
   sourceSecOf,
+  mediaLabel,
   onSelect,
   onTiming,
 }: {
@@ -45,6 +51,7 @@ export function TrackLanes({
   readOnly: boolean;
   /** The source length of a media handle, when known (limits trimming). */
   sourceSecOf: (handle: string) => number | undefined;
+  mediaLabel: (handle: string) => string | undefined;
   onSelect: (selection: Selection) => void;
   onTiming: (selection: Selection, timing: ItemTiming) => void;
 }) {
@@ -144,7 +151,7 @@ export function TrackLanes({
                   key={`${track.id}-${itemIndex}`}
                   role="button"
                   tabIndex={0}
-                  aria-label={`${labelOf(item)}, ${timing.startSec.toFixed(1)}s to ${(timing.startSec + timing.durationSec).toFixed(1)}s`}
+                  aria-label={`${itemLabel(item, mediaLabel)}, ${timing.startSec.toFixed(1)}s to ${(timing.startSec + timing.durationSec).toFixed(1)}s`}
                   className={cn(
                     'absolute top-0.5 bottom-0.5 flex touch-none items-center overflow-hidden rounded-sm border border-primary/40 bg-primary/20 text-[0.72rem] text-foreground select-none',
                     editable && 'cursor-grab active:cursor-grabbing',
@@ -166,7 +173,9 @@ export function TrackLanes({
                       onPointerDown={(event) => begin(event, sel, item, 'start')}
                     />
                   ) : null}
-                  <span className="min-w-0 flex-1 truncate px-1.5">{labelOf(item)}</span>
+                  <span className="min-w-0 flex-1 truncate px-1.5">
+                    {itemLabel(item, mediaLabel)}
+                  </span>
                   {editable ? (
                     <span
                       aria-hidden

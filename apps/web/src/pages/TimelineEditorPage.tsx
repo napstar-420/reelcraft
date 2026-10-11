@@ -281,6 +281,7 @@ export function TimelineEditorPage() {
             selection={selection}
             readOnly={readOnly}
             sourceSecOf={(handle) => resourceDurationSec(resourceByHandle.get(handle))}
+            mediaLabel={(handle) => resourceByHandle.get(handle)?.label}
             onSelect={setSelection}
             onTiming={(sel, timing) =>
               commit((next) => {
