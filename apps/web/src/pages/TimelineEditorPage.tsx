@@ -455,6 +455,9 @@ export function TimelineEditorPage() {
           styles={styles}
           readOnly={readOnly}
           selectionKey={selection ? `${selection.trackIndex}-${selection.itemIndex}` : 'none'}
+          timingMaps={timingMaps}
+          playerRef={playerRef}
+          onSeekSec={seekSec}
           onUpdate={(change) =>
             selection &&
             mutate((next) => {

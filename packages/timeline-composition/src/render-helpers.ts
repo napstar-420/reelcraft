@@ -12,6 +12,23 @@ export const DEFAULT_TEXT_STYLE: TextStyleTokens = {
 /** The colour of the word being spoken in a caption. */
 export const CAPTION_HIGHLIGHT = '#ffd84d';
 
+/** A captions item's look: its preset's tokens with this item's own colour, size and case laid on
+ * top. */
+export function captionTokens(
+  base: TextStyleTokens,
+  style:
+    | { color?: string | undefined; fontSize?: number | undefined; uppercase?: boolean | undefined }
+    | undefined,
+): TextStyleTokens {
+  if (!style) return base;
+  return {
+    ...base,
+    ...(style.color !== undefined && { color: style.color }),
+    ...(style.fontSize !== undefined && { fontSize: style.fontSize }),
+    ...(style.uppercase !== undefined && { uppercase: style.uppercase }),
+  };
+}
+
 type Css = Record<string, string | number>;
 
 /** CSS for the text itself (the inner span), from a style's tokens. */

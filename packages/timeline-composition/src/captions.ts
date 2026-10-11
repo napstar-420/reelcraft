@@ -17,7 +17,7 @@ const CLAUSE_END = /[,;:，；：]["”’')\]]*$/;
  * and the final render both call this, so they break the same way. */
 export function captionPages(
   words: CaptionWord[],
-  options: { wordsPerPage?: number } = {},
+  options: { wordsPerPage?: number | undefined } = {},
 ): CaptionPage[] {
   const perPage = Math.max(1, Math.floor(options.wordsPerPage ?? DEFAULT_WORDS_PER_PAGE));
   const pages: CaptionPage[] = [];
@@ -57,4 +57,30 @@ export function activeCaption(
     return { page, wordIndex };
   }
   return undefined;
+}
+
+/** Pages stored on a captions item (the person's edits), in the shape the player shows. */
+export function pagesFromStored(
+  stored: ReadonlyArray<{ words: ReadonlyArray<CaptionWord> }>,
+): CaptionPage[] {
+  return stored
+    .filter((page) => page.words.length > 0)
+    .map((page) => ({
+      words: page.words.map((word) => ({ ...word })),
+      startSec: page.words[0]!.startSec,
+      endSec: page.words.at(-1)!.endSec,
+    }));
+}
+
+/** The pages a captions item shows: the person's edited pages if there are any, otherwise the
+ * transcript's words, paged automatically. */
+export function captionPagesFor(
+  item: {
+    pages?: ReadonlyArray<{ words: ReadonlyArray<CaptionWord> }> | undefined;
+    style?: { wordsPerPage?: number | undefined } | undefined;
+  },
+  words: CaptionWord[],
+): CaptionPage[] {
+  if (item.pages?.length) return pagesFromStored(item.pages);
+  return captionPages(words, { wordsPerPage: item.style?.wordsPerPage });
 }

@@ -74,4 +74,66 @@ describe('Timeline', () => {
     expect(parsed.success).toBe(false);
     if (!parsed.success) expect(parsed.error.issues.length).toBeGreaterThanOrEqual(4);
   });
+
+  describe('captions', () => {
+    const captions = (extra: object) =>
+      Timeline.safeParse({
+        ...base,
+        tracks: [
+          {
+            id: 'captions',
+            type: 'captions',
+            items: [
+              { type: 'captions', timingHandle: 'artifact:w', styleId: 'caption.clean', ...extra },
+            ],
+          },
+        ],
+      });
+
+    it('still accepts captions with no pages or style (stored and model-made timelines)', () => {
+      expect(captions({}).success).toBe(true);
+    });
+
+    it('accepts edited pages and style overrides', () => {
+      const result = captions({
+        pages: [
+          {
+            words: [
+              { text: 'Hi', startSec: 0, endSec: 0.4 },
+              { text: 'there', startSec: 0.4, endSec: 0.9 },
+            ],
+          },
+        ],
+        style: {
+          wordsPerPage: 2,
+          highlightColor: '#ffd84d',
+          position: 'center',
+          fontSize: 80,
+          uppercase: true,
+        },
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it('rejects words out of order, empty pages and out-of-range style values', () => {
+      expect(
+        captions({
+          pages: [
+            {
+              words: [
+                { text: 'b', startSec: 1, endSec: 2 },
+                { text: 'a', startSec: 0, endSec: 0.5 },
+              ],
+            },
+          ],
+        }).success,
+      ).toBe(false);
+      expect(captions({ pages: [{ words: [] }] }).success).toBe(false);
+      expect(
+        captions({ pages: [{ words: [{ text: 'x', startSec: 2, endSec: 1 }] }] }).success,
+      ).toBe(false);
+      expect(captions({ style: { wordsPerPage: 0 } }).success).toBe(false);
+      expect(captions({ style: { position: 'left' } }).success).toBe(false);
+    });
+  });
 });

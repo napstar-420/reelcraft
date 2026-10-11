@@ -1,8 +1,17 @@
+import type { RefObject } from 'react';
 import { Captions, Film, ImageIcon, Layers, Music, Type } from 'lucide-react';
-import type { Timeline, TimelineItem, TimelineResource, TimelineStyle } from '@reelcraft/shared';
+import type { PlayerRef } from '@remotion/player';
+import type {
+  Timeline,
+  TimelineItem,
+  TimelineResource,
+  TimelineStyle,
+  TimingMap,
+} from '@reelcraft/shared';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { formatDuration } from '@/pages/timeline-editor/format-time';
 import { SHORTCUT_HELP } from '@/pages/timeline-editor/shortcuts';
+import { CaptionInspector } from './caption-inspector';
 import { ItemInspector } from './item-inspector';
 
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
@@ -85,6 +94,9 @@ export function InspectorPanel({
   styles,
   readOnly,
   selectionKey,
+  timingMaps,
+  playerRef,
+  onSeekSec,
   onUpdate,
   onDelete,
 }: {
@@ -97,6 +109,9 @@ export function InspectorPanel({
   styles: TimelineStyle[];
   readOnly: boolean;
   selectionKey: string;
+  timingMaps: Record<string, TimingMap>;
+  playerRef: RefObject<PlayerRef>;
+  onSeekSec: (sec: number) => void;
   onUpdate: (mutate: (item: TimelineItem) => void) => void;
   onDelete: () => void;
 }) {
@@ -121,15 +136,29 @@ export function InspectorPanel({
                   <p className="text-xs text-muted-foreground">{kind.name}</p>
                 </div>
               </div>
-              <ItemInspector
-                key={selectionKey}
-                item={item}
-                styles={styles}
-                readOnly={readOnly}
-                isImage={item.type === 'media' && resource?.kind === 'media.image'}
-                update={onUpdate}
-                onDelete={onDelete}
-              />
+              {item.type === 'captions' ? (
+                <CaptionInspector
+                  key={selectionKey}
+                  item={item}
+                  styles={styles}
+                  timing={timingMaps[item.timingHandle]}
+                  readOnly={readOnly}
+                  playerRef={playerRef}
+                  fps={timeline.canvas.fps}
+                  onSeekSec={onSeekSec}
+                  update={onUpdate}
+                />
+              ) : (
+                <ItemInspector
+                  key={selectionKey}
+                  item={item}
+                  styles={styles}
+                  readOnly={readOnly}
+                  isImage={item.type === 'media' && resource?.kind === 'media.image'}
+                  update={onUpdate}
+                  onDelete={onDelete}
+                />
+              )}
             </>
           ) : (
             <ProjectSummary timeline={timeline} durationSec={durationSec} />

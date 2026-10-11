@@ -13,9 +13,10 @@ import {
 } from 'remotion';
 import type { CalculateMetadataFunction } from 'remotion';
 import type { TextStyleTokens, Timeline, TimelineItem, TimingMap } from '@reelcraft/shared';
-import { activeCaption, captionPages } from './captions';
+import { activeCaption, captionPagesFor } from './captions';
 import {
   CAPTION_HIGHLIGHT,
+  captionTokens,
   DEFAULT_TEXT_STYLE,
   kenBurnsTransform,
   textStyleCss,
@@ -23,11 +24,19 @@ import {
 
 export {
   CAPTION_HIGHLIGHT,
+  captionTokens,
   DEFAULT_TEXT_STYLE,
   kenBurnsTransform,
   textStyleCss,
 } from './render-helpers';
-export { activeCaption, captionPages, type CaptionPage, type CaptionWord } from './captions';
+export {
+  activeCaption,
+  captionPages,
+  captionPagesFor,
+  pagesFromStored,
+  type CaptionPage,
+  type CaptionWord,
+} from './captions';
 
 /** A media file a timeline item names by handle. `src` is a URL or path the
  * browser can load (the editor), or a bare filename in the render's public
@@ -197,6 +206,8 @@ const TextItem = ({
   );
 };
 
+const CAPTION_JUSTIFY = { top: 'flex-start', center: 'center', bottom: 'flex-end' } as const;
+
 const CaptionsItem = ({
   item,
   timing,
@@ -209,7 +220,11 @@ const CaptionsItem = ({
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const second = frame / fps + (item.startSec ?? 0);
-  const pages = React.useMemo(() => captionPages(timing.words), [timing.words]);
+  const pages = React.useMemo(
+    () => captionPagesFor(item, timing.words),
+    // The pages follow the item's edited pages and its words-per-page, or else the transcript.
+    [item.pages, item.style?.wordsPerPage, timing.words],
+  );
   const active = activeCaption(pages, second);
   // A timing map with sentences but no words (older data) still shows its sentence.
   const sentence = timing.words.length
@@ -221,21 +236,25 @@ const CaptionsItem = ({
   return (
     <AbsoluteFill
       style={{
-        justifyContent: 'flex-end',
+        justifyContent: CAPTION_JUSTIFY[item.style?.position ?? 'bottom'],
         alignItems: 'center',
-        padding: '0 7% 9%',
+        padding: item.style?.position === 'top' ? '9% 7% 0' : '0 7% 9%',
         boxSizing: 'border-box',
         textAlign: 'center',
       }}
     >
       <div>
-        <span style={textStyleCss(tokens)}>
+        <span style={textStyleCss(captionTokens(tokens, item.style))}>
           {active
             ? active.page.words.map((word, index) => (
                 <React.Fragment key={index}>
                   {index > 0 ? ' ' : null}
                   <span
-                    style={index === active.wordIndex ? { color: CAPTION_HIGHLIGHT } : undefined}
+                    style={
+                      index === active.wordIndex
+                        ? { color: item.style?.highlightColor ?? CAPTION_HIGHLIGHT }
+                        : undefined
+                    }
                   >
                     {word.text}
                   </span>

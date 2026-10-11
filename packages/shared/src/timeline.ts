@@ -5,6 +5,45 @@ const finitePositive = z.number().finite().positive();
 
 /** §17.1 — engine-owned schema; produced by text.generate(timeline) and
  * consumed by timeline.render. */
+/** One word of a caption page and when it is spoken. */
+export const CaptionWordDef = z
+  .object({
+    text: z.string().min(1),
+    startSec: finiteNonNegative,
+    endSec: finiteNonNegative,
+  })
+  .refine((word) => word.endSec >= word.startSec, {
+    message: 'a word cannot end before it starts',
+  });
+
+/** A few words shown together. Words are in the order they are spoken. */
+export const CaptionPageDef = z
+  .object({ words: z.array(CaptionWordDef).min(1).max(24) })
+  .superRefine((page, ctx) => {
+    for (let i = 1; i < page.words.length; i += 1) {
+      if (page.words[i]!.startSec < page.words[i - 1]!.startSec) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['words', i, 'startSec'],
+          message: 'words must be in the order they are spoken',
+        });
+      }
+    }
+  });
+export type CaptionPageDef = z.infer<typeof CaptionPageDef>;
+
+/** What a captions item can change about its preset. Fonts are left to the preset on purpose: the
+ * render can only use fonts it has. */
+export const CaptionStyleOverrides = z.object({
+  wordsPerPage: z.number().int().min(1).max(8).optional(),
+  highlightColor: z.string().min(1).max(40).optional(),
+  color: z.string().min(1).max(40).optional(),
+  fontSize: z.number().min(16).max(200).optional(),
+  uppercase: z.boolean().optional(),
+  position: z.enum(['top', 'center', 'bottom']).optional(),
+});
+export type CaptionStyleOverrides = z.infer<typeof CaptionStyleOverrides>;
+
 export const TimelineItem = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('media'),
@@ -46,6 +85,11 @@ export const TimelineItem = z.discriminatedUnion('type', [
     timingHandle: z.string(),
     styleId: z.string(),
     startSec: finiteNonNegative.optional(),
+    /** How the captions are broken into pages. When present, these replace the automatic paging
+     * of the transcript, so a person can fix a wrong word or move a break. */
+    pages: z.array(CaptionPageDef).optional(),
+    /** Looks that override the style preset for this captions item only. */
+    style: CaptionStyleOverrides.optional(),
   }),
 ]);
 export type TimelineItem = z.infer<typeof TimelineItem>;
