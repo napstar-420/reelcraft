@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.2](https://github.com/napstar-420/reelcraft/compare/v0.8.1...v0.8.2) (2026-10-11)
+
+
+### Bug Fixes
+
+* **api:** preserve loopback host for BrowserOS Neo requests ([#130](https://github.com/napstar-420/reelcraft/issues/130)) ([e1c7498](https://github.com/napstar-420/reelcraft/commit/e1c7498b4e0669a293e4d8fa23b157aed967a2c3))
+
 ## [0.8.1](https://github.com/napstar-420/reelcraft/compare/v0.8.0...v0.8.1) (2026-10-11)
 
 
