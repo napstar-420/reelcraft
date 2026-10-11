@@ -33,8 +33,9 @@ Under **Config**:
 ## How it works
 
 1. When the run reaches the stage, it pauses as **Paused Input**.
-2. On the run page, select **Open editor** on the stage.
-3. Edit the timeline. See [Timeline editor](../video/timeline-editor.md).
+2. Select **Open editor** on the stage, on the run page or on its card in the blueprint canvas.
+3. Edit the timeline. See [Timeline editor](../video/timeline-editor.md). You can watch a quick **Render
+   draft** of it before you submit.
 4. Select **Submit timeline**. Reelcraft runs its [timeline checks](../video/timeline-checks.md); if
    any fail, you're shown which, and you stay in the editor to fix them.
 

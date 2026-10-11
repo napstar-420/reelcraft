@@ -19,6 +19,20 @@ seven are shown for every timeline, so you can see which pass.
 
 If the schema check fails, only it is reported, since the others can't be worked out.
 
+## In the editor
+
+The [timeline editor](./timeline-editor.md) runs these checks on your draft as you work, a moment after
+each change, and nothing is saved or spent. The top of the page says **No problems** or, for example,
+**2 problems**. Select it for a list in plain words, and **Show** to jump to the clip. The clips a problem is
+about are outlined in red with an alert badge:
+
+- a missing file: the clip that uses it;
+- a clip longer than its source: that clip;
+- a gap in the main video track: the clips on either side of it.
+
+Problems that aren't about one clip, such as the audio and video ending at different times, are listed
+without a **Show** button. **Submit timeline** stays available, and runs the checks again.
+
 ## How to fix each
 
 ### timeline.schema

@@ -76,7 +76,8 @@ Select **Submit**. If the value fails the stage's checks, you're told why and ca
 ## Open editor
 
 On a [Human Timeline Edit](../stage-types/human-timeline-edit.md) stage, select **Open editor** to
-arrange the timeline. See [Timeline editor](../video/timeline-editor.md).
+arrange the timeline. It's on the stage here and on its card in the blueprint canvas. See
+[Timeline editor](../video/timeline-editor.md).
 
 ## Reminders
 
