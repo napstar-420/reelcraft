@@ -1,5 +1,6 @@
 import { memo } from 'react';
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react';
+import { Link } from 'react-router-dom';
 import {
   ArrowDownToLine,
   ArrowUpFromLine,
@@ -93,7 +94,11 @@ function RunFooter({
       <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground">
         {status.meta}
       </span>
-      {status.reviewable ? (
+      {status.editorHref ? (
+        <Button type="button" size="xs" className="nodrag nopan" asChild>
+          <Link to={status.editorHref}>Open editor</Link>
+        </Button>
+      ) : status.reviewable ? (
         <Button
           type="button"
           size="xs"
