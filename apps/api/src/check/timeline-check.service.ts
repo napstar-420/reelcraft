@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { and, eq } from 'drizzle-orm';
 import { Timeline, type Probe } from '@reelcraft/shared';
+import { isListKind, parseArtifactHandle, storedListItems } from '../artifact/clip-handle';
 import { StyleRegistry } from '../capability/style.registry';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
 import { artifact, blob, run } from '../db/schema';
@@ -53,25 +54,39 @@ export class TimelineCheckService {
       .where(eq(run.id, input.runId))
       .limit(1);
     for (const handle of handles) {
-      if (handle.startsWith('artifact:')) {
-        const id = handle.slice('artifact:'.length);
+      const artifactHandle = handle.startsWith('artifact:')
+        ? parseArtifactHandle(handle)
+        : undefined;
+      if (artifactHandle) {
         const [row] = await this.db
           .select({ artifact, blob })
           .from(artifact)
           .leftJoin(blob, eq(artifact.blobId, blob.id))
           .where(
-            and(eq(artifact.id, id), eq(artifact.runId, input.runId), eq(artifact.stale, false)),
+            and(
+              eq(artifact.id, artifactHandle.artifactId),
+              eq(artifact.runId, input.runId),
+              eq(artifact.stale, false),
+            ),
           )
           .limit(1);
-        if (!row || row.blob?.deletedAt) {
+        // One item of an image or video list is its own blob, named `artifact:<id>#<position>`.
+        const clip =
+          artifactHandle.clipPosition !== undefined && row && isListKind(row.artifact.kind)
+            ? storedListItems(row.artifact.kind, row.artifact.data)[artifactHandle.clipPosition]
+            : undefined;
+        const [clipBlob] = clip
+          ? await this.db.select().from(blob).where(eq(blob.id, clip.blobId)).limit(1)
+          : [];
+        const file = artifactHandle.clipPosition === undefined ? row?.blob : clipBlob;
+        if (!row || (artifactHandle.clipPosition !== undefined && !clip) || file?.deletedAt) {
           results.push(
             failed('timeline.handles_resolve', `${handle} is missing, stale, or deleted`),
           );
         } else {
-          resources.set(
-            handle,
-            (row.artifact.probe ?? row.blob?.probe ?? undefined) as Probe | undefined,
-          );
+          const probe =
+            clip !== undefined ? clip.probe : (row.artifact.probe ?? row.blob?.probe ?? undefined);
+          resources.set(handle, (probe ?? clipBlob?.probe ?? undefined) as Probe | undefined);
         }
       } else if (handle.startsWith('asset:')) {
         const assetId = handle.slice('asset:'.length);
@@ -121,8 +136,10 @@ export class TimelineCheckService {
       for (const [itemIndex, item] of track.items.entries()) {
         if (item.type !== 'media' || item.durationSec === undefined) continue;
         const duration = resources.get(item.handle)?.durationSec;
+        // A still has no length (it probes as 0), so any duration fits it.
         if (
           duration !== undefined &&
+          duration > 0 &&
           (item.trimInSec ?? 0) + item.durationSec > duration + 0.001 &&
           !['loop', 'freeze', 'speed'].includes(item.overflow ?? 'trim')
         ) {
