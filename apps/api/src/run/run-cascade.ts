@@ -14,6 +14,7 @@ import {
   stageEvent,
   stageExecution,
   stageItem,
+  timelinePreviewRender,
 } from '../db/schema/index';
 import { queueStorageOrphans, type StorageOrphanReason } from '../artifact/storage-orphans';
 
@@ -58,6 +59,8 @@ export async function deleteRunsCascade(
   await tx.delete(stageExecution).where(inArray(stageExecution.runId, runIds));
   await tx.delete(artifact).where(inArray(artifact.runId, runIds));
 
+  // Draft renders point at blobs, so they go first.
+  await tx.delete(timelinePreviewRender).where(inArray(timelinePreviewRender.runId, runIds));
   const files = await tx
     .delete(blob)
     .where(inArray(blob.runId, runIds))

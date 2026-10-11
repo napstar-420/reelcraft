@@ -48,6 +48,7 @@ import type {
   SaveTimelineDraftDto,
   TimelineCheckResponseDto,
   TimelineEditorSessionDto,
+  TimelinePreviewResponseDto,
   CheckDef,
   JsonSchema,
   ValidationIssue,
@@ -465,6 +466,24 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(dto),
     }),
+  getTimelinePreview: (runId: string, stageKey: string) =>
+    request<TimelinePreviewResponseDto>(
+      `/runs/${runId}/stages/${stageKey}/timeline-editor/preview`,
+    ),
+  startTimelinePreview: (runId: string, stageKey: string) =>
+    request<TimelinePreviewResponseDto>(
+      `/runs/${runId}/stages/${stageKey}/timeline-editor/preview`,
+      {
+        method: 'POST',
+      },
+    ),
+  cancelTimelinePreview: (runId: string, stageKey: string) =>
+    request<TimelinePreviewResponseDto>(
+      `/runs/${runId}/stages/${stageKey}/timeline-editor/preview`,
+      {
+        method: 'DELETE',
+      },
+    ),
   checkTimelineDraft: (runId: string, stageKey: string, timeline: unknown) =>
     request<TimelineCheckResponseDto>(`/runs/${runId}/stages/${stageKey}/timeline-editor/check`, {
       method: 'POST',

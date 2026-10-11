@@ -1,4 +1,5 @@
 import {
+  Delete,
   Body,
   BadRequestException,
   Controller,
@@ -36,6 +37,7 @@ import { HumanActionService } from './human-action.service';
 import { RunCancellationService } from './run-cancellation.service';
 import { ArtifactEditService } from './artifact-edit.service';
 import { TimelineEditorService } from './timeline-editor.service';
+import { TimelinePreviewService } from './timeline-preview.service';
 
 @Controller('runs')
 export class RunController {
@@ -48,6 +50,7 @@ export class RunController {
     private readonly cancellation: RunCancellationService,
     private readonly artifactEdits: ArtifactEditService,
     private readonly timelineEditor: TimelineEditorService,
+    private readonly timelinePreview: TimelinePreviewService,
   ) {}
 
   @Post()
@@ -241,6 +244,21 @@ export class RunController {
     @Body(new ZodValidationPipe(CheckTimelineDraftDto)) dto: CheckTimelineDraftDto,
   ) {
     return this.timelineEditor.check(id, key, dto.timeline);
+  }
+
+  @Post(':id/stages/:key/timeline-editor/preview')
+  async startTimelinePreview(@Param('id') id: string, @Param('key') key: string) {
+    return { preview: await this.timelinePreview.start(id, key) };
+  }
+
+  @Get(':id/stages/:key/timeline-editor/preview')
+  async timelinePreviewStatus(@Param('id') id: string, @Param('key') key: string) {
+    return { preview: await this.timelinePreview.current(id, key) };
+  }
+
+  @Delete(':id/stages/:key/timeline-editor/preview')
+  async cancelTimelinePreview(@Param('id') id: string, @Param('key') key: string) {
+    return { preview: await this.timelinePreview.cancel(id, key) };
   }
 
   @Post(':id/stages/:key/timeline-editor/submit')

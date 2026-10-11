@@ -86,6 +86,7 @@ export function EditorHeader({
   onRedo,
   onSubmit,
   checks,
+  render,
 }: {
   runId: string;
   title: string;
@@ -99,6 +100,8 @@ export function EditorHeader({
   onSubmit: () => void;
   /** The checks indicator, shown before the save state. */
   checks?: React.ReactNode;
+  /** The draft render control, shown before Submit. */
+  render?: React.ReactNode;
 }) {
   const view = SAVE_VIEW[save];
   return (
@@ -163,6 +166,7 @@ export function EditorHeader({
             </dl>
           </PopoverContent>
         </Popover>
+        {render ? <div className="ml-2">{render}</div> : null}
         <Button
           className="ml-2"
           size="default"

@@ -48,3 +48,20 @@ export type TimelineCheckResultDto = z.infer<typeof TimelineCheckResultDto>;
 
 export const TimelineCheckResponseDto = z.object({ results: z.array(TimelineCheckResultDto) });
 export type TimelineCheckResponseDto = z.infer<typeof TimelineCheckResponseDto>;
+
+/** A draft video rendered from the editor. `url` is set once it is done. */
+export const TimelinePreviewRenderDto = z.object({
+  id: z.string(),
+  state: z.enum(['rendering', 'done', 'failed', 'cancelled']),
+  /** The saved draft this video shows; older than the editor's revision means it is out of date. */
+  draftRevision: z.number().int().nonnegative(),
+  createdAt: z.string(),
+  error: z.string().optional(),
+  url: z.string().optional(),
+});
+export type TimelinePreviewRenderDto = z.infer<typeof TimelinePreviewRenderDto>;
+
+export const TimelinePreviewResponseDto = z.object({
+  preview: TimelinePreviewRenderDto.nullable(),
+});
+export type TimelinePreviewResponseDto = z.infer<typeof TimelinePreviewResponseDto>;

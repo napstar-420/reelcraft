@@ -13,11 +13,13 @@ import type {
 import { timelineDurationSec } from '@reelcraft/timeline-composition';
 import { Button } from '../components/ui/button';
 import { ChecksIndicator } from '../components/timeline-editor/checks-indicator';
+import { DraftRenderDialog } from '../components/timeline-editor/draft-render-dialog';
 import { EditorHeader, type SaveState } from '../components/timeline-editor/editor-header';
 import { InspectorPanel } from '../components/timeline-editor/inspector-panel';
 import { MediaPanel } from '../components/timeline-editor/media-panel';
 import { PreviewPanel } from '../components/timeline-editor/preview-panel';
 import { TimelinePanel } from '../components/timeline-editor/timeline-panel';
+import { useDraftRender } from '../components/timeline-editor/use-draft-render';
 import { useTimelineChecks } from '../components/timeline-editor/use-timeline-checks';
 import { api } from '../api/client';
 import {
@@ -66,6 +68,7 @@ export function TimelineEditorPage() {
   const timelineRef = useRef<Timeline>();
   const savedRef = useRef<Timeline>();
   const revisionRef = useRef(0);
+  const [savedRevision, setSavedRevision] = useState(0);
   const savingRef = useRef(false);
   const saveTimer = useRef<number>();
   timelineRef.current = timeline;
@@ -87,6 +90,7 @@ export function TimelineEditorPage() {
       const session = await api.getTimelineEditor(runId, stageKey);
       savedRef.current = session.timeline;
       revisionRef.current = session.draftRevision;
+      setSavedRevision(session.draftRevision);
       dispatch({ type: 'load', timeline: session.timeline });
       setResources(session.resources);
       setTimingMaps(session.timingMaps);
@@ -118,6 +122,7 @@ export function TimelineEditorPage() {
         timeline: next,
       });
       revisionRef.current = saved.draftRevision;
+      setSavedRevision(saved.draftRevision);
       savedRef.current = next;
       setSave('saved');
     } catch (error) {
@@ -138,6 +143,14 @@ export function TimelineEditorPage() {
     // `save` is deliberately left out: a failed save must wait for the next change, not loop.
   }, [timeline, readOnly, flush]);
 
+  // Waits until every change is saved, for things that must act on the saved draft.
+  const settleSave = useCallback(async () => {
+    window.clearTimeout(saveTimer.current);
+    await flush();
+    while (savingRef.current) await new Promise((resolve) => setTimeout(resolve, 50));
+    if (timelineRef.current !== savedRef.current) throw new Error('The draft could not be saved.');
+  }, [flush]);
+  const draftRender = useDraftRender(runId, stageKey, settleSave);
   const { results: checkResults, checking } = useTimelineChecks(
     runId,
     stageKey,
@@ -292,10 +305,7 @@ export function TimelineEditorPage() {
     setSubmitting(true);
     setSubmitError(undefined);
     try {
-      await flush();
-      while (savingRef.current) await new Promise((resolve) => setTimeout(resolve, 50));
-      if (timelineRef.current !== savedRef.current)
-        throw new Error('The draft could not be saved.');
+      await settleSave();
       await api.submitTimelineDraft(runId, stageKey, revisionRef.current);
       navigate(`/runs/${runId}`);
     } catch (error) {
@@ -419,6 +429,18 @@ export function TimelineEditorPage() {
         onUndo={undo}
         onRedo={redo}
         onSubmit={() => void submit()}
+        render={
+          <DraftRenderDialog
+            preview={draftRender.preview}
+            busy={draftRender.busy}
+            error={draftRender.error}
+            outOfDate={!!draftRender.preview && draftRender.preview.draftRevision < savedRevision}
+            aspect={`${timeline.canvas.width}/${timeline.canvas.height}`}
+            disabled={readOnly}
+            onStart={() => void draftRender.start()}
+            onCancel={() => void draftRender.cancel()}
+          />
+        }
         checks={
           readOnly ? undefined : (
             <ChecksIndicator issues={issues} checking={checking} onShow={showIssue} />

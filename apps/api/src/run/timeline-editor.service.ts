@@ -110,6 +110,19 @@ export class TimelineEditorService {
     };
   }
 
+  /** The saved draft, with who owns the run, for renders made from it. */
+  async savedDraft(runId: string, stageKey: string) {
+    const context = await this.loadContext(runId, stageKey);
+    const parsed = Timeline.safeParse(context.wait.draft);
+    if (!parsed.success) throw new ConflictException('There is no saved draft to render yet');
+    return {
+      ownerId: context.ownerId,
+      channelId: context.run.channelId,
+      timeline: parsed.data,
+      draftRevision: context.wait.draftRevision,
+    };
+  }
+
   /** Runs the timeline checks that submitting would run, on a draft that may not be saved yet, so
    * the editor can show what is wrong before you submit. Nothing is stored. */
   async check(
