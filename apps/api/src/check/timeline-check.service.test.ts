@@ -86,4 +86,63 @@ describe('TimelineCheckService media handles', () => {
       message: 'words is not canonical',
     });
   });
+
+  describe('targets', () => {
+    const still = { artifact: { kind: 'media.image', probe: null, data: null }, blob: null };
+
+    it('points a missing file at the clip that uses it', async () => {
+      const results = await serviceWith([{ assets: {} }], []).run({
+        runId: 'r1',
+        timeline: timeline('artifact:GONE'),
+      });
+      expect(results.find((r) => r.name === 'timeline.handles_resolve')?.targets).toEqual([
+        { trackId: 'video-main', itemIndex: 0 },
+      ]);
+    });
+
+    it('points a clip that runs past its source at that clip', async () => {
+      const results = await serviceWith(
+        [{ assets: {} }],
+        [{ artifact: { kind: 'media.video', probe: { durationSec: 2 }, data: null }, blob: null }],
+      ).run({ runId: 'r1', timeline: timeline('artifact:V') });
+      expect(results.find((r) => r.name === 'timeline.source_bounds')?.targets).toEqual([
+        { trackId: 'video-main', itemIndex: 0 },
+      ]);
+    });
+
+    it('points a gap at the clips on either side of it', async () => {
+      const gapped = {
+        version: 1,
+        canvas: { width: 1080, height: 1920, fps: 30 },
+        tracks: [
+          {
+            id: 'video-main',
+            type: 'video',
+            items: [
+              { type: 'media', handle: 'artifact:A', startSec: 0, durationSec: 2 },
+              { type: 'media', handle: 'artifact:B', startSec: 4, durationSec: 2 },
+            ],
+          },
+        ],
+      };
+      const results = await serviceWith([{ assets: {} }], [still], [still]).run({
+        runId: 'r1',
+        timeline: gapped,
+      });
+      const coverage = results.find((r) => r.name === 'timeline.coverage');
+      expect(coverage?.pass).toBe(false);
+      expect(coverage?.targets).toEqual([
+        { trackId: 'video-main', itemIndex: 0 },
+        { trackId: 'video-main', itemIndex: 1 },
+      ]);
+    });
+
+    it('has no targets when everything passes', async () => {
+      const results = await serviceWith([{ assets: {} }], [still]).run({
+        runId: 'r1',
+        timeline: timeline('artifact:A'),
+      });
+      expect(results.every((r) => r.targets === undefined)).toBe(true);
+    });
+  });
 });

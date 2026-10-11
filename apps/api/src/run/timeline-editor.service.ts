@@ -1,6 +1,13 @@
 import { ConflictException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { and, desc, eq, inArray, isNull } from 'drizzle-orm';
-import { Probe, StageDef, Timeline, type Ref, type TimelineResource } from '@reelcraft/shared';
+import {
+  Probe,
+  StageDef,
+  Timeline,
+  type Ref,
+  type TimelineCheckResponseDto,
+  type TimelineResource,
+} from '@reelcraft/shared';
 import { BlobService } from '../artifact/blob.service';
 import { MemoryService } from '../artifact/memory.service';
 import { writerArtifactId } from '../artifact/memory-writer';
@@ -14,6 +21,7 @@ import {
   storedListItems,
   type StoredClip,
 } from '../artifact/clip-handle';
+import { TimelineCheckService } from '../check/timeline-check.service';
 import { StyleRegistry } from '../capability/style.registry';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
 import {
@@ -27,6 +35,7 @@ import {
   stageAttempt,
   stageExecution,
 } from '../db/schema';
+import { ConfigResolverService } from '../run-config/config-resolver.service';
 import { HumanActionService } from './human-action.service';
 
 type Context = {
@@ -61,6 +70,8 @@ export class TimelineEditorService {
     private readonly styles: StyleRegistry,
     private readonly humanActions: HumanActionService,
     private readonly memory: MemoryService,
+    private readonly configResolver: ConfigResolverService,
+    private readonly timelineChecks: TimelineCheckService,
   ) {}
 
   async session(runId: string, stageKey: string) {
@@ -96,6 +107,37 @@ export class TimelineEditorService {
         context.wait.resolvedAt !== null ||
         context.run.state !== 'PAUSED_INPUT' ||
         context.run.cursorStageKey !== stageKey,
+    };
+  }
+
+  /** Runs the timeline checks that submitting would run, on a draft that may not be saved yet, so
+   * the editor can show what is wrong before you submit. Nothing is stored. */
+  async check(
+    runId: string,
+    stageKey: string,
+    timeline: unknown,
+  ): Promise<TimelineCheckResponseDto> {
+    const context = await this.loadContext(runId, stageKey);
+    const effective = await this.configResolver.effectiveStageConfig(
+      runId,
+      stageKey,
+      context.stage,
+    );
+    const config = effective.capabilityConfig as { allowGaps?: boolean; toleranceSec?: number };
+    const results = await this.timelineChecks.run({
+      runId,
+      timeline,
+      allowGaps: config.allowGaps,
+      toleranceSec: config.toleranceSec,
+      aspectRatio: effective.layer.format?.aspectRatio,
+    });
+    return {
+      results: results.map(({ name, pass, message, targets }) => ({
+        name,
+        pass,
+        ...(message !== undefined && { message }),
+        ...(targets && { targets }),
+      })),
     };
   }
 

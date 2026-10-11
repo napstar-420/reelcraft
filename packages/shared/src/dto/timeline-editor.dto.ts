@@ -29,3 +29,22 @@ export const SubmitTimelineDraftDto = z.object({
   draftRevision: z.number().int().nonnegative(),
 });
 export type SubmitTimelineDraftDto = z.infer<typeof SubmitTimelineDraftDto>;
+
+/** A draft to check without saving it. Any value is accepted so that a draft that does not parse
+ * comes back as a failed `timeline.schema` check instead of a request error. */
+export const CheckTimelineDraftDto = z.object({ timeline: z.unknown() });
+export type CheckTimelineDraftDto = z.infer<typeof CheckTimelineDraftDto>;
+
+export const TimelineCheckResultDto = z.object({
+  name: z.string(),
+  pass: z.boolean(),
+  message: z.string().optional(),
+  /** The timeline items a failure is about. */
+  targets: z
+    .array(z.object({ trackId: z.string(), itemIndex: z.number().int().nonnegative() }))
+    .optional(),
+});
+export type TimelineCheckResultDto = z.infer<typeof TimelineCheckResultDto>;
+
+export const TimelineCheckResponseDto = z.object({ results: z.array(TimelineCheckResultDto) });
+export type TimelineCheckResponseDto = z.infer<typeof TimelineCheckResponseDto>;

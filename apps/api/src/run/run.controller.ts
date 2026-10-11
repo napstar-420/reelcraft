@@ -22,6 +22,7 @@ import {
   PatchRunOverridesDto,
   ManualArtifactEditDto,
   PutRunInputDto,
+  CheckTimelineDraftDto,
   SaveTimelineDraftDto,
   SubmitTimelineDraftDto,
   ListRunsQueryDto,
@@ -231,6 +232,15 @@ export class RunController {
     @Body(new ZodValidationPipe(SaveTimelineDraftDto)) dto: SaveTimelineDraftDto,
   ) {
     return this.timelineEditor.save(id, key, dto);
+  }
+
+  @Post(':id/stages/:key/timeline-editor/check')
+  checkTimelineDraft(
+    @Param('id') id: string,
+    @Param('key') key: string,
+    @Body(new ZodValidationPipe(CheckTimelineDraftDto)) dto: CheckTimelineDraftDto,
+  ) {
+    return this.timelineEditor.check(id, key, dto.timeline);
   }
 
   @Post(':id/stages/:key/timeline-editor/submit')

@@ -85,6 +85,7 @@ export function EditorHeader({
   onUndo,
   onRedo,
   onSubmit,
+  checks,
 }: {
   runId: string;
   title: string;
@@ -96,6 +97,8 @@ export function EditorHeader({
   onUndo: () => void;
   onRedo: () => void;
   onSubmit: () => void;
+  /** The checks indicator, shown before the save state. */
+  checks?: React.ReactNode;
 }) {
   const view = SAVE_VIEW[save];
   return (
@@ -113,6 +116,7 @@ export function EditorHeader({
         </div>
       </div>
       <div className="flex items-center gap-1.5">
+        {checks ? <div className="mr-3">{checks}</div> : null}
         <span
           className={cn('mr-2 flex items-center gap-1.5 text-xs [&_svg]:size-3.5', view.tone)}
           role="status"
@@ -143,7 +147,7 @@ export function EditorHeader({
             </TooltipTrigger>
             <TooltipContent>Keyboard shortcuts</TooltipContent>
           </Tooltip>
-          <PopoverContent align="end" className="w-80">
+          <PopoverContent align="end" className="w-80 p-4">
             <p className="mb-2 text-sm font-semibold">Keyboard shortcuts</p>
             <dl className="space-y-1.5">
               {SHORTCUT_HELP.map((row) => (

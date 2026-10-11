@@ -9,6 +9,7 @@ import {
 } from 'react';
 import {
   Captions,
+  TriangleAlert,
   Film,
   ImageIcon,
   Maximize2,
@@ -36,6 +37,7 @@ import {
   type ItemTiming,
 } from '@/pages/timeline-editor.logic';
 import type { Selection } from '@/pages/timeline-editor/edit-ops';
+import { itemKey } from '@/pages/timeline-editor/check-issues';
 import { formatDuration, rulerStepSec } from '@/pages/timeline-editor/format-time';
 import { usePlayerFrame } from './use-player';
 
@@ -127,6 +129,7 @@ function ClipBlock({
   selected,
   dragging,
   editable,
+  problems,
   pxPerSec,
   onPointerDown,
 }: {
@@ -138,6 +141,8 @@ function ClipBlock({
   selected: boolean;
   dragging: boolean;
   editable: boolean;
+  /** What the checks found wrong with this clip, if anything. */
+  problems: string[] | undefined;
   pxPerSec: number;
   onPointerDown: (event: ReactPointerEvent, mode: DragMode) => void;
 }) {
@@ -158,11 +163,13 @@ function ClipBlock({
       role="button"
       tabIndex={0}
       aria-pressed={selected}
-      aria-label={`${label}, ${timing.startSec.toFixed(1)} to ${(timing.startSec + timing.durationSec).toFixed(1)} seconds`}
+      title={problems?.join(' · ')}
+      aria-label={`${label}, ${timing.startSec.toFixed(1)} to ${(timing.startSec + timing.durationSec).toFixed(1)} seconds${problems ? `. Problem: ${problems.join(', ')}` : ''}`}
       className={cn(
         'group/clip absolute top-1 bottom-1 touch-none rounded-md border text-white select-none',
         TRACK_TONE[trackType],
         editable && 'cursor-grab active:cursor-grabbing',
+        problems && 'border-destructive ring-2 ring-destructive/70',
         selected && 'z-10 border-white/90 shadow-lg ring-2 ring-primary',
         dragging && 'opacity-90 shadow-xl',
       )}
@@ -196,6 +203,11 @@ function ClipBlock({
           ) : null}
         </div>
       </div>
+      {problems ? (
+        <span className="absolute -top-1.5 -right-1.5 z-20 flex size-4 items-center justify-center rounded-full bg-destructive text-white shadow">
+          <TriangleAlert className="size-2.5" />
+        </span>
+      ) : null}
       {editable ? (
         <>
           <span
@@ -278,6 +290,7 @@ export function TimelinePanel({
   zoom,
   resourceByHandle,
   canSplit,
+  problems,
   onZoom,
   onSelect,
   onSeekSec,
@@ -295,6 +308,8 @@ export function TimelinePanel({
   zoom: number;
   resourceByHandle: Map<string, TimelineResource>;
   canSplit: boolean;
+  /** What the checks found wrong, by `trackId:itemIndex`. */
+  problems: Map<string, string[]>;
   onZoom: (zoom: number) => void;
   onSelect: (selection: Selection | undefined) => void;
   onSeekSec: (sec: number) => void;
@@ -636,6 +651,7 @@ export function TimelinePanel({
                         }
                         dragging={dragged && drag.moved}
                         editable={!readOnly && item.type !== 'captions'}
+                        problems={problems.get(itemKey(track.id, itemIndex))}
                         pxPerSec={pxPerSec}
                         onPointerDown={(event, mode) => beginDrag(event, sel, item, mode)}
                       />

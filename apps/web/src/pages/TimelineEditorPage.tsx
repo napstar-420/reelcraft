@@ -12,11 +12,13 @@ import type {
 } from '@reelcraft/shared';
 import { timelineDurationSec } from '@reelcraft/timeline-composition';
 import { Button } from '../components/ui/button';
+import { ChecksIndicator } from '../components/timeline-editor/checks-indicator';
 import { EditorHeader, type SaveState } from '../components/timeline-editor/editor-header';
 import { InspectorPanel } from '../components/timeline-editor/inspector-panel';
 import { MediaPanel } from '../components/timeline-editor/media-panel';
 import { PreviewPanel } from '../components/timeline-editor/preview-panel';
 import { TimelinePanel } from '../components/timeline-editor/timeline-panel';
+import { useTimelineChecks } from '../components/timeline-editor/use-timeline-checks';
 import { api } from '../api/client';
 import {
   deleteItem,
@@ -31,6 +33,7 @@ import {
   type EditResult,
   type Selection,
 } from './timeline-editor/edit-ops';
+import { issuesFrom, problemsByItem, type CheckIssue } from './timeline-editor/check-issues';
 import { editorReducer, initialEditorState } from './timeline-editor/editor-state';
 import { isTypingTarget, shortcutFor, type ShortcutAction } from './timeline-editor/shortcuts';
 import {
@@ -134,6 +137,15 @@ export function TimelineEditorPage() {
     return () => window.clearTimeout(saveTimer.current);
     // `save` is deliberately left out: a failed save must wait for the next change, not loop.
   }, [timeline, readOnly, flush]);
+
+  const { results: checkResults, checking } = useTimelineChecks(
+    runId,
+    stageKey,
+    timeline,
+    !readOnly,
+  );
+  const issues = useMemo(() => issuesFrom(checkResults), [checkResults]);
+  const problems = useMemo(() => problemsByItem(issues), [issues]);
 
   const fps = timeline?.canvas.fps ?? 30;
   const durationSec = timeline ? timelineDurationSec(timeline, timingMaps) : 0;
@@ -262,6 +274,16 @@ export function TimelineEditorPage() {
         else delete item.trimInSec;
       }
     });
+  };
+
+  const showIssue = (issue: CheckIssue) => {
+    const target = issue.targets[0];
+    if (!target || !timeline) return;
+    const trackIndex = timeline.tracks.findIndex((track) => track.id === target.trackId);
+    const item = timeline.tracks[trackIndex]?.items[target.itemIndex];
+    if (!item) return;
+    setSelection({ trackIndex, itemIndex: target.itemIndex });
+    if (item.type !== 'captions') seekSec(item.startSec);
   };
 
   const submit = async () => {
@@ -397,6 +419,11 @@ export function TimelineEditorPage() {
         onUndo={undo}
         onRedo={redo}
         onSubmit={() => void submit()}
+        checks={
+          readOnly ? undefined : (
+            <ChecksIndicator issues={issues} checking={checking} onShow={showIssue} />
+          )
+        }
       />
       {save === 'conflict' ? (
         <div
@@ -478,6 +505,7 @@ export function TimelineEditorPage() {
         zoom={zoom}
         resourceByHandle={resourceByHandle}
         canSplit={!readOnly}
+        problems={problems}
         onZoom={setZoom}
         onSelect={setSelection}
         onSeekSec={seekSec}
