@@ -4,7 +4,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { Modality } from '@reelcraft/shared';
 import { EngineConfig } from '../../config/engine-config';
 import { SettingsService } from '../../settings/settings.service';
-import { browserOsHostHeaders } from '../chatgpt/browseros-host';
+import { browserOsFetch, browserOsHostHeaders } from '../chatgpt/browseros-host';
 
 const execFileAsync = promisify(execFile);
 
@@ -106,7 +106,7 @@ export class CodexRuntimeReadiness {
   private async browserOsReachable(): Promise<boolean> {
     try {
       const url = await this.settings.browserOsUrl();
-      const response = await fetch(url, {
+      const response = await browserOsFetch(url, {
         method: 'GET',
         headers: browserOsHostHeaders(url),
         signal: AbortSignal.timeout(this.config.codexReadinessTimeoutMs),
