@@ -379,6 +379,7 @@ describe('binding resolver + memory writes (e2e)', () => {
         stageKey: stage.key,
         kind: 'text',
         data: { text: 'first pass' },
+        artifactId: firstArtifactId,
       }),
     });
 
@@ -407,6 +408,7 @@ describe('binding resolver + memory writes (e2e)', () => {
         stageKey: stage.key,
         kind: 'text',
         data: { text: 'second pass' },
+        artifactId: secondArtifactId,
       }),
     });
 
@@ -511,6 +513,7 @@ describe('binding resolver + memory writes (e2e)', () => {
           itemIndex: i,
           kind: 'text',
           data: { text: `shot ${i}` },
+          artifactId,
         }),
       });
     }
@@ -583,6 +586,7 @@ describe('binding resolver + memory writes (e2e)', () => {
         itemIndex: 2,
         kind: 'text',
         data: { text: 'shot 2 retried' },
+        artifactId,
       }),
     });
     const rebuilt = await bindings.resolve({ from: 'memory', key: 'shots' }, { runId, inputs: {} });
@@ -617,6 +621,7 @@ describe('binding resolver + memory writes (e2e)', () => {
           itemIndex: i,
           kind: 'text',
           data: { text: `x${i}` },
+          artifactId,
         }),
       });
     }
@@ -654,6 +659,7 @@ describe('binding resolver + memory writes (e2e)', () => {
           stageKey: stage.key,
           kind: 'text',
           data: { text: 'irrelevant' },
+          artifactId,
         }),
       }),
     ).rejects.toThrow('did not resolve');
