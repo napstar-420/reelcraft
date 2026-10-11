@@ -6,6 +6,7 @@ import {
 } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import { SettingsService } from '../../settings/settings.service';
+import { browserOsHostHeaders } from './browseros-host';
 
 const AGENT_NAME = 'reelcraft';
 
@@ -105,7 +106,9 @@ export class NeoClient {
 
 async function open(url: string): Promise<Client> {
   const client = new Client({ name: AGENT_NAME, version: '1.0.0' });
-  const transport = new StreamableHTTPClientTransport(new URL(url));
+  const transport = new StreamableHTTPClientTransport(new URL(url), {
+    requestInit: { headers: browserOsHostHeaders(url) },
+  });
   // The SDK's own `sessionId?: string` fails our `exactOptionalPropertyTypes`.
   await client.connect(transport as unknown as Parameters<Client['connect']>[0]);
   return client;
