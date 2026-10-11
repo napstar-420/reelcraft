@@ -10,6 +10,7 @@ import { DerivedFrameService } from './derived-frame.service';
 import { isListKind, listItemKind, storedListItems } from './clip-handle';
 import { timingMapOf } from './timing-map';
 import { MemoryService } from './memory.service';
+import { writerArtifactId } from './memory-writer';
 
 type ArtifactRow = typeof artifact.$inferSelect;
 type PrevRef = Extract<Ref, { from: 'prev' }>;
@@ -218,7 +219,7 @@ export class BindingResolverService {
           // Word timings are a captions `timingHandle` source, so they need a handle that
           // maps to the artifact that wrote them.
           const timingArtifactId =
-            !ref.path && timingMapOf(row.data) ? await this.writerArtifactId(row) : undefined;
+            !ref.path && timingMapOf(row.data) ? await writerArtifactId(this.db, row) : undefined;
           return {
             value: timingArtifactId ? withHandle(value, `memory:${ref.key}`) : value,
             provenance: {
@@ -650,25 +651,6 @@ export class BindingResolverService {
     const unwrapped = unwrapArtifactData(row.kind as ArtifactKind, row.data);
     if (path) return getPath(unwrapped, path);
     return timingMapOf(unwrapped) ? withHandle(unwrapped, handle) : unwrapped;
-  }
-
-  /** The active artifact a memory row's stage (or item) finalized. */
-  private async writerArtifactId(row: MemoryRow): Promise<string | undefined> {
-    const [writer] = await this.db
-      .select({ id: artifact.id })
-      .from(artifact)
-      .where(
-        and(
-          eq(artifact.runId, row.runId),
-          eq(artifact.producerStageKey, row.writtenBy),
-          row.writtenItem === null
-            ? isNull(artifact.itemIndex)
-            : eq(artifact.itemIndex, row.writtenItem),
-          eq(artifact.stale, false),
-        ),
-      )
-      .limit(1);
-    return writer?.id;
   }
 
   /** §6.3/§14 — an exact `memKey` match (covers plain non-iterating writes

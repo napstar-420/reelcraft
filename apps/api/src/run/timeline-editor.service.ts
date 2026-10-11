@@ -2,6 +2,8 @@ import { ConflictException, Inject, Injectable, Logger, NotFoundException } from
 import { and, desc, eq, inArray, isNull } from 'drizzle-orm';
 import { Probe, StageDef, Timeline, type Ref, type TimelineResource } from '@reelcraft/shared';
 import { BlobService } from '../artifact/blob.service';
+import { MemoryService } from '../artifact/memory.service';
+import { writerArtifactId } from '../artifact/memory-writer';
 import { timingMapOf } from '../artifact/timing-map';
 import {
   LIST_KINDS,
@@ -10,6 +12,7 @@ import {
   listItemKind,
   parseArtifactHandle,
   storedListItems,
+  type StoredClip,
 } from '../artifact/clip-handle';
 import { StyleRegistry } from '../capability/style.registry';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
@@ -42,6 +45,8 @@ type SourceRow = {
   clipPosition?: number | undefined;
   blobId?: string | undefined;
   kind: string;
+  /** What the editor shows for this file instead of its handle. */
+  label?: string | undefined;
   probe?: unknown;
   data?: unknown;
 };
@@ -55,6 +60,7 @@ export class TimelineEditorService {
     private readonly blobs: BlobService,
     private readonly styles: StyleRegistry,
     private readonly humanActions: HumanActionService,
+    private readonly memory: MemoryService,
   ) {}
 
   async session(runId: string, stageKey: string) {
@@ -253,7 +259,8 @@ export class TimelineEditorService {
         resources.push({
           handle,
           kind: row.kind as TimelineResource['kind'],
-          url: access.url,
+          url: mediaUrl(row.blobId),
+          ...(row.label && { label: row.label }),
           ...(row.probe !== null && row.probe !== undefined ? { probe: row.probe } : {}),
         });
       }
@@ -319,7 +326,12 @@ export class TimelineEditorService {
       if (!parsed) continue;
       if (parsed.clipPosition !== undefined) {
         const [list] = await this.db
-          .select({ data: artifact.data, kind: artifact.kind })
+          .select({
+            data: artifact.data,
+            kind: artifact.kind,
+            producerStageKey: artifact.producerStageKey,
+            itemIndex: artifact.itemIndex,
+          })
           .from(artifact)
           .where(
             and(
@@ -334,11 +346,12 @@ export class TimelineEditorService {
           list?.kind === 'media.image_list' ? 'media.image_list' : 'media.video_list';
         const clip = storedListItems(listKind, list?.data)[parsed.clipPosition];
         const access = clip ? await this.blobs.readUrl(context.ownerId, clip.blobId) : undefined;
-        if (clip && access?.status === 'live') {
+        if (clip && list && access?.status === 'live') {
           resources.push({
             handle,
             kind: listItemKind(listKind),
-            url: access.url,
+            url: mediaUrl(clip.blobId),
+            label: artifactLabel(context.graph, list, clip, parsed.clipPosition),
             ...(clip.probe !== null && clip.probe !== undefined ? { probe: clip.probe } : {}),
           });
         }
@@ -359,7 +372,8 @@ export class TimelineEditorService {
         resources.push({
           handle,
           kind: row.artifact.kind as TimelineResource['kind'],
-          url: access.url,
+          url: mediaUrl(row.blob.id),
+          label: artifactLabel(context.graph, row.artifact),
           ...(row.artifact.probe !== null && row.artifact.probe !== undefined
             ? { probe: row.artifact.probe }
             : {}),
@@ -386,6 +400,7 @@ export class TimelineEditorService {
               artifactId: '',
               blobId: binding.blobId,
               kind: binding.kind,
+              label: 'Asset',
               probe: blobRow.probe,
               data: undefined,
             },
@@ -405,7 +420,7 @@ export class TimelineEditorService {
         );
       return rows
         .filter((row) => ref.index === undefined || row.itemIndex === ref.index)
-        .flatMap(toSourceRows);
+        .flatMap((row) => toSourceRows(row, context.graph));
     }
     if (ref.from === 'prev') {
       const index = context.graph.findIndex((stage) => stage.key === context.stage.key);
@@ -421,7 +436,7 @@ export class TimelineEditorService {
             eq(artifact.stale, false),
           ),
         );
-      return rows.flatMap(toSourceRows);
+      return rows.flatMap((row) => toSourceRows(row, context.graph));
     }
     if (ref.from === 'memory') {
       const [memory] = await this.db
@@ -430,24 +445,14 @@ export class TimelineEditorService {
         .where(and(eq(runMemory.runId, context.run.id), eq(runMemory.memKey, ref.key)))
         .orderBy(desc(runMemory.version))
         .limit(1);
-      if (!memory || memory.tombstone) return [];
-      if (!memory.artifactId) {
-        return [
-          {
-            artifactId: memory.id,
-            blobId: undefined,
-            kind: memory.kind,
-            probe: undefined,
-            data: memory.data,
-          },
-        ];
-      }
-      const [row] = await this.db
-        .select()
-        .from(artifact)
-        .where(eq(artifact.id, memory.artifactId))
-        .limit(1);
-      return row ? toSourceRows(row) : [];
+      // An iterating stage writes `key#0…key#N-1` rather than `key`.
+      const memoryRows =
+        memory && !memory.tombstone
+          ? [memory]
+          : await this.memory.listGroupCurrent(this.db, context.run.id, ref.key).catch(() => []);
+      const sources: SourceRow[] = [];
+      for (const row of memoryRows) sources.push(...(await this.rowsForMemory(context, row)));
+      return sources;
     }
     if (ref.from === 'const') {
       const parsed = Timeline.safeParse(ref.value);
@@ -464,6 +469,26 @@ export class TimelineEditorService {
         : [];
     }
     return [];
+  }
+
+  private async rowsForMemory(
+    context: Context,
+    memory: typeof runMemory.$inferSelect,
+  ): Promise<SourceRow[]> {
+    if (memory.artifactId) {
+      const [row] = await this.db
+        .select()
+        .from(artifact)
+        .where(eq(artifact.id, memory.artifactId))
+        .limit(1);
+      return row ? toSourceRows(row, context.graph) : [];
+    }
+    // A data write keeps its value in the memory row. Name it by the artifact that wrote it, the
+    // only handle the checks and the render can resolve.
+    const writer = await writerArtifactId(this.db, memory);
+    return writer
+      ? [{ artifactId: writer, kind: memory.kind, data: memory.data, probe: undefined }]
+      : [];
   }
 
   private async loadContext(runId: string, stageKey: string): Promise<Context> {
@@ -498,26 +523,52 @@ export class TimelineEditorService {
 }
 
 /** A `media.video_list` or `media.image_list` artifact is offered to the editor as one source per item. */
-function toSourceRows(row: typeof artifact.$inferSelect): SourceRow[] {
-  if (!isListKind(row.kind)) return [toSourceRow(row)];
+function toSourceRows(row: typeof artifact.$inferSelect, graph: StageDef[]): SourceRow[] {
+  if (!isListKind(row.kind)) return [toSourceRow(row, graph)];
   return storedListItems(row.kind, row.data).map((clip, position) => ({
     artifactId: row.id,
     clipPosition: position,
     blobId: clip.blobId,
     kind: listItemKind(row.kind as 'media.video_list' | 'media.image_list'),
+    label: artifactLabel(graph, row, clip, position),
     probe: clip.probe,
     data: undefined,
   }));
 }
 
-function toSourceRow(row: typeof artifact.$inferSelect): SourceRow {
+function toSourceRow(row: typeof artifact.$inferSelect, graph: StageDef[]): SourceRow {
   return {
     artifactId: row.id,
     blobId: row.blobId ?? undefined,
     kind: row.kind,
+    label: artifactLabel(graph, row),
     probe: row.probe,
     data: row.data,
   };
+}
+
+/** The URL the editor loads a blob from. `/api/blobs/:id` answers with a fresh signed link on
+ * every request, so a preview left open never goes stale, and it stays same-origin, so no
+ * storage address or CORS rule is involved. */
+function mediaUrl(blobId: string): string {
+  return `/api/blobs/${blobId}`;
+}
+
+/** A name a person recognises: the clip's own label, else the stage that made it (and which of
+ * its items it is), e.g. "Images · 12". */
+function artifactLabel(
+  graph: StageDef[],
+  row: Pick<typeof artifact.$inferSelect, 'producerStageKey' | 'itemIndex'>,
+  clip?: StoredClip,
+  position?: number,
+): string {
+  if (clip?.label) return clip.label;
+  const stageKey = row.producerStageKey;
+  const name = stageKey.startsWith('$input:')
+    ? stageKey.slice('$input:'.length)
+    : (graph.find((stage) => stage.key === stageKey)?.label ?? stageKey);
+  const number = position ?? row.itemIndex;
+  return number === null || number === undefined ? name : `${name} · ${number + 1}`;
 }
 
 function dedupeResources(resources: TimelineResource[]) {

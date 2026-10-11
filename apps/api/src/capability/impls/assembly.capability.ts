@@ -223,7 +223,7 @@ export class TimelineRenderCapability extends LocalComputeCapability<RenderConfi
     const timeline = Timeline.parse(ctx.slots.timeline);
     const resources = ctx.resources ?? {};
     const inputs: Array<{ sourceKey: string; asFilename: string }> = [];
-    const resourceFiles: Record<string, string> = {};
+    const resourceFiles: Record<string, { src: string; kind: string }> = {};
     const timingMaps: Record<string, import('@reelcraft/shared').TimingMap> = {};
     let index = 0;
     for (const [handle, resource] of Object.entries(resources)) {
@@ -239,7 +239,7 @@ export class TimelineRenderCapability extends LocalComputeCapability<RenderConfi
         : fallbackExtension;
       const asFilename = `resource-${index}.${extension}`;
       inputs.push({ sourceKey: resource.sourceKey, asFilename });
-      resourceFiles[handle] = asFilename;
+      resourceFiles[handle] = { src: asFilename, kind: resource.kind };
       index += 1;
     }
     const missing = timeline.tracks

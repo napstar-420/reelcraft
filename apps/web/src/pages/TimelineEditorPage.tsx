@@ -82,7 +82,10 @@ export function TimelineEditorPage() {
   useEffect(() => () => window.clearTimeout(saveTimer.current), []);
 
   const resourceMap = useMemo(
-    () => Object.fromEntries(resources.map((resource) => [resource.handle, resource.url])),
+    () =>
+      Object.fromEntries(
+        resources.map((resource) => [resource.handle, { src: resource.url, kind: resource.kind }]),
+      ),
     [resources],
   );
   const styleTokens = useMemo(
@@ -211,8 +214,11 @@ export function TimelineEditorPage() {
                       ♪ Audio
                     </span>
                   )}
-                  <small className="block truncate p-2 text-xs text-muted-foreground">
-                    {resource.handle}
+                  <small
+                    className="block truncate p-2 text-xs text-muted-foreground"
+                    title={resource.handle}
+                  >
+                    {resource.label ?? resource.handle}
                   </small>
                 </button>
               ))}
@@ -245,25 +251,29 @@ export function TimelineEditorPage() {
           </ScrollArea>
         </aside>
 
-        <section className="min-h-0 min-w-0 overflow-auto p-6">
-          <div
-            className="mx-auto mb-5 w-full max-w-[720px] overflow-hidden rounded-lg border bg-black shadow-sm"
-            style={{ maxHeight: '58vh' }}
-          >
-            <Player
-              ref={playerRef}
-              component={TimelineComposition}
-              inputProps={{ timeline, resources: resourceMap, timingMaps, styles: styleTokens }}
-              durationInFrames={Math.max(1, Math.ceil(duration * timeline.canvas.fps))}
-              compositionWidth={timeline.canvas.width}
-              compositionHeight={timeline.canvas.height}
-              fps={timeline.canvas.fps}
-              controls
-              style={{
-                width: '100%',
-                aspectRatio: `${timeline.canvas.width}/${timeline.canvas.height}`,
-              }}
-            />
+        <section className="flex min-h-0 min-w-0 flex-col gap-4 overflow-auto p-6">
+          {/* The preview takes the height the timeline leaves and fits the canvas inside it, so
+              a vertical video is never cropped and the player's controls stay visible. */}
+          <div className="flex min-h-[260px] flex-1 items-center justify-center">
+            <div
+              className="flex h-full w-full items-center justify-center"
+              style={{ containerType: 'size' }}
+            >
+              <Player
+                ref={playerRef}
+                component={TimelineComposition}
+                inputProps={{ timeline, resources: resourceMap, timingMaps, styles: styleTokens }}
+                durationInFrames={Math.max(1, Math.ceil(duration * timeline.canvas.fps))}
+                compositionWidth={timeline.canvas.width}
+                compositionHeight={timeline.canvas.height}
+                fps={timeline.canvas.fps}
+                controls
+                style={{
+                  width: `min(100cqw, calc(100cqh * ${timeline.canvas.width} / ${timeline.canvas.height}))`,
+                  height: `min(100cqh, calc(100cqw * ${timeline.canvas.height} / ${timeline.canvas.width}))`,
+                }}
+              />
+            </div>
           </div>
           <TrackLanes
             timeline={timeline}

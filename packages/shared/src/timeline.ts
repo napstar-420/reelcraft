@@ -130,6 +130,8 @@ export const TimelineResource = z.object({
   handle: z.string(),
   kind: z.enum(['media.image', 'media.video', 'media.audio']),
   url: z.string(),
+  /** What to show the person instead of the handle: the clip's name, or where it came from. */
+  label: z.string().optional(),
   probe: z.unknown().optional(),
 });
 export type TimelineResource = z.infer<typeof TimelineResource>;

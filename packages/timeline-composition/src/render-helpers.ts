@@ -9,6 +9,9 @@ export const DEFAULT_TEXT_STYLE: TextStyleTokens = {
   shadow: '0 3px 12px rgba(0,0,0,0.75)',
 };
 
+/** The colour of the word being spoken in a caption. */
+export const CAPTION_HIGHLIGHT = '#ffd84d';
+
 type Css = Record<string, string | number>;
 
 /** CSS for the text itself (the inner span), from a style's tokens. */

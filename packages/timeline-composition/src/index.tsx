@@ -13,13 +13,34 @@ import {
 } from 'remotion';
 import type { CalculateMetadataFunction } from 'remotion';
 import type { TextStyleTokens, Timeline, TimelineItem, TimingMap } from '@reelcraft/shared';
-import { DEFAULT_TEXT_STYLE, kenBurnsTransform, textStyleCss } from './render-helpers';
+import { activeCaption, captionPages } from './captions';
+import {
+  CAPTION_HIGHLIGHT,
+  DEFAULT_TEXT_STYLE,
+  kenBurnsTransform,
+  textStyleCss,
+} from './render-helpers';
 
-export { DEFAULT_TEXT_STYLE, kenBurnsTransform, textStyleCss } from './render-helpers';
+export {
+  CAPTION_HIGHLIGHT,
+  DEFAULT_TEXT_STYLE,
+  kenBurnsTransform,
+  textStyleCss,
+} from './render-helpers';
+export { activeCaption, captionPages, type CaptionPage, type CaptionWord } from './captions';
+
+/** A media file a timeline item names by handle. `src` is a URL or path the
+ * browser can load (the editor), or a bare filename in the render's public
+ * directory (the final render). `kind` decides how it's shown, so the element
+ * never depends on what the URL looks like (signed URLs end in a query string). */
+export type CompositionResource = {
+  src: string;
+  kind: 'media.image' | 'media.video' | 'media.audio';
+};
 
 export type TimelineCompositionProps = {
   timeline: Timeline;
-  resources: Record<string, string>;
+  resources: Record<string, CompositionResource>;
   timingMaps?: Record<string, TimingMap>;
   /** Style id → tokens (from the API's style registry); unknown ids fall back
    * to `DEFAULT_TEXT_STYLE`. */
@@ -41,18 +62,22 @@ export const timelineDurationSec = (
     ),
   );
 
+/** A scheme or a leading slash means a URL; anything else is a file in the
+ * render's public directory. */
+const resolveSrc = (src: string) => (/^([a-z][a-z0-9+.-]*:|\/)/i.test(src) ? src : staticFile(src));
+
 const mediaDuration = (item: Extract<TimelineItem, { type: 'media' }>, fps: number) =>
   Math.max(1, Math.ceil((item.durationSec ?? 1) * fps));
 
 const MediaItem = ({
   item,
-  src,
+  resource,
   trackType,
   clipIndex = 0,
   duckIntervals = [],
 }: {
   item: Extract<TimelineItem, { type: 'media' }>;
-  src: string;
+  resource: CompositionResource;
   trackType: 'video' | 'audio' | 'overlay' | 'captions';
   clipIndex?: number;
   duckIntervals?: Array<{ startSec: number; endSec: number }>;
@@ -91,7 +116,7 @@ const MediaItem = ({
   const transitionTransform =
     item.transitionIn?.type === 'slide' ? `translateX(${(1 - entryProgress) * 100}%)` : undefined;
   const transform = [transitionTransform, motionTransform].filter(Boolean).join(' ') || undefined;
-  const resolvedSrc = /^(https?:|data:|blob:)/.test(src) ? src : staticFile(src);
+  const resolvedSrc = resolveSrc(resource.src);
   const common = {
     startFrom: Math.round((item.trimInSec ?? 0) * fps),
     volume: (relativeFrame: number) => {
@@ -102,7 +127,9 @@ const MediaItem = ({
       return (item.volume ?? 1) * (ducked ? 0.3 : 1);
     },
   };
-  if (trackType === 'audio') return <Audio src={resolvedSrc} {...common} />;
+  if (trackType === 'audio' || resource.kind === 'media.audio') {
+    return <Audio src={resolvedSrc} {...common} />;
+  }
   const style: React.CSSProperties = {
     width: '100%',
     height: '100%',
@@ -113,7 +140,7 @@ const MediaItem = ({
       ? { clipPath: `inset(0 ${(1 - entryProgress) * 100}% 0 0)` }
       : {}),
   };
-  return src.match(/\.(png|jpe?g|webp|gif|avif)$/i) ? (
+  return resource.kind === 'media.image' ? (
     <Img src={resolvedSrc} style={style} />
   ) : (
     <Video src={resolvedSrc} style={style} {...common} />
@@ -182,10 +209,15 @@ const CaptionsItem = ({
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const second = frame / fps + (item.startSec ?? 0);
-  const sentence = timing.sentences.find(
-    (candidate) => second >= candidate.startSec && second <= candidate.endSec,
-  );
-  if (!sentence) return null;
+  const pages = React.useMemo(() => captionPages(timing.words), [timing.words]);
+  const active = activeCaption(pages, second);
+  // A timing map with sentences but no words (older data) still shows its sentence.
+  const sentence = timing.words.length
+    ? undefined
+    : timing.sentences.find(
+        (candidate) => second >= candidate.startSec && second <= candidate.endSec,
+      );
+  if (!active && !sentence) return null;
   return (
     <AbsoluteFill
       style={{
@@ -197,7 +229,20 @@ const CaptionsItem = ({
       }}
     >
       <div>
-        <span style={textStyleCss(tokens)}>{sentence.text}</span>
+        <span style={textStyleCss(tokens)}>
+          {active
+            ? active.page.words.map((word, index) => (
+                <React.Fragment key={index}>
+                  {index > 0 ? ' ' : null}
+                  <span
+                    style={index === active.wordIndex ? { color: CAPTION_HIGHLIGHT } : undefined}
+                  >
+                    {word.text}
+                  </span>
+                </React.Fragment>
+              ))
+            : sentence?.text}
+        </span>
       </div>
     </AbsoluteFill>
   );
@@ -242,7 +287,7 @@ export const TimelineComposition = ({
               ) : resources[item.handle] ? (
                 <MediaItem
                   item={item}
-                  src={resources[item.handle]!}
+                  resource={resources[item.handle]!}
                   trackType={track.type}
                   clipIndex={index}
                   duckIntervals={
