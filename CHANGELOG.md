@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.1](https://github.com/napstar-420/reelcraft/compare/v0.8.0...v0.8.1) (2026-10-11)
+
+
+### Bug Fixes
+
+* **api:** keep the file on media memory written by approval, input and edits ([#128](https://github.com/napstar-420/reelcraft/issues/128)) ([8ad1e4e](https://github.com/napstar-420/reelcraft/commit/8ad1e4ed45ef517db7e5fc65719d4e6e4acacbf7))
+
 ## [0.8.0](https://github.com/napstar-420/reelcraft/compare/v0.7.0...v0.8.0) (2026-10-11)
 
 
