@@ -27,7 +27,7 @@ const REQUEST_TIMEOUT_MS = 120_000;
 const PRONUNCIATION_HEADROOM = 0.85;
 
 /** The reason in a Deepgram error body: `{ err_msg }` or `{ message }`. */
-function errorReason(body: string): string {
+export function errorReason(body: string): string {
   try {
     const parsed = JSON.parse(body) as { err_msg?: string; message?: string; err_code?: string };
     return parsed.err_msg ?? parsed.message ?? parsed.err_code ?? body.slice(0, 200);

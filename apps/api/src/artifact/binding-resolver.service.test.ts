@@ -86,3 +86,65 @@ describe('BindingResolverService — {from: "coalesce"}', () => {
     expect(refs.x).toEqual({ kind: 'literal', data: 42 });
   });
 });
+
+describe('BindingResolverService — media manifests carry blobId', () => {
+  /** Each `select()` resolves to the next queued result, whether the query
+   * ends at `.limit()` or `.where()`. */
+  function serviceWith(...results: unknown[][]): BindingResolverService {
+    const queue = [...results];
+    const next = () => Promise.resolve(queue.shift() ?? []);
+    const select = () => ({
+      from: () => ({
+        where: () => ({
+          limit: next,
+          orderBy: next,
+          then: (resolve: (rows: unknown[]) => unknown) => next().then(resolve),
+        }),
+      }),
+    });
+    return Object.assign(Object.create(BindingResolverService.prototype) as object, {
+      db: { select },
+      logger: { warn: () => undefined, debug: () => undefined },
+    }) as unknown as BindingResolverService;
+  }
+  const ctx: BindingScope = { runId: 'run-1', inputs: {}, prevStageKey: 'narration_audio' };
+
+  it('{from:"prev"} on a media.audio artifact includes its blobId (Deepgram needs it)', async () => {
+    const row = { id: 'art-1', kind: 'media.audio', blobId: 'blob-1', probe: null, data: null };
+    const { value } = await serviceWith([row], [{ objectKey: 'k/audio.wav' }]).resolve(
+      { from: 'prev' },
+      ctx,
+    );
+    expect(value).toMatchObject({
+      artifactId: 'art-1',
+      blobId: 'blob-1',
+      sourceKey: 'k/audio.wav',
+    });
+  });
+
+  it('{from:"prev"} on a media.image_list gives each item its own blobId', async () => {
+    const row = {
+      id: 'art-2',
+      kind: 'media.image_list',
+      blobId: null,
+      probe: null,
+      data: {
+        images: [
+          { index: 0, label: null, blobId: 'blob-a', probe: null },
+          { index: 1, label: null, blobId: 'blob-b', probe: null },
+        ],
+      },
+    };
+    const { value } = await serviceWith(
+      [row],
+      [
+        { id: 'blob-a', objectKey: 'k/a.png' },
+        { id: 'blob-b', objectKey: 'k/b.png' },
+      ],
+    ).resolve({ from: 'prev' }, ctx);
+    expect(value).toMatchObject([
+      { blobId: 'blob-a', sourceKey: 'k/a.png' },
+      { blobId: 'blob-b', sourceKey: 'k/b.png' },
+    ]);
+  });
+});

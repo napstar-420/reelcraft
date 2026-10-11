@@ -16,7 +16,7 @@ function registry() {
   providers.register(new ElevenLabsAdapter({ get: async () => undefined }));
   // Only Deepgram's speech half is used here, so its storage, database and inbox are stubs.
   const stub = {} as never;
-  providers.register(new DeepgramAdapter({ get: async () => 'key' }, stub, stub, stub, stub));
+  providers.register(new DeepgramAdapter({ get: async () => 'key' }, stub, stub, stub));
   return providers;
 }
 

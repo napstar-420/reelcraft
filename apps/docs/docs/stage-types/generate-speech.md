@@ -86,8 +86,7 @@ Free plans can only use **premade** voices through the API. A **library** voice 
 
 ### Deepgram
 
-You need a [Deepgram key](../provider-keys.md). Deepgram makes speech straight away, so, unlike
-transcription, it works on a desktop install.
+You need a [Deepgram key](../provider-keys.md).
 
 | Model        | Good for                                                                              |
 | ------------ | ------------------------------------------------------------------------------------- |

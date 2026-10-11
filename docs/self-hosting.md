@@ -118,7 +118,9 @@ the release-please PR for 0.3.0 (Settings and the guide's in-app links) is #51.
   container also needs outbound internet to reach the browser vendor's push service. The VAPID key is made on
   first use and saved in Settings (`push.vapidPrivateKey`, sealed with `secrets.env` like provider keys); if
   `secrets.env` is lost it is replaced and each browser resubscribes on its next page load.
-- **Deepgram** needs to reach the instance (`PUBLIC_API_BASE_URL`), so it doesn't work on a desktop install.
+- **Deepgram** transcription uploads the audio bytes with the request (`DeepgramAdapter.transcribeStored`), so it
+  works on a desktop install. Don't send Deepgram a presigned URL: storage URLs point at `127.0.0.1`/`localhost`
+  and Deepgram rejects them as not publicly routable.
 - **Cloud sandboxes**: outbound traffic goes through a proxy that blocks some hosts (for example
   `auth.openai.com`), so real Codex sign-in and BrowserOS docs couldn't be checked from there. Docker needs
   `dockerd` started by hand.

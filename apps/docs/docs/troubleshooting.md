@@ -93,8 +93,8 @@ See [Generate Speech](./stage-types/generate-speech.md#if-it-fails).
 
 ## Deepgram transcription doesn't work
 
-Deepgram needs to reach your Reelcraft over the internet, which a desktop install doesn't allow.
-See [the note on the providers page](./provider-keys.md#the-services).
+The stage's error ends with Deepgram's own reason. A key problem shows up there; click **Test** under
+**Settings** to check the key. See [Analyze Media](./stage-types/analyze-media.md).
 
 ## Getting help
 

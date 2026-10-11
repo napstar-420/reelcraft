@@ -27,17 +27,6 @@ account can use, and **Pronunciation Dictionaries: Read** lists your dictionarie
 when a working key lacks one of these. Without **Voices: Read** you can still run speech by pasting a
 voice ID in the voice picker. The simplest choice is a key with no restrictions.
 
-:::note Deepgram on a desktop install
-
-Deepgram makes **speech** straight away, so [Generate Speech](./stage-types/generate-speech.md) works
-anywhere. Transcription is different: Deepgram sends the results of an [Analyze Media](./stage-types/analyze-media.md) stage back to
-Reelcraft over the internet, so it needs a public address for your Reelcraft. On a normal desktop
-install it can't reach your computer, and that stage's **Transcribe align** setting doesn't work.
-Deepgram transcripts for [quality control](./blueprints/quality-control.md#include-transcript) are not
-affected.
-
-:::
-
 ## Add a key
 
 1. In Reelcraft, click **Settings** in the sidebar.

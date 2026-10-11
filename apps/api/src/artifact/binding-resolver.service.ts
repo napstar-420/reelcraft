@@ -705,7 +705,7 @@ export class BindingResolverService {
     const keys = new Map(blobs.map((row) => [row.id, row.objectKey]));
     return clips.map((clip, position) =>
       mediaManifest(
-        { ...row, kind: itemKind, probe: clip.probe },
+        { ...row, blobId: clip.blobId, kind: itemKind, probe: clip.probe },
         `${handle}#${position}`,
         keys.get(clip.blobId),
       ),
@@ -763,6 +763,8 @@ function mediaManifest(
   return {
     handle,
     artifactId: row.id,
+    // Providers that fetch the file themselves (Deepgram) look the blob up by id.
+    ...(row.blobId && { blobId: row.blobId }),
     kind: row.kind,
     ...(sourceKey && { sourceKey }),
     ...(video?.width !== undefined && { width: video.width }),
