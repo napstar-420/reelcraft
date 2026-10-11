@@ -1,87 +1,148 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Player, type PlayerRef } from '@remotion/player';
-import { Link, useNavigate, useParams } from 'react-router-dom';
-import type { Timeline, TimelineResource, TimelineStyle, TimingMap } from '@reelcraft/shared';
-import { TimelineComposition, timelineDurationSec } from '@reelcraft/timeline-composition';
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import type { PlayerRef } from '@remotion/player';
+import { AlertTriangle, Loader2, RefreshCw } from 'lucide-react';
+import { useNavigate, useParams } from 'react-router-dom';
+import { toast } from 'sonner';
+import type {
+  Timeline,
+  TimelineItem,
+  TimelineResource,
+  TimelineStyle,
+  TimingMap,
+} from '@reelcraft/shared';
+import { timelineDurationSec } from '@reelcraft/timeline-composition';
 import { Button } from '../components/ui/button';
-import { ScrollArea } from '../components/ui/scroll-area';
-import { ItemInspector } from '../components/timeline-editor/item-inspector';
-import { TrackLanes, type Selection } from '../components/timeline-editor/track-lanes';
+import { EditorHeader, type SaveState } from '../components/timeline-editor/editor-header';
+import { InspectorPanel } from '../components/timeline-editor/inspector-panel';
+import { MediaPanel } from '../components/timeline-editor/media-panel';
+import { PreviewPanel } from '../components/timeline-editor/preview-panel';
+import { TimelinePanel } from '../components/timeline-editor/timeline-panel';
 import { api } from '../api/client';
+import {
+  deleteItem,
+  itemAt,
+  itemUnderPlayhead,
+  nudgeItem,
+  overlapsOthers,
+  reorderItem,
+  reorderTargetIndex,
+  rippleDelete,
+  splitAt,
+  type EditResult,
+  type Selection,
+} from './timeline-editor/edit-ops';
+import { editorReducer, initialEditorState } from './timeline-editor/editor-state';
+import { isTypingTarget, shortcutFor, type ShortcutAction } from './timeline-editor/shortcuts';
 import {
   appendResource,
   describeSubmitError,
-  resourceDurationSec,
+  type ItemTiming,
   type SubmitErrorView,
 } from './timeline-editor.logic';
 
-const clone = (timeline: Timeline): Timeline => structuredClone(timeline);
+const isConflict = (error: unknown) =>
+  !!error && typeof error === 'object' && 'status' in error && error.status === 409;
 
 export function TimelineEditorPage() {
   const { runId = '', stageKey = '' } = useParams<{ runId: string; stageKey: string }>();
   const navigate = useNavigate();
-  const [timeline, setTimeline] = useState<Timeline>();
+  const [state, dispatch] = useReducer(editorReducer, initialEditorState);
+  const timeline = state.timeline;
   const [resources, setResources] = useState<TimelineResource[]>([]);
   const [timingMaps, setTimingMaps] = useState<Record<string, TimingMap>>({});
   const [styles, setStyles] = useState<TimelineStyle[]>([]);
-  const playerRef = useRef<PlayerRef>(null);
-  const [selection, setSelection] = useState<Selection>();
-  const [status, setStatus] = useState('Loading editor…');
+  const [stageLabel, setStageLabel] = useState<string>();
   const [readOnly, setReadOnly] = useState(false);
-  const [history, setHistory] = useState<Timeline[]>([]);
-  const [future, setFuture] = useState<Timeline[]>([]);
+  const [selection, setSelection] = useState<Selection>();
+  const [zoom, setZoom] = useState(1);
+  const [save, setSave] = useState<SaveState>('loading');
+  const [loadError, setLoadError] = useState<string>();
   const [submitError, setSubmitError] = useState<SubmitErrorView>();
   const [submitting, setSubmitting] = useState(false);
+  const playerRef = useRef<PlayerRef>(null);
+  const timelineRef = useRef<Timeline>();
+  const savedRef = useRef<Timeline>();
+  const revisionRef = useRef(0);
+  const savingRef = useRef(false);
   const saveTimer = useRef<number>();
-  const latestRevision = useRef(0);
+  timelineRef.current = timeline;
+
+  // The editor is a dark workspace whatever the app's theme is; menus and tooltips render outside
+  // it, so the class goes on the page itself while the editor is open.
+  useEffect(() => {
+    const root = document.documentElement;
+    const had = root.classList.contains('dark');
+    root.classList.add('dark');
+    return () => {
+      if (!had) root.classList.remove('dark');
+    };
+  }, []);
 
   const load = useCallback(async () => {
-    const session = await api.getTimelineEditor(runId, stageKey);
-    setTimeline(session.timeline);
-    setResources(session.resources);
-    setTimingMaps(session.timingMaps);
-    setStyles(session.styles);
-    latestRevision.current = session.draftRevision;
-    setReadOnly(session.readOnly);
-    setStatus(session.readOnly ? 'Read only' : 'All changes saved');
+    setLoadError(undefined);
+    try {
+      const session = await api.getTimelineEditor(runId, stageKey);
+      savedRef.current = session.timeline;
+      revisionRef.current = session.draftRevision;
+      dispatch({ type: 'load', timeline: session.timeline });
+      setResources(session.resources);
+      setTimingMaps(session.timingMaps);
+      setStyles(session.styles);
+      setStageLabel(session.stageLabel);
+      setReadOnly(session.readOnly);
+      setSelection(undefined);
+      setSave(session.readOnly ? 'readonly' : 'saved');
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : String(error));
+    }
   }, [runId, stageKey]);
 
   useEffect(() => {
-    void load().catch((error: unknown) => setStatus(String(error)));
+    void load();
   }, [load]);
 
-  const persist = useCallback(
-    async (next: Timeline) => {
-      setStatus('Saving…');
-      try {
-        const saved = await api.saveTimelineDraft(runId, stageKey, {
-          draftRevision: latestRevision.current,
-          timeline: next,
-        });
-        latestRevision.current = saved.draftRevision;
-        setStatus('All changes saved');
-      } catch {
-        setStatus('A newer draft exists — reloading…');
-        await load();
-      }
-    },
-    [load, runId, stageKey],
-  );
+  // Autosave: shortly after the last change, send the draft. One save runs at a time, and a
+  // change made while it runs is sent right after.
+  const flush = useCallback(async () => {
+    if (savingRef.current) return;
+    const next = timelineRef.current;
+    if (!next || next === savedRef.current) return;
+    savingRef.current = true;
+    setSave('saving');
+    try {
+      const saved = await api.saveTimelineDraft(runId, stageKey, {
+        draftRevision: revisionRef.current,
+        timeline: next,
+      });
+      revisionRef.current = saved.draftRevision;
+      savedRef.current = next;
+      setSave('saved');
+    } catch (error) {
+      savingRef.current = false;
+      setSave(isConflict(error) ? 'conflict' : 'error');
+      return;
+    }
+    savingRef.current = false;
+    if (timelineRef.current !== savedRef.current) void flush();
+  }, [runId, stageKey]);
 
-  const commit = (mutate: (next: Timeline) => void) => {
-    if (!timeline || readOnly) return;
-    const next = clone(timeline);
-    mutate(next);
-    setHistory((items) => [...items.slice(-39), timeline]);
-    setFuture([]);
-    setTimeline(next);
+  useEffect(() => {
+    if (!timeline || readOnly || save === 'conflict' || timeline === savedRef.current) return;
     window.clearTimeout(saveTimer.current);
-    saveTimer.current = window.setTimeout(() => void persist(next), 450);
-  };
+    setSave((current) => (current === 'saving' ? current : 'saving'));
+    saveTimer.current = window.setTimeout(() => void flush(), 450);
+    return () => window.clearTimeout(saveTimer.current);
+    // `save` is deliberately left out: a failed save must wait for the next change, not loop.
+  }, [timeline, readOnly, flush]);
 
-  useEffect(() => () => window.clearTimeout(saveTimer.current), []);
-
-  const resourceMap = useMemo(
+  const fps = timeline?.canvas.fps ?? 30;
+  const durationSec = timeline ? timelineDurationSec(timeline, timingMaps) : 0;
+  const durationFrames = Math.max(1, Math.ceil(durationSec * fps));
+  const resourceByHandle = useMemo(
+    () => new Map(resources.map((resource) => [resource.handle, resource])),
+    [resources],
+  );
+  const compositionResources = useMemo(
     () =>
       Object.fromEntries(
         resources.map((resource) => [resource.handle, { src: resource.url, kind: resource.kind }]),
@@ -95,27 +156,112 @@ export function TimelineEditorPage() {
       ),
     [styles],
   );
-  const resourceByHandle = useMemo(
-    () => new Map(resources.map((resource) => [resource.handle, resource])),
-    [resources],
-  );
-  const selected = selection && timeline?.tracks[selection.trackIndex]?.items[selection.itemIndex];
 
-  const undo = () => {
-    const previous = history.at(-1);
-    if (!previous || !timeline) return;
-    setHistory((items) => items.slice(0, -1));
-    setFuture((items) => [timeline, ...items]);
-    setTimeline(previous);
-    void persist(previous);
+  const seek = useCallback(
+    (frame: number) => {
+      playerRef.current?.seekTo(Math.max(0, Math.min(durationFrames - 1, Math.round(frame))));
+    },
+    [durationFrames],
+  );
+  const seekSec = useCallback((sec: number) => seek(sec * fps), [seek, fps]);
+  const playheadSec = () => (playerRef.current?.getCurrentFrame() ?? 0) / fps;
+
+  const edit = (next: Timeline, coalesce?: string) =>
+    dispatch({
+      type: 'edit',
+      timeline: next,
+      now: Date.now(),
+      ...(coalesce !== undefined && { coalesce }),
+    });
+  const apply = (result: EditResult | undefined) => {
+    if (!result || readOnly) return;
+    edit(result.timeline);
+    setSelection(result.selection);
   };
-  const redo = () => {
-    const next = future[0];
-    if (!next || !timeline) return;
-    setFuture((items) => items.slice(1));
-    setHistory((items) => [...items, timeline]);
-    setTimeline(next);
-    void persist(next);
+  const mutate = (change: (draft: Timeline) => void, coalesce?: string) => {
+    if (!timeline || readOnly) return;
+    const next = structuredClone(timeline);
+    change(next);
+    edit(next, coalesce);
+  };
+
+  const selectedItem = selection && timeline ? itemAt(timeline, selection) : undefined;
+  const selectedResource =
+    selectedItem?.type === 'media' ? resourceByHandle.get(selectedItem.handle) : undefined;
+
+  const split = () => {
+    if (!timeline) return;
+    const at = playheadSec();
+    const target = itemUnderPlayhead(timeline, selection, at);
+    const result = target ? splitAt(timeline, target, at) : undefined;
+    if (!result) {
+      toast('Move the playhead over a clip to split it.');
+      return;
+    }
+    apply(result);
+  };
+  const remove = (ripple: boolean) => {
+    if (!timeline || !selection) return;
+    apply((ripple ? rippleDelete : deleteItem)(timeline, selection));
+  };
+
+  const addResource = (resource: TimelineResource) => {
+    if (!timeline) return;
+    const next = structuredClone(timeline);
+    appendResource(next, resource);
+    const trackIndex = next.tracks.findIndex(
+      (track, index) => track.items.length > (timeline.tracks[index]?.items.length ?? 0),
+    );
+    if (trackIndex === -1) return;
+    edit(next);
+    const itemIndex = next.tracks[trackIndex]!.items.length - 1;
+    setSelection({ trackIndex, itemIndex });
+    const added = next.tracks[trackIndex]!.items[itemIndex];
+    if (added && added.type !== 'captions') seekSec(added.startSec);
+  };
+  const addTitle = () =>
+    mutate((next) => {
+      let overlay = next.tracks.find((track) => track.type === 'overlay');
+      if (!overlay) {
+        overlay = { id: `overlay-${Date.now()}`, type: 'overlay', items: [] };
+        next.tracks.push(overlay);
+      }
+      overlay.items.push({
+        type: 'text',
+        text: 'New title',
+        startSec: Math.round(playheadSec() * 10) / 10,
+        durationSec: 3,
+        styleId: 'text.title',
+        position: 'center',
+      });
+      setSelection({
+        trackIndex: next.tracks.indexOf(overlay),
+        itemIndex: overlay.items.length - 1,
+      });
+    });
+
+  const onMove = (sel: Selection, timing: ItemTiming, mode: 'move' | 'start' | 'end') => {
+    if (!timeline) return;
+    if (mode === 'move' && timeline.tracks[sel.trackIndex]?.type === 'video') {
+      const to = reorderTargetIndex(timeline, sel, timing);
+      if (to !== undefined) {
+        apply(reorderItem(timeline, sel, to));
+        return;
+      }
+      // Dropped on top of a neighbour without passing its middle: the story order is unchanged,
+      // so the clip goes back instead of overlapping it.
+      if (overlapsOthers(timeline, sel, timing)) return;
+    }
+    mutate((next) => {
+      const item = next.tracks[sel.trackIndex]?.items[sel.itemIndex];
+      if (!item || item.type === 'captions') return;
+      item.startSec = timing.startSec;
+      item.durationSec = timing.durationSec;
+      if (item.type === 'media') {
+        if (timing.trimInSec > 0) item.trimInSec = timing.trimInSec;
+        else delete item.trimInSec;
+      }
+    });
   };
 
   const submit = async () => {
@@ -124,56 +270,152 @@ export function TimelineEditorPage() {
     setSubmitting(true);
     setSubmitError(undefined);
     try {
-      await persist(timeline);
-      await api.submitTimelineDraft(runId, stageKey, latestRevision.current);
+      await flush();
+      while (savingRef.current) await new Promise((resolve) => setTimeout(resolve, 50));
+      if (timelineRef.current !== savedRef.current)
+        throw new Error('The draft could not be saved.');
+      await api.submitTimelineDraft(runId, stageKey, revisionRef.current);
       navigate(`/runs/${runId}`);
     } catch (error) {
       setSubmitError(describeSubmitError(error));
-      if (error && typeof error === 'object' && 'status' in error && error.status === 409) {
-        await load().catch(() => undefined);
-      }
+      if (isConflict(error)) await load();
     } finally {
       setSubmitting(false);
     }
   };
 
-  if (!timeline)
+  // Positions in the timeline change when a step is undone, so the selection would point at a
+  // different clip; clear it.
+  const undo = () => {
+    if (readOnly) return;
+    dispatch({ type: 'undo' });
+    setSelection(undefined);
+  };
+  const redo = () => {
+    if (readOnly) return;
+    dispatch({ type: 'redo' });
+    setSelection(undefined);
+  };
+
+  // Keyboard shortcuts. The handler is kept in a ref so the listener is added once.
+  const run = (action: ShortcutAction) => {
+    const frame = playerRef.current?.getCurrentFrame() ?? 0;
+    switch (action) {
+      case 'play_pause':
+        return playerRef.current?.toggle();
+      case 'frame_back':
+        return seek(frame - 1);
+      case 'frame_forward':
+        return seek(frame + 1);
+      case 'second_back':
+        return seek(frame - fps);
+      case 'second_forward':
+        return seek(frame + fps);
+      case 'to_start':
+        return seek(0);
+      case 'to_end':
+        return seek(durationFrames - 1);
+      case 'split':
+        return split();
+      case 'delete':
+        return remove(false);
+      case 'ripple_delete':
+        return remove(true);
+      case 'undo':
+        return undo();
+      case 'redo':
+        return redo();
+      case 'zoom_in':
+        return setZoom((value) => Math.min(16, value * 1.4));
+      case 'zoom_out':
+        return setZoom((value) => Math.max(0.5, value / 1.4));
+      case 'zoom_fit':
+        return setZoom(1);
+      case 'deselect':
+        return setSelection(undefined);
+      case 'nudge_back':
+      case 'nudge_forward':
+        return (
+          timeline &&
+          selection &&
+          apply(nudgeItem(timeline, selection, action === 'nudge_back' ? -0.1 : 0.1))
+        );
+    }
+  };
+  const runRef = useRef(run);
+  runRef.current = run;
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (isTypingTarget(event.target)) return;
+      const action = shortcutFor(event);
+      if (!action) return;
+      event.preventDefault();
+      runRef.current(action);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
+  if (!timeline) {
     return (
-      <main className="flex h-screen items-center justify-center bg-background text-foreground">
-        {status}
+      <main className="dark flex h-screen flex-col items-center justify-center gap-3 bg-background text-foreground">
+        {loadError ? (
+          <>
+            <AlertTriangle className="size-6 text-amber-400" />
+            <p className="max-w-md text-center text-sm text-muted-foreground">{loadError}</p>
+            <Button variant="outline" onClick={() => void load()}>
+              <RefreshCw /> Try again
+            </Button>
+          </>
+        ) : (
+          <>
+            <Loader2 className="size-6 animate-spin text-muted-foreground" />
+            <p className="text-sm text-muted-foreground">Loading the editor…</p>
+          </>
+        )}
       </main>
     );
-  const duration = timelineDurationSec(timeline, timingMaps);
+  }
+
+  const title =
+    selectedItem?.type === 'media'
+      ? (selectedResource?.label ?? selectedItem.handle)
+      : selectedItem?.type === 'text'
+        ? selectedItem.text
+        : 'Captions';
 
   return (
-    <main className="flex h-screen flex-col bg-background text-foreground">
-      <header className="flex items-center justify-between gap-4 border-b px-5 py-3">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="sm" asChild>
-            <Link to={`/runs/${runId}`}>← Run</Link>
+    <main className="dark flex h-screen flex-col overflow-hidden bg-background text-foreground">
+      <EditorHeader
+        runId={runId}
+        title={stageLabel ?? 'Edit the timeline'}
+        save={save}
+        canUndo={!readOnly && state.past.length > 0}
+        canRedo={!readOnly && state.future.length > 0}
+        canSubmit={!readOnly && save !== 'conflict'}
+        submitting={submitting}
+        onUndo={undo}
+        onRedo={redo}
+        onSubmit={() => void submit()}
+      />
+      {save === 'conflict' ? (
+        <div
+          role="alert"
+          className="flex items-center justify-between gap-3 border-b border-amber-500/40 bg-amber-500/10 px-4 py-2 text-sm text-amber-200"
+        >
+          <span>
+            This draft was changed somewhere else, so your latest edits weren’t saved. Reload to
+            continue from the newer version.
+          </span>
+          <Button size="sm" variant="outline" onClick={() => void load()}>
+            <RefreshCw /> Reload
           </Button>
-          <h1 className="text-sm font-medium">Edit assembly · {stageKey}</h1>
         </div>
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-muted-foreground">{status}</span>
-          <Button variant="outline" size="sm" onClick={undo} disabled={!history.length || readOnly}>
-            Undo
-          </Button>
-          <Button variant="outline" size="sm" onClick={redo} disabled={!future.length || readOnly}>
-            Redo
-          </Button>
-          <Button
-            disabled={readOnly || submitting || status === 'Saving…'}
-            onClick={() => void submit()}
-          >
-            {submitting ? 'Submitting…' : 'Submit timeline'}
-          </Button>
-        </div>
-      </header>
+      ) : null}
       {submitError ? (
         <div
           role="alert"
-          className="border-b border-destructive/40 bg-destructive/10 px-5 py-3 text-sm text-destructive"
+          className="border-b border-destructive/40 bg-destructive/10 px-4 py-2.5 text-sm text-destructive"
         >
           <p className="font-medium">{submitError.message}</p>
           {submitError.failures.length ? (
@@ -186,157 +428,61 @@ export function TimelineEditorPage() {
         </div>
       ) : null}
 
-      <section className="grid min-h-0 flex-1 grid-cols-[240px_1fr_260px]">
-        <aside className="min-h-0 border-r bg-muted/30">
-          <ScrollArea className="h-full">
-            <div className="space-y-3 p-4">
-              <h2 className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-                Media
-              </h2>
-              {resources.map((resource) => (
-                <button
-                  type="button"
-                  key={resource.handle}
-                  disabled={readOnly}
-                  className="block w-full overflow-hidden rounded-lg border bg-card text-left text-card-foreground transition-colors hover:bg-accent disabled:pointer-events-none disabled:opacity-50"
-                  onClick={() => commit((next) => appendResource(next, resource))}
-                >
-                  {resource.kind === 'media.image' ? (
-                    <img src={resource.url} alt="" className="block h-[90px] w-full object-cover" />
-                  ) : resource.kind === 'media.video' ? (
-                    <video
-                      src={resource.url}
-                      muted
-                      className="block h-[90px] w-full object-cover"
-                    />
-                  ) : (
-                    <span className="flex h-[90px] w-full items-center justify-center text-muted-foreground">
-                      ♪ Audio
-                    </span>
-                  )}
-                  <small
-                    className="block truncate p-2 text-xs text-muted-foreground"
-                    title={resource.handle}
-                  >
-                    {resource.label ?? resource.handle}
-                  </small>
-                </button>
-              ))}
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={readOnly}
-                onClick={() =>
-                  commit((next) => {
-                    let overlay = next.tracks.find((track) => track.type === 'overlay');
-                    if (!overlay) {
-                      overlay = { id: `overlay-${Date.now()}`, type: 'overlay', items: [] };
-                      next.tracks.push(overlay);
-                    }
-                    const frame = playerRef.current?.getCurrentFrame() ?? 0;
-                    overlay.items.push({
-                      type: 'text',
-                      text: 'New title',
-                      startSec: Math.round((frame / next.canvas.fps) * 10) / 10,
-                      durationSec: 3,
-                      styleId: 'text.title',
-                      position: 'center',
-                    });
-                  })
-                }
-              >
-                + Add text
-              </Button>
-            </div>
-          </ScrollArea>
-        </aside>
+      <div className="grid min-h-0 flex-1 grid-cols-[272px_minmax(0,1fr)_304px]">
+        <MediaPanel
+          resources={resources}
+          timeline={timeline}
+          aspect={`${timeline.canvas.width}/${timeline.canvas.height}`}
+          readOnly={readOnly}
+          onAdd={addResource}
+          onAddTitle={addTitle}
+        />
+        <PreviewPanel
+          playerRef={playerRef}
+          timeline={timeline}
+          resources={compositionResources}
+          timingMaps={timingMaps}
+          styles={styleTokens}
+          durationFrames={durationFrames}
+          onSeek={seek}
+        />
+        <InspectorPanel
+          timeline={timeline}
+          durationSec={durationSec}
+          item={selectedItem as TimelineItem | undefined}
+          resource={selectedResource}
+          title={title}
+          styles={styles}
+          readOnly={readOnly}
+          selectionKey={selection ? `${selection.trackIndex}-${selection.itemIndex}` : 'none'}
+          onUpdate={(change) =>
+            selection &&
+            mutate((next) => {
+              const item = next.tracks[selection.trackIndex]?.items[selection.itemIndex];
+              if (item) change(item);
+            }, `inspector-${selection.trackIndex}-${selection.itemIndex}`)
+          }
+          onDelete={() => remove(false)}
+        />
+      </div>
 
-        <section className="flex min-h-0 min-w-0 flex-col gap-4 overflow-auto p-6">
-          {/* The preview takes the height the timeline leaves and fits the canvas inside it, so
-              a vertical video is never cropped and the player's controls stay visible. */}
-          <div className="flex min-h-[260px] flex-1 items-center justify-center">
-            <div
-              className="flex h-full w-full items-center justify-center"
-              style={{ containerType: 'size' }}
-            >
-              <Player
-                ref={playerRef}
-                component={TimelineComposition}
-                inputProps={{ timeline, resources: resourceMap, timingMaps, styles: styleTokens }}
-                durationInFrames={Math.max(1, Math.ceil(duration * timeline.canvas.fps))}
-                compositionWidth={timeline.canvas.width}
-                compositionHeight={timeline.canvas.height}
-                fps={timeline.canvas.fps}
-                controls
-                style={{
-                  width: `min(100cqw, calc(100cqh * ${timeline.canvas.width} / ${timeline.canvas.height}))`,
-                  height: `min(100cqh, calc(100cqw * ${timeline.canvas.height} / ${timeline.canvas.width}))`,
-                }}
-              />
-            </div>
-          </div>
-          <TrackLanes
-            timeline={timeline}
-            durationSec={duration}
-            selection={selection}
-            readOnly={readOnly}
-            sourceSecOf={(handle) => resourceDurationSec(resourceByHandle.get(handle))}
-            mediaLabel={(handle) => resourceByHandle.get(handle)?.label}
-            onSelect={setSelection}
-            onTiming={(sel, timing) =>
-              commit((next) => {
-                const item = next.tracks[sel.trackIndex]?.items[sel.itemIndex];
-                if (!item || item.type === 'captions') return;
-                item.startSec = timing.startSec;
-                item.durationSec = timing.durationSec;
-                if (item.type === 'media') {
-                  if (timing.trimInSec > 0) item.trimInSec = timing.trimInSec;
-                  else delete item.trimInSec;
-                }
-              })
-            }
-          />
-        </section>
-
-        <aside className="min-h-0 border-l bg-muted/30">
-          <ScrollArea className="h-full">
-            <div className="space-y-4 p-4">
-              <h2 className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-                Inspector
-              </h2>
-              {!selected || !selection ? (
-                <p className="text-sm text-muted-foreground">
-                  Select a clip, title or captions. Drag a clip to move it, or drag its edges to
-                  trim it.
-                </p>
-              ) : (
-                <ItemInspector
-                  key={`${selection.trackIndex}-${selection.itemIndex}`}
-                  item={selected}
-                  styles={styles}
-                  readOnly={readOnly}
-                  isImage={
-                    selected.type === 'media' &&
-                    resourceByHandle.get(selected.handle)?.kind === 'media.image'
-                  }
-                  update={(mutate) =>
-                    commit((next) => {
-                      const item = next.tracks[selection.trackIndex]?.items[selection.itemIndex];
-                      if (item) mutate(item);
-                    })
-                  }
-                  onDelete={() => {
-                    commit((next) => {
-                      next.tracks[selection.trackIndex]!.items.splice(selection.itemIndex, 1);
-                    });
-                    setSelection(undefined);
-                  }}
-                />
-              )}
-            </div>
-          </ScrollArea>
-        </aside>
-      </section>
+      <TimelinePanel
+        timeline={timeline}
+        durationSec={durationSec}
+        playerRef={playerRef}
+        selection={selection}
+        readOnly={readOnly}
+        zoom={zoom}
+        resourceByHandle={resourceByHandle}
+        canSplit={!readOnly}
+        onZoom={setZoom}
+        onSelect={setSelection}
+        onSeekSec={seekSec}
+        onMove={onMove}
+        onSplit={split}
+        onDelete={() => remove(false)}
+        onRippleDelete={() => remove(true)}
+      />
     </main>
   );
 }

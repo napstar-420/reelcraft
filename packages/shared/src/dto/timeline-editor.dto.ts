@@ -5,6 +5,8 @@ import { Timeline, TimelineResource, TimelineStyle } from '../timeline';
 export const TimelineEditorSessionDto = z.object({
   runId: z.string(),
   stageKey: z.string(),
+  /** The stage's name in the blueprint, for the editor's title. */
+  stageLabel: z.string().optional(),
   runRevision: z.number().int().nonnegative(),
   draftRevision: z.number().int().nonnegative(),
   timeline: Timeline,

@@ -84,6 +84,7 @@ export class TimelineEditorService {
     return {
       runId,
       stageKey,
+      stageLabel: context.stage.label,
       runRevision: context.run.revision,
       draftRevision: context.wait.draftRevision,
       timeline: Timeline.parse(context.wait.draft),
