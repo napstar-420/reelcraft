@@ -214,9 +214,19 @@ export class BindingResolverService {
               },
             };
           }
+          const value = ref.path ? getPath(row.data, ref.path) : row.data;
+          // Word timings are a captions `timingHandle` source, so they need a handle that
+          // maps to the artifact that wrote them.
+          const timingArtifactId =
+            !ref.path && timingMapOf(row.data) ? await this.writerArtifactId(row) : undefined;
           return {
-            value: ref.path ? getPath(row.data, ref.path) : row.data,
-            provenance: { ref, memoryKey: ref.key, memoryVersion: row.version },
+            value: timingArtifactId ? withHandle(value, `memory:${ref.key}`) : value,
+            provenance: {
+              ref,
+              memoryKey: ref.key,
+              memoryVersion: row.version,
+              ...(timingArtifactId && { artifactId: timingArtifactId }),
+            },
           };
         }
 
@@ -638,7 +648,27 @@ export class BindingResolverService {
       return this.blobManifest(row, handle);
     }
     const unwrapped = unwrapArtifactData(row.kind as ArtifactKind, row.data);
-    return path ? getPath(unwrapped, path) : unwrapped;
+    if (path) return getPath(unwrapped, path);
+    return timingMapOf(unwrapped) ? withHandle(unwrapped, handle) : unwrapped;
+  }
+
+  /** The active artifact a memory row's stage (or item) finalized. */
+  private async writerArtifactId(row: MemoryRow): Promise<string | undefined> {
+    const [writer] = await this.db
+      .select({ id: artifact.id })
+      .from(artifact)
+      .where(
+        and(
+          eq(artifact.runId, row.runId),
+          eq(artifact.producerStageKey, row.writtenBy),
+          row.writtenItem === null
+            ? isNull(artifact.itemIndex)
+            : eq(artifact.itemIndex, row.writtenItem),
+          eq(artifact.stale, false),
+        ),
+      )
+      .limit(1);
+    return writer?.id;
   }
 
   /** §6.3/§14 — an exact `memKey` match (covers plain non-iterating writes
@@ -761,6 +791,11 @@ function itemIndexOf(row: MemoryRow, baseKey: string): number {
     );
   }
   return row.writtenItem;
+}
+
+/** Word timings bound as data, with the handle a captions item names them by. */
+function withHandle(value: unknown, handle: string): unknown {
+  return value && typeof value === 'object' ? { handle, ...value } : value;
 }
 
 function mediaManifest(
