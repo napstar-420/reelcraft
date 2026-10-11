@@ -49,7 +49,10 @@ A media item can have:
 - **Motion**: **Ken Burns (zoom and drift)**, **Zoom in** or **Pan**, with a **strength**.
   Ken Burns combines a slow zoom with a gentle drift, and the direction changes from clip to clip so a run
   of images doesn't all move the same way.
-- **Transition in**: how it arrives: **Crossfade**, **Slide** or **Wipe**, with a length.
+- **Transition in** and **Transition out**: how it arrives and how it leaves: **Crossfade**, **Slide** or
+  **Wipe**, each with a length. A crossfade fades the picture in from nothing, or out to nothing; a slide
+  comes in from the right and leaves to the left; a wipe reveals it from the left and hides it from the
+  left. Clips don't overlap, so what shows behind a transition is the canvas background.
 
 ## Text and styles
 

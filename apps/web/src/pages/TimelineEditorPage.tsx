@@ -32,6 +32,8 @@ import {
   reorderTargetIndex,
   rippleDelete,
   splitAt,
+  applyTransitionsToTrack,
+  clampTransitions,
   type EditResult,
   type Selection,
 } from './timeline-editor/edit-ops';
@@ -214,6 +216,20 @@ export function TimelineEditorPage() {
   const selectedResource =
     selectedItem?.type === 'media' ? resourceByHandle.get(selectedItem.handle) : undefined;
 
+  const applyTransitions = () => {
+    if (!timeline || !selection) return;
+    const result = applyTransitionsToTrack(timeline, selection);
+    if (!result) return;
+    apply(result);
+    toast(`Applied to ${result.count} other ${result.count === 1 ? 'clip' : 'clips'}.`);
+  };
+  const transitionsApplicable =
+    !!timeline &&
+    !!selection &&
+    selectedItem?.type === 'media' &&
+    selectedResource?.kind !== 'media.audio' &&
+    timeline.tracks[selection.trackIndex]?.type !== 'audio';
+
   const split = () => {
     if (!timeline) return;
     const at = playheadSec();
@@ -285,6 +301,7 @@ export function TimelineEditorPage() {
       if (item.type === 'media') {
         if (timing.trimInSec > 0) item.trimInSec = timing.trimInSec;
         else delete item.trimInSec;
+        clampTransitions(item);
       }
     });
   };
@@ -515,6 +532,10 @@ export function TimelineEditorPage() {
             }, `inspector-${selection.trackIndex}-${selection.itemIndex}`)
           }
           onDelete={() => remove(false)}
+          onApplyTransitions={transitionsApplicable ? applyTransitions : undefined}
+          canApplyTransitions={
+            transitionsApplicable && !!selection && !!applyTransitionsToTrack(timeline, selection)
+          }
         />
       </div>
 

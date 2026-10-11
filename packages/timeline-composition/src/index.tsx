@@ -20,6 +20,7 @@ import {
   DEFAULT_TEXT_STYLE,
   kenBurnsTransform,
   textStyleCss,
+  transitionLook,
 } from './render-helpers';
 
 export {
@@ -28,6 +29,7 @@ export {
   DEFAULT_TEXT_STYLE,
   kenBurnsTransform,
   textStyleCss,
+  transitionLook,
 } from './render-helpers';
 export {
   activeCaption,
@@ -94,27 +96,12 @@ const MediaItem = ({
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const duration = mediaDuration(item, fps);
-  const transitionFrames = Math.round((item.transitionIn?.durationSec ?? 0) * fps);
-  const fadeIn = Math.round(
-    (item.fadeInSec ??
-      (item.transitionIn?.type === 'crossfade' ? item.transitionIn.durationSec : 0)) * fps,
-  );
-  const fadeOut = Math.round((item.fadeOutSec ?? 0) * fps);
-  const opacity = Math.min(
-    fadeIn > 0 ? interpolate(frame, [0, fadeIn], [0, 1], { extrapolateRight: 'clamp' }) : 1,
-    fadeOut > 0
-      ? interpolate(frame, [duration - fadeOut, duration], [1, 0], { extrapolateLeft: 'clamp' })
-      : 1,
-  );
+  const look = transitionLook(frame, duration, fps, item);
   const intensity = item.motion?.intensity ?? 0.12;
   const progress = interpolate(frame, [0, duration], [0, 1], {
     extrapolateLeft: 'clamp',
     extrapolateRight: 'clamp',
   });
-  const entryProgress =
-    transitionFrames > 0
-      ? interpolate(frame, [0, transitionFrames], [0, 1], { extrapolateRight: 'clamp' })
-      : 1;
   const motionTransform = item.motion
     ? item.motion.type === 'pan'
       ? `scale(${1 + intensity}) translateX(${(progress - 0.5) * intensity * 50}%)`
@@ -122,9 +109,7 @@ const MediaItem = ({
         ? kenBurnsTransform(progress, intensity, clipIndex)
         : `scale(${1 + progress * intensity})`
     : undefined;
-  const transitionTransform =
-    item.transitionIn?.type === 'slide' ? `translateX(${(1 - entryProgress) * 100}%)` : undefined;
-  const transform = [transitionTransform, motionTransform].filter(Boolean).join(' ') || undefined;
+  const transform = [look.transform, motionTransform].filter(Boolean).join(' ') || undefined;
   const resolvedSrc = resolveSrc(resource.src);
   const common = {
     startFrom: Math.round((item.trimInSec ?? 0) * fps),
@@ -143,11 +128,9 @@ const MediaItem = ({
     width: '100%',
     height: '100%',
     objectFit: item.fit ?? 'cover',
-    opacity,
+    opacity: look.opacity,
     transform,
-    ...(item.transitionIn?.type === 'wipe'
-      ? { clipPath: `inset(0 ${(1 - entryProgress) * 100}% 0 0)` }
-      : {}),
+    ...(look.clipPath ? { clipPath: look.clipPath } : {}),
   };
   return resource.kind === 'media.image' ? (
     <Img src={resolvedSrc} style={style} />

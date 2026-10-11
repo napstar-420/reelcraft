@@ -115,7 +115,12 @@ on what it is.
   down to fit**;
 - **Fade in (s)** and **Fade out (s)**;
 - **Motion**: **None**, **Ken Burns (zoom and drift)**, **Zoom in**, **Pan**, and the **Motion strength**;
-- **Transition in**: **None**, **Crossfade**, **Slide**, **Wipe**, and its **Length (s)**.
+- **Transition in** and **Transition out**: how the clip arrives and how it leaves: **None**, **Crossfade**,
+  **Slide** or **Wipe**, each with a **Length (s)**. The two can't add up to more than the clip, so a length
+  is held to what the other end leaves;
+- **Apply to all clips**: gives every other clip on the same track the same **Transition in** and
+  **Transition out** as this one, including **None**. A clip too short to fit both gets them shortened.
+  Audio is left alone.
 
 **Delete item** removes it. See [Timelines](./timelines.md) for what each setting does.
 

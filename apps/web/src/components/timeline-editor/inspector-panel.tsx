@@ -99,6 +99,8 @@ export function InspectorPanel({
   onSeekSec,
   onUpdate,
   onDelete,
+  onApplyTransitions,
+  canApplyTransitions,
 }: {
   timeline: Timeline;
   durationSec: number;
@@ -114,6 +116,8 @@ export function InspectorPanel({
   onSeekSec: (sec: number) => void;
   onUpdate: (mutate: (item: TimelineItem) => void) => void;
   onDelete: () => void;
+  onApplyTransitions: (() => void) | undefined;
+  canApplyTransitions: boolean;
 }) {
   const kind = item ? itemKindLabel(item, resource) : undefined;
   return (
@@ -155,8 +159,11 @@ export function InspectorPanel({
                   styles={styles}
                   readOnly={readOnly}
                   isImage={item.type === 'media' && resource?.kind === 'media.image'}
+                  isAudio={item.type === 'media' && resource?.kind === 'media.audio'}
                   update={onUpdate}
                   onDelete={onDelete}
+                  onApplyTransitions={onApplyTransitions}
+                  canApplyTransitions={canApplyTransitions}
                 />
               )}
             </>

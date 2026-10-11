@@ -136,4 +136,49 @@ describe('Timeline', () => {
       expect(captions({ style: { position: 'left' } }).success).toBe(false);
     });
   });
+
+  describe('transitions', () => {
+    const clip = (extra: object) =>
+      Timeline.safeParse({
+        ...base,
+        tracks: [
+          {
+            id: 'video',
+            type: 'video',
+            items: [{ type: 'media', handle: 'artifact:a', startSec: 0, durationSec: 2, ...extra }],
+          },
+        ],
+      });
+
+    it('accepts a transition at each end, and none (stored timelines)', () => {
+      expect(clip({}).success).toBe(true);
+      expect(clip({ transitionIn: { type: 'slide', durationSec: 0.5 } }).success).toBe(true);
+      expect(
+        clip({
+          transitionIn: { type: 'crossfade', durationSec: 0.5 },
+          transitionOut: { type: 'wipe', durationSec: 0.5 },
+        }).success,
+      ).toBe(true);
+    });
+
+    it('rejects an entry and an exit that are together longer than the clip', () => {
+      const result = clip({
+        transitionIn: { type: 'crossfade', durationSec: 1.5 },
+        transitionOut: { type: 'crossfade', durationSec: 1 },
+      });
+      expect(result.success).toBe(false);
+      expect(JSON.stringify(result)).toContain('combined transitions');
+    });
+
+    it('does not count a cut, and rejects a bad exit', () => {
+      expect(
+        clip({
+          transitionIn: { type: 'cut', durationSec: 5 },
+          transitionOut: { type: 'slide', durationSec: 1 },
+        }).success,
+      ).toBe(true);
+      expect(clip({ transitionOut: { type: 'spin', durationSec: 1 } }).success).toBe(false);
+      expect(clip({ transitionOut: { type: 'slide', durationSec: 0 } }).success).toBe(false);
+    });
+  });
 });

@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import type { TimelineItem, TimelineStyle } from '@reelcraft/shared';
+import { Copy } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -12,6 +13,7 @@ import {
 } from '@/components/ui/select';
 import { Slider } from '@/components/ui/slider';
 import { clampFades, MIN_ITEM_SEC } from '@/pages/timeline-editor.logic';
+import { clampTransitions } from '@/pages/timeline-editor/edit-ops';
 
 type MediaItem = Extract<TimelineItem, { type: 'media' }>;
 type TextItem = Extract<TimelineItem, { type: 'text' }>;
@@ -105,6 +107,73 @@ function Choice({
   );
 }
 
+/** One end of a clip's transition: its kind and, once there is one, how long it lasts. The two ends
+ * can't be longer than the clip together, so a length is held to what the other end leaves. */
+function TransitionFields({
+  label,
+  lengthId,
+  media,
+  which,
+  disabled,
+  updateMedia,
+}: {
+  label: string;
+  lengthId: string;
+  media: MediaItem;
+  which: 'transitionIn' | 'transitionOut';
+  disabled: boolean;
+  updateMedia: (mutate: (media: MediaItem) => void) => void;
+}) {
+  const transition = media[which];
+  const active = transition && transition.type !== 'cut';
+  return (
+    <div className="grid grid-cols-2 gap-3">
+      <Choice
+        label={label}
+        value={active ? transition.type : NONE}
+        options={[
+          { value: NONE, label: 'None' },
+          { value: 'crossfade', label: 'Crossfade' },
+          { value: 'slide', label: 'Slide' },
+          { value: 'wipe', label: 'Wipe' },
+        ]}
+        disabled={disabled}
+        onChange={(type) =>
+          updateMedia((draft) => {
+            if (type === NONE) delete draft[which];
+            else {
+              draft[which] = {
+                type: type as NonNullable<MediaItem['transitionIn']>['type'],
+                durationSec: draft[which]?.durationSec ?? 0.5,
+              };
+              clampTransitions(draft);
+            }
+          })
+        }
+      />
+      {active ? (
+        <NumberField
+          id={lengthId}
+          label="Length (s)"
+          min={MIN_ITEM_SEC}
+          value={transition.durationSec}
+          disabled={disabled}
+          onChange={(value) =>
+            updateMedia((draft) => {
+              const current = draft[which];
+              if (!current) return;
+              const other = draft[which === 'transitionIn' ? 'transitionOut' : 'transitionIn'];
+              const room =
+                (draft.durationSec ?? 1) - (other && other.type !== 'cut' ? other.durationSec : 0);
+              current.durationSec = Math.max(MIN_ITEM_SEC, Math.min(value, room));
+            })
+          }
+        />
+      ) : null}
+    </div>
+  );
+}
+
 /** Edits the selected clip, title or captions. `update` receives a draft of
  * the item to change in place (it becomes one undo step). */
 export function ItemInspector({
@@ -112,15 +181,24 @@ export function ItemInspector({
   styles,
   readOnly,
   isImage,
+  isAudio,
   update,
   onDelete,
+  onApplyTransitions,
+  canApplyTransitions,
 }: {
   item: TimelineItem;
   styles: TimelineStyle[];
   readOnly: boolean;
   isImage: boolean;
+  /** Audio has no picture, so it has no transitions. */
+  isAudio: boolean;
   update: (mutate: (item: TimelineItem) => void) => void;
   onDelete: () => void;
+  /** Copies this clip's transitions to every other clip on its track; absent when that makes no sense. */
+  onApplyTransitions?: (() => void) | undefined;
+  /** Whether applying would change anything. */
+  canApplyTransitions?: boolean | undefined;
 }) {
   const styleOptions = (type: 'text' | 'captions') =>
     styles
@@ -211,7 +289,10 @@ export function ItemInspector({
               update((draft) => {
                 if (draft.type === 'captions') return;
                 draft.durationSec = value;
-                if (draft.type === 'media') Object.assign(draft, fades(draft));
+                if (draft.type === 'media') {
+                  Object.assign(draft, fades(draft));
+                  clampTransitions(draft);
+                }
               })
             }
           />
@@ -334,47 +415,44 @@ export function ItemInspector({
               />
             </Field>
           ) : null}
-          <div className="grid grid-cols-2 gap-3">
-            <Choice
-              label="Transition in"
-              value={
-                !item.transitionIn || item.transitionIn.type === 'cut'
-                  ? NONE
-                  : item.transitionIn.type
-              }
-              options={[
-                { value: NONE, label: 'None' },
-                { value: 'crossfade', label: 'Crossfade' },
-                { value: 'slide', label: 'Slide' },
-                { value: 'wipe', label: 'Wipe' },
-              ]}
-              disabled={readOnly}
-              onChange={(type) =>
-                updateMedia((media) => {
-                  if (type === NONE) delete media.transitionIn;
-                  else
-                    media.transitionIn = {
-                      type: type as NonNullable<MediaItem['transitionIn']>['type'],
-                      durationSec: media.transitionIn?.durationSec ?? 0.5,
-                    };
-                })
-              }
-            />
-            {item.transitionIn && item.transitionIn.type !== 'cut' ? (
-              <NumberField
-                id="clip-transition"
-                label="Length (s)"
-                min={MIN_ITEM_SEC}
-                value={item.transitionIn.durationSec}
+          {!isAudio ? (
+            <>
+              <TransitionFields
+                label="Transition in"
+                lengthId="clip-transition-in"
+                media={item}
+                which="transitionIn"
                 disabled={readOnly}
-                onChange={(value) =>
-                  updateMedia((media) => {
-                    if (media.transitionIn) media.transitionIn.durationSec = value;
-                  })
-                }
+                updateMedia={updateMedia}
               />
-            ) : null}
-          </div>
+              <TransitionFields
+                label="Transition out"
+                lengthId="clip-transition-out"
+                media={item}
+                which="transitionOut"
+                disabled={readOnly}
+                updateMedia={updateMedia}
+              />
+              {onApplyTransitions ? (
+                <div className="space-y-1.5">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="w-full"
+                    disabled={readOnly || !canApplyTransitions}
+                    onClick={onApplyTransitions}
+                  >
+                    <Copy /> Apply to all clips
+                  </Button>
+                  <p className="text-xs text-muted-foreground">
+                    Gives every other clip on this track the same Transition in and Transition out
+                    as this one.
+                  </p>
+                </div>
+              ) : null}
+            </>
+          ) : null}
         </>
       ) : null}
 

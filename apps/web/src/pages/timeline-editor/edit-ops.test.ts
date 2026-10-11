@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { Timeline } from '@reelcraft/shared';
 import {
+  applyTransitionsToTrack,
+  clampTransitions,
   closeGaps,
   deleteItem,
   itemUnderPlayhead,
@@ -188,5 +190,120 @@ describe('overlapsOthers', () => {
     expect(
       overlapsOthers(timeline(), { trackIndex: 0, itemIndex: 1 }, { startSec: 4, durationSec: 2 }),
     ).toBe(false);
+  });
+});
+
+describe('applyTransitionsToTrack', () => {
+  const sel = { trackIndex: 0, itemIndex: 0 };
+  const withTransitions = (): Timeline => {
+    const t = timeline();
+    const first = t.tracks[0]!.items[0] as {
+      transitionIn?: object;
+      transitionOut?: object;
+    };
+    first.transitionIn = { type: 'crossfade', durationSec: 0.5 };
+    first.transitionOut = { type: 'slide', durationSec: 0.4 };
+    return t;
+  };
+  const media = (t: Timeline, track: number, index: number) =>
+    t.tracks[track]!.items[index] as { transitionIn?: unknown; transitionOut?: unknown };
+
+  it('gives every other clip on the track the same entry and exit', () => {
+    const result = applyTransitionsToTrack(withTransitions(), sel)!;
+    expect(result.count).toBe(2);
+    for (const index of [1, 2]) {
+      expect(media(result.timeline, 0, index)).toMatchObject({
+        transitionIn: { type: 'crossfade', durationSec: 0.5 },
+        transitionOut: { type: 'slide', durationSec: 0.4 },
+      });
+    }
+    expect(result.selection).toEqual(sel);
+  });
+
+  it('leaves other tracks and the original timeline alone', () => {
+    const base = withTransitions();
+    const result = applyTransitionsToTrack(base, sel)!;
+    expect(media(result.timeline, 1, 0).transitionIn).toBeUndefined();
+    expect(media(base, 0, 1).transitionIn).toBeUndefined();
+  });
+
+  it('applies "none" too, clearing the others', () => {
+    const base = withTransitions();
+    for (const index of [1, 2]) {
+      Object.assign(media(base, 0, index), {
+        transitionIn: { type: 'wipe', durationSec: 0.3 },
+        transitionOut: { type: 'wipe', durationSec: 0.3 },
+      });
+    }
+    delete media(base, 0, 0).transitionIn;
+    delete media(base, 0, 0).transitionOut;
+    const result = applyTransitionsToTrack(base, sel)!;
+    expect(media(result.timeline, 0, 1)).not.toHaveProperty('transitionIn');
+    expect(media(result.timeline, 0, 2)).not.toHaveProperty('transitionOut');
+  });
+
+  it('shortens both ends on a clip too short to fit them', () => {
+    const base = withTransitions();
+    (base.tracks[0]!.items[1] as { durationSec: number }).durationSec = 0.6;
+    const result = applyTransitionsToTrack(base, sel)!;
+    const short = media(result.timeline, 0, 1) as {
+      transitionIn: { durationSec: number };
+      transitionOut: { durationSec: number };
+    };
+    expect(short.transitionIn.durationSec + short.transitionOut.durationSec).toBeLessThanOrEqual(
+      0.6,
+    );
+    expect(short.transitionIn.durationSec / short.transitionOut.durationSec).toBeCloseTo(
+      0.5 / 0.4,
+      1,
+    );
+  });
+
+  it('does nothing when nothing would change, on audio, or on captions', () => {
+    const once = applyTransitionsToTrack(withTransitions(), sel)!;
+    expect(applyTransitionsToTrack(once.timeline, sel)).toBeUndefined();
+    expect(
+      applyTransitionsToTrack(withTransitions(), { trackIndex: 1, itemIndex: 0 }),
+    ).toBeUndefined();
+    expect(
+      applyTransitionsToTrack(withTransitions(), { trackIndex: 2, itemIndex: 0 }),
+    ).toBeUndefined();
+  });
+});
+
+describe('transitions when a clip changes length', () => {
+  const clipWith = (durationSec: number) => ({
+    type: 'media' as const,
+    handle: 'a',
+    startSec: 0,
+    durationSec,
+    transitionIn: { type: 'crossfade' as const, durationSec: 1 },
+    transitionOut: { type: 'slide' as const, durationSec: 1 },
+  });
+
+  it('clampTransitions shortens both ends to fit, and leaves ones that already fit', () => {
+    const short = clipWith(1);
+    clampTransitions(short);
+    expect(short.transitionIn.durationSec + short.transitionOut.durationSec).toBeLessThanOrEqual(1);
+    const long = clipWith(4);
+    clampTransitions(long);
+    expect(long.transitionIn.durationSec).toBe(1);
+    expect(long.transitionOut.durationSec).toBe(1);
+  });
+
+  it('splitting gives the first part the entry and the second the exit, each fitted', () => {
+    const t: Timeline = {
+      version: 1,
+      canvas: { width: 1080, height: 1920, fps: 30 },
+      tracks: [{ id: 'video', type: 'video', items: [clipWith(4)] }],
+    };
+    const result = splitAt(t, { trackIndex: 0, itemIndex: 0 }, 0.4)!;
+    const [first, second] = result.timeline.tracks[0]!.items as Array<
+      ReturnType<typeof clipWith> & { transitionIn?: unknown; transitionOut?: unknown }
+    >;
+    expect(first).not.toHaveProperty('transitionOut');
+    expect(first!.transitionIn!.durationSec).toBeLessThanOrEqual(0.4);
+    expect(second).not.toHaveProperty('transitionIn');
+    expect(second!.transitionOut).toMatchObject({ type: 'slide', durationSec: 1 });
   });
 });

@@ -44,6 +44,13 @@ export const CaptionStyleOverrides = z.object({
 });
 export type CaptionStyleOverrides = z.infer<typeof CaptionStyleOverrides>;
 
+/** A transition at one end of a clip. */
+export const MediaTransition = z.object({
+  type: z.enum(['cut', 'crossfade', 'slide', 'wipe']),
+  durationSec: finitePositive,
+});
+export type MediaTransition = z.infer<typeof MediaTransition>;
+
 export const TimelineItem = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('media'),
@@ -62,12 +69,10 @@ export const TimelineItem = z.discriminatedUnion('type', [
         intensity: z.number().finite().min(0).max(1).optional(),
       })
       .optional(),
-    transitionIn: z
-      .object({
-        type: z.enum(['cut', 'crossfade', 'slide', 'wipe']),
-        durationSec: finitePositive,
-      })
-      .optional(),
+    /** How the clip arrives. */
+    transitionIn: MediaTransition.optional(),
+    /** How the clip leaves, at its end: the same kinds as `transitionIn`, played backwards. */
+    transitionOut: MediaTransition.optional(),
   }),
   z.object({
     type: z.literal('text'),
@@ -143,6 +148,21 @@ export const Timeline = z
             code: z.ZodIssueCode.custom,
             path: ['tracks', trackIndex, 'items', itemIndex],
             message: `${item.type} item is not valid on a ${track.type} track`,
+          });
+        }
+        if (
+          item.type === 'media' &&
+          item.durationSec !== undefined &&
+          item.transitionIn &&
+          item.transitionOut &&
+          item.transitionIn.type !== 'cut' &&
+          item.transitionOut.type !== 'cut' &&
+          item.transitionIn.durationSec + item.transitionOut.durationSec > item.durationSec + 0.001
+        ) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['tracks', trackIndex, 'items', itemIndex],
+            message: 'combined transitions cannot exceed item duration',
           });
         }
         if (

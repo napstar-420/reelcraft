@@ -52,6 +52,16 @@ const item: JsonSchema = {
         durationSec: { type: 'number', minimum: 0 },
       },
     },
+    transitionOut: {
+      type: 'object',
+      required: ['type', 'durationSec'],
+      description:
+        'media only: how this item leaves, at its end. durationSec must be greater than 0, and transitionIn plus transitionOut must not be longer than the item.',
+      properties: {
+        type: { type: 'string', enum: ['cut', 'crossfade', 'slide', 'wipe'] },
+        durationSec: { type: 'number', minimum: 0 },
+      },
+    },
     text: { type: 'string', description: 'text only: the words to show.' },
     position: {
       type: 'string',

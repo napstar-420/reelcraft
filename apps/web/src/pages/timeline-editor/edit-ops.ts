@@ -2,8 +2,13 @@ import type { Timeline, TimelineItem } from '@reelcraft/shared';
 import { itemTiming, MIN_ITEM_SEC } from '../timeline-editor.logic';
 
 export type Selection = { trackIndex: number; itemIndex: number };
-/** The result of an edit: the new timeline, and what should be selected after it. */
-export type EditResult = { timeline: Timeline; selection?: Selection | undefined };
+/** The result of an edit: the new timeline, and what should be selected after it. `count` is how
+ * many items an edit that touches several changed. */
+export type EditResult = {
+  timeline: Timeline;
+  selection?: Selection | undefined;
+  count?: number | undefined;
+};
 
 type Timed = Exclude<TimelineItem, { type: 'captions' }>;
 
@@ -45,6 +50,10 @@ export function splitAt(
     delete first.fadeOutSec;
     delete second.fadeInSec;
     delete second.transitionIn;
+    // The exit belongs to the end of the clip, which the second part keeps; the first part loses it.
+    delete first.transitionOut;
+    clampTransitions(first);
+    clampTransitions(second);
   }
   track.items.splice(selection.itemIndex + 1, 0, second);
   return { timeline: next, selection: { ...selection, itemIndex: selection.itemIndex + 1 } };
@@ -174,6 +183,81 @@ export function overlapsOthers(
     const { startSec, durationSec } = itemTiming(other);
     return timing.startSec < startSec + durationSec - 0.001 && end > startSec + 0.001;
   });
+}
+
+type Transition = NonNullable<Extract<TimelineItem, { type: 'media' }>['transitionIn']>;
+
+const sameTransition = (a: Transition | undefined, b: Transition | undefined) =>
+  a?.type === b?.type && a?.durationSec === b?.durationSec;
+
+/** A transition shortened so that, with the one at the other end, it fits in a clip
+ * `clipSec` long. */
+function fitTransitions(
+  transitionIn: Transition | undefined,
+  transitionOut: Transition | undefined,
+  clipSec: number,
+): [Transition | undefined, Transition | undefined] {
+  const length = (transition: Transition | undefined) =>
+    transition && transition.type !== 'cut' ? transition.durationSec : 0;
+  const total = length(transitionIn) + length(transitionOut);
+  const scale = total > clipSec ? clipSec / total : 1;
+  const scaled = (transition: Transition | undefined) =>
+    transition && scale < 1
+      ? {
+          ...transition,
+          durationSec: Math.max(0.001, round(transition.durationSec * scale - 0.0005)),
+        }
+      : transition && { ...transition };
+  return [scaled(transitionIn), scaled(transitionOut)];
+}
+
+/** Shortens a clip's entry and exit, in place, if together they are longer than the clip. Call it
+ * after anything that makes a clip shorter or a transition longer. */
+export function clampTransitions(media: Extract<TimelineItem, { type: 'media' }>): void {
+  if (!media.transitionIn && !media.transitionOut) return;
+  const [transitionIn, transitionOut] = fitTransitions(
+    media.transitionIn,
+    media.transitionOut,
+    media.durationSec ?? 1,
+  );
+  if (transitionIn) media.transitionIn = transitionIn;
+  if (transitionOut) media.transitionOut = transitionOut;
+}
+
+/** Gives every other picture or video on the selected clip's track the same entry and exit as the
+ * selected clip, including none: "make them all like this one". A clip too short to fit both gets
+ * them shortened. Audio is left alone, since it has no picture to transition. Returns undefined when
+ * nothing would change. */
+export function applyTransitionsToTrack(
+  timeline: Timeline,
+  selection: Selection,
+): EditResult | undefined {
+  const track = timeline.tracks[selection.trackIndex];
+  const source = itemAt(timeline, selection);
+  if (!track || track.type === 'audio' || source?.type !== 'media') return undefined;
+
+  const next = structuredClone(timeline);
+  let count = 0;
+  for (const [index, target] of next.tracks[selection.trackIndex]!.items.entries()) {
+    if (index === selection.itemIndex || target.type !== 'media') continue;
+    const [transitionIn, transitionOut] = fitTransitions(
+      source.transitionIn,
+      source.transitionOut,
+      target.durationSec ?? 1,
+    );
+    if (
+      sameTransition(target.transitionIn, transitionIn) &&
+      sameTransition(target.transitionOut, transitionOut)
+    ) {
+      continue;
+    }
+    if (transitionIn) target.transitionIn = transitionIn;
+    else delete target.transitionIn;
+    if (transitionOut) target.transitionOut = transitionOut;
+    else delete target.transitionOut;
+    count += 1;
+  }
+  return count === 0 ? undefined : { timeline: next, selection, count };
 }
 
 /** Moves a clip or title by `deltaSec` (it can't start before 0). */
