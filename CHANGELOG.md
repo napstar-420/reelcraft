@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.9.0](https://github.com/napstar-420/reelcraft/compare/v0.8.2...v0.9.0) (2026-10-12)
+
+
+### Features
+
+* a professional timeline editor (preview, captions, problem checks, draft render) ([#140](https://github.com/napstar-420/reelcraft/issues/140)) ([69933c7](https://github.com/napstar-420/reelcraft/commit/69933c79e5b94fe0f023d23a4e60e333af1e4791))
+
+
+### Bug Fixes
+
+* **api:** run compute jobs from an absolute job directory ([#137](https://github.com/napstar-420/reelcraft/issues/137)) ([d2004b5](https://github.com/napstar-420/reelcraft/commit/d2004b58e45502d180fcc4f3abb4703195095a04))
+* **web:** open the timeline editor from a canvas stage that needs input ([#132](https://github.com/napstar-420/reelcraft/issues/132)) ([65259cb](https://github.com/napstar-420/reelcraft/commit/65259cba6defe708a37977c7538b6fc045ac96dc))
+
 ## [0.8.2](https://github.com/napstar-420/reelcraft/compare/v0.8.1...v0.8.2) (2026-10-11)
 
 
