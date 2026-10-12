@@ -235,8 +235,11 @@ export class ComputeJobService {
     throw new Error('ComputeJobService: another submit is still preparing this job');
   }
 
+  /** Absolute even when `WORKSPACE_ROOT` is relative (the default is `./.workspace`): the supervisor
+   * runs the command from inside the job directory, so every path it is handed (the inputs, the
+   * output) must not depend on the working directory it was resolved from. */
   private jobDir(jobId: string) {
-    return path.join(this.config.workspaceRoot, 'jobs', jobId);
+    return path.resolve(this.config.workspaceRoot, 'jobs', jobId);
   }
 
   private validateJobId(jobId: string) {
