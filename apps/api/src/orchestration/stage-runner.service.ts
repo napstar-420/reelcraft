@@ -769,7 +769,28 @@ export class StageRunnerService {
         status.deadlineMs + this.engineConfig.fetchAllowanceSec * 1000,
       );
     }
+    if (ctx && status.done) await this.recordJobReady(ctx, status);
     return status;
+  }
+
+  /** When the provider first reports the job done, relative to the attempt
+   * starting: with `job.completed`'s `fetchMs`, it splits an attempt's wall time
+   * into generating, reading the result back, and judging it. */
+  private async recordJobReady(ctx: StageAttemptContext, status: JobStatus): Promise<void> {
+    const [attempt] = await this.db
+      .select({ createdAt: stageAttempt.createdAt })
+      .from(stageAttempt)
+      .where(eq(stageAttempt.id, ctx.stageAttemptId))
+      .limit(1);
+    if (!attempt) return;
+    const sinceAttemptStartMs = Date.now() - new Date(attempt.createdAt).getTime();
+    await this.events.record(
+      ctx,
+      'debug',
+      'job.ready',
+      `Provider reported done after ${Math.round(sinceAttemptStartMs / 1000)}s`,
+      { sinceAttemptStartMs, outcome: status.done ? status.outcome : undefined },
+    );
   }
 
   /** Poll exhausted without `status.done` — §13's backoff loop calls this
@@ -893,7 +914,9 @@ export class StageRunnerService {
         ? await this.timelineResources.resolve(ctx.runId, bindings.slots.timeline)
         : undefined;
     const execCtx = this.buildExecCtx(stage, ctx, effective, bindings, undefined, resources);
+    const fetchStartedAt = Date.now();
     const result = await capability.fetch(handle, execCtx);
+    const fetchMs = Date.now() - fetchStartedAt;
     await this.events.record(
       ctx,
       'info',
@@ -901,6 +924,7 @@ export class StageRunnerService {
       `Provider finished ($${result.costUsd.toFixed(4)})`,
       {
         costUsd: result.costUsd,
+        fetchMs,
         repro: result.repro,
         ...(result.attachments?.length && { attachments: result.attachments.length }),
         ...(result.providerMeta && { provider: result.providerMeta }),
@@ -1900,6 +1924,7 @@ export class StageRunnerService {
     const maxAttempts = 1 + this.engineConfig.qcErrorRetries;
     let last: QcOutcome = { status: 'error', reason: 'qc never attempted', costUsd: 0 };
     for (let n = 1; n <= maxAttempts; n++) {
+      const qcStartedAt = Date.now();
       last = await this.qc.run({
         envelope,
         judge: effectiveQc.judge,
@@ -1913,7 +1938,7 @@ export class StageRunnerService {
         last.status === 'error'
           ? `QC call ${n}/${maxAttempts} errored: ${last.reason}`
           : `QC ${last.status}`,
-        last,
+        { ...last, durationMs: Date.now() - qcStartedAt },
       );
       if (last.status !== 'error') return last;
     }
