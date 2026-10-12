@@ -3,6 +3,11 @@ name: reelcraft
 services:
   postgres:
     image: postgres:16-alpine
+    # The API pool (10) and Inngest (~9) share this server. A data directory
+    # initialised with the 20-connection fallback left almost no spare, and
+    # Inngest's own queries failed with "too many clients". Command-line flags
+    # override the postgresql.conf already on disk, so no re-init is needed.
+    command: ['postgres', '-c', 'max_connections=100', '-c', 'shared_buffers=128MB']
     environment:
       POSTGRES_USER: reelcraft
       POSTGRES_PASSWORD: reelcraft
