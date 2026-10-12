@@ -185,6 +185,14 @@ export class ChatgptProviderAdapter implements ProviderAdapter {
       }
       if (!signIn.composer) throw new ChatgptPageError('ChatGPT composer not found');
 
+      // Files go into this tab's own composer and do not depend on the
+      // account-wide effort slider, so without web search they are attached
+      // before taking the turn: a QC judge's few MB of images would otherwise
+      // hold every other tab's effort-then-send behind it. With web search on,
+      // the composer's "+" menu is driven first, as before.
+      const attachFirst = !webSearch && references.length > 0;
+      if (attachFirst) await this.uploadReferences(pageId, references);
+
       const sent = await this.exclusive(async () => {
         const set = this.pageResult(
           await this.neo.run<{ value?: number; error?: string }>(
@@ -197,7 +205,7 @@ export class ChatgptProviderAdapter implements ProviderAdapter {
         if (webSearch && !(await this.neo.run<boolean>(enableWebSearchScript(pageId)))) {
           throw new ChatgptPageError('Could not turn on ChatGPT web search');
         }
-        if (references.length > 0) await this.uploadReferences(pageId, references);
+        if (!attachFirst && references.length > 0) await this.uploadReferences(pageId, references);
         return this.pageResult(
           await this.neo.run<{ url?: string; error?: string }>(
             sendPromptScript(pageId, pastedPrompt, webSearch),
