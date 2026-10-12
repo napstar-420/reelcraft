@@ -2,6 +2,7 @@ import type { Context, Logger } from 'inngest';
 import { DEFAULT_FEEDBACK_MAX_ATTEMPTS } from '@reelcraft/shared';
 import type { JobHandle, JobStatus, StageDef } from '@reelcraft/shared';
 import { CONSUMES_RETRY_LIMIT } from '../attempt-outcome';
+import { isProviderUnavailable } from '../../provider/provider-unavailable';
 import type {
   FetchAndFinalizeResult,
   StageAttemptContext,
@@ -18,6 +19,14 @@ type StepTools = Context.Any['step'];
 
 /** §13's backoff poll sequence, capped. */
 const POLL_BACKOFF_SEC = [5, 15, 30];
+
+/** Pauses before reading a finished job's result again after the browser could
+ * not be reached (network drop, Neo down); once spent, the attempt is given up. */
+const FETCH_RESUME_WAITS = ['30s', '2m', '5m', '10m'];
+
+/** Pauses before the next attempt after a provider-reported infrastructure
+ * failure (the last repeats), so a short outage is not burned through at once. */
+const INFRA_RETRY_WAITS = ['30s', '2m', '5m'];
 
 /** A job whose provider reports its own `deadlineMs` (e.g. Codex's own
  * job-runner watchdog) is still worth polling past this loop's generic
@@ -317,6 +326,10 @@ export async function runStageAttemptLoop(
             );
             return { outcome: 'failed' as const, reason: status.reason };
           }
+          await step.sleep(
+            `infra-retry-wait-${stageKey}-${iteration}`,
+            INFRA_RETRY_WAITS[Math.min(infraAttemptsUsed, INFRA_RETRY_WAITS.length - 1)]!,
+          );
           continue;
         }
         // The provider already cleaned up a job it reported as failed.
@@ -324,9 +337,29 @@ export async function runStageAttemptLoop(
         throw new Error(status.reason);
       }
 
-      const fetched = await step.run(`fetch-${stageKey}-${iteration}`, () =>
-        runner.fetchAndFinalize(stage, attemptCtx, handle, prevStageKey, effective),
-      );
+      // A browser provider leaves the finished job's tab open when a read of it
+      // fails. If that failure was only that the browser could not be reached,
+      // wait and read the same tab again rather than abandoning the finished
+      // result and generating it from scratch.
+      let fetched: FetchAndFinalizeResult | undefined;
+      for (let round = 0; fetched === undefined; round++) {
+        try {
+          fetched = await step.run(
+            round === 0
+              ? `fetch-${stageKey}-${iteration}`
+              : `fetch-${stageKey}-${iteration}-${round}`,
+            () => runner.fetchAndFinalize(stage, attemptCtx, handle, prevStageKey, effective),
+          );
+        } catch (err) {
+          const wait = FETCH_RESUME_WAITS[round];
+          if (wait === undefined || !isProviderUnavailable(err)) throw err;
+          logger.warn(
+            { runId, stageKey, round, err },
+            'fetch could not reach the provider; waiting',
+          );
+          await step.sleep(`fetch-resume-wait-${stageKey}-${iteration}-${round}`, wait);
+        }
+      }
 
       const settled = await settleFetched(fetched, attemptCtx, iteration, isLastAttempt);
       if (settled) return settled;

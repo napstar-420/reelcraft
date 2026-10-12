@@ -6,6 +6,7 @@ import {
 } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import { SettingsService } from '../../settings/settings.service';
+import { PROVIDER_UNAVAILABLE_PREFIX } from '../provider-unavailable';
 import { browserOsFetch, browserOsHostHeaders } from './browseros-host';
 
 const AGENT_NAME = 'reelcraft';
@@ -68,7 +69,7 @@ export class NeoClient {
         return this.call(name, args, true);
       }
       this.logger.warn({ err: error, tool: name }, 'neo call failed');
-      throw new Error(`BrowserOS Neo is unavailable: ${(error as Error).message}`);
+      throw new Error(`${PROVIDER_UNAVAILABLE_PREFIX}: ${(error as Error).message}`);
     }
   }
 
