@@ -12,6 +12,8 @@ import { STORAGE_ADAPTER, type StorageAdapter } from '../../storage/storage.adap
 import { loadReferenceFiles, type ReferenceFile } from '../reference-files';
 import { buildChatgptPrompt } from './chatgpt-prompt';
 import {
+  CDP_READ_BUDGET,
+  CDP_READ_UNSUPPORTED,
   EFFORT_STOPS,
   archiveChatScript,
   attachFilesScript,
@@ -21,6 +23,7 @@ import {
   openChatScript,
   pageStateScript,
   parkImageScript,
+  readParkedImageCdpScript,
   readParkedImageScript,
   RUN_RESULT_BUDGET,
   sendPromptScript,
@@ -397,14 +400,46 @@ export class ChatgptProviderAdapter implements ProviderAdapter {
         parkImageScript(pageId, index),
       );
       if (!parked) return images;
-      let base64 = '';
-      for (let from = 0; from < parked.length; from += RUN_RESULT_BUDGET) {
-        const to = Math.min(from + RUN_RESULT_BUDGET, parked.length);
-        base64 += await this.neo.run<string>(readParkedImageScript(pageId, from, to));
-      }
+      const base64 = await this.readParkedImage(pageId, parked.length);
       if (base64.length !== parked.length) throw new Error('ChatGPT image download was incomplete');
       images.push({ mime: parked.mime, base64 });
     }
+  }
+
+  /** ponytail: flips off for the process if Neo ever returns a CDP read short or not as text. */
+  private cdpReads = true;
+
+  /**
+   * Reads the parked image back in a few ~1.5M-character CDP reads (a whole
+   * image is about 2.7M), falling back to the ~6 KB `evaluate` slices when Neo
+   * does not return the text. Any other failure (e.g. a timeout) propagates so
+   * the retried fetch reads the same tab.
+   */
+  private async readParkedImage(pageId: number, length: number): Promise<string> {
+    if (this.cdpReads) {
+      try {
+        let text = '';
+        for (let from = 0; from < length; from += CDP_READ_BUDGET) {
+          const to = Math.min(from + CDP_READ_BUDGET, length);
+          text += await this.neo.run<string>(readParkedImageCdpScript(pageId, from, to));
+        }
+        if (text.length === length) return text;
+        this.logger.warn(
+          { pageId, got: text.length, want: length },
+          'chatgpt cdp image read short',
+        );
+      } catch (error) {
+        if (!(error instanceof Error) || !error.message.includes(CDP_READ_UNSUPPORTED)) throw error;
+        this.logger.warn({ pageId }, 'chatgpt cdp image read unsupported');
+      }
+      this.cdpReads = false;
+    }
+    let text = '';
+    for (let from = 0; from < length; from += RUN_RESULT_BUDGET) {
+      const to = Math.min(from + RUN_RESULT_BUDGET, length);
+      text += await this.neo.run<string>(readParkedImageScript(pageId, from, to));
+    }
+    return text;
   }
 
   private inspectReadiness(): Promise<Readiness> {
