@@ -9,10 +9,13 @@ import {
   parseJsonReply,
 } from './chatgpt-provider.adapter';
 import {
+  CDP_READ_BUDGET,
+  CDP_READ_UNSUPPORTED,
   RUN_RESULT_BUDGET,
   archiveChatScript,
   pageStateScript,
   parkImageScript,
+  readParkedImageCdpScript,
   stripCitations,
   type PageState,
 } from './chatgpt-page';
@@ -438,26 +441,56 @@ describe('chatgpt page image lookup', () => {
   });
 });
 
+const imageJob = () => job({ modality: 'image', outputKind: 'media.image' });
+const unsupported = new Error(`BrowserOS Neo script failed: Error: ${CDP_READ_UNSUPPORTED}`);
+
 describe('ChatgptProviderAdapter image download', () => {
-  it('reads an image bigger than one run result across several runs', async () => {
-    const big = RUN_RESULT_BUDGET;
+  it('reads an image bigger than one CDP read across several runs', async () => {
+    const big = CDP_READ_BUDGET;
     const { adapter, scripts } = fixture([
       { mime: 'image/png', length: big + 3 },
       'a'.repeat(big),
       'bcd',
       null,
     ]);
-    const result = await adapter.fetch(job({ modality: 'image', outputKind: 'media.image' }));
+    const result = await adapter.fetch(imageJob());
     expect((result.output as { base64: string }).base64).toBe(`${'a'.repeat(big)}bcd`);
-    // park image 0, two reads, then park image 1 (none left)
+    // park image 0, two CDP reads, then park image 1 (none left)
     expect(scripts.filter((code) => code.includes('__reelcraft_image'))).toHaveLength(4);
+    expect(scripts.filter((code) => code.includes('Runtime.evaluate'))).toHaveLength(2);
+  });
+
+  it('falls back to evaluate slices when Neo does not return the CDP text, and keeps using them', async () => {
+    const big = RUN_RESULT_BUDGET;
+    const { adapter, scripts } = fixture([
+      { mime: 'image/png', length: big + 3 },
+      unsupported,
+      'a'.repeat(big),
+      'bcd',
+      { mime: 'image/png', length: 2 },
+      'ef', // the next image goes straight to the slices
+      null,
+    ]);
+    const result = await adapter.fetch(imageJob());
+    expect((result.output as { base64: string }).base64).toBe(`${'a'.repeat(big)}bcd`);
+    expect(scripts.filter((code) => code.includes('Runtime.evaluate'))).toHaveLength(1);
+    // two slice reads for the first image, one for the second; no more CDP reads
+    expect(
+      scripts.filter((code) =>
+        code.includes('getElementById("__reelcraft_image").textContent.slice('),
+      ),
+    ).toHaveLength(3);
+  });
+
+  it('falls back when a CDP read comes back short', async () => {
+    const { adapter } = fixture([{ mime: 'image/png', length: 5 }, 'abc', 'abcde', null]);
+    const result = await adapter.fetch(imageJob());
+    expect((result.output as { base64: string }).base64).toBe('abcde');
   });
 
   it('rejects a truncated download and leaves the tab open for the retry', async () => {
-    const { adapter, closed } = fixture([{ mime: 'image/png', length: 5 }, 'abc']);
-    await expect(
-      adapter.fetch(job({ modality: 'image', outputKind: 'media.image' })),
-    ).rejects.toThrow(/incomplete/);
+    const { adapter, closed } = fixture([{ mime: 'image/png', length: 5 }, 'abc', 'abc']);
+    await expect(adapter.fetch(imageJob())).rejects.toThrow(/incomplete/);
     expect(closed()).toBe(0);
   });
 
@@ -469,7 +502,7 @@ describe('ChatgptProviderAdapter image download', () => {
       'AAA',
       null,
     ]);
-    const handle = job({ modality: 'image', outputKind: 'media.image' });
+    const handle = imageJob();
     await expect(adapter.fetch(handle)).rejects.toThrow('run exceeded 30000ms');
     expect(closed()).toBe(0);
     expect(archived()).toBe(0);
@@ -479,6 +512,25 @@ describe('ChatgptProviderAdapter image download', () => {
     expect(archived()).toBe(1);
     expect(closed()).toBe(1);
     expect(archivedBeforeClose()).toBe(true);
+  });
+});
+
+describe('readParkedImageCdpScript', () => {
+  it('reads one slice over a raw CDP Runtime.evaluate and always detaches', () => {
+    const script = readParkedImageCdpScript(7, 10, 20);
+    expect(script).toContain("browser.cdp('Runtime.evaluate'");
+    expect(script).toContain('returnByValue');
+    expect(script).toContain('.slice(10, 20)');
+    expect(script).toContain('__reelcraft_image');
+    expect(script).toContain('Target.detachFromTarget');
+    expect(script).toContain(CDP_READ_UNSUPPORTED);
+  });
+
+  it("keeps one read under Neo's 2 MB result cap and rejects a bad range", () => {
+    expect(CDP_READ_BUDGET).toBeLessThan(2_000_000);
+    expect(() => readParkedImageCdpScript(7, 0, CDP_READ_BUDGET + 1)).toThrow(/Invalid parked/);
+    expect(() => readParkedImageCdpScript(7, -1, 5)).toThrow(/Invalid parked/);
+    expect(() => readParkedImageCdpScript(7, 9, 5)).toThrow(/Invalid parked/);
   });
 });
 

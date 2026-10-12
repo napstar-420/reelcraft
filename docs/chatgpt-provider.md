@@ -60,8 +60,13 @@ response as `pastedPrompt`.
 - Web search is turned on from the composer's "+" menu, which ignores synthetic clicks, so two
   trusted mouse clicks are sent over CDP (they work in a background tab). The old `hints=search`
   URL hint was dropped by ChatGPT. The "Web search" pill then sits inside the composer text.
-- Neo returns `evaluate` results over ~6 KB as files, so large results (images, long replies) are
-  read back in small chunks. See `inPage` in `chatgpt-page.ts`.
+- Neo returns `evaluate` results over ~6 KB as files, so large results (long replies) are read
+  back in small chunks. See `inPage` in `chatgpt-page.ts`.
+- Generated images (~2.7M base64 characters each) are read back with a raw CDP `Runtime.evaluate`
+  in ~1.5M-character slices (`readParkedImageCdpScript`), a few runs per image instead of ~670
+  `evaluate` slices that took about eight minutes per item. If Neo ever returns that read short or
+  not as text, the adapter logs it and falls back to the `evaluate` slices for the rest of the
+  process.
 - Every chatgpt.com selector lives in `apps/api/src/provider/chatgpt/chatgpt-page.ts`. When
   ChatGPT changes its UI, failures read "… — the ChatGPT UI may have changed" and that file is
   the one to fix.

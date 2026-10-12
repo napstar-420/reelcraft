@@ -368,6 +368,43 @@ export function readParkedImageScript(id: number, from: number, to: number): str
 return text;`;
 }
 
+/**
+ * Characters read back per `run` over CDP: under Neo's 2 MB result cap, so an
+ * image of about 2.7M base64 characters takes two reads instead of the ~670
+ * `evaluate` slices `readParkedImageScript` needs.
+ */
+export const CDP_READ_BUDGET = 1_500_000;
+/** Thrown by `readParkedImageCdpScript` when Neo hands back something other than the text. */
+export const CDP_READ_UNSUPPORTED = 'CDP_READ_UNSUPPORTED';
+
+/**
+ * Reads `[from, to)` of the parked image over one raw CDP `Runtime.evaluate`
+ * (the same attach `enableWebSearchScript` uses), which returns the whole
+ * slice in one response instead of Neo's ~6 KB-per-`evaluate` limit.
+ */
+export function readParkedImageCdpScript(id: number, from: number, to: number): string {
+  if (
+    !Number.isInteger(from) ||
+    !Number.isInteger(to) ||
+    from < 0 ||
+    to < from ||
+    to - from > CDP_READ_BUDGET
+  ) {
+    throw new Error(`Invalid parked image range ${from}-${to}`);
+  }
+  const expression = `document.getElementById(${JSON.stringify(IMAGE_NODE)}).textContent.slice(${from}, ${to})`;
+  return `const info = await browser.pages.getInfo(${pageId(id)});
+const { sessionId } = await browser.cdp('Target.attachToTarget', { targetId: info.targetId, flatten: true });
+try {
+  const res = await browser.cdp('Runtime.evaluate', { expression: ${JSON.stringify(expression)}, returnByValue: true }, sessionId);
+  const value = res && res.result && res.result.value;
+  if (typeof value !== 'string') throw new Error(${JSON.stringify(CDP_READ_UNSUPPORTED)});
+  return value;
+} finally {
+  await browser.cdp('Target.detachFromTarget', { sessionId }).catch(() => {});
+}`;
+}
+
 export type ArchiveResult = { archived: boolean; reason?: string };
 
 /**
