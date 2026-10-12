@@ -18,7 +18,24 @@ export interface QcVerdict {
 export type QcOutcome =
   | { status: 'passed'; verdict: QcVerdict; costUsd: number }
   | { status: 'failed'; verdict: QcVerdict; costUsd: number }
-  | { status: 'error'; reason: string; costUsd: number };
+  /** `transient`: the judge could not be reached (network, unavailable
+   * browser), so judging again after a pause may work, unlike an unparseable
+   * verdict. */
+  | { status: 'error'; reason: string; costUsd: number; transient?: boolean };
+
+/** Pauses before judging again after a transient error (the last repeats). */
+const TRANSIENT_BACKOFF_MS = [30_000, 120_000, 300_000];
+
+/** How long to wait after the `errorsSoFar`-th errored judge call before the next. */
+export function qcRetryDelayMs(outcome: QcOutcome, errorsSoFar: number): number {
+  if (outcome.status !== 'error' || !outcome.transient) return 0;
+  return TRANSIENT_BACKOFF_MS[Math.min(errorsSoFar, TRANSIENT_BACKOFF_MS.length) - 1] ?? 0;
+}
+
+/** A thrown provider error that a retry once the connection is back may clear. */
+function isTransientError(err: unknown): boolean {
+  return /unavailable|timed out|network|ECONN/i.test(describeError(err));
+}
 
 /** Backoff between judge polls (the last step repeats). A real judge goes
  * through the same submit/poll adapter as the stage's own call and takes real
@@ -80,16 +97,28 @@ export class QcRunner {
     // matters more than any author-set creativity knob on the pin.
     const params = { ...args.judge.params, temperature: 0 };
 
-    const handle = await adapter.submit(
-      {
-        modality: 'text',
-        modelId: args.judge.modelId,
-        params: qcParams(params, args.envelope, args.judge.provider),
-        renderedPrompt: prompt.user,
-        system: prompt.system,
-      },
-      args.idempotencyKey,
-    );
+    let handle;
+    try {
+      handle = await adapter.submit(
+        {
+          modality: 'text',
+          modelId: args.judge.modelId,
+          params: qcParams(params, args.envelope, args.judge.provider),
+          renderedPrompt: prompt.user,
+          system: prompt.system,
+        },
+        args.idempotencyKey,
+      );
+    } catch (err) {
+      // A judge that cannot be reached is an errored judge call, not a crash of
+      // the stage's own attempt: the caller retries it and then parks the output.
+      return {
+        status: 'error',
+        reason: describeError(err),
+        costUsd: 0,
+        ...(isTransientError(err) && { transient: true }),
+      };
+    }
 
     let status = await adapter.poll(handle);
     const giveUpAt = Date.now() + JUDGE_DEADLINE_MS;
@@ -104,14 +133,24 @@ export class QcRunner {
       return { status: 'error', reason: 'qc judge call did not complete in time', costUsd: 0 };
     }
     if (status.outcome === 'failed') {
-      return { status: 'error', reason: status.reason, costUsd: 0 };
+      return {
+        status: 'error',
+        reason: status.reason,
+        costUsd: 0,
+        ...(status.failureClass === 'infrastructure' && { transient: true }),
+      };
     }
 
     let result;
     try {
       result = await adapter.fetch(handle);
     } catch (err) {
-      return { status: 'error', reason: describeError(err), costUsd: 0 };
+      return {
+        status: 'error',
+        reason: describeError(err),
+        costUsd: 0,
+        ...(isTransientError(err) && { transient: true }),
+      };
     }
 
     let parsed: JudgeResponse;

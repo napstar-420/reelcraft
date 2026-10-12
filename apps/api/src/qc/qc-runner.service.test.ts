@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { ProviderAdapter, ProviderRequest } from '../provider/provider-adapter.interface';
 import { ProviderRegistry } from '../provider/provider.registry';
 import { FakeProviderAdapter } from '../provider/fake/fake-provider.adapter';
-import { QcRunner } from './qc-runner.service';
+import { QcRunner, qcRetryDelayMs, type QcOutcome } from './qc-runner.service';
 import { buildQcEnvelope } from './qc-envelope';
 
 function makeRunner() {
@@ -99,6 +99,62 @@ describe('QcRunner', () => {
       idempotencyKey: 'qc-4',
     });
     expect(outcome.status).toBe('error');
+  });
+
+  describe('a judge that cannot be reached', () => {
+    const judge = { provider: 'fake', modelId: 'fake-judge-1', params: {} };
+    const unreachable = (message: string) => {
+      const registry = new ProviderRegistry();
+      const fake = new FakeProviderAdapter();
+      fake.submit = async () => {
+        throw new Error(message);
+      };
+      registry.register(fake);
+      return new QcRunner(registry);
+    };
+
+    it('is an errored judge call, not a throw out of the stage attempt, and a transient one when the browser is unavailable', async () => {
+      const outcome = await unreachable('BrowserOS Neo is unavailable: Request timed out').run({
+        envelope,
+        judge,
+        threshold: 70,
+        idempotencyKey: 'qc-down',
+      });
+      expect(outcome).toMatchObject({ status: 'error', transient: true });
+    });
+
+    it('is not transient when the failure is not about reaching the judge', async () => {
+      const outcome = await unreachable('ChatGPT composer not found').run({
+        envelope,
+        judge,
+        threshold: 70,
+        idempotencyKey: 'qc-drift',
+      });
+      expect(outcome).toMatchObject({ status: 'error' });
+      expect(outcome).not.toHaveProperty('transient');
+    });
+  });
+
+  describe('qcRetryDelayMs', () => {
+    const error = (transient: boolean): QcOutcome => ({
+      status: 'error',
+      reason: 'x',
+      costUsd: 0,
+      ...(transient && { transient }),
+    });
+
+    it('waits 30 s, then 2 min, then 5 min after transient errors', () => {
+      expect([1, 2, 3, 4].map((n) => qcRetryDelayMs(error(true), n))).toEqual([
+        30_000, 120_000, 300_000, 300_000,
+      ]);
+    });
+
+    it('does not wait for a bad verdict or a verdict at all', () => {
+      expect(qcRetryDelayMs(error(false), 1)).toBe(0);
+      expect(
+        qcRetryDelayMs({ status: 'passed', verdict: { score: 90, critique: '' }, costUsd: 0 }, 1),
+      ).toBe(0);
+    });
   });
 
   it("forces temperature to 0 regardless of the pin's own params", async () => {
