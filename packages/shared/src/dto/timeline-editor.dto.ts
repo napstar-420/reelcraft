@@ -5,6 +5,8 @@ import { Timeline, TimelineResource, TimelineStyle } from '../timeline';
 export const TimelineEditorSessionDto = z.object({
   runId: z.string(),
   stageKey: z.string(),
+  /** The stage's name in the blueprint, for the editor's title. */
+  stageLabel: z.string().optional(),
   runRevision: z.number().int().nonnegative(),
   draftRevision: z.number().int().nonnegative(),
   timeline: Timeline,
@@ -27,3 +29,39 @@ export const SubmitTimelineDraftDto = z.object({
   draftRevision: z.number().int().nonnegative(),
 });
 export type SubmitTimelineDraftDto = z.infer<typeof SubmitTimelineDraftDto>;
+
+/** A draft to check without saving it. Any value is accepted so that a draft that does not parse
+ * comes back as a failed `timeline.schema` check instead of a request error. */
+export const CheckTimelineDraftDto = z.object({ timeline: z.unknown() });
+export type CheckTimelineDraftDto = z.infer<typeof CheckTimelineDraftDto>;
+
+export const TimelineCheckResultDto = z.object({
+  name: z.string(),
+  pass: z.boolean(),
+  message: z.string().optional(),
+  /** The timeline items a failure is about. */
+  targets: z
+    .array(z.object({ trackId: z.string(), itemIndex: z.number().int().nonnegative() }))
+    .optional(),
+});
+export type TimelineCheckResultDto = z.infer<typeof TimelineCheckResultDto>;
+
+export const TimelineCheckResponseDto = z.object({ results: z.array(TimelineCheckResultDto) });
+export type TimelineCheckResponseDto = z.infer<typeof TimelineCheckResponseDto>;
+
+/** A draft video rendered from the editor. `url` is set once it is done. */
+export const TimelinePreviewRenderDto = z.object({
+  id: z.string(),
+  state: z.enum(['rendering', 'done', 'failed', 'cancelled']),
+  /** The saved draft this video shows; older than the editor's revision means it is out of date. */
+  draftRevision: z.number().int().nonnegative(),
+  createdAt: z.string(),
+  error: z.string().optional(),
+  url: z.string().optional(),
+});
+export type TimelinePreviewRenderDto = z.infer<typeof TimelinePreviewRenderDto>;
+
+export const TimelinePreviewResponseDto = z.object({
+  preview: TimelinePreviewRenderDto.nullable(),
+});
+export type TimelinePreviewResponseDto = z.infer<typeof TimelinePreviewResponseDto>;

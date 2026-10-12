@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { and, eq } from 'drizzle-orm';
 import { Timeline, type Probe } from '@reelcraft/shared';
+import { isListKind, parseArtifactHandle, storedListItems } from '../artifact/clip-handle';
 import { StyleRegistry } from '../capability/style.registry';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
 import { artifact, blob, run } from '../db/schema';
@@ -41,6 +42,16 @@ export class TimelineCheckService {
     const results: CheckResult[] = [];
     const resources = new Map<string, Probe | undefined>();
     const handles = new Set<string>();
+    // The items that name a handle, so a failure can point at them.
+    const usersOf = (handle: string): Target[] =>
+      timeline.tracks.flatMap((track) =>
+        track.items.flatMap((item, itemIndex) =>
+          (item.type === 'media' && item.handle === handle) ||
+          (item.type === 'captions' && item.timingHandle === handle)
+            ? [{ trackId: track.id, itemIndex }]
+            : [],
+        ),
+      );
     for (const track of timeline.tracks) {
       for (const item of track.items) {
         if (item.type === 'media') handles.add(item.handle);
@@ -53,25 +64,43 @@ export class TimelineCheckService {
       .where(eq(run.id, input.runId))
       .limit(1);
     for (const handle of handles) {
-      if (handle.startsWith('artifact:')) {
-        const id = handle.slice('artifact:'.length);
+      const artifactHandle = handle.startsWith('artifact:')
+        ? parseArtifactHandle(handle)
+        : undefined;
+      if (artifactHandle) {
         const [row] = await this.db
           .select({ artifact, blob })
           .from(artifact)
           .leftJoin(blob, eq(artifact.blobId, blob.id))
           .where(
-            and(eq(artifact.id, id), eq(artifact.runId, input.runId), eq(artifact.stale, false)),
+            and(
+              eq(artifact.id, artifactHandle.artifactId),
+              eq(artifact.runId, input.runId),
+              eq(artifact.stale, false),
+            ),
           )
           .limit(1);
-        if (!row || row.blob?.deletedAt) {
+        // One item of an image or video list is its own blob, named `artifact:<id>#<position>`.
+        const clip =
+          artifactHandle.clipPosition !== undefined && row && isListKind(row.artifact.kind)
+            ? storedListItems(row.artifact.kind, row.artifact.data)[artifactHandle.clipPosition]
+            : undefined;
+        const [clipBlob] = clip
+          ? await this.db.select().from(blob).where(eq(blob.id, clip.blobId)).limit(1)
+          : [];
+        const file = artifactHandle.clipPosition === undefined ? row?.blob : clipBlob;
+        if (!row || (artifactHandle.clipPosition !== undefined && !clip) || file?.deletedAt) {
           results.push(
-            failed('timeline.handles_resolve', `${handle} is missing, stale, or deleted`),
+            failed(
+              'timeline.handles_resolve',
+              `${handle} is missing, stale, or deleted`,
+              usersOf(handle),
+            ),
           );
         } else {
-          resources.set(
-            handle,
-            (row.artifact.probe ?? row.blob?.probe ?? undefined) as Probe | undefined,
-          );
+          const probe =
+            clip !== undefined ? clip.probe : (row.artifact.probe ?? row.blob?.probe ?? undefined);
+          resources.set(handle, (probe ?? clipBlob?.probe ?? undefined) as Probe | undefined);
         }
       } else if (handle.startsWith('asset:')) {
         const assetId = handle.slice('asset:'.length);
@@ -80,7 +109,11 @@ export class TimelineCheckService {
         ];
         if (!binding) {
           results.push(
-            failed('timeline.handles_resolve', `${handle} is not snapshotted on this run`),
+            failed(
+              'timeline.handles_resolve',
+              `${handle} is not snapshotted on this run`,
+              usersOf(handle),
+            ),
           );
         } else {
           const [row] = await this.db
@@ -89,11 +122,15 @@ export class TimelineCheckService {
             .where(eq(blob.id, binding.blobId))
             .limit(1);
           if (!row || row.deletedAt)
-            results.push(failed('timeline.handles_resolve', `${handle} is deleted`));
+            results.push(
+              failed('timeline.handles_resolve', `${handle} is deleted`, usersOf(handle)),
+            );
           else resources.set(handle, row.probe as Probe | undefined);
         }
       } else {
-        results.push(failed('timeline.handles_resolve', `${handle} is not canonical`));
+        results.push(
+          failed('timeline.handles_resolve', `${handle} is not canonical`, usersOf(handle)),
+        );
       }
     }
     if (!results.some((result) => result.name === 'timeline.handles_resolve')) {
@@ -117,32 +154,40 @@ export class TimelineCheckService {
     );
 
     const boundErrors: string[] = [];
+    const boundTargets: Target[] = [];
     for (const [trackIndex, track] of timeline.tracks.entries()) {
       for (const [itemIndex, item] of track.items.entries()) {
         if (item.type !== 'media' || item.durationSec === undefined) continue;
         const duration = resources.get(item.handle)?.durationSec;
+        // A still has no length (it probes as 0), so any duration fits it.
         if (
           duration !== undefined &&
+          duration > 0 &&
           (item.trimInSec ?? 0) + item.durationSec > duration + 0.001 &&
           !['loop', 'freeze', 'speed'].includes(item.overflow ?? 'trim')
         ) {
           boundErrors.push(
             `track ${trackIndex} item ${itemIndex}: requested ${(item.trimInSec ?? 0) + item.durationSec}s from a ${duration}s source`,
           );
+          boundTargets.push({ trackId: track.id, itemIndex });
         }
       }
     }
     results.push(
       boundErrors.length
-        ? failed('timeline.source_bounds', boundErrors.join('; '))
+        ? failed('timeline.source_bounds', boundErrors.join('; '), boundTargets)
         : passed('timeline.source_bounds'),
     );
 
     const primary = timeline.tracks.find((track) => track.type === 'video');
-    const gaps = primary ? findGaps(primary.items.filter((item) => item.type === 'media')) : [];
+    const gaps = primary ? findGaps(primary) : [];
     results.push(
       !input.allowGaps && gaps.length
-        ? failed('timeline.coverage', `primary video track has gaps: ${gaps.join(', ')}`)
+        ? failed(
+            'timeline.coverage',
+            `primary video track has gaps: ${gaps.map((gap) => gap.label).join(', ')}`,
+            gaps.flatMap((gap) => gap.targets),
+          )
         : passed('timeline.coverage'),
     );
 
@@ -190,8 +235,17 @@ export class TimelineCheckService {
   }
 }
 
-function failed(name: string, message: string): CheckResult {
-  return { name, kind: 'builtin', pass: false, fault: 'artifact', message };
+type Target = { trackId: string; itemIndex: number };
+
+function failed(name: string, message: string, targets: Target[] = []): CheckResult {
+  return {
+    name,
+    kind: 'builtin',
+    pass: false,
+    fault: 'artifact',
+    message,
+    ...(targets.length > 0 && { targets }),
+  };
 }
 function passed(name: string): CheckResult {
   return { name, kind: 'builtin', pass: true };
@@ -208,15 +262,35 @@ function itemEnd(
 ) {
   return item.startSec + (item.durationSec ?? resources.get(item.handle)?.durationSec ?? 0);
 }
-function findGaps(
-  items: Array<Extract<Timeline['tracks'][number]['items'][number], { type: 'media' }>>,
-) {
-  const sorted = [...items].sort((a, b) => a.startSec - b.startSec);
-  const gaps: string[] = [];
+/** The empty stretches on a track, each with the clips on either side of it (those are what the
+ * editor marks). */
+function findGaps(track: Timeline['tracks'][number]): Array<{ label: string; targets: Target[] }> {
+  const clips = track.items
+    .map((item, itemIndex) => ({ item, itemIndex }))
+    .filter(
+      (
+        entry,
+      ): entry is { item: Extract<typeof entry.item, { type: 'media' }>; itemIndex: number } =>
+        entry.item.type === 'media',
+    )
+    .sort((a, b) => a.item.startSec - b.item.startSec);
+  const gaps: Array<{ label: string; targets: Target[] }> = [];
   let end = 0;
-  for (const item of sorted) {
-    if (item.startSec > end + 0.001) gaps.push(`${end.toFixed(3)}-${item.startSec.toFixed(3)}s`);
-    end = Math.max(end, item.startSec + (item.durationSec ?? 0));
+  let before: number | undefined;
+  for (const { item, itemIndex } of clips) {
+    if (item.startSec > end + 0.001) {
+      gaps.push({
+        label: `${end.toFixed(3)}-${item.startSec.toFixed(3)}s`,
+        targets: [
+          ...(before !== undefined ? [{ trackId: track.id, itemIndex: before }] : []),
+          { trackId: track.id, itemIndex },
+        ],
+      });
+    }
+    if (item.startSec + (item.durationSec ?? 0) >= end) {
+      end = item.startSec + (item.durationSec ?? 0);
+      before = itemIndex;
+    }
   }
   return gaps;
 }

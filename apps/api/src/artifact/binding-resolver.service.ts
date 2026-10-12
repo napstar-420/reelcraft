@@ -10,6 +10,7 @@ import { DerivedFrameService } from './derived-frame.service';
 import { isListKind, listItemKind, storedListItems } from './clip-handle';
 import { timingMapOf } from './timing-map';
 import { MemoryService } from './memory.service';
+import { writerArtifactId } from './memory-writer';
 
 type ArtifactRow = typeof artifact.$inferSelect;
 type PrevRef = Extract<Ref, { from: 'prev' }>;
@@ -214,9 +215,19 @@ export class BindingResolverService {
               },
             };
           }
+          const value = ref.path ? getPath(row.data, ref.path) : row.data;
+          // Word timings are a captions `timingHandle` source, so they need a handle that
+          // maps to the artifact that wrote them.
+          const timingArtifactId =
+            !ref.path && timingMapOf(row.data) ? await writerArtifactId(this.db, row) : undefined;
           return {
-            value: ref.path ? getPath(row.data, ref.path) : row.data,
-            provenance: { ref, memoryKey: ref.key, memoryVersion: row.version },
+            value: timingArtifactId ? withHandle(value, `memory:${ref.key}`) : value,
+            provenance: {
+              ref,
+              memoryKey: ref.key,
+              memoryVersion: row.version,
+              ...(timingArtifactId && { artifactId: timingArtifactId }),
+            },
           };
         }
 
@@ -638,7 +649,8 @@ export class BindingResolverService {
       return this.blobManifest(row, handle);
     }
     const unwrapped = unwrapArtifactData(row.kind as ArtifactKind, row.data);
-    return path ? getPath(unwrapped, path) : unwrapped;
+    if (path) return getPath(unwrapped, path);
+    return timingMapOf(unwrapped) ? withHandle(unwrapped, handle) : unwrapped;
   }
 
   /** §6.3/§14 — an exact `memKey` match (covers plain non-iterating writes
@@ -761,6 +773,11 @@ function itemIndexOf(row: MemoryRow, baseKey: string): number {
     );
   }
   return row.writtenItem;
+}
+
+/** Word timings bound as data, with the handle a captions item names them by. */
+function withHandle(value: unknown, handle: string): unknown {
+  return value && typeof value === 'object' ? { handle, ...value } : value;
 }
 
 function mediaManifest(

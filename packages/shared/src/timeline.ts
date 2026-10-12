@@ -5,6 +5,57 @@ const finitePositive = z.number().finite().positive();
 
 /** §17.1 — engine-owned schema; produced by text.generate(timeline) and
  * consumed by timeline.render. */
+/** One word of a caption page and when it is spoken. */
+export const CaptionWordDef = z
+  .object({
+    text: z.string().min(1),
+    startSec: finiteNonNegative,
+    endSec: finiteNonNegative,
+  })
+  .refine((word) => word.endSec >= word.startSec, {
+    message: 'a word cannot end before it starts',
+  });
+
+/** A few words shown together. Words are in the order they are spoken. */
+export const CaptionPageDef = z
+  .object({ words: z.array(CaptionWordDef).min(1).max(24) })
+  .superRefine((page, ctx) => {
+    for (let i = 1; i < page.words.length; i += 1) {
+      if (page.words[i]!.startSec < page.words[i - 1]!.startSec) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['words', i, 'startSec'],
+          message: 'words must be in the order they are spoken',
+        });
+      }
+    }
+  });
+export type CaptionPageDef = z.infer<typeof CaptionPageDef>;
+
+/** What a captions item can change about its preset. Fonts are left to the preset on purpose: the
+ * render can only use fonts it has. */
+/** How the word being spoken stands out in a caption. */
+export const CaptionHighlightStyle = z.enum(['none', 'color', 'pill', 'underline', 'grow']);
+export type CaptionHighlightStyle = z.infer<typeof CaptionHighlightStyle>;
+
+export const CaptionStyleOverrides = z.object({
+  wordsPerPage: z.number().int().min(1).max(8).optional(),
+  highlightStyle: CaptionHighlightStyle.optional(),
+  highlightColor: z.string().min(1).max(40).optional(),
+  color: z.string().min(1).max(40).optional(),
+  fontSize: z.number().min(16).max(200).optional(),
+  uppercase: z.boolean().optional(),
+  position: z.enum(['top', 'center', 'bottom']).optional(),
+});
+export type CaptionStyleOverrides = z.infer<typeof CaptionStyleOverrides>;
+
+/** A transition at one end of a clip. */
+export const MediaTransition = z.object({
+  type: z.enum(['cut', 'crossfade', 'slide', 'wipe']),
+  durationSec: finitePositive,
+});
+export type MediaTransition = z.infer<typeof MediaTransition>;
+
 export const TimelineItem = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('media'),
@@ -23,12 +74,10 @@ export const TimelineItem = z.discriminatedUnion('type', [
         intensity: z.number().finite().min(0).max(1).optional(),
       })
       .optional(),
-    transitionIn: z
-      .object({
-        type: z.enum(['cut', 'crossfade', 'slide', 'wipe']),
-        durationSec: finitePositive,
-      })
-      .optional(),
+    /** How the clip arrives. */
+    transitionIn: MediaTransition.optional(),
+    /** How the clip leaves, at its end: the same kinds as `transitionIn`, played backwards. */
+    transitionOut: MediaTransition.optional(),
   }),
   z.object({
     type: z.literal('text'),
@@ -46,6 +95,11 @@ export const TimelineItem = z.discriminatedUnion('type', [
     timingHandle: z.string(),
     styleId: z.string(),
     startSec: finiteNonNegative.optional(),
+    /** How the captions are broken into pages. When present, these replace the automatic paging
+     * of the transcript, so a person can fix a wrong word or move a break. */
+    pages: z.array(CaptionPageDef).optional(),
+    /** Looks that override the style preset for this captions item only. */
+    style: CaptionStyleOverrides.optional(),
   }),
 ]);
 export type TimelineItem = z.infer<typeof TimelineItem>;
@@ -104,6 +158,21 @@ export const Timeline = z
         if (
           item.type === 'media' &&
           item.durationSec !== undefined &&
+          item.transitionIn &&
+          item.transitionOut &&
+          item.transitionIn.type !== 'cut' &&
+          item.transitionOut.type !== 'cut' &&
+          item.transitionIn.durationSec + item.transitionOut.durationSec > item.durationSec + 0.001
+        ) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['tracks', trackIndex, 'items', itemIndex],
+            message: 'combined transitions cannot exceed item duration',
+          });
+        }
+        if (
+          item.type === 'media' &&
+          item.durationSec !== undefined &&
           (item.fadeInSec ?? 0) + (item.fadeOutSec ?? 0) > item.durationSec
         ) {
           ctx.addIssue({
@@ -130,6 +199,8 @@ export const TimelineResource = z.object({
   handle: z.string(),
   kind: z.enum(['media.image', 'media.video', 'media.audio']),
   url: z.string(),
+  /** What to show the person instead of the handle: the clip's name, or where it came from. */
+  label: z.string().optional(),
   probe: z.unknown().optional(),
 });
 export type TimelineResource = z.infer<typeof TimelineResource>;
@@ -149,8 +220,25 @@ export const TextStyleTokens = z.object({
     .object({ color: z.string(), paddingEm: z.number().nonnegative(), radius: z.number() })
     .optional(),
   uppercase: z.boolean().optional(),
+  italic: z.boolean().optional(),
+  /** Space between letters, in em. */
+  letterSpacingEm: z.number().min(-0.2).max(1).optional(),
   /** Horizontal alignment; a lower third sits left. */
   align: z.enum(['left', 'center']).optional(),
+  /** What a caption template sets besides how its text looks: how the spoken word stands out, how
+   * many words show at once, and where. A person's own choices on a captions item win over these. */
+  caption: z
+    .object({
+      wordsPerPage: z.number().int().min(1).max(8),
+      position: z.enum(['top', 'center', 'bottom']),
+      highlight: z.object({
+        style: CaptionHighlightStyle,
+        color: z.string(),
+        /** The colour of the word itself when its highlight is a box (`pill`). */
+        textColor: z.string().optional(),
+      }),
+    })
+    .optional(),
 });
 export type TextStyleTokens = z.infer<typeof TextStyleTokens>;
 

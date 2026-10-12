@@ -23,6 +23,7 @@ import { RunCancellationService } from './run-cancellation.service';
 import { ArtifactEditService } from './artifact-edit.service';
 import { HumanReminderService } from './human-reminder.service';
 import { TimelineEditorService } from './timeline-editor.service';
+import { TimelinePreviewService } from './timeline-preview.service';
 import { ProviderModule } from '../provider/provider.module';
 import { RunInsightService } from './run-insight.service';
 import { LiveModule } from '../live/live.module';
@@ -41,6 +42,7 @@ const runControlProviders = [
   ArtifactEditService,
   HumanReminderService,
   TimelineEditorService,
+  TimelinePreviewService,
 ];
 
 @Module({

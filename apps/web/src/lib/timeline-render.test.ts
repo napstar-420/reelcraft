@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   kenBurnsTransform,
   textStyleCss,
+  backgroundBox,
 } from '@reelcraft/timeline-composition/src/render-helpers';
 
 describe('kenBurnsTransform', () => {
@@ -43,5 +44,36 @@ describe('textStyleCss', () => {
         background: { color: 'rgba(0,0,0,0.6)', paddingEm: 0.35, radius: 14 },
       }),
     ).toMatchObject({ backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 14 });
+  });
+});
+
+describe('captions on a box', () => {
+  it('keeps the boxes of a wrapped caption from overlapping', () => {
+    for (const paddingEm of [0.1, 0.25, 0.35, 0.5, 0.8]) {
+      const box = backgroundBox(paddingEm);
+      // A line's own box is about 1.2em tall; with the padding above and below it, the next line
+      // must start below that.
+      expect(box.lineHeight).toBeGreaterThanOrEqual(1.2 + 2 * box.verticalEm);
+    }
+  });
+
+  it('sets that line height and padding on the text', () => {
+    const css = textStyleCss({
+      color: '#fff',
+      fontFamily: 'Arial',
+      fontSize: 66,
+      fontWeight: 600,
+      background: { color: '#000', paddingEm: 0.35, radius: 14 },
+    });
+    const box = backgroundBox(0.35);
+    expect(css.lineHeight).toBe(box.lineHeight);
+    expect(css.padding).toBe(`${box.verticalEm}em ${box.horizontalEm}em`);
+  });
+
+  it('keeps the normal line height with no box', () => {
+    expect(
+      textStyleCss({ color: '#fff', fontFamily: 'Arial', fontSize: 66, fontWeight: 600 })
+        .lineHeight,
+    ).toBe(1.15);
   });
 });

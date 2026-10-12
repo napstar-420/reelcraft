@@ -49,18 +49,23 @@ A media item can have:
 - **Motion**: **Ken Burns (zoom and drift)**, **Zoom in** or **Pan**, with a **strength**.
   Ken Burns combines a slow zoom with a gentle drift, and the direction changes from clip to clip so a run
   of images doesn't all move the same way.
-- **Transition in**: how it arrives: **Crossfade**, **Slide** or **Wipe**, with a length.
+- **Transition in** and **Transition out**: how it arrives and how it leaves: **Crossfade**, **Slide** or
+  **Wipe**, each with a length. A crossfade fades the picture in from nothing, or out to nothing; a slide
+  comes in from the right and leaves to the left; a wipe reveals it from the left and hides it from the
+  left. Clips don't overlap, so what shows behind a transition is the canvas background.
 
 ## Text and styles
 
-Text and captions look the way their **style** says. Reelcraft has four:
+Text looks the way its **style** says. Reelcraft has two for text:
 
-| Style                   | Used for | Looks like                                               |
-| ----------------------- | -------- | -------------------------------------------------------- |
-| **Title**               | Text     | Large centred white text with a soft shadow              |
-| **Minimal Lower Third** | Text     | A dark band with left-aligned text, for names and labels |
-| **Bold Pop**            | Captions | Large, heavy capitals with a thick black outline         |
-| **Clean Captions**      | Captions | Compact, readable text on a translucent dark background  |
+| Style                   | Looks like                                               |
+| ----------------------- | -------------------------------------------------------- |
+| **Title**               | Large centred white text with a soft shadow              |
+| **Minimal Lower Third** | A dark band with left-aligned text, for names and labels |
+
+Captions use a **caption template**: a whole look that also says how the spoken word stands out, how many
+words show at once and where they sit. There are thirteen, from **Clean** and **Bold Pop** to **Karaoke**,
+**Neon**, **Cinema** and **Newsroom**. See [Timeline editor](./timeline-editor.md#captions) for the list.
 
 A text item also has a **position**: **Top**, **Center** or **Bottom**.
 

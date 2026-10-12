@@ -448,7 +448,9 @@ describe('binding resolver + memory writes (e2e)', () => {
       { from: 'memory', key: 'voiceTiming' },
       { runId, inputs: {} },
     );
-    expect(read.value).toEqual(timing);
+    // Word timings come with the handle a captions item names them by.
+    expect(read.value).toEqual({ handle: 'memory:voiceTiming', ...timing });
+    expect(read.provenance.artifactId).toBe(artifactId);
     const history = await memory.listCurrent(testDb.db, runId);
     expect(history.find((row) => row.memKey === 'voiceTiming')?.kind).toBe('data');
     expect(history.find((row) => row.memKey === 'voice')?.artifactId).toBe(artifactId);

@@ -11,7 +11,8 @@ export type StorageOrphanReason =
   | 'upload_rejected'
   | 'package_upload'
   | 'package_import_failed'
-  | 'orphaned_prefix';
+  | 'orphaned_prefix'
+  | 'draft_render_replaced';
 
 /** Queues stored objects for deletion by the `blob.gc` sweep, which removes
  * them once they have been queued for `BLOB_RETENTION_DAYS`. Call it in the
