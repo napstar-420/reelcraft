@@ -189,6 +189,126 @@ describe('runStageAttemptLoop abandoned jobs', () => {
   });
 });
 
+describe('runStageAttemptLoop unreachable provider', () => {
+  const handle = { providerId: 'chatgpt', externalId: 'job' };
+  const unavailable = () => new Error('BrowserOS Neo is unavailable: Request timed out');
+
+  function setup(over: Record<string, unknown> = {}, retryLimit = 0) {
+    const runner = {
+      findHeldQcAttempt: vi.fn().mockResolvedValue(undefined),
+      beginAttempt: vi.fn().mockResolvedValue({ attemptNo: 1 }),
+      countRoundAttempts: vi.fn().mockResolvedValue(0),
+      infraAttemptLimit: () => 3,
+      reserveAndSubmit: vi.fn().mockResolvedValue({ outcome: 'submitted', handle }),
+      pollOnce: vi.fn().mockResolvedValue({ done: true, outcome: 'succeeded' }),
+      fetchAndFinalize: vi.fn().mockResolvedValue({ outcome: 'success', artifactId: 'a1' }),
+      cancelJob: vi.fn().mockResolvedValue(undefined),
+      settleFailedPoll: vi.fn(),
+      stopIfRunNotRunning: vi.fn().mockResolvedValue(false),
+      recordInfraError: vi.fn(),
+      recordAttemptError: vi.fn(),
+      recordFailure: vi.fn(),
+      ...over,
+    };
+    const sleep = vi.fn();
+    const result = runStageAttemptLoop({
+      step: { run: (_id: string, fn: () => unknown) => fn(), sleep } as never,
+      logger: { warn: vi.fn() } as never,
+      runner: runner as never,
+      stage: { checks: [] } as never,
+      effective: { polling: { maxWaitSec: 60 } } as never,
+      prevStageKey: undefined,
+      runId: 'run',
+      stageExecutionId: 'exec',
+      stageKey: 'draft',
+      retryLimit,
+    });
+    return { runner, sleep, result };
+  }
+
+  it('waits and reads the same finished job again instead of cancelling it and generating from scratch', async () => {
+    const { runner, sleep, result } = setup({
+      fetchAndFinalize: vi
+        .fn()
+        .mockRejectedValueOnce(unavailable())
+        .mockRejectedValueOnce(unavailable())
+        .mockResolvedValue({ outcome: 'success', artifactId: 'a1' }),
+    });
+
+    await expect(result).resolves.toEqual({ outcome: 'passed', artifactId: 'a1' });
+    expect(runner.fetchAndFinalize).toHaveBeenCalledTimes(3);
+    expect(runner.reserveAndSubmit).toHaveBeenCalledTimes(1);
+    expect(runner.cancelJob).not.toHaveBeenCalled();
+    expect(sleep.mock.calls).toEqual([
+      ['fetch-resume-wait-draft-1-0', '30s'],
+      ['fetch-resume-wait-draft-1-1', '2m'],
+    ]);
+  });
+
+  it('gives the attempt up once the waits are spent, cancelling the job as before', async () => {
+    const { runner, sleep, result } = setup({
+      fetchAndFinalize: vi.fn().mockRejectedValue(unavailable()),
+    });
+
+    await expect(result).resolves.toMatchObject({ outcome: 'failed' });
+    expect(sleep).toHaveBeenCalledTimes(4);
+    expect(runner.fetchAndFinalize).toHaveBeenCalledTimes(5);
+    expect(runner.cancelJob).toHaveBeenCalledTimes(1);
+    expect(runner.recordFailure).toHaveBeenCalledTimes(1);
+  });
+
+  it('also waits when a Neo run was cut off at its 30 s cap, which is what failed a real run', async () => {
+    const { runner, sleep, result } = setup({
+      fetchAndFinalize: vi
+        .fn()
+        .mockRejectedValueOnce(new Error('BrowserOS Neo script failed: run exceeded 30000ms'))
+        .mockResolvedValue({ outcome: 'success', artifactId: 'a1' }),
+    });
+
+    await expect(result).resolves.toEqual({ outcome: 'passed', artifactId: 'a1' });
+    expect(runner.cancelJob).not.toHaveBeenCalled();
+    expect(sleep).toHaveBeenCalledWith('fetch-resume-wait-draft-1-0', '30s');
+  });
+
+  it('does not wait for a read that failed for another reason', async () => {
+    const { runner, sleep, result } = setup({
+      fetchAndFinalize: vi
+        .fn()
+        .mockRejectedValue(new Error('ChatGPT image download was incomplete')),
+    });
+
+    await expect(result).resolves.toMatchObject({ outcome: 'failed' });
+    expect(sleep).not.toHaveBeenCalled();
+    expect(runner.fetchAndFinalize).toHaveBeenCalledTimes(1);
+  });
+
+  it('pauses before the next attempt after an infrastructure failure, instead of retrying at once', async () => {
+    const { runner, sleep, result } = setup({
+      beginAttempt: vi
+        .fn()
+        .mockResolvedValueOnce({ attemptNo: 1 })
+        .mockResolvedValue({ attemptNo: 2 }),
+      pollOnce: vi
+        .fn()
+        .mockResolvedValueOnce({
+          done: true,
+          outcome: 'failed',
+          reason: 'could not be reached',
+          retryable: true,
+          failureClass: 'infrastructure',
+        })
+        .mockResolvedValue({ done: true, outcome: 'succeeded' }),
+    });
+
+    await expect(result).resolves.toEqual({ outcome: 'passed', artifactId: 'a1' });
+    expect(runner.recordInfraError).toHaveBeenCalledTimes(1);
+    expect(sleep).toHaveBeenCalledWith('infra-retry-wait-draft-1', '30s');
+    expect(sleep.mock.invocationCallOrder[0]).toBeLessThan(
+      runner.beginAttempt.mock.invocationCallOrder[1]!,
+    );
+  });
+});
+
 describe('runStageAttemptLoop feedback retries', () => {
   /** A runner whose every fetch ends in `outcome`; `countRoundAttempts`
    * counts from the attempts recorded so far, like the real DB query. */
