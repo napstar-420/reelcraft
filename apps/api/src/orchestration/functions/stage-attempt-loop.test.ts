@@ -257,6 +257,19 @@ describe('runStageAttemptLoop unreachable provider', () => {
     expect(runner.recordFailure).toHaveBeenCalledTimes(1);
   });
 
+  it('also waits when a Neo run was cut off at its 30 s cap, which is what failed a real run', async () => {
+    const { runner, sleep, result } = setup({
+      fetchAndFinalize: vi
+        .fn()
+        .mockRejectedValueOnce(new Error('BrowserOS Neo script failed: run exceeded 30000ms'))
+        .mockResolvedValue({ outcome: 'success', artifactId: 'a1' }),
+    });
+
+    await expect(result).resolves.toEqual({ outcome: 'passed', artifactId: 'a1' });
+    expect(runner.cancelJob).not.toHaveBeenCalled();
+    expect(sleep).toHaveBeenCalledWith('fetch-resume-wait-draft-1-0', '30s');
+  });
+
   it('does not wait for a read that failed for another reason', async () => {
     const { runner, sleep, result } = setup({
       fetchAndFinalize: vi
