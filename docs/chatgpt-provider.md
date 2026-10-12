@@ -50,7 +50,9 @@ response as `pastedPrompt`.
 - **Effort is sticky account-wide** in ChatGPT. Every job sets it explicitly, and your ChatGPT app
   keeps whatever the last job used. Jobs that run side by side (an iterating stage with
   `iterate.concurrency` above 1) take turns from "set effort" to "sent", so each prompt goes out with
-  its own effort; everything else about a job stays in its own tab.
+  its own effort; everything else about a job stays in its own tab. Reference images (a QC judge's
+  attached candidates, for example) are attached before that turn, so a large upload in one tab does
+  not hold the others up; when web search is on they are still attached inside the turn.
 - **Concurrency is not capped.** Each running item is its own tab and its own chat, started within
   seconds of the others. Three at once was tried and worked (all images generated and downloaded);
   more is untested, and ChatGPT may rate-limit or show captchas for many image chats at once. Start

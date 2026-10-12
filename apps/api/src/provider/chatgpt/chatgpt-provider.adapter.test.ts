@@ -151,9 +151,9 @@ describe('ChatgptProviderAdapter.submit', () => {
     const { adapter, scripts, storage } = fixture([
       8,
       signedIn,
-      { value: 0 },
       { length: 12 },
       { ok: true },
+      { value: 0 },
       { url: 'https://chatgpt.com/c/img' },
     ]);
     await adapter.submit(
@@ -170,10 +170,10 @@ describe('ChatgptProviderAdapter.submit', () => {
     );
     expect(scripts[0]).toContain('"https://chatgpt.com/"');
     expect(storage.getStream).toHaveBeenCalledWith('assets/ref.jpg');
-    expect(scripts[3]).toContain(Buffer.from('png-bytes').toString('base64'));
-    expect(scripts[4]).toContain('1-ref.jpg');
-    expect(scripts[4]).toContain('image/jpeg');
-    expect(scripts[4]).not.toContain(Buffer.from('png-bytes').toString('base64'));
+    expect(scripts[2]).toContain(Buffer.from('png-bytes').toString('base64'));
+    expect(scripts[3]).toContain('1-ref.jpg');
+    expect(scripts[3]).toContain('image/jpeg');
+    expect(scripts[3]).not.toContain(Buffer.from('png-bytes').toString('base64'));
   });
 
   it('uploads large references in chunks that each fit a Neo request', async () => {
@@ -181,11 +181,11 @@ describe('ChatgptProviderAdapter.submit', () => {
     const { adapter, scripts, storage } = fixture([
       8,
       signedIn,
-      { value: 0 },
       { length: 0 },
       { length: 0 },
       { length: 0 },
       { ok: true },
+      { value: 0 },
       { url: 'https://chatgpt.com/c/img' },
     ]);
     storage.getStream.mockImplementation(async () => Readable.from([big]));
@@ -199,13 +199,13 @@ describe('ChatgptProviderAdapter.submit', () => {
       'k',
     );
     const base64 = big.toString('base64');
-    const chunks = scripts.slice(3, 6).map((s) => {
+    const chunks = scripts.slice(2, 5).map((s) => {
       const match = /\\"chunk\\":\\"([A-Za-z0-9+/=]*)\\"/.exec(s);
       if (!match) throw new Error('chunk not found');
       return match[1];
     });
     expect(chunks.join('')).toBe(base64);
-    expect(scripts[6]).toContain(`"length\\":${base64.length}`);
+    expect(scripts[5]).toContain(`"length\\":${base64.length}`);
     expect(Math.max(...scripts.map((s) => s.length))).toBeLessThan(4 * 1024 * 1024);
   });
 });
@@ -603,6 +603,68 @@ describe('ChatgptProviderAdapter sending in turns', () => {
     const results = await Promise.allSettled([turn('a', 20, true), turn('b', 5), turn('c', 1)]);
     expect(order).toEqual(['a start', 'a end', 'b start', 'b end', 'c start', 'c end']);
     expect(results.map((r) => r.status)).toEqual(['rejected', 'fulfilled', 'fulfilled']);
+  });
+});
+
+describe('ChatgptProviderAdapter reference uploads and the turn lock', () => {
+  /** A fake Neo that answers by script content, with a slow reference upload. */
+  function slowUploadNeo() {
+    const order: string[] = [];
+    let nextPage = 10;
+    const neo = {
+      run: vi.fn(async (code: string) => {
+        if (code.includes('browser.pages.newPage')) return nextPage++;
+        if (code.includes('/api/auth/session')) return signedIn;
+        if (code.includes('__reelcraft_upload_') && code.includes('args.chunk')) {
+          order.push('upload');
+          await new Promise((resolve) => setTimeout(resolve, 40));
+          return { length: 12 };
+        }
+        if (code.includes('input[type=file]')) {
+          order.push('attach');
+          return { ok: true };
+        }
+        if (code.includes('ArrowLeft')) {
+          order.push('effort');
+          return { value: 0 };
+        }
+        if (code.includes('document.execCommand')) {
+          order.push('send');
+          return { url: 'https://chatgpt.com/c/x' };
+        }
+        return true;
+      }),
+    };
+    const storage = {
+      getStream: vi.fn(async () => Readable.from([Buffer.from('png-bytes')])),
+      stat: vi.fn(async () => ({ bytes: 9, etag: 'e', mime: 'application/octet-stream' })),
+    };
+    return { adapter: new ChatgptProviderAdapter(neo as never, storage as never), order };
+  }
+  const withRef = {
+    modality: 'text' as const,
+    modelId: 'chatgpt',
+    params: { reasoningEffort: 'instant', slots: { ref: { sourceKey: 'assets/ref.jpg' } } },
+    renderedPrompt: 'judge this',
+  };
+  const plain = { ...withRef, params: { reasoningEffort: 'instant' }, renderedPrompt: 'hello' };
+
+  it("does not hold another tab's effort-then-send behind a slow reference upload", async () => {
+    const { adapter, order } = slowUploadNeo();
+    await Promise.all([adapter.submit(withRef, 'a'), adapter.submit(plain, 'b')]);
+    // b's whole turn (effort, send) runs while a is still uploading its images.
+    expect(order.indexOf('send')).toBeLessThan(order.lastIndexOf('send'));
+    expect(order.indexOf('send')).toBeLessThan(order.indexOf('attach'));
+  });
+
+  it('attaches before the turn when web search is off, and inside it when web search is on', async () => {
+    const off = slowUploadNeo();
+    await off.adapter.submit(withRef, 'a');
+    expect(off.order).toEqual(['upload', 'attach', 'effort', 'send']);
+
+    const on = slowUploadNeo();
+    await on.adapter.submit({ ...withRef, params: { ...withRef.params, webSearch: true } }, 'b');
+    expect(on.order).toEqual(['effort', 'upload', 'attach', 'send']);
   });
 });
 
