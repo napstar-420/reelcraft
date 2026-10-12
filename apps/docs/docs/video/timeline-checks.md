@@ -48,8 +48,7 @@ produced it was redone after the timeline was written, so redo the timeline too.
 
 ### timeline.styles_exist
 
-The message lists the unknown styles. Use one of the four: **Title**, **Minimal Lower Third**, **Bold Pop**
-or **Clean Captions**. See [Timelines](./timelines.md#text-and-styles).
+The message lists the unknown styles. Use **Title** or **Minimal Lower Third** for text, and a caption template (such as **Clean** or **Bold Pop**) for captions. In the editor, pick a template from the **Template** gallery. See [Timelines](./timelines.md#text-and-styles).
 
 ### timeline.source_bounds
 

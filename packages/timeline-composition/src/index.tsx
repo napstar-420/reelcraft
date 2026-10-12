@@ -15,10 +15,11 @@ import type { CalculateMetadataFunction } from 'remotion';
 import type { TextStyleTokens, Timeline, TimelineItem, TimingMap } from '@reelcraft/shared';
 import { activeCaption, captionPagesFor } from './captions';
 import {
-  CAPTION_HIGHLIGHT,
-  captionTokens,
+  type CaptionLook,
   DEFAULT_TEXT_STYLE,
+  highlightWordCss,
   kenBurnsTransform,
+  resolveCaptionLook,
   textStyleCss,
   transitionLook,
 } from './render-helpers';
@@ -26,10 +27,14 @@ import {
 export {
   CAPTION_HIGHLIGHT,
   captionTokens,
+  DEFAULT_CAPTION_WORDS_PER_PAGE,
   DEFAULT_TEXT_STYLE,
+  highlightWordCss,
   kenBurnsTransform,
+  resolveCaptionLook,
   textStyleCss,
   transitionLook,
+  type CaptionLook,
 } from './render-helpers';
 export {
   activeCaption,
@@ -191,6 +196,31 @@ const TextItem = ({
 
 const CAPTION_JUSTIFY = { top: 'flex-start', center: 'center', bottom: 'flex-end' } as const;
 
+/** The words of one caption page with the word being spoken standing out. Shared by the captions
+ * on the video and by the template previews in the editor, so they cannot drift apart. */
+export const CaptionWords = ({
+  words,
+  activeIndex,
+  look,
+}: {
+  words: string[];
+  /** Which word is being spoken; -1 for none. */
+  activeIndex: number;
+  look: CaptionLook;
+}) => {
+  const highlighted = highlightWordCss(look.highlight);
+  return (
+    <span style={textStyleCss(look.tokens)}>
+      {words.map((word, index) => (
+        <React.Fragment key={index}>
+          {index > 0 ? ' ' : null}
+          <span style={index === activeIndex ? highlighted : undefined}>{word}</span>
+        </React.Fragment>
+      ))}
+    </span>
+  );
+};
+
 const CaptionsItem = ({
   item,
   timing,
@@ -203,10 +233,11 @@ const CaptionsItem = ({
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const second = frame / fps + (item.startSec ?? 0);
+  const look = React.useMemo(() => resolveCaptionLook(tokens, item.style), [tokens, item.style]);
   const pages = React.useMemo(
-    () => captionPagesFor(item, timing.words),
-    // The pages follow the item's edited pages and its words-per-page, or else the transcript.
-    [item.pages, item.style?.wordsPerPage, timing.words],
+    () => captionPagesFor(item, timing.words, look.wordsPerPage),
+    // The pages follow the item's edited pages and its words per page, or else the transcript.
+    [item.pages, look.wordsPerPage, timing.words],
   );
   const active = activeCaption(pages, second);
   // A timing map with sentences but no words (older data) still shows its sentence.
@@ -216,35 +247,27 @@ const CaptionsItem = ({
         (candidate) => second >= candidate.startSec && second <= candidate.endSec,
       );
   if (!active && !sentence) return null;
+  const left = look.tokens.align === 'left';
   return (
     <AbsoluteFill
       style={{
-        justifyContent: CAPTION_JUSTIFY[item.style?.position ?? 'bottom'],
-        alignItems: 'center',
-        padding: item.style?.position === 'top' ? '9% 7% 0' : '0 7% 9%',
+        justifyContent: CAPTION_JUSTIFY[look.position],
+        alignItems: left ? 'flex-start' : 'center',
+        padding: look.position === 'top' ? '9% 7% 0' : '0 7% 9%',
         boxSizing: 'border-box',
-        textAlign: 'center',
+        textAlign: left ? 'left' : 'center',
       }}
     >
       <div>
-        <span style={textStyleCss(captionTokens(tokens, item.style))}>
-          {active
-            ? active.page.words.map((word, index) => (
-                <React.Fragment key={index}>
-                  {index > 0 ? ' ' : null}
-                  <span
-                    style={
-                      index === active.wordIndex
-                        ? { color: item.style?.highlightColor ?? CAPTION_HIGHLIGHT }
-                        : undefined
-                    }
-                  >
-                    {word.text}
-                  </span>
-                </React.Fragment>
-              ))
-            : sentence?.text}
-        </span>
+        {active ? (
+          <CaptionWords
+            words={active.page.words.map((word) => word.text)}
+            activeIndex={active.wordIndex}
+            look={look}
+          />
+        ) : (
+          <CaptionWords words={(sentence?.text ?? '').split(' ')} activeIndex={-1} look={look} />
+        )}
       </div>
     </AbsoluteFill>
   );

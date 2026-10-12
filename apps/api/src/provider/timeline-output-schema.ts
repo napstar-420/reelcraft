@@ -76,7 +76,7 @@ const item: JsonSchema = {
     styleId: {
       type: 'string',
       description:
-        'text and captions (required). Captions: caption.clean or caption.bold_pop. Text: text.title or lower_third.minimal.',
+        'text and captions (required). Captions: a caption template id from list_styles (caption.clean is a safe default). Text: text.title or lower_third.minimal.',
     },
   },
 };

@@ -1,4 +1,11 @@
-import type { MediaTransition, TextStyleTokens } from '@reelcraft/shared';
+import type {
+  CaptionHighlightStyle,
+  CaptionStyleOverrides,
+  MediaTransition,
+  TextStyleTokens,
+} from '@reelcraft/shared';
+
+type Css = Record<string, string | number>;
 
 /** How text looks when a timeline names a style the renderer doesn't know. */
 export const DEFAULT_TEXT_STYLE: TextStyleTokens = {
@@ -12,13 +19,11 @@ export const DEFAULT_TEXT_STYLE: TextStyleTokens = {
 /** The colour of the word being spoken in a caption. */
 export const CAPTION_HIGHLIGHT = '#ffd84d';
 
-/** A captions item's look: its preset's tokens with this item's own colour, size and case laid on
+/** A captions item's look: its template's tokens with this item's own colour, size and case laid on
  * top. */
 export function captionTokens(
   base: TextStyleTokens,
-  style:
-    | { color?: string | undefined; fontSize?: number | undefined; uppercase?: boolean | undefined }
-    | undefined,
+  style: Pick<CaptionStyleOverrides, 'color' | 'fontSize' | 'uppercase'> | undefined,
 ): TextStyleTokens {
   if (!style) return base;
   return {
@@ -29,7 +34,90 @@ export function captionTokens(
   };
 }
 
-type Css = Record<string, string | number>;
+export const DEFAULT_CAPTION_WORDS_PER_PAGE = 3;
+
+/** Everything about how a captions item looks, once its template and the person's own choices are
+ * put together: the person's choice wins, then the template's, then these defaults. */
+export type CaptionLook = {
+  tokens: TextStyleTokens;
+  wordsPerPage: number;
+  position: 'top' | 'center' | 'bottom';
+  highlight: { style: CaptionHighlightStyle; color: string; textColor: string | undefined };
+};
+
+export function resolveCaptionLook(
+  base: TextStyleTokens,
+  style: CaptionStyleOverrides | undefined,
+): CaptionLook {
+  const template = base.caption;
+  return {
+    tokens: captionTokens(base, style),
+    wordsPerPage: style?.wordsPerPage ?? template?.wordsPerPage ?? DEFAULT_CAPTION_WORDS_PER_PAGE,
+    position: style?.position ?? template?.position ?? 'bottom',
+    highlight: {
+      style: style?.highlightStyle ?? template?.highlight.style ?? 'color',
+      color: style?.highlightColor ?? template?.highlight.color ?? CAPTION_HIGHLIGHT,
+      textColor: template?.highlight.textColor,
+    },
+  };
+}
+
+/** The extra CSS the word being spoken gets, for each way of standing out. */
+export function highlightWordCss(highlight: CaptionLook['highlight']): Css | undefined {
+  switch (highlight.style) {
+    case 'none':
+      return undefined;
+    case 'color':
+      return { color: highlight.color };
+    case 'pill':
+      return {
+        backgroundColor: highlight.color,
+        color: highlight.textColor ?? '#000000',
+        borderRadius: '0.28em',
+        padding: '0 0.22em',
+        margin: '0 -0.05em',
+        // The text outline would be drawn around the box's text too, which looks like a smudge.
+        WebkitTextStroke: '0',
+        textShadow: 'none',
+        boxDecorationBreak: 'clone',
+        WebkitBoxDecorationBreak: 'clone',
+      };
+    case 'underline':
+      return {
+        textDecorationLine: 'underline',
+        textDecorationColor: highlight.color,
+        textDecorationThickness: '0.1em',
+        textUnderlineOffset: '0.14em',
+        color: highlight.color,
+      };
+    case 'grow':
+      return {
+        color: highlight.color,
+        display: 'inline-block',
+        transform: 'scale(1.14)',
+        transformOrigin: '50% 70%',
+        // Growing is a transform, so it takes no room: without this the bigger word (and its
+        // outline) swallows the space between it and its neighbours.
+        margin: '0 0.16em',
+      };
+  }
+}
+
+/** The padding of a text box and the line height that keeps the boxes of a wrapped caption apart.
+ * `1.2` is the height of a line of text's own box (what an inline background paints), and the last
+ * term is a small gap so stacked boxes don't touch. */
+export function backgroundBox(paddingEm: number): {
+  verticalEm: number;
+  horizontalEm: number;
+  lineHeight: number;
+} {
+  const verticalEm = Math.round(paddingEm * 0.6 * 1000) / 1000;
+  return {
+    verticalEm,
+    horizontalEm: Math.round(paddingEm * 1.6 * 1000) / 1000,
+    lineHeight: Math.round((1.2 + 2 * verticalEm + 0.06) * 1000) / 1000,
+  };
+}
 
 /** CSS for the text itself (the inner span), from a style's tokens. */
 export function textStyleCss(tokens: TextStyleTokens): Css {
@@ -45,15 +133,24 @@ export function textStyleCss(tokens: TextStyleTokens): Css {
     // paint-order keeps the outline behind the fill, so it doesn't eat the letters.
     css.WebkitTextStroke = `${tokens.stroke.width}px ${tokens.stroke.color}`;
     css.paintOrder = 'stroke fill';
+    // The outline reaches half its width into the space on each side of a word, so thick outlines
+    // make neighbouring words touch. Open the gap by the outline's width to give it back.
+    css.wordSpacing = `${Math.round((tokens.stroke.width / tokens.fontSize) * 1000) / 1000}em`;
   }
   if (tokens.background) {
+    const box = backgroundBox(tokens.background.paddingEm);
     css.backgroundColor = tokens.background.color;
-    css.padding = `${tokens.background.paddingEm}em ${tokens.background.paddingEm * 1.6}em`;
+    css.padding = `${box.verticalEm}em ${box.horizontalEm}em`;
+    // Padding doesn't make an inline box's line taller, so with a 1.15 line height the boxes of a
+    // caption that wraps overlap. The line grows with the padding instead, so they never touch.
+    css.lineHeight = box.lineHeight;
     css.borderRadius = tokens.background.radius;
     css.boxDecorationBreak = 'clone';
     css.WebkitBoxDecorationBreak = 'clone';
   }
   if (tokens.uppercase) css.textTransform = 'uppercase';
+  if (tokens.italic) css.fontStyle = 'italic';
+  if (tokens.letterSpacingEm) css.letterSpacing = `${tokens.letterSpacingEm}em`;
   return css;
 }
 

@@ -129,17 +129,40 @@ on what it is.
 Captions are shown a few words at a time, with the word being spoken highlighted. Select the **Captions**
 track to change how they look and what they say.
 
-**Style** picks a preset, such as **Clean Captions**.
+**Template** is a gallery of looks, each shown as a small example you can compare at a glance. Choosing one
+gives the captions its whole look: how the text is drawn, how the spoken word stands out, how many words
+show at once and where they sit. It replaces any tweaks you made under **Look**, but keeps words you edited.
 
-**Look** changes this captions item only:
+| Template        | Looks like                                                          |
+| --------------- | ------------------------------------------------------------------- |
+| **Clean**       | Readable text on a soft dark box; the spoken word turns yellow      |
+| **Bold Pop**    | Large, heavy capitals with a thick black outline                    |
+| **Karaoke**     | White text on a dark box; the spoken word sits on a purple box      |
+| **Hype**        | Huge capitals, thick outline and a hard shadow, in the middle       |
+| **Neon**        | Glowing cyan lettering with a hot-pink spoken word                  |
+| **Minimal**     | Light, quiet text with a soft shadow; the spoken word is underlined |
+| **Cinema**      | Italic serif subtitles like a film, with no highlight               |
+| **Terminal**    | Green typewriter text on black; the spoken word is a green block    |
+| **Sticker**     | Black capitals on a yellow label; the spoken word flips to black    |
+| **Comic**       | Chunky yellow capitals with a drop shadow; the spoken word grows    |
+| **Newsroom**    | A solid red band with left-aligned capitals                         |
+| **Glass**       | A frosted box with crisp white text and an ice-blue spoken word     |
+| **Highlighter** | White outlined text; the spoken word is marked in yellow            |
+
+**Look** changes this captions item only, on top of its template:
 
 - **Position**: **Top**, **Middle** or **Bottom**;
-- **Text colour** and **Highlight**, the colour of the word being spoken;
+- **Spoken word**: how the word being spoken stands out: **Change colour**, **Highlight box**,
+  **Underline**, **Grow** or **No highlight**;
+- **Text colour** and **Highlight**, the colour of the spoken word;
 - **Size**;
 - **Words per page**, from 1 to 6;
 - **Uppercase**.
 
-**Reset** puts the look back to the preset.
+**Reset** puts the look back to the template.
+
+Templates use only fonts that every Reelcraft install has, so a template looks the same in the editor and in
+the final video.
 
 **Transcript** lists the captions page by page, each with the time it starts (select it to go there). The
 page being spoken is outlined.

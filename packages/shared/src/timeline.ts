@@ -34,8 +34,13 @@ export type CaptionPageDef = z.infer<typeof CaptionPageDef>;
 
 /** What a captions item can change about its preset. Fonts are left to the preset on purpose: the
  * render can only use fonts it has. */
+/** How the word being spoken stands out in a caption. */
+export const CaptionHighlightStyle = z.enum(['none', 'color', 'pill', 'underline', 'grow']);
+export type CaptionHighlightStyle = z.infer<typeof CaptionHighlightStyle>;
+
 export const CaptionStyleOverrides = z.object({
   wordsPerPage: z.number().int().min(1).max(8).optional(),
+  highlightStyle: CaptionHighlightStyle.optional(),
   highlightColor: z.string().min(1).max(40).optional(),
   color: z.string().min(1).max(40).optional(),
   fontSize: z.number().min(16).max(200).optional(),
@@ -215,8 +220,25 @@ export const TextStyleTokens = z.object({
     .object({ color: z.string(), paddingEm: z.number().nonnegative(), radius: z.number() })
     .optional(),
   uppercase: z.boolean().optional(),
+  italic: z.boolean().optional(),
+  /** Space between letters, in em. */
+  letterSpacingEm: z.number().min(-0.2).max(1).optional(),
   /** Horizontal alignment; a lower third sits left. */
   align: z.enum(['left', 'center']).optional(),
+  /** What a caption template sets besides how its text looks: how the spoken word stands out, how
+   * many words show at once, and where. A person's own choices on a captions item win over these. */
+  caption: z
+    .object({
+      wordsPerPage: z.number().int().min(1).max(8),
+      position: z.enum(['top', 'center', 'bottom']),
+      highlight: z.object({
+        style: CaptionHighlightStyle,
+        color: z.string(),
+        /** The colour of the word itself when its highlight is a box (`pill`). */
+        textColor: z.string().optional(),
+      }),
+    })
+    .optional(),
 });
 export type TextStyleTokens = z.infer<typeof TextStyleTokens>;
 

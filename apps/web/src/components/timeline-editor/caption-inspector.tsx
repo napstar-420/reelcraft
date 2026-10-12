@@ -15,7 +15,7 @@ import type {
   TimelineStyle,
   TimingMap,
 } from '@reelcraft/shared';
-import { CAPTION_HIGHLIGHT } from '@reelcraft/timeline-composition/src/render-helpers';
+import { resolveCaptionLook } from '@reelcraft/timeline-composition/src/render-helpers';
 import {
   captionPagesFor,
   DEFAULT_WORDS_PER_PAGE,
@@ -43,6 +43,7 @@ import {
   toStoredPages,
 } from '@/pages/timeline-editor/caption-edit';
 import { formatTimecode } from '@/pages/timeline-editor/format-time';
+import { CaptionTemplatePicker } from './caption-templates';
 import { usePlayerFrame } from './use-player';
 
 type Captions = Extract<TimelineItem, { type: 'captions' }>;
@@ -52,6 +53,14 @@ const POSITIONS: Array<{ value: Position; label: string; Icon: typeof AlignVerti
   { value: 'top', label: 'Top', Icon: AlignVerticalJustifyStart },
   { value: 'center', label: 'Middle', Icon: AlignVerticalJustifyCenter },
   { value: 'bottom', label: 'Bottom', Icon: AlignVerticalJustifyEnd },
+];
+
+const HIGHLIGHT_STYLES = [
+  { value: 'color', label: 'Change colour' },
+  { value: 'pill', label: 'Highlight box' },
+  { value: 'underline', label: 'Underline' },
+  { value: 'grow', label: 'Grow' },
+  { value: 'none', label: 'No highlight' },
 ];
 
 const hexOr = (value: string | undefined, fallback: string) =>
@@ -211,6 +220,7 @@ function PageRow({
 function Transcript({
   item,
   timing,
+  wordsPerPage,
   readOnly,
   playerRef,
   fps,
@@ -219,6 +229,8 @@ function Transcript({
 }: {
   item: Captions;
   timing: TimingMap;
+  /** The words-per-page the video uses, so this list pages the same way. */
+  wordsPerPage: number;
   readOnly: boolean;
   playerRef: RefObject<PlayerRef>;
   fps: number;
@@ -228,7 +240,7 @@ function Transcript({
   const frame = usePlayerFrame(playerRef);
   // Word times are on the timeline's own clock, the same one the player reports.
   const second = frame / fps;
-  const pages = captionPagesFor(item, timing.words);
+  const pages = captionPagesFor(item, timing.words, wordsPerPage);
   const activeIndex = pages.findIndex(
     (page) => second >= page.startSec && second < page.endSec + 0.4,
   );
@@ -280,9 +292,11 @@ export function CaptionInspector({
   onSeekSec: (sec: number) => void;
   update: (mutate: (item: TimelineItem) => void) => void;
 }) {
-  const presets = styles.filter((style) => style.supportedItemTypes.includes('captions'));
+  const templates = styles.filter((style) => style.supportedItemTypes.includes('captions'));
   const tokens = styles.find((style) => style.id === item.styleId)?.tokens;
   const look = item.style ?? {};
+  // What the captions actually use: the person's choices on top of the template's.
+  const resolved = tokens ? resolveCaptionLook(tokens, item.style) : undefined;
   const edited = !!item.pages?.length;
 
   const setLook = (patch: Partial<Record<keyof CaptionStyleOverrides, unknown>>) =>
@@ -296,27 +310,21 @@ export function CaptionInspector({
 
   return (
     <div className="space-y-6">
-      <Section title="Style">
-        <Select
+      <Section title="Template">
+        <CaptionTemplatePicker
+          templates={templates}
           value={item.styleId}
           disabled={readOnly}
-          onValueChange={(styleId) =>
+          onChange={(styleId) =>
             update((draft) => {
-              if (draft.type === 'captions') draft.styleId = styleId;
+              if (draft.type !== 'captions') return;
+              draft.styleId = styleId;
+              // A template is a whole look, so it replaces tweaks made to the last one. Edited
+              // words stay.
+              delete draft.style;
             })
           }
-        >
-          <SelectTrigger size="sm" className="w-full" aria-label="Caption style">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {presets.map((style) => (
-              <SelectItem key={style.id} value={style.id}>
-                {style.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        />
       </Section>
 
       <Section
@@ -347,7 +355,7 @@ export function CaptionInspector({
             aria-label="Position"
           >
             {POSITIONS.map(({ value, label, Icon }) => {
-              const selected = (look.position ?? 'bottom') === value;
+              const selected = (resolved?.position ?? 'bottom') === value;
               return (
                 <button
                   key={value}
@@ -355,7 +363,7 @@ export function CaptionInspector({
                   role="radio"
                   aria-checked={selected}
                   disabled={readOnly}
-                  onClick={() => setLook({ position: value === 'bottom' ? undefined : value })}
+                  onClick={() => setLook({ position: value })}
                   className={cn(
                     'flex items-center justify-center gap-1.5 rounded-md py-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50',
                     selected && 'bg-background text-foreground shadow-sm',
@@ -367,6 +375,25 @@ export function CaptionInspector({
             })}
           </div>
         </div>
+        <div className="space-y-1.5">
+          <Label>Spoken word</Label>
+          <Select
+            value={resolved?.highlight.style ?? 'color'}
+            disabled={readOnly}
+            onValueChange={(highlightStyle) => setLook({ highlightStyle })}
+          >
+            <SelectTrigger size="sm" className="w-full" aria-label="Spoken word">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {HIGHLIGHT_STYLES.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
         <div className="grid grid-cols-2 gap-3">
           <ColorField
             label="Text colour"
@@ -376,7 +403,7 @@ export function CaptionInspector({
           />
           <ColorField
             label="Highlight"
-            value={hexOr(look.highlightColor, CAPTION_HIGHLIGHT)}
+            value={hexOr(resolved?.highlight.color, '#ffd84d')}
             disabled={readOnly}
             onChange={(highlightColor) => setLook({ highlightColor })}
           />
@@ -394,14 +421,14 @@ export function CaptionInspector({
           />
         </div>
         <div className="space-y-1.5">
-          <Label>Words per page ({look.wordsPerPage ?? DEFAULT_WORDS_PER_PAGE})</Label>
+          <Label>Words per page ({resolved?.wordsPerPage ?? DEFAULT_WORDS_PER_PAGE})</Label>
           <Slider
             aria-label="Words per page"
             min={1}
             max={6}
             step={1}
             disabled={readOnly || edited}
-            value={[look.wordsPerPage ?? DEFAULT_WORDS_PER_PAGE]}
+            value={[resolved?.wordsPerPage ?? DEFAULT_WORDS_PER_PAGE]}
             onValueChange={([value]) => value !== undefined && setLook({ wordsPerPage: value })}
           />
           {edited ? (
@@ -446,6 +473,7 @@ export function CaptionInspector({
           <Transcript
             item={item}
             timing={timing}
+            wordsPerPage={resolved?.wordsPerPage ?? DEFAULT_WORDS_PER_PAGE}
             readOnly={readOnly}
             playerRef={playerRef}
             fps={fps}

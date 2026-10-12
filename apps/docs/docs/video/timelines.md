@@ -56,14 +56,16 @@ A media item can have:
 
 ## Text and styles
 
-Text and captions look the way their **style** says. Reelcraft has four:
+Text looks the way its **style** says. Reelcraft has two for text:
 
-| Style                   | Used for | Looks like                                               |
-| ----------------------- | -------- | -------------------------------------------------------- |
-| **Title**               | Text     | Large centred white text with a soft shadow              |
-| **Minimal Lower Third** | Text     | A dark band with left-aligned text, for names and labels |
-| **Bold Pop**            | Captions | Large, heavy capitals with a thick black outline         |
-| **Clean Captions**      | Captions | Compact, readable text on a translucent dark background  |
+| Style                   | Looks like                                               |
+| ----------------------- | -------------------------------------------------------- |
+| **Title**               | Large centred white text with a soft shadow              |
+| **Minimal Lower Third** | A dark band with left-aligned text, for names and labels |
+
+Captions use a **caption template**: a whole look that also says how the spoken word stands out, how many
+words show at once and where they sit. There are thirteen, from **Clean** and **Bold Pop** to **Karaoke**,
+**Neon**, **Cinema** and **Newsroom**. See [Timeline editor](./timeline-editor.md#captions) for the list.
 
 A text item also has a **position**: **Top**, **Center** or **Bottom**.
 

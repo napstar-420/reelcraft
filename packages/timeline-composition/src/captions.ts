@@ -73,14 +73,12 @@ export function pagesFromStored(
 }
 
 /** The pages a captions item shows: the person's edited pages if there are any, otherwise the
- * transcript's words, paged automatically. */
+ * transcript's words, paged automatically (`wordsPerPage` is the already-resolved setting). */
 export function captionPagesFor(
-  item: {
-    pages?: ReadonlyArray<{ words: ReadonlyArray<CaptionWord> }> | undefined;
-    style?: { wordsPerPage?: number | undefined } | undefined;
-  },
+  item: { pages?: ReadonlyArray<{ words: ReadonlyArray<CaptionWord> }> | undefined },
   words: CaptionWord[],
+  wordsPerPage: number | undefined,
 ): CaptionPage[] {
   if (item.pages?.length) return pagesFromStored(item.pages);
-  return captionPages(words, { wordsPerPage: item.style?.wordsPerPage });
+  return captionPages(words, { wordsPerPage });
 }
