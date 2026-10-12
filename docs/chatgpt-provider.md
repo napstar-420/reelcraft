@@ -13,7 +13,10 @@ It is local and single-user, like the Codex provider.
 
 If Neo is down or ChatGPT is signed out, the pin editor shows the reason, and both saving and
 running refuse the pin. If ChatGPT signs out mid-run, the stage fails once with "You're not signed
-in to ChatGPT…" and does not retry. Sign in, then use re-run stage.
+in to ChatGPT…" and does not retry. Sign in, then use re-run stage. Only an answered session check
+counts as signed out: if the check itself fails (network drop, ChatGPT error), or ChatGPT shows its
+Retry button or a delivery or network error, that is an infrastructure failure and is retried. A
+quality-control call that cannot reach the judge waits 30 s, then 2 min, between its retries.
 
 ## How a job runs
 

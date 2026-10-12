@@ -47,7 +47,7 @@ import { SchemaValidatorService } from '../json-schema/schema-validator.service'
 import { EngineConfig } from '../config/engine-config';
 import { CheckRunner } from '../check/check-runner.service';
 import type { CheckArtifact, CheckResult } from '../check/check.types';
-import { QcRunner, type QcOutcome, type QcVerdict } from '../qc/qc-runner.service';
+import { QcRunner, qcRetryDelayMs, type QcOutcome, type QcVerdict } from '../qc/qc-runner.service';
 import { QcAudioService } from '../qc/qc-audio';
 import { buildQcEnvelope } from '../qc/qc-envelope';
 import { storedCandidates } from '../artifact/clip-handle';
@@ -1916,6 +1916,10 @@ export class StageRunnerService {
         last,
       );
       if (last.status !== 'error') return last;
+      // A judge that could not be reached (network drop, browser unavailable) is
+      // worth a pause before the next call; a bad verdict is not.
+      const pause = n < maxAttempts ? qcRetryDelayMs(last, n) : 0;
+      if (pause > 0) await new Promise((resolve) => setTimeout(resolve, pause));
     }
     return last;
   }

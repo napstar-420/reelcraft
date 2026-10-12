@@ -176,6 +176,13 @@ export class ChatgptProviderAdapter implements ProviderAdapter {
     );
     try {
       const signIn = await this.neo.run<SignInState>(signInStateScript(pageId));
+      if (signIn.unknown) {
+        // The session check itself failed (network, ChatGPT error): that is not
+        // "signed out". Reported by the first poll as a retryable infrastructure
+        // failure instead of a no-retry `user_action` one.
+        await this.close(pageId);
+        return { providerId: this.id, externalId: idempotencyKey, payload: { unreachable: true } };
+      }
       if (!signIn.signedIn) {
         // Not thrown: a throw is retried (and opens a tab each time). The
         // first poll reports it as a no-retry `user_action` failure instead.
@@ -229,7 +236,11 @@ export class ChatgptProviderAdapter implements ProviderAdapter {
 
   async poll(handle: JobHandle): Promise<JobStatus> {
     const job = this.job(handle);
-    if (!job) return signedOutFailure();
+    if (!job) {
+      return (handle.payload as { unreachable?: boolean } | undefined)?.unreachable
+        ? unreachableFailure()
+        : signedOutFailure();
+    }
     let state: PageState;
     try {
       state = await this.neo.run<PageState>(pageStateScript(job.pageId));
@@ -463,8 +474,11 @@ export class ChatgptProviderAdapter implements ProviderAdapter {
       return unavailable(NEO_UNAVAILABLE_MESSAGE);
     }
     try {
-      const { signedIn } = await this.neo.run<SignInState>(signInStateScript(pageId));
-      return signedIn ? { modalities: ['text', 'image'] } : unavailable(CHATGPT_SIGN_IN_MESSAGE);
+      const { signedIn, unknown } = await this.neo.run<SignInState>(signInStateScript(pageId));
+      // A failed session check is not "signed out": don't block stages on it.
+      return signedIn || unknown
+        ? { modalities: ['text', 'image'] }
+        : unavailable(CHATGPT_SIGN_IN_MESSAGE);
     } catch (error) {
       // Unknown is not "signed out": don't block stages on a flaky probe.
       this.logger.warn({ err: error }, 'chatgpt readiness probe failed');
@@ -481,8 +495,8 @@ export class ChatgptProviderAdapter implements ProviderAdapter {
 
   private job(handle: JobHandle): ChatgptJobPayload | undefined {
     const payload = handle.payload as
-      (Partial<ChatgptJobPayload> & { signedOut?: boolean }) | undefined;
-    if (payload?.signedOut) return undefined;
+      (Partial<ChatgptJobPayload> & { signedOut?: boolean; unreachable?: boolean }) | undefined;
+    if (payload?.signedOut || payload?.unreachable) return undefined;
     if (typeof payload?.pageId !== 'number') throw new Error('Invalid ChatGPT job handle');
     return payload as ChatgptJobPayload;
   }
@@ -543,6 +557,19 @@ function signedOutFailure(): JobStatus {
   };
 }
 
+function unreachableFailure(): JobStatus {
+  return {
+    done: true,
+    outcome: 'failed',
+    reason: 'ChatGPT could not be reached to check the sign-in (network or ChatGPT error)',
+    retryable: true,
+    failureClass: 'infrastructure',
+  };
+}
+
+/** A banner that a retry after the connection is back would clear, as opposed to a refusal. */
+const TRANSIENT_ERROR_SIGNAL = /^button: (retry|try again)$|delivery timed out|network error/i;
+
 /** Nothing is generating and nothing has come of it: no reply, image or error. */
 export function isIdle(state: PageState): boolean {
   return (
@@ -575,7 +602,10 @@ export function decidePoll(
       outcome: 'failed',
       reason: `ChatGPT reported an error${state.errorSignal ? ` (${state.errorSignal})` : ''}: ${state.tail.trim().slice(-300)}`,
       retryable: true,
-      failureClass: 'provider',
+      failureClass:
+        state.errorSignal && TRANSIENT_ERROR_SIGNAL.test(state.errorSignal)
+          ? 'infrastructure'
+          : 'provider',
     };
   }
   if (state.generating) return running(job);

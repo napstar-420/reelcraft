@@ -16,6 +16,7 @@ import {
   pageStateScript,
   parkImageScript,
   readParkedImageCdpScript,
+  signInStateScript,
   stripCitations,
   type PageState,
 } from './chatgpt-page';
@@ -105,6 +106,19 @@ describe('ChatgptProviderAdapter.submit', () => {
       providerId: 'chatgpt',
       externalId: 'key-1',
       payload: { pageId: 7, modality: 'text', conversationUrl: expect.stringContaining('/c/abc') },
+    });
+  });
+
+  it('does not call a failed session check "signed out": a retryable infrastructure failure instead', async () => {
+    const { adapter, closed } = fixture([7, { signedIn: false, unknown: true, composer: true }]);
+    const handle = await adapter.submit(textReq, 'k');
+    expect(handle.payload).toEqual({ unreachable: true });
+    expect(closed()).toBe(1);
+    await expect(adapter.poll(handle)).resolves.toMatchObject({
+      done: true,
+      outcome: 'failed',
+      retryable: true,
+      failureClass: 'infrastructure',
     });
   });
 
@@ -549,6 +563,12 @@ describe('ChatgptProviderAdapter readiness and cancel', () => {
     expect(neo.run.mock.calls.length).toBe(calls);
   });
 
+  it('does not block stages when the sign-in probe could not tell', async () => {
+    const { adapter } = fixture([3, { signedIn: false, unknown: true, composer: false }]);
+    const [model] = await adapter.listModels();
+    expect(model).toMatchObject({ modalities: ['text', 'image'] });
+  });
+
   it('reports Neo being down as the unavailable reason', async () => {
     const { adapter } = fixture([new Error('ECONNREFUSED')]);
     const [model] = await adapter.listModels();
@@ -631,6 +651,37 @@ describe('decidePoll error banner', () => {
         ),
       ).toMatchObject({ done: true, outcome: 'failed', failureClass: 'provider' });
     }
+  });
+});
+
+describe('decidePoll error banner classes', () => {
+  const text = { modality: 'text' as const, submittedAt: 1_000 };
+  const failure = (errorSignal: string) =>
+    decidePoll(state({ errorShown: true, errorSignal, tail: 'x' }), text, undefined, 0);
+
+  it('treats a Retry button and delivery or network errors as infrastructure, which a retry can clear', () => {
+    for (const signal of [
+      'button: Retry',
+      'button: Try again',
+      'text: Message delivery timed out',
+      'text: network error',
+    ]) {
+      expect(failure(signal), signal).toMatchObject({ failureClass: 'infrastructure' });
+    }
+  });
+
+  it('keeps other banners as provider errors', () => {
+    expect(failure('text: error generating')).toMatchObject({ failureClass: 'provider' });
+    expect(failure('text: something went wrong')).toMatchObject({ failureClass: 'provider' });
+  });
+});
+
+describe('chatgpt sign-in scripts', () => {
+  it('only a session check that answered can say signed out', () => {
+    // A failed check must not read as the user's doing (it stays signed in / unknown).
+    expect(pageStateScript(7)).toContain('if (r.ok) {');
+    expect(signInStateScript(7)).toContain('unknown = false');
+    expect(signInStateScript(7)).toContain('unknown = true');
   });
 });
 
