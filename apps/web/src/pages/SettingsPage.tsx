@@ -6,6 +6,7 @@ import { BrowserOsCard } from '@/components/settings/browser-os-card';
 import { CodexCard } from '@/components/settings/codex-card';
 import { IdentityCard } from '@/components/settings/identity-card';
 import { NotificationsCard } from '@/components/settings/notifications-card';
+import { QwenTtsCard } from '@/components/settings/qwen-tts-card';
 import { ProviderKeysCard } from '@/components/settings/provider-keys-card';
 import { SETTINGS_KEY } from '@/components/settings/settings.logic';
 import { apiErrorMessage } from '@/lib/api-error-message';
@@ -31,6 +32,7 @@ export function SettingsPage() {
       ) : (
         <>
           <ProviderKeysCard settings={settings.data} />
+          <QwenTtsCard key={settings.data.qwenTts.url} settings={settings.data} />
           <BrowserOsCard key={settings.data.browserOs.url} settings={settings.data} />
         </>
       )}

@@ -13,6 +13,8 @@ pnpm-lock.yaml
 apps/api/drizzle/**
 
 # runtime / local infra data
+services/qwen-tts/.venv/
+services/qwen-tts/.pytest_cache/
 docker/data/
 apps/api/.workspace/
 

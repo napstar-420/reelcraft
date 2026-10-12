@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { ModelInfoDto, SpeechModelOptions } from '@reelcraft/shared';
 import {
+  anyDownloading,
+  downloadPercent,
   estimateSpeechCostUsd,
+  formatBytes,
+  hasRoomFor,
+  needsDownload,
   formatLabel,
   formatSlider,
   groupFormats,
@@ -138,5 +143,48 @@ describe('cost and summary', () => {
     );
     expect(speechPinSummary({ modelId: 'eleven_v4', params: {} })).toBe('eleven_v4');
     expect(speechPinSummary(undefined)).toBe('Inherited');
+  });
+});
+
+describe('local model downloads', () => {
+  const model = (download?: ModelInfoDto['download']) =>
+    ({
+      providerId: 'qwen-tts',
+      modelId: 'm',
+      label: 'M',
+      modalities: ['audio'],
+      download,
+    }) as ModelInfoDto;
+  const dl = (extra: Partial<NonNullable<ModelInfoDto['download']>> = {}) => ({
+    state: 'not_downloaded' as const,
+    downloadedBytes: 0,
+    totalBytes: 2_500_000_000,
+    ...extra,
+  });
+
+  it('asks for a download unless the model is ready or runs elsewhere', () => {
+    expect(needsDownload(model(dl()))).toBe(true);
+    expect(needsDownload(model(dl({ state: 'failed' })))).toBe(true);
+    expect(needsDownload(model(dl({ state: 'ready' })))).toBe(false);
+    expect(needsDownload(model())).toBe(false);
+  });
+
+  it('knows when to keep refreshing', () => {
+    expect(anyDownloading([model(dl()), model(dl({ state: 'downloading' }))])).toBe(true);
+    expect(anyDownloading([model(dl())])).toBe(false);
+    expect(anyDownloading(undefined)).toBe(false);
+  });
+
+  it('formats sizes and progress', () => {
+    expect(formatBytes(2_493_919_668)).toBe('2.5 GB');
+    expect(formatBytes(340_000_000)).toBe('340 MB');
+    expect(downloadPercent(dl({ downloadedBytes: 1_250_000_000 }))).toBe(50);
+    expect(downloadPercent(dl({ totalBytes: 0 }))).toBe(0);
+  });
+
+  it('checks the disk has room, with some to spare', () => {
+    expect(hasRoomFor(dl())).toBe(true);
+    expect(hasRoomFor(dl({ freeBytes: 3_000_000_000 }))).toBe(false);
+    expect(hasRoomFor(dl({ freeBytes: 4_000_000_000 }))).toBe(true);
   });
 });

@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { Modality, OutputKind } from '../primitives';
 import { JsonSchema } from '../json-schema';
 import { SlotDef } from '../slots';
-import { SpeechModelOptions } from '../speech';
+import { ModelDownload, SpeechModelOptions } from '../speech';
 
 /** Backs `GET /capabilities` (§7.1) — one source for editor form generation,
  * validator type checking, and execution. */
@@ -48,6 +48,8 @@ export const ModelInfoDto = z.object({
   unavailableModalities: z.record(Modality, z.string()).optional(),
   supportedReasoningEfforts: z.array(z.string()).optional(),
   defaultReasoningEffort: z.string().optional(),
+  /** A model that runs on this computer: set until it has been downloaded. */
+  download: ModelDownload.optional(),
   /** Kinds of attached file the model can read (`media.image`, `media.audio`). */
   capabilities: z
     .object({

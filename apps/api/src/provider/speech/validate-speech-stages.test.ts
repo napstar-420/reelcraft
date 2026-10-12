@@ -1,8 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { StageDef } from '@reelcraft/shared';
 import { DeepgramAdapter } from '../deepgram/deepgram.adapter';
 import { ElevenLabsAdapter } from '../elevenlabs/elevenlabs.adapter';
 import { ProviderRegistry } from '../provider.registry';
+import { QwenTtsAdapter } from '../qwen/qwen.adapter';
 import { validateSpeechParams } from './speech-params';
 import { validateSpeechStages } from './validate-speech-stages';
 import { elevenLabsOptions, ELEVENLABS_MODELS } from '../elevenlabs/elevenlabs-speech';
@@ -157,5 +158,64 @@ describe('validateSpeechStages', () => {
     expect(off[0]?.message).toMatch(/Word timings is off/);
     const deepgram = await validateSpeechStages([speech], pin('deepgram', 'flux', {}), registry());
     expect(deepgram[0]?.message).toMatch(/can't return word timings/);
+  });
+});
+
+describe('validateSpeechStages with a local model', () => {
+  const MODEL = 'Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice';
+  const providers = () => {
+    const registry = new ProviderRegistry();
+    registry.register(new QwenTtsAdapter({ qwenTtsUrl: async () => 'http://local:8091' }));
+    return registry;
+  };
+  const validate = () =>
+    validateSpeechStages(
+      [stage('voice')],
+      { voice: { model: { provider: 'qwen-tts', modelId: MODEL, params: {} } } },
+      providers(),
+    );
+  const serve = (state: string) =>
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          data: [
+            {
+              id: MODEL,
+              label: 'Qwen3-TTS 0.6B',
+              state,
+              downloadedBytes: 0,
+              totalBytes: 1,
+              error: null,
+              license: 'Apache-2.0',
+              instructions: false,
+            },
+          ],
+        }),
+      })),
+    );
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('blocks a model that has not been downloaded', async () => {
+    serve('not_downloaded');
+    const issues = await validate();
+    expect(issues).toMatchObject([
+      {
+        path: 'stages.voice.model.modelId',
+        severity: 'error',
+        message: expect.stringContaining('Download it'),
+      },
+    ]);
+  });
+
+  it('accepts a downloaded model', async () => {
+    serve('ready');
+    expect(await validate()).toEqual([]);
+  });
+
+  it('only warns when the service is not running', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('refused')));
+    expect(await validate()).toMatchObject([{ severity: 'warning' }]);
   });
 });

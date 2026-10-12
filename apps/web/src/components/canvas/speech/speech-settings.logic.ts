@@ -1,4 +1,5 @@
 import type {
+  ModelDownload,
   ModelInfoDto,
   PartialModelPin,
   SpeechFormat,
@@ -131,3 +132,26 @@ export function speechPinSummary(pin: PartialModelPin | undefined): string {
   const voice = pin.params?.voiceName ?? pin.params?.voiceId;
   return typeof voice === 'string' && voice ? `${voice} · ${pin.modelId}` : pin.modelId;
 }
+
+/** The model runs on this computer and hasn't been downloaded, so it can't speak yet. */
+export const needsDownload = (model: ModelInfoDto | undefined): boolean =>
+  !!model?.download && model.download.state !== 'ready';
+
+/** Whether any of the models is being downloaded, so the list should keep refreshing. */
+export const anyDownloading = (models: ModelInfoDto[] | undefined): boolean =>
+  !!models?.some((model) => model.download?.state === 'downloading');
+
+/** `2.5 GB`, `340 MB`. */
+export function formatBytes(bytes: number): string {
+  if (bytes >= 1e9) return `${(bytes / 1e9).toFixed(1)} GB`;
+  return `${Math.max(1, Math.round(bytes / 1e6))} MB`;
+}
+
+export const downloadPercent = (download: ModelDownload): number =>
+  download.totalBytes > 0
+    ? Math.min(100, Math.floor((download.downloadedBytes / download.totalBytes) * 100))
+    : 0;
+
+/** Whether the disk has room for the download, with a little to spare. Unknown space counts as enough. */
+export const hasRoomFor = (download: ModelDownload): boolean =>
+  download.freeBytes === undefined || download.freeBytes >= download.totalBytes + 1e9;

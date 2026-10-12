@@ -35,9 +35,20 @@ export const BrowserOsSettingsDto = z.object({
 });
 export type BrowserOsSettingsDto = z.infer<typeof BrowserOsSettingsDto>;
 
+export const QwenTtsSource = z.enum(['saved', 'env', 'default']);
+export type QwenTtsSource = z.infer<typeof QwenTtsSource>;
+
+/** The local Qwen3-TTS service. */
+export const QwenTtsSettingsDto = z.object({
+  url: z.string(),
+  source: QwenTtsSource,
+});
+export type QwenTtsSettingsDto = z.infer<typeof QwenTtsSettingsDto>;
+
 export const SettingsDto = z.object({
   keys: z.array(ProviderKeyStatusDto),
   browserOs: BrowserOsSettingsDto,
+  qwenTts: QwenTtsSettingsDto,
 });
 export type SettingsDto = z.infer<typeof SettingsDto>;
 
@@ -70,6 +81,12 @@ export const TestBrowserOsDto = z.object({
     .optional(),
 });
 export type TestBrowserOsDto = z.infer<typeof TestBrowserOsDto>;
+
+/** An empty `url` removes the saved address. */
+export const SaveQwenTtsDto = SaveBrowserOsDto;
+export type SaveQwenTtsDto = SaveBrowserOsDto;
+export const TestQwenTtsDto = TestBrowserOsDto;
+export type TestQwenTtsDto = TestBrowserOsDto;
 
 export const ConnectionTestDto = z.object({
   ok: z.boolean(),

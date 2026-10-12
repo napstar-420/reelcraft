@@ -12,6 +12,8 @@ export default tseslint.config(
       '**/drizzle/**',
       // The user guide is outside the workspace and typechecks itself.
       'apps/docs/**',
+      // The Qwen3-TTS service is Python; its virtualenv holds third-party JS.
+      'services/**',
     ],
   },
   ...tseslint.configs.recommended,

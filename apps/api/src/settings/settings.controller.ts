@@ -16,12 +16,15 @@ import {
   type ProviderKeyStatusDto,
   SaveBrowserOsDto,
   SaveProviderKeyDto,
+  SaveQwenTtsDto,
   type SettingsDto,
   TestBrowserOsDto,
+  TestQwenTtsDto,
 } from '@reelcraft/shared';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { NeoClient } from '../provider/chatgpt/neo-client';
 import { CodexNeoRegistrar } from '../provider/codex/codex-neo-registrar';
+import { QwenTtsAdapter } from '../provider/qwen/qwen.adapter';
 import { isProviderKeyId, PROVIDER_KEYS, SettingsKeyProvider } from '../provider/key-provider';
 import { isTestable, testProviderKey } from './provider-key-tester';
 import { SETTING, SettingsService } from './settings.service';
@@ -42,6 +45,7 @@ export class SettingsController {
     private readonly keys: SettingsKeyProvider,
     private readonly neo: NeoClient,
     private readonly registrar: CodexNeoRegistrar,
+    private readonly qwenTts: QwenTtsAdapter,
   ) {}
 
   @Get()
@@ -50,6 +54,7 @@ export class SettingsController {
     return {
       keys: await Promise.all(ids.map((id) => this.keyStatus(id))),
       browserOs: await this.settings.browserOs(),
+      qwenTts: await this.settings.qwenTts(),
     };
   }
 
@@ -113,6 +118,28 @@ export class SettingsController {
         ok: false,
         error: `Could not connect to BrowserOS Neo: ${(error as Error).message}`,
       };
+    }
+  }
+
+  @Put('qwen-tts')
+  async saveQwenTts(
+    @Body(new ZodValidationPipe(SaveQwenTtsDto)) dto: SaveQwenTtsDto,
+  ): Promise<SettingsDto['qwenTts']> {
+    if (dto.url) await this.settings.set(SETTING.qwenTtsUrl, dto.url);
+    else await this.settings.delete(SETTING.qwenTtsUrl);
+    return this.settings.qwenTts();
+  }
+
+  @Post('qwen-tts/test')
+  @HttpCode(200)
+  async testQwenTts(
+    @Body(new ZodValidationPipe(TestQwenTtsDto)) dto: TestQwenTtsDto,
+  ): Promise<ConnectionTestDto> {
+    try {
+      await this.qwenTts.probe(dto.url || undefined);
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, error: (error as Error).message };
     }
   }
 

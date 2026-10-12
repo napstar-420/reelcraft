@@ -137,6 +137,16 @@ export class EngineConfig implements OnModuleInit {
     return this.config.get('CODEX_BROWSER_OS_URL', { infer: true });
   }
 
+  /** The Qwen3-TTS service address from the environment or the built-in default.
+   * Use `SettingsService.qwenTtsUrl()`, which also honours Settings. */
+  get qwenTtsUrl(): string {
+    return this.qwenTtsUrlFromEnv ?? 'http://127.0.0.1:8091';
+  }
+
+  get qwenTtsUrlFromEnv(): string | undefined {
+    return this.config.get('QWEN_TTS_URL', { infer: true });
+  }
+
   get codexReadinessTimeoutMs(): number {
     return this.config.get('CODEX_READINESS_TIMEOUT_MS', { infer: true }) ?? 2_000;
   }

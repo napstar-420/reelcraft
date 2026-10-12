@@ -97,6 +97,25 @@ export const SpeechModelOptions = z.object({
 });
 export type SpeechModelOptions = z.infer<typeof SpeechModelOptions>;
 
+/** Where a model that runs on the user's own computer stands: it must be downloaded before it can speak. */
+export const ModelDownload = z.object({
+  state: z.enum(['not_downloaded', 'downloading', 'ready', 'failed']),
+  downloadedBytes: z.number(),
+  totalBytes: z.number(),
+  /** Why the last download failed. */
+  error: z.string().optional(),
+  license: z.string().optional(),
+  /** Free space on the disk the model is stored on. */
+  freeBytes: z.number().optional(),
+  /** The service that holds the model can't be reached, so `state` is only a guess. */
+  serviceDown: z.boolean().optional(),
+});
+export type ModelDownload = z.infer<typeof ModelDownload>;
+
+/** Body of the download, cancel and delete requests for a local model. */
+export const LocalModelActionDto = z.object({ modelId: z.string().min(1).max(200) });
+export type LocalModelActionDto = z.infer<typeof LocalModelActionDto>;
+
 export const VoiceInfo = z.object({
   id: z.string(),
   name: z.string(),
