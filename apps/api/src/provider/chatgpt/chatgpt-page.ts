@@ -128,14 +128,17 @@ export function closePageScript(id: number): string {
   return `try { await browser.pages.close(${pageId(id)}); } catch {}\nreturn true;`;
 }
 
-export type SignInState = { signedIn: boolean; composer: boolean };
+/** `unknown`: the session check itself failed (network, ChatGPT error), so
+ * "signed out" is not known: `signedIn` is false but must not be reported as
+ * the user's doing. */
+export type SignInState = { signedIn: boolean; composer: boolean; unknown?: boolean };
 
 export function signInStateScript(id: number): string {
   return inPage(
     id,
-    `let signedIn = false;
-try { const r = await fetch('/api/auth/session', { credentials: 'include' }); const j = r.ok ? await r.json() : null; signedIn = !!(j && j.user && j.accessToken); } catch {}
-return { signedIn, composer: !!document.querySelector(S.composer) };`,
+    `let signedIn = false, unknown = true;
+try { const r = await fetch('/api/auth/session', { credentials: 'include' }); if (r.ok) { const j = await r.json(); signedIn = !!(j && j.user && j.accessToken); unknown = false; } } catch {}
+return { signedIn, unknown, composer: !!document.querySelector(S.composer) };`,
   );
 }
 
@@ -297,7 +300,8 @@ export function pageStateScript(id: number): string {
   return inPage(
     id,
     `let signedIn = true;
-try { const r = await fetch('/api/auth/session', { credentials: 'include' }); const j = r.ok ? await r.json() : null; signedIn = !!(j && j.user && j.accessToken); } catch {}
+// Only a session check that answered says "signed out"; a failed one (network, ChatGPT error) leaves it true.
+try { const r = await fetch('/api/auth/session', { credentials: 'include' }); if (r.ok) { const j = await r.json(); signedIn = !!(j && j.user && j.accessToken); } } catch {}
 const main = document.querySelector('main');
 const text = main ? main.innerText : '';
 // ChatGPT's failure banner ("Message delivery timed out. Please try again." with a Retry button).
@@ -366,6 +370,43 @@ export function readParkedImageScript(id: number, from: number, to: number): str
   }
   return `${readParkedCode(pageId(id), IMAGE_NODE, String(from), String(to))}
 return text;`;
+}
+
+/**
+ * Characters read back per `run` over CDP: under Neo's 2 MB result cap, so an
+ * image of about 2.7M base64 characters takes two reads instead of the ~670
+ * `evaluate` slices `readParkedImageScript` needs.
+ */
+export const CDP_READ_BUDGET = 1_500_000;
+/** Thrown by `readParkedImageCdpScript` when Neo hands back something other than the text. */
+export const CDP_READ_UNSUPPORTED = 'CDP_READ_UNSUPPORTED';
+
+/**
+ * Reads `[from, to)` of the parked image over one raw CDP `Runtime.evaluate`
+ * (the same attach `enableWebSearchScript` uses), which returns the whole
+ * slice in one response instead of Neo's ~6 KB-per-`evaluate` limit.
+ */
+export function readParkedImageCdpScript(id: number, from: number, to: number): string {
+  if (
+    !Number.isInteger(from) ||
+    !Number.isInteger(to) ||
+    from < 0 ||
+    to < from ||
+    to - from > CDP_READ_BUDGET
+  ) {
+    throw new Error(`Invalid parked image range ${from}-${to}`);
+  }
+  const expression = `document.getElementById(${JSON.stringify(IMAGE_NODE)}).textContent.slice(${from}, ${to})`;
+  return `const info = await browser.pages.getInfo(${pageId(id)});
+const { sessionId } = await browser.cdp('Target.attachToTarget', { targetId: info.targetId, flatten: true });
+try {
+  const res = await browser.cdp('Runtime.evaluate', { expression: ${JSON.stringify(expression)}, returnByValue: true }, sessionId);
+  const value = res && res.result && res.result.value;
+  if (typeof value !== 'string') throw new Error(${JSON.stringify(CDP_READ_UNSUPPORTED)});
+  return value;
+} finally {
+  await browser.cdp('Target.detachFromTarget', { sessionId }).catch(() => {});
+}`;
 }
 
 export type ArchiveResult = { archived: boolean; reason?: string };

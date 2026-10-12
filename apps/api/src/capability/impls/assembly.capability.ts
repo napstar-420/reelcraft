@@ -3,6 +3,7 @@ import { Injectable } from '@nestjs/common';
 import { Timeline } from '@reelcraft/shared';
 import { timingMapOf } from '../../artifact/timing-map';
 import type {
+  ComputeSpec,
   CostEstimate,
   JobHandle,
   JobStatus,
@@ -193,6 +194,69 @@ export class VideoConcatCapability extends LocalComputeCapability<ConcatConfig> 
   }
 }
 
+/** The job that renders a timeline with the render worker: the media it uses copied in as
+ * `resource-N.ext`, the timeline and its word timings and styles as files, and the worker command.
+ * Shared by the Render Timeline stage and the editor's draft render, so they render the same. */
+export function timelineRenderSpec(p: {
+  timeline: Timeline;
+  resources: Record<
+    string,
+    { handle: string; kind: string; sourceKey?: string; probe?: unknown; data?: unknown }
+  >;
+  styles: Record<string, import('@reelcraft/shared').TextStyleTokens>;
+  quality: 'draft' | 'final';
+  maxWaitSec: number;
+  browserExecutable?: string | undefined;
+}): ComputeSpec {
+  const inputs: Array<{ sourceKey: string; asFilename: string }> = [];
+  const resourceFiles: Record<string, { src: string; kind: string }> = {};
+  const timingMaps: Record<string, import('@reelcraft/shared').TimingMap> = {};
+  let index = 0;
+  for (const [handle, resource] of Object.entries(p.resources)) {
+    const timing = timingMapOf(resource.data);
+    if (timing) timingMaps[handle] = timing;
+    if (!resource.kind.startsWith('media.')) continue;
+    if (!resource.sourceKey) continue;
+    const sourceExtension = path.extname(resource.sourceKey).replace(/^\./, '');
+    const fallbackExtension =
+      resource.kind === 'media.image' ? 'png' : resource.kind === 'media.audio' ? 'm4a' : 'mp4';
+    const extension = /^[a-zA-Z0-9]{1,8}$/.test(sourceExtension)
+      ? sourceExtension
+      : fallbackExtension;
+    const asFilename = `resource-${index}.${extension}`;
+    inputs.push({ sourceKey: resource.sourceKey, asFilename });
+    resourceFiles[handle] = { src: asFilename, kind: resource.kind };
+    index += 1;
+  }
+  const missing = p.timeline.tracks
+    .flatMap((track) => track.items)
+    .filter((item) => item.type === 'media' && !resourceFiles[item.handle]);
+  if (missing.length)
+    throw new Error(`timeline.render cannot resolve ${missing.length} media item(s)`);
+  const worker = path.resolve(__dirname, '../../../../render-worker/dist/cli.js');
+  return {
+    command: process.execPath,
+    args: [
+      worker,
+      '{input:timeline.json}',
+      '{input:resources.json}',
+      p.quality,
+      '{output}',
+      ...(p.browserExecutable ? [p.browserExecutable] : []),
+    ],
+    inputs,
+    files: [
+      { asFilename: 'timeline.json', contents: JSON.stringify(p.timeline) },
+      {
+        asFilename: 'resources.json',
+        contents: JSON.stringify({ media: resourceFiles, timing: timingMaps, styles: p.styles }),
+      },
+    ],
+    outputFilename: 'timeline.mp4',
+    maxWaitSec: p.maxWaitSec,
+  };
+}
+
 @Capability('timeline.render')
 @Injectable()
 export class TimelineRenderCapability extends LocalComputeCapability<RenderConfig> {
@@ -220,61 +284,17 @@ export class TimelineRenderCapability extends LocalComputeCapability<RenderConfi
     return ['media.video'];
   }
   async submit(ctx: ExecCtx<RenderConfig>): Promise<JobHandle> {
-    const timeline = Timeline.parse(ctx.slots.timeline);
-    const resources = ctx.resources ?? {};
-    const inputs: Array<{ sourceKey: string; asFilename: string }> = [];
-    const resourceFiles: Record<string, string> = {};
-    const timingMaps: Record<string, import('@reelcraft/shared').TimingMap> = {};
-    let index = 0;
-    for (const [handle, resource] of Object.entries(resources)) {
-      const timing = timingMapOf(resource.data);
-      if (timing) timingMaps[handle] = timing;
-      if (!resource.kind.startsWith('media.')) continue;
-      if (!resource.sourceKey) continue;
-      const sourceExtension = path.extname(resource.sourceKey).replace(/^\./, '');
-      const fallbackExtension =
-        resource.kind === 'media.image' ? 'png' : resource.kind === 'media.audio' ? 'm4a' : 'mp4';
-      const extension = /^[a-zA-Z0-9]{1,8}$/.test(sourceExtension)
-        ? sourceExtension
-        : fallbackExtension;
-      const asFilename = `resource-${index}.${extension}`;
-      inputs.push({ sourceKey: resource.sourceKey, asFilename });
-      resourceFiles[handle] = asFilename;
-      index += 1;
-    }
-    const missing = timeline.tracks
-      .flatMap((track) => track.items)
-      .filter((item) => item.type === 'media' && !resourceFiles[item.handle]);
-    if (missing.length)
-      throw new Error(`timeline.render cannot resolve ${missing.length} media item(s)`);
-    const worker = path.resolve(__dirname, '../../../../render-worker/dist/cli.js');
-    const quality = ctx.config.quality ?? 'final';
-    const args = [
-      worker,
-      '{input:timeline.json}',
-      '{input:resources.json}',
-      quality,
-      '{output}',
-      ...(this.config.remotionBrowserExecutable ? [this.config.remotionBrowserExecutable] : []),
-    ];
-    const handle = await this.compute.spawn(ctx.idempotencyKey, {
-      command: process.execPath,
-      args,
-      inputs,
-      files: [
-        { asFilename: 'timeline.json', contents: JSON.stringify(timeline) },
-        {
-          asFilename: 'resources.json',
-          contents: JSON.stringify({
-            media: resourceFiles,
-            timing: timingMaps,
-            styles: this.styles.tokensById(),
-          }),
-        },
-      ],
-      outputFilename: 'timeline.mp4',
-      maxWaitSec: ctx.config.maxWaitSec ?? 1_800,
-    });
+    const handle = await this.compute.spawn(
+      ctx.idempotencyKey,
+      timelineRenderSpec({
+        timeline: Timeline.parse(ctx.slots.timeline),
+        resources: ctx.resources ?? {},
+        styles: this.styles.tokensById(),
+        quality: ctx.config.quality ?? 'final',
+        maxWaitSec: ctx.config.maxWaitSec ?? 1_800,
+        browserExecutable: this.config.remotionBrowserExecutable,
+      }),
+    );
     return this.jobHandle(handle);
   }
   async fetch(handle: JobHandle): Promise<ExecResult<MediaSource>> {

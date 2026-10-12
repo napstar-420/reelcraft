@@ -38,6 +38,8 @@ Free. It uses your computer's time: a long video can take several minutes.
 ## Tips
 
 - Use `draft` while building, and switch to `final` when you're happy.
+- In the [timeline editor](../video/timeline-editor.md#draft-render), **Render draft** makes a quick video of
+  your saved timeline without running this stage, so you can check it before you submit.
 - Put [Human approval](../blueprints/iterate-conditions-approval.md#human-approval) after it, since
   a video can't be scored by [quality control](../blueprints/quality-control.md).
 - The shape of the video comes from the timeline's canvas. Set a default

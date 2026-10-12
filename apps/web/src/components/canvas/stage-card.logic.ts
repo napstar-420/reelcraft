@@ -148,6 +148,8 @@ export type NodeRunStatus = {
   meta: string;
   /** The run is waiting on this stage's approval and can be reviewed. */
   reviewable: boolean;
+  /** Where to edit the timeline when this stage waits on the timeline editor. */
+  editorHref?: string;
 };
 
 const NODE_STATE_LABELS: Record<StageExecutionState, string> = {
@@ -167,7 +169,7 @@ const NODE_STATE_LABELS: Record<StageExecutionState, string> = {
  * run yet, or the stage was added after it). */
 export function nodeRunStatus(
   execution: StageExecutionDto | undefined,
-  run: Pick<RunDetailDto, 'state' | 'cursorStageKey'> | undefined,
+  run: Pick<RunDetailDto, 'id' | 'state' | 'cursorStageKey'> | undefined,
 ): NodeRunStatus | undefined {
   if (!execution) return undefined;
   const parts: string[] = [];
@@ -185,6 +187,11 @@ export function nodeRunStatus(
       run?.state === 'PAUSED_APPROVAL' &&
       run.cursorStageKey === execution.stageKey &&
       execution.state === 'awaiting_approval',
+    ...(run &&
+      execution.interaction === 'timeline_editor' &&
+      execution.state === 'awaiting_input' && {
+        editorHref: `/runs/${run.id}/stages/${execution.stageKey}/edit`,
+      }),
   };
 }
 

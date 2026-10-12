@@ -7,6 +7,7 @@ import type {
   VoiceInfo,
 } from '@reelcraft/shared';
 import type { AudioFamily } from '../speech/speech-audio';
+import { sentencesFromWords } from '../timing-sentences';
 import { boolParam, numberParam, textParam, type SpeechParams } from '../speech/speech-params';
 
 /** USD per 1,000 characters on the ElevenLabs API at a cost multiplier of 1.
@@ -577,7 +578,6 @@ export interface CharacterAlignment {
   character_end_times_seconds: number[];
 }
 
-const SENTENCE_END = /[.!?…。！？]["”’')\]]*$/;
 /** A delivery tag such as `[whispers]`, which the model acts on instead of speaking. */
 const TAG = /^\[[^\]]*\]$/;
 
@@ -618,26 +618,10 @@ export function timingFromPieces(
     words.push(...wordsFromAlignment(piece.alignment, offset));
     offset += Math.max(0, ...piece.alignment.character_end_times_seconds);
   }
-  const sentences: TimingMap['sentences'] = [];
-  let run: TimingMap['words'] = [];
-  const close = () => {
-    if (!run.length) return;
-    sentences.push({
-      text: run.map((w) => w.text).join(' '),
-      startSec: run[0]!.startSec,
-      endSec: run.at(-1)!.endSec,
-    });
-    run = [];
-  };
-  for (const word of words) {
-    run.push(word);
-    if (SENTENCE_END.test(word.text)) close();
-  }
-  close();
   return {
     transcript: pieces.map((p) => p.text).join(' '),
     durationSec: round(Math.max(offset, words.at(-1)?.endSec ?? 0)),
-    sentences,
+    sentences: sentencesFromWords(words),
     words,
   };
 }

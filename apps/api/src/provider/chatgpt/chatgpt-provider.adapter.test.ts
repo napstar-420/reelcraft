@@ -9,10 +9,14 @@ import {
   parseJsonReply,
 } from './chatgpt-provider.adapter';
 import {
+  CDP_READ_BUDGET,
+  CDP_READ_UNSUPPORTED,
   RUN_RESULT_BUDGET,
   archiveChatScript,
   pageStateScript,
   parkImageScript,
+  readParkedImageCdpScript,
+  signInStateScript,
   stripCitations,
   type PageState,
 } from './chatgpt-page';
@@ -105,6 +109,19 @@ describe('ChatgptProviderAdapter.submit', () => {
     });
   });
 
+  it('does not call a failed session check "signed out": a retryable infrastructure failure instead', async () => {
+    const { adapter, closed } = fixture([7, { signedIn: false, unknown: true, composer: true }]);
+    const handle = await adapter.submit(textReq, 'k');
+    expect(handle.payload).toEqual({ unreachable: true });
+    expect(closed()).toBe(1);
+    await expect(adapter.poll(handle)).resolves.toMatchObject({
+      done: true,
+      outcome: 'failed',
+      retryable: true,
+      failureClass: 'infrastructure',
+    });
+  });
+
   it('rejects an unknown effort before touching the browser', async () => {
     const { adapter, neo } = fixture([]);
     await expect(
@@ -151,9 +168,9 @@ describe('ChatgptProviderAdapter.submit', () => {
     const { adapter, scripts, storage } = fixture([
       8,
       signedIn,
-      { value: 0 },
       { length: 12 },
       { ok: true },
+      { value: 0 },
       { url: 'https://chatgpt.com/c/img' },
     ]);
     await adapter.submit(
@@ -170,10 +187,10 @@ describe('ChatgptProviderAdapter.submit', () => {
     );
     expect(scripts[0]).toContain('"https://chatgpt.com/"');
     expect(storage.getStream).toHaveBeenCalledWith('assets/ref.jpg');
-    expect(scripts[3]).toContain(Buffer.from('png-bytes').toString('base64'));
-    expect(scripts[4]).toContain('1-ref.jpg');
-    expect(scripts[4]).toContain('image/jpeg');
-    expect(scripts[4]).not.toContain(Buffer.from('png-bytes').toString('base64'));
+    expect(scripts[2]).toContain(Buffer.from('png-bytes').toString('base64'));
+    expect(scripts[3]).toContain('1-ref.jpg');
+    expect(scripts[3]).toContain('image/jpeg');
+    expect(scripts[3]).not.toContain(Buffer.from('png-bytes').toString('base64'));
   });
 
   it('uploads large references in chunks that each fit a Neo request', async () => {
@@ -181,11 +198,11 @@ describe('ChatgptProviderAdapter.submit', () => {
     const { adapter, scripts, storage } = fixture([
       8,
       signedIn,
-      { value: 0 },
       { length: 0 },
       { length: 0 },
       { length: 0 },
       { ok: true },
+      { value: 0 },
       { url: 'https://chatgpt.com/c/img' },
     ]);
     storage.getStream.mockImplementation(async () => Readable.from([big]));
@@ -199,13 +216,13 @@ describe('ChatgptProviderAdapter.submit', () => {
       'k',
     );
     const base64 = big.toString('base64');
-    const chunks = scripts.slice(3, 6).map((s) => {
+    const chunks = scripts.slice(2, 5).map((s) => {
       const match = /\\"chunk\\":\\"([A-Za-z0-9+/=]*)\\"/.exec(s);
       if (!match) throw new Error('chunk not found');
       return match[1];
     });
     expect(chunks.join('')).toBe(base64);
-    expect(scripts[6]).toContain(`"length\\":${base64.length}`);
+    expect(scripts[5]).toContain(`"length\\":${base64.length}`);
     expect(Math.max(...scripts.map((s) => s.length))).toBeLessThan(4 * 1024 * 1024);
   });
 });
@@ -438,26 +455,56 @@ describe('chatgpt page image lookup', () => {
   });
 });
 
+const imageJob = () => job({ modality: 'image', outputKind: 'media.image' });
+const unsupported = new Error(`BrowserOS Neo script failed: Error: ${CDP_READ_UNSUPPORTED}`);
+
 describe('ChatgptProviderAdapter image download', () => {
-  it('reads an image bigger than one run result across several runs', async () => {
-    const big = RUN_RESULT_BUDGET;
+  it('reads an image bigger than one CDP read across several runs', async () => {
+    const big = CDP_READ_BUDGET;
     const { adapter, scripts } = fixture([
       { mime: 'image/png', length: big + 3 },
       'a'.repeat(big),
       'bcd',
       null,
     ]);
-    const result = await adapter.fetch(job({ modality: 'image', outputKind: 'media.image' }));
+    const result = await adapter.fetch(imageJob());
     expect((result.output as { base64: string }).base64).toBe(`${'a'.repeat(big)}bcd`);
-    // park image 0, two reads, then park image 1 (none left)
+    // park image 0, two CDP reads, then park image 1 (none left)
     expect(scripts.filter((code) => code.includes('__reelcraft_image'))).toHaveLength(4);
+    expect(scripts.filter((code) => code.includes('Runtime.evaluate'))).toHaveLength(2);
+  });
+
+  it('falls back to evaluate slices when Neo does not return the CDP text, and keeps using them', async () => {
+    const big = RUN_RESULT_BUDGET;
+    const { adapter, scripts } = fixture([
+      { mime: 'image/png', length: big + 3 },
+      unsupported,
+      'a'.repeat(big),
+      'bcd',
+      { mime: 'image/png', length: 2 },
+      'ef', // the next image goes straight to the slices
+      null,
+    ]);
+    const result = await adapter.fetch(imageJob());
+    expect((result.output as { base64: string }).base64).toBe(`${'a'.repeat(big)}bcd`);
+    expect(scripts.filter((code) => code.includes('Runtime.evaluate'))).toHaveLength(1);
+    // two slice reads for the first image, one for the second; no more CDP reads
+    expect(
+      scripts.filter((code) =>
+        code.includes('getElementById("__reelcraft_image").textContent.slice('),
+      ),
+    ).toHaveLength(3);
+  });
+
+  it('falls back when a CDP read comes back short', async () => {
+    const { adapter } = fixture([{ mime: 'image/png', length: 5 }, 'abc', 'abcde', null]);
+    const result = await adapter.fetch(imageJob());
+    expect((result.output as { base64: string }).base64).toBe('abcde');
   });
 
   it('rejects a truncated download and leaves the tab open for the retry', async () => {
-    const { adapter, closed } = fixture([{ mime: 'image/png', length: 5 }, 'abc']);
-    await expect(
-      adapter.fetch(job({ modality: 'image', outputKind: 'media.image' })),
-    ).rejects.toThrow(/incomplete/);
+    const { adapter, closed } = fixture([{ mime: 'image/png', length: 5 }, 'abc', 'abc']);
+    await expect(adapter.fetch(imageJob())).rejects.toThrow(/incomplete/);
     expect(closed()).toBe(0);
   });
 
@@ -469,7 +516,7 @@ describe('ChatgptProviderAdapter image download', () => {
       'AAA',
       null,
     ]);
-    const handle = job({ modality: 'image', outputKind: 'media.image' });
+    const handle = imageJob();
     await expect(adapter.fetch(handle)).rejects.toThrow('run exceeded 30000ms');
     expect(closed()).toBe(0);
     expect(archived()).toBe(0);
@@ -479,6 +526,25 @@ describe('ChatgptProviderAdapter image download', () => {
     expect(archived()).toBe(1);
     expect(closed()).toBe(1);
     expect(archivedBeforeClose()).toBe(true);
+  });
+});
+
+describe('readParkedImageCdpScript', () => {
+  it('reads one slice over a raw CDP Runtime.evaluate and always detaches', () => {
+    const script = readParkedImageCdpScript(7, 10, 20);
+    expect(script).toContain("browser.cdp('Runtime.evaluate'");
+    expect(script).toContain('returnByValue');
+    expect(script).toContain('.slice(10, 20)');
+    expect(script).toContain('__reelcraft_image');
+    expect(script).toContain('Target.detachFromTarget');
+    expect(script).toContain(CDP_READ_UNSUPPORTED);
+  });
+
+  it("keeps one read under Neo's 2 MB result cap and rejects a bad range", () => {
+    expect(CDP_READ_BUDGET).toBeLessThan(2_000_000);
+    expect(() => readParkedImageCdpScript(7, 0, CDP_READ_BUDGET + 1)).toThrow(/Invalid parked/);
+    expect(() => readParkedImageCdpScript(7, -1, 5)).toThrow(/Invalid parked/);
+    expect(() => readParkedImageCdpScript(7, 9, 5)).toThrow(/Invalid parked/);
   });
 });
 
@@ -495,6 +561,12 @@ describe('ChatgptProviderAdapter readiness and cancel', () => {
     const calls = neo.run.mock.calls.length;
     await adapter.listModels();
     expect(neo.run.mock.calls.length).toBe(calls);
+  });
+
+  it('does not block stages when the sign-in probe could not tell', async () => {
+    const { adapter } = fixture([3, { signedIn: false, unknown: true, composer: false }]);
+    const [model] = await adapter.listModels();
+    expect(model).toMatchObject({ modalities: ['text', 'image'] });
   });
 
   it('reports Neo being down as the unavailable reason', async () => {
@@ -582,6 +654,37 @@ describe('decidePoll error banner', () => {
   });
 });
 
+describe('decidePoll error banner classes', () => {
+  const text = { modality: 'text' as const, submittedAt: 1_000 };
+  const failure = (errorSignal: string) =>
+    decidePoll(state({ errorShown: true, errorSignal, tail: 'x' }), text, undefined, 0);
+
+  it('treats a Retry button and delivery or network errors as infrastructure, which a retry can clear', () => {
+    for (const signal of [
+      'button: Retry',
+      'button: Try again',
+      'text: Message delivery timed out',
+      'text: network error',
+    ]) {
+      expect(failure(signal), signal).toMatchObject({ failureClass: 'infrastructure' });
+    }
+  });
+
+  it('keeps other banners as provider errors', () => {
+    expect(failure('text: error generating')).toMatchObject({ failureClass: 'provider' });
+    expect(failure('text: something went wrong')).toMatchObject({ failureClass: 'provider' });
+  });
+});
+
+describe('chatgpt sign-in scripts', () => {
+  it('only a session check that answered can say signed out', () => {
+    // A failed check must not read as the user's doing (it stays signed in / unknown).
+    expect(pageStateScript(7)).toContain('if (r.ok) {');
+    expect(signInStateScript(7)).toContain('unknown = false');
+    expect(signInStateScript(7)).toContain('unknown = true');
+  });
+});
+
 describe('ChatgptProviderAdapter sending in turns', () => {
   it('lets one tab finish setting effort and sending before the next starts, and survives a failed turn', async () => {
     const { adapter } = fixture([]);
@@ -603,6 +706,68 @@ describe('ChatgptProviderAdapter sending in turns', () => {
     const results = await Promise.allSettled([turn('a', 20, true), turn('b', 5), turn('c', 1)]);
     expect(order).toEqual(['a start', 'a end', 'b start', 'b end', 'c start', 'c end']);
     expect(results.map((r) => r.status)).toEqual(['rejected', 'fulfilled', 'fulfilled']);
+  });
+});
+
+describe('ChatgptProviderAdapter reference uploads and the turn lock', () => {
+  /** A fake Neo that answers by script content, with a slow reference upload. */
+  function slowUploadNeo() {
+    const order: string[] = [];
+    let nextPage = 10;
+    const neo = {
+      run: vi.fn(async (code: string) => {
+        if (code.includes('browser.pages.newPage')) return nextPage++;
+        if (code.includes('/api/auth/session')) return signedIn;
+        if (code.includes('__reelcraft_upload_') && code.includes('args.chunk')) {
+          order.push('upload');
+          await new Promise((resolve) => setTimeout(resolve, 40));
+          return { length: 12 };
+        }
+        if (code.includes('input[type=file]')) {
+          order.push('attach');
+          return { ok: true };
+        }
+        if (code.includes('ArrowLeft')) {
+          order.push('effort');
+          return { value: 0 };
+        }
+        if (code.includes('document.execCommand')) {
+          order.push('send');
+          return { url: 'https://chatgpt.com/c/x' };
+        }
+        return true;
+      }),
+    };
+    const storage = {
+      getStream: vi.fn(async () => Readable.from([Buffer.from('png-bytes')])),
+      stat: vi.fn(async () => ({ bytes: 9, etag: 'e', mime: 'application/octet-stream' })),
+    };
+    return { adapter: new ChatgptProviderAdapter(neo as never, storage as never), order };
+  }
+  const withRef = {
+    modality: 'text' as const,
+    modelId: 'chatgpt',
+    params: { reasoningEffort: 'instant', slots: { ref: { sourceKey: 'assets/ref.jpg' } } },
+    renderedPrompt: 'judge this',
+  };
+  const plain = { ...withRef, params: { reasoningEffort: 'instant' }, renderedPrompt: 'hello' };
+
+  it("does not hold another tab's effort-then-send behind a slow reference upload", async () => {
+    const { adapter, order } = slowUploadNeo();
+    await Promise.all([adapter.submit(withRef, 'a'), adapter.submit(plain, 'b')]);
+    // b's whole turn (effort, send) runs while a is still uploading its images.
+    expect(order.indexOf('send')).toBeLessThan(order.lastIndexOf('send'));
+    expect(order.indexOf('send')).toBeLessThan(order.indexOf('attach'));
+  });
+
+  it('attaches before the turn when web search is off, and inside it when web search is on', async () => {
+    const off = slowUploadNeo();
+    await off.adapter.submit(withRef, 'a');
+    expect(off.order).toEqual(['upload', 'attach', 'effort', 'send']);
+
+    const on = slowUploadNeo();
+    await on.adapter.submit({ ...withRef, params: { ...withRef.params, webSearch: true } }, 'b');
+    expect(on.order).toEqual(['effort', 'upload', 'attach', 'send']);
   });
 });
 

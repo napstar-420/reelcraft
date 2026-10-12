@@ -12,6 +12,8 @@ import { STORAGE_ADAPTER, type StorageAdapter } from '../../storage/storage.adap
 import { loadReferenceFiles, type ReferenceFile } from '../reference-files';
 import { buildChatgptPrompt } from './chatgpt-prompt';
 import {
+  CDP_READ_BUDGET,
+  CDP_READ_UNSUPPORTED,
   EFFORT_STOPS,
   archiveChatScript,
   attachFilesScript,
@@ -21,6 +23,7 @@ import {
   openChatScript,
   pageStateScript,
   parkImageScript,
+  readParkedImageCdpScript,
   readParkedImageScript,
   RUN_RESULT_BUDGET,
   sendPromptScript,
@@ -173,6 +176,13 @@ export class ChatgptProviderAdapter implements ProviderAdapter {
     );
     try {
       const signIn = await this.neo.run<SignInState>(signInStateScript(pageId));
+      if (signIn.unknown) {
+        // The session check itself failed (network, ChatGPT error): that is not
+        // "signed out". Reported by the first poll as a retryable infrastructure
+        // failure instead of a no-retry `user_action` one.
+        await this.close(pageId);
+        return { providerId: this.id, externalId: idempotencyKey, payload: { unreachable: true } };
+      }
       if (!signIn.signedIn) {
         // Not thrown: a throw is retried (and opens a tab each time). The
         // first poll reports it as a no-retry `user_action` failure instead.
@@ -181,6 +191,14 @@ export class ChatgptProviderAdapter implements ProviderAdapter {
         return { providerId: this.id, externalId: idempotencyKey, payload: { signedOut: true } };
       }
       if (!signIn.composer) throw new ChatgptPageError('ChatGPT composer not found');
+
+      // Files go into this tab's own composer and do not depend on the
+      // account-wide effort slider, so without web search they are attached
+      // before taking the turn: a QC judge's few MB of images would otherwise
+      // hold every other tab's effort-then-send behind it. With web search on,
+      // the composer's "+" menu is driven first, as before.
+      const attachFirst = !webSearch && references.length > 0;
+      if (attachFirst) await this.uploadReferences(pageId, references);
 
       const sent = await this.exclusive(async () => {
         const set = this.pageResult(
@@ -194,7 +212,7 @@ export class ChatgptProviderAdapter implements ProviderAdapter {
         if (webSearch && !(await this.neo.run<boolean>(enableWebSearchScript(pageId)))) {
           throw new ChatgptPageError('Could not turn on ChatGPT web search');
         }
-        if (references.length > 0) await this.uploadReferences(pageId, references);
+        if (!attachFirst && references.length > 0) await this.uploadReferences(pageId, references);
         return this.pageResult(
           await this.neo.run<{ url?: string; error?: string }>(
             sendPromptScript(pageId, pastedPrompt, webSearch),
@@ -226,7 +244,11 @@ export class ChatgptProviderAdapter implements ProviderAdapter {
 
   async poll(handle: JobHandle): Promise<JobStatus> {
     const job = this.job(handle);
-    if (!job) return signedOutFailure();
+    if (!job) {
+      return (handle.payload as { unreachable?: boolean } | undefined)?.unreachable
+        ? unreachableFailure()
+        : signedOutFailure();
+    }
     let state: PageState;
     try {
       state = await this.neo.run<PageState>(pageStateScript(job.pageId));
@@ -397,14 +419,46 @@ export class ChatgptProviderAdapter implements ProviderAdapter {
         parkImageScript(pageId, index),
       );
       if (!parked) return images;
-      let base64 = '';
-      for (let from = 0; from < parked.length; from += RUN_RESULT_BUDGET) {
-        const to = Math.min(from + RUN_RESULT_BUDGET, parked.length);
-        base64 += await this.neo.run<string>(readParkedImageScript(pageId, from, to));
-      }
+      const base64 = await this.readParkedImage(pageId, parked.length);
       if (base64.length !== parked.length) throw new Error('ChatGPT image download was incomplete');
       images.push({ mime: parked.mime, base64 });
     }
+  }
+
+  /** ponytail: flips off for the process if Neo ever returns a CDP read short or not as text. */
+  private cdpReads = true;
+
+  /**
+   * Reads the parked image back in a few ~1.5M-character CDP reads (a whole
+   * image is about 2.7M), falling back to the ~6 KB `evaluate` slices when Neo
+   * does not return the text. Any other failure (e.g. a timeout) propagates so
+   * the retried fetch reads the same tab.
+   */
+  private async readParkedImage(pageId: number, length: number): Promise<string> {
+    if (this.cdpReads) {
+      try {
+        let text = '';
+        for (let from = 0; from < length; from += CDP_READ_BUDGET) {
+          const to = Math.min(from + CDP_READ_BUDGET, length);
+          text += await this.neo.run<string>(readParkedImageCdpScript(pageId, from, to));
+        }
+        if (text.length === length) return text;
+        this.logger.warn(
+          { pageId, got: text.length, want: length },
+          'chatgpt cdp image read short',
+        );
+      } catch (error) {
+        if (!(error instanceof Error) || !error.message.includes(CDP_READ_UNSUPPORTED)) throw error;
+        this.logger.warn({ pageId }, 'chatgpt cdp image read unsupported');
+      }
+      this.cdpReads = false;
+    }
+    let text = '';
+    for (let from = 0; from < length; from += RUN_RESULT_BUDGET) {
+      const to = Math.min(from + RUN_RESULT_BUDGET, length);
+      text += await this.neo.run<string>(readParkedImageScript(pageId, from, to));
+    }
+    return text;
   }
 
   private inspectReadiness(): Promise<Readiness> {
@@ -428,8 +482,11 @@ export class ChatgptProviderAdapter implements ProviderAdapter {
       return unavailable(NEO_UNAVAILABLE_MESSAGE);
     }
     try {
-      const { signedIn } = await this.neo.run<SignInState>(signInStateScript(pageId));
-      return signedIn ? { modalities: ['text', 'image'] } : unavailable(CHATGPT_SIGN_IN_MESSAGE);
+      const { signedIn, unknown } = await this.neo.run<SignInState>(signInStateScript(pageId));
+      // A failed session check is not "signed out": don't block stages on it.
+      return signedIn || unknown
+        ? { modalities: ['text', 'image'] }
+        : unavailable(CHATGPT_SIGN_IN_MESSAGE);
     } catch (error) {
       // Unknown is not "signed out": don't block stages on a flaky probe.
       this.logger.warn({ err: error }, 'chatgpt readiness probe failed');
@@ -446,8 +503,8 @@ export class ChatgptProviderAdapter implements ProviderAdapter {
 
   private job(handle: JobHandle): ChatgptJobPayload | undefined {
     const payload = handle.payload as
-      (Partial<ChatgptJobPayload> & { signedOut?: boolean }) | undefined;
-    if (payload?.signedOut) return undefined;
+      (Partial<ChatgptJobPayload> & { signedOut?: boolean; unreachable?: boolean }) | undefined;
+    if (payload?.signedOut || payload?.unreachable) return undefined;
     if (typeof payload?.pageId !== 'number') throw new Error('Invalid ChatGPT job handle');
     return payload as ChatgptJobPayload;
   }
@@ -508,6 +565,19 @@ function signedOutFailure(): JobStatus {
   };
 }
 
+function unreachableFailure(): JobStatus {
+  return {
+    done: true,
+    outcome: 'failed',
+    reason: 'ChatGPT could not be reached to check the sign-in (network or ChatGPT error)',
+    retryable: true,
+    failureClass: 'infrastructure',
+  };
+}
+
+/** A banner that a retry after the connection is back would clear, as opposed to a refusal. */
+const TRANSIENT_ERROR_SIGNAL = /^button: (retry|try again)$|delivery timed out|network error/i;
+
 /** Nothing is generating and nothing has come of it: no reply, image or error. */
 export function isIdle(state: PageState): boolean {
   return (
@@ -540,7 +610,10 @@ export function decidePoll(
       outcome: 'failed',
       reason: `ChatGPT reported an error${state.errorSignal ? ` (${state.errorSignal})` : ''}: ${state.tail.trim().slice(-300)}`,
       retryable: true,
-      failureClass: 'provider',
+      failureClass:
+        state.errorSignal && TRANSIENT_ERROR_SIGNAL.test(state.errorSignal)
+          ? 'infrastructure'
+          : 'provider',
     };
   }
   if (state.generating) return running(job);

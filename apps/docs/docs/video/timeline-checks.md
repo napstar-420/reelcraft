@@ -19,6 +19,20 @@ seven are shown for every timeline, so you can see which pass.
 
 If the schema check fails, only it is reported, since the others can't be worked out.
 
+## In the editor
+
+The [timeline editor](./timeline-editor.md) runs these checks on your draft as you work, a moment after
+each change, and nothing is saved or spent. The top of the page says **No problems** or, for example,
+**2 problems**. Select it for a list in plain words, and **Show** to jump to the clip. The clips a problem is
+about are outlined in red with an alert badge:
+
+- a missing file: the clip that uses it;
+- a clip longer than its source: that clip;
+- a gap in the main video track: the clips on either side of it.
+
+Problems that aren't about one clip, such as the audio and video ending at different times, are listed
+without a **Show** button. **Submit timeline** stays available, and runs the checks again.
+
 ## How to fix each
 
 ### timeline.schema
@@ -34,8 +48,7 @@ produced it was redone after the timeline was written, so redo the timeline too.
 
 ### timeline.styles_exist
 
-The message lists the unknown styles. Use one of the four: **Title**, **Minimal Lower Third**, **Bold Pop**
-or **Clean Captions**. See [Timelines](./timelines.md#text-and-styles).
+The message lists the unknown styles. Use **Title** or **Minimal Lower Third** for text, and a caption template (such as **Clean** or **Bold Pop**) for captions. In the editor, pick a template from the **Template** gallery. See [Timelines](./timelines.md#text-and-styles).
 
 ### timeline.source_bounds
 

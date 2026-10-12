@@ -111,6 +111,35 @@ describe('timeline editor HTTP workflow (e2e)', () => {
     expect(save.status).toBe(200);
     expect(await save.json()).toEqual({ draftRevision: 1 });
 
+    // The editor can check a draft without saving it, and gets the clips a failure is about.
+    const checkUrl = `${http.baseUrl}/runs/${created.id}/stages/edit/timeline-editor/check`;
+    const post = (timeline: unknown) =>
+      fetch(checkUrl, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ timeline }),
+      });
+    const good = await post(edited);
+    expect(good.status).toBe(201);
+    const goodBody = (await good.json()) as {
+      results: Array<{ name: string; pass: boolean; targets?: unknown }>;
+    };
+    expect(goodBody.results.find((r) => r.name === 'timeline.handles_resolve')?.pass).toBe(true);
+    const broken = structuredClone(edited);
+    broken.tracks[0]!.items.push({
+      type: 'media',
+      handle: 'artifact:does-not-exist',
+      startSec: 0,
+      durationSec: 2,
+    });
+    const badBody = (await (await post(broken)).json()) as typeof goodBody;
+    expect(badBody.results.find((r) => r.name === 'timeline.handles_resolve')).toMatchObject({
+      pass: false,
+      targets: [{ trackId: 'video-main', itemIndex: broken.tracks[0]!.items.length - 1 }],
+    });
+    const notATimeline = (await (await post({ nope: true })).json()) as typeof goodBody;
+    expect(notATimeline.results[0]).toMatchObject({ name: 'timeline.schema', pass: false });
+
     const stale = await fetch(
       `${http.baseUrl}/runs/${created.id}/stages/edit/timeline-editor/draft`,
       {

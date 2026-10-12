@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Ref } from '@reelcraft/shared';
 import { BindingResolverService, type BindingScope } from './binding-resolver.service';
+import { TimelineHandleService } from './timeline-handle.service';
 
 /** `{from:'input'}` always does an artifact lookup first (to check whether
  * the input was a media upload) before falling back to `ctx.inputs`, so
@@ -157,5 +158,51 @@ describe('BindingResolverService — media manifests carry blobId', () => {
     await expect(
       serviceWith([row]).resolve({ from: 'memory', key: 'narration_audio' }, ctx),
     ).rejects.toThrow('memory media "narration_audio" has no file');
+  });
+
+  it('{from:"memory"} on word timings gives them a handle that canonicalizes to their artifact', async () => {
+    const timing = {
+      transcript: 'hi there',
+      durationSec: 1,
+      sentences: [],
+      words: [{ text: 'hi', startSec: 0, endSec: 0.5 }],
+    };
+    const row = {
+      runId: 'run-1',
+      memKey: 'narration_words',
+      version: 1,
+      writtenBy: 'narration_words',
+      writtenItem: null,
+      kind: 'data',
+      artifactId: null,
+      data: timing,
+      tombstone: false,
+    };
+    const ref = { from: 'memory', key: 'narration_words' } as const;
+    const { value, provenance } = await serviceWith([row], [{ id: 'art-words' }]).resolve(ref, ctx);
+    expect(value).toEqual({ handle: 'memory:narration_words', ...timing });
+
+    const timeline = {
+      version: 1,
+      canvas: { width: 1080, height: 1920, fps: 30 },
+      tracks: [
+        {
+          id: 'captions',
+          type: 'captions',
+          items: [
+            {
+              type: 'captions',
+              styleId: 'caption.clean',
+              startSec: 0,
+              timingHandle: 'memory:narration_words',
+            },
+          ],
+        },
+      ],
+    };
+    const canonical = new TimelineHandleService().canonicalize(timeline, { words: provenance }) as {
+      tracks: Array<{ items: Array<{ timingHandle?: string }> }>;
+    };
+    expect(canonical.tracks[0]!.items[0]!.timingHandle).toBe('artifact:art-words');
   });
 });

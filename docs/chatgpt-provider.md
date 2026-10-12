@@ -13,7 +13,10 @@ It is local and single-user, like the Codex provider.
 
 If Neo is down or ChatGPT is signed out, the pin editor shows the reason, and both saving and
 running refuse the pin. If ChatGPT signs out mid-run, the stage fails once with "You're not signed
-in to ChatGPT…" and does not retry. Sign in, then use re-run stage.
+in to ChatGPT…" and does not retry. Sign in, then use re-run stage. Only an answered session check
+counts as signed out: if the check itself fails (network drop, ChatGPT error), or ChatGPT shows its
+Retry button or a delivery or network error, that is an infrastructure failure and is retried. A
+quality-control call that cannot reach the judge waits 30 s, then 2 min, between its retries.
 
 ## How a job runs
 
@@ -50,18 +53,30 @@ response as `pastedPrompt`.
 - **Effort is sticky account-wide** in ChatGPT. Every job sets it explicitly, and your ChatGPT app
   keeps whatever the last job used. Jobs that run side by side (an iterating stage with
   `iterate.concurrency` above 1) take turns from "set effort" to "sent", so each prompt goes out with
-  its own effort; everything else about a job stays in its own tab.
+  its own effort; everything else about a job stays in its own tab. Reference images (a QC judge's
+  attached candidates, for example) are attached before that turn, so a large upload in one tab does
+  not hold the others up; when web search is on they are still attached inside the turn.
 - **Concurrency is not capped.** Each running item is its own tab and its own chat, started within
   seconds of the others. Three at once was tried and worked (all images generated and downloaded);
   more is untested, and ChatGPT may rate-limit or show captchas for many image chats at once. Start
   with 2 or 3.
+- If Neo cannot be reached, or cuts a read off at its 30 s cap, while a finished job's images are being read (a network drop, Neo
+  down), the tab stays open and the stage waits 30 s, 2 min, 5 min, then 10 min, reading the same
+  tab again each time, instead of generating the images from scratch. After the last wait the
+  attempt is given up as before. A provider-reported infrastructure failure also waits 30 s, then
+  2 min, then 5 min before the next attempt.
 - The one Neo connection is shared by all jobs. A call that only times out no longer drops it, so a
   slow upload in one tab does not reconnect the others.
 - Web search is turned on from the composer's "+" menu, which ignores synthetic clicks, so two
   trusted mouse clicks are sent over CDP (they work in a background tab). The old `hints=search`
   URL hint was dropped by ChatGPT. The "Web search" pill then sits inside the composer text.
-- Neo returns `evaluate` results over ~6 KB as files, so large results (images, long replies) are
-  read back in small chunks. See `inPage` in `chatgpt-page.ts`.
+- Neo returns `evaluate` results over ~6 KB as files, so large results (long replies) are read
+  back in small chunks. See `inPage` in `chatgpt-page.ts`.
+- Generated images (~2.7M base64 characters each) are read back with a raw CDP `Runtime.evaluate`
+  in ~1.5M-character slices (`readParkedImageCdpScript`), a few runs per image instead of ~670
+  `evaluate` slices that took about eight minutes per item. If Neo ever returns that read short or
+  not as text, the adapter logs it and falls back to the `evaluate` slices for the rest of the
+  process.
 - Every chatgpt.com selector lives in `apps/api/src/provider/chatgpt/chatgpt-page.ts`. When
   ChatGPT changes its UI, failures read "… — the ChatGPT UI may have changed" and that file is
   the one to fix.

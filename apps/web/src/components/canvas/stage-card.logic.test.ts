@@ -145,7 +145,9 @@ describe('nodeRunStatus', () => {
   });
 
   it('reports cost and duration for a finished stage', () => {
-    expect(nodeRunStatus(execution(), { state: 'COMPLETED', cursorStageKey: null })).toMatchObject({
+    expect(
+      nodeRunStatus(execution(), { id: 'r1', state: 'COMPLETED', cursorStageKey: null }),
+    ).toMatchObject({
       state: 'passed',
       tone: 'success',
       label: 'Passed',
@@ -162,13 +164,20 @@ describe('nodeRunStatus', () => {
 
   it('is reviewable only for the stage the run is paused on', () => {
     const waiting = execution({ state: 'awaiting_approval', endedAt: null });
-    const paused = { state: 'PAUSED_APPROVAL', cursorStageKey: 's' } as const;
+    const paused = { id: 'r1', state: 'PAUSED_APPROVAL', cursorStageKey: 's' } as const;
     expect(nodeRunStatus(waiting, paused)).toMatchObject({
       label: 'Needs approval',
       tone: 'warning',
       reviewable: true,
     });
     expect(nodeRunStatus(waiting, { ...paused, cursorStageKey: 'other' })?.reviewable).toBe(false);
+  });
+
+  it('links a stage waiting on the timeline editor to it', () => {
+    const run = { id: 'r1', state: 'PAUSED_INPUT', cursorStageKey: 's' } as const;
+    const editing = execution({ state: 'awaiting_input', interaction: 'timeline_editor' });
+    expect(nodeRunStatus(editing, run)?.editorHref).toBe('/runs/r1/stages/s/edit');
+    expect(nodeRunStatus(execution({ state: 'awaiting_input' }), run)?.editorHref).toBeUndefined();
   });
 
   it('says how many items of an iterating stage run at once', () => {

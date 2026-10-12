@@ -10,6 +10,7 @@ import type {
   VoiceQuery,
 } from '../provider-adapter.interface';
 import { DeepgramSpeech, errorReason } from './deepgram-speech.service';
+import { sentencesFromWords } from '../timing-sentences';
 import { deepgramConflict, isDeepgramFamily } from './deepgram-speech';
 import { DeepgramInboxService } from './deepgram-inbox.service';
 import { DRIZZLE, type Db } from '../../db/drizzle.provider';
@@ -243,14 +244,21 @@ function normalize(raw: unknown) {
       channels?: Array<{
         alternatives?: Array<{
           transcript?: string;
-          words?: Array<{ word: string; start: number; end: number; confidence?: number }>;
+          words?: Array<{
+            word: string;
+            punctuated_word?: string;
+            start: number;
+            end: number;
+            confidence?: number;
+          }>;
         }>;
       }>;
     };
   };
   const alternative = body.results?.channels?.[0]?.alternatives?.[0];
+  // The punctuated form carries the commas and full stops the captions break on.
   const words = (alternative?.words ?? []).map((word) => ({
-    text: word.word,
+    text: word.punctuated_word ?? word.word,
     startSec: word.start,
     endSec: word.end,
     ...(word.confidence !== undefined && { confidence: word.confidence }),
@@ -258,15 +266,7 @@ function normalize(raw: unknown) {
   return {
     transcript: alternative?.transcript ?? '',
     durationSec: body.metadata?.duration ?? words.at(-1)?.endSec ?? 0,
-    sentences: words.length
-      ? [
-          {
-            text: alternative?.transcript ?? '',
-            startSec: words[0]!.startSec,
-            endSec: words.at(-1)!.endSec,
-          },
-        ]
-      : [],
+    sentences: sentencesFromWords(words),
     words,
   };
 }

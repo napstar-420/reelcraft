@@ -74,6 +74,44 @@ describe('DeepgramAdapter transcription', () => {
     });
   });
 
+  it('keeps the punctuation of each word and splits the transcript into sentences', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        Response.json({
+          metadata: { duration: 3 },
+          results: {
+            channels: [
+              {
+                alternatives: [
+                  {
+                    transcript: 'Milo cooked. Then he ate!',
+                    words: [
+                      { word: 'milo', punctuated_word: 'Milo', start: 0, end: 0.4 },
+                      { word: 'cooked', punctuated_word: 'cooked.', start: 0.4, end: 1 },
+                      { word: 'then', punctuated_word: 'Then', start: 1.4, end: 1.8 },
+                      { word: 'he', punctuated_word: 'he', start: 1.8, end: 2 },
+                      { word: 'ate', punctuated_word: 'ate!', start: 2, end: 2.6 },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        }),
+      ),
+    );
+    const deepgram = adapter();
+    const result = await deepgram.fetch(await deepgram.submit(request, 'key-1'));
+    expect(result.output).toMatchObject({
+      sentences: [
+        { text: 'Milo cooked.', startSec: 0, endSec: 1 },
+        { text: 'Then he ate!', startSec: 1.4, endSec: 2.6 },
+      ],
+    });
+    expect((result.output as { words: Array<{ text: string }> }).words[1]!.text).toBe('cooked.');
+  });
+
   it("puts Deepgram's reason in the error when the request is rejected", async () => {
     vi.stubGlobal(
       'fetch',

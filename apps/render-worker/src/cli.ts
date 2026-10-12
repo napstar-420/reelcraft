@@ -22,7 +22,7 @@ async function main() {
   };
   const timeline = Timeline.parse(JSON.parse(await readFile(timelinePath, 'utf8')));
   const renderData = JSON.parse(await readFile(resourcesPath, 'utf8')) as {
-    media: Record<string, string>;
+    media: Record<string, { src: string; kind: 'media.image' | 'media.video' | 'media.audio' }>;
     timing: Record<string, import('@reelcraft/shared').TimingMap>;
     styles?: Record<string, import('@reelcraft/shared').TextStyleTokens>;
   };

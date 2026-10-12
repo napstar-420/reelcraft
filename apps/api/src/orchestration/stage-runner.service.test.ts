@@ -158,3 +158,103 @@ describe('StageRunnerService.stopIfRunNotRunning', () => {
     expect(persisted).toEqual([{ outcome: 'cancelled', phase: 'settled' }]);
   });
 });
+
+describe('StageRunnerService phase timings', () => {
+  const ctx: StageAttemptContext = {
+    runId: 'run-1',
+    stageExecutionId: 'execution-1',
+    stageKey: 'images',
+    attemptNo: 1,
+    stageAttemptId: 'attempt-1',
+    itemIndex: 3,
+  };
+  const stage = { key: 'images', capability: 'image.generate' } as StageDef;
+  const handle = { providerId: 'chatgpt', externalId: 'job-1' };
+
+  function pollingService(status: object, createdAt: string | undefined) {
+    const record = vi.fn().mockResolvedValue(undefined);
+    const db = {
+      select: vi.fn().mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            limit: vi.fn().mockResolvedValue(createdAt ? [{ createdAt }] : []),
+          }),
+        }),
+      }),
+    };
+    const service = Object.assign(Object.create(StageRunnerService.prototype) as object, {
+      db,
+      capabilities: { get: vi.fn().mockReturnValue({ poll: vi.fn().mockResolvedValue(status) }) },
+      events: { record },
+      ledger: {},
+      engineConfig: { fetchAllowanceSec: 10 },
+    }) as unknown as StageRunnerService;
+    return { service, record };
+  }
+
+  it('records when the provider first reported the job done, relative to the attempt starting', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-12T12:02:30Z'));
+    try {
+      const { service, record } = pollingService(
+        { done: true, outcome: 'succeeded' },
+        '2026-10-12T12:00:00Z',
+      );
+      await service.pollOnce(stage, handle, ctx);
+      expect(record).toHaveBeenCalledWith(
+        ctx,
+        'debug',
+        'job.ready',
+        'Provider reported done after 150s',
+        { sinceAttemptStartMs: 150_000, outcome: 'succeeded' },
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('records nothing for a poll that is still running, or without an attempt context', async () => {
+    const running = pollingService({ done: false, phase: 'running' }, '2026-10-12T12:00:00Z');
+    await running.service.pollOnce(stage, handle, ctx);
+    expect(running.record).not.toHaveBeenCalled();
+
+    const done = pollingService({ done: true, outcome: 'succeeded' }, '2026-10-12T12:00:00Z');
+    await done.service.pollOnce(stage, handle);
+    expect(done.record).not.toHaveBeenCalled();
+  });
+
+  it('records nothing when the attempt row is gone', async () => {
+    const { service, record } = pollingService({ done: true, outcome: 'succeeded' }, undefined);
+    await service.pollOnce(stage, handle, ctx);
+    expect(record).not.toHaveBeenCalled();
+  });
+
+  it('records how long each QC call took', async () => {
+    const record = vi.fn().mockResolvedValue(undefined);
+    const passed = { status: 'passed', verdict: { score: 90, critique: 'ok' }, costUsd: 0 };
+    const service = Object.assign(Object.create(StageRunnerService.prototype) as object, {
+      qc: { run: vi.fn().mockResolvedValue(passed) },
+      events: { record },
+      engineConfig: { qcErrorRetries: 0 },
+    }) as unknown as StageRunnerService;
+
+    await (
+      service as unknown as { runQcWithRetries: (...args: unknown[]) => Promise<unknown> }
+    ).runQcWithRetries(
+      { criteria: 'good', includeInputs: false },
+      { judge: { provider: 'fake', modelId: 'j', params: {} }, threshold: 70 },
+      ctx,
+      { kind: 'text', data: 'x' },
+      { slots: {}, context: {} },
+      undefined,
+    );
+
+    expect(record).toHaveBeenCalledWith(
+      ctx,
+      'info',
+      'qc.result',
+      'QC passed',
+      expect.objectContaining({ status: 'passed', durationMs: expect.any(Number) }),
+    );
+  });
+});

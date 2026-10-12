@@ -28,6 +28,7 @@ import {
   stageEvent,
   stageExecution,
   storageOrphan,
+  timelinePreviewRender,
 } from '../../src/db/schema/index';
 import { buildTestApp, type TestApp } from '../support/build-app';
 import { createTestDb, type TestDb } from '../support/test-db';
@@ -55,6 +56,30 @@ async function seedNotification(testDb: TestDb, runId: string): Promise<void> {
     body: 'cascade check',
     url: `/runs/${runId}`,
     dedupeKey: `cascade:${runId}`,
+  });
+}
+
+/** A draft render from the timeline editor, with its video. It points at a blob, so the cascade
+ * must delete it first. */
+async function seedDraftRender(testDb: TestDb, runId: string): Promise<void> {
+  const blobId = ulid();
+  await testDb.db.insert(blob).values({
+    id: blobId,
+    scope: 'run',
+    runId,
+    bucket: 'test',
+    objectKey: `local/test/${runId}/media/${blobId}.mp4`,
+    mime: 'video/mp4',
+    bytes: 3,
+    sha256: 'deadbeef',
+  });
+  await testDb.db.insert(timelinePreviewRender).values({
+    id: ulid(),
+    runId,
+    stageKey: 'edit',
+    draftRevision: 0,
+    state: 'done',
+    blobId,
   });
 }
 
@@ -225,6 +250,7 @@ describe('channel delete cascade (e2e)', () => {
     const { error } = await runThroughRealPipeline(dryRun.id, dryRun.stageExecutions);
     expect(error).toBeUndefined();
     await seedNotification(testDb, dryRun.id);
+    await seedDraftRender(testDb, dryRun.id);
     await addRunFile(dryRun.id);
     const runBlobKeys = (
       await testDb.db
@@ -267,6 +293,12 @@ describe('channel delete cascade (e2e)', () => {
     ).toHaveLength(0);
     expect(
       await testDb.db.select().from(notification).where(eq(notification.runId, dryRun.id)),
+    ).toHaveLength(0);
+    expect(
+      await testDb.db
+        .select()
+        .from(timelinePreviewRender)
+        .where(eq(timelinePreviewRender.runId, dryRun.id)),
     ).toHaveLength(0);
     const queued = await testDb.db
       .select({ objectKey: storageOrphan.objectKey })
@@ -367,6 +399,7 @@ describe('channel delete cascade (e2e)', () => {
     expect(assetBlobBefore).toHaveLength(1);
 
     await seedNotification(testDb, dryRun.id);
+    await seedDraftRender(testDb, dryRun.id);
     await addRunFile(dryRun.id);
     const runBlobKeys = (
       await testDb.db
@@ -412,6 +445,12 @@ describe('channel delete cascade (e2e)', () => {
     expect(runRowAfter).toBeUndefined();
     expect(
       await testDb.db.select().from(notification).where(eq(notification.runId, dryRun.id)),
+    ).toHaveLength(0);
+    expect(
+      await testDb.db
+        .select()
+        .from(timelinePreviewRender)
+        .where(eq(timelinePreviewRender.runId, dryRun.id)),
     ).toHaveLength(0);
     const executionsAfter = await testDb.db
       .select()

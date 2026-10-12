@@ -24,6 +24,9 @@ export interface CheckResult extends CheckOutcome {
    * retry policy needs this distinction, this chunk just records it. Always
    * present when `pass` is false, always absent when `pass` is true. */
   fault?: 'artifact' | 'authoring';
+  /** The timeline items a failure is about, so the editor can mark them. Only timeline checks set
+   * this, and only when they can point at specific items. */
+  targets?: Array<{ trackId: string; itemIndex: number }>;
 }
 
 export interface CheckRunInput {
