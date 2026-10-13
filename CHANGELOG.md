@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.10.0](https://github.com/napstar-420/reelcraft/compare/v0.9.0...v0.10.0) (2026-10-13)
+
+
+### Features
+
+* **api:** add local Qwen3-TTS speech provider with on-demand model download ([#142](https://github.com/napstar-420/reelcraft/issues/142)) ([b47d595](https://github.com/napstar-420/reelcraft/commit/b47d5958c2320a433a6e5c65f48a4a01224ca204))
+* **api:** log where an attempt's time goes in the stage events ([#146](https://github.com/napstar-420/reelcraft/issues/146)) ([dd38ebd](https://github.com/napstar-420/reelcraft/commit/dd38ebd31a2f974e9a302a63b59fd9371664ea47))
+
+
+### Bug Fixes
+
+* **api:** read ChatGPT images back over CDP instead of 4 KB evaluate slices ([#143](https://github.com/napstar-420/reelcraft/issues/143)) ([6c1e553](https://github.com/napstar-420/reelcraft/commit/6c1e55303f9f3c244b710436b6b5274ceb9c0249))
+* **api:** resume a finished job's download instead of regenerating it ([#145](https://github.com/napstar-420/reelcraft/issues/145)) ([93ec95c](https://github.com/napstar-420/reelcraft/commit/93ec95c756f70e99743b2fce6b8a498b24e59309))
+* **api:** treat a failed ChatGPT session check or network drop as retryable ([#144](https://github.com/napstar-420/reelcraft/issues/144)) ([09f6bdc](https://github.com/napstar-420/reelcraft/commit/09f6bdc9af999ebda722abc89540f018abe60494))
+* **dev:** raise local Postgres max_connections to 100 ([#148](https://github.com/napstar-420/reelcraft/issues/148)) ([a5d9784](https://github.com/napstar-420/reelcraft/commit/a5d9784f58986606b82a685baf9a43661fba9f88))
+
+
+### Performance
+
+* **api:** attach ChatGPT reference images before taking the turn ([#147](https://github.com/napstar-420/reelcraft/issues/147)) ([c946e89](https://github.com/napstar-420/reelcraft/commit/c946e89facdecc09c55897c88a32701d8f76756e))
+
 ## [0.9.0](https://github.com/napstar-420/reelcraft/compare/v0.8.2...v0.9.0) (2026-10-12)
 
 
