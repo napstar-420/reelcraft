@@ -62,10 +62,11 @@ def test_download_then_speak(client, engine):
     assert engine.calls == [(SMALL, "Hello", "ryan", "English", None)]
 
 
-def test_the_small_model_ignores_delivery_instructions(client, engine):
-    client.post(f"/v1/models/{SMALL}/download")
-    speak(client, instructions="calm")
-    assert engine.calls[-1][4] is None
+@pytest.mark.parametrize("model", [SMALL, BIG])
+def test_delivery_instructions_reach_either_model(client, engine, model):
+    client.post(f"/v1/models/{model}/download")
+    speak(client, model=model, instructions="calm and warm")
+    assert engine.calls[-1][4] == "calm and warm"
 
 
 @pytest.mark.parametrize("body", [{"voice": "nobody"}, {"language": "Klingon"}])

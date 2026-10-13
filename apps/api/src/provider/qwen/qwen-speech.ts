@@ -12,7 +12,7 @@ export const QWEN_FALLBACK_MODELS = [
     label: 'Qwen3-TTS 0.6B',
     totalBytes: 2_493_919_668,
     license: 'Apache-2.0',
-    instructions: false,
+    instructions: true,
   },
   {
     id: 'Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice',

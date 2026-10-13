@@ -26,7 +26,7 @@ CATALOG: dict[str, CatalogModel] = {
             revision="85e237c12c027371202489a0ec509ded67b5e4b5",
             size_bytes=2_493_919_668,
             license="Apache-2.0",
-            instructions=False,
+            instructions=True,
         ),
         CatalogModel(
             id="Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice",
