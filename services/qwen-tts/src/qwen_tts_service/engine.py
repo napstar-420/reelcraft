@@ -19,11 +19,20 @@ def pick_device(torch) -> str:
 
 
 def pick_dtype(torch, device: str):
-    if device.startswith("cuda"):
+    # float16 overflows to NaN on Apple's GPU ("probability tensor contains inf or nan"),
+    # so MPS uses bfloat16 like CUDA does. The CPU runs in float32.
+    if device.startswith("cuda") or device == "mps":
         return torch.bfloat16
-    if device == "mps":
-        return torch.float16
     return torch.float32
+
+
+def load_kwargs(torch, device: str) -> dict:
+    """What `from_pretrained` needs for this device. Off CUDA the model uses the plain
+    ("eager") attention: the default one gives bad output on MPS."""
+    kwargs = {"device_map": device, "dtype": pick_dtype(torch, device)}
+    if not device.startswith("cuda"):
+        kwargs["attn_implementation"] = "eager"
+    return kwargs
 
 
 class Engine:
@@ -51,9 +60,7 @@ class Engine:
         self.unload()
         device = self._device or pick_device(torch)
         self._model = Qwen3TTSModel.from_pretrained(
-            str(self._path(model_id)),
-            device_map=device,
-            dtype=pick_dtype(torch, device),
+            str(self._path(model_id)), **load_kwargs(torch, device)
         )
         self._device, self._model_id = device, model_id
 
