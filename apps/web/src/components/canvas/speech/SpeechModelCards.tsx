@@ -1,7 +1,8 @@
 import { CheckCircle2Icon } from 'lucide-react';
 import type { ModelInfoDto } from '@reelcraft/shared';
 import { Badge } from '@/components/ui/badge';
-import { speechOptionsOf } from './speech-settings.logic';
+import { ModelDownloadControls } from './ModelDownloadControls';
+import { needsDownload, speechOptionsOf } from './speech-settings.logic';
 
 /** The speech models of a provider as a list of cards, each saying what it is for. */
 export function SpeechModelCards({
@@ -18,6 +19,25 @@ export function SpeechModelCards({
       {models.map((model) => {
         const options = speechOptionsOf(model);
         const on = model.modelId === selected;
+        if (needsDownload(model)) {
+          return (
+            <div
+              key={model.modelId}
+              className="flex flex-col gap-2 rounded-xl border border-dashed p-3"
+            >
+              <span className="flex items-center gap-2 text-sm font-medium">
+                {model.label}
+                {options?.badges?.map((badge) => (
+                  <Badge key={badge} variant="outline">
+                    {badge}
+                  </Badge>
+                ))}
+              </span>
+              {options && <span className="text-xs text-muted-foreground">{options.summary}</span>}
+              <ModelDownloadControls model={model} />
+            </div>
+          );
+        }
         return (
           <button
             key={model.modelId}

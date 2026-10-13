@@ -41,6 +41,16 @@ export async function validateSpeechStages(
       });
       continue;
     }
+    if (model.download && model.download.state !== 'ready') {
+      issues.push({
+        path: `${path}.modelId`,
+        message: model.download.serviceDown
+          ? `${model.label} runs on a local service that isn't running. Start it (see Settings), and make sure the model is downloaded.`
+          : `${model.label} isn't downloaded yet. Download it in the stage's Model section before running.`,
+        // A stopped service is no reason to block saving; the run will say so if it's still off.
+        severity: model.download.serviceDown ? 'warning' : 'error',
+      });
+    }
     const params = pin.params ?? {};
     const writesTiming = Object.values(stage.writes ?? {}).some(
       (path) => path === 'timing' || path.startsWith('timing.'),

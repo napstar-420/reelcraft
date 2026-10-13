@@ -1,0 +1,29 @@
+[project]
+name = "qwen-tts-service"
+version = "0.1.0"
+description = "Local Qwen3-TTS speech service for Reelcraft. Downloads the model weights on request and serves /v1/audio/speech."
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "fastapi>=0.115",
+  "uvicorn>=0.32",
+  "httpx>=0.27",
+  "soundfile>=0.12",
+  "numpy",
+  "qwen-tts",
+]
+
+[project.scripts]
+qwen-tts-service = "qwen_tts_service.__main__:main"
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/qwen_tts_service"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

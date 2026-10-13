@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
-import type { BrowserOsSettingsDto } from '@reelcraft/shared';
+import type { BrowserOsSettingsDto, QwenTtsSettingsDto } from '@reelcraft/shared';
 import { EngineConfig } from '../config/engine-config';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
 import { appSetting } from '../db/schema';
@@ -10,6 +10,7 @@ import { SettingsCipher } from './settings-cipher';
 export const SETTING = {
   providerKey: (providerId: string) => `providerKey.${providerId}`,
   browserOsUrl: 'browserOs.url',
+  qwenTtsUrl: 'qwenTts.url',
   /** The Neo address Reelcraft registered with Codex, so it only ever
    * replaces its own entry. */
   codexNeoMcpUrl: 'codex.neoMcpUrl',
@@ -95,6 +96,18 @@ export class SettingsService {
 
   async browserOsUrl(): Promise<string> {
     return (await this.browserOs()).url;
+  }
+
+  /** The Qwen3-TTS service's address: saved in Settings, else the environment's, else the default. */
+  async qwenTts(): Promise<QwenTtsSettingsDto> {
+    const saved = await this.get(SETTING.qwenTtsUrl);
+    if (saved) return { url: saved, source: 'saved' };
+    const env = this.config.qwenTtsUrlFromEnv;
+    return { url: this.config.qwenTtsUrl, source: env ? 'env' : 'default' };
+  }
+
+  async qwenTtsUrl(): Promise<string> {
+    return (await this.qwenTts()).url;
   }
 
   private async write(key: string, value: string, secret: boolean): Promise<void> {

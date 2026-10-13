@@ -27,7 +27,7 @@ prompt: to change what is said, change the stage that writes the script.
 Everything about how the voice sounds is in the stage's **Model** section. It is also what you set as
 the **Speech and audio** [default](../channels/defaults.md) for a channel or blueprint.
 
-1. Choose a **Provider**: **ElevenLabs**, **Deepgram** or **Fake (test)**.
+1. Choose a **Provider**: **ElevenLabs**, **Deepgram**, **Qwen3-TTS (local)** or **Fake (test)**.
 2. Choose a **Model**. Each card says what the model is for, how many languages it speaks and how much
    text it takes in one request. Select **Change model** to see the others.
 3. Choose a **Voice**. Select the box to search by name, accent or use, filter by gender or language,
@@ -106,6 +106,22 @@ The voice is part of the model, so choosing another model asks you to choose a v
 
 For a pause in Flux, write `\{pause:1s\}` in the text (500 ms to 3 s, at most 8 per request).
 
+### Qwen3-TTS (local)
+
+Qwen3-TTS runs on your own computer, so it costs nothing per request and no text leaves it. It needs a
+small local service and a one-time model download: see [Qwen3-TTS on your computer](../qwen-tts.md).
+
+| Model              | Good for                                                                        |
+| ------------------ | ------------------------------------------------------------------------------- |
+| **Qwen3-TTS 0.6B** | Smaller and faster to download (2.5 GB). Follows **Delivery** instructions too. |
+| **Qwen3-TTS 1.7B** | Larger (4.6 GB). More natural and expressive.                                   |
+
+A model you haven't downloaded shows **Download required** with a **Download** button. You can't pick
+it until it's downloaded, and a blueprint using it won't run before then.
+
+Settings: **Language** (Auto, or one of 10 languages) and **Delivery**, a short instruction on how to say it, such as "calm and warm". There are
+nine voices, such as Vivian, Ryan and Aiden. It makes no word timings.
+
 ### Word timings
 
 With **Word timings** on (ElevenLabs only), the stage still makes the same audio, and also keeps when
@@ -117,7 +133,7 @@ works where that result does, such as [Export Subtitles](./export-subtitles.md).
 
 - It costs nothing extra: ElevenLabs sends the timings with the audio.
 - A blueprint that writes `timing` is not runnable while **Word timings** is off, or on a model that
-  can't make them (Deepgram).
+  can't make them (Deepgram, Qwen3-TTS).
 - For a text longer than the model takes at once, the pieces' timings are joined end to end, so later
   words can drift by a fraction of a second.
 - Text such as `[whispers]` is acted out by the model and left out of the words.
@@ -128,10 +144,11 @@ works where that result does, such as [Export Subtitles](./export-subtitles.md).
 | ---------- | ------------------------------------------------------------------------------------------------------ |
 | ElevenLabs | MP3 (several rates), WAV, Opus. `MP3 44.1 kHz 192 kbps` needs a Creator plan, WAV 44.1 kHz a Pro plan. |
 | Deepgram   | WAV (default), MP3, FLAC, Opus, AAC                                                                    |
+| Qwen3-TTS  | WAV (default), MP3, FLAC, Opus                                                                         |
 
 ### Long text
 
-Each model takes a limited number of characters in one request (for example 2,000 on Deepgram). Longer
+Each model takes a limited number of characters in one request (for example 2,000 on Deepgram, 500 on Qwen3-TTS). Longer
 text is split at sentence ends, spoken piece by piece and joined into one file. Splitting works for
 **MP3** and **WAV**. For the other formats, a text that is too long fails with a message saying so:
 choose MP3 or WAV, or shorten the text.
@@ -150,6 +167,7 @@ enter your price under **Advanced → Price per 1,000 characters**, and the esti
 | Deepgram Flux                      | $0.045                          |
 | Deepgram Aura-2                    | $0.03                           |
 | Deepgram Aura                      | $0.015                          |
+| Qwen3-TTS (local)                  | Free                            |
 
 ## Checks and quality control
 

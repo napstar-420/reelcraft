@@ -4,6 +4,7 @@ import type {
   JobStatus,
   ModelCapabilities,
   Modality,
+  ModelDownload,
   OutputDef,
   PronunciationDictionaryListDto,
   TimingMap,
@@ -18,6 +19,8 @@ export interface ModelInfo {
   capabilities: ModelCapabilities;
   supportedReasoningEfforts?: string[];
   defaultReasoningEffort?: string;
+  /** Models that run on this computer: whether they have been downloaded. */
+  download?: ModelDownload;
 }
 
 export interface ProviderRequest {

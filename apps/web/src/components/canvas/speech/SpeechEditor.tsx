@@ -23,8 +23,10 @@ import { SpeechPreview } from './SpeechPreview';
 import { SpeechSettingField } from './SpeechSettingField';
 import { VoicePicker } from './VoicePicker';
 import {
+  anyDownloading,
   formatUsd,
   groupFormats,
+  needsDownload,
   nextSpeechPin,
   nextSpeechPinForProvider,
   speechOptionsOf,
@@ -57,6 +59,8 @@ export function SpeechEditor({
     queryKey: ['provider-models', provider],
     queryFn: () => api.listModelsForProvider(provider),
     enabled: !!provider,
+    // A model being downloaded changes under us: follow its progress.
+    refetchInterval: (query) => (anyDownloading(query.state.data) ? 1000 : false),
   });
   const [choosing, setChoosing] = useState(false);
   const speechModels = models.data?.filter((m) => m.modalities.includes('audio'));
@@ -167,7 +171,7 @@ export function SpeechEditor({
         </p>
       )}
 
-      {model && options && (
+      {model && options && !needsDownload(model) && (
         <>
           {options.voices === 'library' && (
             <div className="flex flex-col gap-1.5">

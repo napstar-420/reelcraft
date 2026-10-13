@@ -7,6 +7,8 @@ import { ModelCacheService } from './openrouter/model-cache.service';
 import { ElevenLabsAdapter } from './elevenlabs/elevenlabs.adapter';
 import { FalAdapter } from './fal/fal.adapter';
 import { DeepgramAdapter } from './deepgram/deepgram.adapter';
+import { QwenTtsAdapter } from './qwen/qwen.adapter';
+import { QwenTtsController } from './qwen/qwen.controller';
 import { DeepgramInboxService } from './deepgram/deepgram-inbox.service';
 import { DeepgramController } from './deepgram/deepgram.controller';
 import { DbModule } from '../db/db.module';
@@ -40,6 +42,7 @@ import { ChatgptProviderAdapter } from './chatgpt/chatgpt-provider.adapter';
     ElevenLabsAdapter,
     FalAdapter,
     DeepgramAdapter,
+    QwenTtsAdapter,
     DeepgramInboxService,
     CodexAppServerClient,
     CodexJobLauncher,
@@ -81,7 +84,7 @@ import { ChatgptProviderAdapter } from './chatgpt/chatgpt-provider.adapter';
       ) => new CodexProviderAdapter(config, models, launcher, readiness, inputs),
     },
   ],
-  controllers: [DeepgramController],
+  controllers: [DeepgramController, QwenTtsController],
   exports: [
     SettingsKeyProvider,
     KEY_PROVIDER,
@@ -96,6 +99,7 @@ import { ChatgptProviderAdapter } from './chatgpt/chatgpt-provider.adapter';
     ElevenLabsAdapter,
     FalAdapter,
     DeepgramAdapter,
+    QwenTtsAdapter,
     CodexProviderAdapter,
     ChatgptProviderAdapter,
   ],
@@ -108,6 +112,7 @@ export class ProviderModule implements OnModuleInit {
     private readonly elevenlabs: ElevenLabsAdapter,
     private readonly fal: FalAdapter,
     private readonly deepgram: DeepgramAdapter,
+    private readonly qwenTts: QwenTtsAdapter,
     private readonly codex: CodexProviderAdapter,
     private readonly chatgpt: ChatgptProviderAdapter,
     private readonly settings: SettingsService,
@@ -128,6 +133,7 @@ export class ProviderModule implements OnModuleInit {
     this.registry.register(this.elevenlabs);
     this.registry.register(this.fal);
     this.registry.register(this.deepgram);
+    this.registry.register(this.qwenTts);
     this.registry.register(this.codex);
     this.registry.register(this.chatgpt);
   }

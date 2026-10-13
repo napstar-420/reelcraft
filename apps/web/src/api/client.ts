@@ -15,6 +15,7 @@ import type {
   StartAssistantTurnDto,
   UpdateAssistantSessionDto,
   BrowserOsSettingsDto,
+  QwenTtsSettingsDto,
   CodexLoginDto,
   CodexStatusDto,
   ConnectionTestDto,
@@ -44,6 +45,7 @@ import type {
   CapabilityDto,
   FlowAccountsDto,
   ResolveCapabilityResponseDto,
+  ModelDownload,
   ModelInfoDto,
   SaveTimelineDraftDto,
   TimelineCheckResponseDto,
@@ -535,6 +537,31 @@ export const api = {
     }),
   testBrowserOs: (url?: string) =>
     request<ConnectionTestDto>('/settings/browser-os/test', {
+      method: 'POST',
+      body: JSON.stringify(url ? { url } : {}),
+    }),
+  downloadLocalModel: (modelId: string) =>
+    request<ModelDownload>('/qwen-tts/models/download', {
+      method: 'POST',
+      body: JSON.stringify({ modelId }),
+    }),
+  cancelLocalModel: (modelId: string) =>
+    request<ModelDownload>('/qwen-tts/models/cancel', {
+      method: 'POST',
+      body: JSON.stringify({ modelId }),
+    }),
+  deleteLocalModel: (modelId: string) =>
+    request<ModelDownload>('/qwen-tts/models/delete', {
+      method: 'POST',
+      body: JSON.stringify({ modelId }),
+    }),
+  saveQwenTts: (url: string) =>
+    request<QwenTtsSettingsDto>('/settings/qwen-tts', {
+      method: 'PUT',
+      body: JSON.stringify({ url }),
+    }),
+  testQwenTts: (url?: string) =>
+    request<ConnectionTestDto>('/settings/qwen-tts/test', {
       method: 'POST',
       body: JSON.stringify(url ? { url } : {}),
     }),

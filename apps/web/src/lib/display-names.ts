@@ -16,6 +16,7 @@ const PROVIDER_NAMES: Record<string, string> = {
   fal: 'fal',
   elevenlabs: 'ElevenLabs',
   deepgram: 'Deepgram',
+  'qwen-tts': 'Qwen3-TTS (local)',
   fake: 'Fake (test)',
 };
 

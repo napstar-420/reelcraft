@@ -4,6 +4,7 @@ import type {
   CodexStatusDto,
   ProviderKeyId,
   ProviderKeyStatusDto,
+  QwenTtsSettingsDto,
 } from '@reelcraft/shared';
 
 export const SETTINGS_KEY = ['settings'] as const;
@@ -42,6 +43,17 @@ export function browserOsSourceLabel(settings: BrowserOsSettingsDto): string {
       return 'Saved in Settings';
     case 'env':
       return 'From the container environment';
+    default:
+      return 'Default address';
+  }
+}
+
+export function qwenTtsSourceLabel(settings: QwenTtsSettingsDto): string {
+  switch (settings.source) {
+    case 'saved':
+      return 'Saved in Settings';
+    case 'env':
+      return 'From the container environment (QWEN_TTS_URL)';
     default:
       return 'Default address';
   }

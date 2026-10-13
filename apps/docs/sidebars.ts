@@ -13,7 +13,7 @@ const sidebars: SidebarsConfig = {
       type: 'category',
       label: 'Set up',
       collapsed: false,
-      items: ['provider-keys', 'browseros-neo', 'codex'],
+      items: ['provider-keys', 'qwen-tts', 'browseros-neo', 'codex'],
     },
     {
       type: 'category',

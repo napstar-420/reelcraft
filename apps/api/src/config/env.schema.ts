@@ -44,6 +44,8 @@ export const EnvSchema = z
     FAL_KEY: z.string().optional(),
     ELEVENLABS_API_KEY: z.string().optional(),
     DEEPGRAM_API_KEY: z.string().optional(),
+    /** Base address of a self-hosted Qwen3-TTS server (OpenAI-style `/v1/audio/speech`). */
+    QWEN_TTS_URL: z.string().url().optional(),
     PUBLIC_API_BASE_URL: z.string().url().optional(),
     DEEPGRAM_CALLBACK_SECRET: z.string().min(32).optional(),
 
