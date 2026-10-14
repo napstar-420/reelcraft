@@ -62,15 +62,16 @@ describe('approval review logic', () => {
   });
 
   it('recognizes when polling has concurrently resolved the approval', () => {
-    expect(
-      isApprovalStillOpen('stage-1', { state: 'PAUSED_APPROVAL', cursorStageKey: 'stage-1' }),
-    ).toBe(true);
-    expect(isApprovalStillOpen('stage-1', { state: 'RUNNING', cursorStageKey: 'stage-1' })).toBe(
-      false,
-    );
-    expect(
-      isApprovalStillOpen('stage-1', { state: 'PAUSED_APPROVAL', cursorStageKey: 'stage-2' }),
-    ).toBe(false);
+    const executions = [
+      { stageKey: 'stage-1', waiting: 'approval' },
+      { stageKey: 'stage-2', waiting: null },
+    ];
+    const parked = { state: 'PAUSED_APPROVAL', stageExecutions: executions };
+    expect(isApprovalStillOpen('stage-1', parked)).toBe(true);
+    expect(isApprovalStillOpen('stage-1', { ...parked, state: 'RUNNING' })).toBe(false);
+    expect(isApprovalStillOpen('stage-2', parked)).toBe(false);
+    // A run parked on an input wait can still hold an approval to answer.
+    expect(isApprovalStillOpen('stage-1', { ...parked, state: 'PAUSED_INPUT' })).toBe(true);
   });
 
   it('gives conflicts a useful message and preserves ordinary errors', () => {

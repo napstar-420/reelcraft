@@ -16,7 +16,7 @@ import {
 import type { RetryItems, RetryScope } from '@reelcraft/shared';
 import { api } from '../api/client';
 import { useRun } from '../hooks/useRun';
-import { formatRunDuration } from './runs-page.logic';
+import { formatRunDuration, runningNow } from './runs-page.logic';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -41,7 +41,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { runStateTone, stageExecutionStateTone } from '@/lib/status';
-import { isRunActionAllowed } from '@/lib/run-action-policy';
+import { canAnswerWaits, isRunActionAllowed } from '@/lib/run-action-policy';
 import { describeRunActionError } from '@/lib/describe-run-action-error';
 import { ApprovalReviewSheet } from '@/components/runs/approval-review-sheet';
 import { RaiseBudgetDialog } from '@/components/runs/raise-budget-dialog';
@@ -206,6 +206,11 @@ export function RunPage() {
               Run {run.id}
             </h1>
             <StatusBadge tone={runStateTone(run.state)} label={run.state} />
+            {runningNow(run).length > 0 ? (
+              <span className="text-sm text-muted-foreground">
+                Running now: {runningNow(run).join(', ')}
+              </span>
+            ) : null}
           </div>
           <div className="flex items-center gap-2">
             {canRerun ? (
@@ -364,14 +369,14 @@ export function RunPage() {
                 )}
               </div>
               <div className="flex items-center gap-2">
-                {run.state === 'PAUSED_APPROVAL' && run.cursorStageKey === se.stageKey ? (
+                {isApprovalStillOpen(se.stageKey, run) ? (
                   <Button size="sm" onClick={() => setReviewStageKey(se.stageKey)}>
                     <Eye /> Review output
                   </Button>
                 ) : null}
                 {se.interaction === 'form' &&
-                run.state === 'PAUSED_INPUT' &&
-                run.cursorStageKey === se.stageKey ? (
+                canAnswerWaits(run.state) &&
+                se.waiting === 'input' ? (
                   <Button size="sm" onClick={() => setFormInputStageKey(se.stageKey)}>
                     Provide input
                   </Button>

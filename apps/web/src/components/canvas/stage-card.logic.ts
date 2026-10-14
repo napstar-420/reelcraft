@@ -11,6 +11,8 @@ import type {
 import { stageExecutionStateTone, type StatusTone } from '../../lib/status';
 import { describeSeedStop } from '../../pages/canvas-run.logic';
 import { formatRunDuration } from '../../pages/runs-page.logic';
+import { canAnswerWaits } from '../../lib/run-action-policy';
+import { ancestorsOf, stageDependencies } from '../../lib/stage-deps';
 
 /** Where a slot or context value comes from, as short as it can be said
  * ("input.topic", "memory.script", "prev"). Shown on stage cards. */
@@ -171,7 +173,7 @@ const NODE_STATE_LABELS: Record<StageExecutionState, string> = {
  * run yet, or the stage was added after it). */
 export function nodeRunStatus(
   execution: StageExecutionDto | undefined,
-  run: Pick<RunDetailDto, 'id' | 'state' | 'cursorStageKey'> | undefined,
+  run: Pick<RunDetailDto, 'id' | 'state'> | undefined,
 ): NodeRunStatus | undefined {
   if (!execution) return undefined;
   const parts: string[] = [];
@@ -185,10 +187,8 @@ export function nodeRunStatus(
     tone: stageExecutionStateTone(execution.state),
     label: NODE_STATE_LABELS[execution.state],
     meta: parts.join(' · '),
-    reviewable:
-      run?.state === 'PAUSED_APPROVAL' &&
-      run.cursorStageKey === execution.stageKey &&
-      execution.state === 'awaiting_approval',
+    // `waiting` also covers an item-mode approval, which leaves the stage `running`.
+    reviewable: run !== undefined && canAnswerWaits(run.state) && execution.waiting === 'approval',
     ...(run &&
       execution.interaction === 'timeline_editor' &&
       execution.state === 'awaiting_input' && {
@@ -197,25 +197,27 @@ export function nodeRunStatus(
   };
 }
 
-/** The first stage before `stageKey` that "Run this stage" would have to run
- * again, because the active run did not finish it. A hint only: the server
- * decides (it also compares the stage definitions), so this never blocks. */
+/** The first stage `stageKey` waits for that "Run this stage" would have to run
+ * again, because the active run did not finish it. Only stages it waits for
+ * count: a sibling branch that is still running or waiting is no reason to
+ * re-run anything. A hint only: the server decides (it also compares the stage
+ * definitions), so this never blocks. */
 export function upstreamBlocker(
-  run: Pick<RunDetailDto, 'state' | 'cursorStageKey' | 'stageExecutions'> | undefined,
-  graph: Pick<StageDef, 'key'>[],
+  run: Pick<RunDetailDto, 'stageExecutions'> | undefined,
+  graph: StageDef[],
   stageKey: string,
 ): SeedStop | undefined {
   if (!run) return undefined;
+  const upstream = ancestorsOf(stageDependencies(graph), stageKey);
   for (const { key } of graph) {
     if (key === stageKey) return undefined;
+    if (!upstream.has(key)) continue;
     const execution = run.stageExecutions.find((e) => e.stageKey === key);
     if (!execution) return { stageKey: key, reason: 'not_in_source' };
     if (execution.state === 'passed') continue;
-    // An item-mode approval leaves the stage `running`; only the run knows.
-    const waitingForReview =
-      execution.state === 'awaiting_approval' ||
-      (run.state === 'PAUSED_APPROVAL' && run.cursorStageKey === key);
-    if (waitingForReview) return { stageKey: key, reason: 'awaiting_approval' };
+    if (execution.state === 'awaiting_approval' || execution.waiting === 'approval') {
+      return { stageKey: key, reason: 'awaiting_approval' };
+    }
     if (execution.state === 'awaiting_input') return { stageKey: key, reason: 'awaiting_input' };
     if (execution.state === 'failed') return { stageKey: key, reason: 'failed' };
     if (execution.state === 'cancelled') return { stageKey: key, reason: 'cancelled' };

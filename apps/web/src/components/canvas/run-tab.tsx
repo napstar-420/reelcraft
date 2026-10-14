@@ -15,6 +15,7 @@ import { runStageTitle, upstreamBlocker } from '@/components/canvas/stage-card.l
 import { RunLaunchDialog } from '@/pages/RunLaunchDialog';
 import { formatRunDuration } from '@/pages/runs-page.logic';
 import { isRunActionAllowed } from '@/lib/run-action-policy';
+import { isApprovalStillOpen } from '@/pages/approval-review.logic';
 import { runStateTone, stageExecutionStateTone, toneDotClassName } from '@/lib/status';
 import { formatCapUsd } from '@/lib/format-cap';
 
@@ -241,7 +242,7 @@ export function RunTab({
                     Reused
                   </Badge>
                 )}
-                {run.state === 'PAUSED_APPROVAL' && run.cursorStageKey === stage.key && (
+                {isApprovalStillOpen(stage.key, run) && (
                   <Button size="xs" onClick={() => actions.setApprovalStageKey(stage.key)}>
                     Review output
                   </Button>

@@ -145,9 +145,7 @@ describe('nodeRunStatus', () => {
   });
 
   it('reports cost and duration for a finished stage', () => {
-    expect(
-      nodeRunStatus(execution(), { id: 'r1', state: 'COMPLETED', cursorStageKey: null }),
-    ).toMatchObject({
+    expect(nodeRunStatus(execution(), { id: 'r1', state: 'COMPLETED' })).toMatchObject({
       state: 'passed',
       tone: 'success',
       label: 'Passed',
@@ -162,19 +160,26 @@ describe('nodeRunStatus', () => {
     ).toBe('');
   });
 
-  it('is reviewable only for the stage the run is paused on', () => {
-    const waiting = execution({ state: 'awaiting_approval', endedAt: null });
-    const paused = { id: 'r1', state: 'PAUSED_APPROVAL', cursorStageKey: 's' } as const;
+  it('is reviewable only for a stage with an open approval, in either paused state', () => {
+    const waiting = execution({ state: 'awaiting_approval', endedAt: null, waiting: 'approval' });
+    const paused = { id: 'r1', state: 'PAUSED_APPROVAL' } as const;
     expect(nodeRunStatus(waiting, paused)).toMatchObject({
       label: 'Needs approval',
       tone: 'warning',
       reviewable: true,
     });
-    expect(nodeRunStatus(waiting, { ...paused, cursorStageKey: 'other' })?.reviewable).toBe(false);
+    expect(nodeRunStatus(waiting, { ...paused, state: 'PAUSED_INPUT' })?.reviewable).toBe(true);
+    expect(nodeRunStatus(waiting, { ...paused, state: 'RUNNING' })?.reviewable).toBe(false);
+    expect(nodeRunStatus(execution({ state: 'running' }), paused)?.reviewable).toBe(false);
+  });
+
+  it('is reviewable for one waiting item of a stage that is still running', () => {
+    const item = execution({ state: 'running', endedAt: null, waiting: 'approval' });
+    expect(nodeRunStatus(item, { id: 'r1', state: 'PAUSED_APPROVAL' })?.reviewable).toBe(true);
   });
 
   it('links a stage waiting on the timeline editor to it', () => {
-    const run = { id: 'r1', state: 'PAUSED_INPUT', cursorStageKey: 's' } as const;
+    const run = { id: 'r1', state: 'PAUSED_INPUT' } as const;
     const editing = execution({ state: 'awaiting_input', interaction: 'timeline_editor' });
     expect(nodeRunStatus(editing, run)?.editorHref).toBe('/runs/r1/stages/s/edit');
     expect(nodeRunStatus(execution({ state: 'awaiting_input' }), run)?.editorHref).toBeUndefined();
@@ -193,17 +198,30 @@ describe('nodeRunStatus', () => {
 });
 
 describe('upstreamBlocker', () => {
-  const graph = [{ key: 'a' }, { key: 'b' }, { key: 'c' }];
+  const node = (key: string, dependsOn?: string[]): StageDef =>
+    ({
+      key,
+      label: key,
+      capability: 'text.generate',
+      config: {},
+      slots: {},
+      context: {},
+      output: { kind: 'text' },
+      checks: [],
+      ...(dependsOn ? { dependsOn } : {}),
+    }) as StageDef;
+  const graph = [node('a'), node('b'), node('c')];
   function runWith(
     states: Record<string, StageExecutionDto['state']>,
-    patch: Partial<Pick<RunDetailDto, 'state' | 'cursorStageKey'>> = {},
+    waiting: Record<string, StageExecutionDto['waiting']> = {},
   ) {
     return {
-      state: 'COMPLETED',
-      cursorStageKey: null,
-      ...patch,
-      stageExecutions: Object.entries(states).map(([stageKey, state]) => ({ stageKey, state })),
-    } as Pick<RunDetailDto, 'state' | 'cursorStageKey' | 'stageExecutions'>;
+      stageExecutions: Object.entries(states).map(([stageKey, state]) => ({
+        stageKey,
+        state,
+        waiting: waiting[stageKey] ?? null,
+      })),
+    } as Pick<RunDetailDto, 'stageExecutions'>;
   }
 
   it('has no blocker without a run, for the first stage, or when everything before passed', () => {
@@ -235,13 +253,20 @@ describe('upstreamBlocker', () => {
     expect(blocked({ a: 'passed' })).toEqual({ stageKey: 'b', reason: 'not_in_source' });
   });
 
-  it('treats a running stage the run is parked on for approval as awaiting approval', () => {
-    const run = runWith(
-      { a: 'running', b: 'pending' },
-      { state: 'PAUSED_APPROVAL', cursorStageKey: 'a' },
-    );
+  it('treats a running stage with an open approval wait as awaiting approval', () => {
+    const run = runWith({ a: 'running', b: 'pending' }, { a: 'approval' });
     expect(upstreamBlocker(run, graph, 'c')).toEqual({
       stageKey: 'a',
+      reason: 'awaiting_approval',
+    });
+  });
+
+  it('only counts stages it waits for, not a sibling branch', () => {
+    const branches = [node('a'), node('b', ['a']), node('c', ['a'])];
+    const run = runWith({ a: 'passed', b: 'awaiting_approval', c: 'pending' }, { b: 'approval' });
+    expect(upstreamBlocker(run, branches, 'c')).toBeUndefined();
+    expect(upstreamBlocker(run, [...branches, node('d', ['b', 'c'])], 'd')).toEqual({
+      stageKey: 'b',
       reason: 'awaiting_approval',
     });
   });

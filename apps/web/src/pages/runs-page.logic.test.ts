@@ -4,6 +4,7 @@ import {
   runsListSearchParams,
   formatRunDuration,
   RUN_STATES,
+  runningNow,
 } from './runs-page.logic';
 
 describe('parseRunsListSearchParams', () => {
@@ -114,5 +115,21 @@ describe('formatRunDuration', () => {
 
   it('falls back to an em dash for a negative duration', () => {
     expect(formatRunDuration('2026-01-01T00:01:00.000Z', '2026-01-01T00:00:00.000Z')).toBe('—');
+  });
+});
+
+describe('runningNow', () => {
+  const executions = [
+    { state: 'passed', label: 'A' },
+    { state: 'running', label: 'B' },
+    { state: 'running', label: 'C' },
+  ];
+
+  it('lists every stage executing while the run is running', () => {
+    expect(runningNow({ state: 'RUNNING', stageExecutions: executions })).toEqual(['B', 'C']);
+  });
+
+  it('is empty once the run is parked or finished', () => {
+    expect(runningNow({ state: 'PAUSED_APPROVAL', stageExecutions: executions })).toEqual([]);
   });
 });

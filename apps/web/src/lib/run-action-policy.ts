@@ -42,6 +42,12 @@ export const RUN_ACTION_ALLOWED_STATES = {
 
 export type RunAction = keyof typeof RUN_ACTION_ALLOWED_STATES;
 
+/** A run waiting on people parks in one of these states, whichever kind of wait
+ * is open; a person can answer any open wait in either. */
+export function canAnswerWaits(state: string): boolean {
+  return state === 'PAUSED_APPROVAL' || state === 'PAUSED_INPUT';
+}
+
 export function isRunActionAllowed(action: RunAction, state: RunState): boolean {
   return (RUN_ACTION_ALLOWED_STATES[action] as readonly RunState[]).includes(state);
 }

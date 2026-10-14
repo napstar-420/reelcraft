@@ -90,3 +90,13 @@ export function formatRunDuration(startedAt: string, endedAt: string | null): st
   });
   return parts.length > 0 ? parts.join(', ') : '0 minutes';
 }
+
+/** Labels of the stages executing right now. A run can run
+ * several at once when stages do not wait for each other. */
+export function runningNow(run: {
+  state: string;
+  stageExecutions: Array<{ state: string; label: string }>;
+}): string[] {
+  if (run.state !== 'RUNNING') return [];
+  return run.stageExecutions.filter((e) => e.state === 'running').map((e) => e.label);
+}
