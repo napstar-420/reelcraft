@@ -153,7 +153,7 @@ No migration.
 5. `fix(api)`: gate human actions on open waits not the cursor; `countOpenWaits`, `pausedStateFor`, resume precondition; `StageExecutionDto.waiting`.
 6. `feat(api)`: `untilStageKey` runs ancestors only; seed comparison ignores `dependsOn`.
 7. `feat(web)`: layered canvas, "Runs after", stage-output binding, cursor-free run status.
-8. `docs`: spec amendments (below), `apps/docs`, assistant guide, ADR-0013.
+8. `docs`: spec amendments (below), `apps/docs`, assistant guide, ADR-0014.
 
 ## Tests
 
@@ -177,7 +177,7 @@ Saved graphs without `dependsOn` are chains: identical behaviour, no data migrat
 
 ## Spec amendments (done in the docs commit)
 
-§3.5/Appendix A (`dependsOn`); §6.1 (`{from:'stage'}`); §6.3 (writers of one key must be dependency-ordered); §11.1 (concurrency is real within a run; row lock carries it); §12.1/§12.4 (several open waits; cursor informational; approve/input allowed in either paused state with an open wait; resume precondition); §13.4 (scheduler topology, drain; remove "Within a run, nothing is parallel" line 1221 and "There is no per-item function" line 1213); §14/§14.2 (document shipped `iterate.concurrency`); §15.2 ("later stage in array order" stays valid because the array is a topological order); §16.1 (ordering invariant = every dependency points earlier); §16.2/16.3 (new rules); §25 (worked diamond example); §26 (decisions: waves, drain, no semaphores). **ADR-0013** "Dependency-derived stage scheduling in waves".
+§3.5/Appendix A (`dependsOn`); §6.1 (`{from:'stage'}`); §6.3 (writers of one key must be dependency-ordered); §11.1 (concurrency is real within a run; row lock carries it); §12.1/§12.4 (several open waits; cursor informational; approve/input allowed in either paused state with an open wait; resume precondition); §13.4 (scheduler topology, drain; remove "Within a run, nothing is parallel" line 1221 and "There is no per-item function" line 1213); §14/§14.2 (document shipped `iterate.concurrency`); §15.2 ("later stage in array order" stays valid because the array is a topological order); §16.1 (ordering invariant = every dependency points earlier); §16.2/16.3 (new rules); §25 (worked diamond example); §26 (decisions: waves, drain, no semaphores). **ADR-0014** "Dependency-derived stage scheduling in waves".
 
 Assistant guide: `guide.ts:25,355` (parallel via `dependsOn`), `:60-61` (prev vs stage), `:357` as needed; `guide-troubleshooting.ts` messages; recipe "parallel audio and video branches with a join". User docs (stable slugs): `blueprints/connecting-stages.md`, `runs/run-page.md`, `runs/when-a-run-needs-you.md`, `reference/run-statuses.md`, `reference/validation-messages.md`, `concepts/how-it-works.md`; new `blueprints/parallel-stages.md`.
 

@@ -178,7 +178,7 @@ Deferred; the gap is narrowed: `source` is the discriminator a future `InputDef.
 
 **User guide (stable slugs):** `channels/characters.md` (remove `:61`; role sources, characters made during a run, promotion); `blueprints/connecting-stages.md` (Cast binding); `blueprints/quality-control.md` (Compare with character references); `runs/run-page.md` (Cast panel); `blueprints/sharing.md` (several roles); `concepts/glossary.md` (run role, cast).
 
-**Spec:** §3.4 `roles` comment; §6.1 add `cast`; §16.2 remove "more than one role", add cast/run-role rules; §16.3 new warnings; §18.1 record explicit selection replaced `ReferencePolicy`; §18.5 rewrite "Many characters: explicit budget"; §18.6 resolved except roles-as-inputs; new §18.7 "Run roles"; §28 revision. **ADR-0015** "Multi-character reference budget: explicit, validated, no automatic degradation".
+**Spec:** §3.4 `roles` comment; §6.1 add `cast`; §16.2 remove "more than one role", add cast/run-role rules; §16.3 new warnings; §18.1 record explicit selection replaced `ReferencePolicy`; §18.5 rewrite "Many characters: explicit budget"; §18.6 resolved except roles-as-inputs; new §18.7 "Run roles"; §28 revision. **ADR-0016** "Multi-character reference budget: explicit, validated, no automatic degradation".
 
 **Packages:** `package-export.service.ts:237,305` iterate over all `source:'channel'` roles, one character slot each (`character-<roleKey>` already keys by role, `:342`); `launch`/`run` roles export as-is; install fills N slots (`package-install.service.ts`); `PACKAGE_FORMAT_VERSION` stays 1 (`slots[]` already an array).
 
@@ -195,7 +195,7 @@ Deferred; the gap is narrowed: `source` is the discriminator a future `InputDef.
 9. `feat(api)`: promote a run-generated character to the channel.
 10. `feat(api)`: export/import packages with several roles.
 11. `feat(web)`: roles list, cast binding, run cast panel, promotion.
-12. `docs`: assistant guide + recipe, `apps/docs`, spec, ADR-0015.
+12. `docs`: assistant guide + recipe, `apps/docs`, spec, ADR-0016.
 13. `test(api)`: e2e for casts, run roles, seeding, promotion.
 
 ## Tests

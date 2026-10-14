@@ -139,15 +139,15 @@ and shipping fonts/LUTs in Phase 17 are the only ways to trigger one.
    (section 8).
 9. **Spec upkeep.** The spec is already stale in places (§10.1/§10.3 video QC, §11.1,
    §13.4, §14). Each phase's docs commit amends only its own sections and adds a §28
-   revision entry; ADRs 0013–0017 are allocated below.
+   revision entry; ADRs 0014–0018 are allocated below.
 10. **Docs/guide.** User-facing changes update `apps/docs` (exact UI labels, stable slugs —
     `apps/web/src/lib/docs-url.ts` links to them) and the assistant guide in the **same**
     PR. `apps/docs` installs with `pnpm install --ignore-workspace`.
 
-ADR allocation: **0013** dependency-derived scheduling in waves (11); **0014** sub-workflows
-as child runs (16); **0015** multi-character reference budget: explicit, no auto-degradation (15);
-**0016** persistent channel memory (14); **0017** framesheet QC (13). Numbers follow the
-order phases land; renumber if the order changes.
+ADR allocation (0013 went to managed Qwen3-TTS on main): **0014** dependency-derived scheduling in
+waves (11, written); **0015** sub-workflows as child runs (16); **0016** multi-character reference
+budget: explicit, no auto-degradation (15); **0017** persistent channel memory (14); **0018**
+framesheet QC (13). Numbers follow the order phases land; renumber if the order changes.
 
 ## 7. Definition of done (every phase)
 

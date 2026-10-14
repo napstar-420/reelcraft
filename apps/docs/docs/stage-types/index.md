@@ -42,4 +42,7 @@ A typical video blueprint chains these types:
 5. **Generate Text** (as `timeline`) or **Human Timeline Edit** arranges everything on a timeline.
 6. **Render Timeline**, or **Concatenate Video**, makes the finished video.
 
+Stages that don't need each other, such as the voice-over and the visuals, can run at the same time: see
+[Parallel stages](../blueprints/parallel-stages.md).
+
 See [Assembly](../video/assembly.md).

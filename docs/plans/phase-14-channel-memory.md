@@ -191,7 +191,7 @@ Memory values are **never exported**. `persist` and `channelMemory` refs travel 
 8. `feat(web)`: Memory tab, proposals review, persist editor, run memory panel.
 9. `feat(api)`: assistant tool, guide topic, series recipe.
 10. `feat(api)`: keep memory out of packages; list read keys in the manifest.
-11. `docs`: `apps/docs/docs/channels/memory.md` (new slug), `blueprints/connecting-stages.md`, `runs/run-page.md`, `blueprints/sharing.md`, glossary; spec new §3.14 `channel_memory`, §6.7 "Channel Memory", §6.1 Ref, §15.1 (refresh trigger if adopted), §16.2/16.3, §19 (pinned by `memory_as_of_seq`), §26.3, §28; **ADR-0016** "Persistent channel memory: declared persist, commit on completion, FTS not vectors".
+11. `docs`: `apps/docs/docs/channels/memory.md` (new slug), `blueprints/connecting-stages.md`, `runs/run-page.md`, `blueprints/sharing.md`, glossary; spec new §3.14 `channel_memory`, §6.7 "Channel Memory", §6.1 Ref, §15.1 (refresh trigger if adopted), §16.2/16.3, §19 (pinned by `memory_as_of_seq`), §26.3, §28; **ADR-0017** "Persistent channel memory: declared persist, commit on completion, FTS not vectors".
 12. _(Optional, Q7)_ `feat(api)`: offer human rejection notes as pending lessons — `commitRun` turns this run's `stage_attempt.review_note`s into `pending` `lessons.review#n` entries (type `preference`, tags `[capability, stageKey]`). Deterministic, no LLM, always human-reviewed.
 
 ## Tests

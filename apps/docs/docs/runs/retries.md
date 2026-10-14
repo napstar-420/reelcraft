@@ -20,11 +20,11 @@ Use this when one stage failed, or when you don't like what it made and want to 
    failed shows **Retry**.
 2. Open its menu and choose how much to redo:
 
-   | Choice                              | What it does                                                    |
-   | ----------------------------------- | --------------------------------------------------------------- |
-   | **With stages that use its output** | Redoes this stage and the later stages that use its output      |
-   | **Only this stage**                 | Redoes just this stage. Later stages keep their current outputs |
-   | **This and all later stages**       | Redoes this stage and every stage after it                      |
+   | Choice                              | What it does                                                                                                                                                             |
+   | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+   | **With stages that use its output** | Redoes this stage and the later stages that use its output                                                                                                               |
+   | **Only this stage**                 | Redoes just this stage. Later stages keep their current outputs                                                                                                          |
+   | **This and all later stages**       | Redoes this stage and every stage that waits for it, directly or through others. Stages on other [parallel branches](../blueprints/parallel-stages.md) keep their output |
 
    A stage that repeats for each item, such as one that makes an image for every scene, and that has
    failed items also offers **Only the failed items**. It redoes just those items, each with its full

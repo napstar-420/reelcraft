@@ -78,7 +78,7 @@ Scenes -> shots is an outer stage that iterates `over` scenes with capability `b
 4. `run/settled` emission; cancel/pause propagation; child mutation guard; runs-list filter.
 5. Package export/import bundling.
 6. Web: palette "Run another blueprint" (blueprint and version picker; slots auto-listed from child inputs), Sub-runs panel, child breadcrumb.
-7. Remove `iterate.groupKey`; loop recipes; guide and docs; ADR-0014.
+7. Remove `iterate.groupKey`; loop recipes; guide and docs; ADR-0015.
 
 ## Tests
 

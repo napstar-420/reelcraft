@@ -136,7 +136,7 @@ Sync compute capability: slot `source` (`media.video`|`media.video_list`), confi
 4. `feat(api)`: judge video from framesheets in QC (envelope, prompt, runner, validator).
 5. `feat(api)`: media analysis probe and black/frozen/silence/loudness checks.
 6. `feat(web)`: show verdicts and framesheets on approval/attempts; framesheet QC controls.
-7. `docs`: amend spec §10; user guide; assistant guide; ADR-0017.
+7. `docs`: amend spec §10; user guide; assistant guide; ADR-0018.
 8. `feat(api)`: `media.framesheet` capability (optional within the PR).
 
 ## Tests
