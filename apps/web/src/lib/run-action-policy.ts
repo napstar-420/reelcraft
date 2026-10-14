@@ -26,7 +26,7 @@ export const RUN_ACTION_ALLOWED_STATES = {
     'FAILED',
     'COMPLETED',
   ],
-  submit_input: ['PAUSED_INPUT'],
+  submit_input: ['PAUSED_APPROVAL', 'PAUSED_INPUT'],
   resume: ['PAUSED_BUDGET', 'PAUSED_MANUAL', 'PAUSED_QUOTA', 'FAILED'],
   cancel: [
     'CREATED',

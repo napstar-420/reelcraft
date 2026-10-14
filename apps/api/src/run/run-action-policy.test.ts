@@ -9,6 +9,9 @@ describe('RunActionPolicy', () => {
   it('owns the action matrix for approval, input, resume, and cancellation', () => {
     expect(policy.isAllowed('PAUSED_APPROVAL', 'approve')).toBe(true);
     expect(policy.isAllowed('PAUSED_INPUT', 'submit_input')).toBe(true);
+    // A run holding both kinds of wait parks in one state; either accepts any answer.
+    expect(policy.isAllowed('PAUSED_INPUT', 'approve')).toBe(true);
+    expect(policy.isAllowed('PAUSED_APPROVAL', 'submit_input')).toBe(true);
     expect(policy.isAllowed('FAILED', 'resume')).toBe(true);
     expect(policy.isAllowed('PAUSED_APPROVAL', 'resume')).toBe(false);
     expect(policy.isAllowed('CANCELLED', 'cancel')).toBe(false);

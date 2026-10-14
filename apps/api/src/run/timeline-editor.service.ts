@@ -60,6 +60,10 @@ type SourceRow = {
   data?: unknown;
 };
 
+/** Run states in which a person can answer a wait: which one it is depends on
+ * which kind of wait is open, and a run can hold several at once. */
+const HUMAN_WAIT_STATES = ['PAUSED_APPROVAL', 'PAUSED_INPUT'] as const;
+
 @Injectable()
 export class TimelineEditorService {
   private readonly logger = new Logger(TimelineEditorService.name);
@@ -105,8 +109,7 @@ export class TimelineEditorService {
       checkResults: latestAttempt?.checkResults ?? [],
       readOnly:
         context.wait.resolvedAt !== null ||
-        context.run.state !== 'PAUSED_INPUT' ||
-        context.run.cursorStageKey !== stageKey,
+        !HUMAN_WAIT_STATES.includes(context.run.state as (typeof HUMAN_WAIT_STATES)[number]),
     };
   }
 
@@ -212,8 +215,7 @@ export class TimelineEditorService {
   private requireEditable(context: Context) {
     if (
       context.wait.resolvedAt ||
-      context.run.state !== 'PAUSED_INPUT' ||
-      context.run.cursorStageKey !== context.stage.key
+      !HUMAN_WAIT_STATES.includes(context.run.state as (typeof HUMAN_WAIT_STATES)[number])
     ) {
       throw new ConflictException('The timeline editor is no longer active');
     }

@@ -34,6 +34,11 @@ import { RunMutationService } from './run-mutation.service';
 import { RunWakeupDispatcher } from './run-wakeup-dispatcher.service';
 import { TimelineCheckService } from '../check/timeline-check.service';
 
+/** Run states in which a person can answer a wait. A run with several open
+ * waits parks in the state of the first kind (approval before input), so any
+ * wait can be answered in either. */
+const HUMAN_WAIT_STATES = ['PAUSED_APPROVAL', 'PAUSED_INPUT'] as const;
+
 @Injectable()
 export class HumanActionService {
   private readonly logger = new Logger(HumanActionService.name);
@@ -58,10 +63,10 @@ export class HumanActionService {
     const result = await this.mutation.withLockedRunMaybeWake(
       runId,
       'approve',
-      ['PAUSED_APPROVAL'],
+      HUMAN_WAIT_STATES,
       async (tx, lockedRun) => {
         await this.approveInTransaction(tx, runId, stageKey, lockedRun, itemIndex);
-        return { othersWaiting: (await this.waits.countOpenWaits(tx, runId)) > 0 };
+        return this.settleAnswer(tx, runId);
       },
       'run/resumed',
       (value) => !value.othersWaiting,
@@ -81,11 +86,6 @@ export class HumanActionService {
     lockedRun: typeof run.$inferSelect,
     itemIndex?: number,
   ): Promise<void> {
-    if (lockedRun.cursorStageKey !== stageKey) {
-      throw new ConflictException(
-        `Approval is waiting at ${lockedRun.cursorStageKey ?? 'no stage'}`,
-      );
-    }
     const { stage, execution } = await this.loadStageAndExecution(tx, lockedRun, stageKey);
 
     if (approvalModeOf(stage) === 'item') {
@@ -137,16 +137,11 @@ export class HumanActionService {
    * run. Releases the hold and resumes the run; the stage loop then judges
    * the stored output again (no regeneration, no attempt spent). */
   async retryQc(runId: string, stageKey: string, itemIndex?: number) {
-    const result = await this.mutation.withLockedRun(
+    const result = await this.mutation.withLockedRunMaybeWake(
       runId,
       'retry_qc',
-      ['PAUSED_APPROVAL'],
+      HUMAN_WAIT_STATES,
       async (tx, lockedRun) => {
-        if (lockedRun.cursorStageKey !== stageKey) {
-          throw new ConflictException(
-            `Approval is waiting at ${lockedRun.cursorStageKey ?? 'no stage'}`,
-          );
-        }
         const { stage, execution } = await this.loadStageAndExecution(tx, lockedRun, stageKey);
         const item =
           approvalModeOf(stage) === 'item'
@@ -176,14 +171,16 @@ export class HumanActionService {
             .where(eq(stageExecution.id, execution.id));
         }
         await this.waits.resolve(tx, execution.id, item?.id);
+        return this.settleAnswer(tx, runId);
       },
       'run/resumed',
+      (value) => !value.othersWaiting,
     );
     this.logger.log(
       { runId, stageKey, itemIndex, wakeupId: result.wakeupId, revision: result.revision },
       'qc retry requested',
     );
-    await this.dispatchBestEffort(result.wakeupId);
+    if (result.wakeupId) await this.dispatchBestEffort(result.wakeupId);
     return { accepted: true, revision: result.revision };
   }
 
@@ -399,9 +396,9 @@ export class HumanActionService {
     const result = await this.mutation.withLockedRunMaybeWake(
       runId,
       'reject',
-      ['PAUSED_APPROVAL'],
+      HUMAN_WAIT_STATES,
       async (tx, lockedRun) => {
-        if (lockedRun.revision !== claims.runRevision || lockedRun.cursorStageKey !== stageKey) {
+        if (lockedRun.revision !== claims.runRevision) {
           throw new ConflictException('The approval changed; request a new preview');
         }
         const { execution } = await this.loadStageAndExecution(tx, lockedRun, stageKey);
@@ -410,6 +407,7 @@ export class HumanActionService {
           : undefined;
         const pending = await this.pendingAttempt(tx, execution.id, pendingItem?.id);
         if (!pending) throw new ConflictException('No pending approval candidate exists');
+        await this.waits.requireOpen(tx, execution.id, 'approval', pendingItem?.id);
         await tx
           .update(stageAttempt)
           .set({
@@ -424,7 +422,7 @@ export class HumanActionService {
           closure: preview.closure,
           targetStageKey,
         });
-        return { othersWaiting: (await this.waits.countOpenWaits(tx, runId)) > 0 };
+        return this.settleAnswer(tx, runId);
       },
       'run/resumed',
       (value) => !value.othersWaiting,
@@ -451,7 +449,7 @@ export class HumanActionService {
     expectedDraftRevision?: number,
   ) {
     const context = await this.loadRunContext(runId, stageKey);
-    if (context.run.state !== 'PAUSED_INPUT' || context.run.cursorStageKey !== stageKey) {
+    if (!(HUMAN_WAIT_STATES as readonly string[]).includes(context.run.state)) {
       throw new ConflictException('The run is not waiting for input at this stage');
     }
     if (
@@ -490,12 +488,12 @@ export class HumanActionService {
       });
     }
 
-    const result = await this.mutation.withLockedRun(
+    const result = await this.mutation.withLockedRunMaybeWake(
       runId,
       'submit_input',
-      ['PAUSED_INPUT'],
+      HUMAN_WAIT_STATES,
       async (tx, lockedRun) => {
-        if (lockedRun.revision !== context.run.revision || lockedRun.cursorStageKey !== stageKey) {
+        if (lockedRun.revision !== context.run.revision) {
           throw new ConflictException('The input wait changed; submit again');
         }
         if (expectedDraftRevision !== undefined) {
@@ -525,14 +523,16 @@ export class HumanActionService {
           candidateData,
           evaluated,
         );
+        return this.settleAnswer(tx, runId);
       },
       'run/resumed',
+      (value) => !value.othersWaiting,
     );
     this.logger.log(
       { runId, stageKey, wakeupId: result.wakeupId, revision: result.revision },
       'human input submitted',
     );
-    await this.dispatchBestEffort(result.wakeupId);
+    if (result.wakeupId) await this.dispatchBestEffort(result.wakeupId);
     return { accepted: true, revision: result.revision };
   }
 
@@ -610,8 +610,7 @@ export class HumanActionService {
       if (
         !locked ||
         locked.revision !== runRow.revision ||
-        locked.state !== 'PAUSED_INPUT' ||
-        locked.cursorStageKey !== stage.key
+        !(HUMAN_WAIT_STATES as readonly string[]).includes(locked.state)
       ) {
         throw new ConflictException('The input wait changed; submit again');
       }
@@ -792,6 +791,16 @@ export class HumanActionService {
       .orderBy(desc(stageAttempt.attemptNo))
       .limit(1);
     return row;
+  }
+
+  /** After an answer: the run wakes only once no wait is left. While one
+   * remains it stays parked, in the state of the first kind still open, so the
+   * next answer is accepted in either paused state. */
+  private async settleAnswer(tx: Tx, runId: string): Promise<{ othersWaiting: boolean }> {
+    const state = await this.waits.pausedStateFor(tx, runId);
+    if (!state) return { othersWaiting: false };
+    await tx.update(run).set({ state }).where(eq(run.id, runId));
+    return { othersWaiting: true };
   }
 
   private async nextAttemptNo(tx: Tx, executionId: string): Promise<number> {

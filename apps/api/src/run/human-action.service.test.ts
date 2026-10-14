@@ -18,7 +18,7 @@ describe('HumanActionService', () => {
     const service = Object.assign(Object.create(HumanActionService.prototype) as object, {
       mutation,
       logger: new Logger(HumanActionService.name),
-      waits: { countOpenWaits: vi.fn().mockResolvedValue(0) },
+      waits: { pausedStateFor: vi.fn().mockResolvedValue(undefined) },
       dispatcher: { dispatch: vi.fn().mockResolvedValue(true) },
       approveInTransaction: vi.fn().mockResolvedValue(undefined),
     }) as unknown as HumanActionService;
@@ -28,7 +28,7 @@ describe('HumanActionService', () => {
     expect(mutation.withLockedRunMaybeWake).toHaveBeenCalledWith(
       'run-1',
       'approve',
-      ['PAUSED_APPROVAL'],
+      ['PAUSED_APPROVAL', 'PAUSED_INPUT'],
       expect.any(Function),
       'run/resumed',
       expect.any(Function),
@@ -42,23 +42,28 @@ describe('HumanActionService', () => {
     ).toHaveBeenCalledWith(tx, 'run-1', 'review', expect.any(Object), undefined);
   });
 
-  it('leaves the run paused while other items still wait for approval', async () => {
+  it('leaves the run paused while other waits are still open', async () => {
+    const setState = vi.fn().mockReturnValue({ where: vi.fn() });
+    const tx = { update: vi.fn().mockReturnValue({ set: setState }) };
     const mutation = {
       withLockedRunMaybeWake: vi.fn(async (_id, _action, _states, callback, _event, wake) => {
-        const value = await callback({}, { cursorStageKey: 'review' });
+        const value = await callback(tx, { cursorStageKey: 'review' });
         return { value, wakeupId: wake(value) ? 'wake-approval' : undefined, revision: 3 };
       }),
     };
     const dispatch = vi.fn().mockResolvedValue(true);
+    const pausedStateFor = vi.fn().mockResolvedValue('PAUSED_INPUT');
     const service = Object.assign(Object.create(HumanActionService.prototype) as object, {
       mutation,
       logger: new Logger(HumanActionService.name),
-      waits: { countOpenWaits: vi.fn().mockResolvedValue(2) },
+      waits: { pausedStateFor },
       dispatcher: { dispatch },
       approveInTransaction: vi.fn().mockResolvedValue(undefined),
     }) as unknown as HumanActionService;
 
     await expect(service.approve('run-1', 'review', 1)).resolves.toMatchObject({ accepted: true });
     expect(dispatch).not.toHaveBeenCalled();
+    // Parked in the state of the wait still open, so the next answer is accepted.
+    expect(setState).toHaveBeenCalledWith({ state: 'PAUSED_INPUT' });
   });
 });

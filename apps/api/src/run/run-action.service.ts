@@ -10,6 +10,8 @@ import { and, asc, eq, lt } from 'drizzle-orm';
 import {
   ConfigLayer,
   StageDef,
+  descendantsOf,
+  stageDependencies,
   type ConfigLayer as ConfigLayerType,
   type RetryItems,
   type RetryScope,
@@ -158,9 +160,16 @@ export class RunActionService {
     if (scope === 'stage') return { ...target, cascade: false };
     if (scope === 'downstream') {
       const graph = await this.runGraph(runId);
-      const index = graph.findIndex((stage) => stage.key === stageKey);
-      if (index === -1) throw new ConflictException(`Stage ${stageKey} not found`);
-      return { ...target, forcedStageKeys: graph.slice(index + 1).map((stage) => stage.key) };
+      if (!graph.some((stage) => stage.key === stageKey)) {
+        throw new ConflictException(`Stage ${stageKey} not found`);
+      }
+      // Everything that waits for this stage, directly or through others —
+      // not the stages that merely come after it in the graph.
+      const downstream = descendantsOf(stageDependencies(graph), stageKey);
+      return {
+        ...target,
+        forcedStageKeys: graph.filter((s) => downstream.has(s.key)).map((s) => s.key),
+      };
     }
     return target;
   }

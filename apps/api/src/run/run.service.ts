@@ -669,15 +669,16 @@ export class RunService {
   async resume(runId: string) {
     const current = await this.get(runId);
     if (current.state === 'PAUSED_BUDGET' || current.state === 'FAILED') {
-      const cursor = current.cursorStageKey
-        ? current.stageExecutions.find((execution) => execution.stageKey === current.cursorStageKey)
-        : undefined;
-      if (
-        !cursor ||
-        ['passed', 'skipped', 'awaiting_approval', 'awaiting_input'].includes(cursor.state)
-      ) {
+      // Something must still be left to do: a stage that is neither settled
+      // nor waiting on a person (parallel stages leave no single cursor).
+      const resumable = current.stageExecutions.some(
+        (execution) =>
+          !['passed', 'skipped', 'awaiting_approval', 'awaiting_input'].includes(execution.state) &&
+          !execution.waiting,
+      );
+      if (!resumable) {
         throw new ConflictException(
-          `Run ${runId} has no resumable cursor execution in state ${current.state}`,
+          `Run ${runId} has no resumable execution in state ${current.state}`,
         );
       }
     }
@@ -888,13 +889,13 @@ export class RunService {
 
   async approvalCandidate(runId: string, stageKey: string, requestedItemIndex?: number) {
     const [runRow] = await this.db
-      .select({ state: run.state, cursorStageKey: run.cursorStageKey, ownerId: channel.ownerId })
+      .select({ state: run.state, ownerId: channel.ownerId })
       .from(run)
       .innerJoin(channel, eq(channel.id, run.channelId))
       .where(eq(run.id, runId))
       .limit(1);
     if (!runRow) throw new NotFoundException(`Run ${runId} not found`);
-    if (runRow.state !== 'PAUSED_APPROVAL' || runRow.cursorStageKey !== stageKey) {
+    if (runRow.state !== 'PAUSED_APPROVAL' && runRow.state !== 'PAUSED_INPUT') {
       throw new ConflictException(`Run ${runId} is not awaiting approval at ${stageKey}`);
     }
 
