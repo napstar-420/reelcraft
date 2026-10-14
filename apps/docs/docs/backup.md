@@ -21,12 +21,17 @@ docker stop reelcraft
 docker run --rm --entrypoint tar \
   -v reelcraft-data:/data -v "${PWD}:/backup" \
   zohaibkhan97/reelcraft \
-  -czf /backup/reelcraft-backup.tgz --numeric-owner -C /data .
+  -czf /backup/reelcraft-backup.tgz --numeric-owner --exclude=./qwen-tts -C /data .
 docker start reelcraft
 ```
 
 On PowerShell, put the `docker run` command on one line, or end each line with a backtick
 (`` ` ``) instead of `\`.
+
+`--exclude=./qwen-tts` leaves out the software and voice models of the local
+[Qwen3-TTS](./qwen-tts.md) voices, if you set them up. They are several gigabytes and can be
+installed and downloaded again, so a restored Reelcraft asks you to set them up again when you use
+them.
 
 This uses the Reelcraft image you already have, so nothing extra is downloaded. Keep the backup
 file somewhere safe, such as an external drive. **It contains your saved API keys** and the key

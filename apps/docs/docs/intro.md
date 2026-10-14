@@ -17,9 +17,10 @@ download Reelcraft's source code.
 
 - A 64-bit computer running **Windows 10 or 11**, **macOS** (Apple Silicon or Intel) or
   **Linux**.
-- **8 GB of memory** or more. Docker should be allowed to use at least 4 GB of it.
+- **8 GB of memory** or more. Docker should be allowed to use at least 4 GB of it. (The free local
+  [Qwen3-TTS voices](./qwen-tts.md) need more: see that page.)
 - About **10 GB of free disk space** for Docker, the Reelcraft image and your first projects.
-  Videos and images you make need more over time.
+  Videos and images you make need more over time. The local Qwen3-TTS voices add roughly 4 to 6 GB.
 - **Docker Desktop**, which is free for personal use. [Install Docker Desktop](./install-docker.md)
   shows how.
 
