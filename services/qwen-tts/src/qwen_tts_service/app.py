@@ -25,6 +25,10 @@ class SpeechRequest(BaseModel):
     instructions: str | None = Field(default=None, max_length=500)
 
 
+class LinkRequest(BaseModel):
+    path: str = Field(min_length=1, max_length=1000)
+
+
 def _error(status: int, message: str) -> JSONResponse:
     return JSONResponse({"error": {"message": message, "type": "error", "code": status}}, status_code=status)
 
@@ -74,6 +78,12 @@ def create_app(store: ModelStore, engine: Engine) -> FastAPI:
     @app.post("/v1/models/{model_id:path}/cancel")
     def cancel(model_id: str):
         store.cancel(model_id)
+        return store.status(model_id)
+
+    @app.post("/v1/models/{model_id:path}/link")
+    def link(model_id: str, req: LinkRequest):
+        """Use model files the user already has, in place: nothing is copied or written to them."""
+        store.link(model_id, req.path)
         return store.status(model_id)
 
     @app.delete("/v1/models/{model_id:path}")
