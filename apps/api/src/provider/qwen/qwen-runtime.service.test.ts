@@ -523,3 +523,31 @@ describe('models that were ready', () => {
     expect(r.runtime.readyModels()).toEqual(['Qwen/a']);
   });
 });
+
+describe('startsOnDemand', () => {
+  it('is true once installed: a stopped service is then expected, not down', async () => {
+    const r = await installed();
+    expect(await r.runtime.startsOnDemand()).toBe(true);
+    await r.runtime.ensureRunning();
+    expect(await r.runtime.startsOnDemand()).toBe(true);
+  });
+
+  it('is false when nothing is set up, there is nothing to run, or the user runs the service', async () => {
+    expect(await rig().runtime.startsOnDemand()).toBe(false);
+
+    const noSource = rig();
+    rmSync(path.join(noSource.sourceDir, 'pyproject.toml'));
+    expect(await noSource.runtime.startsOnDemand()).toBe(false);
+
+    const external = await installed();
+    external.world.source = 'saved';
+    expect(await external.runtime.startsOnDemand()).toBe(false);
+  });
+
+  it('asking never starts anything', async () => {
+    const r = await installed();
+    r.calls.length = 0;
+    await r.runtime.startsOnDemand();
+    expect(r.calls).toHaveLength(0);
+  });
+});

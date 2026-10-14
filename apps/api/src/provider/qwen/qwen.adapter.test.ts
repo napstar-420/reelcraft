@@ -5,7 +5,17 @@ import { qwenBaseUrl, qwenErrorReason, qwenOptions, qwenRequestBody } from './qw
 const SMALL = 'Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice';
 const BIG = 'Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice';
 
-const adapter = (url = 'http://gpu:8091') => new QwenTtsAdapter({ qwenTtsUrl: async () => url });
+/** A runtime that is always ready: it hands `use` the service address and starts nothing. */
+const fakeRuntime = (over: Record<string, unknown> = {}) => ({
+  use: vi.fn(async (work: (base: string) => Promise<unknown>) => work('http://gpu:8091')),
+  startsOnDemand: vi.fn(async () => false),
+  readyModels: vi.fn(() => [] as string[]),
+  rememberReadyModels: vi.fn(),
+  ...over,
+});
+
+const adapter = (url = 'http://gpu:8091', runtime = fakeRuntime()) =>
+  new QwenTtsAdapter({ qwenTtsUrl: async () => url }, runtime as never);
 
 const reply = (body: unknown, ok = true, status = 200) =>
   ({
@@ -147,7 +157,7 @@ describe('QwenTtsAdapter downloads', () => {
 
   it('says how to start the service when it is not running', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('ECONNREFUSED')));
-    await expect(adapter().download(SMALL)).rejects.toThrow('pnpm tts');
+    await expect(adapter().download(SMALL)).rejects.toThrow('Settings → Qwen3-TTS');
   });
 
   it('probes the service and reports its device', async () => {
@@ -188,7 +198,7 @@ describe('QwenTtsAdapter speech', () => {
   it('says how to start the service when speech is asked for while it is off', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('ECONNREFUSED')));
     const a = adapter();
-    await expect(a.fetch(await a.submit(speechReq(), 'j'))).rejects.toThrow('pnpm tts');
+    await expect(a.fetch(await a.submit(speechReq(), 'j'))).rejects.toThrow('Settings → Qwen3-TTS');
   });
 
   it('rejects a format the model does not offer when the job is submitted', async () => {
@@ -204,5 +214,89 @@ describe('QwenTtsAdapter speech', () => {
     await expect(
       a.fetch(await a.submit(speechReq({ outputFormat: 'flac' }, long), 'j')),
     ).rejects.toThrow("can't be joined");
+  });
+});
+
+describe('QwenTtsAdapter and the runtime that starts the service', () => {
+  it('never starts the service to list models or voices, or to test a connection', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => reply({ data: [], voices: [], device: 'cpu' })),
+    );
+    const runtime = fakeRuntime();
+    const a = adapter('http://gpu:8091', runtime);
+    await a.listModels();
+    await a.listVoices({});
+    await a.probe();
+    expect(runtime.use).not.toHaveBeenCalled();
+  });
+
+  it('starts it for speech, downloads, cancels, deletes and linking', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) =>
+        url.endsWith('/v1/audio/speech') ? reply('RIFF') : reply(served(SMALL, 'ready')),
+      ),
+    );
+    const runtime = fakeRuntime();
+    const a = adapter('http://gpu:8091', runtime);
+    await a.fetch(await a.submit(speechReq(), 'j'));
+    await a.download(SMALL);
+    await a.cancelDownload(SMALL);
+    await a.remove(SMALL);
+    await a.link(SMALL, '/models/qwen');
+    expect(runtime.use).toHaveBeenCalledTimes(5);
+  });
+
+  it('tells the service which folder to use, in the request body', async () => {
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) =>
+      reply(served(SMALL, 'ready')),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const download = await adapter().link(SMALL, '/models/qwen');
+    expect(download.state).toBe('ready');
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(url).toBe(`http://gpu:8091/v1/models/${SMALL}/link`);
+    expect(init).toMatchObject({ method: 'POST', headers: { 'Content-Type': 'application/json' } });
+    expect(JSON.parse(String(init!.body))).toEqual({ path: '/models/qwen' });
+  });
+
+  it('remembers which models were ready whenever the service answers', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => reply({ data: [served(SMALL, 'ready'), served(BIG, 'not_downloaded')] })),
+    );
+    const runtime = fakeRuntime();
+    await adapter('http://gpu:8091', runtime).listModels();
+    expect(runtime.rememberReadyModels).toHaveBeenCalledWith([SMALL]);
+  });
+
+  it('shows what was ready, without calling the service down, while an installed one is stopped', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('refused')));
+    const runtime = fakeRuntime({
+      startsOnDemand: vi.fn(async () => true),
+      readyModels: vi.fn(() => [SMALL]),
+    });
+    const models = await adapter('http://gpu:8091', runtime).listModels();
+    expect(models.map((m) => [m.modelId, m.download?.state])).toEqual([
+      [SMALL, 'ready'],
+      [BIG, 'not_downloaded'],
+    ]);
+    expect(models.some((m) => m.download?.serviceDown)).toBe(false);
+    expect(runtime.rememberReadyModels).not.toHaveBeenCalled();
+  });
+
+  it('calls the service down, and trusts nothing it remembered, when nothing is set up', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('refused')));
+    const runtime = fakeRuntime({ readyModels: vi.fn(() => [SMALL]) }); // startsOnDemand is false
+    const models = await adapter('http://gpu:8091', runtime).listModels();
+    expect(models.every((m) => m.download?.state === 'not_downloaded')).toBe(true);
+    expect(models.every((m) => m.download?.serviceDown)).toBe(true);
+  });
+
+  it('knows the real sizes of both models when the service cannot say', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('refused')));
+    const models = await adapter().listModels();
+    expect(models.map((m) => m.download?.totalBytes)).toEqual([2_498_383_610, 4_520_159_586]);
   });
 });

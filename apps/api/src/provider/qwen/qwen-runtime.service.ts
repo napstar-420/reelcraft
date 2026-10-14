@@ -514,6 +514,17 @@ export class QwenTtsRuntime implements OnModuleDestroy {
 
   // -- Models the service had ready -----------------------------------------------------------
 
+  /**
+   * Reelcraft installed the service (or can run one it has installed), so a request will start it:
+   * a stopped service is then expected, not "down". False when nothing is set up, or when the user
+   * runs the service themselves.
+   */
+  async startsOnDemand(): Promise<boolean> {
+    const { managed } = await this.mode();
+    const sourceDir = this.sourceDir();
+    return managed && !!sourceDir && this.installState(sourceDir) !== 'not-installed';
+  }
+
   /** The models that were ready when the service last answered. */
   readyModels(): string[] {
     return this.readState()?.readyModels ?? [];
