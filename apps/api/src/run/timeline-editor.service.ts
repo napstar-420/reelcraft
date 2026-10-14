@@ -478,9 +478,12 @@ export class TimelineEditorService {
         .filter((row) => ref.index === undefined || row.itemIndex === ref.index)
         .flatMap((row) => toSourceRows(row, context.graph));
     }
-    if (ref.from === 'prev') {
+    if (ref.from === 'prev' || ref.from === 'stage') {
       const index = context.graph.findIndex((stage) => stage.key === context.stage.key);
-      const previous = context.graph[index - 1];
+      const previous =
+        ref.from === 'prev'
+          ? context.graph[index - 1]
+          : context.graph.find((stage) => stage.key === ref.stageKey);
       if (!previous) return [];
       const rows = await this.db
         .select()

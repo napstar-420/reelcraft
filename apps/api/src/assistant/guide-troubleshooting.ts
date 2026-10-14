@@ -155,8 +155,14 @@ export const TROUBLESHOOTING: TroubleshootingEntry[] = [
   },
   {
     matches: ['runs after unknown stage', 'runs after itself', 'which comes later in the graph'],
-    means: 'dependsOn names a stage that does not exist, is this stage, or comes later.',
+    means:
+      'dependsOn, or a {from:"stage"} binding, names a stage that does not exist or comes later.',
     fix: 'List only earlier stages in dependsOn, or move this stage below the one it waits for. Leave dependsOn out to wait for the previous stage.',
+  },
+  {
+    matches: ['reads the output of unknown stage', "cannot read this stage's own output"],
+    means: 'A {from:"stage"} binding names a stage that does not exist, or this stage itself.',
+    fix: 'Use the key of an earlier stage. To read the previous item of the same stage use {from:"prevItem"}.',
   },
   {
     matches: [
@@ -171,6 +177,7 @@ export const TROUBLESHOOTING: TroubleshootingEntry[] = [
     matches: [
       "alignWith:'item' requires this stage",
       "alignWith:'item' requires the previous stage",
+      "alignWith:'item' requires the stage it reads",
     ],
     means: "alignWith:'item' is used without both stages iterating.",
     fix: 'Both stages must iterate over the same array; otherwise read the earlier stage through memory.',

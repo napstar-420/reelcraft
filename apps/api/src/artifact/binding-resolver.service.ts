@@ -14,6 +14,9 @@ import { writerArtifactId } from './memory-writer';
 
 type ArtifactRow = typeof artifact.$inferSelect;
 type PrevRef = Extract<Ref, { from: 'prev' }>;
+type StageRef = Extract<Ref, { from: 'stage' }>;
+/** A ref that reads another stage's output artifact. */
+type ProducerRef = PrevRef | StageRef;
 
 type MemoryRow = typeof runMemory.$inferSelect;
 
@@ -176,9 +179,18 @@ export class BindingResolverService {
         return { value, provenance: { ref, inputKey: ref.inputKey } };
       }
 
-      case 'prev': {
-        const row = await this.fetchPrevArtifact(ctx, ref);
-        const value = await this.valueForArtifactRow(row, ref.path, 'prev');
+      case 'prev':
+      case 'stage': {
+        const row = await this.fetchProducerArtifact(
+          ctx,
+          ref.from === 'prev' ? ctx.prevStageKey : ref.stageKey,
+          ref,
+        );
+        const value = await this.valueForArtifactRow(
+          row,
+          ref.path,
+          ref.from === 'prev' ? 'prev' : `stage:${ref.stageKey}`,
+        );
         return {
           value,
           provenance: {
@@ -474,8 +486,13 @@ export class BindingResolverService {
     ctx: BindingScope,
   ): Promise<{ envelope: RefEnvelope; provenance: RefProvenance }> {
     switch (ref.from) {
-      case 'prev': {
-        const row = await this.fetchPrevArtifact(ctx, ref);
+      case 'prev':
+      case 'stage': {
+        const row = await this.fetchProducerArtifact(
+          ctx,
+          ref.from === 'prev' ? ctx.prevStageKey : ref.stageKey,
+          ref,
+        );
         // Lenient on media kinds — unlike `unwrapArtifactData`, a check
         // envelope inspects `kind`/`probe` directly and shouldn't throw just
         // because `data` can't be fully unwrapped yet.
@@ -568,18 +585,23 @@ export class BindingResolverService {
     }
   }
 
-  /** §6.1 / §14.3 — the default (no `alignWith`) query shape is unchanged
-   * from before phase 7: `isNull(artifact.itemIndex)`, same error message.
+  /** §6.1 / §14.3 — reads the artifact `producerKey` made: the previous stage
+   * for `prev`, the named stage for `stage`. The default (no `alignWith`) query
+   * shape is unchanged from before phase 7: `isNull(artifact.itemIndex)`, same error message.
    * Only `ref?.alignWith === 'item'` diverges, fetching the previous
    * (iterating) stage's item `ctx.itemIndex` artifact instead. */
-  private async fetchPrevArtifact(ctx: BindingScope, ref?: PrevRef): Promise<ArtifactRow> {
-    if (!ctx.prevStageKey) {
+  private async fetchProducerArtifact(
+    ctx: BindingScope,
+    producerKey: string | undefined,
+    ref?: ProducerRef,
+  ): Promise<ArtifactRow> {
+    if (!producerKey) {
       throw new Error('BindingResolverService: {from: "prev"} on the first stage is invalid');
     }
     const alignWithItem = ref?.alignWith === 'item';
     if (alignWithItem && ctx.itemIndex === undefined) {
       throw new Error(
-        'BindingResolverService: {from: "prev", alignWith: "item"} outside an iterating attempt',
+        `BindingResolverService: {from: "${ref?.from ?? 'prev'}", alignWith: "item"} outside an iterating attempt`,
       );
     }
     const [row] = await this.db
@@ -588,7 +610,7 @@ export class BindingResolverService {
       .where(
         and(
           eq(artifact.runId, ctx.runId),
-          eq(artifact.producerStageKey, ctx.prevStageKey),
+          eq(artifact.producerStageKey, producerKey),
           alignWithItem ? eq(artifact.itemIndex, ctx.itemIndex!) : isNull(artifact.itemIndex),
           eq(artifact.stale, false),
         ),
@@ -597,14 +619,14 @@ export class BindingResolverService {
     if (!row) {
       throw new Error(
         alignWithItem
-          ? `BindingResolverService: no active artifact for stage "${ctx.prevStageKey}" item ${ctx.itemIndex} (alignWith:'item')`
-          : `BindingResolverService: no active artifact for stage "${ctx.prevStageKey}"`,
+          ? `BindingResolverService: no active artifact for stage "${producerKey}" item ${ctx.itemIndex} (alignWith:'item')`
+          : `BindingResolverService: no active artifact for stage "${producerKey}"`,
       );
     }
     return row;
   }
 
-  /** §14.4 — same shape as `fetchPrevArtifact`, but keyed on `stageKey` (the
+  /** §14.4 — same shape as `fetchProducerArtifact`, but keyed on `stageKey` (the
    * CURRENT stage, not the previous one) — this is what `{from:'prevItem'}`
    * reads: this stage's own item `itemIndex`, not the previous stage's
    * output. */

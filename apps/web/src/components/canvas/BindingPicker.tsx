@@ -16,6 +16,7 @@ import {
 
 const ALL_REF_KINDS: Ref['from'][] = [
   'prev',
+  'stage',
   'memory',
   'input',
   'asset',
@@ -33,7 +34,7 @@ const UNSET = '__unset__';
  * sole source of truth on whether a binding is actually correct. */
 function availableRefKinds(stageIndex: number, iterating: boolean): Ref['from'][] {
   return ALL_REF_KINDS.filter((kind) => {
-    if (kind === 'prev' && stageIndex === 0) return false;
+    if ((kind === 'prev' || kind === 'stage') && stageIndex === 0) return false;
     if ((kind === 'item' || kind === 'prevItem') && !iterating) return false;
     return true;
   });
@@ -43,6 +44,8 @@ function defaultRefFor(kind: Ref['from']): Ref {
   switch (kind) {
     case 'prev':
       return { from: 'prev' };
+    case 'stage':
+      return { from: 'stage', stageKey: '' };
     case 'memory':
       return { from: 'memory', key: '' };
     case 'input':
@@ -142,6 +145,41 @@ export function BindingPicker({
         <span className="flex flex-wrap items-center gap-2">
           {pathInput}
           {prevStageIterates && (
+            <Label className="font-normal">
+              <Checkbox
+                checked={value.alignWith === 'item'}
+                onCheckedChange={(checked) =>
+                  onChange({ ...value, alignWith: checked === true ? 'item' : undefined })
+                }
+              />
+              align with item
+            </Label>
+          )}
+        </span>
+      )}
+
+      {value.from === 'stage' && (
+        <span className="flex flex-wrap items-center gap-2">
+          <Select
+            value={value.stageKey || UNSET}
+            onValueChange={(next) =>
+              onChange({ ...value, stageKey: next === UNSET ? '' : next, alignWith: undefined })
+            }
+          >
+            <SelectTrigger size="sm" className="w-48">
+              <SelectValue placeholder="Output of stage…" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={UNSET}>Output of stage…</SelectItem>
+              {graph.slice(0, stageIndex).map((stage) => (
+                <SelectItem key={stage.key} value={stage.key}>
+                  {stage.label || stage.key}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {pathInput}
+          {!!graph.find((stage) => stage.key === value.stageKey)?.iterate && (
             <Label className="font-normal">
               <Checkbox
                 checked={value.alignWith === 'item'}

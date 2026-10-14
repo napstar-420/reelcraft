@@ -67,6 +67,18 @@ export function sourceTypeOfRef(
       return { type: sourceTypeOfOutput(prevStage.output) };
     }
 
+    case 'stage': {
+      const producerIndex = ctx.stageIndexByKey.get(ref.stageKey);
+      const producer = producerIndex === undefined ? undefined : ctx.graph[producerIndex];
+      if (!producer || producerIndex! >= stageIndex) {
+        // Already flagged by the dedicated stage-reference rules.
+        return {
+          type: { kind: 'unknown', reason: 'stage reference to a stage that is not earlier' },
+        };
+      }
+      return { type: sourceTypeOfOutput(producer.output) };
+    }
+
     case 'memory': {
       const writer = earlierWriters(ctx, ref.key, stageIndex)[0];
       if (!writer) {

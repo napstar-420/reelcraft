@@ -19,6 +19,8 @@ export function describeRef(ref: Ref | undefined): string {
   switch (ref.from) {
     case 'prev':
       return 'prev';
+    case 'stage':
+      return `stage.${ref.stageKey}`;
     case 'memory':
       return `memory.${ref.key}`;
     case 'input':

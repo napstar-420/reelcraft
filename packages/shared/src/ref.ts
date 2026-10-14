@@ -5,6 +5,8 @@ import { z } from 'zod';
  */
 export type Ref =
   | { from: 'prev'; path?: string | undefined; alignWith?: 'item' | undefined }
+  /** The output of any earlier stage, by key (`prev` reads only the stage just before). */
+  | { from: 'stage'; stageKey: string; path?: string | undefined; alignWith?: 'item' | undefined }
   | { from: 'memory'; key: string; path?: string | undefined }
   | { from: 'input'; inputKey: string; index?: number | undefined; path?: string | undefined }
   | { from: 'asset'; assetId: string }
@@ -21,6 +23,12 @@ export type Ref =
 export const Ref: z.ZodType<Ref> = z.discriminatedUnion('from', [
   z.object({
     from: z.literal('prev'),
+    path: z.string().optional(),
+    alignWith: z.literal('item').optional(),
+  }),
+  z.object({
+    from: z.literal('stage'),
+    stageKey: z.string(),
     path: z.string().optional(),
     alignWith: z.literal('item').optional(),
   }),

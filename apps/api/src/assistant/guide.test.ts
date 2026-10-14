@@ -126,7 +126,7 @@ describe('assistant guide coverage', () => {
 
   it('mentions every Ref kind', () => {
     const kinds = refKinds();
-    expect(kinds).toHaveLength(9);
+    expect(kinds).toHaveLength(10);
     expect(kinds.filter((k) => !covered(k) && !guideText.includes(`from:'${k}'`))).toEqual([]);
   });
 

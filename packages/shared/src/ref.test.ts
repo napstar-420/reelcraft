@@ -18,8 +18,19 @@ describe('Ref', () => {
     expect(ref.index).toBe(2);
   });
 
+  it('parses a stage binding', () => {
+    const ref = Ref.parse({ from: 'stage', stageKey: 'script', path: 'title', alignWith: 'item' });
+    if (ref.from !== 'stage') throw new Error('expected stage variant');
+    expect(ref.stageKey).toBe('script');
+    expect(ref.alignWith).toBe('item');
+  });
+
+  it('rejects a stage binding without a stage key', () => {
+    expect(() => Ref.parse({ from: 'stage' })).toThrow();
+  });
+
   it('rejects an unknown discriminator', () => {
-    expect(() => Ref.parse({ from: 'stage', stageKey: 'x' })).toThrow();
+    expect(() => Ref.parse({ from: 'stages', stageKey: 'x' })).toThrow();
   });
 
   it('parses a coalesce of nested refs', () => {

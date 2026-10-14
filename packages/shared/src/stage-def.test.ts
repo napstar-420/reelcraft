@@ -37,14 +37,30 @@ describe('StageDef', () => {
     expect(reparsed).toEqual(parsed);
   });
 
-  it('rejects a Ref with the removed {from: "stage"} variant', () => {
+  it('round-trips a stage binding and dependsOn', () => {
+    const stage = {
+      key: 'x',
+      label: 'X',
+      capability: 'text.generate',
+      config: {},
+      slots: { ok: { from: 'stage', stageKey: 'script' } },
+      context: {},
+      output: { kind: 'text' },
+      checks: [],
+      retryLimit: 0,
+      dependsOn: [],
+    };
+    expect(StageDef.parse(stage)).toEqual(stage);
+  });
+
+  it('rejects an unknown Ref variant', () => {
     expect(() =>
       StageDef.parse({
         key: 'x',
         label: 'X',
         capability: 'text.generate',
         config: {},
-        slots: { bad: { from: 'stage', stageKey: 'script' } },
+        slots: { bad: { from: 'stages', stageKey: 'script' } },
         context: {},
         output: { kind: 'text' },
         checks: [],

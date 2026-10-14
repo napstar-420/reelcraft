@@ -1378,5 +1378,108 @@ describe('BlueprintValidatorService — iterate (Phase 7, §14/§16.2)', () => {
         'is not upstream of this stage',
       );
     });
+
+    describe('{from:"stage"}', () => {
+      const iterates = (key: string, extra: Partial<StageDef> = {}) =>
+        stage({
+          key,
+          iterate: { over: { from: 'input', inputKey: 'list' }, itemAlias: 'x', itemRetryLimit: 1 },
+          ...extra,
+        });
+      const runWithList = (graph: StageDef[]) =>
+        makeValidator().validate({ graph, inputs: [listInput], roles: [] });
+      const errorAt = (graph: StageDef[], path: string) =>
+        runWithList(graph).find((i) => i.severity === 'error' && i.path === path)?.message;
+
+      it('accepts a binding to any earlier stage', () => {
+        const graph = [
+          stage({ key: 'a' }),
+          stage({ key: 'b' }),
+          stage({ key: 'c', context: { x: { from: 'stage', stageKey: 'a' } } }),
+        ];
+        expect(hasError(run(graph))).toBe(false);
+      });
+
+      it('errors on an unknown stage', () => {
+        const graph = [
+          stage({ key: 'a' }),
+          stage({ key: 'b', context: { x: { from: 'stage', stageKey: 'ghost' } } }),
+        ];
+        expect(errorAt(graph, 'stages.b.context.x')).toBe(
+          'reads the output of unknown stage "ghost"',
+        );
+      });
+
+      it('errors on the stage itself', () => {
+        const graph = [stage({ key: 'a', context: { x: { from: 'stage', stageKey: 'a' } } })];
+        expect(errorAt(graph, 'stages.a.context.x')).toContain(
+          "cannot read this stage's own output",
+        );
+      });
+
+      it('errors on a later stage', () => {
+        const graph = [
+          stage({ key: 'a', context: { x: { from: 'stage', stageKey: 'b' } } }),
+          stage({ key: 'b' }),
+        ];
+        expect(errorAt(graph, 'stages.a.context.x')).toContain(
+          'which comes later in the graph — move this stage after "b"',
+        );
+      });
+
+      it('checks a stage ref inside iterate.over and a check ref', () => {
+        const over = [
+          stage({ key: 'a' }),
+          stage({
+            key: 'b',
+            iterate: {
+              over: { from: 'stage', stageKey: 'ghost' },
+              itemAlias: 'x',
+              itemRetryLimit: 1,
+            },
+          }),
+        ];
+        expect(errorAt(over, 'stages.b.iterate.over')).toContain('unknown stage "ghost"');
+      });
+
+      it('errors when it binds an iterating stage without alignWith', () => {
+        const graph = [
+          iterates('p'),
+          stage({ key: 'q' }),
+          stage({ key: 'a', context: { x: { from: 'stage', stageKey: 'p' } } }),
+        ];
+        expect(errorAt(graph, 'stages.a.context.x')).toContain(
+          "cannot bind an iterating stage's output",
+        );
+      });
+
+      it('accepts alignWith when both stages iterate over the same list', () => {
+        const graph = [
+          iterates('p'),
+          stage({ key: 'q' }),
+          iterates('a', { context: { x: { from: 'stage', stageKey: 'p', alignWith: 'item' } } }),
+        ];
+        expect(runWithList(graph).filter((i) => i.severity === 'error')).toEqual([]);
+      });
+
+      it('errors on alignWith when the stage it reads does not iterate', () => {
+        const graph = [
+          stage({ key: 'p' }),
+          iterates('a', { context: { x: { from: 'stage', stageKey: 'p', alignWith: 'item' } } }),
+        ];
+        expect(errorAt(graph, 'stages.a.context.x')).toContain(
+          "alignWith:'item' requires the stage it reads to also declare iterate",
+        );
+      });
+
+      it('errors when it reads a conditionally enabled stage without the same condition', () => {
+        const graph = [
+          stage({ key: 'p', enabledWhen: { input: 'mode', equals: 'full' } }),
+          stage({ key: 'q' }),
+          stage({ key: 'a', context: { x: { from: 'stage', stageKey: 'p' } } }),
+        ];
+        expect(errorAt(graph, 'stages.a.context.x')).toContain('which is conditionally enabled');
+      });
+    });
   });
 });

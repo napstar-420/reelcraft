@@ -120,6 +120,26 @@ describe('BindingResolverService — media manifests carry blobId', () => {
     });
   });
 
+  it('{from:"stage"} reads the named stage, not the previous one, and labels its manifest', async () => {
+    const row = { id: 'art-9', kind: 'media.audio', blobId: 'blob-9', probe: null, data: null };
+    const { value, provenance } = await serviceWith([row], [{ objectKey: 'k/music.wav' }]).resolve(
+      { from: 'stage', stageKey: 'music' },
+      ctx,
+    );
+    expect(value).toMatchObject({
+      artifactId: 'art-9',
+      handle: 'stage:music',
+      sourceKey: 'k/music.wav',
+    });
+    expect(provenance).toMatchObject({ artifactId: 'art-9' });
+  });
+
+  it('{from:"stage"} names the stage it could not find an artifact for', async () => {
+    await expect(
+      serviceWith([]).resolve({ from: 'stage', stageKey: 'music' }, ctx),
+    ).rejects.toThrow('no active artifact for stage "music"');
+  });
+
   it('{from:"prev"} on a media.image_list gives each item its own blobId', async () => {
     const row = {
       id: 'art-2',

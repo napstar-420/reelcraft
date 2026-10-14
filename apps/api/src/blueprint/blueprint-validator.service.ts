@@ -751,8 +751,10 @@ export class BlueprintValidatorService {
 
     for (const { path, ref: topRef } of entries) {
       for (const ref of flattenCoalesce(topRef)) {
-        if (ref.from === 'prev') {
-          const prevStage = stageIndex > 0 ? ctx.graph[stageIndex - 1] : undefined;
+        if (ref.from === 'prev' || ref.from === 'stage') {
+          const producerIndex =
+            ref.from === 'prev' ? stageIndex - 1 : (ctx.stageIndexByKey.get(ref.stageKey) ?? -1);
+          const prevStage = producerIndex >= 0 ? ctx.graph[producerIndex] : undefined;
           if (
             prevStage?.enabledWhen &&
             !sameEnabledWhen(stage.enabledWhen, prevStage.enabledWhen)
@@ -760,7 +762,7 @@ export class BlueprintValidatorService {
             issues.push({
               path,
               message:
-                `binds {from:'prev'} to "${prevStage.key}", which is conditionally enabled — ` +
+                `binds {from:'${ref.from}'} to "${prevStage.key}", which is conditionally enabled — ` +
                 'this stage must carry the same enabledWhen condition or the binding may find no artifact',
               severity: 'error',
             });
@@ -815,6 +817,15 @@ export class BlueprintValidatorService {
           message: 'iterate.over a many-cardinality media source is not yet supported',
           severity: 'error',
         });
+        return;
+      }
+    }
+
+    for (const leaf of flattenCoalesce(overRef)) {
+      if (
+        leaf.from === 'stage' &&
+        !this.checkStageRef(leaf, path, stage, stageIndex, ctx, issues)
+      ) {
         return;
       }
     }
@@ -882,6 +893,10 @@ export class BlueprintValidatorService {
       return;
     }
 
+    if (ref.from === 'stage' && !this.checkStageRef(ref, path, stage, stageIndex, ctx, issues)) {
+      return;
+    }
+
     // §14.4, strict reading (Resolved Decision 2) — no config-level fallback
     // escape hatch. A required binding to a BARE prevItem is always an
     // error; the capability itself must declare the slot optional and
@@ -899,6 +914,19 @@ export class BlueprintValidatorService {
 
     if (ref.from === 'prev' && ref.alignWith === 'item') {
       this.checkAlignWith(stage, stageIndex, ctx, path, issues);
+    } else if (ref.from === 'stage') {
+      const producerIndex = ctx.stageIndexByKey.get(ref.stageKey)!;
+      if (ref.alignWith === 'item') {
+        this.checkAlignWith(stage, stageIndex, ctx, path, issues, producerIndex);
+      } else if (ctx.graph[producerIndex]?.iterate) {
+        issues.push({
+          path,
+          message:
+            "{from:'stage'} cannot bind an iterating stage's output — use {alignWith:'item'} " +
+            '(if this stage also iterates) or Run Memory',
+          severity: 'error',
+        });
+      }
     } else if (ref.from === 'prev' && !ref.alignWith) {
       // Locked Decision 4 — no `stage_execution`/`artifact` row is ever
       // written with `item_index IS NULL` for an iterating producer, so this
@@ -916,6 +944,48 @@ export class BlueprintValidatorService {
     }
   }
 
+  /** A `{from:'stage'}` ref names a different, existing stage that comes earlier
+   * in the graph. Returns false (after reporting) when it doesn't, so the
+   * rules that need a real producer can skip it. */
+  private checkStageRef(
+    ref: Extract<Ref, { from: 'stage' }>,
+    path: string,
+    stage: StageDef,
+    stageIndex: number,
+    ctx: ValidationContext,
+    issues: ValidationIssue[],
+  ): boolean {
+    if (ref.stageKey === stage.key) {
+      issues.push({
+        path,
+        message:
+          "{from:'stage'} cannot read this stage's own output — use {from:'prevItem'} for the previous item",
+        severity: 'error',
+      });
+      return false;
+    }
+    const producerIndex = ctx.stageIndexByKey.get(ref.stageKey);
+    if (producerIndex === undefined) {
+      issues.push({
+        path,
+        message: `reads the output of unknown stage "${ref.stageKey}"`,
+        severity: 'error',
+      });
+      return false;
+    }
+    if (producerIndex > stageIndex) {
+      issues.push({
+        path,
+        message:
+          `reads the output of "${ref.stageKey}", which comes later in the graph — ` +
+          `move this stage after "${ref.stageKey}"`,
+        severity: 'error',
+      });
+      return false;
+    }
+    return true;
+  }
+
   /** §14.3 — `alignWith:'item'` requires both this stage and the previous
    * one to iterate, and their `iterate.over` Refs to canonicalize to the
    * same `(producerStageKey, path)` tuple. Comparing Refs directly does not
@@ -926,6 +996,7 @@ export class BlueprintValidatorService {
     ctx: ValidationContext,
     path: string,
     issues: ValidationIssue[],
+    producerIndex?: number,
   ): void {
     if (!stage.iterate) {
       issues.push({
@@ -935,18 +1006,22 @@ export class BlueprintValidatorService {
       });
       return;
     }
-    const prevStage = stageIndex > 0 ? ctx.graph[stageIndex - 1] : undefined;
+    const prevIndex = producerIndex ?? stageIndex - 1;
+    const prevStage = prevIndex >= 0 ? ctx.graph[prevIndex] : undefined;
     if (!prevStage?.iterate) {
       issues.push({
         path,
-        message: "alignWith:'item' requires the previous stage to also declare iterate",
+        message:
+          producerIndex === undefined
+            ? "alignWith:'item' requires the previous stage to also declare iterate"
+            : "alignWith:'item' requires the stage it reads to also declare iterate",
         severity: 'error',
       });
       return;
     }
 
     const own = canonicalizeIterateOver(stage.iterate.over, stageIndex, ctx);
-    const prev = canonicalizeIterateOver(prevStage.iterate.over, stageIndex - 1, ctx);
+    const prev = canonicalizeIterateOver(prevStage.iterate.over, prevIndex, ctx);
     if ('error' in own) {
       issues.push({
         path: `stages.${stage.key}.iterate.over`,
@@ -1055,6 +1130,8 @@ function canonicalizeIterateOver(
       if (!prevStage) return { error: 'no preceding stage' };
       return { producerKey: prevStage.key, path: ref.path ?? '$' };
     }
+    case 'stage':
+      return { producerKey: ref.stageKey, path: ref.path ?? '$' };
     case 'memory': {
       const writer = earlierWriters(ctx, ref.key, ownerIndex)[0];
       if (!writer) return { error: `memory key "${ref.key}" has no writer` };
@@ -1079,7 +1156,9 @@ function iterateProducedArity(
   stageIndex: number,
 ): 'many' | 'scalar-iterate' | undefined {
   if (ref.from === 'item' || ref.from === 'prevItem') return 'scalar-iterate';
-  if (ref.from === 'prev' && ref.alignWith === 'item') return 'scalar-iterate';
+  if ((ref.from === 'prev' || ref.from === 'stage') && ref.alignWith === 'item') {
+    return 'scalar-iterate';
+  }
   if (ref.from === 'memory' && !/#\d+$/.test(ref.key)) {
     const writer = earlierWriters(ctx, ref.key, stageIndex)[0];
     const writerIndex = writer ? ctx.stageIndexByKey.get(writer.stageKey) : undefined;

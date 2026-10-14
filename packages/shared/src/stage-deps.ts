@@ -33,13 +33,14 @@ export function stageRefLeaves(stage: StageDef): Ref[] {
   return leaves;
 }
 
-/** The key of the stage a `prev` ref reads, for the stage at `stageIndex`. */
+/** The key of the stage a `prev` or `stage` ref reads, for the stage at `stageIndex`. */
 export function producerOf(
   ref: Ref,
   graph: ReadonlyArray<Pick<StageDef, 'key'>>,
   stageIndex: number,
 ): string | undefined {
   if (ref.from === 'prev') return stageIndex > 0 ? graph[stageIndex - 1]?.key : undefined;
+  if (ref.from === 'stage') return ref.stageKey;
   return undefined;
 }
 
@@ -67,7 +68,7 @@ export function stageDependencies(graph: ReadonlyArray<StageDef>): Map<string, s
     };
     for (const key of stage.dependsOn ?? (index > 0 ? [graph[index - 1]!.key] : [])) add(key);
     for (const ref of stageRefLeaves(stage)) {
-      if (ref.from === 'prev') add(producerOf(ref, graph, index));
+      if (ref.from === 'prev' || ref.from === 'stage') add(producerOf(ref, graph, index));
       else if (ref.from === 'memory') {
         memoryWritersBefore(graph, ref.key, index).forEach(add);
       }

@@ -58,7 +58,8 @@ An output kind must be one the capability allows (\`get_capability\` → allowed
     body: `Every slot and context entry is a Ref saying where its value comes from:
 
 - \`{from:'prev', path?, alignWith?:'item'}\`: the previous stage's output. Invalid on the first stage. A \`path\` picks one field of a \`data\` output; the field is still \`data\`, so a text field of a data output can NOT feed a \`text\` slot. Only a stage whose output is \`text\` can.
-- \`{from:'memory', key, path?}\`: a value an earlier stage saved with \`writes\`. \`prev\` only reaches one stage back; use memory for anything further.
+- \`{from:'stage', stageKey, path?, alignWith?:'item'}\`: the output of any earlier stage, by its key. Use it to read a stage that is not the one just before, especially when stages run in parallel (\`dependsOn\`). The stage must come earlier in the graph.
+- \`{from:'memory', key, path?}\`: a value an earlier stage saved with \`writes\`. \`prev\` only reaches one stage back; use \`stage\` or memory for anything further.
 - \`{from:'input', inputKey, index?, path?}\`: a run input declared in \`inputs\`. \`index\` (from 0) picks one file of a many-file input.
 - \`{from:'asset', assetId}\`: a channel asset. Get ids from \`get_channel_resources\`; never invent one.
 - \`{from:'role', roleKey}\`: the blueprint's Character role. Only valid on a many-cardinality image \`references\` slot, or in context of a text stage with the key listed in \`attach\`.
