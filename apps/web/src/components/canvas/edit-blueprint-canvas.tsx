@@ -28,6 +28,9 @@ import {
   groupIssuesByStage,
   insertStage,
   moveStage,
+  canMoveStage,
+  removeStage,
+  withDependsOn,
 } from '@/pages/canvas-graph.logic';
 import { RunLaunchDialog } from '@/pages/RunLaunchDialog';
 import type {
@@ -544,7 +547,8 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
     const index = draft!.graph.findIndex((s) => s.key === key);
     const removed = draft!.graph[index];
     if (!removed) return;
-    setDraft((prev) => prev && { ...prev, graph: prev.graph.filter((s) => s.key !== key) });
+    const { restore } = removeStage(draft!.graph, key);
+    setDraft((prev) => prev && { ...prev, graph: removeStage(prev.graph, key).graph });
     setSelectedStageKey((prev) => (prev === key ? null : prev));
     toast(`Deleted “${removed.label || removed.key}”`, {
       action: {
@@ -555,7 +559,16 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
               prev &&
               (prev.graph.some((s) => s.key === removed.key)
                 ? prev
-                : { ...prev, graph: insertStage(prev.graph, removed, index) }),
+                : {
+                    ...prev,
+                    graph: insertStage(
+                      prev.graph.map((s) =>
+                        restore.has(s.key) ? withDependsOn(s, restore.get(s.key)) : s,
+                      ),
+                      removed,
+                      index,
+                    ),
+                  }),
           ),
       },
     });
@@ -563,6 +576,10 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
 
   function reorderStage(fromIndex: number, toIndex: number) {
     if (readOnly) return;
+    if (draft && !canMoveStage(draft.graph, fromIndex, toIndex)) {
+      toast.error('A stage can’t move past a stage it runs after (or one that runs after it).');
+      return;
+    }
     setDraft((prev) => prev && { ...prev, graph: moveStage(prev.graph, fromIndex, toIndex) });
   }
 

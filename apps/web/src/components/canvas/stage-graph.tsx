@@ -19,11 +19,14 @@ import {
 } from '@/pages/stage-graph.logic';
 import {
   dropIndex,
-  NODE_TOP_Y,
+  isChainLayout,
   START_NODE_X,
   STAGE_NODE_WIDTH,
+  stageLayout,
   stageX,
+  stageY,
 } from '@/pages/canvas-layout.logic';
+import type { StageDef } from '@reelcraft/shared';
 import { MemoryEdge, TrunkEdge } from './stage-edges';
 import { AddNode, StageNode, StartNode } from './stage-node';
 
@@ -49,12 +52,17 @@ export type StageGraphApi = {
   focusStage: (index: number) => void;
 };
 
-export function useStageGraphApi(): StageGraphApi {
+export function useStageGraphApi(graph: StageDef[]): StageGraphApi {
   const { setCenter } = useReactFlow();
+  const latest = useRef(graph);
+  latest.current = graph;
   return useMemo(
     () => ({
       focusStage(index: number) {
-        void setCenter(stageX(index) + STAGE_NODE_WIDTH / 2, NODE_TOP_Y + 150, {
+        // A stage added a moment ago may not be in the graph yet: assume the
+        // next column of the first lane, as in a chain.
+        const slot = stageLayout(latest.current)[index] ?? { level: index, lane: 0 };
+        void setCenter(stageX(slot.level) + STAGE_NODE_WIDTH / 2, stageY(slot.lane) + 150, {
           zoom: FOCUS_ZOOM,
           duration: 300,
         });
@@ -94,12 +102,12 @@ export function StageGraph({
   }, [derived.nodes]);
 
   const onNodesChange = useCallback((changes: NodeChange<FlowNode>[]) => {
-    // Cards slide along the trunk only.
-    const locked = changes.map((change) =>
-      change.type === 'position' && change.position
-        ? { ...change, position: { x: change.position.x, y: NODE_TOP_Y } }
-        : change,
-    );
+    // Cards slide along the trunk only (and only when the stages form one row).
+    const locked = changes.map((change) => {
+      if (change.type !== 'position' || !change.position) return change;
+      const home = latest.current.find((node) => node.id === change.id);
+      return { ...change, position: { x: change.position.x, y: home?.position.y ?? 0 } };
+    });
     setNodes((previous) => applyNodeChanges(locked, previous));
   }, []);
 
@@ -111,6 +119,7 @@ export function StageGraph({
     (_event, node) => {
       dragging.current = false;
       const from = input.graph.findIndex((s) => s.key === node.id);
+      if (!isChainLayout(stageLayout(input.graph))) return;
       const to = dropIndex(node.position.x, input.graph.length);
       if (from === -1 || from === to) {
         // Not moved: put the card back on its slot.
@@ -128,15 +137,19 @@ export function StageGraph({
     if (focused.current) return;
     focused.current = true;
     if (initialFocusIndex !== null) {
+      const slot = stageLayout(input.graph)[initialFocusIndex] ?? {
+        level: initialFocusIndex,
+        lane: 0,
+      };
       void setViewport({
-        x: 360 - (stageX(initialFocusIndex) + STAGE_NODE_WIDTH / 2) * FOCUS_ZOOM,
-        y: 32,
+        x: 360 - (stageX(slot.level) + STAGE_NODE_WIDTH / 2) * FOCUS_ZOOM,
+        y: 32 - stageY(slot.lane) * FOCUS_ZOOM + stageY(0) * FOCUS_ZOOM,
         zoom: FOCUS_ZOOM,
       });
       return;
     }
     void setViewport({ x: 40 - START_NODE_X * READABLE_ZOOM, y: 32, zoom: READABLE_ZOOM });
-  }, [initialFocusIndex, setViewport]);
+  }, [initialFocusIndex, input.graph, setViewport]);
 
   return (
     <ReactFlow<FlowNode>

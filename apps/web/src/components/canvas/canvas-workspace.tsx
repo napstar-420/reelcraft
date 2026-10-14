@@ -59,7 +59,7 @@ function paletteContext(graph: StageDef[], index: number): string {
 
 function Workspace(props: CanvasWorkspaceProps) {
   const { graph, readOnly } = props;
-  const graphApi = useStageGraphApi();
+  const graphApi = useStageGraphApi(graph);
   const [palette, setPalette] = useState<{ index: number } | null>(null);
   const [showMemoryLinks, setShowMemoryLinks] = useState(true);
   const [adding, setAdding] = useState(false);

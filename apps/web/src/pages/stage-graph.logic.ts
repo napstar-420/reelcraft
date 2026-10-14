@@ -11,7 +11,16 @@ import {
   upstreamBlocker,
 } from '../components/canvas/stage-card.logic';
 import { memoryLinks } from './canvas-graph.logic';
-import { NODE_TOP_Y, START_NODE_X, stageX } from './canvas-layout.logic';
+import {
+  isChainLayout,
+  NODE_TOP_Y,
+  reducedEdges,
+  START_NODE_X,
+  stageLayout,
+  stageX,
+  stageY,
+} from './canvas-layout.logic';
+import { stageDependencies } from '../lib/stage-deps';
 
 export const START_NODE_ID = '__start__';
 export const ADD_NODE_ID = '__add__';
@@ -35,11 +44,17 @@ export type StageGraphInput = {
   showMemoryLinks: boolean;
 };
 
-/** Trunk layout: x = array index × fixed spacing, recomputed from the graph
- * on every change and never persisted. The Start node sits one slot before
- * the first stage; the "Add stage" card one slot after the last. */
+/** Layered layout, recomputed from the graph on every change and never
+ * persisted: x is the column (the longest chain of stages a stage waits for),
+ * y the lane among stages in the same column. A chain is one row, exactly as
+ * before. The Start node sits one slot before the first column; the "Add
+ * stage" card one column after the last. */
 export function buildStageGraph(input: StageGraphInput): { nodes: FlowNode[]; edges: FlowEdge[] } {
   const { graph, readOnly } = input;
+  const layout = stageLayout(graph);
+  const chainLayout = isChainLayout(layout);
+  const deps = stageDependencies(graph);
+  const lastColumn = layout.reduce((max, slot) => Math.max(max, slot.level), -1);
   const labelOf = new Map(input.capabilities.map((c) => [c.key, c.label]));
   const executions = new Map(input.run?.stageExecutions.map((e) => [e.stageKey, e]));
   const keys = new Set(graph.map((s) => s.key));
@@ -57,8 +72,8 @@ export function buildStageGraph(input: StageGraphInput): { nodes: FlowNode[]; ed
     ...graph.map<StageFlowNode>((stage, index) => ({
       id: stage.key,
       type: 'stage',
-      position: { x: stageX(index), y: NODE_TOP_Y },
-      draggable: !readOnly,
+      position: { x: stageX(layout[index]!.level), y: stageY(layout[index]!.lane) },
+      draggable: !readOnly && chainLayout,
       selected: stage.key === input.selectedKey,
       data: {
         index,
@@ -79,7 +94,10 @@ export function buildStageGraph(input: StageGraphInput): { nodes: FlowNode[]; ed
     nodes.push({
       id: ADD_NODE_ID,
       type: 'add',
-      position: { x: stageX(graph.length), y: NODE_TOP_Y },
+      position: {
+        x: stageX(lastColumn + 1),
+        y: stageY(layout[graph.length - 1]?.lane ?? 0),
+      },
       draggable: false,
       selectable: false,
       data: {
@@ -104,13 +122,26 @@ export function buildStageGraph(input: StageGraphInput): { nodes: FlowNode[]; ed
     focusable: false,
     data,
   });
-  const chain = [START_NODE_ID, ...graph.map((s) => s.key)];
-  chain.forEach((source, index) => {
-    const next = graph[index];
-    if (next) edges.push(trunk(source, next.key, { insertIndex: index, readOnly }));
+  // Start feeds every stage that waits for nothing. The `+` on a connector
+  // inserts a stage at that point, so only the connector a stage gets by
+  // default (from the stage before it) carries one.
+  graph.forEach((stage, index) => {
+    if ((deps.get(stage.key) ?? []).length === 0) {
+      edges.push(
+        trunk(START_NODE_ID, stage.key, {
+          readOnly,
+          ...(index === 0 ? { insertIndex: 0 } : {}),
+        }),
+      );
+    }
   });
+  for (const [from, to] of reducedEdges(graph)) {
+    const index = graph.findIndex((s) => s.key === to);
+    const implicit = graph[index]!.dependsOn === undefined && graph[index - 1]?.key === from;
+    edges.push(trunk(from, to, { readOnly, ...(implicit ? { insertIndex: index } : {}) }));
+  }
   if (!readOnly) {
-    edges.push(trunk(chain[chain.length - 1] ?? START_NODE_ID, ADD_NODE_ID, { readOnly }));
+    edges.push(trunk(graph[graph.length - 1]?.key ?? START_NODE_ID, ADD_NODE_ID, { readOnly }));
   }
 
   if (input.showMemoryLinks) {

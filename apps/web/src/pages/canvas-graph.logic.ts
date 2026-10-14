@@ -1,5 +1,6 @@
 import type { Ref, StageDef, ValidationIssue } from '@reelcraft/shared';
 import { deriveMemoryWriters } from '../lib/memory-writers';
+import { isTopological } from '../lib/stage-deps';
 import { parseValidationPath } from '../lib/parse-validation-path';
 
 /** Splices `graph[fromIndex]` out and back in at `toIndex`. */
@@ -10,6 +11,44 @@ export function moveStage(graph: StageDef[], fromIndex: number, toIndex: number)
   if (!moved) return graph;
   next.splice(toIndex, 0, moved);
   return next;
+}
+
+/** True when moving `graph[fromIndex]` to `toIndex` keeps every stage after the
+ * stages it waits for. A chain can always be reordered; stages with an explicit
+ * "Runs after" or a stage reference can not move past what they depend on. */
+export function canMoveStage(graph: StageDef[], fromIndex: number, toIndex: number): boolean {
+  return isTopological(moveStage(graph, fromIndex, toIndex));
+}
+
+/** `stage` with its `dependsOn` set, or removed when `dependsOn` is undefined. */
+export function withDependsOn(stage: StageDef, dependsOn: string[] | undefined): StageDef {
+  const next: StageDef = { ...stage };
+  delete next.dependsOn;
+  return dependsOn === undefined ? next : { ...next, dependsOn };
+}
+
+/** Removes a stage. Stages that ran after it now run after what it ran after,
+ * so deleting a stage in a branch never detaches the stages behind it. `restore`
+ * holds the `dependsOn` each rewired stage had, for Undo. A `{from:'stage'}`
+ * reference to the removed stage is left for validation to report. */
+export function removeStage(
+  graph: StageDef[],
+  key: string,
+): { graph: StageDef[]; restore: Map<string, string[] | undefined> } {
+  const index = graph.findIndex((s) => s.key === key);
+  const removed = graph[index];
+  const restore = new Map<string, string[] | undefined>();
+  if (!removed) return { graph, restore };
+  const inherited = removed.dependsOn ?? (index > 0 ? [graph[index - 1]!.key] : []);
+  const next = graph
+    .filter((s) => s.key !== key)
+    .map((stage) => {
+      if (!stage.dependsOn?.includes(key)) return stage;
+      restore.set(stage.key, stage.dependsOn);
+      const rewired = stage.dependsOn.flatMap((dep) => (dep === key ? inherited : [dep]));
+      return withDependsOn(stage, [...new Set(rewired)]);
+    });
+  return { graph: next, restore };
 }
 
 /** Inserts `stage` so it ends up at `index` (clamped; past the end appends). */
