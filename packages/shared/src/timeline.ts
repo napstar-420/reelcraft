@@ -112,9 +112,82 @@ export const Track = z.object({
 });
 export type Track = z.infer<typeof Track>;
 
+/** The version a timeline has to be written as: 2 when it uses anything added after version 1,
+ * otherwise 1. Pure, so the parse can set it and tests can check it. */
+export function timelineVersionFor(timeline: {
+  world?: unknown;
+  camera?: unknown;
+  theme?: unknown;
+}): 1 | 2 {
+  return timeline.world || timeline.camera || timeline.theme ? 2 : 1;
+}
+
+/** A big canvas the camera moves over, in its own units. Items with `space: 'world'` live on it. */
+export const TimelineWorld = z.object({
+  width: z.number().int().positive().max(20000),
+  height: z.number().int().positive().max(20000),
+});
+export type TimelineWorld = z.infer<typeof TimelineWorld>;
+
+export const CameraEase = z.enum(['linear', 'in', 'out', 'in_out']);
+export type CameraEase = z.infer<typeof CameraEase>;
+
+/** Where the camera looks at `atSec`: the world point at the centre of the frame, and how far in. */
+export const CameraKey = z.object({
+  atSec: finiteNonNegative,
+  cx: z.number().finite(),
+  cy: z.number().finite(),
+  /** 1 shows as much of the world as fits the frame; 2 is twice as close. */
+  zoom: finitePositive.max(20),
+  /** How the camera eases into this key from the one before. */
+  ease: CameraEase.optional(),
+});
+export type CameraKey = z.infer<typeof CameraKey>;
+
+export const TimelineCamera = z
+  .object({ keys: z.array(CameraKey).min(1).max(200) })
+  .superRefine((camera, ctx) => {
+    for (let i = 1; i < camera.keys.length; i += 1) {
+      if (camera.keys[i]!.atSec < camera.keys[i - 1]!.atSec) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['keys', i, 'atSec'],
+          message: 'camera keys must be in time order',
+        });
+      }
+    }
+  });
+export type TimelineCamera = z.infer<typeof TimelineCamera>;
+
+/** The look of a hand-drawn video, so every drawn item follows one style. Colours and fonts are
+ * values, not names, so the render needs nothing from the API. */
+export const TimelineTheme = z.object({
+  paper: z.string().min(1).max(40),
+  ink: z.string().min(1).max(40),
+  highlight: z.string().min(1).max(40),
+  accents: z.array(z.string().min(1).max(40)).min(1).max(6),
+  fontHand: z.string().min(1).max(80),
+  fontBody: z.string().min(1).max(80),
+  /** Line weight, in world units. */
+  strokeWidth: z.number().positive().max(40),
+  /** How wobbly lines are drawn, 0 (clean) to 1. */
+  roughness: z.number().min(0).max(1),
+  paperTexture: z.enum(['none', 'paper', 'grid']).optional(),
+});
+export type TimelineTheme = z.infer<typeof TimelineTheme>;
+
+/** Which tracks each kind of item can sit on. */
+export const ITEM_TRACKS = {
+  media: ['video', 'audio', 'overlay'],
+  text: ['overlay'],
+  captions: ['captions'],
+} as const satisfies Record<TimelineItem['type'], ReadonlyArray<Track['type']>>;
+
 export const Timeline = z
   .object({
-    version: z.literal(1),
+    /** 1 until a timeline uses something added later (a world, camera or theme), then 2. Older
+     * releases reject 2 instead of silently dropping what they don't know. The parse sets it. */
+    version: z.union([z.literal(1), z.literal(2)]),
     canvas: z.object({
       width: z.number().int().positive(),
       height: z.number().int().positive(),
@@ -122,8 +195,18 @@ export const Timeline = z
       background: z.string().optional(),
     }),
     tracks: z.array(Track),
+    world: TimelineWorld.optional(),
+    camera: TimelineCamera.optional(),
+    theme: TimelineTheme.optional(),
   })
   .superRefine((timeline, ctx) => {
+    if (timeline.camera && !timeline.world) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['camera'],
+        message: 'a camera needs a world to move over',
+      });
+    }
     const ids = new Set<string>();
     for (const [trackIndex, track] of timeline.tracks.entries()) {
       if (ids.has(track.id)) {
@@ -142,12 +225,7 @@ export const Timeline = z
         });
       }
       for (const [itemIndex, item] of track.items.entries()) {
-        const compatible =
-          item.type === 'media'
-            ? track.type === 'video' || track.type === 'audio' || track.type === 'overlay'
-            : item.type === 'text'
-              ? track.type === 'overlay'
-              : track.type === 'captions';
+        const compatible = (ITEM_TRACKS[item.type] as readonly string[]).includes(track.type);
         if (!compatible) {
           ctx.addIssue({
             code: z.ZodIssueCode.custom,
@@ -192,7 +270,8 @@ export const Timeline = z
         });
       }
     }
-  });
+  })
+  .transform((timeline) => ({ ...timeline, version: timelineVersionFor(timeline) }));
 export type Timeline = z.infer<typeof Timeline>;
 
 export const TimelineResource = z.object({

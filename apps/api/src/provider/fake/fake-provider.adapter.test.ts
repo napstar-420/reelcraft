@@ -37,4 +37,18 @@ describe('FakeProviderAdapter media fixtures', () => {
     const { output } = await provider.fetch(handle);
     expect((output as { images: unknown[] }).images).toHaveLength(2);
   });
+
+  it('gives spoken text word timings, and silence none', async () => {
+    const provider = new FakeProviderAdapter();
+    const spoken = await provider.submit(
+      { modelId: 'fake-audio-1', params: { slots: { text: 'Cue, routine, reward.' } } },
+      'fixture-audio-timing',
+    );
+    const { timing } = await provider.fetch(spoken);
+    expect(timing?.words.map((word) => word.text)).toEqual(['Cue,', 'routine,', 'reward.']);
+    expect(timing?.durationSec).toBeCloseTo(1.2);
+
+    const silent = await provider.submit({ modelId: 'fake-audio-1', params: {} }, 'fixture-silent');
+    expect((await provider.fetch(silent)).timing).toBeUndefined();
+  });
 });

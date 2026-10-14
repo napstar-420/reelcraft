@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Timeline } from './timeline';
+import { Timeline, timelineVersionFor } from './timeline';
 
 const base = {
   version: 1 as const,
@@ -179,6 +179,69 @@ describe('Timeline', () => {
       ).toBe(true);
       expect(clip({ transitionOut: { type: 'spin', durationSec: 1 } }).success).toBe(false);
       expect(clip({ transitionOut: { type: 'slide', durationSec: 0 } }).success).toBe(false);
+    });
+  });
+
+  describe('version, world, camera and theme', () => {
+    const theme = {
+      paper: '#fbfaf5',
+      ink: '#1a1a1a',
+      highlight: '#ffd84a',
+      accents: ['#3b82f6', '#22c55e', '#ef4444'],
+      fontHand: 'Caveat',
+      fontBody: 'Patrick Hand',
+      strokeWidth: 4,
+      roughness: 0.3,
+    };
+
+    it('stays version 1 when nothing newer is used', () => {
+      expect(Timeline.parse({ ...base, tracks: [] }).version).toBe(1);
+      expect(timelineVersionFor({})).toBe(1);
+    });
+
+    it('is written as version 2 when it uses a world, camera or theme', () => {
+      const world = { width: 5000, height: 3000 };
+      const camera = { keys: [{ atSec: 0, cx: 2500, cy: 1500, zoom: 1 }] };
+      for (const extra of [{ world }, { world, camera }, { theme }]) {
+        expect(Timeline.parse({ ...base, tracks: [], ...extra }).version).toBe(2);
+      }
+    });
+
+    it('fixes a timeline that says version 1 but uses newer fields', () => {
+      const parsed = Timeline.parse({ ...base, version: 1, tracks: [], theme });
+      expect(parsed.version).toBe(2);
+    });
+
+    it('accepts a version 2 timeline that uses nothing new, and writes it as 1', () => {
+      expect(Timeline.parse({ ...base, version: 2, tracks: [] }).version).toBe(1);
+    });
+
+    it('rejects a camera without a world, and unordered camera keys', () => {
+      const camera = { keys: [{ atSec: 0, cx: 0, cy: 0, zoom: 1 }] };
+      expect(Timeline.safeParse({ ...base, tracks: [], camera }).success).toBe(false);
+      const unordered = {
+        keys: [
+          { atSec: 2, cx: 0, cy: 0, zoom: 1 },
+          { atSec: 1, cx: 0, cy: 0, zoom: 2 },
+        ],
+      };
+      const result = Timeline.safeParse({
+        ...base,
+        tracks: [],
+        world: { width: 100, height: 100 },
+        camera: unordered,
+      });
+      expect(result.success).toBe(false);
+      expect(JSON.stringify(result)).toContain('time order');
+    });
+
+    it('rejects a theme that is out of range', () => {
+      expect(
+        Timeline.safeParse({ ...base, tracks: [], theme: { ...theme, roughness: 2 } }).success,
+      ).toBe(false);
+      expect(
+        Timeline.safeParse({ ...base, tracks: [], theme: { ...theme, accents: [] } }).success,
+      ).toBe(false);
     });
   });
 });
