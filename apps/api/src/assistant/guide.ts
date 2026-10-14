@@ -1,5 +1,10 @@
 import type { CreateBlueprintVersionDto } from '@reelcraft/shared';
-import { recipeBrollMontage, recipeIllustratedStory, recipeVoiceoverReel } from './guide-recipes';
+import {
+  recipeBrollMontage,
+  recipeIllustratedStory,
+  recipeParallelStory,
+  recipeVoiceoverReel,
+} from './guide-recipes';
 import { renderTroubleshooting } from './guide-troubleshooting';
 
 /**
@@ -22,7 +27,7 @@ export const GUIDE: Record<string, GuideSection> = {
     title: 'How a blueprint works',
     body: `A blueprint is a recipe for a video: an ordered list of **stages** (\`graph\`), the **inputs** a run asks for, an optional **role** (a channel Character), a **defaults** layer and a **budget** (\`runCapUsd\`).
 
-- A run executes the stages one at a time, in order. Stages never run in parallel; the items of an iterating stage can (\`iterate.concurrency\`).
+- A run starts a stage once every stage it depends on has finished. With no \`dependsOn\` a stage depends on the stage before it, so a blueprint is a chain and runs one stage at a time. Stages that do not depend on each other run in parallel (see \`dependsOn\` in the iterate topic). The items of an iterating stage run in order unless \`iterate.concurrency\` is set.
 - Each stage has a type (\`capability\`), \`slots\` (the inputs the type asks for), \`context\` (extra values for the prompt), an \`output\` and optional checks, quality control, approval, iterate and enabledWhen.
 - Stage \`key\`s must be unique. Pick short descriptive keys such as \`script\`, \`scenes\`, \`images\`, \`voice\`. Once saved, runs refer to a stage by its key, so don't rename keys of existing stages without a reason.
 - Always send the COMPLETE draft (every stage, inputs, roles, defaults, budget). A draft is not a patch.
@@ -117,9 +122,11 @@ Mark the fields later stages need as \`required\`, and add a \`description\` to 
 - To use item N of an earlier iterating stage in item N of this one, iterate over the same list and put \`alignWith:'item'\` on the prev ref and on the iterate. Otherwise read through memory (a list).
 - \`maxItems\` caps items (built-in cap 50). A failed item fails the stage; finished items are kept on resume.
 
+**dependsOn**: \`string[]\`, optional. The stages that must finish before this one starts; every key must be a stage EARLIER in the graph. Unset = wait for the previous stage (the default: do not set it for an ordinary chain). \`[]\` = start as soon as the stages this one reads from are done. A stage always also waits for the stage behind every \`prev\` or \`stage\` ref it reads and for the earlier writers of every memory key it reads. Stages that wait for the same thing run in parallel; a stage that waits for several joins them. Use it for work that does not need each other (narration and illustrations, music and b-roll). Two stages that can run at the same time must not write the same memory key. Read a non-adjacent stage's output with \`{from:'stage', stageKey}\`, not \`prev\`. When a stage stops for approval or input, the stages running beside it finish and then the run waits.
+
 **enabledWhen**: \`{ input: '<inputKey>', equals: string|number|boolean }\` skips the stage unless the run's input equals the value (exact comparison; a missing input skips). The input must be declared. Stages after a skipped stage still run, so those reading its output need the same enabledWhen. This is the ONLY branching Reelcraft has.
 
-**approval**: \`{ mode: 'stage'|'item', onReject?: { retryStageKey } }\` pauses the run for the user to approve or reject. \`item\` mode needs \`iterate\`. A rejection note goes to the next attempt's prompt. \`onReject.retryStageKey\` must be this stage or an EARLIER one and should have an instructions template. Approval is how video outputs are controlled, because QC isn't available on video: video stages should declare approval (otherwise a warning).`,
+**approval**: \`{ mode: 'stage'|'item', onReject?: { retryStageKey } }\` pauses the run for the user to approve or reject. \`item\` mode needs \`iterate\`. A rejection note goes to the next attempt's prompt. \`onReject.retryStageKey\` must be this stage or a stage it depends on, and should have an instructions template. Approval is how video outputs are controlled, because QC isn't available on video: video stages should declare approval (otherwise a warning).`,
   },
 
   'checks-qc': {
@@ -269,6 +276,15 @@ ${JSON.stringify(
 ${JSON.stringify(recipeBrollMontage(), null, 2)}
 \`\`\`
 
+**4. Story whose narration is written while the pictures are drawn (parallel).** The illustrated story of 2 with one change: the narration stage has \`dependsOn: ['story']\`, so it runs beside the illustration stage instead of after it. Only that stage differs from 2; everything else, including memory reads, stays. Use \`dependsOn\` the same way for any branch that does not need another (B-roll next to a voice-over, say), and make the stage that joins them read both. Only the changed stage:
+\`\`\`json
+${JSON.stringify(
+  recipeParallelStory().graph.find((stage) => stage.key === 'narration'),
+  null,
+  2,
+)}
+\`\`\`
+
 When a request mixes shapes (a story with a few real clips, a voice-over plus music), combine the stages; keep each rule from the quality topic. Always bind run inputs for what changes per run (topic, tone, a photo) and put constants in the prompts.`,
   },
 
@@ -353,7 +369,7 @@ ${renderTroubleshooting()}`,
     body: `If the user asks for any of these, do NOT build something that pretends to do it. Say plainly that Reelcraft can't, why, and suggest the closest thing that works.
 
 - **Publish or upload anywhere** (YouTube, TikTok, Instagram…): \`publish.stub\` is a placeholder that does nothing.
-- **Parallel stages**: stages run strictly one after another. Only the items of one iterating stage can run together (\`iterate.concurrency\`).
+- **Parallel stages beyond dependencies**: stages run in parallel only when nothing makes one wait for the other (\`dependsOn\`, or reading its output). You cannot cap or schedule them per provider, and a provider that serves one request at a time makes parallel stages take turns.
 - **Branching**: the only conditional is \`enabledWhen\` (a run input equals a value). No if/else, loops over stages, or computed conditions.
 - **Iterate** over a many-cardinality media set, or use \`groupKey\` (ignored); \`iterate.over\` must be an array from memory or a whole-output array from prev.
 - **QC on video output or on \`human.input\`** (use approval); QC \`includeTranscript\` outside audio.
@@ -361,7 +377,7 @@ ${renderTroubleshooting()}`,
 - **Running, dry-running, saving or approving**: you only propose drafts and metadata changes; the user saves and runs.
 - **JSON schemas beyond the small subset** (\`$ref\`, \`oneOf\`, \`anyOf\`, \`allOf\`, \`additionalProperties\`, …).
 - **Template logic**: \`{{ }}\` only inserts values: no conditions, loops, formulas, and no \`{{ item }}\`.
-- **\`prev\` on the first stage**, \`prevItem\` or \`item\` outside an iterating stage, a memory key written by two stages.
+- **\`prev\` on the first stage**, \`prevItem\` or \`item\` outside an iterating stage, a memory key written by two stages that can run at the same time (make one \`dependsOn\` the other).
 - **Anything about a model, style, check, asset or capability that the tools don't list.** Don't guess and don't use training knowledge about what Reelcraft "probably" has: look it up, and if it isn't there, it doesn't exist in this install.
 - **Starting, retrying, approving or cancelling runs**, and anything on the web. You can read this blueprint's runs and what they made (\`list_runs\`, \`get_run\`, \`get_stage\`, \`view_stage_media\`), not other blueprints' runs, and you can't play audio or watch video (frames only).
 - Anything you did not read with a tool: you only know what the tools return.`,

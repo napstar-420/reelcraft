@@ -10,7 +10,7 @@ Reelcraft makes videos by following **recipes** you build. Here is how the piece
 **Channel**: the home for one kind of video you make, such as a YouTube channel. Everything below lives
 inside a channel: its blueprints, characters, assets and runs. See [Channels](../channels/channels.md).
 
-**Blueprint**: a recipe for a video. It's a list of **stages** that run in order. See
+**Blueprint**: a recipe for a video. It's a set of **stages** that run in order, or side by side when they don't need each other. See
 [Blueprints](../blueprints/blueprints.md).
 
 **Version**: every time you save a blueprint, Reelcraft keeps a copy that never changes, numbered like
@@ -42,8 +42,9 @@ Channel
 ## What happens in a run
 
 1. You pick a blueprint version and fill in its **inputs**: a topic, a script, a photo.
-2. Reelcraft runs the **stages** one at a time. Each stage reads what it needs, perhaps the previous
-   stage's output, and makes its own.
+2. Reelcraft runs the **stages**, one after another by default. Stages that don't need each other can run at
+   the same time (see [Parallel stages](../blueprints/parallel-stages.md)). Each stage reads what it needs,
+   perhaps an earlier stage's output, and makes its own.
 3. After a stage, Reelcraft can **check** its output automatically, ask an AI judge to score it
    (**quality control**), or pause for **your approval**. If the output isn't good enough, the stage tries
    again with feedback.
@@ -52,17 +53,18 @@ Channel
 
 ## What you control, and where
 
-| You want to…                              | Look at                                                                                   |
-| ----------------------------------------- | ----------------------------------------------------------------------------------------- |
-| Choose the AI model for each kind of work | [Defaults](../channels/defaults.md) and [Models](../blueprints/models.md)                 |
-| Write instructions for an AI model        | [Prompts](../blueprints/prompts.md)                                                       |
-| Feed one stage with another's output      | [Connecting stages](../blueprints/connecting-stages.md)                                   |
-| Repeat a stage for every scene            | [Iterate](../blueprints/iterate-conditions-approval.md#iterate)                           |
-| Catch bad results automatically           | [Checks](../blueprints/checks.md) and [Quality control](../blueprints/quality-control.md) |
-| Review results yourself                   | [Human approval](../blueprints/iterate-conditions-approval.md#human-approval)             |
-| Keep the same face in every image         | [Characters](../channels/characters.md)                                                   |
-| Put clips, music and captions together    | [Assembly](../video/assembly.md)                                                          |
-| Limit what a run can spend                | [Budget and costs](../runs/budget-and-costs.md)                                           |
-| Try things out for free                   | [Dry runs](../runs/dry-runs.md)                                                           |
+| You want to…                               | Look at                                                                                   |
+| ------------------------------------------ | ----------------------------------------------------------------------------------------- |
+| Choose the AI model for each kind of work  | [Defaults](../channels/defaults.md) and [Models](../blueprints/models.md)                 |
+| Write instructions for an AI model         | [Prompts](../blueprints/prompts.md)                                                       |
+| Feed one stage with another's output       | [Connecting stages](../blueprints/connecting-stages.md)                                   |
+| Repeat a stage for every scene             | [Iterate](../blueprints/iterate-conditions-approval.md#iterate)                           |
+| Make music, voice-over and b-roll together | [Parallel stages](../blueprints/parallel-stages.md)                                       |
+| Catch bad results automatically            | [Checks](../blueprints/checks.md) and [Quality control](../blueprints/quality-control.md) |
+| Review results yourself                    | [Human approval](../blueprints/iterate-conditions-approval.md#human-approval)             |
+| Keep the same face in every image          | [Characters](../channels/characters.md)                                                   |
+| Put clips, music and captions together     | [Assembly](../video/assembly.md)                                                          |
+| Limit what a run can spend                 | [Budget and costs](../runs/budget-and-costs.md)                                           |
+| Try things out for free                    | [Dry runs](../runs/dry-runs.md)                                                           |
 
 New words are explained in the [Glossary](./glossary.md).

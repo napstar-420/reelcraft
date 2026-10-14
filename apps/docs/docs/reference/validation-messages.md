@@ -20,6 +20,19 @@ settings**. See [Versions](../blueprints/versions.md#runnable-or-not).
 | role "…" is declared but never bound by any stage _(warning)_ | Bind a stage's slot to the role, or remove the role                                                    |
 | memory key "…" is written by multiple stages _(warning)_      | Give each stage its own memory key. See [Connecting stages](../blueprints/connecting-stages.md#memory) |
 
+## Parallel stages
+
+| Message                                                                                                 | What to do                                                                                              |
+| ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| runs after unknown stage "…"                                                                            | **Runs after** names a stage that doesn't exist. Pick another or switch to **Previous stage**           |
+| runs after itself — remove it from dependsOn                                                            | Untick the stage itself in **Runs after**                                                               |
+| runs after "…", which comes later in the graph — move this stage after "…"                              | A stage can only wait for an earlier stage. Move this stage after it                                    |
+| reads the output of unknown stage "…"                                                                   | The stage chosen under **Output of stage…** is gone. Pick another                                       |
+| reads the output of "…", which comes later in the graph — move this stage after "…"                     | Move this stage after the one it reads                                                                  |
+| `{from:'stage'} cannot read this stage's own output — use {from:'prevItem'} for the previous item`      | To read the previous item of the same stage, use **prevItem**                                           |
+| memory key "…" is written by "…" and "…", which can run at the same time — make one run after the other | Set **Runs after** on one of them to the other. See [Parallel stages](../blueprints/parallel-stages.md) |
+| onReject target "…" is not upstream of this stage …                                                     | Pick this stage or a stage it waits for under **Retry stage**                                           |
+
 ## Characters and roles
 
 | Message                                                                                   | What to do                                                           |

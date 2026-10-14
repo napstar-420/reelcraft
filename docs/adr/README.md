@@ -19,5 +19,6 @@ one, take the next number, and add a row here. Supersede an ADR instead of editi
 | [0010](0010-live-updates-over-socket-io.md)                    | Live updates over Socket.IO, as invalidation hints                             | accepted | 2026-10-08 |
 | [0011](0011-notifications-inbox-and-web-push.md)               | Notifications: a server inbox, Web Push, and per-browser choices               | accepted | 2026-10-08 |
 | [0012](0012-local-qwen3-tts-service.md)                        | Qwen3-TTS is a separate local service; weights download on request             | accepted | 2026-10-12 |
+| [0013](0013-dependency-derived-scheduling-in-waves.md)         | Stages are scheduled from their dependencies, in waves                         | accepted | 2026-10-14 |
 
 ADRs 0001–0007 were decided during the self-hosting work in October 2026 and recorded together on 2026-10-03, so the dates are when they were written down.
