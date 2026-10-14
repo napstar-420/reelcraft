@@ -11,7 +11,13 @@ import type {
   SeedStop,
   HumanWaitKind,
 } from '@reelcraft/shared';
-import { InputDef, RoleDef as RoleDefSchema, StageDef } from '@reelcraft/shared';
+import {
+  ancestorsOf,
+  InputDef,
+  RoleDef as RoleDefSchema,
+  StageDef,
+  stageDependencies,
+} from '@reelcraft/shared';
 import { RUN_ACTION_ALLOWED_STATES } from './run-action-policy';
 import { stageReferenceLimit } from '../common/reference-limit';
 import { findFinalVideo } from '../artifact/final-video';
@@ -56,7 +62,7 @@ import {
   copyReusedStages,
   describeSeedStop,
   reusableStageKeys,
-  untilStageIndex,
+  untilStageKeep,
   type SourceExecutionSummary,
 } from './run-seed';
 
@@ -140,7 +146,7 @@ export class RunService {
         throw new ConflictException(`Stage "${key}" is not part of this blueprint version`);
       }
     }
-    const stopIndex = untilStageIndex(graph, dto.untilStageKey);
+    const keep = untilStageKeep(graph, dto.untilStageKey);
 
     // Canvas "run this stage" / "run to here" — see run-seed.ts and the
     // run-stages-from-canvas plan. Copies a still-valid prefix of a previous
@@ -230,16 +236,17 @@ export class RunService {
         newRoles,
         sourceExecutions,
         rerunStageKeys: dto.rerunStageKeys,
+        ...(keep && { relevant: keep }),
       });
       if (stageKeys.length > 0) seed = { sourceRunId: dto.seedFromRunId, stageKeys };
       seedStop = stop;
 
       // Before anything is inserted: "run this stage" must not silently start
       // an earlier stage instead of (or before) the one that was asked for.
-      const expectedIndex = dto.expectReusedBefore
-        ? graph.findIndex((s) => s.key === dto.expectReusedBefore)
-        : -1;
-      if (stop && stageKeys.length < expectedIndex) {
+      const upstream = dto.expectReusedBefore
+        ? ancestorsOf(stageDependencies(graph), dto.expectReusedBefore)
+        : new Set<string>();
+      if (stop && upstream.has(stop.stageKey)) {
         throw new ConflictException({
           code: 'upstream_rerun',
           message: describeSeedStop(stop, `Running "${dto.expectReusedBefore}" would first re-run`),
@@ -264,12 +271,12 @@ export class RunService {
       const newExecutionIdByKey = new Map<string, string>();
       const stateByKey = new Map<string, 'passed' | 'skipped' | 'pending'>();
       const reusedKeys = new Set(seed?.stageKeys ?? []);
-      for (const [index, stage] of graph.entries()) {
+      for (const stage of graph) {
         const id = ulid();
         newExecutionIdByKey.set(stage.key, id);
         const state = reusedKeys.has(stage.key)
           ? 'passed'
-          : stopIndex !== undefined && index > stopIndex
+          : keep && !keep.has(stage.key)
             ? 'skipped'
             : 'pending';
         stateByKey.set(stage.key, state);

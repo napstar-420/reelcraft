@@ -1,5 +1,13 @@
 import { and, eq, inArray } from 'drizzle-orm';
-import type { ConfigLayer, RoleDef, SeedStop, SeedStopReason, StageDef } from '@reelcraft/shared';
+import {
+  ancestorsOf,
+  stageDependencies,
+  type ConfigLayer,
+  type RoleDef,
+  type SeedStop,
+  type SeedStopReason,
+  type StageDef,
+} from '@reelcraft/shared';
 import { canonicalJson } from '../json-schema/schema-hash';
 import { mergeLayer } from '../run-config/layer-merge';
 import { collectAssetIds } from '../blueprint/collect-asset-refs';
@@ -40,6 +48,10 @@ export interface ReusableStageKeysParams {
   sourceExecutions: SourceExecutionSummary[];
   /** Force these keys (and everything from the earliest one on) to re-run. */
   rerunStageKeys: string[];
+  /** When the new run stops at a stage, only that stage and what it waits for
+   * matter: any other stage is skipped here, neither reused nor a reason to
+   * stop reusing. */
+  relevant?: Set<string>;
 }
 
 /** `iterate.concurrency` and `dependsOn` only change when and how fast a
@@ -113,6 +125,7 @@ export function reusableStageKeys(p: ReusableStageKeysParams): {
 
   for (let i = 0; i < p.newGraph.length; i++) {
     const newStage = p.newGraph[i]!;
+    if (p.relevant && !p.relevant.has(newStage.key)) continue;
     const sourceStage = p.sourceGraph[i];
     const sourceExecution = sourceByKey.get(newStage.key);
     const stopAt = (reason: SeedStopReason) => ({
@@ -416,13 +429,13 @@ async function copyActiveAttempts(
   }
 }
 
-/** Returns the graph index just after `untilStageKey`, or `undefined` when
- * unset or not found. Stages at/after that index are created `skipped`. */
-export function untilStageIndex(
+/** The stages a run that stops at `untilStageKey` still runs: that stage and
+ * everything it waits for, directly or through others. The rest are created
+ * `skipped`. Undefined when unset or not found. */
+export function untilStageKeep(
   graph: StageDef[],
   untilStageKey: string | undefined,
-): number | undefined {
-  if (!untilStageKey) return undefined;
-  const idx = graph.findIndex((s) => s.key === untilStageKey);
-  return idx === -1 ? undefined : idx;
+): Set<string> | undefined {
+  if (!untilStageKey || !graph.some((s) => s.key === untilStageKey)) return undefined;
+  return new Set([untilStageKey, ...ancestorsOf(stageDependencies(graph), untilStageKey)]);
 }
