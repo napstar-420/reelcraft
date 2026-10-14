@@ -32,8 +32,10 @@ The items:
 - **Media**: a clip, image or sound, with a start time and a duration.
 - **Text**: words on screen, with a style and a position.
 - **Captions**: the words of a voice-over, timed to the speech, with a style.
+- **Drawing**: something drawn by hand on the screen: lines, written words, shapes and markers. See
+  [Hand-drawn videos](#hand-drawn-videos).
 
-An item must be on a suitable track: text on an overlay track, captions on a captions track.
+An item must be on a suitable track: text and drawings on an overlay track, captions on a captions track.
 
 ## Media items
 
@@ -74,6 +76,58 @@ A text item also has a **position**: **Top**, **Center** or **Bottom**.
 A captions item shows the words of a voice-over as it plays, in time with the speech. It uses the word
 timings from [Analyze Media](../stage-types/analyze-media.md), so you can't change what is said or when
 in the editor, only the style.
+
+## Hand-drawn videos
+
+A **drawing** item makes the whiteboard look: lines that draw themselves on, words that are written out,
+shapes that pop in and a marker that swipes across a word. A timeline can also have a **world** (a canvas
+bigger than the picture) with a **camera** that moves over it, and a **theme** that gives every drawing the
+same paper, ink, colours and handwriting fonts. You normally don't write these by hand: a stage builds
+them from a plan.
+
+A drawing item draws one of three things:
+
+- **Lines**: any shape, as lines drawn in order. A drawing is a list of strokes on a grid you choose.
+- **Written words**: text in the theme's handwriting font (**hand**) or its plain handwritten font (**body**).
+- **A shape**: an **arrow**, **circle**, **underline**, **box**, **highlight** (a marker swipe) or **check**.
+
+How it appears is its **animation**:
+
+| Animation     | What it does                                                                        |
+| ------------- | ----------------------------------------------------------------------------------- |
+| **Draw**      | Lines are drawn on one after another; a filled shape fills in once its line is done |
+| **Handwrite** | Words are written out from left to right                                            |
+| **Pop**       | Grows a little past full size, then settles                                         |
+| **Fade**      | Fades in                                                                            |
+| **Slide**     | Slides in from the left, right, top or bottom                                       |
+| **Highlight** | A marker swipes behind the item                                                     |
+| **None**      | Is there from the start                                                             |
+
+Draw and handwrite can show a **pen** or **marker** that follows the line. Each animation has its own pace,
+or you can give a length in seconds. An item can also have a few **keyframes** after it appears: where it is,
+how big, turned and how visible, at moments you choose, which blend between.
+
+Lines are drawn slightly wobbly, like a hand would, and the wobble is the same every time, so a video looks
+the same each time you render it. The theme's **roughness** sets how wobbly.
+
+### The world and the camera
+
+Items can sit **on the world** or **on the screen**. Items on the world move with the camera, and items on the
+screen stay where they are. The camera is a list of moments (**keys**), each with the point of the world it
+looks at and how close it is: **1** shows a part of the world as big as the picture, **2** is twice as
+close and **0.5** twice as far. Between two keys the camera glides, and zooming feels even. With no camera,
+the whole world is shown. Captions are always on the screen.
+
+### Pictures that draw in
+
+A **media** item that is an image can have a **reveal**, so it looks as if it is being drawn in: **wipe** from
+the left, a **circle** growing from the middle, or a **marker** swipe with a soft edge.
+
+### Version
+
+A timeline that uses a world, camera, theme, drawing or reveal is saved as **version 2**. An older release
+refuses to open it, instead of quietly dropping the drawings. Timelines that use none of these stay
+version 1.
 
 ## Ducking
 

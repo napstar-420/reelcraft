@@ -49,12 +49,98 @@ export const CaptionStyleOverrides = z.object({
 });
 export type CaptionStyleOverrides = z.infer<typeof CaptionStyleOverrides>;
 
+/** How a picture is uncovered as it appears. */
+export const MediaReveal = z.object({
+  type: z.enum(['wipe_lr', 'circle', 'marker']),
+  /** How long it takes; left out, 0.8 seconds. */
+  durationSec: finitePositive.optional(),
+});
+export type MediaReveal = z.infer<typeof MediaReveal>;
+
 /** A transition at one end of a clip. */
 export const MediaTransition = z.object({
   type: z.enum(['cut', 'crossfade', 'slide', 'wipe']),
   durationSec: finitePositive,
 });
 export type MediaTransition = z.infer<typeof MediaTransition>;
+
+/** How a change eases: steady, slow in, slow out, or both. */
+export const Ease = z.enum(['linear', 'in', 'out', 'in_out']);
+export type Ease = z.infer<typeof Ease>;
+
+/** One line to draw: SVG path data, in the item's own viewBox. */
+export const SketchStroke = z.object({
+  d: z.string().min(1).max(8000),
+  /** A CSS colour, or a theme colour: `ink`, `paper`, `highlight`, `accent1`, `accent2`, `accent3`.
+   * Left out, the line is `ink` unless it only has a fill. */
+  color: z.string().min(1).max(40).optional(),
+  /** Fills the shape, fading in once its line is drawn. */
+  fill: z.string().min(1).max(40).optional(),
+  /** How heavy the line is, against the theme's stroke width. */
+  weight: z.enum(['thin', 'normal', 'bold']).optional(),
+});
+export type SketchStroke = z.infer<typeof SketchStroke>;
+
+export const SketchShape = z.enum(['arrow', 'circle', 'underline', 'box', 'highlight', 'check']);
+export type SketchShape = z.infer<typeof SketchShape>;
+
+/** What a sketch item draws. */
+export const SketchContent = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('paths'),
+    viewBox: z.object({ width: finitePositive, height: finitePositive }),
+    strokes: z.array(SketchStroke).min(1).max(60),
+  }),
+  z.object({
+    kind: z.literal('text'),
+    text: z.string().min(1).max(300),
+    /** Letter height, in the item's units. */
+    size: finitePositive.max(2000),
+    color: z.string().min(1).max(40).optional(),
+    font: z.enum(['hand', 'body']).optional(),
+  }),
+  z.object({
+    kind: z.literal('shape'),
+    shape: SketchShape,
+    color: z.string().min(1).max(40).optional(),
+  }),
+]);
+export type SketchContent = z.infer<typeof SketchContent>;
+
+export const SketchAnim = z.object({
+  type: z.enum(['draw', 'handwrite', 'pop', 'fade', 'slide', 'highlight', 'none']),
+  /** How long the animation takes; left out, each kind has its own pace. */
+  durationSec: finitePositive.optional(),
+  ease: Ease.optional(),
+  /** Where `slide` comes in from. */
+  from: z.enum(['left', 'right', 'top', 'bottom']).optional(),
+  /** A pen or marker that follows the line while it is drawn. */
+  hand: z.enum(['none', 'marker', 'pencil']).optional(),
+});
+export type SketchAnim = z.infer<typeof SketchAnim>;
+
+/** A small move after the item has appeared: where it is, how big, turned, how visible. Values
+ * between two keys are blended. Times are from the item's own start. */
+export const SketchKeyframe = z.object({
+  atSec: finiteNonNegative,
+  x: z.number().finite().optional(),
+  y: z.number().finite().optional(),
+  scale: finitePositive.max(20).optional(),
+  rotate: z.number().finite().optional(),
+  opacity: z.number().min(0).max(1).optional(),
+  ease: Ease.optional(),
+});
+export type SketchKeyframe = z.infer<typeof SketchKeyframe>;
+
+/** Where the item's start came from: a word in the narration. The start time stays what counts;
+ * this records it, so an editor can put it back after the item is moved. */
+export const SketchCue = z.object({
+  timingHandle: z.string(),
+  phrase: z.string().min(1).max(200).optional(),
+  wordIndex: z.number().int().nonnegative().optional(),
+  offsetSec: z.number().finite().optional(),
+});
+export type SketchCue = z.infer<typeof SketchCue>;
 
 export const TimelineItem = z.discriminatedUnion('type', [
   z.object({
@@ -78,6 +164,9 @@ export const TimelineItem = z.discriminatedUnion('type', [
     transitionIn: MediaTransition.optional(),
     /** How the clip leaves, at its end: the same kinds as `transitionIn`, played backwards. */
     transitionOut: MediaTransition.optional(),
+    /** Uncovers the picture as if it were drawn in, for a still image that should look sketched
+     * on: a swipe from the left, a circle growing from the middle, or a marker swipe. */
+    reveal: MediaReveal.optional(),
   }),
   z.object({
     type: z.literal('text'),
@@ -101,6 +190,27 @@ export const TimelineItem = z.discriminatedUnion('type', [
     /** Looks that override the style preset for this captions item only. */
     style: CaptionStyleOverrides.optional(),
   }),
+  z.object({
+    type: z.literal('sketch'),
+    /** Stable name for the item; seeds its hand-drawn wobble, so it looks the same on every render. */
+    id: z.string().min(1).max(80).optional(),
+    startSec: finiteNonNegative,
+    durationSec: finitePositive,
+    /** `world` sits on the big canvas the camera moves over; `screen` stays fixed on the frame. */
+    space: z.enum(['world', 'screen']).optional(),
+    /** The box it is drawn in, in the units of its space (the frame's pixels on screen). */
+    x: z.number().finite(),
+    y: z.number().finite(),
+    w: finitePositive,
+    h: finitePositive,
+    rotate: z.number().finite().optional(),
+    /** Stacking order among drawn items; higher is on top. */
+    z: z.number().finite().optional(),
+    content: SketchContent,
+    anim: SketchAnim,
+    keyframes: z.array(SketchKeyframe).max(50).optional(),
+    cue: SketchCue.optional(),
+  }),
 ]);
 export type TimelineItem = z.infer<typeof TimelineItem>;
 
@@ -118,8 +228,12 @@ export function timelineVersionFor(timeline: {
   world?: unknown;
   camera?: unknown;
   theme?: unknown;
+  tracks?: ReadonlyArray<{ items: ReadonlyArray<{ type: string; reveal?: unknown }> }>;
 }): 1 | 2 {
-  return timeline.world || timeline.camera || timeline.theme ? 2 : 1;
+  const newer = timeline.tracks?.some((track) =>
+    track.items.some((item) => item.type === 'sketch' || item.reveal !== undefined),
+  );
+  return timeline.world || timeline.camera || timeline.theme || newer ? 2 : 1;
 }
 
 /** A big canvas the camera moves over, in its own units. Items with `space: 'world'` live on it. */
@@ -129,15 +243,15 @@ export const TimelineWorld = z.object({
 });
 export type TimelineWorld = z.infer<typeof TimelineWorld>;
 
-export const CameraEase = z.enum(['linear', 'in', 'out', 'in_out']);
-export type CameraEase = z.infer<typeof CameraEase>;
+export const CameraEase = Ease;
+export type CameraEase = Ease;
 
 /** Where the camera looks at `atSec`: the world point at the centre of the frame, and how far in. */
 export const CameraKey = z.object({
   atSec: finiteNonNegative,
   cx: z.number().finite(),
   cy: z.number().finite(),
-  /** 1 shows as much of the world as fits the frame; 2 is twice as close. */
+  /** 1 shows a part of the world as big as the frame; 2 is twice as close, 0.5 twice as far. */
   zoom: finitePositive.max(20),
   /** How the camera eases into this key from the one before. */
   ease: CameraEase.optional(),
@@ -181,6 +295,7 @@ export const ITEM_TRACKS = {
   media: ['video', 'audio', 'overlay'],
   text: ['overlay'],
   captions: ['captions'],
+  sketch: ['overlay'],
 } as const satisfies Record<TimelineItem['type'], ReadonlyArray<Track['type']>>;
 
 export const Timeline = z

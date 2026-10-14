@@ -8,8 +8,12 @@
   "main": "./src/index.tsx",
   "types": "./src/index.tsx",
   "dependencies": {
+    "@fontsource/caveat": "5.3.0",
+    "@fontsource/patrick-hand": "5.3.0",
     "@reelcraft/shared": "workspace:*",
+    "@remotion/fonts": "4.0.526",
     "@remotion/media": "4.0.526",
+    "@remotion/paths": "4.0.526",
     "react": "^18.3.1",
     "remotion": "4.0.526"
   },
