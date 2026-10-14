@@ -1,11 +1,12 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { bundle } from '@remotion/bundler';
-import { renderMedia, selectComposition } from '@remotion/renderer';
+import { renderMedia, renderStill, selectComposition } from '@remotion/renderer';
 import { Timeline } from '@reelcraft/shared';
 
 type RenderJob = {
-  quality: 'draft' | 'final';
+  /** `still` renders the first frame as a PNG, for a picture of a timeline instead of a video. */
+  quality: 'draft' | 'final' | 'still';
   browserExecutable?: string;
 };
 
@@ -17,7 +18,7 @@ async function main() {
     );
   }
   const job: RenderJob = {
-    quality: quality === 'final' ? 'final' : 'draft',
+    quality: quality === 'final' ? 'final' : quality === 'still' ? 'still' : 'draft',
     ...(browserExecutable ? { browserExecutable } : {}),
   };
   const timeline = Timeline.parse(JSON.parse(await readFile(timelinePath, 'utf8')));
@@ -42,6 +43,18 @@ async function main() {
     inputProps,
     ...(job.browserExecutable ? { browserExecutable: job.browserExecutable } : {}),
   });
+  if (job.quality === 'still') {
+    await renderStill({
+      composition,
+      serveUrl,
+      output,
+      inputProps,
+      frame: 0,
+      imageFormat: 'png',
+      ...(job.browserExecutable ? { browserExecutable: job.browserExecutable } : {}),
+    });
+    return;
+  }
   await renderMedia({
     composition,
     serveUrl,

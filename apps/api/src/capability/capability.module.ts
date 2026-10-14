@@ -21,6 +21,8 @@ import {
 import { BrowserAutomateCapability } from './impls/browser-automate.capability';
 import { FlowVideoCapability } from './impls/flow-video.capability';
 import { SceneCompileCapability } from './impls/scene-compile.capability';
+import { SvgPrepareCapability } from './impls/svg-prepare.capability';
+import { SvgPreviewCapability } from './impls/svg-preview.capability';
 import { WhiteboardAssetRegistry } from './whiteboard/asset.registry';
 
 /**
@@ -48,6 +50,8 @@ import { WhiteboardAssetRegistry } from './whiteboard/asset.registry';
     BrowserAutomateCapability,
     FlowVideoCapability,
     SceneCompileCapability,
+    SvgPrepareCapability,
+    SvgPreviewCapability,
     WhiteboardAssetRegistry,
   ],
   controllers: [CapabilityController],

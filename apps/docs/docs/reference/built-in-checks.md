@@ -23,6 +23,7 @@ Settings marked _required_ must be filled in. A `min` or `max` left empty isn't 
 | `duration_range` | The length of a video or audio file, in seconds                                       | `min`, `max`                          |
 | `media_format`   | The file's container and/or codec                                                     | `container`, `codec`                  |
 | `wpm`            | Words spoken per minute, in a **Generate Speech** output                              | `min`, `max`                          |
+| `drawing`        | A drawing a model made for a hand-drawn video can be drawn: its paths are valid       | `path`                                |
 
 ## Details
 
@@ -38,6 +39,12 @@ no probe metadata_ if Reelcraft couldn't read the file.
 **`wpm`** divides the spoken words by the audio's length in minutes. It only works on **Generate Speech**
 outputs.
 
+**`drawing`** checks a drawing, or a list of drawings, an id and strokes of SVG path data on a 100 by 100
+grid. Every path must use only the drawing commands (`M L H V C S Q T A Z`), stay on the grid, and be big
+enough to see; colours must be theme colours or hex colours; line weights `thin`, `normal` or `bold`. It lists
+everything wrong at once, by stroke, so that the retry that follows can fix it. Put it on the stage that
+draws, with a **path** of `drawings` if the answer holds a list. See [Prepare Drawings](../stage-types/prepare-drawings.md).
+
 ## Messages
 
 A failing check says why, prefixed with its name. For example:
@@ -49,6 +56,7 @@ A failing check says why, prefixed with its name. For example:
 - `duration_range: 34.2s is above maximum 30s`
 - `wpm: 187.3 words/min is above maximum 170`
 - `non_empty: value at "script" is empty`
+- `drawing: stroke 2: the path leaves the 100 by 100 grid (it spans 0,0 to 900,900)`
 
 A check that is itself wrong, such as a bad setting or a script with an error, is reported as an authoring
 problem instead. See [When a stage fails](../runs/when-a-stage-fails.md).

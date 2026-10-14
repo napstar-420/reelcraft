@@ -26,8 +26,8 @@ A `timeline` output, for [Render Timeline](./render-timeline.md). See
   words take to read. With ElevenLabs, turn on **Word timings** and write them to memory with a
   `writes` entry at the path `timing`, then bind that memory here. Or use
   [Analyze Media](./analyze-media.md).
-- **`assets`** (optional): drawings made for this video. A plan can name a built-in drawing, or one made
-  for the run.
+- **`assets`** (optional): drawings made for this video, from [Prepare Drawings](./prepare-drawings.md). A
+  plan can name a built-in drawing, or one made for the run.
 
 ## The scene plan
 

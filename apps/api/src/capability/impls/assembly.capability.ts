@@ -45,7 +45,7 @@ const estimate: CostEstimate = {
 
 const unwrap = (handle: JobHandle): ComputeHandle => handle.payload as ComputeHandle;
 
-abstract class LocalComputeCapability<Cfg> implements CapabilityImpl<Cfg> {
+export abstract class LocalComputeCapability<Cfg> implements CapabilityImpl<Cfg> {
   abstract readonly modality: string;
   abstract readonly label: string;
   abstract readonly description: string;

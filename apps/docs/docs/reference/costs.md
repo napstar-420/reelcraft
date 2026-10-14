@@ -31,7 +31,8 @@ your ChatGPT plan instead of a per-use bill. They count against your plan's own 
 ## What is free
 
 - [Concatenate Video](../stage-types/concatenate-video.md), [Render Timeline](../stage-types/render-timeline.md),
-  [Compile Scenes](../stage-types/compile-scenes.md) and [Export Subtitles](../stage-types/export-subtitles.md): they run on your computer. They use its
+  [Compile Scenes](../stage-types/compile-scenes.md), [Prepare Drawings](../stage-types/prepare-drawings.md),
+  [Preview Drawings](../stage-types/preview-drawings.md) and [Export Subtitles](../stage-types/export-subtitles.md): they run on your computer. They use its
   processor and time, not money.
 - [Analyze Media](../stage-types/analyze-media.md) with **Probe**.
 - [Generate Speech](../stage-types/generate-speech.md) with **Qwen3-TTS (local)**: it runs on your

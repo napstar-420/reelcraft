@@ -16,6 +16,8 @@ what the stage does, what inputs (slots) and settings it has, and what it can ou
 | [Concatenate Video](./concatenate-video.md)               | Joins clips into one video, with sound and subtitles               | `media.video`                      | Free                       |
 | [Render Timeline](./render-timeline.md)                   | Renders a timeline into a finished video                           | `media.video`                      | Free                       |
 | [Compile Scenes](./compile-scenes.md)                     | Builds a hand-drawn video timeline from a scene plan               | `timeline`                         | Free                       |
+| [Prepare Drawings](./prepare-drawings.md)                 | Gathers the drawings a model made for a hand-drawn video           | `data`                             | Free                       |
+| [Preview Drawings](./preview-drawings.md)                 | Makes one picture of a set of drawings                             | `media.image`                      | Free                       |
 | [Export Subtitles](./export-subtitles.md)                 | Makes an SRT or VTT file from word timings                         | `file.subtitles`                   | Free                       |
 | [Human Input](./human-input.md)                           | Pauses for you to type or paste something                          | `text`, `data`                     | Free                       |
 | [Human Timeline Edit](./human-timeline-edit.md)           | Pauses for you to edit a timeline by hand                          | `timeline`                         | Free                       |

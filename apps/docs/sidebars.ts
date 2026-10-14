@@ -62,6 +62,8 @@ const sidebars: SidebarsConfig = {
         'stage-types/concatenate-video',
         'stage-types/render-timeline',
         'stage-types/compile-scenes',
+        'stage-types/prepare-drawings',
+        'stage-types/preview-drawings',
         'stage-types/export-subtitles',
         'stage-types/human-input',
         'stage-types/human-timeline-edit',

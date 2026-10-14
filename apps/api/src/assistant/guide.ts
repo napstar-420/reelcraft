@@ -50,6 +50,8 @@ export const GUIDE: Record<string, GuideSection> = {
 - \`timeline.render\`: renders a \`timeline\` into a finished video; free, local.
 - \`subtitles.export\`: SRT or VTT file (\`file.subtitles\`) from word timings; free.
 - \`scene.compile\`: puts a hand-drawn (whiteboard) video together from a scene plan (slot \`scenes\`: data in the SceneSpec shape; optional \`voice\` audio, \`timing\` word timings, \`assets\` drawings made for the run); \`timeline\` output for \`timeline.render\`; free, instant. Layouts come from templates (title, three_step, before_after, cause_process_result, problem_why_solution, free) and scenes are timed by the voice-over, so the model only writes the plan. Drawings are named by id: built-in ids such as \`lightbulb\`, \`arrow-right\`, \`brain\`, or ids the run draws.
+- \`svg.prepare\`: checks the drawings a model made for a hand-drawn video and gathers the usable ones into a set for \`scene.compile\`'s \`assets\` slot (slot \`drawings\`: the answers of a \`text.generate\` stage that drew them; optional \`scenes\` plan for labels); \`data\` output; free. Each run makes its own drawings this way: the plan lists \`assetNeeds\`, a \`text.generate\` stage draws them as SVG path data on a 100 by 100 grid (with the builtin check \`drawing\`), \`svg.prepare\` gathers them, a drawing that can't be used falls back to a built-in one.
+- \`svg.preview\`: one picture (\`media.image\`) of a set of drawings with their ids, rendered locally; free. For a person or an image-judging QC to look at the drawings.
 - \`human.input\`: pauses the run for a person to type or paste text or data.
 - \`human.timeline_edit\`: pauses for a person to edit a timeline in the timeline editor.
 - \`browser.automate\`: Codex uses a signed-in browser to do a task; \`data\` output, or files it downloads (\`media.audio\`, \`media.image\`, \`media.video\`, or an image or video list; needs an instructions template saying what to find; the licence it reads is recorded in the stage log). Uses the user's accounts: only if they ask for it.
@@ -133,7 +135,7 @@ Mark the fields later stages need as \`required\`, and add a \`description\` to 
   'checks-qc': {
     title: 'Checks, quality control and retries',
     body: `**checks** are free, automatic pass/fail tests on a stage's output; ALL must pass. A failed check makes the stage regenerate with the failure messages as feedback, up to \`checkMaxAttempts\` (default 3). Two kinds:
-- builtin: \`{type:'builtin', key, params}\`. Keys come from \`list_checks\` (with each params schema). Text checks (\`non_empty\`, \`word_count\`, \`regex_match\`, \`regex_absent\`, \`wpm\`) read a text output without a path; for a data output give \`path\` to the text field. \`numeric_range\` and \`array_length\` need a \`path\`. \`duration_range\` and \`media_format\` read a media file's probe. \`wpm\` only works on an \`audio.speech\` (media.audio) output.
+- builtin: \`{type:'builtin', key, params}\`. Keys come from \`list_checks\` (with each params schema). Text checks (\`non_empty\`, \`word_count\`, \`regex_match\`, \`regex_absent\`, \`wpm\`) read a text output without a path; for a data output give \`path\` to the text field. \`numeric_range\` and \`array_length\` need a \`path\`. \`duration_range\` and \`media_format\` read a media file's probe. \`drawing\` checks a drawing (id and strokes) or a list of them, on the stage that draws pictures for a hand-drawn video. \`wpm\` only works on an \`audio.speech\` (media.audio) output.
 - script: \`{type:'script', name, code, refs?}\`: JavaScript that is the body of a function ending in \`return {pass, message?}\`; it can read \`artifact\` (kind, data, probe; a text output's text is \`artifact.data.text\`) and \`refs\`. It runs in a locked sandbox: no files, network or I/O. It must compile.
 A \`data\` output is always checked against its schema first.
 
@@ -361,7 +363,7 @@ ${renderTroubleshooting()}`,
 - **Blueprint** tab: name, description, tags, inputs (run inputs), the Character role, defaults and budget.
 - **Save** creates a version (its menu can start a new major); **Versions** lists them; the toolbar badge **Runnable** with a warning count comes from the validator. **Run** opens the run dialog (**Live run** or **Dry run**, budget cap, inputs, **Run up to** to stop after a stage). A **Dry run** uses the free fake provider.
 - **Assistant** tab: **Auto-apply** (proposals go straight to the canvas, with **Undo**), **Apply** (manual mode), **Start new chat**, the model and effort pickers.
-- Stage types by label: Generate Text, Generate Image, Generate Video, Generate Video with Flow, Generate Speech, Analyze Media, Concatenate Video, Render Timeline, Export Subtitles, Human Input, Human Timeline Edit, Automate Browser, Compile Scenes, Publish (Stub). \`list_capabilities\` has the exact labels.
+- Stage types by label: Generate Text, Generate Image, Generate Video, Generate Video with Flow, Generate Speech, Analyze Media, Concatenate Video, Render Timeline, Export Subtitles, Human Input, Human Timeline Edit, Automate Browser, Compile Scenes, Prepare Drawings, Preview Drawings, Publish (Stub). \`list_capabilities\` has the exact labels.
 - **Approve** / **Reject** (with a note) are the user's actions on a paused run; you cannot do them.`,
   },
 
