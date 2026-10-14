@@ -15,6 +15,7 @@ import {
   stageAttempt,
   stageExecution,
 } from '../../src/db/schema/index';
+import { HumanWaitService } from '../../src/run/human-wait.service';
 import { InvalidationService } from '../../src/run/invalidation.service';
 import { createTestDb, type TestDb } from '../support/test-db';
 
@@ -40,7 +41,11 @@ describe('InvalidationService (e2e)', () => {
 
   beforeAll(async () => {
     testDb = await createTestDb();
-    service = new InvalidationService(testDb.db, new MemoryService());
+    service = new InvalidationService(
+      testDb.db,
+      new MemoryService(),
+      new HumanWaitService(testDb.db),
+    );
 
     const channelId = ulid();
     await testDb.db.insert(channel).values({ id: channelId, ownerId: 'local', name: 'Channel' });

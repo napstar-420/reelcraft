@@ -1,9 +1,10 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { ConflictException } from '@nestjs/common';
+import { and, eq, inArray, isNull } from 'drizzle-orm';
 import type { HumanWaitKind } from '@reelcraft/shared';
 import { ulid } from '../common/ulid';
 import { DRIZZLE, type Db, type Tx } from '../db/drizzle.provider';
-import { humanWait } from '../db/schema/index';
+import { humanWait, stageExecution, stageItem } from '../db/schema/index';
 
 @Injectable()
 export class HumanWaitService {
@@ -40,29 +41,95 @@ export class HumanWaitService {
       );
   }
 
-  /** After an invalidation: closes the waits of items that are no longer
-   * waiting, so a reject that restarted the stage doesn't leave a wait nobody
-   * can answer. */
-  async resolveForItemsNoLongerWaiting(tx: Tx, runId: string): Promise<void> {
-    await tx.execute(sql`
-      update human_wait set resolved_at = now()
-      where run_id = ${runId} and resolved_at is null and stage_item_id is not null
-        and stage_item_id in (select id from stage_item where state <> 'awaiting_approval')`);
+  /** The open waits somebody can still answer. An open row alone is not
+   * enough: an invalidation or an older version of the code can leave a wait
+   * behind after its stage or item moved on. A stage-level wait is live while
+   * its execution waits (`awaiting_approval` / `awaiting_input`); an item wait
+   * while its item is `awaiting_approval`. */
+  async liveOpenWaits(
+    db: Db | Tx,
+    runId: string,
+  ): Promise<
+    Array<{ id: string; stageExecutionId: string; stageItemId: string | null; kind: HumanWaitKind }>
+  > {
+    const rows = await db
+      .select({
+        id: humanWait.id,
+        stageExecutionId: humanWait.stageExecutionId,
+        stageItemId: humanWait.stageItemId,
+        kind: humanWait.kind,
+        executionState: stageExecution.state,
+        itemState: stageItem.state,
+      })
+      .from(humanWait)
+      .innerJoin(stageExecution, eq(humanWait.stageExecutionId, stageExecution.id))
+      .leftJoin(stageItem, eq(humanWait.stageItemId, stageItem.id))
+      .where(and(eq(humanWait.runId, runId), isNull(humanWait.resolvedAt)));
+    return rows
+      .filter((row) =>
+        row.stageItemId === null
+          ? row.executionState === 'awaiting_approval' || row.executionState === 'awaiting_input'
+          : row.itemState === 'awaiting_approval',
+      )
+      .map(({ id, stageExecutionId, stageItemId, kind }) => ({
+        id,
+        stageExecutionId,
+        stageItemId,
+        kind,
+      }));
   }
 
-  /** How many approval waits of the run are still open. */
-  async countOpenApprovals(tx: Tx, runId: string): Promise<number> {
-    const [row] = await tx
-      .select({ count: sql<number>`count(*)::int` })
+  async countOpenWaits(tx: Tx, runId: string): Promise<number> {
+    return (await this.liveOpenWaits(tx, runId)).length;
+  }
+
+  /** The paused state that matches what the run waits for: approval before input. */
+  async pausedStateFor(
+    db: Db | Tx,
+    runId: string,
+  ): Promise<'PAUSED_APPROVAL' | 'PAUSED_INPUT' | undefined> {
+    const waits = await this.liveOpenWaits(db, runId);
+    if (waits.some((wait) => wait.kind === 'approval')) return 'PAUSED_APPROVAL';
+    return waits.length > 0 ? 'PAUSED_INPUT' : undefined;
+  }
+
+  /** Throws unless this stage (or item) has a live open wait of `kind`. */
+  async requireOpen(
+    tx: Tx,
+    executionId: string,
+    kind: HumanWaitKind,
+    stageItemId?: string,
+  ): Promise<void> {
+    const [wait] = await tx
+      .select({ id: humanWait.id })
       .from(humanWait)
       .where(
         and(
-          eq(humanWait.runId, runId),
-          eq(humanWait.kind, 'approval'),
+          eq(humanWait.stageExecutionId, executionId),
+          eq(humanWait.kind, kind),
           isNull(humanWait.resolvedAt),
+          stageItemId ? eq(humanWait.stageItemId, stageItemId) : isNull(humanWait.stageItemId),
         ),
-      );
-    return row?.count ?? 0;
+      )
+      .limit(1);
+    if (!wait) throw new ConflictException(`No open ${kind} wait exists`);
+  }
+
+  /** After an invalidation: closes the waits nobody can answer any more
+   * (their item or stage was reset), so a reject that restarted a stage
+   * doesn't leave a wait behind. */
+  async resolveNotLive(tx: Tx, runId: string): Promise<void> {
+    const live = new Set((await this.liveOpenWaits(tx, runId)).map((wait) => wait.id));
+    const open = await tx
+      .select({ id: humanWait.id })
+      .from(humanWait)
+      .where(and(eq(humanWait.runId, runId), isNull(humanWait.resolvedAt)));
+    const orphans = open.map((wait) => wait.id).filter((id) => !live.has(id));
+    if (orphans.length === 0) return;
+    await tx
+      .update(humanWait)
+      .set({ resolvedAt: new Date().toISOString() })
+      .where(inArray(humanWait.id, orphans));
   }
 
   async resolveAll(tx: Tx, runId: string): Promise<void> {

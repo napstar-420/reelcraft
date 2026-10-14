@@ -1,3 +1,4 @@
+import { HumanWaitService } from './human-wait.service';
 import { ConflictException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { and, asc, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import type {
@@ -8,6 +9,7 @@ import type {
   ListRunsQueryDto,
   Probe,
   SeedStop,
+  HumanWaitKind,
 } from '@reelcraft/shared';
 import { InputDef, RoleDef as RoleDefSchema, StageDef } from '@reelcraft/shared';
 import { RUN_ACTION_ALLOWED_STATES } from './run-action-policy';
@@ -80,6 +82,7 @@ export class RunService {
     private readonly providers: ProviderRegistry,
     private readonly blobs: BlobService,
     private readonly events: LiveEvents,
+    private readonly humanWaits: HumanWaitService,
   ) {}
 
   /** §6.2/§21 — inserts the run in `CREATED` without sending `run/started`.
@@ -778,6 +781,11 @@ export class RunService {
       values.push(attachment);
       attachmentsByArtifact.set(attachment.artifactId, values);
     }
+    const waitingByExecution = new Map<string, HumanWaitKind>();
+    for (const wait of await this.humanWaits.liveOpenWaits(this.db, runId)) {
+      const known = waitingByExecution.get(wait.stageExecutionId);
+      if (known !== 'approval') waitingByExecution.set(wait.stageExecutionId, wait.kind);
+    }
     const final = await findFinalVideo(this.db, runId);
     const budgetBlock = row.state === 'PAUSED_BUDGET' ? await this.budgetBlock(row) : null;
     const resumeAt = row.state === 'PAUSED_QUOTA' ? await this.quotaResumeAt(runId) : null;
@@ -802,6 +810,7 @@ export class RunService {
             label: definition?.label || execution.stageKey,
             output: definition?.output ?? null,
             attemptCount: attemptCounts.get(execution.id) ?? 0,
+            waiting: waitingByExecution.get(execution.id) ?? null,
             capability,
             interaction: this.capabilities.get(capability).interaction?.kind ?? null,
             attachments: (

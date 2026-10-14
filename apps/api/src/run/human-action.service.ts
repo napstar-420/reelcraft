@@ -6,7 +6,7 @@ import {
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { and, asc, desc, eq, isNull, sql } from 'drizzle-orm';
-import { StageDef, Timeline, approvalModeOf, type HumanWaitKind } from '@reelcraft/shared';
+import { StageDef, Timeline, approvalModeOf } from '@reelcraft/shared';
 import { ArtifactService } from '../artifact/artifact.service';
 import { BindingResolverService, type RefProvenance } from '../artifact/binding-resolver.service';
 import { MemoryService } from '../artifact/memory.service';
@@ -61,7 +61,7 @@ export class HumanActionService {
       ['PAUSED_APPROVAL'],
       async (tx, lockedRun) => {
         await this.approveInTransaction(tx, runId, stageKey, lockedRun, itemIndex);
-        return { othersWaiting: (await this.waits.countOpenApprovals(tx, runId)) > 0 };
+        return { othersWaiting: (await this.waits.countOpenWaits(tx, runId)) > 0 };
       },
       'run/resumed',
       (value) => !value.othersWaiting,
@@ -104,7 +104,7 @@ export class HumanActionService {
       .where(eq(artifact.id, pending.artifactId))
       .limit(1);
     if (!candidate || !candidate.stale) throw new ConflictException('Approval candidate is stale');
-    await this.requireOpenWait(tx, execution.id, 'approval');
+    await this.waits.requireOpen(tx, execution.id, 'approval');
 
     await this.artifacts.finalize(
       {
@@ -160,7 +160,7 @@ export class HumanActionService {
         ) {
           throw new ConflictException('Quality control did not fail on this output');
         }
-        await this.requireOpenWait(tx, execution.id, 'approval', item?.id);
+        await this.waits.requireOpen(tx, execution.id, 'approval', item?.id);
         // Released: the stage loop picks up the newest `qc_error` attempt that
         // is settled and judges it again.
         await tx
@@ -210,7 +210,7 @@ export class HumanActionService {
       .where(eq(artifact.id, pending.artifactId))
       .limit(1);
     if (!candidate || !candidate.stale) throw new ConflictException('Approval candidate is stale');
-    await this.requireOpenWait(tx, stageExecutionId, 'approval', item.id);
+    await this.waits.requireOpen(tx, stageExecutionId, 'approval', item.id);
 
     await this.artifacts.finalize(
       {
@@ -424,10 +424,7 @@ export class HumanActionService {
           closure: preview.closure,
           targetStageKey,
         });
-        // A reject that restarts a whole stage also restarts the items still
-        // waiting in it: their waits go with them.
-        await this.waits.resolveForItemsNoLongerWaiting(tx, runId);
-        return { othersWaiting: (await this.waits.countOpenApprovals(tx, runId)) > 0 };
+        return { othersWaiting: (await this.waits.countOpenWaits(tx, runId)) > 0 };
       },
       'run/resumed',
       (value) => !value.othersWaiting,
@@ -547,7 +544,7 @@ export class HumanActionService {
     data: unknown,
     evaluated: { provenance: Record<string, RefProvenance>; checkResults: CheckResult[] },
   ) {
-    await this.requireOpenWait(
+    await this.waits.requireOpen(
       tx,
       executionId,
       stage.capability === 'human.timeline_edit' ? 'timeline_edit' : 'input',
@@ -618,7 +615,7 @@ export class HumanActionService {
       ) {
         throw new ConflictException('The input wait changed; submit again');
       }
-      await this.requireOpenWait(
+      await this.waits.requireOpen(
         tx,
         executionId,
         stage.capability === 'human.timeline_edit' ? 'timeline_edit' : 'input',
@@ -795,27 +792,6 @@ export class HumanActionService {
       .orderBy(desc(stageAttempt.attemptNo))
       .limit(1);
     return row;
-  }
-
-  private async requireOpenWait(
-    tx: Tx,
-    executionId: string,
-    kind: HumanWaitKind,
-    stageItemId?: string,
-  ) {
-    const [wait] = await tx
-      .select({ id: humanWait.id })
-      .from(humanWait)
-      .where(
-        and(
-          eq(humanWait.stageExecutionId, executionId),
-          eq(humanWait.kind, kind),
-          isNull(humanWait.resolvedAt),
-          stageItemId ? eq(humanWait.stageItemId, stageItemId) : isNull(humanWait.stageItemId),
-        ),
-      )
-      .limit(1);
-    if (!wait) throw new ConflictException(`No open ${kind} wait exists`);
   }
 
   private async nextAttemptNo(tx: Tx, executionId: string): Promise<number> {

@@ -18,7 +18,7 @@ describe('HumanActionService', () => {
     const service = Object.assign(Object.create(HumanActionService.prototype) as object, {
       mutation,
       logger: new Logger(HumanActionService.name),
-      waits: { countOpenApprovals: vi.fn().mockResolvedValue(0) },
+      waits: { countOpenWaits: vi.fn().mockResolvedValue(0) },
       dispatcher: { dispatch: vi.fn().mockResolvedValue(true) },
       approveInTransaction: vi.fn().mockResolvedValue(undefined),
     }) as unknown as HumanActionService;
@@ -53,7 +53,7 @@ describe('HumanActionService', () => {
     const service = Object.assign(Object.create(HumanActionService.prototype) as object, {
       mutation,
       logger: new Logger(HumanActionService.name),
-      waits: { countOpenApprovals: vi.fn().mockResolvedValue(2) },
+      waits: { countOpenWaits: vi.fn().mockResolvedValue(2) },
       dispatcher: { dispatch },
       approveInTransaction: vi.fn().mockResolvedValue(undefined),
     }) as unknown as HumanActionService;
