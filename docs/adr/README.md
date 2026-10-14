@@ -21,5 +21,6 @@ one, take the next number, and add a row here. Supersede an ADR instead of editi
 | [0012](0012-local-qwen3-tts-service.md)                        | Qwen3-TTS is a separate local service; weights download on request             | accepted (partly superseded by 0013) | 2026-10-12 |
 | [0013](0013-managed-qwen3-tts.md)                              | Reelcraft installs and runs the Qwen3-TTS service itself, on request           | accepted                             | 2026-10-14 |
 | [0014](0014-dependency-derived-scheduling-in-waves.md)         | Stages are scheduled from their dependencies, in waves                         | accepted                             | 2026-10-14 |
+| [0015](0015-hand-drawn-videos.md)                              | Hand-drawn videos are drawn items on a world, under a camera                   | accepted                             | 2026-10-14 |
 
 ADRs 0001–0007 were decided during the self-hosting work in October 2026 and recorded together on 2026-10-03, so the dates are when they were written down.

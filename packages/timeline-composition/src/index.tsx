@@ -14,6 +14,16 @@ import {
 import type { CalculateMetadataFunction } from 'remotion';
 import type { TextStyleTokens, Timeline, TimelineItem, TimingMap } from '@reelcraft/shared';
 import { activeCaption, captionPagesFor } from './captions';
+import { useSketchFonts } from './sketch/fonts';
+import { SketchItem } from './sketch/SketchItem';
+import {
+  DEFAULT_THEME,
+  cameraAt,
+  cameraTransform,
+  ease,
+  revealLook,
+  wholeWorldView,
+} from './sketch/sketch-math';
 import {
   type CaptionLook,
   DEFAULT_TEXT_STYLE,
@@ -36,6 +46,7 @@ export {
   transitionLook,
   type CaptionLook,
 } from './render-helpers';
+export { DEFAULT_THEME } from './sketch/sketch-math';
 export {
   activeCaption,
   captionPages,
@@ -129,13 +140,21 @@ const MediaItem = ({
   if (trackType === 'audio' || resource.kind === 'media.audio') {
     return <Audio src={resolvedSrc} {...common} />;
   }
+  // A reveal uncovers the picture as if it were being drawn in.
+  const reveal = item.reveal
+    ? revealLook(item.reveal.type, ease('out', frame / fps / (item.reveal.durationSec ?? 0.8)))
+    : undefined;
+  const clipPath = reveal?.clipPath ?? look.clipPath;
   const style: React.CSSProperties = {
     width: '100%',
     height: '100%',
     objectFit: item.fit ?? 'cover',
     opacity: look.opacity,
     transform,
-    ...(look.clipPath ? { clipPath: look.clipPath } : {}),
+    ...(clipPath ? { clipPath } : {}),
+    ...(reveal?.maskImage
+      ? { maskImage: reveal.maskImage, WebkitMaskImage: reveal.maskImage }
+      : {}),
   };
   return resource.kind === 'media.image' ? (
     <Img src={resolvedSrc} style={style} />
@@ -273,6 +292,71 @@ const CaptionsItem = ({
   );
 };
 
+type SketchEntry = {
+  trackId: string;
+  index: number;
+  item: Extract<TimelineItem, { type: 'sketch' }>;
+};
+
+/** The paper under a hand-drawn video, from the theme. */
+const paperStyle = (theme: Timeline['theme'] | undefined): React.CSSProperties => {
+  if (theme?.paperTexture === 'grid') {
+    return {
+      backgroundImage:
+        'linear-gradient(rgba(0,0,0,0.06) 1px, transparent 1px), linear-gradient(90deg, rgba(0,0,0,0.06) 1px, transparent 1px)',
+      backgroundSize: '48px 48px',
+    };
+  }
+  if (theme?.paperTexture === 'paper' || theme?.paperTexture === undefined) {
+    return {
+      backgroundImage:
+        'radial-gradient(ellipse at center, transparent 55%, rgba(60,40,0,0.08) 100%)',
+    };
+  }
+  return {};
+};
+
+/** Every `world` sketch item, under the camera. The world is a canvas bigger than the frame, and
+ * the camera shows a part of it. Without a camera the whole world is shown. */
+const WorldLayer = ({
+  timeline,
+  entries,
+  theme,
+}: {
+  timeline: Timeline;
+  entries: SketchEntry[];
+  theme: NonNullable<Timeline['theme']>;
+}) => {
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+  const canvas = timeline.canvas;
+  const world = timeline.world ?? { width: canvas.width, height: canvas.height };
+  const view = timeline.camera
+    ? cameraAt(timeline.camera, frame / fps)
+    : wholeWorldView(world, canvas);
+  return (
+    <AbsoluteFill
+      style={{
+        width: world.width,
+        height: world.height,
+        transformOrigin: '0 0',
+        transform: cameraTransform(view, canvas),
+      }}
+    >
+      {entries.map(({ trackId, index, item }) => (
+        <Sequence
+          key={`${trackId}-${index}`}
+          from={Math.round(item.startSec * fps)}
+          durationInFrames={Math.max(1, Math.ceil(item.durationSec * fps))}
+          premountFor={fps}
+        >
+          <SketchItem item={item} seedKey={`${trackId}:${index}`} theme={theme} />
+        </Sequence>
+      ))}
+    </AbsoluteFill>
+  );
+};
+
 export const TimelineComposition = ({
   timeline,
   resources,
@@ -281,10 +365,34 @@ export const TimelineComposition = ({
 }: TimelineCompositionProps) => {
   const { fps } = useVideoConfig();
   const tokensFor = (styleId: string) => styles[styleId] ?? DEFAULT_TEXT_STYLE;
+  const theme = { ...DEFAULT_THEME, ...timeline.theme };
+  const drawn = timeline.tracks.some((track) => track.items.some((item) => item.type === 'sketch'));
+  useSketchFonts(drawn);
+  // Items on the big canvas are drawn together under the camera, beneath every track.
+  const worldEntries: SketchEntry[] = timeline.tracks
+    .flatMap((track) =>
+      track.items.flatMap((item, index) =>
+        item.type === 'sketch' && (item.space ?? 'world') === 'world'
+          ? [{ trackId: track.id, index, item }]
+          : [],
+      ),
+    )
+    .map((entry, order) => ({ entry, order }))
+    .sort((a, b) => (a.entry.item.z ?? 0) - (b.entry.item.z ?? 0) || a.order - b.order)
+    .map(({ entry }) => entry);
   return (
-    <AbsoluteFill style={{ backgroundColor: timeline.canvas.background ?? '#000' }}>
+    <AbsoluteFill
+      style={{
+        backgroundColor: timeline.canvas.background ?? (timeline.theme ? theme.paper : '#000'),
+        ...(timeline.theme ? paperStyle(timeline.theme) : {}),
+      }}
+    >
+      {worldEntries.length ? (
+        <WorldLayer timeline={timeline} entries={worldEntries} theme={theme} />
+      ) : null}
       {timeline.tracks.flatMap((track) =>
         track.items.map((item, index) => {
+          if (item.type === 'sketch' && (item.space ?? 'world') === 'world') return null;
           const startSec = item.type === 'captions' ? (item.startSec ?? 0) : item.startSec;
           const from = Math.round(startSec * fps);
           const durationSec =
@@ -299,7 +407,9 @@ export const TimelineComposition = ({
               durationInFrames={durationInFrames}
               premountFor={fps}
             >
-              {item.type === 'captions' ? (
+              {item.type === 'sketch' ? (
+                <SketchItem item={item} seedKey={`${track.id}:${index}`} theme={theme} />
+              ) : item.type === 'captions' ? (
                 timingMaps[item.timingHandle] ? (
                   <CaptionsItem
                     item={item}

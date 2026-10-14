@@ -19,9 +19,17 @@ const extensionFor = (mime: string, fallback: string | undefined) => {
       {
         'image/png': 'png',
         'image/jpeg': 'jpg',
+        'image/webp': 'webp',
+        'image/gif': 'gif',
         'audio/mpeg': 'mp3',
         'audio/wav': 'wav',
+        'audio/ogg': 'ogg',
+        'audio/flac': 'flac',
+        'audio/mp4': 'm4a',
+        'audio/webm': 'webm',
         'video/mp4': 'mp4',
+        'video/webm': 'webm',
+        'video/quicktime': 'mov',
       } as Record<string, string>
     )[mime] ?? 'bin'
   );

@@ -14,4 +14,5 @@ export * from './probe';
 export * from './storage';
 export * from './character';
 export * from './timeline';
+export * from './vector-asset';
 export * from './dto/index';

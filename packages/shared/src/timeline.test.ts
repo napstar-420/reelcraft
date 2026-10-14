@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Timeline } from './timeline';
+import { Timeline, timelineVersionFor } from './timeline';
 
 const base = {
   version: 1 as const,
@@ -179,6 +179,158 @@ describe('Timeline', () => {
       ).toBe(true);
       expect(clip({ transitionOut: { type: 'spin', durationSec: 1 } }).success).toBe(false);
       expect(clip({ transitionOut: { type: 'slide', durationSec: 0 } }).success).toBe(false);
+    });
+  });
+
+  describe('version, world, camera and theme', () => {
+    const theme = {
+      paper: '#fbfaf5',
+      ink: '#1a1a1a',
+      highlight: '#ffd84a',
+      accents: ['#3b82f6', '#22c55e', '#ef4444'],
+      fontHand: 'Caveat',
+      fontBody: 'Patrick Hand',
+      strokeWidth: 4,
+      roughness: 0.3,
+    };
+
+    it('stays version 1 when nothing newer is used', () => {
+      expect(Timeline.parse({ ...base, tracks: [] }).version).toBe(1);
+      expect(timelineVersionFor({})).toBe(1);
+    });
+
+    it('is written as version 2 when it uses a world, camera or theme', () => {
+      const world = { width: 5000, height: 3000 };
+      const camera = { keys: [{ atSec: 0, cx: 2500, cy: 1500, zoom: 1 }] };
+      for (const extra of [{ world }, { world, camera }, { theme }]) {
+        expect(Timeline.parse({ ...base, tracks: [], ...extra }).version).toBe(2);
+      }
+    });
+
+    it('fixes a timeline that says version 1 but uses newer fields', () => {
+      const parsed = Timeline.parse({ ...base, version: 1, tracks: [], theme });
+      expect(parsed.version).toBe(2);
+    });
+
+    it('accepts a version 2 timeline that uses nothing new, and writes it as 1', () => {
+      expect(Timeline.parse({ ...base, version: 2, tracks: [] }).version).toBe(1);
+    });
+
+    it('rejects a camera without a world, and unordered camera keys', () => {
+      const camera = { keys: [{ atSec: 0, cx: 0, cy: 0, zoom: 1 }] };
+      expect(Timeline.safeParse({ ...base, tracks: [], camera }).success).toBe(false);
+      const unordered = {
+        keys: [
+          { atSec: 2, cx: 0, cy: 0, zoom: 1 },
+          { atSec: 1, cx: 0, cy: 0, zoom: 2 },
+        ],
+      };
+      const result = Timeline.safeParse({
+        ...base,
+        tracks: [],
+        world: { width: 100, height: 100 },
+        camera: unordered,
+      });
+      expect(result.success).toBe(false);
+      expect(JSON.stringify(result)).toContain('time order');
+    });
+
+    it('rejects a theme that is out of range', () => {
+      expect(
+        Timeline.safeParse({ ...base, tracks: [], theme: { ...theme, roughness: 2 } }).success,
+      ).toBe(false);
+      expect(
+        Timeline.safeParse({ ...base, tracks: [], theme: { ...theme, accents: [] } }).success,
+      ).toBe(false);
+    });
+  });
+
+  describe('sketch items and reveals', () => {
+    const sketch = (overrides: Record<string, unknown> = {}) => ({
+      type: 'sketch',
+      startSec: 0,
+      durationSec: 2,
+      x: 10,
+      y: 10,
+      w: 200,
+      h: 100,
+      content: { kind: 'shape', shape: 'arrow' },
+      anim: { type: 'draw' },
+      ...overrides,
+    });
+    const onOverlay = (item: unknown, type = 'overlay') => ({
+      ...base,
+      tracks: [{ id: 't', type, items: [item] }],
+    });
+
+    it('accepts a drawn item on an overlay track and writes the timeline as version 2', () => {
+      const parsed = Timeline.parse(onOverlay(sketch()));
+      expect(parsed.version).toBe(2);
+    });
+
+    it('accepts every kind of content', () => {
+      const contents = [
+        { kind: 'paths', viewBox: { width: 100, height: 100 }, strokes: [{ d: 'M0 0 L10 10' }] },
+        { kind: 'text', text: 'CUE', size: 60, font: 'hand', color: 'accent1' },
+        { kind: 'shape', shape: 'highlight', color: 'highlight' },
+      ];
+      for (const content of contents) {
+        expect(Timeline.safeParse(onOverlay(sketch({ content }))).success).toBe(true);
+      }
+    });
+
+    it('does not accept a drawn item on a video track', () => {
+      const result = Timeline.safeParse(onOverlay(sketch(), 'video'));
+      expect(result.success).toBe(false);
+      expect(JSON.stringify(result)).toContain('sketch item is not valid on a video track');
+    });
+
+    it('rejects bad content, animation and sizes', () => {
+      for (const bad of [
+        { content: { kind: 'shape', shape: 'dragon' } },
+        { content: { kind: 'paths', viewBox: { width: 0, height: 1 }, strokes: [{ d: 'M0 0' }] } },
+        { content: { kind: 'paths', viewBox: { width: 1, height: 1 }, strokes: [] } },
+        { content: { kind: 'text', text: '', size: 10 } },
+        { anim: { type: 'explode' } },
+        { w: 0 },
+        { durationSec: 0 },
+        { keyframes: [{ atSec: 0, opacity: 3 }] },
+      ]) {
+        expect(Timeline.safeParse(onOverlay(sketch(bad))).success, JSON.stringify(bad)).toBe(false);
+      }
+    });
+
+    it('keeps the narration cue an item was placed by', () => {
+      const cue = { timingHandle: 'artifact:vo', phrase: 'the cue', offsetSec: -0.1 };
+      const parsed = Timeline.parse(onOverlay(sketch({ cue })));
+      expect(parsed.tracks[0]!.items[0]).toMatchObject({ cue });
+    });
+
+    it('writes a picture that is revealed as version 2, and a plain one as version 1', () => {
+      const media = (extra: Record<string, unknown> = {}) => ({
+        ...base,
+        tracks: [
+          {
+            id: 'v',
+            type: 'video',
+            items: [
+              { type: 'media', handle: 'artifact:img', startSec: 0, durationSec: 3, ...extra },
+            ],
+          },
+        ],
+      });
+      expect(Timeline.parse(media()).version).toBe(1);
+      expect(Timeline.parse(media({ reveal: { type: 'marker', durationSec: 1 } })).version).toBe(2);
+      expect(Timeline.safeParse(media({ reveal: { type: 'melt' } })).success).toBe(false);
+      expect(
+        Timeline.safeParse(media({ reveal: { type: 'circle', durationSec: 0 } })).success,
+      ).toBe(false);
+    });
+
+    it('says version 2 for a drawn item and a revealed picture', () => {
+      expect(timelineVersionFor({ tracks: [{ items: [{ type: 'sketch' }] }] })).toBe(2);
+      expect(timelineVersionFor({ tracks: [{ items: [{ type: 'media', reveal: {} }] }] })).toBe(2);
+      expect(timelineVersionFor({ tracks: [{ items: [{ type: 'media' }] }] })).toBe(1);
     });
   });
 });

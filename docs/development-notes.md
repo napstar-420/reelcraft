@@ -60,6 +60,17 @@ The command builds the render worker, creates an input clip, renders a timeline,
 and verifies the resulting MP4 with `ffprobe`. It is intentionally not part of
 CI because it requires system media and browser dependencies.
 
+Run the hand-drawn video render acceptance with:
+
+```bash
+pnpm --filter @reelcraft/api acceptance:whiteboard-render
+```
+
+It renders a timeline with a camera over a big canvas and lines drawn on, twice, through the real
+render worker, then checks with `ffmpeg` that lines appear as they are drawn, the paper stays paper,
+the camera moves, and the two renders have identical frames. It needs ffmpeg and Chrome (set
+`REMOTION_BROWSER_EXECUTABLE` to a headless shell if Remotion cannot find one).
+
 ## Iteration: local prerequisites
 
 Install FFmpeg (`ffmpeg` and `ffprobe`). Iteration adds the `iterate` stage

@@ -233,10 +233,7 @@ export class TimelineEditorService {
         if (handle && !allowedHandles.has(handle)) {
           throw new ConflictException(`Timeline handle "${handle}" is not available to this stage`);
         }
-        if (item.type !== 'media' && item.type !== 'text' && !this.styles.has(item.styleId)) {
-          throw new ConflictException(`Unknown timeline style "${item.styleId}"`);
-        }
-        if (item.type === 'text' && !this.styles.has(item.styleId)) {
+        if ((item.type === 'text' || item.type === 'captions') && !this.styles.has(item.styleId)) {
           throw new ConflictException(`Unknown timeline style "${item.styleId}"`);
         }
       }

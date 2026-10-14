@@ -7,6 +7,13 @@ import type {
   ProviderRequest,
   ProviderResult,
 } from '../provider-adapter.interface';
+import { fakeTimingFor } from './fake-timing';
+
+/** The text bound to an audio request's `text` slot. */
+function speechTextOf(slots: unknown): string | undefined {
+  const text = (slots as { text?: unknown } | undefined)?.text;
+  return typeof text === 'string' ? text : undefined;
+}
 
 interface FakeJobPayload {
   submittedAt: number;
@@ -27,6 +34,8 @@ interface FakeJobPayload {
    * `undefined` preserves the original hardcoded `0.001` for every existing
    * caller that doesn't pass it. */
   costUsd?: number | undefined;
+  /** The text a `fake-audio-*` run was asked to speak (`params.slots.text`). */
+  speechText?: string | undefined;
   /** `params.count`: how many images a `fake-image-*` run was asked for. */
   imageCount?: number | undefined;
   /** `params.fakeImageCount`: how many it actually returns (default: all), to
@@ -181,6 +190,7 @@ export class FakeProviderAdapter implements ProviderAdapter {
       failuresRemaining: parsed?.count,
       output: req.params.fakeOutput,
       costUsd: req.params.fakeCostUsd as number | undefined,
+      speechText: speechTextOf(req.params.slots),
       imageCount: req.params.count as number | undefined,
       fakeImageCount: req.params.fakeImageCount as number | undefined,
       pollsRemaining: this.parseSlow(req.modelId),
@@ -305,6 +315,8 @@ export class FakeProviderAdapter implements ProviderAdapter {
         costUsd: job.costUsd ?? 0,
         repro: { level: 'exact', seed: '42', providerVersion: job.modelId },
         rawResponse: { fake: true, fixture: 'wav' },
+        // Spoken text comes with word timings, so tests can place things at words.
+        ...(job.speechText?.trim() && { timing: fakeTimingFor(job.speechText) }),
       };
     }
     return {
