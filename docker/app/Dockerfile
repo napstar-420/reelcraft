@@ -10,6 +10,9 @@ ARG RUNTIME_IMAGE=ubuntu:24.04
 ARG GO_IMAGE=golang:1.24-bookworm
 ARG INNGEST_VERSION=v1.45.1
 ARG MINIO_VERSION=v0.0.0-20260212201848-7aac2a2c5b7c
+# Keep in step with UV_VERSION in .github/workflows/qwen-tts.yml: `uv pip install --torch-backend`
+# behaves differently between uv versions, so CI and the image must run the same one.
+ARG UV_VERSION=0.12.23
 
 # ---------------------------------------------------------------------------
 # MinIO only ships source now, so build a pinned commit. The pseudo-version is
@@ -20,6 +23,10 @@ RUN CGO_ENABLED=0 GOTOOLCHAIN=auto \
     go install -trimpath -ldflags "-s -w" github.com/minio/minio@${MINIO_VERSION}
 
 FROM inngest/inngest:${INNGEST_VERSION} AS inngest
+
+# uv, a single static binary (amd64 and arm64). The local Qwen3-TTS voices are installed with it,
+# on request, into /data/qwen-tts: no Python or PyTorch is baked into this image.
+FROM ghcr.io/astral-sh/uv:${UV_VERSION} AS uv
 
 # ---------------------------------------------------------------------------
 FROM ${NODE_IMAGE} AS build
@@ -80,6 +87,7 @@ RUN npm install -g "@openai/codex@${CODEX_VERSION}" && npm cache clean --force
 
 COPY --from=minio /go/bin/minio /usr/local/bin/minio
 COPY --from=inngest /usr/bin/inngest /usr/local/bin/inngest
+COPY --from=uv /uv /uvx /usr/local/bin/
 
 RUN useradd --system --uid 10001 --user-group --create-home --home-dir /home/reelcraft reelcraft
 
@@ -95,6 +103,13 @@ COPY --from=build /src/apps/render-worker/package.json ${REELCRAFT_APP_DIR}/apps
 COPY --from=build /src/apps/render-worker/dist ${REELCRAFT_APP_DIR}/apps/render-worker/dist
 COPY --from=build /src/apps/render-worker/node_modules ${REELCRAFT_APP_DIR}/apps/render-worker/node_modules
 COPY --from=build /src/apps/web/dist ${REELCRAFT_APP_DIR}/apps/web/dist
+
+# The Qwen3-TTS service's source and the pinned package list `uv` installs it from. They are
+# outside the app bundle on purpose: that bundle is what in-app updates replace, and this is
+# runtime, so changing it is a RUNTIME_VERSION bump. Only the source is here. The Python
+# packages and the voice models are installed and downloaded on request into /data/qwen-tts.
+COPY services/qwen-tts/pyproject.toml services/qwen-tts/constraints.txt /opt/reelcraft/qwen-tts/
+COPY services/qwen-tts/src /opt/reelcraft/qwen-tts/src
 
 # Remotion looks for its browser relative to the working directory, and render
 # jobs run in per-job folders, so install it once and point at it explicitly.
@@ -126,6 +141,11 @@ ENV PATH=/usr/lib/postgresql/16/bin:${PATH} \
     INNGEST_SYNC_ON_BOOT=true \
     WORKSPACE_ROOT=/data/workspace \
     CODEX_HOME=/data/codex \
+    QWEN_TTS_SOURCE_DIR=/opt/reelcraft/qwen-tts \
+    QWEN_TTS_HOME=/data/qwen-tts \
+    UV_CACHE_DIR=/data/qwen-tts/cache \
+    UV_PYTHON_INSTALL_DIR=/data/qwen-tts/python \
+    UV_PYTHON_PREFERENCE=only-managed \
     CODEX_BROWSER_OS_URL=http://host.docker.internal:9010/mcp \
     REMOTION_BROWSER_EXECUTABLE=/usr/local/bin/chrome-headless-shell \
     S6_BEHAVIOUR_IF_STAGE2_FAILS=2 \
