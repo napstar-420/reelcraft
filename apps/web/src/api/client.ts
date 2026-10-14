@@ -15,7 +15,9 @@ import type {
   StartAssistantTurnDto,
   UpdateAssistantSessionDto,
   BrowserOsSettingsDto,
+  QwenTtsBackend,
   QwenTtsSettingsDto,
+  QwenTtsSetupDto,
   CodexLoginDto,
   CodexStatusDto,
   ConnectionTestDto,
@@ -555,6 +557,21 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ modelId }),
     }),
+  linkQwenModel: (modelId: string, path: string) =>
+    request<ModelDownload>('/qwen-tts/models/link', {
+      method: 'POST',
+      body: JSON.stringify({ modelId, path }),
+    }),
+  qwenSetup: () => request<QwenTtsSetupDto>('/qwen-tts/setup'),
+  installQwen: (backend: QwenTtsBackend) =>
+    request<QwenTtsSetupDto>('/qwen-tts/setup/install', {
+      method: 'POST',
+      body: JSON.stringify({ backend }),
+    }),
+  cancelQwenInstall: () => request<QwenTtsSetupDto>('/qwen-tts/setup/cancel', { method: 'POST' }),
+  startQwen: () => request<QwenTtsSetupDto>('/qwen-tts/setup/start', { method: 'POST' }),
+  stopQwen: () => request<QwenTtsSetupDto>('/qwen-tts/setup/stop', { method: 'POST' }),
+  checkQwenAgain: () => request<QwenTtsSetupDto>('/qwen-tts/setup/check', { method: 'POST' }),
   saveQwenTts: (url: string) =>
     request<QwenTtsSettingsDto>('/settings/qwen-tts', {
       method: 'PUT',

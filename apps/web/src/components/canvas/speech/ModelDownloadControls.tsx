@@ -14,7 +14,7 @@ import {
 } from '@/components/ui/dialog';
 import { Progress } from '@/components/ui/progress';
 import { apiErrorMessage } from '@/lib/api-error-message';
-import { docsUrl } from '@/lib/docs-url';
+import { QwenLinkFolder } from './QwenLinkFolder';
 import { downloadPercent, formatBytes, hasRoomFor } from './speech-settings.logic';
 
 /** What a model that runs on this computer needs before it can speak: the download, its
@@ -39,17 +39,11 @@ export function ModelDownloadControls({ model }: { model: ModelInfoDto }) {
   if (!download || download.state === 'ready') return null;
 
   if (download.serviceDown) {
+    // The setup panel above the models says what is wrong and offers the fix.
     return (
       <p className="text-xs text-amber-700 dark:text-amber-400">
-        The Qwen3-TTS service isn’t running. Start it with <code>pnpm tts</code>, then come back.{' '}
-        <a
-          href={docsUrl('qwen-tts')}
-          target="_blank"
-          rel="noreferrer"
-          className="underline underline-offset-2"
-        >
-          How to start it
-        </a>
+        Qwen3-TTS isn’t running yet. Set it up above, then download this model (
+        {formatBytes(download.totalBytes)}).
       </p>
     );
   }
@@ -101,6 +95,7 @@ export function ModelDownloadControls({ model }: { model: ModelInfoDto }) {
       {download.state === 'failed' && download.error && (
         <p className="text-xs text-destructive">The download failed: {download.error}</p>
       )}
+      <QwenLinkFolder modelId={model.modelId} modelLabel={model.label} />
       <Dialog open={confirming} onOpenChange={setConfirming}>
         <DialogContent>
           <DialogHeader>

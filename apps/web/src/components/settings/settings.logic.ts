@@ -55,7 +55,7 @@ export function qwenTtsSourceLabel(settings: QwenTtsSettingsDto): string {
     case 'env':
       return 'From the container environment (QWEN_TTS_URL)';
     default:
-      return 'Default address';
+      return 'Not set, so Reelcraft runs the service itself';
   }
 }
 
