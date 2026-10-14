@@ -9,8 +9,12 @@ dependencies = [
   "httpx>=0.27",
   "soundfile>=0.12",
   "numpy",
-  "qwen-tts",
 ]
+
+[project.optional-dependencies]
+# The model runtime (PyTorch and friends, GBs). The tests and the API contract do not need it;
+# the app installs it with `--extra engine` against `constraints.txt`.
+engine = ["qwen-tts"]
 
 [project.scripts]
 qwen-tts-service = "qwen_tts_service.__main__:main"

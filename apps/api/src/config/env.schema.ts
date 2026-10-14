@@ -44,8 +44,16 @@ export const EnvSchema = z
     FAL_KEY: z.string().optional(),
     ELEVENLABS_API_KEY: z.string().optional(),
     DEEPGRAM_API_KEY: z.string().optional(),
-    /** Base address of a self-hosted Qwen3-TTS server (OpenAI-style `/v1/audio/speech`). */
-    QWEN_TTS_URL: z.string().url().optional(),
+    /** Address of a Qwen3-TTS service you run yourself. Unset (or blank, as in `.env.example`) means
+     * Reelcraft installs and runs the service itself. */
+    QWEN_TTS_URL: z.preprocess(
+      (value) => (value === '' ? undefined : value),
+      z.string().url().optional(),
+    ),
+    /** Where the managed Qwen3-TTS service keeps its Python packages and models. */
+    QWEN_TTS_HOME: z.string().optional(),
+    /** The folder holding the service's source (`services/qwen-tts`); found in a checkout, set by the image. */
+    QWEN_TTS_SOURCE_DIR: z.string().optional(),
     PUBLIC_API_BASE_URL: z.string().url().optional(),
     DEEPGRAM_CALLBACK_SECRET: z.string().min(32).optional(),
 

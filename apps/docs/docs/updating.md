@@ -88,6 +88,8 @@ Reelcraft then makes no requests to GitHub, and you update by
 
 - Versions installed from inside the app are in `/data/app`. A newer image always replaces them.
 - The last 3 database backups taken before updates are in `/data/backups`.
+- The software and models of the local [Qwen3-TTS](./qwen-tts.md) voices, if you set them up, are in
+  `/data/qwen-tts`. Updates leave them alone, and [your own backups](./backup.md) leave them out.
 
 These backups protect against a failed update. They don't replace
 [your own backups](./backup.md).

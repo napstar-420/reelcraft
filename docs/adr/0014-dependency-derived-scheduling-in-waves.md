@@ -1,4 +1,4 @@
-# ADR 0013: Stages are scheduled from their dependencies, in waves
+# ADR 0014: Stages are scheduled from their dependencies, in waves
 
 - Status: accepted
 - Date: 2026-10-14

@@ -6,7 +6,7 @@ import {
   HttpException,
   Post,
 } from '@nestjs/common';
-import { LocalModelActionDto, type ModelDownload } from '@reelcraft/shared';
+import { LinkQwenModelDto, LocalModelActionDto, type ModelDownload } from '@reelcraft/shared';
 import { ZodValidationPipe } from '../../common/zod-validation.pipe';
 import { QwenServiceError, QwenTtsAdapter } from './qwen.adapter';
 
@@ -34,10 +34,18 @@ export class QwenTtsController {
     return this.relay(() => this.qwen.remove(dto.modelId));
   }
 
+  /** Use model files the user already has, in place. The service checks the folder and says what is missing. */
+  @Post('link')
+  @HttpCode(200)
+  link(@Body(new ZodValidationPipe(LinkQwenModelDto)) dto: LinkQwenModelDto) {
+    return this.relay(() => this.qwen.link(dto.modelId, dto.path));
+  }
+
   private async relay(call: () => Promise<ModelDownload>): Promise<ModelDownload> {
     try {
       return await call();
     } catch (error) {
+      if (error instanceof HttpException) throw error; // e.g. "not set up yet", from the runtime
       if (error instanceof QwenServiceError) throw new HttpException(error.message, error.status);
       throw new BadGatewayException((error as Error).message);
     }

@@ -7,6 +7,7 @@ import type {
   VoiceListDto,
 } from '@reelcraft/shared';
 import { SettingsService } from '../../settings/settings.service';
+import { QwenTtsRuntime } from './qwen-runtime.service';
 import type {
   ModelInfo,
   ProviderAdapter,
@@ -78,20 +79,37 @@ export class QwenTtsAdapter implements ProviderAdapter {
 
   constructor(
     @Inject(SettingsService) private readonly settings: Pick<SettingsService, 'qwenTtsUrl'>,
+    @Inject(QwenTtsRuntime)
+    private readonly runtime: Pick<
+      QwenTtsRuntime,
+      'use' | 'startsOnDemand' | 'readyModels' | 'rememberReadyModels'
+    >,
   ) {}
 
-  /** Both models, with whether each has been downloaded. If the service isn't running they are
-   * listed as not downloaded, and marked so. */
+  /**
+   * Both models, with whether each has been downloaded. Listing never starts the service (the UI
+   * polls it). When the service isn't answering: if Reelcraft can start it on demand, the models
+   * it last saw ready are shown as ready; otherwise they are listed as not downloaded and marked
+   * `serviceDown`, which is what makes the UI offer to set it up.
+   */
   async listModels(): Promise<ModelInfo[]> {
     const served = await this.lookup<{ data?: ServiceModel[] }>('/v1/models');
-    const models: ServiceModel[] =
-      served?.data ??
-      QWEN_FALLBACK_MODELS.map((m) => ({
+    let models: ServiceModel[];
+    let serviceDown = false;
+    if (served?.data) {
+      models = served.data;
+      this.runtime.rememberReadyModels(models.filter((m) => m.state === 'ready').map((m) => m.id));
+    } else {
+      const onDemand = await this.runtime.startsOnDemand();
+      const ready = new Set(onDemand ? this.runtime.readyModels() : []);
+      serviceDown = !onDemand;
+      models = QWEN_FALLBACK_MODELS.map((m) => ({
         ...m,
-        state: 'not_downloaded' as const,
-        downloadedBytes: 0,
+        state: ready.has(m.id) ? ('ready' as const) : ('not_downloaded' as const),
+        downloadedBytes: ready.has(m.id) ? m.totalBytes : 0,
         error: null,
       }));
+    }
     return models.map((m) => ({
       modelId: m.id,
       label: m.label,
@@ -101,7 +119,7 @@ export class QwenTtsAdapter implements ProviderAdapter {
         supportsIdempotency: false,
         speech: qwenOptions(m.instructions),
       },
-      download: toDownload(m, !served),
+      download: toDownload(m, serviceDown),
     }));
   }
 
@@ -130,10 +148,14 @@ export class QwenTtsAdapter implements ProviderAdapter {
     return { done: true, outcome: 'succeeded' };
   }
 
-  async fetch(handle: JobHandle): Promise<ProviderResult> {
+  /** Makes the speech. Starts the service first if it is installed but stopped. */
+  fetch(handle: JobHandle): Promise<ProviderResult> {
+    return this.runtime.use((base) => this.speak(handle, base));
+  }
+
+  private async speak(handle: JobHandle, base: string): Promise<ProviderResult> {
     const req = (handle.payload as { speech?: ProviderRequest } | undefined)?.speech;
     if (!req) throw new Error('Qwen3-TTS: missing durable request');
-    const base = await this.baseUrl();
     const params = req.params as SpeechParams;
     const family = (textParam(params, 'outputFormat') ?? 'wav') as AudioFamily;
     if (!FAMILIES.includes(family as (typeof FAMILIES)[number])) {
@@ -224,30 +246,42 @@ export class QwenTtsAdapter implements ProviderAdapter {
     return this.act('POST', modelId, 'cancel');
   }
 
-  /** Deletes a downloaded model's files to free the disk. */
+  /** Deletes a downloaded model's files to free the disk. A linked folder is only forgotten. */
   remove(modelId: string): Promise<ModelDownload> {
     return this.act('DELETE', modelId);
   }
 
-  private async act(
+  /** Uses model files the user already has, in place: the service checks the folder first. */
+  link(modelId: string, folder: string): Promise<ModelDownload> {
+    return this.act('POST', modelId, 'link', { path: folder });
+  }
+
+  /** A request to the service about a model. Starts the service first if it is installed but stopped. */
+  private act(
     method: 'POST' | 'DELETE',
     modelId: string,
     action?: string,
+    body?: Record<string, unknown>,
   ): Promise<ModelDownload> {
-    const base = await this.baseUrl();
-    let response: Response;
-    try {
-      response = await fetch(`${base}/v1/models/${modelId}${action ? `/${action}` : ''}`, {
-        method,
-        signal: AbortSignal.timeout(ACTION_TIMEOUT_MS),
-      });
-    } catch (error) {
-      throw new Error(unreachable(base, error));
-    }
-    if (!response.ok) {
-      throw new QwenServiceError(response.status, qwenErrorReason(await response.text()));
-    }
-    return toDownload((await response.json()) as ServiceModel, false);
+    return this.runtime.use(async (base) => {
+      let response: Response;
+      try {
+        response = await fetch(`${base}/v1/models/${modelId}${action ? `/${action}` : ''}`, {
+          method,
+          ...(body && {
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+          }),
+          signal: AbortSignal.timeout(ACTION_TIMEOUT_MS),
+        });
+      } catch (error) {
+        throw new Error(unreachable(base, error));
+      }
+      if (!response.ok) {
+        throw new QwenServiceError(response.status, qwenErrorReason(await response.text()));
+      }
+      return toDownload((await response.json()) as ServiceModel, false);
+    });
   }
 
   private text(req: ProviderRequest): string {
@@ -290,5 +324,5 @@ function toDownload(m: ServiceModel, serviceDown: boolean): ModelDownload {
 }
 
 function unreachable(base: string, error: unknown): string {
-  return `Qwen3-TTS: could not reach the service at ${base}. Start it with "pnpm tts" (see Settings → Qwen3-TTS). ${(error as Error).message}`;
+  return `Qwen3-TTS: could not reach the service at ${base}. Check it in Settings → Qwen3-TTS. ${(error as Error).message}`;
 }

@@ -16,6 +16,30 @@ function requiredEnv(overrides: Record<string, unknown> = {}): Record<string, un
   };
 }
 
+describe('Qwen3-TTS environment configuration', () => {
+  it('treats a blank QWEN_TTS_URL as unset, so a copied .env.example still starts', () => {
+    expect(validateEnv(requiredEnv({ QWEN_TTS_URL: '' })).QWEN_TTS_URL).toBeUndefined();
+    expect(validateEnv(requiredEnv()).QWEN_TTS_URL).toBeUndefined();
+  });
+
+  it('accepts an address and rejects something that is not one', () => {
+    const url = 'http://host.docker.internal:8091';
+    expect(validateEnv(requiredEnv({ QWEN_TTS_URL: url })).QWEN_TTS_URL).toBe(url);
+    expect(() => validateEnv(requiredEnv({ QWEN_TTS_URL: 'not a url' }))).toThrow('QWEN_TTS_URL');
+  });
+
+  it('takes the managed service folders as plain paths', () => {
+    const env = validateEnv(
+      requiredEnv({
+        QWEN_TTS_HOME: '/data/qwen-tts',
+        QWEN_TTS_SOURCE_DIR: '/opt/reelcraft/qwen-tts',
+      }),
+    );
+    expect(env.QWEN_TTS_HOME).toBe('/data/qwen-tts');
+    expect(env.QWEN_TTS_SOURCE_DIR).toBe('/opt/reelcraft/qwen-tts');
+  });
+});
+
 describe('preview-token environment configuration', () => {
   it('requires PREVIEW_TOKEN_SECRET outside tests', () => {
     const env = requiredEnv();

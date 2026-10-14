@@ -21,24 +21,26 @@ the release-please PR for 0.3.0 (Settings and the guide's in-app links) is #51.
 
 ## Where things are
 
-| Path                                                          | What                                                                                     |
-| ------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `docker/app/Dockerfile`, `rootfs/`                            | The image. s6 services in `rootfs/etc/s6-overlay/s6-rc.d/`, scripts in `.../scripts/`    |
-| `docker/app/RUNTIME_VERSION`                                  | The image's runtime number (see rules below)                                             |
-| `docker/app/release-signing.pub`                              | Public key the updater verifies releases with                                            |
-| `docker/app/rootfs/usr/local/lib/reelcraft/updater/`          | The in-app updater: agent (root, Unix socket), releases, signing, state, select-app      |
-| `docker/app/smoke-test.sh`, `update-test.sh`                  | Boot-and-run test, and the end-to-end update/rollback test (both run in CI)              |
-| `docker/app/DOCKERHUB.md`                                     | The Docker Hub page, pushed by the release workflow                                      |
-| `scripts/release/`                                            | Manifest build, signing and key generation (`pnpm test:release`)                         |
-| `.github/workflows/`                                          | `ci.yml`, `release.yml`, `runtime-version.yml`, `docs.yml`                               |
-| `apps/api/src/update/`                                        | Relays the UI's update requests to the agent. No update logic lives here                 |
-| `apps/api/src/settings/`                                      | Encrypted settings store, `/settings` routes, `/codex` routes, provider key tester       |
-| `apps/api/src/provider/key-provider.ts`                       | `KEY_PROVIDER` → `SettingsKeyProvider` (environment, then saved)                         |
-| `apps/api/src/provider/codex/`                                | `codex-login.service.ts`, `codex-device-page.ts` (Neo scripts), `codex-neo-registrar.ts` |
-| `apps/web/src/pages/SettingsPage.tsx`, `components/settings/` | Settings UI. `settings.logic.ts` holds the tested pure helpers                           |
-| `apps/web/src/components/update/`                             | Update indicator, dialog and `use-update-status.ts`                                      |
-| `apps/web/src/lib/docs-url.ts`                                | Links from the app into the user guide                                                   |
-| `apps/docs/`                                                  | The user guide (Docusaurus, outside the pnpm workspace)                                  |
+| Path                                                          | What                                                                                        |
+| ------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `docker/app/Dockerfile`, `rootfs/`                            | The image. s6 services in `rootfs/etc/s6-overlay/s6-rc.d/`, scripts in `.../scripts/`       |
+| `docker/app/RUNTIME_VERSION`                                  | The image's runtime number (see rules below)                                                |
+| `docker/app/release-signing.pub`                              | Public key the updater verifies releases with                                               |
+| `docker/app/rootfs/usr/local/lib/reelcraft/updater/`          | The in-app updater: agent (root, Unix socket), releases, signing, state, select-app         |
+| `docker/app/smoke-test.sh`, `update-test.sh`                  | Boot-and-run test, and the end-to-end update/rollback test (both run in CI)                 |
+| `docker/app/DOCKERHUB.md`                                     | The Docker Hub page, pushed by the release workflow                                         |
+| `scripts/release/`                                            | Manifest build, signing and key generation (`pnpm test:release`)                            |
+| `.github/workflows/`                                          | `ci.yml`, `release.yml`, `runtime-version.yml`, `docs.yml`                                  |
+| `apps/api/src/update/`                                        | Relays the UI's update requests to the agent. No update logic lives here                    |
+| `apps/api/src/settings/`                                      | Encrypted settings store, `/settings` routes, `/codex` routes, provider key tester          |
+| `apps/api/src/provider/key-provider.ts`                       | `KEY_PROVIDER` → `SettingsKeyProvider` (environment, then saved)                            |
+| `apps/api/src/provider/codex/`                                | `codex-login.service.ts`, `codex-device-page.ts` (Neo scripts), `codex-neo-registrar.ts`    |
+| `services/qwen-tts/`                                          | The local Qwen3-TTS service (Python). Its source is copied into the image; see below        |
+| `apps/api/src/provider/qwen/`                                 | The `qwen-tts` provider, and `qwen-runtime.service.ts`, which installs and runs the service |
+| `apps/web/src/pages/SettingsPage.tsx`, `components/settings/` | Settings UI. `settings.logic.ts` holds the tested pure helpers                              |
+| `apps/web/src/components/update/`                             | Update indicator, dialog and `use-update-status.ts`                                         |
+| `apps/web/src/lib/docs-url.ts`                                | Links from the app into the user guide                                                      |
+| `apps/docs/`                                                  | The user guide (Docusaurus, outside the pnpm workspace)                                     |
 
 ## How it runs
 
@@ -61,11 +63,19 @@ the release-please PR for 0.3.0 (Settings and the guide's in-app links) is #51.
   encrypts secrets and clears dependent caches (OpenRouter models, the Neo connection, Codex readiness).
 - **Connect Codex**: `codex login --device-auth` → parse link and code → Neo opens the page and types the code
   → the user approves in Neo → `codex mcp add` registers Neo. If Neo can't help, the page shows the link and code.
+- **Local Qwen3-TTS** (ADR 0013): the image has `uv` and the service's source (`/opt/reelcraft/qwen-tts`, outside the
+  app bundle) but no Python packages or models. When the user chooses **Set up**, the API (`QwenTtsRuntime`)
+  runs `uv venv` and `uv pip install --torch-backend auto … -c constraints.txt` into `/data/qwen-tts` (`UV_*`
+  point the cache and managed Python there too), starts the service as a child process the first time speech
+  is needed, and stops it after 10 idle minutes. The service exits when its stdin closes, so it never outlives
+  the API. `/data/qwen-tts` is left out of the documented backups. A saved service address (or `QWEN_TTS_URL`)
+  turns all of this off: Reelcraft then only talks to a service the user runs.
 
 ## Rules to follow when changing this
 
 1. **Bump `docker/app/RUNTIME_VERSION`** in any change to `docker/app/Dockerfile`, `docker/app/rootfs/` (this
-   includes the updater) or the `@remotion/renderer` version. CI enforces it; the `runtime-unchanged` label is
+   includes the updater), the baked Qwen3-TTS service files (`services/qwen-tts/src/`, `pyproject.toml`,
+   `constraints.txt`) or the `@remotion/renderer` version. CI enforces it; the `runtime-unchanged` label is
    for changes that can't affect the running container. If unsure, bump it. Web and API-only changes ship as
    in-app updates and need no bump.
 2. **Never read provider keys from `process.env`** at the point of use: go through `KEY_PROVIDER`. Read the Neo
@@ -84,6 +94,11 @@ the release-please PR for 0.3.0 (Settings and the guide's in-app links) is #51.
    `updating#update-to-a-new-image`).
 7. A new table that references channel, blueprint or run must go into `ChannelService.delete()`'s cascade
    (the existing rule in `CLAUDE.md`). `app_setting` has no such reference and isn't in it.
+8. **Keep the Qwen3-TTS service out of the app bundle and the packages out of the image.** The source lives at
+   `/opt/reelcraft/qwen-tts`, never under `/opt/reelcraft/app` (in-app updates replace that). Python packages and
+   models go to `/data/qwen-tts` on request. Keep `UV_VERSION` in the Dockerfile and in
+   `.github/workflows/qwen-tts.yml` the same (`--torch-backend` differs between uv versions), and regenerate
+   `services/qwen-tts/constraints.txt` (see its README) when its dependencies change.
 
 ## Verifying a change
 
@@ -96,7 +111,12 @@ the release-please PR for 0.3.0 (Settings and the guide's in-app links) is #51.
   `NODE_IMAGE`, `GO_IMAGE` and `RUNTIME_IMAGE` build args for restricted networks.
 - User guide: `cd apps/docs && pnpm install --ignore-workspace && pnpm build` (fails on broken links).
 - Backup and restore of `/data`: the documented `tar` commands were tested against the built image: a restored
-  volume boots healthy with saved keys and the Neo address intact.
+  volume boots healthy with saved keys and the Neo address intact. The backup command leaves out
+  `/data/qwen-tts` (`--exclude=./qwen-tts`).
+- Qwen3-TTS in the image: `smoke-test.sh` checks `uv` runs as root and as `reelcraft`, that `/data/qwen-tts` is
+  writable and that `GET /api/qwen-tts/setup` reports `managed` and `not-installed`. A full install in the
+  container (CPU on Docker Desktop for Mac) is a manual check: `POST /api/qwen-tts/setup/install`, poll the same
+  route until `stopped`, then `POST …/start`.
 
 ## Lessons and gotchas
 

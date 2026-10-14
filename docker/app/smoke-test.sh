@@ -56,6 +56,14 @@ echo "    $health"
 step "serving the web app"
 curl -fsS "${base}/" | grep -q '<div id="root">' || fail "web app index not served"
 
+step "checking uv and the Qwen3-TTS setup"
+docker exec "$name" uv --version >/dev/null || fail "uv is missing from the image"
+docker exec -u reelcraft "$name" uv --version >/dev/null || fail "the app user cannot run uv"
+docker exec -u reelcraft "$name" test -w /data/qwen-tts || fail "/data/qwen-tts is not writable by the app user"
+setup="$(curl -fsS "${api}/qwen-tts/setup")"
+echo "$setup" | jq -e '.mode == "managed" and .phase == "not-installed" and .homeDir == "/data/qwen-tts" and .uv != null' >/dev/null ||
+  fail "unexpected Qwen3-TTS setup status: $setup"
+
 step "running a hello blueprint"
 channel="$(post "${api}/channels" '{"name":"Smoke test"}' | jq -r .id)"
 blueprint="$(post "${api}/blueprints" "{\"channelId\":\"${channel}\",\"name\":\"Hello\"}" | jq -r .blueprintId)"

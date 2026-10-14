@@ -163,16 +163,26 @@ describe('validateSpeechStages', () => {
 
 describe('validateSpeechStages with a local model', () => {
   const MODEL = 'Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice';
-  const providers = () => {
+  /** The runtime that starts the service: by default nothing is set up. */
+  const runtimeWith = (over: Record<string, unknown> = {}) => ({
+    use: async (work: (base: string) => Promise<unknown>) => work('http://local:8091'),
+    startsOnDemand: async () => false,
+    readyModels: () => [] as string[],
+    rememberReadyModels: () => undefined,
+    ...over,
+  });
+  const providers = (runtime = runtimeWith()) => {
     const registry = new ProviderRegistry();
-    registry.register(new QwenTtsAdapter({ qwenTtsUrl: async () => 'http://local:8091' }));
+    registry.register(
+      new QwenTtsAdapter({ qwenTtsUrl: async () => 'http://local:8091' }, runtime as never),
+    );
     return registry;
   };
-  const validate = () =>
+  const validate = (runtime?: ReturnType<typeof runtimeWith>) =>
     validateSpeechStages(
       [stage('voice')],
       { voice: { model: { provider: 'qwen-tts', modelId: MODEL, params: {} } } },
-      providers(),
+      providers(runtime),
     );
   const serve = (state: string) =>
     vi.stubGlobal(
@@ -214,8 +224,22 @@ describe('validateSpeechStages with a local model', () => {
     expect(await validate()).toEqual([]);
   });
 
-  it('only warns when the service is not running', async () => {
+  it('only warns when the service is not running and nothing is set up', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('refused')));
     expect(await validate()).toMatchObject([{ severity: 'warning' }]);
+  });
+
+  it('accepts a downloaded model while the service is idle-stopped, since a run starts it', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('refused')));
+    const runtime = runtimeWith({ startsOnDemand: async () => true, readyModels: () => [MODEL] });
+    expect(await validate(runtime)).toEqual([]);
+  });
+
+  it('still blocks a model that was never downloaded when the stopped service is installed', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('refused')));
+    const runtime = runtimeWith({ startsOnDemand: async () => true, readyModels: () => [] });
+    expect(await validate(runtime)).toMatchObject([
+      { severity: 'error', message: expect.stringContaining('Download it') },
+    ]);
   });
 });
