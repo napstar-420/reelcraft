@@ -82,8 +82,8 @@ in the editor, only the style.
 A **drawing** item makes the whiteboard look: lines that draw themselves on, words that are written out,
 shapes that pop in and a marker that swipes across a word. A timeline can also have a **world** (a canvas
 bigger than the picture) with a **camera** that moves over it, and a **theme** that gives every drawing the
-same paper, ink, colours and handwriting fonts. You normally don't write these by hand: a stage builds
-them from a plan.
+same paper, ink, colours and handwriting fonts. You normally don't write these by hand: a
+[Compile Scenes](../stage-types/compile-scenes.md) stage builds them from a plan.
 
 A drawing item draws one of three things:
 

@@ -98,6 +98,8 @@ export const SketchContent = z.discriminatedUnion('kind', [
     size: finitePositive.max(2000),
     color: z.string().min(1).max(40).optional(),
     font: z.enum(['hand', 'body']).optional(),
+    /** Which side the words line up on; left out, the left. */
+    align: z.enum(['left', 'center']).optional(),
   }),
   z.object({
     kind: z.literal('shape'),

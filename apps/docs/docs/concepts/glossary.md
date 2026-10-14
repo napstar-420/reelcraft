@@ -94,6 +94,9 @@ See [Characters](../channels/characters.md).
 **Stage cap**: the most one stage may spend in a run. See
 [Budget and costs](../runs/budget-and-costs.md).
 
+**Scene plan**: a short plan for a hand-drawn video, scene by scene, that
+[Compile Scenes](../stage-types/compile-scenes.md#the-scene-plan) turns into a timeline.
+
 **Style**: how text or captions look in a timeline. See [Timelines](../video/timelines.md#text-and-styles).
 
 **Timeline**: a plan for a video: tracks of clips, audio, text and captions. See

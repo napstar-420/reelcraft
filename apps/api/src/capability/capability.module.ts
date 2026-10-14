@@ -20,6 +20,8 @@ import {
 } from './impls/media-generate.capability';
 import { BrowserAutomateCapability } from './impls/browser-automate.capability';
 import { FlowVideoCapability } from './impls/flow-video.capability';
+import { SceneCompileCapability } from './impls/scene-compile.capability';
+import { WhiteboardAssetRegistry } from './whiteboard/asset.registry';
 
 /**
  * §1.3 — may inject ProviderModule and StorageModule. Must NOT be able to
@@ -45,8 +47,10 @@ import { FlowVideoCapability } from './impls/flow-video.capability';
     MediaAnalyzeCapability,
     BrowserAutomateCapability,
     FlowVideoCapability,
+    SceneCompileCapability,
+    WhiteboardAssetRegistry,
   ],
   controllers: [CapabilityController],
-  exports: [CapabilityRegistry, StyleRegistry],
+  exports: [CapabilityRegistry, StyleRegistry, WhiteboardAssetRegistry],
 })
 export class CapabilityModule {}

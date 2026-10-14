@@ -146,6 +146,8 @@ export const SketchItem = ({
             height: '100%',
             display: 'flex',
             alignItems: 'center',
+            justifyContent: item.content.align === 'center' ? 'center' : 'flex-start',
+            textAlign: item.content.align === 'center' ? 'center' : 'left',
             fontFamily: `"${font}", "Comic Sans MS", cursive`,
             fontWeight: item.content.font === 'body' ? 400 : 700,
             fontSize: item.content.size,

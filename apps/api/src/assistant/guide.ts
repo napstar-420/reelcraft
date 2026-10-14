@@ -49,6 +49,7 @@ export const GUIDE: Record<string, GuideSection> = {
 - \`video.concat\`: joins clips end to end with optional crossfade, replacement audio and burned-in subtitles; free, local.
 - \`timeline.render\`: renders a \`timeline\` into a finished video; free, local.
 - \`subtitles.export\`: SRT or VTT file (\`file.subtitles\`) from word timings; free.
+- \`scene.compile\`: puts a hand-drawn (whiteboard) video together from a scene plan (slot \`scenes\`: data in the SceneSpec shape; optional \`voice\` audio, \`timing\` word timings, \`assets\` drawings made for the run); \`timeline\` output for \`timeline.render\`; free, instant. Layouts come from templates (title, three_step, before_after, cause_process_result, problem_why_solution, free) and scenes are timed by the voice-over, so the model only writes the plan. Drawings are named by id: built-in ids such as \`lightbulb\`, \`arrow-right\`, \`brain\`, or ids the run draws.
 - \`human.input\`: pauses the run for a person to type or paste text or data.
 - \`human.timeline_edit\`: pauses for a person to edit a timeline in the timeline editor.
 - \`browser.automate\`: Codex uses a signed-in browser to do a task; \`data\` output, or files it downloads (\`media.audio\`, \`media.image\`, \`media.video\`, or an image or video list; needs an instructions template saying what to find; the licence it reads is recorded in the stage log). Uses the user's accounts: only if they ask for it.
@@ -360,7 +361,7 @@ ${renderTroubleshooting()}`,
 - **Blueprint** tab: name, description, tags, inputs (run inputs), the Character role, defaults and budget.
 - **Save** creates a version (its menu can start a new major); **Versions** lists them; the toolbar badge **Runnable** with a warning count comes from the validator. **Run** opens the run dialog (**Live run** or **Dry run**, budget cap, inputs, **Run up to** to stop after a stage). A **Dry run** uses the free fake provider.
 - **Assistant** tab: **Auto-apply** (proposals go straight to the canvas, with **Undo**), **Apply** (manual mode), **Start new chat**, the model and effort pickers.
-- Stage types by label: Generate Text, Generate Image, Generate Video, Generate Video with Flow, Generate Speech, Analyze Media, Concatenate Video, Render Timeline, Export Subtitles, Human Input, Human Timeline Edit, Automate Browser, Publish (Stub). \`list_capabilities\` has the exact labels.
+- Stage types by label: Generate Text, Generate Image, Generate Video, Generate Video with Flow, Generate Speech, Analyze Media, Concatenate Video, Render Timeline, Export Subtitles, Human Input, Human Timeline Edit, Automate Browser, Compile Scenes, Publish (Stub). \`list_capabilities\` has the exact labels.
 - **Approve** / **Reject** (with a note) are the user's actions on a paused run; you cannot do them.`,
   },
 
