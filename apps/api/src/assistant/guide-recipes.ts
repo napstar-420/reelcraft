@@ -315,6 +315,21 @@ export function recipeIllustratedStory(withCharacter = false): CreateBlueprintVe
   };
 }
 
+/**
+ * The illustrated story with the narration written while the pictures are drawn: both read only
+ * the story, so `dependsOn: ['story']` lets them run together. The voice-over waits for the
+ * narration, and the edit plan waits for the pictures it uses.
+ */
+export function recipeParallelStory(): CreateBlueprintVersionDto {
+  const draft = recipeIllustratedStory();
+  return {
+    ...draft,
+    graph: draft.graph.map((stage) =>
+      stage.key === 'narration' ? { ...stage, dependsOn: ['story'] } : stage,
+    ),
+  };
+}
+
 const shotsSchema: JsonSchema = {
   type: 'object',
   properties: {

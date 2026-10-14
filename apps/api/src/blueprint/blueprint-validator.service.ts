@@ -19,6 +19,7 @@ import { BUILTIN_CHECKS } from '../check/builtins/index';
 import { parseTemplatePaths, parseTemplatePathSegments } from '../common/prompt-template';
 import {
   buildValidationContext,
+  earlierWriters,
   type BlueprintValidationInput,
   type ValidationContext,
 } from './validation-context';
@@ -348,6 +349,7 @@ export class BlueprintValidatorService {
       });
     }
 
+    this.checkDependsOn(stage, stageIndex, ctx, issues);
     this.checkEnabledWhenDeclaration(stage, ctx, issues);
     this.checkApprovalOnReject(stage, stageIndex, ctx, issues);
     this.checkIterate(stage, stageIndex, ctx, issues);
@@ -446,7 +448,7 @@ export class BlueprintValidatorService {
         // §16.2 — cardinality vs. an iterate-derived producer's real arity.
         // Scoped to memory-group/iterate-derived refs only (Locked Decision
         // 2) — pre-existing many-cardinality inputs are untouched.
-        const arity = iterateProducedArity(ref, ctx);
+        const arity = iterateProducedArity(ref, ctx, stageIndex);
         if (arity === 'many' && slotDef.cardinality === 'one') {
           issues.push({
             path: `${base}.slots.${slotDef.name}`,
@@ -611,6 +613,43 @@ export class BlueprintValidatorService {
     }
   }
 
+  /** `dependsOn` names stages that exist, aren't this one, and come earlier in
+   * the graph — the graph array stays a valid run order. */
+  private checkDependsOn(
+    stage: StageDef,
+    stageIndex: number,
+    ctx: ValidationContext,
+    issues: ValidationIssue[],
+  ): void {
+    const path = `stages.${stage.key}.dependsOn`;
+    for (const key of stage.dependsOn ?? []) {
+      if (key === stage.key) {
+        issues.push({
+          path,
+          message: 'runs after itself — remove it from dependsOn',
+          severity: 'error',
+        });
+        continue;
+      }
+      const index = ctx.stageIndexByKey.get(key);
+      if (index === undefined) {
+        issues.push({
+          path,
+          message: `runs after unknown stage "${key}"`,
+          severity: 'error',
+        });
+      } else if (index > stageIndex) {
+        issues.push({
+          path,
+          message:
+            `runs after "${key}", which comes later in the graph — ` +
+            `move this stage after "${key}"`,
+          severity: 'error',
+        });
+      }
+    }
+  }
+
   /** §16.2/§16.3 — `approval.onReject.retryStageKey` must name this stage
    * or an earlier one in the graph (retrying "forward" makes no sense); a
    * `mode:'item'` approval needs `iterate` declared to have any item-level
@@ -651,6 +690,17 @@ export class BlueprintValidatorService {
         message:
           `onReject target "${onReject.retryStageKey}" comes after this stage in the graph — ` +
           'a rejection can only retry this stage or an earlier one',
+        severity: 'error',
+      });
+      return;
+    }
+
+    if (targetIndex < stageIndex && !ctx.ancestors.get(stage.key)?.has(onReject.retryStageKey)) {
+      issues.push({
+        path: `${base}.approval.onReject.retryStageKey`,
+        message:
+          `onReject target "${onReject.retryStageKey}" is not upstream of this stage — ` +
+          'a rejection can only retry this stage or a stage it depends on',
         severity: 'error',
       });
       return;
@@ -701,8 +751,10 @@ export class BlueprintValidatorService {
 
     for (const { path, ref: topRef } of entries) {
       for (const ref of flattenCoalesce(topRef)) {
-        if (ref.from === 'prev') {
-          const prevStage = stageIndex > 0 ? ctx.graph[stageIndex - 1] : undefined;
+        if (ref.from === 'prev' || ref.from === 'stage') {
+          const producerIndex =
+            ref.from === 'prev' ? stageIndex - 1 : (ctx.stageIndexByKey.get(ref.stageKey) ?? -1);
+          const prevStage = producerIndex >= 0 ? ctx.graph[producerIndex] : undefined;
           if (
             prevStage?.enabledWhen &&
             !sameEnabledWhen(stage.enabledWhen, prevStage.enabledWhen)
@@ -710,13 +762,13 @@ export class BlueprintValidatorService {
             issues.push({
               path,
               message:
-                `binds {from:'prev'} to "${prevStage.key}", which is conditionally enabled — ` +
+                `binds {from:'${ref.from}'} to "${prevStage.key}", which is conditionally enabled — ` +
                 'this stage must carry the same enabledWhen condition or the binding may find no artifact',
               severity: 'error',
             });
           }
         } else if (ref.from === 'memory') {
-          const writers = ctx.memoryWriters.get(ref.key) ?? [];
+          const writers = earlierWriters(ctx, ref.key, stageIndex);
           if (writers.length === 1) {
             const writerIndex = ctx.stageIndexByKey.get(writers[0]!.stageKey);
             const writerStage = writerIndex === undefined ? undefined : ctx.graph[writerIndex];
@@ -756,7 +808,7 @@ export class BlueprintValidatorService {
     const overRef = stage.iterate.over;
 
     if (overRef.from === 'memory') {
-      const writer = ctx.memoryWriters.get(overRef.key)?.[0];
+      const writer = earlierWriters(ctx, overRef.key, stageIndex)[0];
       const writerIndex = writer ? ctx.stageIndexByKey.get(writer.stageKey) : undefined;
       const writerStage = writerIndex === undefined ? undefined : ctx.graph[writerIndex];
       if (writerStage?.iterate && writerStage.output.kind !== 'data') {
@@ -765,6 +817,15 @@ export class BlueprintValidatorService {
           message: 'iterate.over a many-cardinality media source is not yet supported',
           severity: 'error',
         });
+        return;
+      }
+    }
+
+    for (const leaf of flattenCoalesce(overRef)) {
+      if (
+        leaf.from === 'stage' &&
+        !this.checkStageRef(leaf, path, stage, stageIndex, ctx, issues)
+      ) {
         return;
       }
     }
@@ -832,6 +893,10 @@ export class BlueprintValidatorService {
       return;
     }
 
+    if (ref.from === 'stage' && !this.checkStageRef(ref, path, stage, stageIndex, ctx, issues)) {
+      return;
+    }
+
     // §14.4, strict reading (Resolved Decision 2) — no config-level fallback
     // escape hatch. A required binding to a BARE prevItem is always an
     // error; the capability itself must declare the slot optional and
@@ -849,6 +914,19 @@ export class BlueprintValidatorService {
 
     if (ref.from === 'prev' && ref.alignWith === 'item') {
       this.checkAlignWith(stage, stageIndex, ctx, path, issues);
+    } else if (ref.from === 'stage') {
+      const producerIndex = ctx.stageIndexByKey.get(ref.stageKey)!;
+      if (ref.alignWith === 'item') {
+        this.checkAlignWith(stage, stageIndex, ctx, path, issues, producerIndex);
+      } else if (ctx.graph[producerIndex]?.iterate) {
+        issues.push({
+          path,
+          message:
+            "{from:'stage'} cannot bind an iterating stage's output — use {alignWith:'item'} " +
+            '(if this stage also iterates) or Run Memory',
+          severity: 'error',
+        });
+      }
     } else if (ref.from === 'prev' && !ref.alignWith) {
       // Locked Decision 4 — no `stage_execution`/`artifact` row is ever
       // written with `item_index IS NULL` for an iterating producer, so this
@@ -866,6 +944,48 @@ export class BlueprintValidatorService {
     }
   }
 
+  /** A `{from:'stage'}` ref names a different, existing stage that comes earlier
+   * in the graph. Returns false (after reporting) when it doesn't, so the
+   * rules that need a real producer can skip it. */
+  private checkStageRef(
+    ref: Extract<Ref, { from: 'stage' }>,
+    path: string,
+    stage: StageDef,
+    stageIndex: number,
+    ctx: ValidationContext,
+    issues: ValidationIssue[],
+  ): boolean {
+    if (ref.stageKey === stage.key) {
+      issues.push({
+        path,
+        message:
+          "{from:'stage'} cannot read this stage's own output — use {from:'prevItem'} for the previous item",
+        severity: 'error',
+      });
+      return false;
+    }
+    const producerIndex = ctx.stageIndexByKey.get(ref.stageKey);
+    if (producerIndex === undefined) {
+      issues.push({
+        path,
+        message: `reads the output of unknown stage "${ref.stageKey}"`,
+        severity: 'error',
+      });
+      return false;
+    }
+    if (producerIndex > stageIndex) {
+      issues.push({
+        path,
+        message:
+          `reads the output of "${ref.stageKey}", which comes later in the graph — ` +
+          `move this stage after "${ref.stageKey}"`,
+        severity: 'error',
+      });
+      return false;
+    }
+    return true;
+  }
+
   /** §14.3 — `alignWith:'item'` requires both this stage and the previous
    * one to iterate, and their `iterate.over` Refs to canonicalize to the
    * same `(producerStageKey, path)` tuple. Comparing Refs directly does not
@@ -876,6 +996,7 @@ export class BlueprintValidatorService {
     ctx: ValidationContext,
     path: string,
     issues: ValidationIssue[],
+    producerIndex?: number,
   ): void {
     if (!stage.iterate) {
       issues.push({
@@ -885,18 +1006,22 @@ export class BlueprintValidatorService {
       });
       return;
     }
-    const prevStage = stageIndex > 0 ? ctx.graph[stageIndex - 1] : undefined;
+    const prevIndex = producerIndex ?? stageIndex - 1;
+    const prevStage = prevIndex >= 0 ? ctx.graph[prevIndex] : undefined;
     if (!prevStage?.iterate) {
       issues.push({
         path,
-        message: "alignWith:'item' requires the previous stage to also declare iterate",
+        message:
+          producerIndex === undefined
+            ? "alignWith:'item' requires the previous stage to also declare iterate"
+            : "alignWith:'item' requires the stage it reads to also declare iterate",
         severity: 'error',
       });
       return;
     }
 
     const own = canonicalizeIterateOver(stage.iterate.over, stageIndex, ctx);
-    const prev = canonicalizeIterateOver(prevStage.iterate.over, stageIndex - 1, ctx);
+    const prev = canonicalizeIterateOver(prevStage.iterate.over, prevIndex, ctx);
     if ('error' in own) {
       issues.push({
         path: `stages.${stage.key}.iterate.over`,
@@ -926,15 +1051,36 @@ export class BlueprintValidatorService {
 
   private checkMemoryWrittenByMultiple(ctx: ValidationContext, issues: ValidationIssue[]): void {
     for (const [memKey, writers] of ctx.memoryWriters) {
-      if (writers.length > 1) {
+      if (writers.length < 2) continue;
+      // Writers that neither wait for the other can run at the same time, so
+      // which value wins would depend on timing.
+      const unordered = writers.flatMap((a, i) =>
+        writers
+          .slice(i + 1)
+          .filter(
+            (b) =>
+              !ctx.ancestors.get(a.stageKey)?.has(b.stageKey) &&
+              !ctx.ancestors.get(b.stageKey)?.has(a.stageKey),
+          )
+          .map((b) => [a.stageKey, b.stageKey] as const),
+      )[0];
+      if (unordered) {
         issues.push({
           path: `memory.${memKey}`,
-          message: `memory key "${memKey}" is written by multiple stages: ${writers
-            .map((w) => w.stageKey)
-            .join(', ')}`,
-          severity: 'warning',
+          message:
+            `memory key "${memKey}" is written by "${unordered[0]}" and "${unordered[1]}", ` +
+            'which can run at the same time — make one run after the other',
+          severity: 'error',
         });
+        continue;
       }
+      issues.push({
+        path: `memory.${memKey}`,
+        message: `memory key "${memKey}" is written by multiple stages: ${writers
+          .map((w) => w.stageKey)
+          .join(', ')}`,
+        severity: 'warning',
+      });
     }
   }
 
@@ -984,8 +1130,10 @@ function canonicalizeIterateOver(
       if (!prevStage) return { error: 'no preceding stage' };
       return { producerKey: prevStage.key, path: ref.path ?? '$' };
     }
+    case 'stage':
+      return { producerKey: ref.stageKey, path: ref.path ?? '$' };
     case 'memory': {
-      const writer = ctx.memoryWriters.get(ref.key)?.[0];
+      const writer = earlierWriters(ctx, ref.key, ownerIndex)[0];
       if (!writer) return { error: `memory key "${ref.key}" has no writer` };
       return { producerKey: writer.stageKey, path: writer.path + (ref.path ?? '') };
     }
@@ -1005,11 +1153,14 @@ function canonicalizeIterateOver(
 function iterateProducedArity(
   ref: Ref,
   ctx: ValidationContext,
+  stageIndex: number,
 ): 'many' | 'scalar-iterate' | undefined {
   if (ref.from === 'item' || ref.from === 'prevItem') return 'scalar-iterate';
-  if (ref.from === 'prev' && ref.alignWith === 'item') return 'scalar-iterate';
+  if ((ref.from === 'prev' || ref.from === 'stage') && ref.alignWith === 'item') {
+    return 'scalar-iterate';
+  }
   if (ref.from === 'memory' && !/#\d+$/.test(ref.key)) {
-    const writer = ctx.memoryWriters.get(ref.key)?.[0];
+    const writer = earlierWriters(ctx, ref.key, stageIndex)[0];
     const writerIndex = writer ? ctx.stageIndexByKey.get(writer.stageKey) : undefined;
     const writerStage = writerIndex === undefined ? undefined : ctx.graph[writerIndex];
     if (writerStage?.iterate) return 'many';

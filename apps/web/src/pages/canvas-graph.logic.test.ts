@@ -8,6 +8,8 @@ import {
   memoryKeysReadByStage,
   memoryLinks,
   moveStage,
+  canMoveStage,
+  removeStage,
 } from './canvas-graph.logic';
 
 function stage(key: string, patch: Partial<StageDef> = {}): StageDef {
@@ -153,5 +155,43 @@ describe('issue helpers', () => {
   it('counts errors and warnings', () => {
     expect(issueCounts(issues)).toEqual({ errors: 2, warnings: 2 });
     expect(issueCounts(undefined)).toEqual({ errors: 0, warnings: 0 });
+  });
+});
+
+describe('canMoveStage', () => {
+  it('lets a chain be reordered freely', () => {
+    expect(canMoveStage([stage('a'), stage('b'), stage('c')], 2, 0)).toBe(true);
+  });
+
+  it('blocks moving a stage before one it runs after, or after one that waits for it', () => {
+    const graph = [stage('a'), stage('b', { dependsOn: ['a'] }), stage('c')];
+    expect(canMoveStage(graph, 1, 0)).toBe(false);
+    expect(canMoveStage(graph, 0, 1)).toBe(false);
+    expect(canMoveStage(graph, 2, 1)).toBe(true);
+  });
+});
+
+describe('removeStage', () => {
+  const graph = [
+    stage('a'),
+    stage('b', { dependsOn: ['a'] }),
+    stage('c', { dependsOn: ['a'] }),
+    stage('d', { dependsOn: ['b', 'c'] }),
+  ];
+
+  it('makes the stages behind the removed one wait for what it waited for', () => {
+    const { graph: next, restore } = removeStage(graph, 'b');
+    expect(next.find((s) => s.key === 'd')!.dependsOn).toEqual(['a', 'c']);
+    expect(keys(next)).toEqual(['a', 'c', 'd']);
+    expect(restore.get('d')).toEqual(['b', 'c']);
+  });
+
+  it('inherits the previous stage when the removed one waited for it by default', () => {
+    const chain = [stage('a'), stage('b'), stage('c', { dependsOn: ['b'] })];
+    expect(removeStage(chain, 'b').graph.find((s) => s.key === 'c')!.dependsOn).toEqual(['a']);
+  });
+
+  it('is a no-op for an unknown key', () => {
+    expect(removeStage(graph, 'zzz').graph).toBe(graph);
   });
 });

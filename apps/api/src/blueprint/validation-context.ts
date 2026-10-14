@@ -1,3 +1,4 @@
+import { ancestorsOf, stageDependencies } from '@reelcraft/shared';
 import type { InputDef, RoleDef, StageDef } from '@reelcraft/shared';
 
 /** An `asset` row's channel-scoping/kind, as loaded by the async caller
@@ -48,6 +49,23 @@ export interface ValidationContext {
   assetsById: Map<string, AssetLookup>;
   blueprintChannelId: string;
   charactersById: Map<string, CharacterLookup>;
+  /** stageKey -> the stages it waits for (`dependsOn`, or the previous stage,
+   * plus the stages its bindings read). May name stages that don't exist. */
+  deps: Map<string, string[]>;
+  /** stageKey -> every stage it waits for, directly or through others. */
+  ancestors: Map<string, Set<string>>;
+}
+
+/** The writers of `key` that come before the stage at `stageIndex` — the only
+ * ones a read can see (§16.2). */
+export function earlierWriters(
+  ctx: ValidationContext,
+  key: string,
+  stageIndex: number,
+): MemoryWriter[] {
+  return (ctx.memoryWriters.get(key) ?? []).filter(
+    (writer) => (ctx.stageIndexByKey.get(writer.stageKey) ?? Infinity) < stageIndex,
+  );
 }
 
 export function buildValidationContext(input: BlueprintValidationInput): ValidationContext {
@@ -65,6 +83,9 @@ export function buildValidationContext(input: BlueprintValidationInput): Validat
     }
   }
 
+  const deps = stageDependencies(input.graph);
+  const ancestors = new Map(input.graph.map((stage) => [stage.key, ancestorsOf(deps, stage.key)]));
+
   return {
     graph: input.graph,
     stageIndexByKey,
@@ -74,5 +95,7 @@ export function buildValidationContext(input: BlueprintValidationInput): Validat
     assetsById: input.assetsById ?? new Map(),
     blueprintChannelId: input.blueprintChannelId ?? '',
     charactersById: input.charactersById ?? new Map(),
+    deps,
+    ancestors,
   };
 }

@@ -63,6 +63,9 @@ See [Characters](../channels/characters.md).
 
 **Output**: what a stage makes. See [Outputs](../blueprints/outputs.md).
 
+**Parallel stages**: stages that don't wait for each other, so they run at the same time. See
+[Parallel stages](../blueprints/parallel-stages.md).
+
 **Path**: a way to pick one field out of a structured value, such as `scenes` or `scene.narration`.
 
 **Prompt**: the instructions sent to an AI model. See [Prompts](../blueprints/prompts.md).

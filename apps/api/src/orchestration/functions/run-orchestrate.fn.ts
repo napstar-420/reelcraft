@@ -1,11 +1,13 @@
 import type { Inngest } from 'inngest';
 import { and, eq, inArray, ne } from 'drizzle-orm';
-import { StageDef } from '@reelcraft/shared';
+import { StageDef, stageDependencies } from '@reelcraft/shared';
 import type { Db } from '../../db/drizzle.provider';
 import { artifact, blueprintVersion, run, stageExecution, stageItem } from '../../db/schema/index';
 import type { RunStateService } from '../run-state.service';
 import { isStageEnabled } from '../enabled-when';
 import { buildStageExecuteFunction } from './stage-execute.fn';
+import { worstOutcome } from './stage-outcome';
+import type { HumanWaitService } from '../../run/human-wait.service';
 import type { RunWakeupClaimService, RunWakeupEventData } from '../../run/run-wakeup-claim.service';
 import type { DerivedFrameService } from '../../artifact/derived-frame.service';
 import { findFinalVideo } from '../../artifact/final-video';
@@ -36,13 +38,70 @@ export function orderStageExecutions<T extends { stageKey: string }>(
   );
 }
 
+/** What `planWave` needs to know about a stage execution. */
+export interface WaveRow {
+  stageKey: string;
+  state: string;
+  needsItemWork?: boolean;
+  /** Stages this one waits for. Rows memoised before dependencies existed
+   * carry none: they wait for the previous row, as a chain always did. */
+  deps?: string[];
+  /** A person still owes an answer (a live open wait). Rows memoised before
+   * waits were read this way carry none: nothing is waiting. */
+  openWait?: boolean;
+}
+
+/**
+ * Which stages to start now. `settled` stages passed (with no item work left)
+ * or were skipped; a stage is `done` once it and everything it waits for has
+ * settled. `ready` stages are not done, not waiting on a person, and have every
+ * dependency done. A stage waiting on a person is never re-entered: running it
+ * again would redo provider work behind the open wait.
+ *
+ * In a chain this is always the first stage that is not done, which is what the
+ * sequential loop used to pick.
+ */
+export function planWave<T extends WaveRow>(
+  rows: T[],
+): { ready: T[]; waiting: T[]; allDone: boolean } {
+  const byKey = new Map(rows.map((row) => [row.stageKey, row]));
+  const depsOf = (row: T, index: number): string[] =>
+    row.deps ?? (index > 0 ? [rows[index - 1]!.stageKey] : []);
+  const index = new Map(rows.map((row, i) => [row.stageKey, i]));
+  const settled = (row: T): boolean =>
+    row.state === 'skipped' || (row.state === 'passed' && !row.needsItemWork);
+
+  const doneMemo = new Map<string, boolean>();
+  const isDone = (key: string): boolean => {
+    const row = byKey.get(key);
+    if (!row) return true; // no execution row: nothing to wait for
+    const known = doneMemo.get(key);
+    if (known !== undefined) return known;
+    doneMemo.set(key, false); // guards a cycle; the validator rejects those
+    const done = settled(row) && depsOf(row, index.get(key)!).every(isDone);
+    doneMemo.set(key, done);
+    return done;
+  };
+
+  const ready: T[] = [];
+  const waiting: T[] = [];
+  rows.forEach((row, i) => {
+    if (isDone(row.stageKey)) return;
+    if (row.openWait === true) waiting.push(row);
+    else if (depsOf(row, i).every(isDone)) ready.push(row);
+  });
+  return { ready, waiting, allDone: rows.every((row) => isDone(row.stageKey)) };
+}
+
 /**
  * §13.4/§13.5 — one Run at a time (`concurrency` keyed by runId), cancels on
  * `run/cancelled` for the same runId. Walks stage_execution rows created at
- * run start, in blueprint graph array order — REQ-2.8.3 ("Run's Stages
- * execute strictly sequentially"), §16.1. `stage_execution` carries no
- * ordinal column, so the graph is loaded and the rows sorted in memory
- * rather than adding a migration for a run-start-time property.
+ * run start in waves: every stage whose dependencies have settled starts
+ * together (`planWave`). With no `dependsOn` a stage waits for the previous
+ * one, so a chain runs one stage at a time exactly as before (§16.1).
+ * `stage_execution` carries no ordinal column, so the graph is loaded and the
+ * rows sorted in memory rather than adding a migration for a run-start-time
+ * property.
  *
  * §12.4 — triggers on `run/resumed` as well as `run/started`: the existing
  * unconditional `mark-running` step below is what actually flips a
@@ -72,6 +131,7 @@ export function buildRunOrchestrateFunction(
   wakeupClaim?: RunWakeupClaimService,
   derivedFrames?: DerivedFrameService,
   notifications?: NotificationService,
+  waits?: HumanWaitService,
 ) {
   return client.createFunction(
     {
@@ -163,10 +223,16 @@ export function buildRunOrchestrateFunction(
 
         const inputs = (row.inputs ?? {}) as Record<string, unknown>;
         const enabledWhenByKey = new Map(graph.map((stage) => [stage.key, stage.enabledWhen]));
+        const deps = stageDependencies(graph);
+        const waitingExecutionIds = new Set(
+          waits ? (await waits.liveOpenWaits(db, runId)).map((w) => w.stageExecutionId) : [],
+        );
         return orderStageExecutions(graph, rows).map((r) => ({
           ...r,
           needsItemWork: executionIdsNeedingItemWork.has(r.id),
           enabled: isStageEnabled(enabledWhenByKey.get(r.stageKey), inputs),
+          deps: deps.get(r.stageKey) ?? [],
+          openWait: waitingExecutionIds.has(r.id),
         }));
       });
 
@@ -175,42 +241,89 @@ export function buildRunOrchestrateFunction(
         'run orchestration started',
       );
 
-      for (const execution of executions) {
-        if (execution.state === 'passed' && !execution.needsItemWork) continue;
-        // Seeded runs (RunService.create's `untilStageKey`) mark stages past
-        // the stop point 'skipped' up front — never re-checked, never run.
-        if (execution.state === 'skipped') continue;
+      // A run parks with the state that matches what it is waiting for. The
+      // fallback is the state an older invocation recorded, so a replay of a
+      // memoised park step still returns what it did.
+      const pausedState = async (fallback: 'PAUSED_APPROVAL' | 'PAUSED_INPUT') =>
+        (await waits?.pausedStateFor(db, runId)) ?? fallback;
+
+      // Mutable copy: each wave settles stages, and the next wave plans from that.
+      const rows = executions.map((execution) => ({ ...execution }));
+
+      for (;;) {
+        const { ready, waiting, allDone } = planWave(rows);
+        if (allDone) break;
+
+        if (ready.length === 0) {
+          if (waiting.length === 0) {
+            throw new Error(`run.orchestrate: run ${runId} has stages left but none can start`);
+          }
+          // Every stage left is waiting on a person: park again, quietly — they
+          // were told when each wait opened.
+          const state = await step.run('mark-paused-waiting', async () => {
+            const next = await pausedState('PAUSED_APPROVAL');
+            await runState.transition(runId, next);
+            return next;
+          });
+          return { state };
+        }
+
         // §16 — "Enabled when" didn't match this run's input: skip the stage.
-        if (!execution.enabled) {
-          await step.run(`skip-disabled-${execution.stageKey}`, () =>
-            runState.skipStage(runId, execution.id, execution.stageKey),
-          );
+        const disabled = ready.filter((execution) => !execution.enabled);
+        if (disabled.length > 0) {
+          for (const execution of disabled) {
+            await step.run(`skip-disabled-${execution.stageKey}`, () =>
+              runState.skipStage(runId, execution.id, execution.stageKey),
+            );
+            execution.state = 'skipped';
+          }
           continue;
         }
 
+        const first = ready[0]!;
         // §12.4 manual pause — checked before starting the next stage, not
         // by killing the durable function (that's cancel's job via
         // `cancelOn`). Leaves the cursor untouched so a later `run/resumed`
         // naturally re-enters at this same stage.
-        const runnableState = await step.run(`check-runnable-${execution.stageKey}`, () =>
+        const runnableState = await step.run(`check-runnable-${first.stageKey}`, () =>
           runState.getState(runId),
         );
         if (runnableState !== 'RUNNING') {
           logger.info(
-            { runId, stageKey: execution.stageKey, state: runnableState },
+            { runId, stageKey: first.stageKey, state: runnableState },
             'run orchestration stopped: run not running',
           );
           return { state: runnableState ?? ('CANCELLED' as const) };
         }
 
-        await step.run(`set-cursor-${execution.stageKey}`, () =>
-          runState.setCursor(runId, execution.stageKey),
+        await step.run(`set-cursor-${first.stageKey}`, () =>
+          runState.setCursor(runId, first.stageKey),
         );
 
-        const result = await step.invoke(`invoke-stage-${execution.stageKey}`, {
-          function: stageExecuteFn,
-          data: { runId, stageExecutionId: execution.id, stageKey: execution.stageKey },
-        });
+        // Independent stages run together. The wave drains before anything is
+        // decided, so a stage that fails or waits never strands its siblings.
+        const settled = await Promise.allSettled(
+          ready.map((execution) =>
+            step.invoke(`invoke-stage-${execution.stageKey}`, {
+              function: stageExecuteFn,
+              data: { runId, stageExecutionId: execution.id, stageKey: execution.stageKey },
+            }),
+          ),
+        );
+        const crashed = settled.find((entry) => entry.status === 'rejected');
+        if (crashed?.status === 'rejected') throw crashed.reason;
+        const results = settled.flatMap((entry, i) =>
+          entry.status === 'fulfilled' ? [{ ...entry.value, stageKey: ready[i]!.stageKey }] : [],
+        );
+        for (const result of results) {
+          if (result.outcome !== 'passed') continue;
+          const row = rows.find((candidate) => candidate.stageKey === result.stageKey)!;
+          row.state = 'passed';
+          row.needsItemWork = false;
+        }
+
+        const result = worstOutcome(results);
+        if (!result) continue;
 
         if (result.outcome === 'budget_blocked') {
           // §11.5 — never silently resumes, never silently dies. Cursor is
@@ -238,35 +351,34 @@ export function buildRunOrchestrateFunction(
           // in flight (manual pause or cancel raced it). Re-read the actual
           // state rather than assuming CANCELLED — a paused run should be
           // reported (and left) as PAUSED_MANUAL, not mislabeled.
-          const stateAfter = await step.run(`state-after-${execution.stageKey}`, () =>
+          const stateAfter = await step.run(`state-after-${result.stageKey}`, () =>
             runState.getState(runId),
           );
           logger.info(
-            { runId, stageKey: execution.stageKey, state: stateAfter },
+            { runId, stageKey: result.stageKey, state: stateAfter },
             'run orchestration stopped: run left running mid-stage',
           );
           return { state: stateAfter ?? ('CANCELLED' as const) };
         }
 
-        if (result.outcome === 'approval_required') {
-          await step.run('mark-paused-approval', () =>
-            runState.transition(runId, 'PAUSED_APPROVAL'),
+        if (result.outcome === 'approval_required' || result.outcome === 'input_required') {
+          const approval = result.outcome === 'approval_required';
+          const legacy = approval ? 'PAUSED_APPROVAL' : 'PAUSED_INPUT';
+          const state = await step.run(
+            approval ? 'mark-paused-approval' : 'mark-paused-input',
+            async () => {
+              const next = await pausedState(legacy);
+              await runState.transition(runId, next);
+              return next;
+            },
           );
-          await notify('awaiting_approval');
-          return { state: 'PAUSED_APPROVAL' as const };
+          await notify(approval ? 'awaiting_approval' : 'awaiting_input');
+          return { state: state ?? legacy };
         }
 
-        if (result.outcome === 'input_required') {
-          await step.run('mark-paused-input', () => runState.transition(runId, 'PAUSED_INPUT'));
-          await notify('awaiting_input');
-          return { state: 'PAUSED_INPUT' as const };
-        }
-
-        if (result.outcome === 'failed') {
-          await step.run('mark-failed', () => runState.transition(runId, 'FAILED'));
-          await notify('failed');
-          return { state: 'FAILED' as const };
-        }
+        await step.run('mark-failed', () => runState.transition(runId, 'FAILED'));
+        await notify('failed');
+        return { state: 'FAILED' as const };
       }
 
       await step.run('mark-completed', () => runState.transition(runId, 'COMPLETED'));

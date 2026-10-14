@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { buttonVariants } from '@/components/ui/button';
 import { ApprovalReviewSheet } from '@/components/runs/approval-review-sheet';
+import { isApprovalStillOpen } from '@/pages/approval-review.logic';
 import { StageAttemptsSheet } from '@/components/runs/stage-attempts-sheet';
 import { StageOutputSheet } from '@/components/runs/stage-output-sheet';
 import type { CanvasRunActions } from '@/hooks/useCanvasRunActions';
@@ -35,8 +36,7 @@ export function CanvasRunSheets({
   const canReview =
     stop?.reason === 'awaiting_approval' &&
     upstreamRerun?.sourceRunId === run.id &&
-    run.state === 'PAUSED_APPROVAL' &&
-    run.cursorStageKey === stop.stageKey;
+    isApprovalStillOpen(stop.stageKey, run);
   return (
     <>
       <AlertDialog

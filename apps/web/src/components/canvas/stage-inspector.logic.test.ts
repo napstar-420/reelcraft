@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { StageDef } from '@reelcraft/shared';
 import {
+  retryTargets,
+  runsAfterMode,
+  setRunsAfter,
   buildStageOutput,
   DEFAULT_IMAGE_COUNT,
   MAX_IMAGE_COUNT,
@@ -394,5 +397,40 @@ describe('Generate Image candidates for quality control to pick from', () => {
   it('turning candidates off drops count and onShortfall and nothing else', () => {
     const picking = stage({ count: 3, onShortfall: 'fail', style: 'x' });
     expect(withPickCount(picking, undefined).config).toEqual({ style: 'x' });
+  });
+});
+
+describe('Runs after', () => {
+  const base: StageDef = {
+    key: 'b',
+    label: 'B',
+    capability: 'text.generate',
+    config: {},
+    slots: {},
+    context: {},
+    output: { kind: 'text' },
+    checks: [],
+  };
+
+  it('reads the mode from dependsOn', () => {
+    expect(runsAfterMode(base)).toBe('previous');
+    expect(runsAfterMode({ ...base, dependsOn: [] })).toBe('inputs');
+    expect(runsAfterMode({ ...base, dependsOn: ['a'] })).toBe('specific');
+  });
+
+  it('switches mode, removing dependsOn for the default and never leaving an empty choice', () => {
+    expect(setRunsAfter({ ...base, dependsOn: ['a'] }, 'previous')).not.toHaveProperty('dependsOn');
+    expect(setRunsAfter(base, 'inputs').dependsOn).toEqual([]);
+    expect(setRunsAfter(base, 'specific', 'a').dependsOn).toEqual(['a']);
+  });
+
+  it('offers this stage and the stages it waits for as rejection targets', () => {
+    const graph: StageDef[] = [
+      { ...base, key: 'a' },
+      { ...base, key: 'b', dependsOn: ['a'] },
+      { ...base, key: 'c', dependsOn: ['a'] },
+      { ...base, key: 'd', dependsOn: ['b'] },
+    ];
+    expect(retryTargets(graph, 'd').map((s) => s.key)).toEqual(['a', 'b', 'd']);
   });
 });

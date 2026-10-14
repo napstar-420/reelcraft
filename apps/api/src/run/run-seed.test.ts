@@ -5,7 +5,7 @@ import {
   reusableStageKeys,
   remapProvenance,
   remapTimelineHandles,
-  untilStageIndex,
+  untilStageKeep,
 } from './run-seed';
 import type { RefProvenance } from '../artifact/binding-resolver.service';
 
@@ -198,6 +198,35 @@ describe('reusableStageKeys', () => {
     expect(reusableStageKeys(p)).toEqual({ keys: ['topics', 'selector'] });
   });
 
+  it('ignores stages outside `relevant`, so a changed sibling does not cut the prefix', () => {
+    const sourceGraph = [stage('a'), stage('b'), stage('c', { dependsOn: ['a'] })];
+    const newGraph = [stage('a'), stage('b', { label: 'B v2' }), stage('c', { dependsOn: ['a'] })];
+    const p = baseParams({
+      sourceGraph,
+      newGraph,
+      sourceExecutions: ['a', 'b', 'c'].map((stageKey) => ({
+        stageKey,
+        state: 'passed',
+        needsItemWork: false,
+      })),
+    });
+    expect(reusableStageKeys({ ...p, relevant: new Set(['a', 'c']) })).toEqual({
+      keys: ['a', 'c'],
+    });
+    expect(reusableStageKeys(p)).toEqual({
+      keys: ['a'],
+      stop: { stageKey: 'b', reason: 'definition_changed' },
+    });
+  });
+
+  it('ignores dependsOn when comparing stage definitions', () => {
+    const p = baseParams({
+      sourceGraph: [stage('topics'), stage('selector')],
+      newGraph: [stage('topics'), stage('selector', { dependsOn: [] })],
+    });
+    expect(reusableStageKeys(p)).toEqual({ keys: ['topics', 'selector'] });
+  });
+
   it('still cuts when another part of an iterating stage changed', () => {
     const iterate = { over: { from: 'memory' as const, key: 'shots' }, itemAlias: 'item' };
     const p = baseParams({
@@ -249,19 +278,27 @@ describe('remapProvenance', () => {
   });
 });
 
-describe('untilStageIndex', () => {
-  const graph = [stage('topics'), stage('selector'), stage('script')];
+describe('untilStageKeep', () => {
+  const chain = [stage('topics'), stage('selector'), stage('script')];
 
-  it('is undefined when unset', () => {
-    expect(untilStageIndex(graph, undefined)).toBeUndefined();
+  it('is undefined when unset or unknown', () => {
+    expect(untilStageKeep(chain, undefined)).toBeUndefined();
+    expect(untilStageKeep(chain, 'nope')).toBeUndefined();
   });
 
-  it('finds the matching stage index', () => {
-    expect(untilStageIndex(graph, 'selector')).toBe(1);
+  it('keeps everything up to the stage in a chain', () => {
+    expect([...untilStageKeep(chain, 'selector')!].sort()).toEqual(['selector', 'topics']);
   });
 
-  it('is undefined for an unknown key', () => {
-    expect(untilStageIndex(graph, 'nope')).toBeUndefined();
+  it('keeps only the stage and what it waits for in a diamond', () => {
+    const diamond = [
+      stage('a'),
+      stage('b', { dependsOn: ['a'] }),
+      stage('c', { dependsOn: ['a'] }),
+      stage('d', { dependsOn: ['b', 'c'] }),
+    ];
+    expect([...untilStageKeep(diamond, 'c')!].sort()).toEqual(['a', 'c']);
+    expect([...untilStageKeep(diamond, 'd')!].sort()).toEqual(['a', 'b', 'c', 'd']);
   });
 });
 

@@ -39,6 +39,10 @@ export function refSourceSchema(
   switch (ref.from) {
     case 'prev':
       return stageIndex > 0 ? outputSchema(graph[stageIndex - 1]?.output) : undefined;
+    case 'stage': {
+      const producer = graph.find((stage) => stage.key === ref.stageKey);
+      return producer ? outputSchema(producer.output) : undefined;
+    }
     case 'memory': {
       const writerKey = deriveMemoryWriters(graph).get(ref.key)?.[0];
       const writer = graph.find((stage) => stage.key === writerKey);

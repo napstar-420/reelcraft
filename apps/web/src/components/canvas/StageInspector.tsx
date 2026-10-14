@@ -40,6 +40,10 @@ import {
   flowAccounts,
   withFlowAccounts,
   withIngredientCount,
+  retryTargets,
+  runsAfterMode,
+  setRunsAfter,
+  type RunsAfterMode,
 } from './stage-inspector.logic';
 import { parseValidationPath, type ParsedValidationPath } from '../../lib/parse-validation-path';
 import {
@@ -767,13 +771,67 @@ function QcEditor({
 
 /** `onReject.retryStageKey` names a stage by key, not a `Ref` — a plain
  * `<select>` over `graph`, no `BindingPicker` involved (point 5, task spec). */
+/** "Runs after": a stage starts once the stages it waits for are done, so
+ * stages that wait for different things run side by side. Not offered for the
+ * first stage, which has nothing before it. */
+function RunsAfterEditor({
+  stage,
+  earlier,
+  onChange,
+}: {
+  stage: StageDef;
+  earlier: StageDef[];
+  onChange: (stage: StageDef) => void;
+}) {
+  const mode = runsAfterMode(stage);
+  const previousKey = earlier[earlier.length - 1]?.key;
+  const chosen = new Set(stage.dependsOn ?? []);
+  return (
+    <div className="flex flex-col gap-2">
+      <Select
+        value={mode}
+        onValueChange={(next) => onChange(setRunsAfter(stage, next as RunsAfterMode, previousKey))}
+      >
+        <SelectTrigger size="sm" className="w-64">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="previous">Previous stage</SelectItem>
+          <SelectItem value="inputs">When its inputs are ready</SelectItem>
+          <SelectItem value="specific">Specific stages</SelectItem>
+        </SelectContent>
+      </Select>
+      {mode === 'specific' && (
+        <div className="flex flex-col gap-1">
+          {earlier.map((s) => (
+            <label key={s.key} className="flex items-center gap-2 text-sm">
+              <Checkbox
+                checked={chosen.has(s.key)}
+                onCheckedChange={(checked) => {
+                  const next = earlier
+                    .map((e) => e.key)
+                    .filter((key) => (key === s.key ? checked === true : chosen.has(key)));
+                  onChange({ ...stage, dependsOn: next });
+                }}
+              />
+              {s.label || s.key}
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ApprovalEditor({
   approval,
   graph,
+  stageKey,
   onChange,
 }: {
   approval: StageDef['approval'];
   graph: StageDef[];
+  stageKey: string;
   onChange: (approval: StageDef['approval']) => void;
 }) {
   if (!approval) {
@@ -821,7 +879,7 @@ function ApprovalEditor({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value={UNSET}>Select a stage…</SelectItem>
-                {graph.map((s) => (
+                {retryTargets(graph, stageKey).map((s) => (
                   <SelectItem key={s.key} value={s.key}>
                     {s.label}
                   </SelectItem>
@@ -845,7 +903,10 @@ function ApprovalEditor({
           size="sm"
           className="self-start"
           onClick={() =>
-            onChange({ ...approval, onReject: { retryStageKey: graph[0]?.key ?? '' } })
+            onChange({
+              ...approval,
+              onReject: { retryStageKey: retryTargets(graph, stageKey)[0]?.key ?? '' },
+            })
           }
         >
           + add on-reject
@@ -1709,6 +1770,19 @@ export function StageInspector({
         <AccordionItem value="flow" className={STAGE_SECTION_ITEM_CLASS}>
           <SectionTrigger title="Flow control" summary={summaries.flow} />
           <AccordionContent className={STAGE_SECTION_CONTENT_CLASS}>
+            {stageIndex > 0 && (
+              <div className="flex flex-col gap-1.5">
+                <InfoHeading info="When this stage starts. “Previous stage” runs it after the stage before it, one at a time. “When its inputs are ready” starts it as soon as the stages it reads from are done, alongside others. “Specific stages” waits for the ones you tick.">
+                  Runs after
+                </InfoHeading>
+                <RunsAfterEditor
+                  stage={stage}
+                  earlier={graph.slice(0, stageIndex)}
+                  onChange={onChange}
+                />
+              </div>
+            )}
+
             <div className="flex flex-col gap-1.5">
               <InfoHeading info="Optional condition gating whether this stage runs at all. When set, the stage is skipped unless the named blueprint Input equals the given value.">
                 Enabled when
@@ -1728,6 +1802,7 @@ export function StageInspector({
               <ApprovalEditor
                 approval={stage.approval}
                 graph={graph}
+                stageKey={stage.key}
                 onChange={(approval) => onChange({ ...stage, approval })}
               />
               <IssueList issues={approvalIssues} />

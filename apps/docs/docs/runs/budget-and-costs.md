@@ -30,6 +30,9 @@ Free stages, human stages and the test provider cost nothing and are never held 
 If Reelcraft can't be sure how a call ended, for example because it was cancelled before the provider
 confirmed, it counts the full amount as spent to stay on the safe side.
 
+Stages that run [at the same time](../blueprints/parallel-stages.md) share the one run cap. Each one reserves
+its cost before it starts, so together they can't spend past the cap.
+
 ## When a run pauses for money
 
 The run's status becomes **Paused Budget**, and the page says which limit was reached:

@@ -41,7 +41,8 @@ that produced one. See [Outputs and downloads](./outputs-and-downloads.md).
 
 ## Stages
 
-One card per stage, in order. Each shows:
+One card per stage, in order. While a run has several stages running side by side, the header says
+**Running now:** and lists them. Each card shows:
 
 - the stage's label, and its key in small text if it differs;
 - its status: **Pending**, **Running**, **Awaiting Approval**, **Awaiting Input**, **Passed**, **Failed**,

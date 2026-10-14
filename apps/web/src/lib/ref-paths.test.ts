@@ -61,6 +61,14 @@ describe('pathSuggestions', () => {
     expect(pathSuggestions({ from: 'prev' }, graph, 2, inputs)).toBeNull();
   });
 
+  it('reads a named stage output, not only the previous one', () => {
+    expect(
+      paths(pathSuggestions({ from: 'stage', stageKey: 'script' }, graph, 2, inputs)),
+    ).toContain('beats.0.line');
+    expect(pathSuggestions({ from: 'stage', stageKey: 'caption' }, graph, 2, inputs)).toBeNull();
+    expect(pathSuggestions({ from: 'stage', stageKey: 'nope' }, graph, 2, inputs)).toBeUndefined();
+  });
+
   it('narrows a memory key by its writer path', () => {
     expect(paths(pathSuggestions({ from: 'memory', key: 'beats' }, graph, 1, inputs))).toEqual([
       '0',

@@ -1296,4 +1296,190 @@ describe('BlueprintValidatorService — iterate (Phase 7, §14/§16.2)', () => {
       ),
     ).toBe(true);
   });
+  describe('stage dependencies', () => {
+    const run = (graph: StageDef[]) => makeValidator().validate({ graph, inputs: [], roles: [] });
+    const message = (graph: StageDef[], path: string) =>
+      run(graph).find((i) => i.severity === 'error' && i.path === path)?.message;
+
+    it('accepts dependsOn naming earlier stages, including []', () => {
+      const graph = [
+        stage({ key: 'a' }),
+        stage({ key: 'b', dependsOn: [] }),
+        stage({ key: 'c', dependsOn: ['a', 'b'] }),
+      ];
+      expect(hasError(run(graph))).toBe(false);
+    });
+
+    it('errors on a dependsOn naming an unknown stage', () => {
+      const graph = [stage({ key: 'a' }), stage({ key: 'b', dependsOn: ['ghost'] })];
+      expect(message(graph, 'stages.b.dependsOn')).toBe('runs after unknown stage "ghost"');
+    });
+
+    it('errors on a dependsOn naming the stage itself', () => {
+      const graph = [stage({ key: 'a' }), stage({ key: 'b', dependsOn: ['b'] })];
+      expect(message(graph, 'stages.b.dependsOn')).toContain('runs after itself');
+    });
+
+    it('errors on a dependsOn naming a later stage', () => {
+      const graph = [stage({ key: 'a', dependsOn: ['b'] }), stage({ key: 'b' })];
+      expect(message(graph, 'stages.a.dependsOn')).toContain(
+        'which comes later in the graph — move this stage after "b"',
+      );
+    });
+
+    it('errors on two stages that can run at the same time writing one memory key', () => {
+      const graph = [
+        stage({ key: 'a' }),
+        stage({ key: 'b', dependsOn: ['a'], writes: { shared: '$' } }),
+        stage({ key: 'c', dependsOn: ['a'], writes: { shared: '$' } }),
+      ];
+      const issue = run(graph).find((i) => i.path === 'memory.shared');
+      expect(issue?.severity).toBe('error');
+      expect(issue?.message).toContain('which can run at the same time');
+    });
+
+    it('only warns when one writer waits for the other', () => {
+      const graph = [
+        stage({ key: 'a', writes: { shared: '$' } }),
+        stage({ key: 'b', writes: { shared: '$' } }),
+      ];
+      const issue = run(graph).find((i) => i.path === 'memory.shared');
+      expect(issue?.severity).toBe('warning');
+    });
+
+    it('errors on a memory read whose only writer comes later', () => {
+      const graph = [
+        stage({ key: 'a', context: { x: { from: 'memory', key: 'late' } } }),
+        stage({ key: 'b', writes: { late: '$' } }),
+      ];
+      expect(hasError(run(graph), 'stages.a.context.x')).toBe(true);
+    });
+
+    it('allows onReject to retry a stage this one depends on', () => {
+      const graph = [
+        stage({ key: 'a', instructions: { template: 'x' } }),
+        stage({ key: 'b' }),
+        stage({ key: 'c', approval: { mode: 'stage', onReject: { retryStageKey: 'a' } } }),
+      ];
+      expect(hasError(run(graph), 'stages.c.approval')).toBe(false);
+    });
+
+    it('errors when onReject targets an earlier stage this one does not depend on', () => {
+      const graph = [
+        stage({ key: 'a', instructions: { template: 'x' } }),
+        stage({ key: 'b', dependsOn: [] }),
+        stage({
+          key: 'c',
+          dependsOn: ['b'],
+          approval: { mode: 'stage', onReject: { retryStageKey: 'a' } },
+        }),
+      ];
+      expect(message(graph, 'stages.c.approval.onReject.retryStageKey')).toContain(
+        'is not upstream of this stage',
+      );
+    });
+
+    describe('{from:"stage"}', () => {
+      const iterates = (key: string, extra: Partial<StageDef> = {}) =>
+        stage({
+          key,
+          iterate: { over: { from: 'input', inputKey: 'list' }, itemAlias: 'x', itemRetryLimit: 1 },
+          ...extra,
+        });
+      const runWithList = (graph: StageDef[]) =>
+        makeValidator().validate({ graph, inputs: [listInput], roles: [] });
+      const errorAt = (graph: StageDef[], path: string) =>
+        runWithList(graph).find((i) => i.severity === 'error' && i.path === path)?.message;
+
+      it('accepts a binding to any earlier stage', () => {
+        const graph = [
+          stage({ key: 'a' }),
+          stage({ key: 'b' }),
+          stage({ key: 'c', context: { x: { from: 'stage', stageKey: 'a' } } }),
+        ];
+        expect(hasError(run(graph))).toBe(false);
+      });
+
+      it('errors on an unknown stage', () => {
+        const graph = [
+          stage({ key: 'a' }),
+          stage({ key: 'b', context: { x: { from: 'stage', stageKey: 'ghost' } } }),
+        ];
+        expect(errorAt(graph, 'stages.b.context.x')).toBe(
+          'reads the output of unknown stage "ghost"',
+        );
+      });
+
+      it('errors on the stage itself', () => {
+        const graph = [stage({ key: 'a', context: { x: { from: 'stage', stageKey: 'a' } } })];
+        expect(errorAt(graph, 'stages.a.context.x')).toContain(
+          "cannot read this stage's own output",
+        );
+      });
+
+      it('errors on a later stage', () => {
+        const graph = [
+          stage({ key: 'a', context: { x: { from: 'stage', stageKey: 'b' } } }),
+          stage({ key: 'b' }),
+        ];
+        expect(errorAt(graph, 'stages.a.context.x')).toContain(
+          'which comes later in the graph — move this stage after "b"',
+        );
+      });
+
+      it('checks a stage ref inside iterate.over and a check ref', () => {
+        const over = [
+          stage({ key: 'a' }),
+          stage({
+            key: 'b',
+            iterate: {
+              over: { from: 'stage', stageKey: 'ghost' },
+              itemAlias: 'x',
+              itemRetryLimit: 1,
+            },
+          }),
+        ];
+        expect(errorAt(over, 'stages.b.iterate.over')).toContain('unknown stage "ghost"');
+      });
+
+      it('errors when it binds an iterating stage without alignWith', () => {
+        const graph = [
+          iterates('p'),
+          stage({ key: 'q' }),
+          stage({ key: 'a', context: { x: { from: 'stage', stageKey: 'p' } } }),
+        ];
+        expect(errorAt(graph, 'stages.a.context.x')).toContain(
+          "cannot bind an iterating stage's output",
+        );
+      });
+
+      it('accepts alignWith when both stages iterate over the same list', () => {
+        const graph = [
+          iterates('p'),
+          stage({ key: 'q' }),
+          iterates('a', { context: { x: { from: 'stage', stageKey: 'p', alignWith: 'item' } } }),
+        ];
+        expect(runWithList(graph).filter((i) => i.severity === 'error')).toEqual([]);
+      });
+
+      it('errors on alignWith when the stage it reads does not iterate', () => {
+        const graph = [
+          stage({ key: 'p' }),
+          iterates('a', { context: { x: { from: 'stage', stageKey: 'p', alignWith: 'item' } } }),
+        ];
+        expect(errorAt(graph, 'stages.a.context.x')).toContain(
+          "alignWith:'item' requires the stage it reads to also declare iterate",
+        );
+      });
+
+      it('errors when it reads a conditionally enabled stage without the same condition', () => {
+        const graph = [
+          stage({ key: 'p', enabledWhen: { input: 'mode', equals: 'full' } }),
+          stage({ key: 'q' }),
+          stage({ key: 'a', context: { x: { from: 'stage', stageKey: 'p' } } }),
+        ];
+        expect(errorAt(graph, 'stages.a.context.x')).toContain('which is conditionally enabled');
+      });
+    });
+  });
 });

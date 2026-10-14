@@ -129,3 +129,37 @@ describe('problemRows', () => {
     expect(problemRows(graph, issues).map((r) => r.stageLabel)).toEqual([undefined, 'A', 'B']);
   });
 });
+
+describe('buildStageGraph with parallel stages', () => {
+  const diamond = [
+    stage('a'),
+    stage('b', { dependsOn: ['a'] }),
+    stage('c', { dependsOn: ['a'] }),
+    stage('d', { dependsOn: ['b', 'c'] }),
+  ];
+
+  it('lays branches out in lanes and joins them one column later', () => {
+    const { nodes } = build(diamond);
+    const at = (id: string) => nodes.find((n) => n.id === id)!.position;
+    expect(at('b').x).toBe(at('c').x);
+    expect(at('c').y).toBeGreaterThan(at('b').y);
+    expect(at('d').x).toBeGreaterThan(at('b').x);
+    expect(nodes.find((n) => n.id === 'b')!.draggable).toBe(false);
+  });
+
+  it('draws one connector per dependency, without an insert point on explicit ones', () => {
+    const edges = trunkEdges(build(diamond).edges);
+    expect(edges.map((e) => `${e.source}->${e.target}`).sort()).toEqual(
+      [`${START_NODE_ID}->a`, `d->${ADD_NODE_ID}`, 'a->b', 'a->c', 'b->d', 'c->d'].sort(),
+    );
+    expect(edges.filter((e) => e.data?.insertIndex !== undefined).map((e) => e.target)).toEqual([
+      'a',
+    ]);
+  });
+
+  it('keeps a chain draggable with an insert point on every link', () => {
+    const { nodes, edges } = build([stage('a'), stage('b'), stage('c')]);
+    expect(nodes.find((n) => n.id === 'b')!.draggable).toBe(true);
+    expect(trunkEdges(edges).map((e) => e.data?.insertIndex)).toEqual([0, 1, 2, undefined]);
+  });
+});

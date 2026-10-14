@@ -1,3 +1,4 @@
+import { HumanWaitService } from './human-wait.service';
 import { ConflictException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { and, asc, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import type {
@@ -8,8 +9,15 @@ import type {
   ListRunsQueryDto,
   Probe,
   SeedStop,
+  HumanWaitKind,
 } from '@reelcraft/shared';
-import { InputDef, RoleDef as RoleDefSchema, StageDef } from '@reelcraft/shared';
+import {
+  ancestorsOf,
+  InputDef,
+  RoleDef as RoleDefSchema,
+  StageDef,
+  stageDependencies,
+} from '@reelcraft/shared';
 import { RUN_ACTION_ALLOWED_STATES } from './run-action-policy';
 import { stageReferenceLimit } from '../common/reference-limit';
 import { findFinalVideo } from '../artifact/final-video';
@@ -54,7 +62,7 @@ import {
   copyReusedStages,
   describeSeedStop,
   reusableStageKeys,
-  untilStageIndex,
+  untilStageKeep,
   type SourceExecutionSummary,
 } from './run-seed';
 
@@ -80,6 +88,7 @@ export class RunService {
     private readonly providers: ProviderRegistry,
     private readonly blobs: BlobService,
     private readonly events: LiveEvents,
+    private readonly humanWaits: HumanWaitService,
   ) {}
 
   /** §6.2/§21 — inserts the run in `CREATED` without sending `run/started`.
@@ -137,7 +146,7 @@ export class RunService {
         throw new ConflictException(`Stage "${key}" is not part of this blueprint version`);
       }
     }
-    const stopIndex = untilStageIndex(graph, dto.untilStageKey);
+    const keep = untilStageKeep(graph, dto.untilStageKey);
 
     // Canvas "run this stage" / "run to here" — see run-seed.ts and the
     // run-stages-from-canvas plan. Copies a still-valid prefix of a previous
@@ -227,16 +236,17 @@ export class RunService {
         newRoles,
         sourceExecutions,
         rerunStageKeys: dto.rerunStageKeys,
+        ...(keep && { relevant: keep }),
       });
       if (stageKeys.length > 0) seed = { sourceRunId: dto.seedFromRunId, stageKeys };
       seedStop = stop;
 
       // Before anything is inserted: "run this stage" must not silently start
       // an earlier stage instead of (or before) the one that was asked for.
-      const expectedIndex = dto.expectReusedBefore
-        ? graph.findIndex((s) => s.key === dto.expectReusedBefore)
-        : -1;
-      if (stop && stageKeys.length < expectedIndex) {
+      const upstream = dto.expectReusedBefore
+        ? ancestorsOf(stageDependencies(graph), dto.expectReusedBefore)
+        : new Set<string>();
+      if (stop && upstream.has(stop.stageKey)) {
         throw new ConflictException({
           code: 'upstream_rerun',
           message: describeSeedStop(stop, `Running "${dto.expectReusedBefore}" would first re-run`),
@@ -261,12 +271,12 @@ export class RunService {
       const newExecutionIdByKey = new Map<string, string>();
       const stateByKey = new Map<string, 'passed' | 'skipped' | 'pending'>();
       const reusedKeys = new Set(seed?.stageKeys ?? []);
-      for (const [index, stage] of graph.entries()) {
+      for (const stage of graph) {
         const id = ulid();
         newExecutionIdByKey.set(stage.key, id);
         const state = reusedKeys.has(stage.key)
           ? 'passed'
-          : stopIndex !== undefined && index > stopIndex
+          : keep && !keep.has(stage.key)
             ? 'skipped'
             : 'pending';
         stateByKey.set(stage.key, state);
@@ -666,15 +676,16 @@ export class RunService {
   async resume(runId: string) {
     const current = await this.get(runId);
     if (current.state === 'PAUSED_BUDGET' || current.state === 'FAILED') {
-      const cursor = current.cursorStageKey
-        ? current.stageExecutions.find((execution) => execution.stageKey === current.cursorStageKey)
-        : undefined;
-      if (
-        !cursor ||
-        ['passed', 'skipped', 'awaiting_approval', 'awaiting_input'].includes(cursor.state)
-      ) {
+      // Something must still be left to do: a stage that is neither settled
+      // nor waiting on a person (parallel stages leave no single cursor).
+      const resumable = current.stageExecutions.some(
+        (execution) =>
+          !['passed', 'skipped', 'awaiting_approval', 'awaiting_input'].includes(execution.state) &&
+          !execution.waiting,
+      );
+      if (!resumable) {
         throw new ConflictException(
-          `Run ${runId} has no resumable cursor execution in state ${current.state}`,
+          `Run ${runId} has no resumable execution in state ${current.state}`,
         );
       }
     }
@@ -778,6 +789,11 @@ export class RunService {
       values.push(attachment);
       attachmentsByArtifact.set(attachment.artifactId, values);
     }
+    const waitingByExecution = new Map<string, HumanWaitKind>();
+    for (const wait of await this.humanWaits.liveOpenWaits(this.db, runId)) {
+      const known = waitingByExecution.get(wait.stageExecutionId);
+      if (known !== 'approval') waitingByExecution.set(wait.stageExecutionId, wait.kind);
+    }
     const final = await findFinalVideo(this.db, runId);
     const budgetBlock = row.state === 'PAUSED_BUDGET' ? await this.budgetBlock(row) : null;
     const resumeAt = row.state === 'PAUSED_QUOTA' ? await this.quotaResumeAt(runId) : null;
@@ -802,6 +818,7 @@ export class RunService {
             label: definition?.label || execution.stageKey,
             output: definition?.output ?? null,
             attemptCount: attemptCounts.get(execution.id) ?? 0,
+            waiting: waitingByExecution.get(execution.id) ?? null,
             capability,
             interaction: this.capabilities.get(capability).interaction?.kind ?? null,
             attachments: (
@@ -879,13 +896,13 @@ export class RunService {
 
   async approvalCandidate(runId: string, stageKey: string, requestedItemIndex?: number) {
     const [runRow] = await this.db
-      .select({ state: run.state, cursorStageKey: run.cursorStageKey, ownerId: channel.ownerId })
+      .select({ state: run.state, ownerId: channel.ownerId })
       .from(run)
       .innerJoin(channel, eq(channel.id, run.channelId))
       .where(eq(run.id, runId))
       .limit(1);
     if (!runRow) throw new NotFoundException(`Run ${runId} not found`);
-    if (runRow.state !== 'PAUSED_APPROVAL' || runRow.cursorStageKey !== stageKey) {
+    if (runRow.state !== 'PAUSED_APPROVAL' && runRow.state !== 'PAUSED_INPUT') {
       throw new ConflictException(`Run ${runId} is not awaiting approval at ${stageKey}`);
     }
 

@@ -1,3 +1,4 @@
+import { HumanWaitService } from './human-wait.service';
 import { createHash } from 'node:crypto';
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { and, eq, inArray, sql } from 'drizzle-orm';
@@ -77,6 +78,7 @@ export class InvalidationService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly memory: MemoryService,
+    private readonly waits: HumanWaitService,
   ) {}
 
   async preview(params: { runId: string; seed: InvalidationSeed }): Promise<InvalidationPreview> {
@@ -405,6 +407,8 @@ export class InvalidationService {
       }
     }
 
+    // Waits whose stage or item was just reset can no longer be answered.
+    await this.waits.resolveNotLive(tx, params.runId);
     await this.memory.appendTombstones(
       tx,
       params.runId,

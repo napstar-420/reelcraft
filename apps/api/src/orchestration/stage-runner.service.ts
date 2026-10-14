@@ -9,7 +9,7 @@ import type {
   QcDef,
   Ref,
 } from '@reelcraft/shared';
-import { StageDef, approvalModeOf } from '@reelcraft/shared';
+import { StageDef, approvalModeOf, stageRefLeaves } from '@reelcraft/shared';
 import { DRIZZLE, type Db, type Tx } from '../db/drizzle.provider';
 import {
   artifact,
@@ -278,8 +278,9 @@ export class StageRunnerService {
    * insert. On a unique-violation (a replayed Inngest step recomputing the
    * same attemptNo), re-select the existing row instead of erroring — this
    * is what makes the step idempotent without a separate locking mechanism,
-   * given `run.orchestrate`'s `concurrency: {limit:1, key:runId}` guarantees
-   * no concurrent inserts for the same run.
+   * given each stage execution is driven by one `stage.execute` at a time
+   * (stages of a run may run in parallel, but never the same stage twice), so
+   * no two inserts race for the same execution's `attemptNo`.
    */
   async beginAttempt(ctx: {
     runId: string;
@@ -2097,23 +2098,39 @@ export class StageRunnerService {
       return { ok: false, reason: 'iterate_max_items_exceeded' };
     }
 
-    if (prevStageKey) {
+    // The stages this one reads item-by-item: the previous stage, and any stage
+    // bound with {from:'stage', alignWith:'item'}.
+    const alignedKeys = new Set<string>(prevStageKey ? [prevStageKey] : []);
+    for (const leaf of stageRefLeaves(stage)) {
+      if (leaf.from === 'stage' && leaf.alignWith === 'item') alignedKeys.add(leaf.stageKey);
+    }
+    if (alignedKeys.size > 0) {
       const graph = await this.loadGraph(runId);
       const stageIndex = graph.findIndex((s) => s.key === stage.key);
-      const prevStage = stageIndex > 0 ? graph[stageIndex - 1] : undefined;
-      if (
-        prevStage?.iterate &&
-        this.sameIterateProducer(iterate.over, prevStage.iterate.over, graph, stageIndex)
-      ) {
-        const [prevExecution] = await this.db
+      for (const alignedKey of alignedKeys) {
+        const alignedIndex = graph.findIndex((s) => s.key === alignedKey);
+        const alignedStage = alignedIndex >= 0 ? graph[alignedIndex] : undefined;
+        if (
+          !alignedStage?.iterate ||
+          !this.sameIterateProducer(
+            iterate.over,
+            stageIndex,
+            alignedStage.iterate.over,
+            alignedIndex,
+            graph,
+          )
+        ) {
+          continue;
+        }
+        const [alignedExecution] = await this.db
           .select({ itemCount: stageExecution.itemCount })
           .from(stageExecution)
-          .where(and(eq(stageExecution.runId, runId), eq(stageExecution.stageKey, prevStageKey)))
+          .where(and(eq(stageExecution.runId, runId), eq(stageExecution.stageKey, alignedKey)))
           .limit(1);
         if (
-          prevExecution?.itemCount !== undefined &&
-          prevExecution.itemCount !== null &&
-          itemCount !== prevExecution.itemCount
+          alignedExecution?.itemCount !== undefined &&
+          alignedExecution.itemCount !== null &&
+          itemCount !== alignedExecution.itemCount
         ) {
           return { ok: false, reason: 'iterate_item_count_mismatch' };
         }
@@ -2140,17 +2157,17 @@ export class StageRunnerService {
    * `input` refs without needing that context). Two refs canonicalize to
    * the same producer when they resolve to the same `(producerKey, path)`
    * pair — each ref is canonicalized relative to the stage that actually
-   * declares it (`refA` at `stageIndexOfA`, `refB` at `stageIndexOfA - 1`,
-   * i.e. the previous stage's own index). Any other ref kind (or a missing
+   * declares it (`refA` at `stageIndexOfA`, `refB` at `stageIndexOfB`). Any other ref kind (or a missing
    * preceding stage) is "not comparable" — never treated as aligned. */
   private sameIterateProducer(
     refA: Ref,
-    refB: Ref,
-    graph: StageDef[],
     stageIndexOfA: number,
+    refB: Ref,
+    stageIndexOfB: number,
+    graph: StageDef[],
   ): boolean {
     const a = this.canonicalizeIterateOver(refA, graph, stageIndexOfA);
-    const b = this.canonicalizeIterateOver(refB, graph, stageIndexOfA - 1);
+    const b = this.canonicalizeIterateOver(refB, graph, stageIndexOfB);
     if (!a || !b) return false;
     return a.producerKey === b.producerKey && a.path === b.path;
   }
@@ -2166,6 +2183,8 @@ export class StageRunnerService {
         if (!prev) return undefined;
         return { producerKey: prev.key, path: ref.path ?? '$' };
       }
+      case 'stage':
+        return { producerKey: ref.stageKey, path: ref.path ?? '$' };
       case 'memory':
         return { producerKey: `memory:${ref.key}`, path: ref.path ?? '$' };
       case 'input':

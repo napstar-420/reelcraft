@@ -39,6 +39,7 @@ const sidebars: SidebarsConfig = {
         'blueprints/settings',
         'blueprints/stages',
         'blueprints/connecting-stages',
+        'blueprints/parallel-stages',
         'blueprints/prompts',
         'blueprints/outputs',
         'blueprints/models',

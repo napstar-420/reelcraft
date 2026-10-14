@@ -1,6 +1,7 @@
 import type { Inngest } from 'inngest';
 import type { StageRunnerService } from '../stage-runner.service';
 import { runStageAttemptLoop } from './stage-attempt-loop';
+import { worstOutcome } from './stage-outcome';
 import type { buildStageExecuteItemFunction } from './stage-execute-item.fn';
 
 export interface StageExecuteEventData {
@@ -30,15 +31,6 @@ export interface StageExecuteEventData {
  * function" decision) — this function's own step count therefore stays
  * O(itemCount), never O(itemCount × retries × steps/attempt).
  */
-/** The outcome that ends the stage after a batch: the first of the worst kind,
- * in item order. A failure outranks everything; an item waiting for approval
- * is the mildest reason to stop. */
-export function worstOutcome<T extends { outcome: string }>(results: T[]): T | undefined {
-  const priority = ['failed', 'budget_blocked', 'deferred', 'run_not_running', 'approval_required'];
-  const stopping = results.filter((result) => result.outcome !== 'passed');
-  return stopping.sort((a, b) => priority.indexOf(a.outcome) - priority.indexOf(b.outcome))[0];
-}
-
 export function buildStageExecuteFunction(
   client: Inngest,
   runner: StageRunnerService,

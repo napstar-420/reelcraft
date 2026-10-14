@@ -6,7 +6,12 @@ import { ArtifactKind, Ref } from '@reelcraft/shared';
 import { BUILTIN_CHECKS } from '../check/builtins/index';
 import { attemptOutcomeEnum } from '../db/schema/execution';
 import { qualityIssues } from './tools/quality-checks';
-import { recipeBrollMontage, recipeIllustratedStory, recipeVoiceoverReel } from './guide-recipes';
+import {
+  recipeBrollMontage,
+  recipeIllustratedStory,
+  recipeParallelStory,
+  recipeVoiceoverReel,
+} from './guide-recipes';
 import { BlueprintValidatorService } from '../blueprint/blueprint-validator.service';
 import { SchemaValidatorService } from '../json-schema/schema-validator.service';
 import { realCapabilities, realCapabilityRegistry } from './tools/test-support';
@@ -126,7 +131,7 @@ describe('assistant guide coverage', () => {
 
   it('mentions every Ref kind', () => {
     const kinds = refKinds();
-    expect(kinds).toHaveLength(9);
+    expect(kinds).toHaveLength(10);
     expect(kinds.filter((k) => !covered(k) && !guideText.includes(`from:'${k}'`))).toEqual([]);
   });
 
@@ -157,6 +162,7 @@ describe('assistant guide examples', () => {
     ['recipe: illustrated story', recipeIllustratedStory],
     ['recipe: illustrated story with a Character', () => recipeIllustratedStory(true)],
     ['recipe: b-roll montage', recipeBrollMontage],
+    ['recipe: parallel story', recipeParallelStory],
   ])('example "%s" has no validation errors', (_name, make) => {
     const draft = make();
     const issues = validator.validate({

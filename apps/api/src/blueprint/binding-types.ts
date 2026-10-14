@@ -1,7 +1,7 @@
 import type { InputDef, JsonSchema, Ref, StageDef, ValidationIssue } from '@reelcraft/shared';
 import type { SourceType } from '../json-schema/source-type';
 import { narrowRefPath } from '../json-schema/schema-path';
-import type { ValidationContext } from './validation-context';
+import { earlierWriters, type ValidationContext } from './validation-context';
 
 const wordSchema: JsonSchema = {
   type: 'object',
@@ -67,9 +67,20 @@ export function sourceTypeOfRef(
       return { type: sourceTypeOfOutput(prevStage.output) };
     }
 
+    case 'stage': {
+      const producerIndex = ctx.stageIndexByKey.get(ref.stageKey);
+      const producer = producerIndex === undefined ? undefined : ctx.graph[producerIndex];
+      if (!producer || producerIndex! >= stageIndex) {
+        // Already flagged by the dedicated stage-reference rules.
+        return {
+          type: { kind: 'unknown', reason: 'stage reference to a stage that is not earlier' },
+        };
+      }
+      return { type: sourceTypeOfOutput(producer.output) };
+    }
+
     case 'memory': {
-      const writers = ctx.memoryWriters.get(ref.key);
-      const writer = writers?.[0];
+      const writer = earlierWriters(ctx, ref.key, stageIndex)[0];
       if (!writer) {
         return unresolved(
           `references memory key "${ref.key}" that no earlier stage writes`,

@@ -1,6 +1,7 @@
 import type { JsonSchema, OutputDef, OutputKind, StageDef } from '@reelcraft/shared';
 import type { ParsedValidationPath } from '../../lib/parse-validation-path';
 import { speechPinSummary } from './speech/speech-settings.logic';
+import { ancestorsOf, stageDependencies } from '../../lib/stage-deps';
 
 function outputInstructions(output: OutputDef): string | undefined {
   return output.kind === 'text' || output.kind === 'data' ? output.instructions : undefined;
@@ -194,6 +195,7 @@ export function stageSectionSummaries(stage: StageDef): StageSectionSummaries {
     stage.budget?.stageCapUsd !== undefined ? `cap $${stage.budget.stageCapUsd}` : '',
   ].filter(Boolean);
   const flow = [
+    stage.dependsOn === undefined ? '' : 'runs after chosen stages',
     stage.enabledWhen ? 'conditional' : '',
     stage.approval ? 'approval' : '',
     stage.iterate ? 'per item' : '',
@@ -372,4 +374,31 @@ export function visibleConfigSchema(capability: string, schema: JsonSchema): Jso
   delete properties[INGREDIENT_COUNT_KEY];
   delete properties[ACCOUNTS_KEY];
   return { ...schema, properties };
+}
+
+/** When a stage starts: `previous` waits for the stage before it (the default),
+ * `inputs` as soon as the stages its bindings read are done, `specific` once
+ * the chosen stages are done. */
+export type RunsAfterMode = 'previous' | 'inputs' | 'specific';
+
+export function runsAfterMode(stage: StageDef): RunsAfterMode {
+  if (stage.dependsOn === undefined) return 'previous';
+  return stage.dependsOn.length === 0 ? 'inputs' : 'specific';
+}
+
+/** The stage with its "Runs after" set to `mode`. Switching to `specific` starts
+ * from the stage before it, so the choice is never an empty list (which means
+ * `inputs`). `dependsOn` is removed, not set to undefined, for `previous`. */
+export function setRunsAfter(stage: StageDef, mode: RunsAfterMode, previousKey?: string): StageDef {
+  const next: StageDef = { ...stage };
+  delete next.dependsOn;
+  if (mode === 'inputs') return { ...next, dependsOn: [] };
+  if (mode === 'specific') return { ...next, dependsOn: previousKey ? [previousKey] : [] };
+  return next;
+}
+
+/** Stages a rejection can retry: this one, and the stages it waits for. */
+export function retryTargets(graph: StageDef[], stageKey: string): StageDef[] {
+  const upstream = ancestorsOf(stageDependencies(graph), stageKey);
+  return graph.filter((stage) => stage.key === stageKey || upstream.has(stage.key));
 }

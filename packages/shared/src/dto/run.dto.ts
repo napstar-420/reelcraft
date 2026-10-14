@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { RunState, StageExecutionState, AttemptOutcome } from '../primitives';
+import { RunState, StageExecutionState, AttemptOutcome, HumanWaitKind } from '../primitives';
 import { ConfigLayer } from '../config-layer';
 import { Probe } from '../probe';
 import { OutputDef } from '../output';
@@ -295,6 +295,9 @@ export const StageExecutionDto = z.object({
   startedAt: z.string().nullable(),
   endedAt: z.string().nullable(),
   interaction: z.enum(['form', 'timeline_editor']).nullable(),
+  /** What a person is being asked for right now: set while the stage — or, for
+   * item-mode approval, one of its items — has an open wait nobody has answered. */
+  waiting: HumanWaitKind.nullable(),
   attachments: z.array(
     z.object({
       id: z.string(),

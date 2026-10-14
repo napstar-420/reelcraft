@@ -16,7 +16,12 @@ export type TrunkFlowEdge = Edge<TrunkEdgeData, 'trunk'>;
  * button is focused. */
 export function TrunkEdge({ sourceX, sourceY, targetX, targetY, data }: EdgeProps<TrunkFlowEdge>) {
   const actions = useCanvasActions();
-  const path = `M ${sourceX + 4} ${sourceY} L ${targetX - 6} ${targetY}`;
+  // Straight when both ends are level (a chain); otherwise an S-curve between lanes.
+  const middle = (sourceX + targetX) / 2;
+  const path =
+    Math.abs(sourceY - targetY) < 1
+      ? `M ${sourceX + 4} ${sourceY} L ${targetX - 6} ${targetY}`
+      : `M ${sourceX + 4} ${sourceY} C ${middle} ${sourceY}, ${middle} ${targetY}, ${targetX - 6} ${targetY}`;
   const arrow = `M ${targetX - 12} ${targetY - 4} L ${targetX - 6} ${targetY} L ${targetX - 12} ${targetY + 4}`;
   const insertIndex = data?.insertIndex;
   return (
@@ -53,7 +58,7 @@ export function TrunkEdge({ sourceX, sourceY, targetX, targetY, data }: EdgeProp
             // `transform`, so a translate in `transform` would be scaled too and
             // the button would slide away from the pointer on hover.
             className="nodrag nopan pointer-events-auto absolute flex size-6 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border bg-card text-muted-foreground opacity-0 transition-[opacity,scale,color,border-color] group-hover/canvas:opacity-60 hover:scale-110 hover:border-primary hover:text-primary hover:opacity-100 focus-visible:opacity-100"
-            style={{ left: (sourceX + targetX) / 2, top: sourceY }}
+            style={{ left: middle, top: (sourceY + targetY) / 2 }}
           >
             <Plus className="size-3.5" />
           </button>

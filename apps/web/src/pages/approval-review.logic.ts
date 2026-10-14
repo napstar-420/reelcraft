@@ -1,3 +1,4 @@
+import { canAnswerWaits } from '../lib/run-action-policy';
 export type ApprovalCandidateView =
   | { kind: 'text' | 'json'; text: string }
   | { kind: 'image' | 'video' | 'audio' | 'download'; url: string }
@@ -43,11 +44,16 @@ export function rejectionPreviewSummary(preview: {
   };
 }
 
+/** Whether this stage still has an approval to answer: the run is parked and
+ * the stage's own wait is open (a run can hold several at once). */
 export function isApprovalStillOpen(
   stageKey: string,
-  run: { state: string; cursorStageKey: string | null },
+  run: { state: string; stageExecutions: Array<{ stageKey: string; waiting?: string | null }> },
 ) {
-  return run.state === 'PAUSED_APPROVAL' && run.cursorStageKey === stageKey;
+  return (
+    canAnswerWaits(run.state) &&
+    run.stageExecutions.some((e) => e.stageKey === stageKey && e.waiting === 'approval')
+  );
 }
 
 export function describeApiFailure(error: unknown) {

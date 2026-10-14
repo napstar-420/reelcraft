@@ -19,6 +19,7 @@ import { DerivedFrameService } from '../../artifact/derived-frame.service';
 import { buildHumanReminderSweepFunction } from './human-reminder-sweep.fn';
 import { ComputeJobService } from '../../storage/compute-job.service';
 import { NotificationService } from '../../notification/notification.service';
+import { HumanWaitService } from '../../run/human-wait.service';
 
 /**
  * §13.1 — resolves services from the container and closes Inngest functions
@@ -49,6 +50,7 @@ export function buildInngestFunctions(app: INestApplicationContext) {
     wakeupClaim,
     derivedFrames,
     notifications,
+    app.get(HumanWaitService),
   );
   const runWakeupDispatch = buildRunWakeupDispatchFunction(client, wakeupDispatcher);
   const humanReminderSweep = buildHumanReminderSweepFunction(client, reminders);

@@ -39,10 +39,12 @@ export const RUN_ACTION_ALLOWED_STATES = {
   edit_artifact: [...PAUSED_STATES, 'FAILED', 'COMPLETED'],
   replace_input: [...PAUSED_STATES, 'FAILED', 'COMPLETED'],
   patch_overrides: [...PAUSED_STATES, 'FAILED'],
-  approve: ['PAUSED_APPROVAL'],
-  reject: ['PAUSED_APPROVAL'],
-  retry_qc: ['PAUSED_APPROVAL'],
-  submit_input: ['PAUSED_INPUT'],
+  // A run can hold approval and input waits at once (parallel stages), parked
+  // in the state of the first kind, so either state accepts any answer.
+  approve: ['PAUSED_APPROVAL', 'PAUSED_INPUT'],
+  reject: ['PAUSED_APPROVAL', 'PAUSED_INPUT'],
+  retry_qc: ['PAUSED_APPROVAL', 'PAUSED_INPUT'],
+  submit_input: ['PAUSED_APPROVAL', 'PAUSED_INPUT'],
   resume: ['PAUSED_BUDGET', 'PAUSED_MANUAL', 'PAUSED_QUOTA', 'FAILED'],
   cancel: ['CREATED', 'RUNNING', ...PAUSED_STATES, 'PAUSED_MANUAL', 'FAILED'],
 } as const satisfies Record<RunAction, readonly RunState[]>;

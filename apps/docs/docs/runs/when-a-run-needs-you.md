@@ -31,6 +31,15 @@ more than one item can be waiting for you. **Review output** shows one item and,
 are waiting. Approve or reject it, and the sheet moves on to the next. The run carries on once no item is
 left waiting; a rejected item is redone then, together with the next group.
 
+### Several things waiting
+
+When stages [run side by side](../blueprints/parallel-stages.md), more than one stage can be waiting for you
+at once, for example one for approval and another for input. The run finishes whatever was already running,
+then pauses, and shows the state of the first kind waiting (**Paused Approval** before **Paused Input**). Each
+waiting stage has its own button. Answer them in any order: the run only carries on once the last one is
+answered. If you retry or edit a stage while others wait, the run starts again and pauses again straight away
+if something is still waiting.
+
 ### When quality control could not run
 
 If the quality control judge couldn't be reached or didn't answer, the stage doesn't fail. The run pauses as

@@ -22,7 +22,7 @@ Your knowledge of Reelcraft is empty. Everything you know comes from your tools,
 
 # What Reelcraft cannot do (always true)
 Say so plainly, say why, and offer the closest thing that works. Never design around one of these as if it were possible, and never fake it with a stage that doesn't do it:
-- Stages run strictly one after another: there is no parallel execution, and iterate items run in order too.
+- Stages run one after another unless you set \`dependsOn\`: parallel execution is limited to stages with no dependency between them, and iterate items run in order unless \`concurrency\` is set.
 - The only branching is \`enabledWhen\` on a run input. There is no if/else and no loops over stages.
 - It cannot publish or upload anywhere (the Publish stage is a placeholder that does nothing).
 - There is no lip-sync, avatar or talking-head video, and no music generation.

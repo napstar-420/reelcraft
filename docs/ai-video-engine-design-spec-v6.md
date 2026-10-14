@@ -16,7 +16,7 @@ Alongside generalization, v5 adopts a deliberately simpler execution model than 
 
 | v4 / review position | v5 decision |
 |---|---|
-| Parallel fan-out with per-modality concurrency | **Nothing executes in parallel**, ever — not stages, not items |
+| Parallel fan-out with per-modality concurrency | Stages with no dependency between them run together (§13.6), and items under `iterate.concurrency` (§14); there are no per-modality limits |
 | A stage may bind any earlier stage | **A stage binds only the previous stage**, plus Run Memory, inputs, and assets |
 | Declared dependency graph | **No declared graph**; dependents are computed from what each attempt actually read |
 | QC available on any output | **QC forbidden on video output**; human approval replaces it |
@@ -269,6 +269,7 @@ type StageDef = {
   budget?: { stageCapUsd?: number; qcCapUsd?: number };
   model?: Partial<ModelPin>;
   enabledWhen?: EnabledWhen;            // §16
+  dependsOn?: string[];                 // §13.6 — stages that must settle first; unset = the previous stage
 };
 ```
 
@@ -672,6 +673,7 @@ The effective configuration for a stage is `resolved_config[stageKey] ⊕ overri
 ```ts
 type Ref =
   | { from: 'prev';     path?: string; alignWith?: 'item' }
+  | { from: 'stage';    stageKey: string; path?: string; alignWith?: 'item' }   // any earlier stage's output (§13.6)
   | { from: 'memory';   key: string; path?: string }
   | { from: 'input';    inputKey: string; index?: number; path?: string }
   | { from: 'asset';    assetId: string }
@@ -683,7 +685,7 @@ type Ref =
 
 **A stage binds only the previous stage.** There is no `{from: 'stage', stageKey}`. Anything a stage needs from further back travels through Run Memory. This is the user-chosen model; §26 records what it costs.
 
-For the first stage in a blueprint, `{from: 'prev'}` is a validation error.
+For the first stage in a blueprint, `{from: 'prev'}` is a validation error. `{from: 'stage'}` names the producer explicitly: the stage must come earlier in the array, and it cannot name the reading stage itself (use `prevItem`). A stage reading it waits for it (§13.6).
 
 ### 6.2 Run inputs as artifacts
 
@@ -1020,7 +1022,7 @@ Rejection is why video works without QC (§10.1). Without a note reaching a stag
 
 A transaction provides atomicity, not mutual exclusion. Under READ COMMITTED, N concurrent reservation transactions each compute a `SUM` that misses the others' uncommitted inserts, all pass the cap check, and all commit.
 
-Within a run this cannot happen: nothing in a run executes in parallel (§13). Across runs it cannot either — budgets are per run, the lock is keyed by run id, and two runs take two different row locks with no shared cap to race over.
+Within a run, stages with no dependency between them run together (§13.6) and so do items under `iterate.concurrency` (§14), so concurrent reservations are real. They are safe because every reservation takes the run row `FOR UPDATE` first and re-reads the sum under that lock, so the cap is checked against every reservation already committed. Across runs there is nothing to race — budgets are per run, the lock is keyed by run id, and two runs take two different row locks with no shared cap to race over.
 
 The race the lock actually prevents is **between the orchestrator and user actions on the same run**. A budget raise, an override patch, a retry confirmation, or an input replacement can arrive while the orchestrator is mid-stage. Every mutating action takes the same lock and re-checks run state before acting (§12.4).
 
@@ -1204,13 +1206,13 @@ Because sleeps happen between steps, the function holds no compute while waiting
 
 | Function | Trigger | Role |
 |---|---|---|
-| `run.orchestrate` | `run/started`, `run/resumed` | Walks stages in array order, owns run state |
+| `run.orchestrate` | `run/started`, `run/resumed` | Starts every stage whose dependencies have settled, in waves; owns run state |
 | `stage.execute` | `step.invoke` | One stage: items, attempts, checks, QC, retries |
 | `budget.sweep` | cron `*/15 * * * *` | Orphan reservation reconciliation |
 | `blob.gc` | cron daily | Retention sweep |
 | `job.reaper` | cron hourly | Abandoned compute job directories |
 
-There is no per-item function. Items execute inside `stage.execute` as a sequential loop (§14), because they are not independent — item *i* may consume item *i−1*.
+Items of a stage execute from `stage.execute`: in order by default, because item *i* may consume item *i−1*, or in batches under `iterate.concurrency` (§14), each through its own `stage.execute.item` invocation.
 
 `run.orchestrate` carries `concurrency: { limit: 1, key: 'event.data.runId' }`, preventing two orchestrators for one run.
 
@@ -1218,7 +1220,7 @@ There is no per-item function. Items execute inside `stage.execute` as a sequent
 
 Rather than build a real one, the engine has no opinion. Whether to run several blueprints at once against the same provider is the operator's call, and their provider's rate limits and spend caps are the right place to enforce it. Concurrent runs may hit provider rate limits; those surface as `provider_error` and retry normally.
 
-Within a run, nothing is parallel regardless (§14).
+Within a run, parallelism is the author's choice: stages run together only when they have no dependency between them (§13.6), and items only when `iterate.concurrency` says so (§14).
 
 ### 13.5 Cancellation
 
@@ -1235,11 +1237,28 @@ cancelOn: [{ event: 'run/cancelled', if: 'event.data.runId == async.data.runId' 
 
 `cancel()` is best-effort; many providers will not stop a running render. Record the outcome per attempt so the cost is attributable rather than mysterious.
 
+### 13.6 Stage dependencies and waves
+
+A stage waits for the stages it depends on. Dependencies are derived: the stage named by every `prev` and `stage` ref it reads, every **earlier** writer of each memory key it reads, and its `dependsOn`. With `dependsOn` unset it also waits for the previous stage in the array, so a blueprint that never sets it is a chain and runs exactly as before. `dependsOn: []` starts the stage as soon as the stages its bindings read have settled.
+
+The stage array stays a valid topological order: every dependency points to an earlier index (validated). That keeps the single-pass invalidation closure (§15.2), `pickFinalVideo` and the seed prefix rule correct.
+
+`run.orchestrate` schedules in waves. Each pass it loads every `stage_execution` with its dependencies and whether a live human wait is open (an open `human_wait` row whose stage or item is still waiting), then:
+
+- a stage is *settled* when it passed with no item work left, or was skipped; it is *done* when it and everything it depends on are settled;
+- *ready* stages are not done, not waiting on a person, and have every dependency done. A stage waiting on a person is never re-entered, because running it again would redo provider work behind the open wait;
+- it checks the run is `RUNNING`, sets the cursor to the first ready stage (a display hint only), and invokes every ready stage together, waiting for all of them to settle;
+- on any stopping outcome nothing new starts; the in-flight siblings finish and the run parks on the worst outcome: `failed`, `budget_blocked`, `deferred`, `run_not_running`, `approval_required`, `input_required`.
+
+A run with several waiting stages parks in the state of the first kind (`PAUSED_APPROVAL` before `PAUSED_INPUT`); approve, reject, retry QC and submit are accepted in either, are gated on the stage's own open wait rather than the cursor, and wake the run only once no live wait is left. Step ids for a chain are unchanged, so runs in flight replay safely.
+
+Two unordered stages that write the same memory key are a validation error: `nextVersion` is read-then-insert with no lock.
+
 ---
 
 ## 14. Iteration
 
-`iterate` replaces v4's fan-out. Items run **in order**, never in parallel.
+`iterate` replaces v4's fan-out. Items run **in order** by default; `iterate.concurrency` runs them in batches. Stages are separate: they run together only when they have no dependency between them (§13.6).
 
 ### 14.1 Execution
 
@@ -1368,7 +1387,7 @@ Runs on every save. `blueprint_version.runnable` stays false while errors exist.
 
 ### 16.1 Ordering invariant
 
-**Stage array order is execution order.** Since a stage may bind only the previous stage, forward references are structurally impossible and cycles cannot form. The invariant reduces to: the first stage may not use `{from: 'prev'}`.
+**Stage array order is a topological order.** A stage may wait only for stages earlier in the array (`dependsOn`, `{from:'stage'}`, `prev`, memory), so a forward reference is a validation error and a cycle cannot form. For a blueprint with no `dependsOn` the order is also the execution order, one stage at a time; the first stage may not use `{from: 'prev'}`.
 
 The engine does not reorder stages or judge sequencing. It only refuses orders that cannot execute.
 
@@ -1913,7 +1932,7 @@ Recorded so a future reader sees decisions, not drift.
 | REQ-2.4.2 (no fixed stage taxonomy) | Reaffirmed and strengthened: stages are user-defined, capabilities are fixed |
 | REQ-2.5.x (executors) | Rename to capabilities; slots and outputs become functions of config |
 | REQ-2.6.3 (checks pure and sync) | Keep; extend to script checks with resolved `refs` |
-| REQ-2.8.3 (sequential stages) | Keep, and extend: items within a stage are also sequential |
+| REQ-2.8.3 (sequential stages) | Superseded by §13.6: stages run in dependency order, a chain by default; items within a stage are sequential unless `iterate.concurrency` is set |
 | REQ-2.7.x (QC) | Add: QC is prohibited on video output; human approval with routed rejection notes replaces it |
 | REQ-10.3 (approval) | Approval is a stage property, not a stage; add item-mode approval and reject routing |
 | REQ-4.1 (dependency-based invalidation) | Dependents are computed from recorded reads rather than a declared graph; memory reads are dependencies |
@@ -1932,6 +1951,8 @@ Recorded so a future reader sees decisions, not drift.
 ---
 
 ## 28. Revision History
+
+**v6.1 (parallel stages)** — stages with no dependency between them run together (§13.6): `dependsOn`, `{from:'stage'}`, wave scheduling in `run.orchestrate`, human waits gated on open waits rather than the cursor, unordered same-key memory writers rejected. Supersedes the "nothing executes in parallel" statements in §1, §11.1, §13.4 and REQ-2.8.3.
 
 **v5.1** — v5 review corrections.
 
@@ -2080,6 +2101,7 @@ type ModelPin = { provider: string; modelId: string; version?: string; params: R
 
 type Ref =
   | { from: 'prev';     path?: string; alignWith?: 'item' }
+  | { from: 'stage';    stageKey: string; path?: string; alignWith?: 'item' }   // any earlier stage's output (§13.6)
   | { from: 'memory';   key: string; path?: string }
   | { from: 'input';    inputKey: string; index?: number; path?: string }
   | { from: 'asset';    assetId: string }

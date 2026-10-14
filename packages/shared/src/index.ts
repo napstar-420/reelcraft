@@ -7,6 +7,7 @@ export * from './check';
 export * from './config-layer';
 export * from './qc';
 export * from './stage-def';
+export * from './stage-deps';
 export * from './provider';
 export * from './speech';
 export * from './probe';

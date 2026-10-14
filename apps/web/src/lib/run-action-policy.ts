@@ -26,7 +26,7 @@ export const RUN_ACTION_ALLOWED_STATES = {
     'FAILED',
     'COMPLETED',
   ],
-  submit_input: ['PAUSED_INPUT'],
+  submit_input: ['PAUSED_APPROVAL', 'PAUSED_INPUT'],
   resume: ['PAUSED_BUDGET', 'PAUSED_MANUAL', 'PAUSED_QUOTA', 'FAILED'],
   cancel: [
     'CREATED',
@@ -41,6 +41,12 @@ export const RUN_ACTION_ALLOWED_STATES = {
 } as const satisfies Record<string, readonly RunState[]>;
 
 export type RunAction = keyof typeof RUN_ACTION_ALLOWED_STATES;
+
+/** A run waiting on people parks in one of these states, whichever kind of wait
+ * is open; a person can answer any open wait in either. */
+export function canAnswerWaits(state: string): boolean {
+  return state === 'PAUSED_APPROVAL' || state === 'PAUSED_INPUT';
+}
 
 export function isRunActionAllowed(action: RunAction, state: RunState): boolean {
   return (RUN_ACTION_ALLOWED_STATES[action] as readonly RunState[]).includes(state);

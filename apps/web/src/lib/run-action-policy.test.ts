@@ -23,7 +23,7 @@ const API_ALLOWED_STATES = {
     'FAILED',
     'COMPLETED',
   ],
-  submit_input: ['PAUSED_INPUT'],
+  submit_input: ['PAUSED_APPROVAL', 'PAUSED_INPUT'],
   resume: ['PAUSED_BUDGET', 'PAUSED_MANUAL', 'PAUSED_QUOTA', 'FAILED'],
   cancel: [
     'CREATED',
@@ -74,8 +74,9 @@ describe('isRunActionAllowed', () => {
     expect(isRunActionAllowed('cancel', 'PAUSED_MANUAL')).toBe(true);
   });
 
-  it('allows submit_input only while PAUSED_INPUT', () => {
+  it('allows submit_input while either wait state is parked', () => {
     expect(isRunActionAllowed('submit_input', 'PAUSED_INPUT')).toBe(true);
-    expect(isRunActionAllowed('submit_input', 'PAUSED_APPROVAL')).toBe(false);
+    expect(isRunActionAllowed('submit_input', 'PAUSED_APPROVAL')).toBe(true);
+    expect(isRunActionAllowed('submit_input', 'RUNNING')).toBe(false);
   });
 });

@@ -109,7 +109,7 @@ isn't available for video outputs, and approval takes its place.
    - `item` pauses after **each item** of a stage that iterates.
 3. Optionally select **+ add on-reject** and choose a **Retry stage**.
 
-When the stage finishes, the run pauses as **Paused Approval** and its page asks for your review.
+When the stage finishes, the run pauses as **Paused Approval** (stages running beside it finish first) and its page asks for your review.
 Select **Review output** to open it. See [When a run needs you](../runs/when-a-run-needs-you.md).
 
 - **Approve** accepts the output and the run continues.
@@ -121,8 +121,8 @@ Select **Review output** to open it. See [When a run needs you](../runs/when-a-r
 
 By default, rejecting a stage reruns **that stage**. If the real problem is further back, for example
 a script you don't like, choose an earlier stage as the **Retry stage**. Rejecting then redoes that
-stage and everything after it, including this stage. The Retry stage can only be this stage or an
-earlier one, and it should have instructions for your note to be useful.
+stage and everything that waits for it, including this stage. The Retry stage can only be this stage or a
+stage it waits for (see [Parallel stages](./parallel-stages.md)), and it should have instructions for your note to be useful.
 
 In `item` mode, rejecting an item redoes that item. If the Retry stage also iterates, only the same
 item of it is redone.
