@@ -1,7 +1,7 @@
 import type { InputDef, JsonSchema, Ref, StageDef, ValidationIssue } from '@reelcraft/shared';
 import type { SourceType } from '../json-schema/source-type';
 import { narrowRefPath } from '../json-schema/schema-path';
-import type { ValidationContext } from './validation-context';
+import { earlierWriters, type ValidationContext } from './validation-context';
 
 const wordSchema: JsonSchema = {
   type: 'object',
@@ -68,8 +68,7 @@ export function sourceTypeOfRef(
     }
 
     case 'memory': {
-      const writers = ctx.memoryWriters.get(ref.key);
-      const writer = writers?.[0];
+      const writer = earlierWriters(ctx, ref.key, stageIndex)[0];
       if (!writer) {
         return unresolved(
           `references memory key "${ref.key}" that no earlier stage writes`,

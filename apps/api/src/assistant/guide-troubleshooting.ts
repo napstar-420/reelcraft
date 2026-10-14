@@ -146,10 +146,17 @@ export const TROUBLESHOOTING: TroubleshootingEntry[] = [
     matches: [
       'references unknown stage',
       'comes after this stage in the graph',
+      'is not upstream of this stage',
       'has no instructions template',
     ],
-    means: 'onReject points at a missing or later stage, or at one with no prompt to improve.',
-    fix: 'onReject.retryStageKey must be this stage or an earlier one, and that stage needs an instructions template so the rejection note can reach the next attempt.',
+    means:
+      'onReject points at a missing, later or unrelated stage, or at one with no prompt to improve.',
+    fix: 'onReject.retryStageKey must be this stage or a stage it depends on (directly or through others), and that stage needs an instructions template so the rejection note can reach the next attempt.',
+  },
+  {
+    matches: ['runs after unknown stage', 'runs after itself', 'which comes later in the graph'],
+    means: 'dependsOn names a stage that does not exist, is this stage, or comes later.',
+    fix: 'List only earlier stages in dependsOn, or move this stage below the one it waits for. Leave dependsOn out to wait for the previous stage.',
   },
   {
     matches: [
@@ -181,8 +188,14 @@ export const TROUBLESHOOTING: TroubleshootingEntry[] = [
   },
   {
     matches: ['is written by multiple stages'],
-    means: 'Two stages write the same memory key.',
+    means: 'Two stages write the same memory key; the later one wins.',
     fix: 'Use one writer per key: rename the keys.',
+  },
+  {
+    matches: ['which can run at the same time'],
+    means:
+      'Two stages write the same memory key and neither waits for the other, so which value wins would depend on timing.',
+    fix: 'Rename one key, or make one stage run after the other with dependsOn.',
   },
   {
     matches: ['already exists in this channel'],

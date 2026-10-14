@@ -198,6 +198,14 @@ describe('reusableStageKeys', () => {
     expect(reusableStageKeys(p)).toEqual({ keys: ['topics', 'selector'] });
   });
 
+  it('ignores dependsOn when comparing stage definitions', () => {
+    const p = baseParams({
+      sourceGraph: [stage('topics'), stage('selector')],
+      newGraph: [stage('topics'), stage('selector', { dependsOn: [] })],
+    });
+    expect(reusableStageKeys(p)).toEqual({ keys: ['topics', 'selector'] });
+  });
+
   it('still cuts when another part of an iterating stage changed', () => {
     const iterate = { over: { from: 'memory' as const, key: 'shots' }, itemAlias: 'item' };
     const p = baseParams({

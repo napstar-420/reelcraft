@@ -19,6 +19,7 @@ import { BUILTIN_CHECKS } from '../check/builtins/index';
 import { parseTemplatePaths, parseTemplatePathSegments } from '../common/prompt-template';
 import {
   buildValidationContext,
+  earlierWriters,
   type BlueprintValidationInput,
   type ValidationContext,
 } from './validation-context';
@@ -348,6 +349,7 @@ export class BlueprintValidatorService {
       });
     }
 
+    this.checkDependsOn(stage, stageIndex, ctx, issues);
     this.checkEnabledWhenDeclaration(stage, ctx, issues);
     this.checkApprovalOnReject(stage, stageIndex, ctx, issues);
     this.checkIterate(stage, stageIndex, ctx, issues);
@@ -446,7 +448,7 @@ export class BlueprintValidatorService {
         // §16.2 — cardinality vs. an iterate-derived producer's real arity.
         // Scoped to memory-group/iterate-derived refs only (Locked Decision
         // 2) — pre-existing many-cardinality inputs are untouched.
-        const arity = iterateProducedArity(ref, ctx);
+        const arity = iterateProducedArity(ref, ctx, stageIndex);
         if (arity === 'many' && slotDef.cardinality === 'one') {
           issues.push({
             path: `${base}.slots.${slotDef.name}`,
@@ -611,6 +613,43 @@ export class BlueprintValidatorService {
     }
   }
 
+  /** `dependsOn` names stages that exist, aren't this one, and come earlier in
+   * the graph — the graph array stays a valid run order. */
+  private checkDependsOn(
+    stage: StageDef,
+    stageIndex: number,
+    ctx: ValidationContext,
+    issues: ValidationIssue[],
+  ): void {
+    const path = `stages.${stage.key}.dependsOn`;
+    for (const key of stage.dependsOn ?? []) {
+      if (key === stage.key) {
+        issues.push({
+          path,
+          message: 'runs after itself — remove it from dependsOn',
+          severity: 'error',
+        });
+        continue;
+      }
+      const index = ctx.stageIndexByKey.get(key);
+      if (index === undefined) {
+        issues.push({
+          path,
+          message: `runs after unknown stage "${key}"`,
+          severity: 'error',
+        });
+      } else if (index > stageIndex) {
+        issues.push({
+          path,
+          message:
+            `runs after "${key}", which comes later in the graph — ` +
+            `move this stage after "${key}"`,
+          severity: 'error',
+        });
+      }
+    }
+  }
+
   /** §16.2/§16.3 — `approval.onReject.retryStageKey` must name this stage
    * or an earlier one in the graph (retrying "forward" makes no sense); a
    * `mode:'item'` approval needs `iterate` declared to have any item-level
@@ -651,6 +690,17 @@ export class BlueprintValidatorService {
         message:
           `onReject target "${onReject.retryStageKey}" comes after this stage in the graph — ` +
           'a rejection can only retry this stage or an earlier one',
+        severity: 'error',
+      });
+      return;
+    }
+
+    if (targetIndex < stageIndex && !ctx.ancestors.get(stage.key)?.has(onReject.retryStageKey)) {
+      issues.push({
+        path: `${base}.approval.onReject.retryStageKey`,
+        message:
+          `onReject target "${onReject.retryStageKey}" is not upstream of this stage — ` +
+          'a rejection can only retry this stage or a stage it depends on',
         severity: 'error',
       });
       return;
@@ -716,7 +766,7 @@ export class BlueprintValidatorService {
             });
           }
         } else if (ref.from === 'memory') {
-          const writers = ctx.memoryWriters.get(ref.key) ?? [];
+          const writers = earlierWriters(ctx, ref.key, stageIndex);
           if (writers.length === 1) {
             const writerIndex = ctx.stageIndexByKey.get(writers[0]!.stageKey);
             const writerStage = writerIndex === undefined ? undefined : ctx.graph[writerIndex];
@@ -756,7 +806,7 @@ export class BlueprintValidatorService {
     const overRef = stage.iterate.over;
 
     if (overRef.from === 'memory') {
-      const writer = ctx.memoryWriters.get(overRef.key)?.[0];
+      const writer = earlierWriters(ctx, overRef.key, stageIndex)[0];
       const writerIndex = writer ? ctx.stageIndexByKey.get(writer.stageKey) : undefined;
       const writerStage = writerIndex === undefined ? undefined : ctx.graph[writerIndex];
       if (writerStage?.iterate && writerStage.output.kind !== 'data') {
@@ -926,15 +976,36 @@ export class BlueprintValidatorService {
 
   private checkMemoryWrittenByMultiple(ctx: ValidationContext, issues: ValidationIssue[]): void {
     for (const [memKey, writers] of ctx.memoryWriters) {
-      if (writers.length > 1) {
+      if (writers.length < 2) continue;
+      // Writers that neither wait for the other can run at the same time, so
+      // which value wins would depend on timing.
+      const unordered = writers.flatMap((a, i) =>
+        writers
+          .slice(i + 1)
+          .filter(
+            (b) =>
+              !ctx.ancestors.get(a.stageKey)?.has(b.stageKey) &&
+              !ctx.ancestors.get(b.stageKey)?.has(a.stageKey),
+          )
+          .map((b) => [a.stageKey, b.stageKey] as const),
+      )[0];
+      if (unordered) {
         issues.push({
           path: `memory.${memKey}`,
-          message: `memory key "${memKey}" is written by multiple stages: ${writers
-            .map((w) => w.stageKey)
-            .join(', ')}`,
-          severity: 'warning',
+          message:
+            `memory key "${memKey}" is written by "${unordered[0]}" and "${unordered[1]}", ` +
+            'which can run at the same time — make one run after the other',
+          severity: 'error',
         });
+        continue;
       }
+      issues.push({
+        path: `memory.${memKey}`,
+        message: `memory key "${memKey}" is written by multiple stages: ${writers
+          .map((w) => w.stageKey)
+          .join(', ')}`,
+        severity: 'warning',
+      });
     }
   }
 
@@ -985,7 +1056,7 @@ function canonicalizeIterateOver(
       return { producerKey: prevStage.key, path: ref.path ?? '$' };
     }
     case 'memory': {
-      const writer = ctx.memoryWriters.get(ref.key)?.[0];
+      const writer = earlierWriters(ctx, ref.key, ownerIndex)[0];
       if (!writer) return { error: `memory key "${ref.key}" has no writer` };
       return { producerKey: writer.stageKey, path: writer.path + (ref.path ?? '') };
     }
@@ -1005,11 +1076,12 @@ function canonicalizeIterateOver(
 function iterateProducedArity(
   ref: Ref,
   ctx: ValidationContext,
+  stageIndex: number,
 ): 'many' | 'scalar-iterate' | undefined {
   if (ref.from === 'item' || ref.from === 'prevItem') return 'scalar-iterate';
   if (ref.from === 'prev' && ref.alignWith === 'item') return 'scalar-iterate';
   if (ref.from === 'memory' && !/#\d+$/.test(ref.key)) {
-    const writer = ctx.memoryWriters.get(ref.key)?.[0];
+    const writer = earlierWriters(ctx, ref.key, stageIndex)[0];
     const writerIndex = writer ? ctx.stageIndexByKey.get(writer.stageKey) : undefined;
     const writerStage = writerIndex === undefined ? undefined : ctx.graph[writerIndex];
     if (writerStage?.iterate) return 'many';

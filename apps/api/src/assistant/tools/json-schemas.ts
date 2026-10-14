@@ -56,6 +56,12 @@ export function stageJsonSchema(n: NarrowedEnums): JsonObject {
     budget: freeObject('{ stageCapUsd?, qcCapUsd? }.'),
     model: freeObject('{ provider, modelId, version?, params }; omit to use the default.'),
     enabledWhen: freeObject('{ input, equals }: run only when a run input has this value.'),
+    dependsOn: {
+      type: 'array',
+      items: { type: 'string' },
+      description:
+        'Keys of the stages this one waits for (each must come earlier in the graph). Leave it out to wait for the previous stage; [] starts as soon as the stages its bindings read are done.',
+    },
   };
   const shape = StageDef.shape as Record<string, { isOptional(): boolean }>;
   const required = Object.keys(shape).filter((k) => !shape[k]!.isOptional());

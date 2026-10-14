@@ -42,13 +42,16 @@ export interface ReusableStageKeysParams {
   rerunStageKeys: string[];
 }
 
-/** `iterate.concurrency` only changes how fast items run, not what they
- * produce, so a change to it must not break reuse. */
+/** `iterate.concurrency` and `dependsOn` only change when and how fast a
+ * stage runs, not what it produces, so a change to either must not break
+ * reuse. */
 function comparableStage(stage: StageDef): unknown {
-  if (!stage.iterate || !('concurrency' in stage.iterate)) return stage;
-  const iterate: Record<string, unknown> = { ...stage.iterate };
+  const rest: StageDef = { ...stage };
+  delete rest.dependsOn;
+  if (!rest.iterate || !('concurrency' in rest.iterate)) return rest;
+  const iterate: Record<string, unknown> = { ...rest.iterate };
   delete iterate.concurrency;
-  return { ...stage, iterate };
+  return { ...rest, iterate };
 }
 
 function sourceStopReason(e: SourceExecutionSummary): SeedStopReason {
