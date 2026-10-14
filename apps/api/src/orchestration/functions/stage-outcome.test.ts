@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { worstOutcome } from './stage-execute.fn';
+import { worstOutcome } from './stage-outcome';
 
 describe('worstOutcome', () => {
   it('is nothing when every item of the batch passed', () => {
@@ -33,5 +33,14 @@ describe('worstOutcome', () => {
     expect(
       worstOutcome([{ outcome: 'approval_required' }, { outcome: 'run_not_running' }]),
     ).toMatchObject({ outcome: 'run_not_running' });
+  });
+
+  it('ranks waiting on a person below waiting for approval', () => {
+    expect(
+      worstOutcome([{ outcome: 'input_required' }, { outcome: 'approval_required' }]),
+    ).toMatchObject({ outcome: 'approval_required' });
+    expect(worstOutcome([{ outcome: 'input_required' }, { outcome: 'passed' }])).toMatchObject({
+      outcome: 'input_required',
+    });
   });
 });
