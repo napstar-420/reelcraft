@@ -1,6 +1,7 @@
 # ADR 0012: Qwen3-TTS runs as a separate local service, with weights downloaded on request
 
-- Status: accepted
+- Status: accepted; partly superseded by [ADR 0013](0013-managed-qwen3-tts.md) (the app now installs and
+  runs the service)
 - Date: 2026-10-12
 
 ## Context
