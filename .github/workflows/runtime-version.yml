@@ -24,7 +24,8 @@ jobs:
           OVERRIDE: ${{ contains(github.event.pull_request.labels.*.name, 'runtime-unchanged') }}
         run: |
           changed="$(git diff --name-only "$BASE_SHA"...HEAD)"
-          image_changes="$(grep -E '^docker/app/(Dockerfile$|rootfs/)' <<<"$changed" || true)"
+          # The Qwen3-TTS service's source is copied into the image too, so a change to it is a runtime change.
+          image_changes="$(grep -E '^(docker/app/(Dockerfile$|rootfs/)|services/qwen-tts/(src/|pyproject\.toml$|constraints\.txt$))' <<<"$changed" || true)"
           # The image's headless browser is installed for this Remotion version.
           remotion() { git show "$1:apps/render-worker/package.json" | jq -r '.dependencies["@remotion/renderer"]'; }
           if [ "$(remotion "$BASE_SHA")" != "$(remotion HEAD)" ]; then

@@ -1,15 +1,26 @@
 import hashlib
+from dataclasses import replace
 
 import pytest
 
 from conftest import BIG, CONFIG, SMALL, WEIGHTS
 from qwen_tts_service import store as store_module
-from qwen_tts_service.store import MARKER, StoreError
+from qwen_tts_service.catalog import CATALOG
+from qwen_tts_service.store import LINKS, MARKER, StoreError
 
 
 def test_a_model_starts_not_downloaded(store):
     assert store.status(SMALL)["state"] == "not_downloaded"
-    assert store.status(SMALL)["totalBytes"] == 2_493_919_668
+    assert store.status(SMALL)["totalBytes"] == CATALOG[SMALL].size_bytes
+
+
+def test_catalog_sizes_are_the_sums_of_their_file_lists():
+    # Hugging Face's tree API at the pinned revisions (checked when the catalog was written).
+    assert CATALOG[SMALL].size_bytes == 2_498_383_610
+    assert CATALOG[BIG].size_bytes == 4_520_159_586
+    for model in CATALOG.values():
+        names = [name for name, _ in model.files]
+        assert len(names) == len(set(names)) and "model.safetensors" in names
 
 
 def test_downloads_every_file_and_marks_it_ready(store):

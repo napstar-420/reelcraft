@@ -2,6 +2,8 @@
 
 import asyncio
 import contextlib
+import os
+import threading
 from typing import Literal
 
 from fastapi import FastAPI, Request
@@ -23,6 +25,10 @@ class SpeechRequest(BaseModel):
     instructions: str | None = Field(default=None, max_length=500)
 
 
+class LinkRequest(BaseModel):
+    path: str = Field(min_length=1, max_length=1000)
+
+
 def _error(status: int, message: str) -> JSONResponse:
     return JSONResponse({"error": {"message": message, "type": "error", "code": status}}, status_code=status)
 
@@ -35,6 +41,8 @@ def create_app(store: ModelStore, engine: Engine) -> FastAPI:
                 await asyncio.sleep(60)
                 await asyncio.to_thread(engine.unload_if_idle)
 
+        # Work out the device in the background: importing torch is slow and /health must answer at once.
+        threading.Thread(target=engine.probe, daemon=True).start()
         task = asyncio.create_task(sweep())
         yield
         task.cancel()
@@ -48,10 +56,14 @@ def create_app(store: ModelStore, engine: Engine) -> FastAPI:
     @app.get("/health")
     def health():
         return {
+            # `service` and `api` let the Reelcraft API tell this service from something else on the port.
             "status": "ok",
-            "device": engine.device,
+            "service": "reelcraft-qwen-tts",
+            "api": 1,
+            "pid": os.getpid(),
             "loadedModel": engine.loaded,
             "modelsDir": str(store.root),
+            **engine.health(),
         }
 
     @app.get("/v1/models")
@@ -66,6 +78,12 @@ def create_app(store: ModelStore, engine: Engine) -> FastAPI:
     @app.post("/v1/models/{model_id:path}/cancel")
     def cancel(model_id: str):
         store.cancel(model_id)
+        return store.status(model_id)
+
+    @app.post("/v1/models/{model_id:path}/link")
+    def link(model_id: str, req: LinkRequest):
+        """Use model files the user already has, in place: nothing is copied or written to them."""
+        store.link(model_id, req.path)
         return store.status(model_id)
 
     @app.delete("/v1/models/{model_id:path}")

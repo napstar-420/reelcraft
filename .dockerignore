@@ -15,6 +15,14 @@ graphify-out
 .tours
 docs
 
+# The Qwen3-TTS service: the Dockerfile copies only its source, pyproject and pinned packages. A
+# local virtualenv (1 GB+), caches, model weights and the service's tests never go in the context.
+**/.venv
+**/__pycache__
+**/.pytest_cache
+services/qwen-tts/models
+services/qwen-tts/tests
+
 # Updater unit tests stay out of the image.
 docker/app/rootfs/**/*.test.mjs
 docker/app/rootfs/**/testing.mjs

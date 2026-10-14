@@ -64,6 +64,13 @@ of `\`.
 </TabItem>
 </Tabs>
 
+:::tip NVIDIA graphics card
+
+To let the free local [Qwen3-TTS voices](./qwen-tts.md#in-docker) use an NVIDIA graphics card, start
+Reelcraft from a terminal with `--gpus all`. Docker Desktop's **Run** button can't do that.
+
+:::
+
 ## The first start
 
 The first start takes **one to three minutes**: Reelcraft creates its database, and generates its

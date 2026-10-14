@@ -108,19 +108,24 @@ For a pause in Flux, write `\{pause:1s\}` in the text (500 ms to 3 s, at most 8 
 
 ### Qwen3-TTS (local)
 
-Qwen3-TTS runs on your own computer, so it costs nothing per request and no text leaves it. It needs a
-small local service and a one-time model download: see [Qwen3-TTS on your computer](../qwen-tts.md).
+Qwen3-TTS runs on your own computer, so it costs nothing per request and no text leaves it. Reelcraft
+sets it up from this stage: a **Set up Qwen3-TTS** button installs the software it needs (after
+showing you the size and asking), then you download a model. It starts when it is used and stops by
+itself when idle, and uses your graphics card when it can. See
+[Qwen3-TTS on your computer](../qwen-tts.md).
 
 | Model              | Good for                                                                        |
 | ------------------ | ------------------------------------------------------------------------------- |
 | **Qwen3-TTS 0.6B** | Smaller and faster to download (2.5 GB). Follows **Delivery** instructions too. |
-| **Qwen3-TTS 1.7B** | Larger (4.6 GB). More natural and expressive.                                   |
+| **Qwen3-TTS 1.7B** | Larger (4.5 GB). More natural and expressive.                                   |
 
-A model you haven't downloaded shows **Download required** with a **Download** button. You can't pick
-it until it's downloaded, and a blueprint using it won't run before then.
+A model you haven't downloaded shows **Download required** with its size and a **Download** button.
+You can't pick it until it's downloaded, and a blueprint using it won't run before then. If you
+already have the files, use **Already have the files?** to point Reelcraft at them instead.
 
-Settings: **Language** (Auto, or one of 10 languages) and **Delivery**, a short instruction on how to say it, such as "calm and warm". There are
-nine voices, such as Vivian, Ryan and Aiden. It makes no word timings.
+Settings: **Language** (Auto, or one of 10 languages) and **Delivery**, a short instruction on how to
+say it, such as "calm and warm". There are nine voices, such as Vivian, Ryan and Aiden. It makes no
+word timings.
 
 ### Word timings
 

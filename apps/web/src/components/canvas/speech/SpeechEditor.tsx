@@ -18,6 +18,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { InfoHeading, InfoLabel } from '../info-label';
+import { QwenSetupPanel } from './QwenSetupPanel';
 import { SpeechModelCards } from './SpeechModelCards';
 import { SpeechPreview } from './SpeechPreview';
 import { SpeechSettingField } from './SpeechSettingField';
@@ -121,6 +122,7 @@ export function SpeechEditor({
           <InfoLabel info="The speech model. Newer models sound more natural and expressive; cheaper ones are faster.">
             Model
           </InfoLabel>
+          {provider === 'qwen-tts' && <QwenSetupPanel />}
           {models.isPending && <p className="text-xs text-muted-foreground">Loading models…</p>}
           {models.isError && (
             <p className="text-xs text-destructive">

@@ -1,0 +1,94 @@
+name: qwen-tts
+
+# The Qwen3-TTS service (services/qwen-tts) is Python and runs on users' computers, so it is
+# tested on all three operating systems. `ci.yml` does not run these: it has no Python.
+on:
+  push:
+    paths:
+      - 'services/qwen-tts/**'
+      - '.github/workflows/qwen-tts.yml'
+  pull_request:
+    paths:
+      - 'services/qwen-tts/**'
+      - '.github/workflows/qwen-tts.yml'
+
+env:
+  # Keep in step with UV_VERSION in docker/app/Dockerfile: `--torch-backend` behaves differently
+  # between uv versions, so CI and the image must run the same one.
+  UV_VERSION: '0.12.23'
+
+jobs:
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    defaults:
+      run:
+        shell: bash
+        working-directory: services/qwen-tts
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: services/qwen-tts/uv.lock
+      # Only the light dependencies: the tests never import torch (the engine imports it lazily).
+      - run: uv sync --frozen
+      - run: uv run --frozen pytest
+      - name: constraints.txt matches uv.lock
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          uv export --frozen --no-dev --extra engine --no-emit-project --no-hashes -o constraints.txt
+          git diff --exit-code constraints.txt
+
+  # Runs the exact install command the Reelcraft API runs (apps/api/src/provider/qwen/qwen-runtime.ts),
+  # so a broken pin or a missing wheel for an OS shows up here and not on a user's computer.
+  install-smoke:
+    name: install and boot (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    defaults:
+      run:
+        shell: bash
+        working-directory: services/qwen-tts
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: ${{ env.UV_VERSION }}
+      - name: Create the environment and install the runtime
+        run: |
+          uv venv --python 3.12 .smoke-venv
+          if [ -x .smoke-venv/Scripts/python.exe ]; then PY=.smoke-venv/Scripts/python.exe; else PY=.smoke-venv/bin/python; fi
+          echo "PY=$PY" >> "$GITHUB_ENV"
+          uv pip install --python "$PY" --torch-backend=auto -r pyproject.toml --extra engine -c constraints.txt
+      - name: The runtime imports
+        run: '"$PY" -c "import torch, qwen_tts; print(torch.__version__)"'
+      - name: The service boots from source and answers /health
+        env:
+          PYTHONPATH: src
+          QWEN_TTS_PORT: '8191'
+        run: |
+          "$PY" -m qwen_tts_service > service.log 2>&1 &
+          for i in $(seq 1 60); do
+            if curl -sf http://127.0.0.1:8191/health -o health.json; then break; fi
+            sleep 1
+          done
+          # The device is worked out on a background thread after startup: wait for it.
+          for i in $(seq 1 120); do
+            curl -sf http://127.0.0.1:8191/health -o health.json
+            if grep -q '"ready":true' health.json; then break; fi
+            sleep 1
+          done
+          cat health.json
+          grep -q '"service":"reelcraft-qwen-tts"' health.json || { cat service.log; exit 1; }
+          grep -q '"ready":true' health.json || { cat service.log; exit 1; }
+          # Hosted runners have no GPU we can rely on, so only require that a device was chosen.
+          grep -Eq '"device":"(cpu|mps|cuda:0)"' health.json || { cat service.log; exit 1; }

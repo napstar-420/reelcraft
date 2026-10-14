@@ -9,6 +9,8 @@ import { FalAdapter } from './fal/fal.adapter';
 import { DeepgramAdapter } from './deepgram/deepgram.adapter';
 import { QwenTtsAdapter } from './qwen/qwen.adapter';
 import { QwenTtsController } from './qwen/qwen.controller';
+import { QwenTtsRuntime } from './qwen/qwen-runtime.service';
+import { QwenSetupController } from './qwen/qwen-setup.controller';
 import { DeepgramInboxService } from './deepgram/deepgram-inbox.service';
 import { DeepgramController } from './deepgram/deepgram.controller';
 import { DbModule } from '../db/db.module';
@@ -43,6 +45,12 @@ import { ChatgptProviderAdapter } from './chatgpt/chatgpt-provider.adapter';
     FalAdapter,
     DeepgramAdapter,
     QwenTtsAdapter,
+    {
+      provide: QwenTtsRuntime,
+      inject: [EngineConfig, SettingsService],
+      useFactory: (config: EngineConfig, settings: SettingsService) =>
+        new QwenTtsRuntime(config, settings),
+    },
     DeepgramInboxService,
     CodexAppServerClient,
     CodexJobLauncher,
@@ -84,7 +92,7 @@ import { ChatgptProviderAdapter } from './chatgpt/chatgpt-provider.adapter';
       ) => new CodexProviderAdapter(config, models, launcher, readiness, inputs),
     },
   ],
-  controllers: [DeepgramController, QwenTtsController],
+  controllers: [DeepgramController, QwenTtsController, QwenSetupController],
   exports: [
     SettingsKeyProvider,
     KEY_PROVIDER,

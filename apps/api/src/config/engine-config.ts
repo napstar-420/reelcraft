@@ -1,5 +1,8 @@
+import os from 'node:os';
+import path from 'node:path';
 import { Injectable, Logger, type OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { findRepoRoot } from '../common/load-dotenv';
 import type { Env } from './env.schema';
 
 /** §23 — typed accessors over validated env, so nothing in the app reads
@@ -145,6 +148,22 @@ export class EngineConfig implements OnModuleInit {
 
   get qwenTtsUrlFromEnv(): string | undefined {
     return this.config.get('QWEN_TTS_URL', { infer: true });
+  }
+
+  /** Where the managed Qwen3-TTS service keeps its packages (`venv/`) and models (`models/`). */
+  get qwenTtsHome(): string {
+    return (
+      this.config.get('QWEN_TTS_HOME', { infer: true }) ||
+      path.join(os.homedir(), '.reelcraft', 'qwen-tts')
+    );
+  }
+
+  /** The service's source folder: set by the image, else `services/qwen-tts` in a repo checkout. */
+  get qwenTtsSourceDir(): string | undefined {
+    const set = this.config.get('QWEN_TTS_SOURCE_DIR', { infer: true });
+    if (set) return set;
+    const root = findRepoRoot();
+    return root ? path.join(root, 'services', 'qwen-tts') : undefined;
   }
 
   get codexReadinessTimeoutMs(): number {

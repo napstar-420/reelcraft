@@ -15,6 +15,7 @@ from .catalog import CATALOG, CatalogModel
 
 HF = "https://huggingface.co"
 MARKER = ".reelcraft-complete.json"
+LINKS = "links.json"
 CHUNK = 1024 * 1024
 #: Room left on the disk after the download.
 DISK_MARGIN = 1024**3
@@ -61,8 +62,14 @@ class ModelStore:
         self._progress: dict[str, Progress] = {}
         self._thread: threading.Thread | None = None
 
-    def path(self, model_id: str) -> Path:
+    def managed_path(self, model_id: str) -> Path:
+        """Where this service downloads the model to."""
         return self.root / model_id.replace("/", "--")
+
+    def path(self, model_id: str) -> Path:
+        """Where the model's files are: a folder the user pointed us at, else the managed one."""
+        linked = self._links().get(model_id)
+        return Path(linked["path"]) if linked else self.managed_path(model_id)
 
     def model(self, model_id: str) -> CatalogModel:
         try:
@@ -70,8 +77,70 @@ class ModelStore:
         except KeyError:
             raise StoreError(404, f'There is no model "{model_id}".') from None
 
+    # -- Model files the user already has --------------------------------------------------
+    # A link records a folder's path in links.json. Nothing is copied, symlinked or written into
+    # the folder, and deleting a linked model forgets the link and never touches the folder.
+
+    def _links(self) -> dict:
+        try:
+            links = json.loads((self.root / LINKS).read_text())
+            return links if isinstance(links, dict) else {}
+        except (OSError, ValueError):
+            return {}
+
+    def _save_links(self, links: dict) -> None:
+        self.root.mkdir(parents=True, exist_ok=True)
+        (self.root / LINKS).write_text(json.dumps(links, indent=2))
+
+    @staticmethod
+    def problems(m: CatalogModel, folder: Path) -> list[str]:
+        """What is wrong with a folder of model files: a missing file, or one of the wrong size."""
+        found = []
+        for name, size in m.files:
+            file = folder / name
+            if not file.is_file():
+                found.append(f"{name} is missing")
+            elif file.stat().st_size != size:
+                found.append(f"{name} is {file.stat().st_size} bytes, expected {size}")
+        return found
+
+    def link(self, model_id: str, folder: str) -> None:
+        m = self.model(model_id)
+        with self._lock:
+            p = self._progress.get(model_id)
+            if p and p.state == "downloading":
+                raise StoreError(409, "This model is downloading. Cancel the download first.")
+        path = Path(folder).expanduser()
+        if not path.is_absolute():
+            raise StoreError(400, "Give the full path of the folder, starting from the root of the disk.")
+        if not path.is_dir():
+            raise StoreError(400, f"There is no folder at {path}.")
+        found = self.problems(m, path)
+        if found:
+            shown = "; ".join(found[:3]) + (f"; and {len(found) - 3} more" if len(found) > 3 else "")
+            raise StoreError(
+                400, f"{path} is not a complete {m.label} folder (revision {m.revision[:7]}): {shown}."
+            )
+        links = self._links()
+        links[model_id] = {"path": str(path), "revision": m.revision}
+        self._save_links(links)
+        with self._lock:
+            self._progress.pop(model_id, None)
+
+    def _unlink(self, model_id: str) -> bool:
+        links = self._links()
+        if model_id not in links:
+            return False
+        del links[model_id]
+        self._save_links(links)
+        return True
+
     def is_ready(self, model_id: str) -> bool:
-        marker = self.path(model_id) / MARKER
+        linked = self._links().get(model_id)
+        if linked:
+            m = self.model(model_id)
+            return linked.get("revision") == m.revision and not self.problems(m, Path(linked["path"]))
+        marker = self.managed_path(model_id) / MARKER
         try:
             return json.loads(marker.read_text())["revision"] == self.model(model_id).revision
         except (OSError, ValueError, KeyError):
@@ -98,6 +167,7 @@ class ModelStore:
             "license": m.license,
             "instructions": m.instructions,
             "freeBytes": self.free_bytes(),
+            "linkedPath": (self._links().get(model_id) or {}).get("path"),
         }
 
     def free_bytes(self) -> int:
@@ -123,6 +193,9 @@ class ModelStore:
         m = self.model(model_id)
         if self.is_ready(model_id):
             return
+        # The user chose to download: a link to a folder that no longer checks out would send the
+        # model to the wrong place, so forget it first.
+        self._unlink(model_id)
         with self._lock:
             if any(p.state == "downloading" for p in self._progress.values()):
                 raise StoreError(409, "Another model is downloading. Wait for it to finish or cancel it.")
@@ -131,9 +204,9 @@ class ModelStore:
         total = sum(f.size for f in files)
         self.root.mkdir(parents=True, exist_ok=True)
         have = sum(
-            (self.path(model_id) / (f.path + ".part")).stat().st_size
+            (self.managed_path(model_id) / (f.path + ".part")).stat().st_size
             for f in files
-            if (self.path(model_id) / (f.path + ".part")).exists()
+            if (self.managed_path(model_id) / (f.path + ".part")).exists()
         )
         free = shutil.disk_usage(self.root).free
         if free < total - have + DISK_MARGIN:
@@ -166,14 +239,20 @@ class ModelStore:
             if p and p.state == "downloading":
                 raise StoreError(409, "This model is downloading. Cancel the download first.")
             self._progress.pop(model_id, None)
-        shutil.rmtree(self.path(model_id), ignore_errors=True)
+        if self._unlink(model_id):
+            return  # a folder the user pointed us at is theirs: forget it, never delete it
+        managed = self.managed_path(model_id)
+        if managed.is_symlink():
+            managed.unlink()  # a link made by hand: remove the link, never what it points at
+        else:
+            shutil.rmtree(managed, ignore_errors=True)
 
     def wait(self) -> None:
         if self._thread:
             self._thread.join()
 
     def _run(self, client: httpx.Client, m: CatalogModel, files: list[RepoFile], p: Progress) -> None:
-        folder = self.path(m.id)
+        folder = self.managed_path(m.id)
         done = 0
         try:
             for f in files:
