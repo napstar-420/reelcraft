@@ -2,6 +2,8 @@
 
 import asyncio
 import contextlib
+import os
+import threading
 from typing import Literal
 
 from fastapi import FastAPI, Request
@@ -35,6 +37,8 @@ def create_app(store: ModelStore, engine: Engine) -> FastAPI:
                 await asyncio.sleep(60)
                 await asyncio.to_thread(engine.unload_if_idle)
 
+        # Work out the device in the background: importing torch is slow and /health must answer at once.
+        threading.Thread(target=engine.probe, daemon=True).start()
         task = asyncio.create_task(sweep())
         yield
         task.cancel()
@@ -48,10 +52,14 @@ def create_app(store: ModelStore, engine: Engine) -> FastAPI:
     @app.get("/health")
     def health():
         return {
+            # `service` and `api` let the Reelcraft API tell this service from something else on the port.
             "status": "ok",
-            "device": engine.device,
+            "service": "reelcraft-qwen-tts",
+            "api": 1,
+            "pid": os.getpid(),
             "loadedModel": engine.loaded,
             "modelsDir": str(store.root),
+            **engine.health(),
         }
 
     @app.get("/v1/models")

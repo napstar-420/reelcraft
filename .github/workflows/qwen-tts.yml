@@ -81,5 +81,14 @@ jobs:
             if curl -sf http://127.0.0.1:8191/health -o health.json; then break; fi
             sleep 1
           done
+          # The device is worked out on a background thread after startup: wait for it.
+          for i in $(seq 1 120); do
+            curl -sf http://127.0.0.1:8191/health -o health.json
+            if grep -q '"ready":true' health.json; then break; fi
+            sleep 1
+          done
           cat health.json
-          grep -q '"status":"ok"' health.json || { cat service.log; exit 1; }
+          grep -q '"service":"reelcraft-qwen-tts"' health.json || { cat service.log; exit 1; }
+          grep -q '"ready":true' health.json || { cat service.log; exit 1; }
+          # Hosted runners have no GPU we can rely on, so only require that a device was chosen.
+          grep -Eq '"device":"(cpu|mps|cuda:0)"' health.json || { cat service.log; exit 1; }

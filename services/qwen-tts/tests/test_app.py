@@ -8,10 +8,15 @@ from qwen_tts_service.app import create_app
 
 class StubEngine:
     loaded = None
-    device = "cpu"
 
     def __init__(self):
         self.calls = []
+
+    def health(self):
+        return {"device": "cpu", "deviceLabel": "CPU", "reason": "No compatible GPU found", "ready": True}
+
+    def probe(self):
+        pass
 
     def synthesize(self, model_id, text, speaker, language, instructions):
         self.calls.append((model_id, text, speaker, language, instructions))
@@ -44,7 +49,14 @@ def test_lists_both_models_and_the_voices(client):
     assert [m["id"] for m in models] == [SMALL, BIG]
     assert {m["state"] for m in models} == {"not_downloaded"}
     assert "vivian" in client.get("/v1/audio/voices").json()["voices"]
-    assert client.get("/health").json()["status"] == "ok"
+
+
+def test_health_identifies_the_service_and_reports_the_device(client):
+    health = client.get("/health").json()
+    assert health["status"] == "ok" and health["service"] == "reelcraft-qwen-tts"
+    assert health["api"] == 1 and isinstance(health["pid"], int)
+    assert health["device"] == "cpu" and health["reason"] == "No compatible GPU found"
+    assert health["ready"] is True and health["loadedModel"] is None
 
 
 def test_speech_needs_the_model_to_be_downloaded(client):
