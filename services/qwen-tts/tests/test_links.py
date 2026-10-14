@@ -62,10 +62,14 @@ def test_a_missing_file_is_refused_and_named(store, folder):
         store.link(SMALL, str(folder))
 
 
-@pytest.mark.parametrize("path,message", [("relative/dir", "full path"), ("/no/such/dir", "no folder")])
-def test_a_path_that_is_not_a_real_folder_is_refused(store, path, message):
-    with pytest.raises(StoreError, match=message):
-        store.link(SMALL, path)
+def test_a_relative_path_is_refused(store):
+    with pytest.raises(StoreError, match="full path"):
+        store.link(SMALL, "relative/dir")
+
+
+def test_a_full_path_that_is_not_a_folder_is_refused(store, tmp_path):
+    with pytest.raises(StoreError, match="no folder"):
+        store.link(SMALL, str(tmp_path / "missing"))
 
 
 def test_deleting_a_linked_model_forgets_the_link_and_keeps_the_folder(store, folder):
