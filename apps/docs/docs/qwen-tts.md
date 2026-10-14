@@ -31,7 +31,7 @@ The first start installs the packages, which takes a few minutes. Leave it runni
 Reelcraft. It listens on `http://127.0.0.1:8091`, which is where Reelcraft looks.
 
 If you run Reelcraft from the Docker image, there is no Reelcraft folder. Download the
-`services/qwen-tts` folder from the repository, run `uv run qwen-tts-service` in it, then set the
+`services/qwen-tts` folder from the repository, run `uv run --extra engine qwen-tts-service` in it, then set the
 service address in **Settings → Qwen3-TTS (local)** to `http://host.docker.internal:8091`. If the
 container still can't reach it, start the service with `QWEN_TTS_HOST=0.0.0.0`. The service has no
 login, so only do that on a network you trust.

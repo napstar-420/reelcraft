@@ -1142,9 +1142,13 @@ dependencies = [
     { name = "fastapi" },
     { name = "httpx" },
     { name = "numpy" },
-    { name = "qwen-tts" },
     { name = "soundfile" },
     { name = "uvicorn" },
+]
+
+[package.optional-dependencies]
+engine = [
+    { name = "qwen-tts" },
 ]
 
 [package.dev-dependencies]
@@ -1157,10 +1161,11 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.115" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "numpy" },
-    { name = "qwen-tts" },
+    { name = "qwen-tts", marker = "extra == 'engine'" },
     { name = "soundfile", specifier = ">=0.12" },
     { name = "uvicorn", specifier = ">=0.32" },
 ]
+provides-extras = ["engine"]
 
 [package.metadata.requires-dev]
 dev = [{ name = "pytest", specifier = ">=8" }]

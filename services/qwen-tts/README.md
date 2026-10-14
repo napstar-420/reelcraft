@@ -7,10 +7,16 @@ a model (from a pinned Hugging Face revision) the first time you choose one.
 ```bash
 pnpm tts                      # from the repo root
 # or
-uv run qwen-tts-service       # from this folder
+uv run --extra engine qwen-tts-service       # from this folder
 ```
 
-It listens on `http://127.0.0.1:8091`. Tests: `uv run pytest`.
+It listens on `http://127.0.0.1:8091`. Tests: `uv run pytest` (the heavy model packages are an optional
+`engine` extra, pinned in `constraints.txt`, so tests install only the light dependencies). After changing
+dependencies, regenerate the pins:
+
+```bash
+uv lock && uv export --frozen --no-dev --extra engine --no-emit-project --no-hashes -o constraints.txt
+```
 
 | Environment variable    | Default                               |
 | ----------------------- | ------------------------------------- |

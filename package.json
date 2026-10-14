@@ -20,7 +20,7 @@
     "db:migrate": "pnpm --filter @reelcraft/api db:migrate",
     "db:studio": "pnpm --filter @reelcraft/api db:studio",
     "smoke": "pnpm --filter @reelcraft/api smoke",
-    "tts": "uv run --directory services/qwen-tts qwen-tts-service"
+    "tts": "uv run --directory services/qwen-tts --extra engine qwen-tts-service"
   },
   "devDependencies": {
     "typescript-eslint": "^8.18.0",
