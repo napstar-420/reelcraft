@@ -278,8 +278,9 @@ export class StageRunnerService {
    * insert. On a unique-violation (a replayed Inngest step recomputing the
    * same attemptNo), re-select the existing row instead of erroring — this
    * is what makes the step idempotent without a separate locking mechanism,
-   * given `run.orchestrate`'s `concurrency: {limit:1, key:runId}` guarantees
-   * no concurrent inserts for the same run.
+   * given each stage execution is driven by one `stage.execute` at a time
+   * (stages of a run may run in parallel, but never the same stage twice), so
+   * no two inserts race for the same execution's `attemptNo`.
    */
   async beginAttempt(ctx: {
     runId: string;
