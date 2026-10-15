@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   BUILTIN_AUDIO,
+  BUILTIN_AUDIO_PREFIX,
   isBuiltinAudioHandle,
   builtinAudioHandle,
   builtinAudioIdOf,
@@ -39,6 +40,14 @@ describe('sound effect catalogue', () => {
       const seconds = bytes / (rate * channels * (bits / 8));
       expect(Math.abs(seconds - sfx.durationSec)).toBeLessThan(0.05);
     }
+  });
+
+  it('uses the same handle prefix as the composition, which cannot import it', () => {
+    const source = readFileSync(
+      join(__dirname, '../../timeline-composition/src/graphic/builtin-audio.ts'),
+      'utf8',
+    );
+    expect(source).toContain(`const PREFIX = '${BUILTIN_AUDIO_PREFIX}'`);
   });
 
   it('reads and writes handles', () => {

@@ -22,7 +22,13 @@ const AUDIO_PROBE: Probe = {
 };
 
 const SCRIPT = 'First comes the cue. Then the reward.';
-const base = { config: {}, slots: {}, context: {}, checks: [], retryLimit: 0 } as const;
+const base: Pick<StageDef, 'config' | 'slots' | 'context' | 'checks' | 'retryLimit'> = {
+  config: {},
+  slots: {},
+  context: {},
+  checks: [],
+  retryLimit: 0,
+};
 
 const planStage = (plan: unknown): StageDef => ({
   ...base,
@@ -59,7 +65,11 @@ async function execute(ctx: Awaited<ReturnType<typeof runGraph>>, options: { sto
     defaults: {},
     budget: { runCapUsd: 10 },
   });
-  expect(version.validation.filter((issue) => issue.severity === 'error')).toEqual([]);
+  expect(
+    (version.validation as Array<{ severity: string }>).filter(
+      (issue) => issue.severity === 'error',
+    ),
+  ).toEqual([]);
   const created = await ctx.runs.create({
     channelId: ctx.channel.id,
     blueprintVersionId: version.id,
