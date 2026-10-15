@@ -25,6 +25,8 @@ interface MediaConfig {
   count?: number;
   /** Generate Image only: what to do when fewer images come back than asked for. */
   onShortfall?: 'warn' | 'fail';
+  /** Sound Effect and Music only: how long the sound is, in seconds. */
+  durationSec?: number;
 }
 
 function isImageList(output: unknown): output is ImageListOutput {
@@ -277,6 +279,80 @@ export class AudioSpeechCapability extends ProviderMediaCapability {
       slots: { ...ctx.slots, text: unwrapText('text', ctx.slots.text) },
     });
   }
+}
+
+const soundConfigSchema = (range: { min: number; max: number; fallback: number }): JsonSchema => ({
+  type: 'object',
+  properties: {
+    durationSec: {
+      type: 'number',
+      minimum: range.min,
+      maximum: range.max,
+      description: `How long the sound is, in seconds (${range.min} to ${range.max}); default ${range.fallback}`,
+    },
+  },
+});
+
+/** Sound effects and music: one audio file made from a description. */
+abstract class SoundCapability extends ProviderMediaCapability {
+  readonly modality = 'audio';
+  readonly outputKind = 'media.audio' as const;
+  protected abstract readonly soundKind: 'sfx' | 'music';
+  protected abstract readonly range: { min: number; max: number; fallback: number };
+  constructor(providers: ProviderRegistry) {
+    super(providers);
+  }
+  validate(cfg: MediaConfig, stage: StageDef): ValidationIssue[] {
+    const issues: ValidationIssue[] = [];
+    if (!stage.instructions?.template?.trim()) {
+      issues.push({
+        path: 'instructions.template',
+        message: `describe the ${this.soundKind === 'sfx' ? 'sound' : 'music'} you want in the stage instructions`,
+        severity: 'error',
+      });
+    }
+    const sec = cfg?.durationSec;
+    if (sec !== undefined && !(sec >= this.range.min && sec <= this.range.max)) {
+      issues.push({
+        path: 'config.durationSec',
+        message: `Length must be ${this.range.min} to ${this.range.max} seconds`,
+        severity: 'error',
+      });
+    }
+    return issues;
+  }
+  protected override extraParams(ctx: ExecCtx<MediaConfig>): Record<string, unknown> {
+    return {
+      __soundKind: this.soundKind,
+      durationSec: ctx.config.durationSec ?? this.range.fallback,
+    };
+  }
+}
+
+@Capability('audio.sfx')
+@Injectable()
+export class AudioSfxCapability extends SoundCapability {
+  constructor(providers: ProviderRegistry) {
+    super(providers);
+  }
+  readonly label = 'Generate Sound Effect';
+  readonly description = 'Make a short sound effect from a description.';
+  protected readonly soundKind = 'sfx' as const;
+  protected readonly range = { min: 0.5, max: 22, fallback: 2 };
+  override readonly configSchema = soundConfigSchema(this.range);
+}
+
+@Capability('audio.music')
+@Injectable()
+export class AudioMusicCapability extends SoundCapability {
+  constructor(providers: ProviderRegistry) {
+    super(providers);
+  }
+  readonly label = 'Generate Music';
+  readonly description = 'Make background music from a description.';
+  protected readonly soundKind = 'music' as const;
+  protected readonly range = { min: 3, max: 600, fallback: 30 };
+  override readonly configSchema = soundConfigSchema(this.range);
 }
 
 @Capability('media.analyze')

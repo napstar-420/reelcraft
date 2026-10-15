@@ -29,6 +29,8 @@ interface SceneCompileConfig {
   hand?: 'none' | 'marker' | 'pencil';
   captions?: boolean;
   captionStyle?: string;
+  sfx?: boolean;
+  musicVolume?: number;
 }
 
 type Payload =
@@ -92,6 +94,17 @@ export class SceneCompileCapability implements CapabilityImpl<SceneCompileConfig
         description: 'Show the voice-over as captions (needs word timings)',
       },
       captionStyle: { type: 'string', description: 'A caption template id; default caption.clean' },
+      sfx: {
+        type: 'boolean',
+        description:
+          'Add built-in sound effects (pencil, pop, whoosh) for drawings and camera moves; default off',
+      },
+      musicVolume: {
+        type: 'number',
+        minimum: 0,
+        maximum: 1,
+        description: 'Background music loudness against the voice-over; default 0.15',
+      },
     },
   };
 
@@ -102,6 +115,7 @@ export class SceneCompileCapability implements CapabilityImpl<SceneCompileConfig
       { name: 'scenes', accepts: [{ type: 'object' }], required: true, cardinality: 'one' },
       { name: 'voice', accepts: ['media.audio'], required: false, cardinality: 'one' },
       { name: 'timing', accepts: [{ type: 'object' }], required: false, cardinality: 'one' },
+      { name: 'music', accepts: ['media.audio'], required: false, cardinality: 'one' },
       { name: 'assets', accepts: [{ type: 'object' }], required: false, cardinality: 'one' },
     ];
   }
@@ -190,6 +204,7 @@ export class SceneCompileCapability implements CapabilityImpl<SceneCompileConfig
     }
 
     const voice = one(ctx.slots.voice);
+    const music = one(ctx.slots.music);
     const timingValue = one(ctx.slots.timing);
     const timing = timingValue ? TimingMap.safeParse(timingValue) : undefined;
     if (timing && !timing.success)
@@ -253,6 +268,15 @@ export class SceneCompileCapability implements CapabilityImpl<SceneCompileConfig
         assets,
         registry: this.registry,
         hand: config.hand ?? 'marker',
+        sfx: config.sfx === true,
+        music:
+          typeof music?.handle === 'string'
+            ? {
+                handle: music.handle,
+                durationSec: typeof music.durationSec === 'number' ? music.durationSec : undefined,
+                volume: config.musicVolume,
+              }
+            : undefined,
       });
       return {
         timeline: result.timeline,

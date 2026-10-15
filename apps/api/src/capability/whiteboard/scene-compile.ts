@@ -19,6 +19,7 @@ import {
   type SceneLayout,
   type Size,
 } from './scene-layout';
+import { placeSfx } from './scene-sfx';
 import { alignScenes, findCue, spokenWords, type SceneRange } from './scene-timing';
 
 export type SketchItem = Extract<TimelineItem, { type: 'sketch' }>;
@@ -50,6 +51,11 @@ export interface CompileInput {
   assets: ReadonlyMap<string, VectorAsset>;
   registry: WhiteboardAssetRegistry;
   hand: 'none' | 'marker' | 'pencil';
+  /** Add built-in sound effects for drawings and camera moves. */
+  sfx?: boolean | undefined;
+  /** Background music, quiet under the voice-over. */
+  music?:
+    { handle: string; durationSec?: number | undefined; volume?: number | undefined } | undefined;
 }
 
 export interface CompileResult {
@@ -168,6 +174,11 @@ export function compileScenes(input: CompileInput): CompileResult {
       ],
     });
   }
+  if (input.music) tracks.push(musicTrack(input.music, endAll, !!input.voice));
+  if (input.sfx) {
+    const sounds = placeSfx(items, { keys });
+    if (sounds.length) tracks.push({ id: 'sfx', type: 'audio', items: sounds });
+  }
   tracks.push({ id: 'drawings', type: 'overlay', items });
   if (input.captions) {
     tracks.push({
@@ -209,6 +220,44 @@ export function compileScenes(input: CompileInput): CompileResult {
     })),
   };
 }
+
+/** Background music for the whole video: repeated if it is shorter, faded out at the end, and
+ * turned down under the voice-over. */
+function musicTrack(
+  music: NonNullable<CompileInput['music']>,
+  endSec: number,
+  hasVoice: boolean,
+): Timeline['tracks'][number] {
+  const volume = music.volume ?? MUSIC_VOLUME;
+  const length = music.durationSec && music.durationSec > 0.5 ? music.durationSec : undefined;
+  const items: TimelineItem[] = [];
+  if (!length) {
+    items.push({
+      type: 'media',
+      handle: music.handle,
+      startSec: 0,
+      durationSec: round(endSec),
+      volume,
+      fadeOutSec: 1.5,
+    });
+  } else {
+    for (let at = 0; at < endSec - 0.05 && items.length < MAX_MUSIC_REPEATS; at += length) {
+      const last = at + length >= endSec - 0.05;
+      items.push({
+        type: 'media',
+        handle: music.handle,
+        startSec: round(at),
+        durationSec: round(Math.min(length, endSec - at)),
+        volume,
+        ...(last && { fadeOutSec: Math.min(1.5, round(endSec - at)) }),
+      });
+    }
+  }
+  return { id: 'music', type: 'audio', ...(hasVoice && { duckUnder: 'voice' }), items };
+}
+
+const MUSIC_VOLUME = 0.15;
+const MAX_MUSIC_REPEATS = 40;
 
 const roundView = (view: { cx: number; cy: number; zoom: number }) => ({
   cx: Math.round(view.cx),

@@ -14,7 +14,7 @@ import { createTestDb, type TestDb } from '../support/test-db';
 const AUDIO_PROBE: Probe = {
   container: 'wav',
   durationSec: 12,
-  streams: [{ type: 'audio', codec: 'pcm_u8', sampleRate: 8000, channels: 1 }],
+  streams: [{ type: 'audio', codec: 'pcm_u8', sampleRate: 8000 }],
 };
 
 const SCRIPT =

@@ -57,6 +57,7 @@ describe('SceneCompileCapability', () => {
       ['scenes', true],
       ['voice', false],
       ['timing', false],
+      ['music', false],
       ['assets', false],
     ]);
     expect(capability.allowedOutputs()).toEqual(['timeline']);
@@ -76,6 +77,24 @@ describe('SceneCompileCapability', () => {
     expect(timeline.canvas).toMatchObject({ width: 1920, height: 1080, fps: 30 });
     expect(timeline.tracks.map((track) => track.id)).toEqual(['voice', 'drawings']);
     expect(await capability.estimateCost()).toMatchObject({ expectedUsd: 0, ceilingUsd: 0 });
+  });
+
+  it('adds sound effects and the music it is given', async () => {
+    const out = Timeline.parse(
+      (
+        await run(
+          {
+            scenes: plan,
+            voice: { handle: 'artifact:vo', durationSec: timing.durationSec },
+            music: { handle: 'artifact:song', durationSec: 12 },
+          },
+          { sfx: true, musicVolume: 0.2 },
+        )
+      ).output,
+    );
+    expect(out.tracks.map((track) => track.id)).toEqual(['voice', 'music', 'sfx', 'drawings']);
+    const music = out.tracks.find((track) => track.id === 'music')!;
+    expect(music.items[0]).toMatchObject({ handle: 'artifact:song', volume: 0.2 });
   });
 
   it('follows the channel format, and its own settings over it', async () => {

@@ -38,6 +38,12 @@ const timeline = {
   },
   tracks: [
     {
+      // Built-in sounds need no resources: they ship with the composition.
+      id: 'sfx',
+      type: 'audio',
+      items: [{ type: 'media', handle: 'sfx:whoosh', startSec: 2, durationSec: 0.65, volume: 1 }],
+    },
+    {
       id: 'draw',
       type: 'overlay',
       items: [
@@ -146,6 +152,28 @@ function inkAndPaper(rgb: Buffer): { ink: number; paper: number } {
 
 const sha = (buffer: Buffer) => createHash('sha256').update(buffer).digest('hex');
 
+/** The loudest sample in a stretch of the video's audio, in dB (very negative for silence). */
+async function peakDb(video: string, startSec: number, lengthSec: number): Promise<number> {
+  const { stderr } = await exec('ffmpeg', [
+    '-v',
+    'info',
+    '-ss',
+    String(startSec),
+    '-t',
+    String(lengthSec),
+    '-i',
+    video,
+    '-vn',
+    '-af',
+    'volumedetect',
+    '-f',
+    'null',
+    '-',
+  ]);
+  const peak = /max_volume: (-?[\d.]+|-inf) dB/.exec(stderr)?.[1];
+  return peak === undefined || peak === '-inf' ? -120 : Number(peak);
+}
+
 async function render(dir: string, name: string): Promise<string> {
   const output = path.join(dir, name);
   await exec(
@@ -200,6 +228,11 @@ async function main() {
   const before = sha(await frame(first, 1.9));
   const after = sha(await frame(first, 4.0));
   assert(before !== after, 'The camera did not move');
+  // The built-in sound plays where it was put, and the rest is silent.
+  const during = await peakDb(first, 2, 0.65);
+  const silent = await peakDb(first, 4.2, 1);
+  assert(during > -30, `The built-in sound is missing or silent (peak ${during} dB)`);
+  assert(silent < -60, `Audio where there should be none (peak ${silent} dB)`);
   // The same timeline renders to the same pixels.
   for (const sec of [0.9, 1.5, 3.0, 5.0]) {
     const one = sha(await frame(first, sec));

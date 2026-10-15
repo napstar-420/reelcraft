@@ -250,7 +250,7 @@ QC block shape: \`{ criteria, threshold, model: { provider, modelId, params }, i
     title: 'Proven blueprint shapes',
     body: `Start from the closest recipe, then change it to the request. They all meet the quality bar (system prompts, full data schemas, a check, qc or approval on every model stage, one iterating stage instead of copies, approval before paid media and on the final video) and validate. Model ids are left to the channel/blueprint defaults (the models topic); the QC judge in these examples is the free \`fake\` provider, a placeholder: replace it with a real model from \`list_models\` that suits the job (a judge for images needs \`media.image\` in its \`inputKinds\`).
 
-Reelcraft has no lip-sync or avatar video, no music generation and no stock footage: a "talking head" is not possible (use voice-over over pictures), and music has to come from the user (an asset bound as the audio of the assembly). Say so rather than faking it.
+Reelcraft has no lip-sync or avatar video and no stock footage: a "talking head" is not possible (use voice-over over pictures). Music and sound effects come from a Generate Music or Generate Sound Effect stage (ElevenLabs, described in Instructions), from the user (an asset), or from Automate Browser downloading a free file; built-in sound effects are named \`sfx:pencil\`, \`sfx:pop\`, \`sfx:whoosh\`, \`sfx:ding\` and so on, and Compile Scenes adds them with \`sfx: true\` and takes music in its \`music\` slot. Say so rather than faking it.
 
 **1. Voice-over reel (captions on a plain background).** Script (text, word_count, QC on hook/clarity/ending) → voice (audio.speech, wpm check, approval) → word timings (media.analyze, full schema) → edit plan (timeline output, QC) → render (timeline.render, duration check, approval). Choose it for facts, tips, quotes, news.
 \`\`\`json
@@ -363,7 +363,7 @@ ${renderTroubleshooting()}`,
 - **Blueprint** tab: name, description, tags, inputs (run inputs), the Character role, defaults and budget.
 - **Save** creates a version (its menu can start a new major); **Versions** lists them; the toolbar badge **Runnable** with a warning count comes from the validator. **Run** opens the run dialog (**Live run** or **Dry run**, budget cap, inputs, **Run up to** to stop after a stage). A **Dry run** uses the free fake provider.
 - **Assistant** tab: **Auto-apply** (proposals go straight to the canvas, with **Undo**), **Apply** (manual mode), **Start new chat**, the model and effort pickers.
-- Stage types by label: Generate Text, Generate Image, Generate Video, Generate Video with Flow, Generate Speech, Analyze Media, Concatenate Video, Render Timeline, Export Subtitles, Human Input, Human Timeline Edit, Automate Browser, Compile Scenes, Prepare Drawings, Preview Drawings, Publish (Stub). \`list_capabilities\` has the exact labels.
+- Stage types by label: Generate Text, Generate Image, Generate Video, Generate Video with Flow, Generate Speech, Generate Sound Effect, Generate Music, Analyze Media, Concatenate Video, Render Timeline, Export Subtitles, Human Input, Human Timeline Edit, Automate Browser, Compile Scenes, Prepare Drawings, Preview Drawings, Publish (Stub). \`list_capabilities\` has the exact labels.
 - **Approve** / **Reject** (with a note) are the user's actions on a paused run; you cannot do them.`,
   },
 

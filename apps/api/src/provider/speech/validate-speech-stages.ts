@@ -17,7 +17,13 @@ export async function validateSpeechStages(
 ): Promise<ValidationIssue[]> {
   const issues: ValidationIssue[] = [];
   for (const stage of graph) {
-    if (stage.capability !== 'audio.speech') continue;
+    const soundKind =
+      stage.capability === 'audio.sfx'
+        ? 'sfx'
+        : stage.capability === 'audio.music'
+          ? 'music'
+          : undefined;
+    if (stage.capability !== 'audio.speech' && !soundKind) continue;
     const pin = pins[stage.key]?.model;
     if (!pin?.provider || !pin.modelId || pin.provider === 'fake') continue;
     const path = `stages.${stage.key}.model`;
@@ -28,6 +34,16 @@ export async function validateSpeechStages(
         issues.push({
           path: `${path}.modelId`,
           message: `Deepgram has no speech model "${pin.modelId}". Choose Flux TTS, Aura-2 or Aura.`,
+          severity: 'error',
+        });
+      }
+      continue;
+    }
+    if (soundKind) {
+      if (model.capabilities.sound?.kind !== soundKind) {
+        issues.push({
+          path: `${path}.modelId`,
+          message: `"${model.label}" can't make ${soundKind === 'sfx' ? 'sound effects' : 'music'}. Choose a ${soundKind === 'sfx' ? 'sound effect' : 'music'} model.`,
           severity: 'error',
         });
       }

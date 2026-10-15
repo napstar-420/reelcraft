@@ -15,6 +15,8 @@ import { TimelineRenderCapability, VideoConcatCapability } from './impls/assembl
 import {
   ImageGenerateCapability,
   VideoGenerateCapability,
+  AudioMusicCapability,
+  AudioSfxCapability,
   AudioSpeechCapability,
   MediaAnalyzeCapability,
 } from './impls/media-generate.capability';
@@ -45,6 +47,8 @@ import { WhiteboardAssetRegistry } from './whiteboard/asset.registry';
     PublishStub,
     ImageGenerateCapability,
     VideoGenerateCapability,
+    AudioMusicCapability,
+    AudioSfxCapability,
     AudioSpeechCapability,
     MediaAnalyzeCapability,
     BrowserAutomateCapability,

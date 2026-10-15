@@ -553,7 +553,13 @@ export class BlueprintService {
     dto: CreateBlueprintVersionDto,
     channelDefaults: ConfigLayer,
   ): Promise<ValidationIssue[]> {
-    if (!dto.graph.some((stage) => stage.capability === 'audio.speech')) return [];
+    if (
+      !dto.graph.some((stage) =>
+        ['audio.speech', 'audio.sfx', 'audio.music'].includes(stage.capability),
+      )
+    ) {
+      return [];
+    }
     const config = this.configResolver.resolveRunConfig({
       graph: dto.graph,
       engine: engineDefaults(this.engineConfig),

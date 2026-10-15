@@ -26,6 +26,9 @@ A `timeline` output, for [Render Timeline](./render-timeline.md). See
   words take to read. With ElevenLabs, turn on **Word timings** and write them to memory with a
   `writes` entry at the path `timing`, then bind that memory here. Or use
   [Analyze Media](./analyze-media.md).
+- **`music`** (optional): background music, from [Generate Music](./generate-music.md), an uploaded song or
+  [Automate Browser](./automate-browser.md). It plays quietly under the voice-over, gets quieter while the
+  voice speaks, repeats if it is shorter than the video and fades out at the end.
 - **`assets`** (optional): drawings made for this video, from [Prepare Drawings](./prepare-drawings.md). A
   plan can name a built-in drawing, or one made for the run.
 
@@ -65,6 +68,10 @@ Under **Config**:
 - **theme**: `whiteboard` (default, dark ink on white paper), `blueprint` (blue ink on grid paper) or
   `chalkboard` (chalk on a dark board).
 - **hand**: `marker` (default), `pencil` or `none`: a pen that follows the line as it is drawn.
+- **sfx**: add Reelcraft's [built-in sound effects](../video/timelines.md#sound-effects), a pencil scratch
+  as a line is drawn, a marker squeak as words are written, a pop, a swipe for arrows, a ding for results and
+  a whoosh when the camera moves. Off by default.
+- **musicVolume**: how loud the music is against the voice-over, 0 to 1 (default 0.15).
 - **captions**: show the voice-over as captions. Needs word timings.
 - **captionStyle**: a [caption template](../video/timeline-editor.md#captions). Default **Clean**.
 

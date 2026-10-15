@@ -4,6 +4,7 @@ import {
   Probe,
   StageDef,
   Timeline,
+  isSfxHandle,
   type Ref,
   type TimelineCheckResponseDto,
   type TimelineResource,
@@ -230,7 +231,7 @@ export class TimelineEditorService {
             : item.type === 'media'
               ? item.handle
               : undefined;
-        if (handle && !allowedHandles.has(handle)) {
+        if (handle && !isSfxHandle(handle) && !allowedHandles.has(handle)) {
           throw new ConflictException(`Timeline handle "${handle}" is not available to this stage`);
         }
         if ((item.type === 'text' || item.type === 'captions') && !this.styles.has(item.styleId)) {

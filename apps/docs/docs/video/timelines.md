@@ -129,6 +129,30 @@ A timeline that uses a world, camera, theme, drawing or reveal is saved as **ver
 refuses to open it, instead of quietly dropping the drawings. Timelines that use none of these stay
 version 1.
 
+### Sound effects
+
+A media item can name a **built-in sound** instead of a file: `sfx:pop`. These sounds ship with Reelcraft, so
+they need no stage, no upload and no cost, and they play in the editor and in every render.
+
+| Name      | Sound                                  |
+| --------- | -------------------------------------- |
+| `pencil`  | Short scratches of a pencil on paper   |
+| `marker`  | The squeak of a marker writing         |
+| `pop`     | A soft bubble pop                      |
+| `whoosh`  | Air moving past, rising and fading     |
+| `paper`   | Paper being moved                      |
+| `click`   | A small click                          |
+| `ding`    | A bright bell ding, for a right answer |
+| `tick`    | A clock tick                           |
+| `swipe`   | A quick swipe, high to low             |
+| `sparkle` | A glittering run of high notes         |
+| `thud`    | A soft thump, for something landing    |
+| `chime`   | A gentle two-note chime, for a result  |
+
+[Compile Scenes](../stage-types/compile-scenes.md) places them for you when **sfx** is on, at most one every
+quarter second, quietly under the voice. You can make others with
+[Generate Sound Effect](../stage-types/generate-sound-effect.md).
+
 ## Ducking
 
 An audio track can be set to **duck under** another track: while the other track has something playing, its

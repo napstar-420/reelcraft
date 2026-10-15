@@ -1,5 +1,6 @@
 import React from 'react';
 import { Audio, Video } from '@remotion/media';
+import { bundledSfx } from './sketch/sfx-assets';
 import {
   AbsoluteFill,
   Composition,
@@ -91,6 +92,12 @@ export const timelineDurationSec = (
 
 /** A scheme or a leading slash means a URL; anything else is a file in the
  * render's public directory. */
+/** Built-in `sfx:<id>` handles need no resolved resource: the files ship with the composition. */
+const bundledResource = (handle: string): CompositionResource | undefined => {
+  const src = bundledSfx(handle);
+  return src ? { src, kind: 'media.audio' } : undefined;
+};
+
 const resolveSrc = (src: string) => (/^([a-z][a-z0-9+.-]*:|\/)/i.test(src) ? src : staticFile(src));
 
 const mediaDuration = (item: Extract<TimelineItem, { type: 'media' }>, fps: number) =>
@@ -419,10 +426,10 @@ export const TimelineComposition = ({
                 ) : null
               ) : item.type === 'text' ? (
                 <TextItem item={item} tokens={tokensFor(item.styleId)} />
-              ) : resources[item.handle] ? (
+              ) : (resources[item.handle] ?? bundledResource(item.handle)) ? (
                 <MediaItem
                   item={item}
-                  resource={resources[item.handle]!}
+                  resource={(resources[item.handle] ?? bundledResource(item.handle))!}
                   trackType={track.type}
                   clipIndex={index}
                   duckIntervals={

@@ -93,6 +93,8 @@ export type ModelPinEditorProps = {
    * `StageDef.model`'s own optionality. */
   clearable?: boolean;
   modality?: Modality;
+  /** The stage's capability, for stages that need a narrower model list than their modality. */
+  capability?: string;
 };
 
 /** Provider/model/version/params picker for a `PartialModelPin` (or, via
@@ -106,7 +108,7 @@ export type ModelPinEditorProps = {
  * generic string-valued key/value list rather than a generated form. */
 export function ModelPinEditor(props: ModelPinEditorProps) {
   // Speech has voices and a settings form of its own, so it has its own editor.
-  if (props.modality === 'audio') {
+  if (props.modality === 'audio' && !soundKindOf(props.capability)) {
     return (
       <SpeechEditor
         value={props.value}
@@ -118,7 +120,19 @@ export function ModelPinEditor(props: ModelPinEditorProps) {
   return <TextModelPinEditor {...props} />;
 }
 
-function TextModelPinEditor({ value, onChange, clearable = true, modality }: ModelPinEditorProps) {
+/** Sound effects and music are picked from their own models, not the speech ones. */
+function soundKindOf(capability: string | undefined): 'sfx' | 'music' | undefined {
+  return capability === 'audio.sfx' ? 'sfx' : capability === 'audio.music' ? 'music' : undefined;
+}
+
+function TextModelPinEditor({
+  value,
+  onChange,
+  clearable = true,
+  modality,
+  capability,
+}: ModelPinEditorProps) {
+  const soundKind = soundKindOf(capability);
   const providers = useQuery({
     queryKey: ['providers', modality ?? null],
     queryFn: () => api.listProviders(modality),
@@ -130,7 +144,9 @@ function TextModelPinEditor({ value, onChange, clearable = true, modality }: Mod
     enabled: !!provider,
   });
   const compatibleModels = models.data?.filter(
-    (model) => !modality || model.modalities.includes(modality),
+    (model) =>
+      (!modality || model.modalities.includes(modality)) &&
+      (!soundKind || model.capabilities?.sound?.kind === soundKind),
   );
   // Effort options come from the pinned model even while it is unavailable
   // (e.g. ChatGPT signed out), so the pin stays editable.

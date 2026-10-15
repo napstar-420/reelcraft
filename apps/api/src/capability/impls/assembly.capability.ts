@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { Injectable } from '@nestjs/common';
-import { Timeline } from '@reelcraft/shared';
+import { Timeline, isSfxHandle } from '@reelcraft/shared';
 import { timingMapOf } from '../../artifact/timing-map';
 import type {
   ComputeSpec,
@@ -230,7 +230,9 @@ export function timelineRenderSpec(p: {
   }
   const missing = p.timeline.tracks
     .flatMap((track) => track.items)
-    .filter((item) => item.type === 'media' && !resourceFiles[item.handle]);
+    .filter(
+      (item) => item.type === 'media' && !resourceFiles[item.handle] && !isSfxHandle(item.handle),
+    );
   if (missing.length)
     throw new Error(`timeline.render cannot resolve ${missing.length} media item(s)`);
   const worker = path.resolve(__dirname, '../../../../render-worker/dist/cli.js');

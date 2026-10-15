@@ -344,4 +344,52 @@ describe('compileScenes', () => {
   it('gives the same timeline every time', () => {
     expect(JSON.stringify(compileScenes(base()))).toBe(JSON.stringify(compileScenes(base())));
   });
+
+  describe('sound', () => {
+    it('adds no sound unless asked', () => {
+      const ids = compileScenes(base()).timeline.tracks.map((track) => track.id);
+      expect(ids).toEqual(['voice', 'drawings']);
+    });
+
+    it('adds built-in sound effects on their own track when asked', () => {
+      const { timeline } = compileScenes(base({ sfx: true }));
+      const track = timeline.tracks.find((candidate) => candidate.id === 'sfx')!;
+      expect(track.type).toBe('audio');
+      expect(track.items.length).toBeGreaterThan(5);
+      for (const sound of track.items) {
+        expect(sound.type === 'media' && sound.handle.startsWith('sfx:')).toBe(true);
+      }
+      expect(timeline.tracks.map((candidate) => candidate.id)).toEqual([
+        'voice',
+        'sfx',
+        'drawings',
+      ]);
+    });
+
+    it('lays background music under the voice, quiet, ducked and faded out', () => {
+      const { timeline } = compileScenes(
+        base({ music: { handle: 'artifact:music', durationSec: 8 } }),
+      );
+      const music = timeline.tracks.find((candidate) => candidate.id === 'music')!;
+      expect(music.duckUnder).toBe('voice');
+      // The song is 8 s and the video longer, so it repeats until the end.
+      expect(music.items.length).toBeGreaterThan(1);
+      const last = music.items[music.items.length - 1]!;
+      expect(last.type === 'media' && last.fadeOutSec).toBeGreaterThan(0);
+      expect(music.items.every((entry) => entry.type === 'media' && entry.volume === 0.15)).toBe(
+        true,
+      );
+      const end = timeline.tracks.find((candidate) => candidate.id === 'drawings')!.items[0]!;
+      expect(end.startSec).toBeGreaterThanOrEqual(0);
+    });
+
+    it('uses one item for music of unknown length', () => {
+      const { timeline } = compileScenes(
+        base({ music: { handle: 'artifact:music', volume: 0.3 } }),
+      );
+      const music = timeline.tracks.find((candidate) => candidate.id === 'music')!;
+      expect(music.items).toHaveLength(1);
+      expect(music.items[0]).toMatchObject({ startSec: 0, volume: 0.3 });
+    });
+  });
 });

@@ -58,6 +58,8 @@ const sidebars: SidebarsConfig = {
         'stage-types/generate-image',
         'stage-types/generate-video',
         'stage-types/generate-speech',
+        'stage-types/generate-sound-effect',
+        'stage-types/generate-music',
         'stage-types/analyze-media',
         'stage-types/concatenate-video',
         'stage-types/render-timeline',

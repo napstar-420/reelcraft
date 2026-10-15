@@ -12,6 +12,8 @@ what the stage does, what inputs (slots) and settings it has, and what it can ou
 | [Generate Image](./generate-image.md)                     | Makes an image, or several, from a prompt                          | `media.image`, image list          | Paid, or your ChatGPT plan |
 | [Generate Video](./generate-video.md)                     | Makes a short video clip                                           | `media.video`                      | Paid                       |
 | [Generate Speech](./generate-speech.md)                   | Turns text into a voice-over                                       | `media.audio`                      | Paid                       |
+| [Generate Sound Effect](./generate-sound-effect.md)       | Makes a short sound effect from a description                      | `media.audio`                      | Paid                       |
+| [Generate Music](./generate-music.md)                     | Makes background music from a description                          | `media.audio`                      | Paid                       |
 | [Analyze Media](./analyze-media.md)                       | Transcribes speech with word timings, or reads a file's details    | `data`                             | Paid, or free              |
 | [Concatenate Video](./concatenate-video.md)               | Joins clips into one video, with sound and subtitles               | `media.video`                      | Free                       |
 | [Render Timeline](./render-timeline.md)                   | Renders a timeline into a finished video                           | `media.video`                      | Free                       |
