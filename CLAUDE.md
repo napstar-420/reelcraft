@@ -37,6 +37,18 @@ For a fresh local stack: copy `.env.example` to `.env`, then run `docker compose
 - `docs/self-hosting.md` and `docs/adr/`: how the self-hosted image, releases, in-app updater, Settings and user guide fit together, the rules for changing them, and the decisions behind them. Read these before touching `docker/app/`, `.github/workflows/release.yml`, `apps/api/src/update|settings/` or the Codex connect flow.
 - `apps/docs/`: the user guide (Docusaurus), published to GitHub Pages by `.github/workflows/docs.yml`. It is outside the pnpm workspace (`pnpm install --ignore-workspace` there). Update it whenever user-facing setup, Settings or update behaviour changes, using the UI's exact labels; keep page slugs stable, since `apps/web/src/lib/docs-url.ts` links to them.
 
+## Design Principle: Generic Building Blocks
+
+Reelcraft is a generic video creator. Build small, reusable blocks that combine into any video; never build a feature that recreates one specific video or style.
+
+- **Never design from an example video.** When the user shows a video style (whiteboard, explainer, short, infographic), break it into primitives first: what are the backgrounds, images, text, shapes, motion, audio and timing? Build those primitives. The style is then a recipe or preset made of them, never its own pipeline.
+- **No style-specific compilers, templates or item types.** A `whiteboard`, `explainer` or `short` capability, a fixed list of layout templates, or an item that only makes sense in one look is the wrong shape. A white background is a colour or an image; a drawing is an SVG placed on the timeline; a sound effect is audio placed on the timeline.
+- **One asset model.** Images, SVGs/vectors, narration, music, SFX, video clips and fonts are all assets/artifacts of a kind. Each kind can be generated during the run or uploaded to the channel library and picked from it (a stage can be told to use only uploaded assets). Do not add parallel paths for a single kind (no special handle namespaces, no kind-specific formats where a general one fits). Bundled content (e.g. built-in sounds) should be ordinary library assets that ship with Reelcraft.
+- **The timeline is the common language.** Any number of tracks of any type (video, audio, overlay, captions). Any stage can place anything on it: position, scale, start/end, animation, volume. The model decides placement; code validates and renders it.
+- **Motion graphics come from Remotion through one generic stage**, where a model (Codex or Claude with a Remotion skill) writes the motion for what the video needs and returns it as data or a rendered clip to place on the timeline, instead of hand-built per-effect items.
+- **Before adding a feature, ask:** could this be an existing block plus a recipe/preset? Would it work for a completely different video? If it only serves one style, redesign it as a generic block.
+- Presets and recipes (`guide-recipes.ts`, `.reelpack`) are where a style lives: a stage graph with prompts and settings, built from generic stages.
+
 ## Code Conventions
 
 - Use TypeScript, async/await, named exports, and kebab-case filenames. React components are PascalCase.
