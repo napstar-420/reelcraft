@@ -1,6 +1,12 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { and, eq } from 'drizzle-orm';
-import { Timeline, isSfxHandle, sfxIdOf, sfxProbe, type Probe } from '@reelcraft/shared';
+import {
+  Timeline,
+  isBuiltinAudioHandle,
+  builtinAudioIdOf,
+  builtinAudioProbe,
+  type Probe,
+} from '@reelcraft/shared';
 import { isListKind, parseArtifactHandle, storedListItems } from '../artifact/clip-handle';
 import { StyleRegistry } from '../capability/style.registry';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
@@ -127,9 +133,9 @@ export class TimelineCheckService {
             );
           else resources.set(handle, row.probe as Probe | undefined);
         }
-      } else if (isSfxHandle(handle)) {
+      } else if (isBuiltinAudioHandle(handle)) {
         // Built-in sound effects ship with the renderer; only the id can be wrong.
-        const probe = sfxProbe(sfxIdOf(handle));
+        const probe = builtinAudioProbe(builtinAudioIdOf(handle));
         if (!probe) {
           results.push(
             failed(

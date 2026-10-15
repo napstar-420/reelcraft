@@ -6,25 +6,25 @@ description: What each kind of stage does, which services it uses, and what it c
 Every stage in a blueprint has a **type**, shown in the inspector as **Capability**. The type decides
 what the stage does, what inputs (slots) and settings it has, and what it can output.
 
-| Type                                                      | What it does                                                       | Output                             | Cost                       |
-| --------------------------------------------------------- | ------------------------------------------------------------------ | ---------------------------------- | -------------------------- |
-| [Generate Text](./generate-text.md)                       | Writes text, structured data or a timeline with an AI model        | `text`, `data`, `timeline`         | Paid, or your ChatGPT plan |
-| [Generate Image](./generate-image.md)                     | Makes an image, or several, from a prompt                          | `media.image`, image list          | Paid, or your ChatGPT plan |
-| [Generate Video](./generate-video.md)                     | Makes a short video clip                                           | `media.video`                      | Paid                       |
-| [Generate Speech](./generate-speech.md)                   | Turns text into a voice-over                                       | `media.audio`                      | Paid                       |
-| [Generate Sound Effect](./generate-sound-effect.md)       | Makes a short sound effect from a description                      | `media.audio`                      | Paid                       |
-| [Generate Music](./generate-music.md)                     | Makes background music from a description                          | `media.audio`                      | Paid                       |
-| [Analyze Media](./analyze-media.md)                       | Transcribes speech with word timings, or reads a file's details    | `data`                             | Paid, or free              |
-| [Concatenate Video](./concatenate-video.md)               | Joins clips into one video, with sound and subtitles               | `media.video`                      | Free                       |
-| [Render Timeline](./render-timeline.md)                   | Renders a timeline into a finished video                           | `media.video`                      | Free                       |
-| [Compile Scenes](./compile-scenes.md)                     | Builds a hand-drawn video timeline from a scene plan               | `timeline`                         | Free                       |
-| [Prepare Drawings](./prepare-drawings.md)                 | Gathers the drawings a model made for a hand-drawn video           | `data`                             | Free                       |
-| [Preview Drawings](./preview-drawings.md)                 | Makes one picture of a set of drawings                             | `media.image`                      | Free                       |
-| [Export Subtitles](./export-subtitles.md)                 | Makes an SRT or VTT file from word timings                         | `file.subtitles`                   | Free                       |
-| [Human Input](./human-input.md)                           | Pauses for you to type or paste something                          | `text`, `data`                     | Free                       |
-| [Human Timeline Edit](./human-timeline-edit.md)           | Pauses for you to edit a timeline by hand                          | `timeline`                         | Free                       |
-| [Automate Browser](./automate-browser.md)                 | Lets Codex use a signed-in browser to do a task, or download files | `data`, audio, image, video, lists | Uses your ChatGPT plan     |
-| [Generate Video with Flow](./generate-video-with-flow.md) | Makes clips in Google Flow with Codex and your Flow accounts       | video list                         | Uses your Flow credits     |
+| Type                                                      | What it does                                                             | Output                             | Cost                       |
+| --------------------------------------------------------- | ------------------------------------------------------------------------ | ---------------------------------- | -------------------------- |
+| [Generate Text](./generate-text.md)                       | Writes text, structured data or a timeline with an AI model              | `text`, `data`, `timeline`         | Paid, or your ChatGPT plan |
+| [Generate Image](./generate-image.md)                     | Makes an image, or several, from a prompt                                | `media.image`, image list          | Paid, or your ChatGPT plan |
+| [Generate Video](./generate-video.md)                     | Makes a short video clip                                                 | `media.video`                      | Paid                       |
+| [Generate Speech](./generate-speech.md)                   | Turns text into a voice-over                                             | `media.audio`                      | Paid                       |
+| [Generate Sound Effect](./generate-sound-effect.md)       | Makes a short sound effect from a description                            | `media.audio`                      | Paid                       |
+| [Generate Music](./generate-music.md)                     | Makes background music from a description                                | `media.audio`                      | Paid                       |
+| [Analyze Media](./analyze-media.md)                       | Transcribes speech with word timings, or reads a file's details          | `data`                             | Paid, or free              |
+| [Concatenate Video](./concatenate-video.md)               | Joins clips into one video, with sound and subtitles                     | `media.video`                      | Free                       |
+| [Render Timeline](./render-timeline.md)                   | Renders a timeline into a finished video                                 | `media.video`                      | Free                       |
+| [Compose Timeline](./compose-timeline.md)                 | Places pictures, clips, sounds, drawings, words and captions from a plan | `timeline`                         | Free                       |
+| [Prepare Drawings](./prepare-drawings.md)                 | Checks the drawings a model made and gathers the usable ones             | `data`                             | Free                       |
+| [Preview Drawings](./preview-drawings.md)                 | Makes one picture of a set of drawings                                   | `media.image`                      | Free                       |
+| [Export Subtitles](./export-subtitles.md)                 | Makes an SRT or VTT file from word timings                               | `file.subtitles`                   | Free                       |
+| [Human Input](./human-input.md)                           | Pauses for you to type or paste something                                | `text`, `data`                     | Free                       |
+| [Human Timeline Edit](./human-timeline-edit.md)           | Pauses for you to edit a timeline by hand                                | `timeline`                         | Free                       |
+| [Automate Browser](./automate-browser.md)                 | Lets Codex use a signed-in browser to do a task, or download files       | `data`, audio, image, video, lists | Uses your ChatGPT plan     |
+| [Generate Video with Flow](./generate-video-with-flow.md) | Makes clips in Google Flow with Codex and your Flow accounts             | video list                         | Uses your Flow credits     |
 
 **Paid** types call an AI service that bills you directly, and are limited by the run's
 [budget](../runs/budget-and-costs.md). **Free** types run inside Reelcraft. See

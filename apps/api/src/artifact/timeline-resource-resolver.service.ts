@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { and, eq, inArray } from 'drizzle-orm';
-import { Timeline, isSfxHandle } from '@reelcraft/shared';
+import { Timeline, isBuiltinAudioHandle } from '@reelcraft/shared';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
 import { artifact, blob, run } from '../db/schema';
 import { LIST_KINDS, listItemKind, parseArtifactHandle, storedListItems } from './clip-handle';
@@ -36,7 +36,7 @@ export class TimelineResourceResolverService {
     const result: Record<string, ResolvedTimelineResource> = {};
     for (const handle of handles) {
       // Built-in sounds ship with the renderer; there is nothing to resolve.
-      if (isSfxHandle(handle)) continue;
+      if (isBuiltinAudioHandle(handle)) continue;
       const parsed = parseArtifactHandle(handle);
       if (parsed?.clipPosition !== undefined) {
         const resolved = await this.resolveClip(

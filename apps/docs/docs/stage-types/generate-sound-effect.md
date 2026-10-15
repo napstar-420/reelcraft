@@ -5,9 +5,10 @@ description: Make a short sound effect, such as a pop or a whoosh, from a descri
 
 **Generate Sound Effect** makes a short sound from words, for example "a soft pencil scratching on paper".
 
-You don't need this stage for the usual whiteboard sounds: [Compile Scenes](./compile-scenes.md) can add
-Reelcraft's [built-in sound effects](../video/timelines.md#sound-effects) for free. Use this stage when you
-want a sound the built-in set doesn't have.
+You don't need this stage for the usual sounds: Reelcraft has a set of
+[built-in sounds](../video/timelines.md#built-in-sounds) (a pop, a whoosh, a pencil scratch, a ding) that cost
+nothing and are in the library for any plan to pick. Use this stage when you want a sound the built-in set
+doesn't have.
 
 ## What it makes
 
@@ -33,5 +34,5 @@ before the call, and your plan decides the real bill. Fake costs nothing.
 ## Tips
 
 - Name the sound and how it should feel: "a short, bright bubble pop", not "pop".
-- To use the sound, bind this stage to an audio track in a timeline, or to the **music** input of
-  [Compile Scenes](./compile-scenes.md) if it is a background loop.
+- To use the sound, bind this stage to a named input of [Compose Timeline](./compose-timeline.md) and
+  put a layer with that asset in the plan, or bind it to an audio track in a timeline.

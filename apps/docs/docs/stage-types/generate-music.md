@@ -25,12 +25,14 @@ The music is always instrumental, so it doesn't compete with a voice-over.
 
 ## Using it
 
-Bind this stage to the **music** input of [Compile Scenes](./compile-scenes.md). The music plays quietly
-under the voice-over, gets quieter while someone speaks, is repeated if it is shorter than the video, and
-fades out at the end. You can also bind it to an audio track of any timeline.
+Bind this stage to [Compose Timeline](./compose-timeline.md): list a name for it under **inputs** (for example
+`music`), bind the stage to that slot, and put a layer in the plan with `asset: "music"`, `loop: true`, a low
+`volume` (about 0.15) and a `fadeOutSec`. Use the plan's `ducks` to make the music quieter while the voice-over
+plays. Loop repeats the track if it is shorter than the video. You can also bind it to an audio track of any
+timeline.
 
-You can bring your own music instead: upload a song to the channel's assets and bind it the same way, or
-fetch a free one with [Automate Browser](./automate-browser.md).
+You can bring your own music instead: upload a song to the channel's [library](../channels/assets.md#the-library)
+and pick it from there, or fetch a free one with [Automate Browser](./automate-browser.md).
 
 ## Cost
 

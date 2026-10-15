@@ -23,7 +23,7 @@ Settings marked _required_ must be filled in. A `min` or `max` left empty isn't 
 | `duration_range` | The length of a video or audio file, in seconds                                       | `min`, `max`                          |
 | `media_format`   | The file's container and/or codec                                                     | `container`, `codec`                  |
 | `wpm`            | Words spoken per minute, in a **Generate Speech** output                              | `min`, `max`                          |
-| `drawing`        | A drawing a model made for a hand-drawn video can be drawn: its paths are valid       | `path`                                |
+| `drawing`        | A drawing a model made can be drawn: its paths are valid                              | `path`                                |
 
 ## Details
 

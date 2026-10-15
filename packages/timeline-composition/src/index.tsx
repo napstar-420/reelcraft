@@ -1,6 +1,6 @@
 import React from 'react';
 import { Audio, Video } from '@remotion/media';
-import { bundledSfx } from './sketch/sfx-assets';
+import { bundledAudio } from './graphic/builtin-audio';
 import {
   AbsoluteFill,
   Composition,
@@ -15,16 +15,18 @@ import {
 import type { CalculateMetadataFunction } from 'remotion';
 import type { TextStyleTokens, Timeline, TimelineItem, TimingMap } from '@reelcraft/shared';
 import { activeCaption, captionPagesFor } from './captions';
-import { useSketchFonts } from './sketch/fonts';
-import { SketchItem } from './sketch/SketchItem';
+import { useGraphicFonts } from './graphic/fonts';
+import { GraphicItem, placedStyle } from './graphic/GraphicItem';
 import {
   DEFAULT_THEME,
+  animState,
   cameraAt,
   cameraTransform,
   ease,
+  keyframeState,
   revealLook,
   wholeWorldView,
-} from './sketch/sketch-math';
+} from './graphic/graphic-math';
 import {
   type CaptionLook,
   DEFAULT_TEXT_STYLE,
@@ -47,7 +49,7 @@ export {
   transitionLook,
   type CaptionLook,
 } from './render-helpers';
-export { DEFAULT_THEME } from './sketch/sketch-math';
+export { DEFAULT_THEME } from './graphic/graphic-math';
 export {
   activeCaption,
   captionPages,
@@ -92,9 +94,9 @@ export const timelineDurationSec = (
 
 /** A scheme or a leading slash means a URL; anything else is a file in the
  * render's public directory. */
-/** Built-in `sfx:<id>` handles need no resolved resource: the files ship with the composition. */
+/** Built-in `builtin:audio/<id>` handles need no resolved resource: the files ship with the composition. */
 const bundledResource = (handle: string): CompositionResource | undefined => {
-  const src = bundledSfx(handle);
+  const src = bundledAudio(handle);
   return src ? { src, kind: 'media.audio' } : undefined;
 };
 
@@ -167,6 +169,46 @@ const MediaItem = ({
     <Img src={resolvedSrc} style={style} />
   ) : (
     <Video src={resolvedSrc} style={style} {...common} />
+  );
+};
+
+const PLACED_SHAPE = { kind: 'shape', shape: 'box' } as const;
+
+/** Media in a box: arrives with its animation, moves with its keyframes, and plays like any media. */
+const PlacedMedia = ({
+  item,
+  resource,
+  trackType,
+  clipIndex,
+  duckIntervals,
+}: {
+  item: PlacedMediaItem;
+  resource: CompositionResource;
+  trackType: 'video' | 'audio' | 'overlay' | 'captions';
+  clipIndex: number;
+  duckIntervals: Array<{ startSec: number; endSec: number }>;
+}) => {
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+  const localSec = frame / fps;
+  const state = animState(
+    item.anim ?? { type: 'none' },
+    PLACED_SHAPE,
+    { w: item.w, h: item.h },
+    item.durationSec ?? 1,
+    localSec,
+  );
+  const kf = keyframeState(item.keyframes, localSec);
+  return (
+    <div style={placedStyle(item, state, kf)}>
+      <MediaItem
+        item={item}
+        resource={resource}
+        trackType={trackType}
+        clipIndex={clipIndex}
+        duckIntervals={duckIntervals}
+      />
+    </div>
   );
 };
 
@@ -299,11 +341,26 @@ const CaptionsItem = ({
   );
 };
 
-type SketchEntry = {
-  trackId: string;
-  index: number;
-  item: Extract<TimelineItem, { type: 'sketch' }>;
-};
+type MediaTimelineItem = Extract<TimelineItem, { type: 'media' }>;
+type GraphicTimelineItem = Extract<TimelineItem, { type: 'graphic' }>;
+
+/** A media item given a box (x, y, w, h), so it sits on the frame or the world like a drawing. */
+type PlacedMediaItem = MediaTimelineItem & { x: number; y: number; w: number; h: number };
+
+const isPlacedMedia = (item: TimelineItem): item is PlacedMediaItem =>
+  item.type === 'media' &&
+  item.x !== undefined &&
+  item.y !== undefined &&
+  item.w !== undefined &&
+  item.h !== undefined;
+
+/** Anything that sits in a box: a drawn item, or media with a box. */
+type PlacedItem = GraphicTimelineItem | PlacedMediaItem;
+const isPlaced = (item: TimelineItem): item is PlacedItem =>
+  item.type === 'graphic' || isPlacedMedia(item);
+const spaceOf = (item: PlacedItem) => item.space ?? 'world';
+
+type GraphicEntry = { trackId: string; index: number; item: PlacedItem };
 
 /** The paper under a hand-drawn video, from the theme. */
 const paperStyle = (theme: Timeline['theme'] | undefined): React.CSSProperties => {
@@ -323,15 +380,17 @@ const paperStyle = (theme: Timeline['theme'] | undefined): React.CSSProperties =
   return {};
 };
 
-/** Every `world` sketch item, under the camera. The world is a canvas bigger than the frame, and
+/** Every `world` graphic item, under the camera. The world is a canvas bigger than the frame, and
  * the camera shows a part of it. Without a camera the whole world is shown. */
 const WorldLayer = ({
   timeline,
   entries,
+  resources,
   theme,
 }: {
   timeline: Timeline;
-  entries: SketchEntry[];
+  entries: GraphicEntry[];
+  resources: Record<string, CompositionResource>;
   theme: NonNullable<Timeline['theme']>;
 }) => {
   const frame = useCurrentFrame();
@@ -354,13 +413,61 @@ const WorldLayer = ({
         <Sequence
           key={`${trackId}-${index}`}
           from={Math.round(item.startSec * fps)}
-          durationInFrames={Math.max(1, Math.ceil(item.durationSec * fps))}
+          durationInFrames={Math.max(1, Math.ceil((item.durationSec ?? 1) * fps))}
           premountFor={fps}
         >
-          <SketchItem item={item} seedKey={`${trackId}:${index}`} theme={theme} />
+          <PlacedView
+            entry={{ trackId, index, item }}
+            timeline={timeline}
+            resources={resources}
+            theme={theme}
+          />
         </Sequence>
       ))}
     </AbsoluteFill>
+  );
+};
+
+/** When the track a track ducks under has something playing. */
+const duckIntervalsFor = (timeline: Timeline, track: Timeline['tracks'][number]) =>
+  track.duckUnder
+    ? (timeline.tracks.find((candidate) => candidate.id === track.duckUnder)?.items ?? [])
+        .filter(
+          (candidate): candidate is Exclude<TimelineItem, { type: 'captions' }> =>
+            candidate.type !== 'captions',
+        )
+        .map((candidate) => ({
+          startSec: candidate.startSec,
+          endSec: candidate.startSec + (candidate.durationSec ?? 1),
+        }))
+    : [];
+
+/** One placed item: a drawing, or media in a box. */
+const PlacedView = ({
+  entry,
+  timeline,
+  resources,
+  theme,
+}: {
+  entry: GraphicEntry;
+  timeline: Timeline;
+  resources: Record<string, CompositionResource>;
+  theme: NonNullable<Timeline['theme']>;
+}) => {
+  const { item, trackId, index } = entry;
+  if (item.type === 'graphic')
+    return <GraphicItem item={item} seedKey={`${trackId}:${index}`} theme={theme} />;
+  const resource = resources[item.handle] ?? bundledResource(item.handle);
+  const track = timeline.tracks.find((candidate) => candidate.id === trackId);
+  if (!resource || !track) return null;
+  return (
+    <PlacedMedia
+      item={item}
+      resource={resource}
+      trackType={track.type}
+      clipIndex={index}
+      duckIntervals={duckIntervalsFor(timeline, track)}
+    />
   );
 };
 
@@ -373,15 +480,15 @@ export const TimelineComposition = ({
   const { fps } = useVideoConfig();
   const tokensFor = (styleId: string) => styles[styleId] ?? DEFAULT_TEXT_STYLE;
   const theme = { ...DEFAULT_THEME, ...timeline.theme };
-  const drawn = timeline.tracks.some((track) => track.items.some((item) => item.type === 'sketch'));
-  useSketchFonts(drawn);
+  const drawn = timeline.tracks.some((track) =>
+    track.items.some((item) => item.type === 'graphic'),
+  );
+  useGraphicFonts(drawn);
   // Items on the big canvas are drawn together under the camera, beneath every track.
-  const worldEntries: SketchEntry[] = timeline.tracks
+  const worldEntries: GraphicEntry[] = timeline.tracks
     .flatMap((track) =>
       track.items.flatMap((item, index) =>
-        item.type === 'sketch' && (item.space ?? 'world') === 'world'
-          ? [{ trackId: track.id, index, item }]
-          : [],
+        isPlaced(item) && spaceOf(item) === 'world' ? [{ trackId: track.id, index, item }] : [],
       ),
     )
     .map((entry, order) => ({ entry, order }))
@@ -395,11 +502,16 @@ export const TimelineComposition = ({
       }}
     >
       {worldEntries.length ? (
-        <WorldLayer timeline={timeline} entries={worldEntries} theme={theme} />
+        <WorldLayer
+          timeline={timeline}
+          entries={worldEntries}
+          resources={resources}
+          theme={theme}
+        />
       ) : null}
       {timeline.tracks.flatMap((track) =>
         track.items.map((item, index) => {
-          if (item.type === 'sketch' && (item.space ?? 'world') === 'world') return null;
+          if (isPlaced(item) && spaceOf(item) === 'world') return null;
           const startSec = item.type === 'captions' ? (item.startSec ?? 0) : item.startSec;
           const from = Math.round(startSec * fps);
           const durationSec =
@@ -414,8 +526,13 @@ export const TimelineComposition = ({
               durationInFrames={durationInFrames}
               premountFor={fps}
             >
-              {item.type === 'sketch' ? (
-                <SketchItem item={item} seedKey={`${track.id}:${index}`} theme={theme} />
+              {isPlaced(item) ? (
+                <PlacedView
+                  entry={{ trackId: track.id, index, item }}
+                  timeline={timeline}
+                  resources={resources}
+                  theme={theme}
+                />
               ) : item.type === 'captions' ? (
                 timingMaps[item.timingHandle] ? (
                   <CaptionsItem

@@ -20,6 +20,7 @@ const ALL_REF_KINDS: Ref['from'][] = [
   'memory',
   'input',
   'asset',
+  'library',
   'role',
   'item',
   'prevItem',
@@ -52,6 +53,8 @@ function defaultRefFor(kind: Ref['from']): Ref {
       return { from: 'input', inputKey: '' };
     case 'asset':
       return { from: 'asset', assetId: '' };
+    case 'library':
+      return { from: 'library' };
     case 'role':
       return { from: 'role', roleKey: '' };
     case 'item':
@@ -232,6 +235,60 @@ export function BindingPicker({
             ))}
           </SelectContent>
         </Select>
+      )}
+
+      {value.from === 'library' && (
+        <span className="flex flex-wrap items-center gap-2">
+          {(
+            [
+              ['image', 'Images'],
+              ['video', 'Videos'],
+              ['audio', 'Sounds'],
+              ['vector', 'Drawings'],
+            ] as const
+          ).map(([kind, label]) => {
+            const all = ['image', 'video', 'audio', 'vector'] as const;
+            const chosen = value.kinds ?? all;
+            return (
+              <Label key={kind} className="font-normal">
+                <Checkbox
+                  checked={chosen.includes(kind)}
+                  onCheckedChange={(checked) => {
+                    const next = all.filter((k) =>
+                      k === kind ? checked === true : chosen.includes(k),
+                    );
+                    onChange({
+                      ...value,
+                      kinds: next.length === 0 || next.length === all.length ? undefined : next,
+                    });
+                  }}
+                />
+                {label}
+              </Label>
+            );
+          })}
+          <Input
+            className="w-40"
+            placeholder="tags, comma separated"
+            value={(value.tags ?? []).join(', ')}
+            onChange={(e) => {
+              const tags = e.target.value
+                .split(',')
+                .map((tag) => tag.trim())
+                .filter(Boolean);
+              onChange({ ...value, tags: tags.length ? tags : undefined });
+            }}
+          />
+          <Label className="font-normal">
+            <Checkbox
+              checked={value.builtin !== false}
+              onCheckedChange={(checked) =>
+                onChange({ ...value, builtin: checked === true ? undefined : false })
+              }
+            />
+            include built-in
+          </Label>
+        </span>
       )}
 
       {value.from === 'role' && (

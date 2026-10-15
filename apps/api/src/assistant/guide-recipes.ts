@@ -1,4 +1,17 @@
-import type { CreateBlueprintVersionDto, JsonSchema, QcDef, StageDef } from '@reelcraft/shared';
+import type {
+  CreateBlueprintVersionDto,
+  JsonSchema,
+  QcDef,
+  Ref,
+  StageDef,
+} from '@reelcraft/shared';
+import {
+  TIMELINE_PLAN_GUIDE,
+  timelinePlanJsonSchema,
+} from '../capability/compose/timeline-plan-schema';
+import { BuiltinDrawings } from '../capability/vector/builtin-drawings';
+import { vectorAssetSetJsonSchema } from '../capability/vector/drawing-prepare';
+import { drawingSystemPrompt, drawingsJsonSchema } from '../capability/vector/drawing-prompt';
 
 /**
  * Worked blueprints for the assistant's `recipes` guide topic. Each one validates with the real
@@ -402,5 +415,228 @@ export function recipeBrollMontage(): CreateBlueprintVersionDto {
     roles: [],
     defaults: {},
     budget: { runCapUsd: 12 },
+  };
+}
+
+const needsSchema: JsonSchema = {
+  type: 'object',
+  properties: {
+    needs: {
+      type: 'array',
+      minItems: 3,
+      maxItems: 24,
+      description: 'Every drawing the video needs, one per idea shown on screen.',
+      items: {
+        type: 'object',
+        properties: {
+          id: {
+            type: 'string',
+            description: 'Lowercase words joined by "-", such as "coffee-mug"',
+          },
+          label: { type: 'string', description: 'What it is, in a few words' },
+          description: { type: 'string', description: 'What it should look like' },
+          fallbackId: {
+            type: 'string',
+            description: 'A built-in drawing id to use if this one cannot be made, or ""',
+          },
+        },
+        required: ['id', 'label', 'description', 'fallbackId'],
+      },
+    },
+  },
+  required: ['needs'],
+};
+
+/**
+ * A narrated video of drawings, written words, sounds and captions that a model places on a
+ * timeline: a script, a voice-over, a plan of layers (where each thing goes and when it appears,
+ * by the spoken words) and one Compose Timeline stage. Nothing here is specific to a look: the
+ * hand-drawn style is the prompts and the theme, so the same stages make any layered video.
+ *
+ * `generated`: the run makes its own drawings (a model draws them, Prepare Drawings checks them).
+ * `library`: the plan may only use what the channel uploaded to its library (drawings, sounds,
+ * music, pictures); nothing is made. Sounds come from the library in both modes.
+ */
+export function recipeComposedVideo(mode: 'generated' | 'library'): CreateBlueprintVersionDto {
+  const generated = mode === 'generated';
+  const libraryRef: Ref = generated
+    ? { from: 'library', kinds: ['audio'] }
+    : { from: 'library', builtin: false };
+  return {
+    graph: [
+      {
+        key: 'script',
+        label: 'Write the script',
+        capability: 'text.generate',
+        instructions: {
+          system:
+            'You write voice-over scripts for explainer videos that are drawn as they are spoken. Spoken English, short sentences, a hook in the first line, one idea per sentence so each can be shown with one picture, a clear ending. No stage directions, no emojis, no headings.',
+          template: 'Write a 60-second voice-over script about {{ topic }}.',
+        },
+        config: {},
+        slots: {},
+        context: { topic: { from: 'input', inputKey: 'topic' } },
+        output: { kind: 'text' },
+        writes: { script: '$' },
+        checks: [{ type: 'builtin', key: 'word_count', params: { min: 110, max: 190 } }],
+        qc: qc(
+          'A strong hook, one idea per sentence that can be drawn, easy to speak aloud, a satisfying ending, true and specific.',
+          [
+            {
+              key: 'hook',
+              description: 'The first line makes you want to keep watching',
+              weight: 2,
+            },
+            {
+              key: 'drawable',
+              description: 'Each sentence has one idea that can be pictured',
+              weight: 2,
+            },
+            { key: 'ending', description: 'A clear, satisfying ending', weight: 1 },
+          ],
+        ),
+      },
+      {
+        key: 'voice',
+        label: 'Voice-over',
+        capability: 'audio.speech',
+        config: {},
+        slots: { text: { from: 'memory', key: 'script' } },
+        context: {},
+        output: { kind: 'media.audio' },
+        // Word timings place drawings on the words that name them. With ElevenLabs, turn on Word
+        // timings in this stage's model settings.
+        writes: { timing: 'timing' },
+        checks: [{ type: 'builtin', key: 'wpm', params: { min: 110, max: 175 } }],
+        approval: { mode: 'stage' },
+      },
+      ...(generated
+        ? ([
+            {
+              key: 'needs',
+              label: 'List the drawings',
+              capability: 'text.generate',
+              instructions: {
+                system:
+                  'You are an art director for a hand-drawn explainer. You list the simple drawings a video needs: one per idea, each a single recognisable object or scene made of lines. Prefer a built-in drawing id as fallbackId when one fits.',
+                template:
+                  'List the drawings needed to illustrate this script, one per idea, in the order they appear:\n{{ script }}\nBuilt-in drawing ids: ' +
+                  new BuiltinDrawings().ids().join(', ') +
+                  '.',
+              },
+              config: {},
+              slots: {},
+              context: { script: { from: 'memory', key: 'script' } },
+              output: { kind: 'data', schema: needsSchema },
+              checks: [
+                {
+                  type: 'builtin',
+                  key: 'array_length',
+                  params: { path: 'needs', min: 3, max: 24 },
+                },
+              ],
+            },
+            {
+              key: 'draw',
+              label: 'Draw them',
+              capability: 'text.generate',
+              instructions: {
+                system: drawingSystemPrompt(new BuiltinDrawings()),
+                template: 'Draw every drawing in this list, using each id:\n{{ needs }}',
+              },
+              config: {},
+              slots: {},
+              context: { needs: { from: 'stage', stageKey: 'needs', path: 'needs' } },
+              output: { kind: 'data', schema: drawingsJsonSchema() },
+              checks: [{ type: 'builtin', key: 'drawing', params: { path: 'drawings' } }],
+            },
+            {
+              key: 'prepare',
+              label: 'Check the drawings',
+              capability: 'svg.prepare',
+              config: {},
+              slots: {
+                drawings: { from: 'stage', stageKey: 'draw', path: 'drawings' },
+                needs: { from: 'stage', stageKey: 'needs', path: 'needs' },
+              },
+              context: {},
+              output: { kind: 'data', schema: vectorAssetSetJsonSchema() },
+              checks: [],
+            },
+          ] satisfies StageDef[])
+        : []),
+      {
+        key: 'layout',
+        label: 'Plan the layout',
+        capability: 'text.generate',
+        instructions: {
+          system: `You are a video editor. You place drawings, words and sounds on a timeline so the picture follows the voice-over. ${TIMELINE_PLAN_GUIDE}\nLook: a plain light background with the drawings drawn on by hand (anim "draw"), headlines written out (anim "handwrite"), a soft pop or pencil sound as things appear, music quiet under the voice.`,
+          template:
+            'Plan the video for this script. The voice-over is the audio asset "voice"; it is spoken in order, so place each layer with atCue set to words copied exactly from the script.\nScript:\n{{ script }}\nAssets you may use, by id:\n{{ assets }}',
+        },
+        config: {},
+        slots: {},
+        context: {
+          script: { from: 'memory', key: 'script' },
+          assets: generated ? { from: 'stage', stageKey: 'prepare' } : libraryRef,
+          ...(generated ? { sounds: libraryRef } : {}),
+        },
+        output: { kind: 'data', schema: timelinePlanJsonSchema() },
+        checks: [
+          { type: 'builtin', key: 'array_length', params: { path: 'layers', min: 6, max: 300 } },
+        ],
+        qc: qc(
+          'Every layer uses an asset that exists, appears when its words are spoken, nothing important overlaps by accident, and the voice-over stays clear above any music.',
+          [
+            {
+              key: 'sync',
+              description: 'Each drawing appears as the words naming it are spoken',
+              weight: 2,
+            },
+            {
+              key: 'layout',
+              description: 'Nothing overlaps by accident or leaves the frame',
+              weight: 2,
+            },
+            { key: 'audio', description: 'Music and sounds stay under the voice', weight: 1 },
+          ],
+        ),
+      },
+      {
+        key: 'compose',
+        label: 'Compose the timeline',
+        capability: 'timeline.compose',
+        config: {
+          inputs: generated ? ['voice', 'drawings', 'sounds'] : ['voice'],
+          hand: 'marker',
+        },
+        slots: {
+          plan: { from: 'stage', stageKey: 'layout' },
+          voice: { from: 'stage', stageKey: 'voice' },
+          timing: { from: 'memory', key: 'timing' },
+          ...(generated
+            ? { drawings: { from: 'stage', stageKey: 'prepare' }, sounds: libraryRef }
+            : { assets: libraryRef }),
+        },
+        context: {},
+        output: { kind: 'timeline' },
+        checks: [],
+      },
+      {
+        key: 'render',
+        label: 'Render the video',
+        capability: 'timeline.render',
+        config: {},
+        slots: { timeline: { from: 'prev' } },
+        context: {},
+        output: { kind: 'media.video' },
+        checks: [{ type: 'builtin', key: 'duration_range', params: { min: 20, max: 120 } }],
+        approval: { mode: 'stage' },
+      },
+    ],
+    inputs: [topicInput],
+    roles: [],
+    defaults: {},
+    budget: { runCapUsd: 4 },
   };
 }

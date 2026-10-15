@@ -12,6 +12,7 @@ import type {
   HumanWaitKind,
 } from '@reelcraft/shared';
 import {
+  LIBRARY_KINDS,
   ancestorsOf,
   InputDef,
   RoleDef as RoleDefSchema,
@@ -48,7 +49,8 @@ import { ConfigResolverService } from '../run-config/config-resolver.service';
 import { engineDefaults } from '../run-config/engine-defaults';
 import { mergeLayer } from '../run-config/layer-merge';
 import { LedgerService } from '../budget/ledger.service';
-import { collectAssetIds, roleRefsOf } from '../blueprint/collect-asset-refs';
+import { collectAssetIds, collectLibraryRefs, roleRefsOf } from '../blueprint/collect-asset-refs';
+import { ASSET_KIND_FOR_LIBRARY, type LibraryBinding } from '../library/library-catalog';
 import { RunInputService } from './run-input.service';
 import { RunMutationService } from './run-mutation.service';
 import { RunWakeupDispatcher } from './run-wakeup-dispatcher.service';
@@ -521,9 +523,10 @@ export class RunService {
   private async resolveAssetBindings(
     graph: StageDef[],
     channelId: string,
-  ): Promise<Record<string, { blobId: string; kind: string; name: string }>> {
+  ): Promise<Record<string, LibraryBinding & { name: string }>> {
     const assetIds = collectAssetIds(graph);
-    if (assetIds.length === 0) return {};
+    const libraryRefs = collectLibraryRefs(graph);
+    if (assetIds.length === 0 && libraryRefs.length === 0) return {};
 
     // A soft-deleted asset (`blob.deletedAt` set, `AssetService.delete`)
     // must not resolve for a NEW run even though its row still exists —
@@ -541,7 +544,7 @@ export class RunService {
       .where(and(inArray(asset.id, assetIds), isNull(blob.deletedAt)));
     const byId = new Map(rows.map((r) => [r.id, r]));
 
-    const bindings: Record<string, { blobId: string; kind: string; name: string }> = {};
+    const bindings: Record<string, LibraryBinding & { name: string }> = {};
     for (const assetId of assetIds) {
       const row = byId.get(assetId);
       if (!row) {
@@ -554,7 +557,56 @@ export class RunService {
       }
       bindings[assetId] = { blobId: row.blobId, kind: row.kind, name: row.name };
     }
+    await this.snapshotLibrary(bindings, libraryRefs, channelId);
     return bindings;
+  }
+
+  /** Every channel asset a `{from:'library'}` ref can offer, snapshotted with its name and tags so
+   * the run keeps listing the same assets however the library changes after it starts. Marked
+   * `inLibrary` so a library ref lists these and not an asset a stage bound on its own. */
+  private async snapshotLibrary(
+    bindings: Record<string, LibraryBinding & { name: string }>,
+    refs: ReturnType<typeof collectLibraryRefs>,
+    channelId: string,
+  ): Promise<void> {
+    const kinds = [
+      ...new Set(
+        refs.flatMap((ref) =>
+          (ref.kinds ?? LIBRARY_KINDS).map((kind) => ASSET_KIND_FOR_LIBRARY[kind]),
+        ),
+      ),
+    ];
+    if (kinds.length === 0) return;
+    const rows = await this.db
+      .select({
+        id: asset.id,
+        kind: asset.kind,
+        blobId: asset.blobId,
+        name: asset.name,
+        tags: asset.tags,
+        meta: asset.meta,
+      })
+      .from(asset)
+      .innerJoin(blob, eq(asset.blobId, blob.id))
+      .where(
+        and(
+          eq(asset.channelId, channelId),
+          inArray(asset.kind, kinds as Array<typeof asset.$inferSelect.kind>),
+          isNull(asset.deletedAt),
+          isNull(blob.deletedAt),
+        ),
+      )
+      .limit(2000);
+    for (const row of rows) {
+      bindings[row.id] = {
+        blobId: row.blobId,
+        kind: row.kind,
+        name: row.name,
+        tags: row.tags,
+        inLibrary: true,
+        ...(row.meta != null && { vector: row.meta }),
+      };
+    }
   }
 
   /** Chunk 5 — a dry run is a real `run` row driven through the unchanged

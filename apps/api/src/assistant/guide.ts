@@ -1,6 +1,7 @@
 import type { CreateBlueprintVersionDto } from '@reelcraft/shared';
 import {
   recipeBrollMontage,
+  recipeComposedVideo,
   recipeIllustratedStory,
   recipeParallelStory,
   recipeVoiceoverReel,
@@ -45,12 +46,14 @@ export const GUIDE: Record<string, GuideSection> = {
 - \`image.generate\`: an image from a prompt (\`media.image\`); optional \`references\` slot (images, a Character role). For several images from ONE prompt use output \`media.image_list\` with \`config.count\` (2 to 8) and optional \`config.onShortfall\` (\`warn\` keeps what came back, \`fail\` retries); the list feeds a \`many\` slot such as \`references\`, and a QC judge accepts or rejects the whole set. To make 2 to 4 candidates and keep ONE image, keep output \`media.image\`, set \`config.count\` (2 to 4) and add \`qc\` with a judge that sees images: the judge picks the best candidate (or rejects all, and all are made again).
 - \`video.generate\`: a video clip (\`media.video\`); optional \`startFrame\`, \`endFrame\`, \`references\` slots.
 - \`audio.speech\`: text to voice-over (\`media.audio\`); required \`text\` slot. Takes no instructions. The voice and its settings live in the model pin's \`params\`: \`voiceId\` (an ElevenLabs stage needs one; \`list_models\` shows each speech model's \`speechParams\` and \`outputFormats\`; With ElevenLabs, \`wordTimings: true\` plus a stage \`writes\` entry with path \`timing\` saves word timings (the same shape as media.analyze's data) that later stages read from memory, so no media.analyze is needed. Deepgram's voice ids look like \`thalia-en\` and its model is \`flux\`, \`aura-2\` or \`aura\`. Provider \`qwen-tts\` runs on the user's computer, free: its models are \`Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice\` and \`...1.7B-CustomVoice\`, voice ids look like \`vivian\`, and the user must download a model in the stage's Model section first).
+- \`audio.sfx\`: a short sound effect from a description in \`instructions.template\` (required) (\`media.audio\`); config \`durationSec\` 0.5 to 22 (default 2); ElevenLabs \`eleven_text_to_sound_v2\` or the free fake \`fake-sfx-1\`; paid by the second.
+- \`audio.music\`: instrumental background music from a description in \`instructions.template\` (required) (\`media.audio\`); config \`durationSec\` 3 to 600 (default 30); ElevenLabs \`music_v1\` or the free fake \`fake-music-1\`; paid by the second. Bind it to \`timeline.compose\` (loop, volume 0.15, duck under the voice) or to any timeline audio track.
 - \`media.analyze\`: transcribes speech with word timings (paid, Deepgram) or probes a file; \`data\` output; required \`source\` slot (audio or video).
 - \`video.concat\`: joins clips end to end with optional crossfade, replacement audio and burned-in subtitles; free, local.
 - \`timeline.render\`: renders a \`timeline\` into a finished video; free, local.
 - \`subtitles.export\`: SRT or VTT file (\`file.subtitles\`) from word timings; free.
-- \`scene.compile\`: puts a hand-drawn (whiteboard) video together from a scene plan (slot \`scenes\`: data in the SceneSpec shape; optional \`voice\` audio, \`timing\` word timings, \`assets\` drawings made for the run); \`timeline\` output for \`timeline.render\`; free, instant. Layouts come from templates (title, three_step, before_after, cause_process_result, problem_why_solution, free) and scenes are timed by the voice-over, so the model only writes the plan. Drawings are named by id: built-in ids such as \`lightbulb\`, \`arrow-right\`, \`brain\`, or ids the run draws.
-- \`svg.prepare\`: checks the drawings a model made for a hand-drawn video and gathers the usable ones into a set for \`scene.compile\`'s \`assets\` slot (slot \`drawings\`: the answers of a \`text.generate\` stage that drew them; optional \`scenes\` plan for labels); \`data\` output; free. Each run makes its own drawings this way: the plan lists \`assetNeeds\`, a \`text.generate\` stage draws them as SVG path data on a 100 by 100 grid (with the builtin check \`drawing\`), \`svg.prepare\` gathers them, a drawing that can't be used falls back to a built-in one.
+- \`timeline.compose\`: places pictures, clips, sounds, drawings, words and captions on a timeline from a plan of layers (slot \`plan\`: data in the TimelinePlan shape; \`assets\`: any media, catalogues or drawing sets; \`timing\`: word timings; config \`inputs\` names more asset slots, such as voice or music, and a file is called by its slot's name in the plan). A layer says what it is (image, video, audio, drawing, text, shape, captions), the asset by id, where (x, y, w, h as fractions of the frame; a world can be bigger than a frame, with a camera) and when (seconds, words from the narration, or after another layer). It makes no creative choices: a plan with an unknown asset id or a missing field fails with every problem listed. \`timeline\` output for \`timeline.render\`; free.
+- \`svg.prepare\`: checks drawings a model made as SVG path data and gathers the usable ones into a set for \`timeline.compose\`'s \`assets\` slot (slot \`drawings\`: the answers of a \`text.generate\` stage that drew them; optional \`needs\`: the list of drawings asked for, with a built-in \`fallbackId\` that takes the place of one that can't be used); \`data\` output; free.
 - \`svg.preview\`: one picture (\`media.image\`) of a set of drawings with their ids, rendered locally; free. For a person or an image-judging QC to look at the drawings.
 - \`human.input\`: pauses the run for a person to type or paste text or data.
 - \`human.timeline_edit\`: pauses for a person to edit a timeline in the timeline editor.
@@ -70,6 +73,7 @@ An output kind must be one the capability allows (\`get_capability\` → allowed
 - \`{from:'memory', key, path?}\`: a value an earlier stage saved with \`writes\`. \`prev\` only reaches one stage back; use \`stage\` or memory for anything further.
 - \`{from:'input', inputKey, index?, path?}\`: a run input declared in \`inputs\`. \`index\` (from 0) picks one file of a many-file input.
 - \`{from:'asset', assetId}\`: a channel asset. Get ids from \`get_channel_resources\`; never invent one.
+- \`{from:'library', kinds?, tags?, builtin?}\`: a catalogue (\`data\`) of the channel's uploaded assets, and the ones built into Reelcraft, with each one's name, kind (image, video, audio, vector drawing), tags and length. Bind it to a planning stage's context so the model picks only from what exists, and to \`timeline.compose\`'s \`assets\` slot so the picks resolve. \`builtin:false\` leaves out the built-in ones, so a plan can use only what was uploaded. Every kind of asset works both ways: made during the run (Generate Image, Generate Speech, Generate Music, Generate Sound Effect, Prepare Drawings) or uploaded to the channel library.
 - \`{from:'role', roleKey}\`: the blueprint's Character role. Only valid on a many-cardinality image \`references\` slot, or in context of a text stage with the key listed in \`attach\`.
 - \`{from:'item', path?}\`: the current item, on a stage with \`iterate\`.
 - \`{from:'prevItem', path?}\`: this stage's output for the previous item, on a stage with \`iterate\`. At item 0 it has no value, so any required slot bound to it is an error: make that slot optional or wrap it in coalesce.
@@ -250,7 +254,7 @@ QC block shape: \`{ criteria, threshold, model: { provider, modelId, params }, i
     title: 'Proven blueprint shapes',
     body: `Start from the closest recipe, then change it to the request. They all meet the quality bar (system prompts, full data schemas, a check, qc or approval on every model stage, one iterating stage instead of copies, approval before paid media and on the final video) and validate. Model ids are left to the channel/blueprint defaults (the models topic); the QC judge in these examples is the free \`fake\` provider, a placeholder: replace it with a real model from \`list_models\` that suits the job (a judge for images needs \`media.image\` in its \`inputKinds\`).
 
-Reelcraft has no lip-sync or avatar video and no stock footage: a "talking head" is not possible (use voice-over over pictures). Music and sound effects come from a Generate Music or Generate Sound Effect stage (ElevenLabs, described in Instructions), from the user (an asset), or from Automate Browser downloading a free file; built-in sound effects are named \`sfx:pencil\`, \`sfx:pop\`, \`sfx:whoosh\`, \`sfx:ding\` and so on, and Compile Scenes adds them with \`sfx: true\` and takes music in its \`music\` slot. Say so rather than faking it.
+Reelcraft has no lip-sync or avatar video and no stock footage: a "talking head" is not possible (use voice-over over pictures). Music and sound effects come from a Generate Music or Generate Sound Effect stage (ElevenLabs, described in Instructions), from the user (an asset), or from Automate Browser downloading a free file; the built-in sounds (pencil, marker, pop, whoosh, paper, click, ding, tick, swipe, sparkle, thud, chime) are library audio with handles like \`builtin:audio/pop\`; list them with a library ref. Say so rather than faking it.
 
 **1. Voice-over reel (captions on a plain background).** Script (text, word_count, QC on hook/clarity/ending) → voice (audio.speech, wpm check, approval) → word timings (media.analyze, full schema) → edit plan (timeline output, QC) → render (timeline.render, duration check, approval). Choose it for facts, tips, quotes, news.
 \`\`\`json
@@ -283,6 +287,19 @@ ${JSON.stringify(recipeBrollMontage(), null, 2)}
 \`\`\`json
 ${JSON.stringify(
   recipeParallelStory().graph.find((stage) => stage.key === 'narration'),
+  null,
+  2,
+)}
+\`\`\`
+
+**5. A video of drawings, words, sounds and captions placed by a plan (hand-drawn explainers and any other layered video).** Script (QC) → voice (audio.speech, writes \`timing\`; with ElevenLabs turn on Word timings) → assets → a layout stage whose output is a TimelinePlan (QC) → \`timeline.compose\` → render (approval). Nothing in it is specific to a look: the look is the layout prompt and the theme. Every asset kind works two ways. *Made in the run*: a stage lists the drawings needed, a \`text.generate\` stage draws them as SVG path data (check \`drawing\`), \`svg.prepare\` gathers them, with a built-in \`fallbackId\` for any it can't use; speech, music and sound effects are \`audio.speech\`, \`audio.music\`, \`audio.sfx\` stages. *Picked from the library*: bind \`{from:'library'}\` to the layout stage's context and to compose's \`assets\` slot; the model sees what exists and compose refuses any id that does not (\`builtin:false\` for uploaded assets only). The two can be mixed in one video.
+\`\`\`json
+${JSON.stringify(recipeComposedVideo('generated'), null, 2)}
+\`\`\`
+The same with only uploaded assets (no drawing stages; the layout and compose stages read the library):
+\`\`\`json
+${JSON.stringify(
+  recipeComposedVideo('library').graph.filter((stage) => ['layout', 'compose'].includes(stage.key)),
   null,
   2,
 )}
@@ -363,7 +380,7 @@ ${renderTroubleshooting()}`,
 - **Blueprint** tab: name, description, tags, inputs (run inputs), the Character role, defaults and budget.
 - **Save** creates a version (its menu can start a new major); **Versions** lists them; the toolbar badge **Runnable** with a warning count comes from the validator. **Run** opens the run dialog (**Live run** or **Dry run**, budget cap, inputs, **Run up to** to stop after a stage). A **Dry run** uses the free fake provider.
 - **Assistant** tab: **Auto-apply** (proposals go straight to the canvas, with **Undo**), **Apply** (manual mode), **Start new chat**, the model and effort pickers.
-- Stage types by label: Generate Text, Generate Image, Generate Video, Generate Video with Flow, Generate Speech, Generate Sound Effect, Generate Music, Analyze Media, Concatenate Video, Render Timeline, Export Subtitles, Human Input, Human Timeline Edit, Automate Browser, Compile Scenes, Prepare Drawings, Preview Drawings, Publish (Stub). \`list_capabilities\` has the exact labels.
+- Stage types by label: Generate Text, Generate Image, Generate Video, Generate Video with Flow, Generate Speech, Generate Sound Effect, Generate Music, Analyze Media, Concatenate Video, Render Timeline, Export Subtitles, Human Input, Human Timeline Edit, Automate Browser, Compose Timeline, Prepare Drawings, Preview Drawings, Publish (Stub). \`list_capabilities\` has the exact labels.
 - **Approve** / **Reject** (with a note) are the user's actions on a paused run; you cannot do them.`,
   },
 

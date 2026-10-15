@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
+import { BuiltinDrawings } from '../vector/builtin-drawings';
 import { SvgPrepareCapability } from './svg-prepare.capability';
 
-const capability = new SvgPrepareCapability();
+const capability = new SvgPrepareCapability(new BuiltinDrawings());
 const drawing = (id: string) => ({
   id,
   strokes: [{ d: 'M 20 20 L 80 20 L 80 80 Z' }],
@@ -27,7 +28,7 @@ describe('SvgPrepareCapability', () => {
   it('takes the drawings, and the plan for their labels, and makes a data output', () => {
     expect(capability.slots().map((slot) => [slot.name, slot.required])).toEqual([
       ['drawings', true],
-      ['scenes', false],
+      ['needs', false],
     ]);
     expect(capability.allowedOutputs()).toEqual(['data']);
     expect(capability.modality).toBe('compute');
@@ -36,7 +37,7 @@ describe('SvgPrepareCapability', () => {
   it('gathers usable drawings into a set at no cost', async () => {
     const { result } = await run({
       drawings: [drawing('mug'), drawing('bulb')],
-      scenes: { assetNeeds: [{ id: 'mug', label: 'A mug', description: 'x' }] },
+      needs: { needs: [{ id: 'mug', label: 'A mug', description: 'x' }] },
     });
     expect(result.costUsd).toBe(0);
     expect(result.output).toMatchObject({
@@ -73,7 +74,7 @@ describe('SvgPrepareCapability', () => {
   });
 
   it('ignores a plan with bad needs', async () => {
-    const { result } = await run({ drawings: [drawing('a')], scenes: { assetNeeds: 'nope' } });
+    const { result } = await run({ drawings: [drawing('a')], needs: { needs: 'nope' } });
     expect(result.output).toMatchObject({ assets: [{ id: 'a', label: 'a' }] });
   });
 

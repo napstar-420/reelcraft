@@ -15,7 +15,7 @@ import { EngineConfig } from '../../config/engine-config';
 import { ComputeJobService, type ComputeHandle } from '../../storage/compute-job.service';
 import { Capability } from '../capability.decorator';
 import type { ExecCtx, ExecResult } from '../capability.interface';
-import { previewTimeline } from '../whiteboard/drawing-preview';
+import { previewTimeline } from '../vector/drawing-preview';
 import { LocalComputeCapability } from './assembly.capability';
 
 type PreviewConfig = { columns?: number; maxWaitSec?: number };

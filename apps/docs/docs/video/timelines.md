@@ -29,13 +29,16 @@ while.
 
 The items:
 
-- **Media**: a clip, image or sound, with a start time and a duration.
+- **Media**: a clip, image or sound, with a start time and a duration. It can fill the frame, or be placed
+  in a box. See [Place things on the frame](#place-things-on-the-frame).
 - **Text**: words on screen, with a style and a position.
 - **Captions**: the words of a voice-over, timed to the speech, with a style.
-- **Drawing**: something drawn by hand on the screen: lines, written words, shapes and markers. See
-  [Hand-drawn videos](#hand-drawn-videos).
+- **Graphic**: something drawn on the screen: lines from an SVG drawing, written words in any font, or a
+  shape, with an animation. See [Graphics](#graphics).
 
-An item must be on a suitable track: text and drawings on an overlay track, captions on a captions track.
+A timeline can have any number of tracks of any type: several audio tracks (voice, music, sound
+effects), several overlay tracks, several caption tracks. An item must be on a suitable track: text and
+graphics on an overlay track, captions on a captions track, and a sound on an audio track.
 
 ## Media items
 
@@ -77,18 +80,24 @@ A captions item shows the words of a voice-over as it plays, in time with the sp
 timings from [Analyze Media](../stage-types/analyze-media.md), so you can't change what is said or when
 in the editor, only the style.
 
-## Hand-drawn videos
+## Place things on the frame
 
-A **drawing** item makes the whiteboard look: lines that draw themselves on, words that are written out,
-shapes that pop in and a marker that swipes across a word. A timeline can also have a **world** (a canvas
-bigger than the picture) with a **camera** that moves over it, and a **theme** that gives every drawing the
-same paper, ink, colours and handwriting fonts. You normally don't write these by hand: a
-[Compile Scenes](../stage-types/compile-scenes.md) stage builds them from a plan.
+A media item fills the frame unless it has a **box**: **x**, **y**, **w** and **h**, in the units of its
+space (the frame's pixels on the screen). With a box, a picture or clip sits where you put it, at the size
+you give, and can be **rotated** and given a **z** order. It can also have an **animation** (**pop**,
+**fade**, **slide** or **none**) and **keyframes**, like a graphic. A sound can't have a box. This is how a
+logo goes in a corner, a photo sits beside some words, or a clip plays in a smaller frame.
 
-A drawing item draws one of three things:
+## Graphics
 
-- **Lines**: any shape, as lines drawn in order. A drawing is a list of strokes on a grid you choose.
-- **Written words**: text in the theme's handwriting font (**hand**) or its plain handwritten font (**body**).
+A **graphic** item draws something on the screen with an animation. It works for any look: hand-drawn,
+clean and flat, or anywhere in between. [Compose Timeline](../stage-types/compose-timeline.md) places them
+from a plan, so you normally don't write them by hand. A graphic draws one of three things:
+
+- **Lines**: any shape, as lines drawn in order. A drawing is a list of strokes on a grid you choose; it can
+  come from an SVG file or a [drawing a model made](../stage-types/prepare-drawings.md).
+- **Words**: text in any font family, weight and alignment, or in the theme's two fonts (**hand** and
+  **body**).
 - **A shape**: an **arrow**, **circle**, **underline**, **box**, **highlight** (a marker swipe) or **check**.
 
 How it appears is its **animation**:
@@ -107,8 +116,12 @@ Draw and handwrite can show a **pen** or **marker** that follows the line. Each 
 or you can give a length in seconds. An item can also have a few **keyframes** after it appears: where it is,
 how big, turned and how visible, at moments you choose, which blend between.
 
-Lines are drawn slightly wobbly, like a hand would, and the wobble is the same every time, so a video looks
-the same each time you render it. The theme's **roughness** sets how wobbly.
+A timeline can also have a **world** (a canvas bigger than the picture) with a **camera** that moves over
+it, and a **theme**: the paper, ink, colours and fonts that drawn lines and words use. A **background**
+colour sits behind everything; use a picture on the video track for anything fancier.
+
+Lines can be drawn slightly wobbly, like a hand would, and the wobble is the same every time, so a video
+looks the same each time you render it. The theme's **roughness** sets how wobbly, and 0 is clean.
 
 ### The world and the camera
 
@@ -125,14 +138,16 @@ the left, a **circle** growing from the middle, or a **marker** swipe with a sof
 
 ### Version
 
-A timeline that uses a world, camera, theme, drawing or reveal is saved as **version 2**. An older release
-refuses to open it, instead of quietly dropping the drawings. Timelines that use none of these stay
-version 1.
+A timeline that uses a world, camera, theme, graphic, placed media or reveal is saved as **version 2**. An
+older release refuses to open it, instead of quietly dropping them. Timelines that use none of these stay
+version 1. Timelines saved when graphics were called _sketch_ items still open.
 
-### Sound effects
+### Built-in sounds
 
-A media item can name a **built-in sound** instead of a file: `sfx:pop`. These sounds ship with Reelcraft, so
-they need no stage, no upload and no cost, and they play in the editor and in every render.
+A media item can name a **built-in sound** instead of a file: `builtin:audio/pop`. These sounds ship with
+Reelcraft, so they need no stage, no upload and no cost, and they play in the editor and in every render. In
+the [asset library](../channels/assets.md#the-library) they are ordinary audio assets that happen to come
+with Reelcraft, so a plan picks them the same way it picks a sound you uploaded.
 
 | Name      | Sound                                  |
 | --------- | -------------------------------------- |
@@ -149,9 +164,7 @@ they need no stage, no upload and no cost, and they play in the editor and in ev
 | `thud`    | A soft thump, for something landing    |
 | `chime`   | A gentle two-note chime, for a result  |
 
-[Compile Scenes](../stage-types/compile-scenes.md) places them for you when **sfx** is on, at most one every
-quarter second, quietly under the voice. You can make others with
-[Generate Sound Effect](../stage-types/generate-sound-effect.md).
+Make others with [Generate Sound Effect](../stage-types/generate-sound-effect.md), or upload your own.
 
 ## Ducking
 

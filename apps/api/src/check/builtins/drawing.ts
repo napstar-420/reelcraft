@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { JsonSchema } from '@reelcraft/shared';
 import type { BuiltinCheck } from '../check.types';
-import { checkDrawing, unwrapDrawings } from '../../capability/whiteboard/drawing-prepare';
+import { checkDrawing, unwrapDrawings } from '../../capability/vector/drawing-prepare';
 import { checkValue } from './check-value';
 
 const Params = z.object({ path: z.string().optional() });

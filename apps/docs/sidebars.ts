@@ -63,7 +63,7 @@ const sidebars: SidebarsConfig = {
         'stage-types/analyze-media',
         'stage-types/concatenate-video',
         'stage-types/render-timeline',
-        'stage-types/compile-scenes',
+        'stage-types/compose-timeline',
         'stage-types/prepare-drawings',
         'stage-types/preview-drawings',
         'stage-types/export-subtitles',
@@ -98,6 +98,7 @@ const sidebars: SidebarsConfig = {
       collapsed: true,
       items: [
         'video/assembly',
+        'video/layered-videos',
         'video/timelines',
         'video/timeline-editor',
         'video/timeline-checks',

@@ -1,5 +1,6 @@
 import { and, eq, inArray } from 'drizzle-orm';
 import {
+  LIBRARY_KINDS,
   ancestorsOf,
   stageDependencies,
   type ConfigLayer,
@@ -7,10 +8,12 @@ import {
   type SeedStop,
   type SeedStopReason,
   type StageDef,
+  type LibraryKind,
 } from '@reelcraft/shared';
 import { canonicalJson } from '../json-schema/schema-hash';
 import { mergeLayer } from '../run-config/layer-merge';
-import { collectAssetIds } from '../blueprint/collect-asset-refs';
+import { collectAssetIds, collectLibraryRefs } from '../blueprint/collect-asset-refs';
+import { ASSET_KIND_FOR_LIBRARY } from '../library/library-catalog';
 import { ulid } from '../common/ulid';
 import type { Tx } from '../db/drizzle.provider';
 import {
@@ -153,7 +156,13 @@ export function reusableStageKeys(p: ReusableStageKeysParams): {
     const bindingsMatch = assetIds.every(
       (id) => canonicalJson(p.sourceAssetBindings[id]) === canonicalJson(p.newAssetBindings[id]),
     );
-    if (!bindingsMatch) return stopAt('assets_changed');
+    // A stage that lists the library also depends on which assets the library held.
+    const libraryMatch = collectLibraryRefs([newStage]).every(
+      (ref) =>
+        canonicalJson(libraryView(p.sourceAssetBindings, ref.kinds)) ===
+        canonicalJson(libraryView(p.newAssetBindings, ref.kinds)),
+    );
+    if (!bindingsMatch || !libraryMatch) return stopAt('assets_changed');
 
     if (sourceExecution.state !== 'passed' || sourceExecution.needsItemWork) {
       return stopAt(sourceStopReason(sourceExecution));
@@ -438,4 +447,19 @@ export function untilStageKeep(
 ): Set<string> | undefined {
   if (!untilStageKey || !graph.some((s) => s.key === untilStageKey)) return undefined;
   return new Set([untilStageKey, ...ancestorsOf(stageDependencies(graph), untilStageKey)]);
+}
+
+/** The library assets of one kind a run snapshotted, in a stable order. */
+function libraryView(
+  bindings: Record<string, { blobId: string; kind: string }>,
+  kinds: readonly LibraryKind[] | undefined,
+): unknown[] {
+  const wanted = new Set((kinds ?? LIBRARY_KINDS).map((kind) => ASSET_KIND_FOR_LIBRARY[kind]));
+  return Object.entries(bindings)
+    .filter(
+      ([, binding]) =>
+        (binding as { inLibrary?: boolean }).inLibrary === true && wanted.has(binding.kind),
+    )
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([id, binding]) => [id, binding]);
 }

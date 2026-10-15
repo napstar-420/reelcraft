@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { AssetNeed } from '@reelcraft/shared';
+import { DrawingNeed } from '@reelcraft/shared';
 import type {
   CostEstimate,
   JobHandle,
@@ -11,22 +11,24 @@ import type {
   ValidationIssue,
 } from '@reelcraft/shared';
 import { z } from 'zod';
+import { BuiltinDrawings } from '../vector/builtin-drawings';
 import { Capability } from '../capability.decorator';
 import type { CapabilityImpl, ExecCtx, ExecResult } from '../capability.interface';
-import {
-  prepareDrawings,
-  unwrapDrawings,
-  type DrawingRejection,
-} from '../whiteboard/drawing-prepare';
+import { prepareDrawings, unwrapDrawings, type DrawingRejection } from '../vector/drawing-prepare';
 
-type Payload = { assets: unknown[]; rejected: DrawingRejection[]; received: number };
+type Payload = {
+  assets: unknown[];
+  rejected: DrawingRejection[];
+  fallbacks: string[];
+  received: number;
+};
 
-const Needs = z.array(AssetNeed);
+const Needs = z.array(DrawingNeed);
 
 /**
- * Checks the drawings a run's model made for a hand-drawn video, and puts the ones that can be
- * used into one set for Compile Scenes. A drawing that can't be used is left out and listed in
- * the stage log; the video uses a built-in drawing in its place, so one bad drawing never stops a
+ * Checks the drawings a run's model made, and puts the ones that can be used into one set a
+ * timeline can place. A drawing that can't be used is left out and listed in
+ * the stage log; a built-in drawing takes its place when the plan named one, so one bad drawing never stops a
  * run. Free and instant.
  */
 @Capability('svg.prepare')
@@ -36,8 +38,10 @@ export class SvgPrepareCapability implements CapabilityImpl<Record<string, never
   readonly kind = 'sync' as const;
   readonly label = 'Prepare Drawings';
   readonly description =
-    'Check the drawings a model made for a hand-drawn video and gather the usable ones into a set for Compile Scenes.';
+    'Check the drawings a model made and gather the usable ones into a set to place on a timeline.';
   readonly configSchema: JsonSchema = { type: 'object', properties: {} };
+
+  constructor(private readonly builtin: BuiltinDrawings) {}
 
   slots(): SlotDef[] {
     return [
@@ -47,7 +51,12 @@ export class SvgPrepareCapability implements CapabilityImpl<Record<string, never
         required: true,
         cardinality: 'one',
       },
-      { name: 'scenes', accepts: [{ type: 'object' }], required: false, cardinality: 'one' },
+      {
+        name: 'needs',
+        accepts: [{ type: 'array' }, { type: 'object' }],
+        required: false,
+        cardinality: 'one',
+      },
     ];
   }
 
@@ -80,16 +89,29 @@ export class SvgPrepareCapability implements CapabilityImpl<Record<string, never
 
   async submit(ctx: ExecCtx<Record<string, never>>): Promise<JobHandle> {
     const drawings = unwrapDrawings(ctx.slots.drawings);
-    const plan = ctx.slots.scenes as { assetNeeds?: unknown } | undefined;
-    const needs = Needs.safeParse(plan?.assetNeeds);
-    const { assets, rejected } = prepareDrawings({
+    // What was asked for: a list of needs, or an object that holds one as `needs`.
+    const asked = ctx.slots.needs as { needs?: unknown } | unknown[] | undefined;
+    const needs = Needs.safeParse(Array.isArray(asked) ? asked : asked?.needs);
+    const { assets, rejected, fallbacks } = prepareDrawings({
       drawings,
       needs: needs.success ? needs.data : undefined,
+      builtin: (id) => {
+        const entry = this.builtin.get(id);
+        return (
+          entry && {
+            id: entry.id,
+            label: entry.label,
+            viewBox: entry.viewBox,
+            strokes: entry.strokes,
+            source: 'builtin' as const,
+          }
+        );
+      },
     });
     return {
       providerId: 'local-sync',
       externalId: ctx.idempotencyKey,
-      payload: { assets, rejected, received: drawings.length } satisfies Payload,
+      payload: { assets, rejected, fallbacks, received: drawings.length } satisfies Payload,
     };
   }
 
@@ -112,6 +134,7 @@ export class SvgPrepareCapability implements CapabilityImpl<Record<string, never
         received: payload.received,
         accepted: payload.assets.length,
         rejected: payload.rejected,
+        builtinFallbacks: payload.fallbacks,
       },
     };
   }

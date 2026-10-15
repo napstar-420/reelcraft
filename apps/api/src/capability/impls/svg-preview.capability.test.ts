@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import { Timeline } from '@reelcraft/shared';
-import { WhiteboardAssetRegistry } from '../whiteboard/asset.registry';
+import { BuiltinDrawings } from '../vector/builtin-drawings';
 import { drawingPreviewSpec, SvgPreviewCapability } from './svg-preview.capability';
 
-const registry = new WhiteboardAssetRegistry();
+const registry = new BuiltinDrawings();
 const assets = registry
   .list()
   .slice(0, 6)

@@ -29,6 +29,8 @@ export function describeRef(ref: Ref | undefined): string {
       return `input.${ref.inputKey}`;
     case 'asset':
       return 'asset';
+    case 'library':
+      return `library${ref.kinds?.length ? `.${ref.kinds.join('+')}` : ''}${ref.tags?.length ? `[${ref.tags.join(',')}]` : ''}`;
     case 'role':
       return `role.${ref.roleKey}`;
     case 'item':

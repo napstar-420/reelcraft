@@ -8,6 +8,7 @@ import { attemptOutcomeEnum } from '../db/schema/execution';
 import { qualityIssues } from './tools/quality-checks';
 import {
   recipeBrollMontage,
+  recipeComposedVideo,
   recipeIllustratedStory,
   recipeParallelStory,
   recipeVoiceoverReel,
@@ -131,7 +132,7 @@ describe('assistant guide coverage', () => {
 
   it('mentions every Ref kind', () => {
     const kinds = refKinds();
-    expect(kinds).toHaveLength(10);
+    expect(kinds).toHaveLength(11);
     expect(kinds.filter((k) => !covered(k) && !guideText.includes(`from:'${k}'`))).toEqual([]);
   });
 
@@ -163,6 +164,8 @@ describe('assistant guide examples', () => {
     ['recipe: illustrated story with a Character', () => recipeIllustratedStory(true)],
     ['recipe: b-roll montage', recipeBrollMontage],
     ['recipe: parallel story', recipeParallelStory],
+    ['recipe: composed video, drawings made in the run', () => recipeComposedVideo('generated')],
+    ['recipe: composed video, only uploaded assets', () => recipeComposedVideo('library')],
   ])('example "%s" has no validation errors', (_name, make) => {
     const draft = make();
     const issues = validator.validate({

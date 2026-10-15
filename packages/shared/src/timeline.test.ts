@@ -245,9 +245,9 @@ describe('Timeline', () => {
     });
   });
 
-  describe('sketch items and reveals', () => {
-    const sketch = (overrides: Record<string, unknown> = {}) => ({
-      type: 'sketch',
+  describe('graphic items and reveals', () => {
+    const graphic = (overrides: Record<string, unknown> = {}) => ({
+      type: 'graphic',
       startSec: 0,
       durationSec: 2,
       x: 10,
@@ -264,7 +264,7 @@ describe('Timeline', () => {
     });
 
     it('accepts a drawn item on an overlay track and writes the timeline as version 2', () => {
-      const parsed = Timeline.parse(onOverlay(sketch()));
+      const parsed = Timeline.parse(onOverlay(graphic()));
       expect(parsed.version).toBe(2);
     });
 
@@ -275,14 +275,14 @@ describe('Timeline', () => {
         { kind: 'shape', shape: 'highlight', color: 'highlight' },
       ];
       for (const content of contents) {
-        expect(Timeline.safeParse(onOverlay(sketch({ content }))).success).toBe(true);
+        expect(Timeline.safeParse(onOverlay(graphic({ content }))).success).toBe(true);
       }
     });
 
     it('does not accept a drawn item on a video track', () => {
-      const result = Timeline.safeParse(onOverlay(sketch(), 'video'));
+      const result = Timeline.safeParse(onOverlay(graphic(), 'video'));
       expect(result.success).toBe(false);
-      expect(JSON.stringify(result)).toContain('sketch item is not valid on a video track');
+      expect(JSON.stringify(result)).toContain('graphic item is not valid on a video track');
     });
 
     it('rejects bad content, animation and sizes', () => {
@@ -296,13 +296,15 @@ describe('Timeline', () => {
         { durationSec: 0 },
         { keyframes: [{ atSec: 0, opacity: 3 }] },
       ]) {
-        expect(Timeline.safeParse(onOverlay(sketch(bad))).success, JSON.stringify(bad)).toBe(false);
+        expect(Timeline.safeParse(onOverlay(graphic(bad))).success, JSON.stringify(bad)).toBe(
+          false,
+        );
       }
     });
 
     it('keeps the narration cue an item was placed by', () => {
       const cue = { timingHandle: 'artifact:vo', phrase: 'the cue', offsetSec: -0.1 };
-      const parsed = Timeline.parse(onOverlay(sketch({ cue })));
+      const parsed = Timeline.parse(onOverlay(graphic({ cue })));
       expect(parsed.tracks[0]!.items[0]).toMatchObject({ cue });
     });
 
@@ -328,9 +330,108 @@ describe('Timeline', () => {
     });
 
     it('says version 2 for a drawn item and a revealed picture', () => {
-      expect(timelineVersionFor({ tracks: [{ items: [{ type: 'sketch' }] }] })).toBe(2);
+      expect(timelineVersionFor({ tracks: [{ items: [{ type: 'graphic' }] }] })).toBe(2);
       expect(timelineVersionFor({ tracks: [{ items: [{ type: 'media', reveal: {} }] }] })).toBe(2);
       expect(timelineVersionFor({ tracks: [{ items: [{ type: 'media' }] }] })).toBe(1);
+    });
+  });
+
+  describe('placed media and generic items', () => {
+    const base = { version: 1, canvas: { width: 1920, height: 1080, fps: 30 } };
+    const on = (type: 'video' | 'overlay' | 'audio', extra: Record<string, unknown>) => ({
+      ...base,
+      tracks: [
+        {
+          id: 't',
+          type,
+          items: [{ type: 'media', handle: 'artifact:a', startSec: 0, durationSec: 3, ...extra }],
+        },
+      ],
+    });
+    const box = { x: 100, y: 80, w: 400, h: 300 };
+
+    it('places an image in a box with an arrival and keyframes, as version 2', () => {
+      const parsed = Timeline.parse(
+        on('overlay', {
+          ...box,
+          rotate: 4,
+          anim: { type: 'pop' },
+          keyframes: [{ atSec: 1, x: 20 }],
+        }),
+      );
+      expect(parsed.version).toBe(2);
+      expect(parsed.tracks[0]!.items[0]).toMatchObject({ ...box, anim: { type: 'pop' } });
+    });
+
+    it('needs the whole box, and a box for anything that places', () => {
+      expect(Timeline.safeParse(on('overlay', { x: 1, y: 2 })).success).toBe(false);
+      expect(Timeline.safeParse(on('overlay', { anim: { type: 'pop' } })).success).toBe(false);
+      expect(Timeline.safeParse(on('audio', box)).success).toBe(false);
+    });
+
+    it('lets placed media pop, fade, slide or stay, and not draw', () => {
+      for (const type of ['pop', 'fade', 'slide', 'none']) {
+        expect(Timeline.safeParse(on('overlay', { ...box, anim: { type } })).success).toBe(true);
+      }
+      for (const type of ['draw', 'handwrite', 'highlight']) {
+        expect(Timeline.safeParse(on('overlay', { ...box, anim: { type } })).success).toBe(false);
+      }
+    });
+
+    it('still reads a timeline saved with the item named sketch', () => {
+      const parsed = Timeline.parse({
+        ...base,
+        tracks: [
+          {
+            id: 'o',
+            type: 'overlay',
+            items: [
+              {
+                type: 'sketch',
+                startSec: 0,
+                durationSec: 2,
+                ...box,
+                content: { kind: 'shape', shape: 'circle' },
+                anim: { type: 'draw' },
+              },
+            ],
+          },
+        ],
+      });
+      expect(parsed.tracks[0]!.items[0]!.type).toBe('graphic');
+      expect(parsed.version).toBe(2);
+    });
+
+    it('takes any font family, weight and right-aligned text on a drawn item', () => {
+      const parsed = Timeline.parse({
+        ...base,
+        tracks: [
+          {
+            id: 'o',
+            type: 'overlay',
+            items: [
+              {
+                type: 'graphic',
+                startSec: 0,
+                durationSec: 2,
+                ...box,
+                content: {
+                  kind: 'text',
+                  text: 'HALF A TON',
+                  size: 80,
+                  font: 'Inter',
+                  weight: 800,
+                  align: 'right',
+                },
+                anim: { type: 'pop' },
+              },
+            ],
+          },
+        ],
+      });
+      expect(parsed.tracks[0]!.items[0]).toMatchObject({
+        content: { font: 'Inter', weight: 800, align: 'right' },
+      });
     });
   });
 });

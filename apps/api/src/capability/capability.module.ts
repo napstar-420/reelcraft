@@ -22,10 +22,10 @@ import {
 } from './impls/media-generate.capability';
 import { BrowserAutomateCapability } from './impls/browser-automate.capability';
 import { FlowVideoCapability } from './impls/flow-video.capability';
-import { SceneCompileCapability } from './impls/scene-compile.capability';
+import { TimelineComposeCapability } from './impls/timeline-compose.capability';
 import { SvgPrepareCapability } from './impls/svg-prepare.capability';
 import { SvgPreviewCapability } from './impls/svg-preview.capability';
-import { WhiteboardAssetRegistry } from './whiteboard/asset.registry';
+import { BuiltinDrawings } from './vector/builtin-drawings';
 
 /**
  * §1.3 — may inject ProviderModule and StorageModule. Must NOT be able to
@@ -53,12 +53,12 @@ import { WhiteboardAssetRegistry } from './whiteboard/asset.registry';
     MediaAnalyzeCapability,
     BrowserAutomateCapability,
     FlowVideoCapability,
-    SceneCompileCapability,
+    TimelineComposeCapability,
     SvgPrepareCapability,
     SvgPreviewCapability,
-    WhiteboardAssetRegistry,
+    BuiltinDrawings,
   ],
   controllers: [CapabilityController],
-  exports: [CapabilityRegistry, StyleRegistry, WhiteboardAssetRegistry],
+  exports: [CapabilityRegistry, StyleRegistry, BuiltinDrawings],
 })
 export class CapabilityModule {}

@@ -20,7 +20,7 @@ export function isTimeline(value: unknown): value is Timeline {
 export function itemLabel(item: TimelineItem): string {
   if (item.type === 'media') return item.handle;
   if (item.type === 'text') return item.text;
-  if (item.type === 'sketch') {
+  if (item.type === 'graphic') {
     return item.content.kind === 'text'
       ? item.content.text
       : item.content.kind === 'shape'
