@@ -8,11 +8,11 @@ import {
 import type { Instruction } from '@remotion/paths';
 import type {
   Ease,
-  SketchAnim,
-  SketchContent,
-  SketchKeyframe,
-  SketchShape,
-  SketchStroke,
+  GraphicAnim,
+  GraphicContent,
+  GraphicKeyframe,
+  GraphicShape,
+  GraphicStroke,
   TimelineCamera,
   TimelineTheme,
 } from '@reelcraft/shared';
@@ -82,7 +82,7 @@ export function resolveColor(
 const WEIGHT = { thin: 0.6, normal: 1, bold: 1.7 } as const;
 
 /** A line's width in world units. */
-export function strokeWidthFor(weight: SketchStroke['weight'], theme: TimelineTheme): number {
+export function strokeWidthFor(weight: GraphicStroke['weight'], theme: TimelineTheme): number {
   return theme.strokeWidth * WEIGHT[weight ?? 'normal'];
 }
 
@@ -232,8 +232,8 @@ export function penPoint(
 
 /** How long an animation takes when the item doesn't say. */
 export function animDurationSec(
-  anim: SketchAnim,
-  content: SketchContent,
+  anim: GraphicAnim,
+  content: GraphicContent,
   itemDurationSec: number,
 ): number {
   const chars = content.kind === 'text' ? content.text.length : 0;
@@ -290,8 +290,8 @@ const DONE: AnimState = {
 
 /** What an item looks like `localSec` seconds after it appears. */
 export function animState(
-  anim: SketchAnim,
-  content: SketchContent,
+  anim: GraphicAnim,
+  content: GraphicContent,
   box: { w: number; h: number },
   itemDurationSec: number,
   localSec: number,
@@ -341,7 +341,7 @@ export type KeyframeState = {
 export const NO_KEYFRAMES: KeyframeState = { x: 0, y: 0, scale: 1, rotate: 0, opacity: 1 };
 
 export function keyframeState(
-  keyframes: readonly SketchKeyframe[] | undefined,
+  keyframes: readonly GraphicKeyframe[] | undefined,
   localSec: number,
 ): KeyframeState {
   if (!keyframes?.length) return NO_KEYFRAMES;
@@ -415,7 +415,7 @@ export function cameraTransform(view: CameraView, canvas: { width: number; heigh
 /* ---------------------------------------------------------------- built-in shapes */
 
 /** The lines of a shape, drawn on a `w` by `h` grid. */
-export function shapeStrokes(shape: SketchShape, w: number, h: number): SketchStroke[] {
+export function shapeStrokes(shape: GraphicShape, w: number, h: number): GraphicStroke[] {
   const f = (value: number) => round(value);
   switch (shape) {
     case 'arrow':

@@ -25,17 +25,18 @@ Slot values can be used in the prompt too, by the slot's name.
 
 Every slot and context entry has a picker for where its value comes from:
 
-| Source     | What it gives                                                                                       | Extra choice                    |
-| ---------- | --------------------------------------------------------------------------------------------------- | ------------------------------- |
-| `prev`     | The output of the stage just before this one                                                        | An optional path                |
-| `stage`    | The output of any earlier stage (**Output of stage…**), see [Parallel stages](./parallel-stages.md) | The stage, and an optional path |
-| `memory`   | A value an earlier stage saved under a memory key                                                   | The key, and an optional path   |
-| `input`    | A value or file the person starting the run provided                                                | The input, and an optional path |
-| `asset`    | One of the channel's [assets](../channels/assets.md)                                                | The asset                       |
-| `role`     | The blueprint's [character](../channels/characters.md) and its reference images                     | The role                        |
-| `const`    | A fixed value you type in                                                                           | The value and its type          |
-| `item`     | The current item, on a stage that [iterates](./iterate-conditions-approval.md#iterate)              | An optional path                |
-| `prevItem` | This stage's output for the previous item, on a stage that iterates                                 | An optional path                |
+| Source     | What it gives                                                                                           | Extra choice                                          |
+| ---------- | ------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| `prev`     | The output of the stage just before this one                                                            | An optional path                                      |
+| `stage`    | The output of any earlier stage (**Output of stage…**), see [Parallel stages](./parallel-stages.md)     | The stage, and an optional path                       |
+| `memory`   | A value an earlier stage saved under a memory key                                                       | The key, and an optional path                         |
+| `input`    | A value or file the person starting the run provided                                                    | The input, and an optional path                       |
+| `asset`    | One of the channel's [assets](../channels/assets.md)                                                    | The asset                                             |
+| `library`  | A catalogue of the channel's [library](../channels/assets.md#the-library): uploaded and built-in assets | The kinds, tags, and whether to include built-in ones |
+| `role`     | The blueprint's [character](../channels/characters.md) and its reference images                         | The role                                              |
+| `const`    | A fixed value you type in                                                                               | The value and its type                                |
+| `item`     | The current item, on a stage that [iterates](./iterate-conditions-approval.md#iterate)                  | An optional path                                      |
+| `prevItem` | This stage's output for the previous item, on a stage that iterates                                     | An optional path                                      |
 
 `prev` isn't offered on the first stage, because there's nothing before it. `item` and `prevItem`
 only appear on a stage that iterates.

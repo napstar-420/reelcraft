@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { VectorAsset } from '@reelcraft/shared';
-import { WhiteboardAssetRegistry } from './asset.registry';
+import { BuiltinDrawings } from './builtin-drawings';
 
-const registry = new WhiteboardAssetRegistry();
+const registry = new BuiltinDrawings();
 
-describe('WhiteboardAssetRegistry', () => {
+describe('BuiltinDrawings', () => {
   it('holds a good number of drawings with unique ids', () => {
     expect(registry.list().length).toBeGreaterThanOrEqual(45);
     expect(new Set(registry.ids()).size).toBe(registry.ids().length);

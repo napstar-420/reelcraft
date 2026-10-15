@@ -77,6 +77,16 @@ export const ModelCapabilities = z.object({
     .optional(),
   /** What a text-to-speech model offers: its voices, formats and settings. */
   speech: SpeechModelOptions.optional(),
+  /** What a sound-effect or music model offers. Speech models have `speech` instead. */
+  sound: z
+    .object({
+      kind: z.enum(['sfx', 'music']),
+      minSec: z.number().positive(),
+      maxSec: z.number().positive(),
+      /** The most one second of sound costs, used to reserve budget before the call. */
+      usdPerSecond: z.number().nonnegative(),
+    })
+    .optional(),
 });
 export type ModelCapabilities = z.infer<typeof ModelCapabilities>;
 

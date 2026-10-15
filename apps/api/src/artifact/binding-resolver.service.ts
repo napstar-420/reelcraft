@@ -1,8 +1,14 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { and, desc, eq, inArray, isNull } from 'drizzle-orm';
+import { LIBRARY_KINDS } from '@reelcraft/shared';
 import type { ArtifactKind, Ref } from '@reelcraft/shared';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
 import { artifact, blob, runMemory } from '../db/schema/index';
+import {
+  ASSET_KIND_FOR_LIBRARY,
+  libraryCatalog,
+  type LibraryBinding,
+} from '../library/library-catalog';
 import type { StageDef } from '@reelcraft/shared';
 import { getPath } from '../common/path';
 import { unwrapText } from '../common/unwrap-text';
@@ -45,7 +51,7 @@ export interface BindingScope {
    * `RunService.start()` (§6.2). Never re-read from the live `asset` table
    * here, so a later channel-asset edit can't retroactively change a past
    * run. */
-  assetBindings?: Record<string, { blobId: string; kind: string; name?: string }> | undefined;
+  assetBindings?: Record<string, LibraryBinding> | undefined;
   /** Immutable Character snapshots written by RunService.start(). */
   roleBindings?: Record<string, RoleBinding> | undefined;
   /** phase 7 — carried through the interface now so callers don't churn later. */
@@ -320,6 +326,45 @@ export class BindingResolverService {
               ) ?? false,
           },
           provenance: { ref, assetId: ref.assetId },
+        };
+      }
+
+      case 'library': {
+        // The catalogue of what the run snapshotted at start, so editing the library mid-run
+        // can't change what a stage sees.
+        const bindings = ctx.assetBindings ?? {};
+        const kinds = new Set((ref.kinds ?? LIBRARY_KINDS).map((k) => ASSET_KIND_FOR_LIBRARY[k]));
+        const wanted = Object.entries(bindings).filter(
+          ([, binding]) => binding.inLibrary && kinds.has(binding.kind),
+        );
+        const probes = wanted.length
+          ? await this.db
+              .select({ id: blob.id, probe: blob.probe })
+              .from(blob)
+              .where(
+                inArray(
+                  blob.id,
+                  wanted.map(([, binding]) => binding.blobId),
+                ),
+              )
+          : [];
+        const probeOf = new Map(probes.map((row) => [row.id, row.probe]));
+        const durations = Object.fromEntries(
+          wanted.map(([assetId, binding]) => [
+            assetId,
+            (probeOf.get(binding.blobId) as { durationSec?: number } | null | undefined)
+              ?.durationSec,
+          ]),
+        );
+        return {
+          value: libraryCatalog({
+            kinds: ref.kinds,
+            tags: ref.tags,
+            builtin: ref.builtin,
+            bindings,
+            durations,
+          }),
+          provenance: { ref },
         };
       }
 

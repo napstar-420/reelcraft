@@ -33,6 +33,17 @@ export function collectAssetIds(graph: StageDef[]): string[] {
   return [...ids];
 }
 
+/** Every `{from:'library'}` ref in the graph, so `run.service.ts`'s `start()` can snapshot the
+ * channel assets they select. */
+export function collectLibraryRefs(graph: StageDef[]): Array<Extract<Ref, { from: 'library' }>> {
+  const refs: Array<Extract<Ref, { from: 'library' }>> = [];
+  mapGraphRefs(graph, (ref) => {
+    if (ref.from === 'library') refs.push(ref);
+    return ref;
+  });
+  return refs;
+}
+
 /** The role refs whose images a stage sends to its model: reference slots
  * plus attached Context. Shared by save-time and run-start reference-limit
  * checks so both count the same bindings. */

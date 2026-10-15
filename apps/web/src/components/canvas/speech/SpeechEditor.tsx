@@ -64,7 +64,9 @@ export function SpeechEditor({
     refetchInterval: (query) => (anyDownloading(query.state.data) ? 1000 : false),
   });
   const [choosing, setChoosing] = useState(false);
-  const speechModels = models.data?.filter((m) => m.modalities.includes('audio'));
+  const speechModels = models.data?.filter(
+    (m) => m.modalities.includes('audio') && !m.capabilities?.sound,
+  );
   const model = speechModels?.find((m) => m.modelId === value?.modelId);
   const options = speechOptionsOf(model);
   const params = value?.params;

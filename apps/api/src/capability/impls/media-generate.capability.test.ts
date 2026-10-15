@@ -1,7 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { StageDef } from '@reelcraft/shared';
 import type { ExecCtx } from '../capability.interface';
-import { AudioSpeechCapability, ImageGenerateCapability } from './media-generate.capability';
+import {
+  AudioMusicCapability,
+  AudioSfxCapability,
+  AudioSpeechCapability,
+  ImageGenerateCapability,
+} from './media-generate.capability';
 
 describe('ImageGenerateCapability', () => {
   it('prepares a stable identity-augmented prompt used for estimate and submission', async () => {
@@ -235,5 +240,58 @@ describe('AudioSpeechCapability', () => {
     expect(capability.prepare({ ...ctx, slots: { text: 'plain' } } as never).slots.text).toBe(
       'plain',
     );
+  });
+});
+
+describe('sound effects and music', () => {
+  const stage = (capability: string, template?: string): StageDef => ({
+    key: 'sound',
+    label: 'Sound',
+    capability,
+    config: {},
+    slots: {},
+    context: {},
+    output: { kind: 'media.audio' },
+    checks: [],
+    ...(template !== undefined && { instructions: { template } }),
+  });
+  const sfx = new AudioSfxCapability({} as never);
+  const music = new AudioMusicCapability({} as never);
+
+  it('makes audio, and needs a description of the sound', () => {
+    expect(sfx.allowedOutputs({} as never)).toEqual(['media.audio']);
+    expect(sfx.validate({} as never, stage('audio.sfx')).map((i) => i.path)).toEqual([
+      'instructions.template',
+    ]);
+    expect(sfx.validate({} as never, stage('audio.sfx', 'a pop'))).toEqual([]);
+  });
+
+  it('keeps the length inside what each kind takes', () => {
+    const long = { provider: 'fake', modelId: 'fake-sfx-1', durationSec: 40 };
+    expect(sfx.validate(long, stage('audio.sfx', 'a pop'))[0]?.path).toBe('config.durationSec');
+    expect(music.validate(long, stage('audio.music', 'calm'))).toEqual([]);
+    expect(music.validate({ ...long, durationSec: 1 }, stage('audio.music', 'calm'))[0]?.path).toBe(
+      'config.durationSec',
+    );
+  });
+
+  it('tells the provider what kind of sound and how long', async () => {
+    const submit = vi.fn().mockResolvedValue({ providerId: 'fake', externalId: 'j' });
+    const capability = new AudioMusicCapability({ get: () => ({ submit }) } as never);
+    await capability.submit({
+      runId: 'r',
+      stageKey: 'm',
+      attemptNo: 1,
+      config: { provider: 'fake', modelId: 'fake-music-1', durationSec: 45 },
+      slots: {},
+      context: {},
+      renderedPrompt: 'calm piano',
+      idempotencyKey: 'k',
+      logger: { log: () => {}, error: () => {} },
+    });
+    expect(submit.mock.calls[0]?.[0]).toMatchObject({
+      renderedPrompt: 'calm piano',
+      params: { __soundKind: 'music', durationSec: 45 },
+    });
   });
 });

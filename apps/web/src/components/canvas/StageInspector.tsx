@@ -1713,6 +1713,7 @@ export function StageInspector({
                 value={stage.model}
                 onChange={(model) => onChange({ ...stage, model })}
                 {...(stageCapability && { modality: stageCapability.modality })}
+                capability={stage.capability}
               />
               {!stage.model?.provider && (
                 <InheritedModelNote pin={inherited.models[modalityOf(stage.capability)]} />

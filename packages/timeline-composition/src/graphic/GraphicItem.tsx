@@ -1,6 +1,6 @@
 import React from 'react';
 import { useCurrentFrame, useVideoConfig } from 'remotion';
-import type { SketchStroke, TimelineItem, TimelineTheme } from '@reelcraft/shared';
+import type { GraphicStroke, TimelineItem, TimelineTheme } from '@reelcraft/shared';
 import {
   animState,
   clamp01,
@@ -12,14 +12,36 @@ import {
   shapeStrokes,
   strokeWidthFor,
   visibleLengths,
-} from './sketch-math';
+} from './graphic-math';
 
-export type SketchTimelineItem = Extract<TimelineItem, { type: 'sketch' }>;
+/** Where a placed item sits and how it looks at this moment: its box, turned and moved by its
+ * animation and keyframes. Used by drawn items and by media placed on the frame. */
+export function placedStyle(
+  box: { x: number; y: number; w: number; h: number; rotate?: number | undefined },
+  state: ReturnType<typeof animState>,
+  kf: ReturnType<typeof keyframeState>,
+): React.CSSProperties {
+  const rotate = (box.rotate ?? 0) + kf.rotate;
+  return {
+    position: 'absolute',
+    left: box.x + kf.x,
+    top: box.y + kf.y,
+    width: box.w,
+    height: box.h,
+    opacity: state.opacity * kf.opacity,
+    transform: `translate(${state.dx}px, ${state.dy}px) rotate(${rotate}deg) scale(${state.scale * kf.scale})`,
+    transformOrigin: '50% 50%',
+    clipPath: state.reveal < 1 ? `inset(-20% ${(1 - state.reveal) * 100}% -20% -20%)` : undefined,
+    pointerEvents: 'none',
+  };
+}
 
-/** The lines a sketch item draws, and the grid they are drawn on. */
-export function sketchGeometry(item: SketchTimelineItem): {
+export type GraphicTimelineItem = Extract<TimelineItem, { type: 'graphic' }>;
+
+/** The lines a graphic item draws, and the grid they are drawn on. */
+export function graphicGeometry(item: GraphicTimelineItem): {
   viewBox: { width: number; height: number };
-  strokes: SketchStroke[];
+  strokes: GraphicStroke[];
 } | null {
   const { content } = item;
   if (content.kind === 'paths') return { viewBox: content.viewBox, strokes: content.strokes };
@@ -71,12 +93,12 @@ const Pen = ({
   </g>
 );
 
-export const SketchItem = ({
+export const GraphicItem = ({
   item,
   seedKey,
   theme,
 }: {
-  item: SketchTimelineItem;
+  item: GraphicTimelineItem;
   /** What the wobble is seeded with, so the same item looks the same on every render. */
   seedKey: string;
   theme: TimelineTheme;
@@ -92,7 +114,7 @@ export const SketchItem = ({
     localSec,
   );
   const kf = keyframeState(item.keyframes, localSec);
-  const geometry = sketchGeometry(item);
+  const geometry = graphicGeometry(item);
   const seed = item.id ?? seedKey;
 
   // The lines are roughened once per item, not every frame.
@@ -105,22 +127,11 @@ export const SketchItem = ({
   }, [geometry, seed, theme.roughness, theme.strokeWidth]);
   const lengths = React.useMemo(() => roughened.map(pathLength), [roughened]);
 
-  const rotate = (item.rotate ?? 0) + kf.rotate;
-  const style: React.CSSProperties = {
-    position: 'absolute',
-    left: item.x + kf.x,
-    top: item.y + kf.y,
-    width: item.w,
-    height: item.h,
-    opacity: state.opacity * kf.opacity,
-    transform: `translate(${state.dx}px, ${state.dy}px) rotate(${rotate}deg) scale(${state.scale * kf.scale})`,
-    transformOrigin: '50% 50%',
-    clipPath: state.reveal < 1 ? `inset(-20% ${(1 - state.reveal) * 100}% -20% -20%)` : undefined,
-    pointerEvents: 'none',
-  };
+  const style = placedStyle(item, state, kf);
 
   if (item.content.kind === 'text') {
-    const font = item.content.font === 'body' ? theme.fontBody : theme.fontHand;
+    const family = item.content.font ?? 'hand';
+    const font = family === 'body' ? theme.fontBody : family === 'hand' ? theme.fontHand : family;
     const color = resolveColor(item.content.color, theme);
     const marker = item.anim.type === 'highlight';
     return (
@@ -146,8 +157,15 @@ export const SketchItem = ({
             height: '100%',
             display: 'flex',
             alignItems: 'center',
-            fontFamily: `"${font}", "Comic Sans MS", cursive`,
-            fontWeight: item.content.font === 'body' ? 400 : 700,
+            justifyContent:
+              item.content.align === 'center'
+                ? 'center'
+                : item.content.align === 'right'
+                  ? 'flex-end'
+                  : 'flex-start',
+            textAlign: item.content.align ?? 'left',
+            fontFamily: `"${font}", ${family === 'hand' ? '"Comic Sans MS", cursive' : 'sans-serif'}`,
+            fontWeight: item.content.weight ?? (family === 'body' ? 400 : 700),
             fontSize: item.content.size,
             lineHeight: 1.05,
             color,

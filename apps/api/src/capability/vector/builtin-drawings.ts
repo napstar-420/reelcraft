@@ -14,13 +14,13 @@ const GRID = { width: 100, height: 100 } as const;
  * registry it is plain data, held in memory.
  */
 @Injectable()
-export class WhiteboardAssetRegistry {
+export class BuiltinDrawings {
   private readonly entries: RegistryEntry[] = ASSET_DEFS.map((def) => ({
     id: def.id,
     label: def.label,
     viewBox: { ...GRID },
     strokes: def.strokes,
-    source: 'registry' as const,
+    source: 'builtin' as const,
     tags: def.tags,
   }));
   private readonly byId = new Map(this.entries.map((entry) => [entry.id, entry]));

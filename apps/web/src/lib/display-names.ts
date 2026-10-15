@@ -7,6 +7,7 @@ export const ASSET_KIND_LABELS: Record<AssetKind, string> = {
   'media.audio': 'Audio',
   font: 'Font',
   lut: 'LUT',
+  vector: 'Drawing (SVG)',
 };
 
 const PROVIDER_NAMES: Record<string, string> = {

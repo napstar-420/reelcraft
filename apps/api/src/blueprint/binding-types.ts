@@ -24,6 +24,13 @@ const TIMING_SCHEMA: JsonSchema = {
   required: ['transcript', 'durationSec', 'sentences', 'words'],
 };
 
+/** The shape of an asset catalogue: what `{from:'library'}` resolves to. */
+const CATALOG_SCHEMA: JsonSchema = {
+  type: 'object',
+  properties: { assets: { type: 'array', items: { type: 'object' } } },
+  required: ['assets'],
+};
+
 export interface SourceTypeResult {
   type: SourceType;
   issue?: ValidationIssue;
@@ -104,6 +111,9 @@ export function sourceTypeOfRef(
       }
       return { type: narrowed.type };
     }
+
+    case 'library':
+      return { type: { kind: 'data', schema: CATALOG_SCHEMA } };
 
     case 'role':
       if (!ctx.roleKeys.has(ref.roleKey)) {

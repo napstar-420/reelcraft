@@ -1,4 +1,5 @@
-import { ConflictException, Inject, Injectable, Logger } from '@nestjs/common';
+import { readFile } from 'node:fs/promises';
+import { BadRequestException, ConflictException, Inject, Injectable, Logger } from '@nestjs/common';
 import { and, eq, isNull } from 'drizzle-orm';
 import { Probe, type AssetFileDto, type CreateAssetDto } from '@reelcraft/shared';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
@@ -10,6 +11,7 @@ import { EngineConfig } from '../config/engine-config';
 import { WorkspaceService } from '../storage/workspace.service';
 import { MediaProbeService } from '../artifact/media-probe.service';
 import { queueStorageOrphans } from '../artifact/storage-orphans';
+import { importSvg } from '../capability/vector/svg-import';
 
 /**
  * §3.3 — reusable channel material with a lifetime longer than a run.
@@ -63,6 +65,24 @@ export class AssetService {
         )
       : undefined;
 
+    // A drawing is read now, so a file that can't be drawn is refused at upload, not in a run.
+    let meta: unknown;
+    if (dto.kind === 'vector') {
+      const source = await this.workspaces.withWorkspace(dto.blobId, async (workspace) =>
+        readFile(await workspace.pull(dto.objectKey), 'utf8'),
+      );
+      const imported = importSvg(source);
+      if (!imported.ok) {
+        await queueStorageOrphans(this.db, [dto.objectKey], 'upload_rejected');
+        throw new BadRequestException({ code: 'asset_vector_invalid', message: imported.message });
+      }
+      meta = {
+        viewBox: imported.viewBox,
+        strokes: imported.strokes,
+        ...(imported.skipped.length && { skipped: imported.skipped }),
+      };
+    }
+
     await this.db.insert(blob).values({
       id: dto.blobId,
       ownerId,
@@ -85,6 +105,7 @@ export class AssetService {
       kind: dto.kind,
       blobId: dto.blobId,
       tags: dto.tags,
+      ...(meta !== undefined && { meta }),
     });
     this.logger.log(
       { channelId, assetId: id, blobId: dto.blobId, kind: dto.kind, bytes: stat.bytes },

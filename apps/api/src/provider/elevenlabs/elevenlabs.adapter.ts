@@ -36,13 +36,25 @@ import {
   type ElevenLabsModelSpec,
   type LiveElevenLabsModel,
 } from './elevenlabs-speech';
+import {
+  ELEVENLABS_SOUND_MODELS,
+  SOUND_OUTPUT_FORMAT,
+  clampSoundSeconds,
+  elevenLabsSoundRequest,
+  soundCostUsd,
+  soundModelInfos,
+} from './elevenlabs-sound';
 
 const API = 'https://api.elevenlabs.io';
 const MODELS_TTL_MS = 10 * 60_000;
 const REQUEST_TIMEOUT_MS = 120_000;
 
-const staticModels = (): ModelInfo[] =>
-  Object.entries(ELEVENLABS_MODELS).map(([modelId, spec]) => toModelInfo(modelId, spec.name, spec));
+const staticModels = (): ModelInfo[] => [
+  ...Object.entries(ELEVENLABS_MODELS).map(([modelId, spec]) =>
+    toModelInfo(modelId, spec.name, spec),
+  ),
+  ...soundModelInfos(),
+];
 
 function toModelInfo(modelId: string, label: string, spec: ElevenLabsModelSpec): ModelInfo {
   return {
@@ -104,8 +116,9 @@ export class ElevenLabsAdapter implements ProviderAdapter {
         .map((m) =>
           toModelInfo(m.model_id, ELEVENLABS_MODELS[m.model_id]?.name ?? m.name, specFromLive(m)),
         );
-      this.models = { at: Date.now(), key, list };
-      return list;
+      const withSound = [...list, ...soundModelInfos()];
+      this.models = { at: Date.now(), key, list: withSound };
+      return withSound;
     } catch (error) {
       this.logger.warn({ providerId: this.id, err: error }, 'live model list unavailable');
       return staticModels();
@@ -179,7 +192,29 @@ export class ElevenLabsAdapter implements ProviderAdapter {
     return String(slots?.text ?? '');
   }
 
+  /** The sound spec a request is for, when it asks for a sound effect or music. */
+  private soundSpec(req: ProviderRequest) {
+    if (req.params.__soundKind !== 'sfx' && req.params.__soundKind !== 'music') return undefined;
+    const spec = ELEVENLABS_SOUND_MODELS[req.modelId];
+    if (!spec) {
+      throw new Error(
+        `ElevenLabs: "${req.modelId}" is not a sound model. Choose ${Object.keys(ELEVENLABS_SOUND_MODELS).join(' or ')}.`,
+      );
+    }
+    if (spec.sound.kind !== req.params.__soundKind) {
+      throw new Error(
+        `ElevenLabs: ${spec.name} makes ${spec.sound.kind === 'sfx' ? 'sound effects' : 'music'}, not ${req.params.__soundKind === 'sfx' ? 'sound effects' : 'music'}.`,
+      );
+    }
+    return spec;
+  }
+
   async estimate(req: ProviderRequest): Promise<CostEstimate> {
+    const sound = this.soundSpec(req);
+    if (sound) {
+      const usd = soundCostUsd(sound.sound, clampSoundSeconds(sound.sound, req.params.durationSec));
+      return { expectedUsd: usd, ceilingUsd: usd, basis: 'configured_ceiling' };
+    }
     const options = await this.speechOptions(req.modelId);
     const expectedUsd = this.spokenText(req).length * pricePerCharacter(options, req.params);
     return { expectedUsd, ceilingUsd: expectedUsd, basis: 'configured_ceiling' };
@@ -203,6 +238,8 @@ export class ElevenLabsAdapter implements ProviderAdapter {
     if (!req) throw new Error('ElevenLabs: missing durable request');
     const apiKey = await this.keys.get(this.id);
     if (!apiKey) throw new Error('ElevenLabs: no API key configured');
+    const soundSpec = this.soundSpec(req);
+    if (soundSpec) return this.fetchSound(handle, req, soundSpec.sound, apiKey);
 
     const params = req.params as SpeechParams;
     const options = await this.speechOptions(req.modelId);
@@ -306,6 +343,67 @@ export class ElevenLabsAdapter implements ProviderAdapter {
         providerVersion: req.modelId,
       },
       rawResponse: { voiceId, format, characters: text.length, pieces: pieces.length },
+    };
+  }
+
+  /** One sound effect or piece of music. */
+  private async fetchSound(
+    handle: JobHandle,
+    req: ProviderRequest,
+    sound: NonNullable<ModelInfo['capabilities']['sound']>,
+    apiKey: string,
+  ): Promise<ProviderResult> {
+    const prompt = (req.renderedPrompt ?? '').trim();
+    if (!prompt) throw new Error('ElevenLabs: describe the sound in the stage instructions');
+    const seconds = clampSoundSeconds(sound, req.params.durationSec);
+    const influence = req.params.promptInfluence;
+    const { url, body } = elevenLabsSoundRequest({
+      modelId: req.modelId,
+      sound,
+      prompt,
+      seconds,
+      ...(typeof influence === 'number' && { promptInfluence: influence }),
+    });
+    const ids = { providerId: this.id, jobId: handle.externalId, model: req.modelId };
+    const startedAt = Date.now();
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'xi-api-key': apiKey,
+        'content-type': 'application/json',
+        accept: 'audio/mpeg',
+      },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(sound.kind === 'music' ? 300_000 : REQUEST_TIMEOUT_MS),
+    });
+    if (!response.ok) {
+      const reason = errorReason(await response.text());
+      this.logger.warn(
+        { ...ids, statusCode: response.status, durationMs: Date.now() - startedAt },
+        'provider http request failed',
+      );
+      throw new Error(
+        response.status === 401
+          ? `ElevenLabs: 401 the key was rejected. Check it in Settings. ${reason}`
+          : `ElevenLabs: ${response.status} ${reason}`,
+      );
+    }
+    const bytes = Buffer.from(await response.arrayBuffer());
+    if (bytes.length === 0) throw new Error('ElevenLabs: the sound came back empty');
+    this.logger.log(
+      { ...ids, seconds, bytes: bytes.length, durationMs: Date.now() - startedAt },
+      'provider job completed',
+    );
+    return {
+      output: {
+        kind: 'media.audio',
+        base64: bytes.toString('base64'),
+        mime: response.headers.get('content-type') ?? 'audio/mpeg',
+        filename: `${sound.kind}.mp3`,
+      },
+      costUsd: soundCostUsd(sound, seconds),
+      repro: { level: 'none', providerVersion: req.modelId },
+      rawResponse: { format: SOUND_OUTPUT_FORMAT, seconds },
     };
   }
 

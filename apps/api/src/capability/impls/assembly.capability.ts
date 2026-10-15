@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { Injectable } from '@nestjs/common';
-import { Timeline } from '@reelcraft/shared';
+import { Timeline, isBuiltinAudioHandle } from '@reelcraft/shared';
 import { timingMapOf } from '../../artifact/timing-map';
 import type {
   ComputeSpec,
@@ -45,7 +45,7 @@ const estimate: CostEstimate = {
 
 const unwrap = (handle: JobHandle): ComputeHandle => handle.payload as ComputeHandle;
 
-abstract class LocalComputeCapability<Cfg> implements CapabilityImpl<Cfg> {
+export abstract class LocalComputeCapability<Cfg> implements CapabilityImpl<Cfg> {
   abstract readonly modality: string;
   abstract readonly label: string;
   abstract readonly description: string;
@@ -230,7 +230,10 @@ export function timelineRenderSpec(p: {
   }
   const missing = p.timeline.tracks
     .flatMap((track) => track.items)
-    .filter((item) => item.type === 'media' && !resourceFiles[item.handle]);
+    .filter(
+      (item) =>
+        item.type === 'media' && !resourceFiles[item.handle] && !isBuiltinAudioHandle(item.handle),
+    );
   if (missing.length)
     throw new Error(`timeline.render cannot resolve ${missing.length} media item(s)`);
   const worker = path.resolve(__dirname, '../../../../render-worker/dist/cli.js');

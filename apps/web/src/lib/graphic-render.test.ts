@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { SketchContent, TimelineCamera, TimelineTheme } from '@reelcraft/shared';
+import type { GraphicContent, TimelineCamera, TimelineTheme } from '@reelcraft/shared';
 import {
   animState,
   cameraAt,
@@ -19,7 +19,7 @@ import {
   strokeWidthFor,
   visibleLengths,
   wholeWorldView,
-} from '@reelcraft/timeline-composition/src/sketch/sketch-math';
+} from '@reelcraft/timeline-composition/src/graphic/graphic-math';
 
 const box = { w: 400, h: 100 };
 
@@ -119,12 +119,12 @@ describe('drawing lines on', () => {
 });
 
 describe('animation state', () => {
-  const paths: SketchContent = {
+  const paths: GraphicContent = {
     kind: 'paths',
     viewBox: { width: 10, height: 10 },
     strokes: [{ d: 'M0 0 L9 9' }],
   };
-  const text: SketchContent = { kind: 'text', text: 'Hello there', size: 40 };
+  const text: GraphicContent = { kind: 'text', text: 'Hello there', size: 40 };
 
   it('draws a path on, then fills it in at the end', () => {
     const start = animState({ type: 'draw', durationSec: 1 }, paths, box, 5, 0);
@@ -138,7 +138,7 @@ describe('animation state', () => {
   it('writes text out instead of tracing it, and swipes a marker highlight', () => {
     const written = animState({ type: 'draw', durationSec: 1, ease: 'linear' }, text, box, 5, 0.5);
     expect(written).toMatchObject({ reveal: 0.5, draw: 1 });
-    const marker: SketchContent = { kind: 'shape', shape: 'highlight' };
+    const marker: GraphicContent = { kind: 'shape', shape: 'highlight' };
     expect(
       animState({ type: 'draw', durationSec: 1, ease: 'linear' }, marker, box, 5, 0.25).reveal,
     ).toBe(0.25);

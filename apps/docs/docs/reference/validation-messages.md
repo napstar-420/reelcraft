@@ -10,6 +10,16 @@ settings**. See [Versions](../blueprints/versions.md#runnable-or-not).
 - An **error** makes the blueprint **Not runnable yet**. Fix it before you can run.
 - A **warning** is advice. The blueprint still runs.
 
+## Sound effects and music
+
+- **describe the sound you want in the stage instructions** / **describe the music you want in the stage
+  instructions**: [Generate Sound Effect](../stage-types/generate-sound-effect.md) and
+  [Generate Music](../stage-types/generate-music.md) work from a description. Write it in **Instructions**.
+- **Length must be 0.5 to 22 seconds** (sound effect) or **3 to 600 seconds** (music): set **durationSec** in
+  range.
+- **"…" can't make sound effects / music**: the pinned model is for something else. Choose a sound effect or
+  music model.
+
 ## The blueprint
 
 | Message                                                       | What to do                                                                                             |

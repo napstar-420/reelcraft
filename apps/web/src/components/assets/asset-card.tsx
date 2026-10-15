@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Trash2, Image, Video, Music, Type, Palette } from 'lucide-react';
+import { Trash2, Image, Video, Music, Type, Palette, Shapes } from 'lucide-react';
 import type { AssetDto, AssetKind } from '@reelcraft/shared';
 import { api } from '@/api/client';
 import { Button } from '@/components/ui/button';
@@ -14,6 +14,7 @@ const KIND_ICONS: Record<AssetKind, typeof Image> = {
   'media.audio': Music,
   font: Type,
   lut: Palette,
+  vector: Shapes,
 };
 
 function formatBytes(bytes: number): string {
@@ -50,11 +51,11 @@ export function AssetCard({ asset, channelId }: { asset: AssetDto; channelId: st
   return (
     <Card className="flex h-full w-full flex-col overflow-hidden">
       <div className="relative">
-        {asset.kind === 'media.image' ? (
+        {asset.kind === 'media.image' || asset.kind === 'vector' ? (
           <img
             src={`/api/blobs/${asset.blobId}`}
             alt=""
-            className="aspect-video w-full object-cover"
+            className={`aspect-video w-full ${asset.kind === 'vector' ? 'bg-white object-contain p-2' : 'object-cover'}`}
           />
         ) : asset.kind === 'media.video' ? (
           <video

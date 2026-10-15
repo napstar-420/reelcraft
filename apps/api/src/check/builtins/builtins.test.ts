@@ -13,6 +13,7 @@ const EXPECTED_KEYS = [
   'array_length',
   'media_format',
   'non_empty',
+  'drawing',
 ];
 
 function textArtifact(text: string): CheckArtifact {
@@ -47,6 +48,7 @@ describe('paramsSchema stays in sync with params (drift guard)', () => {
     array_length: { path: 'beats', min: 1 },
     media_format: { container: 'mp4', codec: 'h264' },
     non_empty: { path: 'title' },
+    drawing: { path: 'drawings' },
   };
 
   it.each(Object.entries(BUILTIN_CHECKS))(
@@ -205,5 +207,44 @@ describe('duration_range / media_format / wpm (probe-based)', () => {
     expect(BUILTIN_CHECKS.non_empty!.run({}, text).pass).toBe(true);
     // An explicit path keeps working.
     expect(BUILTIN_CHECKS.word_count!.run({ path: 'text', min: 4 }, text).pass).toBe(true);
+  });
+});
+
+describe('drawing', () => {
+  const check = BUILTIN_CHECKS.drawing!;
+  const data = (strokes: unknown) => ({ kind: 'data' as const, data: { id: 'mug', strokes } });
+
+  it('passes a drawing that can be drawn', () => {
+    const result = check.run({}, data([{ d: 'M 20 20 L 80 20 L 80 80 Z', weight: 'bold' }]));
+    expect(result).toEqual({ pass: true, details: { drawings: 1, strokes: 1 } });
+  });
+
+  it('fails with everything that is wrong, in words a model can act on', () => {
+    const result = check.run(
+      {},
+      data([{ d: 'M 0 0 L 900 900' }, { d: 'M 10 10 L 50 50', color: 'url(#x)' }]),
+    );
+    expect(result.pass).toBe(false);
+    expect(result.message).toContain('stroke 1');
+    expect(result.message).toContain('stroke 2');
+    expect(result.message).toContain('leaves the 100 by 100 grid');
+  });
+
+  it('checks a list of drawings, or an object holding one, and names the one that is wrong', () => {
+    const fine = { id: 'a', strokes: [{ d: 'M 20 20 L 80 80' }] };
+    const broken = { id: 'b', strokes: [{ d: 'M 0 0 L 900 900' }] };
+    expect(check.run({}, { kind: 'data', data: [fine, fine] }).pass).toBe(true);
+    expect(check.run({ path: 'drawings' }, { kind: 'data', data: { drawings: [fine] } }).pass).toBe(
+      true,
+    );
+    const result = check.run({}, { kind: 'data', data: { drawings: [fine, broken] } });
+    expect(result.pass).toBe(false);
+    expect(result.message).toContain('drawing 2 (b)');
+    expect(result.message).not.toContain('drawing 1');
+  });
+
+  it('fails on something that is not a drawing, without throwing', () => {
+    expect(check.run({}, { kind: 'text', data: 'a mug' }).pass).toBe(false);
+    expect(check.run({}, { kind: 'data', data: undefined }).pass).toBe(false);
   });
 });

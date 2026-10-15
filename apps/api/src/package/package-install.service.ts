@@ -1,3 +1,4 @@
+import { importSvg } from '../capability/vector/svg-import';
 import { extname } from 'node:path';
 import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { and, eq, inArray, isNull } from 'drizzle-orm';
@@ -275,7 +276,13 @@ export class PackageInstallService {
         }
         for (const a of newAssets) {
           await tx.insert(blob).values(blobRow(a.blob, 'asset'));
+          // A drawing is read again here, as it is when uploaded, so the library can list it.
+          const drawn =
+            a.kind === 'vector' ? importSvg(Buffer.from(a.blob.bytes).toString('utf8')) : undefined;
           await tx.insert(asset).values({
+            ...(drawn?.ok && {
+              meta: { viewBox: drawn.viewBox, strokes: drawn.strokes },
+            }),
             id: a.id,
             ownerId,
             channelId: dto.channelId,

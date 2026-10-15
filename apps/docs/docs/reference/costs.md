@@ -10,14 +10,15 @@ on their sites.
 
 ## What costs money
 
-| What                                                                                  | Billed by                  | How                                                                     |
-| ------------------------------------------------------------------------------------- | -------------------------- | ----------------------------------------------------------------------- |
-| [Generate Text](../stage-types/generate-text.md) with an OpenRouter model             | OpenRouter                 | By the amount of text sent and received                                 |
-| [Generate Image](../stage-types/generate-image.md) with an OpenRouter model           | OpenRouter                 | Per image, by the model                                                 |
-| [Generate Video](../stage-types/generate-video.md) (fal)                              | fal                        | Per clip. Usually the biggest cost                                      |
-| [Generate Speech](../stage-types/generate-speech.md) (ElevenLabs, Deepgram)           | ElevenLabs or Deepgram     | By the amount of text                                                   |
-| [Analyze Media](../stage-types/analyze-media.md) with **Transcribe align** (Deepgram) | Deepgram                   | By the length of the audio                                              |
-| [Quality control](../blueprints/quality-control.md)                                   | The judge model's provider | One call per scoring, and a transcription if the judge can't hear audio |
+| What                                                                                                                              | Billed by                  | How                                                                     |
+| --------------------------------------------------------------------------------------------------------------------------------- | -------------------------- | ----------------------------------------------------------------------- |
+| [Generate Text](../stage-types/generate-text.md) with an OpenRouter model                                                         | OpenRouter                 | By the amount of text sent and received                                 |
+| [Generate Image](../stage-types/generate-image.md) with an OpenRouter model                                                       | OpenRouter                 | Per image, by the model                                                 |
+| [Generate Video](../stage-types/generate-video.md) (fal)                                                                          | fal                        | Per clip. Usually the biggest cost                                      |
+| [Generate Speech](../stage-types/generate-speech.md) (ElevenLabs, Deepgram)                                                       | ElevenLabs or Deepgram     | By the amount of text                                                   |
+| [Generate Sound Effect](../stage-types/generate-sound-effect.md), [Generate Music](../stage-types/generate-music.md) (ElevenLabs) | ElevenLabs                 | By the length of the sound                                              |
+| [Analyze Media](../stage-types/analyze-media.md) with **Transcribe align** (Deepgram)                                             | Deepgram                   | By the length of the audio                                              |
+| [Quality control](../blueprints/quality-control.md)                                                                               | The judge model's provider | One call per scoring, and a transcription if the judge can't hear audio |
 
 Every attempt costs, including ones that fail a check, fail quality control or are rejected. Redoing
 work costs again.
@@ -30,8 +31,9 @@ your ChatGPT plan instead of a per-use bill. They count against your plan's own 
 
 ## What is free
 
-- [Concatenate Video](../stage-types/concatenate-video.md), [Render Timeline](../stage-types/render-timeline.md)
-  and [Export Subtitles](../stage-types/export-subtitles.md): they run on your computer. They use its
+- [Concatenate Video](../stage-types/concatenate-video.md), [Render Timeline](../stage-types/render-timeline.md),
+  [Compose Timeline](../stage-types/compose-timeline.md), [Prepare Drawings](../stage-types/prepare-drawings.md),
+  [Preview Drawings](../stage-types/preview-drawings.md) and [Export Subtitles](../stage-types/export-subtitles.md): they run on your computer. They use its
   processor and time, not money.
 - [Analyze Media](../stage-types/analyze-media.md) with **Probe**.
 - [Generate Speech](../stage-types/generate-speech.md) with **Qwen3-TTS (local)**: it runs on your

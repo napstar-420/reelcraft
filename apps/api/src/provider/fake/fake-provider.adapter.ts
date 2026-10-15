@@ -149,6 +149,24 @@ export class FakeProviderAdapter implements ProviderAdapter {
         },
       },
       {
+        modelId: 'fake-sfx-1',
+        label: 'Fake Sound Effects 1',
+        capabilities: {
+          supportsSeed: true,
+          supportsIdempotency: true,
+          sound: { kind: 'sfx', minSec: 0.5, maxSec: 22, usdPerSecond: 0 },
+        },
+      },
+      {
+        modelId: 'fake-music-1',
+        label: 'Fake Music 1',
+        capabilities: {
+          supportsSeed: true,
+          supportsIdempotency: true,
+          sound: { kind: 'music', minSec: 3, maxSec: 600, usdPerSecond: 0 },
+        },
+      },
+      {
         modelId: 'fake-audio-1',
         label: 'Fake Audio 1',
         capabilities: { supportsSeed: true, supportsIdempotency: true },
@@ -304,7 +322,7 @@ export class FakeProviderAdapter implements ProviderAdapter {
         rawResponse: { fake: true, fixture: 'png' },
       };
     }
-    if (job.modelId.startsWith('fake-audio-')) {
+    if (/^fake-(audio|sfx|music)-/.test(job.modelId)) {
       return {
         output: {
           kind: 'media.audio',

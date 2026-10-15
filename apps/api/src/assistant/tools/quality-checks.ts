@@ -6,6 +6,8 @@ const MODEL_STAGES = new Set([
   'image.generate',
   'video.generate',
   'audio.speech',
+  'audio.sfx',
+  'audio.music',
   'browser.automate',
   'browser.flow_video',
 ]);

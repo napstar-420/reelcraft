@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { pgEnum, pgTable, text, timestamptz, uniqueIndex } from './pg-helpers';
+import { jsonb, pgEnum, pgTable, text, timestamptz, uniqueIndex } from './pg-helpers';
 import { channel } from './channel';
 import { blob } from './blob';
 
@@ -9,6 +9,7 @@ export const assetKindEnum = pgEnum('asset_kind', [
   'media.audio',
   'font',
   'lut',
+  'vector',
 ]);
 
 /** §3.3 — reusable channel material with a lifetime longer than a run. */
@@ -26,6 +27,8 @@ export const asset = pgTable(
       .notNull()
       .references(() => blob.id), // underlying stored file backing this asset
     tags: text('tags').array().notNull().default([]), // freeform labels for search/filtering
+    // what Reelcraft read from the file when it was uploaded: a vector asset's lines (`{ viewBox, strokes }`)
+    meta: jsonb('meta'),
     createdAt: timestamptz('created_at').notNull().defaultNow(), // when the asset was created
     deletedAt: timestamptz('deleted_at'), // when the asset was deleted; its name is then free again
   },

@@ -231,10 +231,9 @@ describe('ElevenLabsAdapter', () => {
     );
     vi.stubGlobal('fetch', fetch);
     const online = new ElevenLabsAdapter(keys() as never);
-    expect((await online.listModels()).map((m) => m.modelId)).toEqual([
-      'eleven_v4',
-      'eleven_flash_v2_5',
-    ]);
+    expect(
+      (await online.listModels()).filter((m) => m.capabilities.speech).map((m) => m.modelId),
+    ).toEqual(['eleven_v4', 'eleven_flash_v2_5']);
     await online.listModels();
     expect(fetch).toHaveBeenCalledTimes(1);
   });
@@ -242,7 +241,9 @@ describe('ElevenLabsAdapter', () => {
   it('falls back to the known models when ElevenLabs cannot be reached', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('offline')));
     const models = await new ElevenLabsAdapter(keys() as never).listModels();
-    expect(models.length).toBe(Object.keys(ELEVENLABS_MODELS).length);
+    expect(models.filter((m) => m.capabilities.speech).length).toBe(
+      Object.keys(ELEVENLABS_MODELS).length,
+    );
   });
 
   it('estimates by characters at the model price, or the stage price', async () => {
@@ -424,5 +425,85 @@ describe('word timings', () => {
     );
     expect(result.timing?.words.map((w) => w.text)).toEqual(['Hi', 'there.']);
     expect(result.timing?.sentences).toHaveLength(1);
+  });
+});
+
+describe('ElevenLabs sound effects and music', () => {
+  const request = (modelId: string, kind: 'sfx' | 'music', durationSec: number) => ({
+    modality: 'audio' as const,
+    modelId,
+    params: { __soundKind: kind, durationSec },
+    renderedPrompt: 'Soft pencil scratching on paper',
+  });
+
+  it('lists the sound models next to the speech ones, with what they offer', async () => {
+    vi.stubGlobal('fetch', speechFetch());
+    const models = await new ElevenLabsAdapter(keys() as never).listModels();
+    const sound = models.filter((m) => m.capabilities.sound);
+    expect(sound.map((m) => [m.modelId, m.capabilities.sound?.kind])).toEqual([
+      ['eleven_text_to_sound_v2', 'sfx'],
+      ['music_v1', 'music'],
+    ]);
+    expect(models.filter((m) => m.capabilities.speech).length).toBeGreaterThan(0);
+  });
+
+  it('sends a sound effect request and returns the audio at its cost', async () => {
+    const fetch = vi.fn(async () => audio('MP3BYTES'));
+    vi.stubGlobal('fetch', fetch);
+    const adapter = new ElevenLabsAdapter(keys() as never);
+    const req = request('eleven_text_to_sound_v2', 'sfx', 3);
+    expect((await adapter.estimate(req)).ceilingUsd).toBeCloseTo(0.06);
+    const result = await adapter.fetch(await adapter.submit(req, 'sfx-1'));
+    const [url, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toContain('/v1/sound-generation?output_format=mp3_44100_128');
+    expect(JSON.parse(String(init.body))).toEqual({
+      text: 'Soft pencil scratching on paper',
+      model_id: 'eleven_text_to_sound_v2',
+      duration_seconds: 3,
+    });
+    expect((init.headers as Record<string, string>)['xi-api-key']).toBe('xi-key');
+    expect(result.output).toMatchObject({ kind: 'media.audio', filename: 'sfx.mp3' });
+    expect(result.costUsd).toBeCloseTo(0.06);
+  });
+
+  it('sends a music request in milliseconds, instrumental only', async () => {
+    const fetch = vi.fn(async () => audio('MP3BYTES'));
+    vi.stubGlobal('fetch', fetch);
+    const adapter = new ElevenLabsAdapter(keys() as never);
+    await adapter.fetch(await adapter.submit(request('music_v1', 'music', 45), 'music-1'));
+    const [url, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toContain('/v1/music?');
+    expect(JSON.parse(String(init.body))).toEqual({
+      prompt: 'Soft pencil scratching on paper',
+      model_id: 'music_v1',
+      music_length_ms: 45000,
+      force_instrumental: true,
+    });
+  });
+
+  it('keeps the length inside what the model takes', async () => {
+    const adapter = new ElevenLabsAdapter(keys() as never);
+    expect(
+      (await adapter.estimate(request('eleven_text_to_sound_v2', 'sfx', 500))).ceilingUsd,
+    ).toBeCloseTo(22 * 0.02);
+  });
+
+  it('says so when the model makes the other kind of sound', async () => {
+    const adapter = new ElevenLabsAdapter(keys() as never);
+    await expect(adapter.estimate(request('music_v1', 'sfx', 2))).rejects.toThrow(/makes music/);
+    await expect(adapter.estimate(request('eleven_flash_v2_5', 'sfx', 2))).rejects.toThrow(
+      /not a sound model/,
+    );
+  });
+
+  it("reports ElevenLabs' own reason when the call is refused", async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => failure(422, { detail: { message: 'prompt too long' } })),
+    );
+    const adapter = new ElevenLabsAdapter(keys() as never);
+    await expect(
+      adapter.fetch(await adapter.submit(request('music_v1', 'music', 30), 'music-2')),
+    ).rejects.toThrow('ElevenLabs: 422 prompt too long');
   });
 });

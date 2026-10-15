@@ -15,11 +15,17 @@ import { TimelineRenderCapability, VideoConcatCapability } from './impls/assembl
 import {
   ImageGenerateCapability,
   VideoGenerateCapability,
+  AudioMusicCapability,
+  AudioSfxCapability,
   AudioSpeechCapability,
   MediaAnalyzeCapability,
 } from './impls/media-generate.capability';
 import { BrowserAutomateCapability } from './impls/browser-automate.capability';
 import { FlowVideoCapability } from './impls/flow-video.capability';
+import { TimelineComposeCapability } from './impls/timeline-compose.capability';
+import { SvgPrepareCapability } from './impls/svg-prepare.capability';
+import { SvgPreviewCapability } from './impls/svg-preview.capability';
+import { BuiltinDrawings } from './vector/builtin-drawings';
 
 /**
  * §1.3 — may inject ProviderModule and StorageModule. Must NOT be able to
@@ -41,12 +47,18 @@ import { FlowVideoCapability } from './impls/flow-video.capability';
     PublishStub,
     ImageGenerateCapability,
     VideoGenerateCapability,
+    AudioMusicCapability,
+    AudioSfxCapability,
     AudioSpeechCapability,
     MediaAnalyzeCapability,
     BrowserAutomateCapability,
     FlowVideoCapability,
+    TimelineComposeCapability,
+    SvgPrepareCapability,
+    SvgPreviewCapability,
+    BuiltinDrawings,
   ],
   controllers: [CapabilityController],
-  exports: [CapabilityRegistry, StyleRegistry],
+  exports: [CapabilityRegistry, StyleRegistry, BuiltinDrawings],
 })
 export class CapabilityModule {}

@@ -69,7 +69,7 @@ export const Ease = z.enum(['linear', 'in', 'out', 'in_out']);
 export type Ease = z.infer<typeof Ease>;
 
 /** One line to draw: SVG path data, in the item's own viewBox. */
-export const SketchStroke = z.object({
+export const GraphicStroke = z.object({
   d: z.string().min(1).max(8000),
   /** A CSS colour, or a theme colour: `ink`, `paper`, `highlight`, `accent1`, `accent2`, `accent3`.
    * Left out, the line is `ink` unless it only has a fill. */
@@ -79,17 +79,17 @@ export const SketchStroke = z.object({
   /** How heavy the line is, against the theme's stroke width. */
   weight: z.enum(['thin', 'normal', 'bold']).optional(),
 });
-export type SketchStroke = z.infer<typeof SketchStroke>;
+export type GraphicStroke = z.infer<typeof GraphicStroke>;
 
-export const SketchShape = z.enum(['arrow', 'circle', 'underline', 'box', 'highlight', 'check']);
-export type SketchShape = z.infer<typeof SketchShape>;
+export const GraphicShape = z.enum(['arrow', 'circle', 'underline', 'box', 'highlight', 'check']);
+export type GraphicShape = z.infer<typeof GraphicShape>;
 
-/** What a sketch item draws. */
-export const SketchContent = z.discriminatedUnion('kind', [
+/** What a graphic item draws. */
+export const GraphicContent = z.discriminatedUnion('kind', [
   z.object({
     kind: z.literal('paths'),
     viewBox: z.object({ width: finitePositive, height: finitePositive }),
-    strokes: z.array(SketchStroke).min(1).max(60),
+    strokes: z.array(GraphicStroke).min(1).max(60),
   }),
   z.object({
     kind: z.literal('text'),
@@ -97,17 +97,21 @@ export const SketchContent = z.discriminatedUnion('kind', [
     /** Letter height, in the item's units. */
     size: finitePositive.max(2000),
     color: z.string().min(1).max(40).optional(),
-    font: z.enum(['hand', 'body']).optional(),
+    /** `hand` and `body` are the theme's two fonts; any other value is a font family name. */
+    font: z.string().min(1).max(80).optional(),
+    weight: z.number().int().min(100).max(900).optional(),
+    /** Which side the words line up on; left out, the left. */
+    align: z.enum(['left', 'center', 'right']).optional(),
   }),
   z.object({
     kind: z.literal('shape'),
-    shape: SketchShape,
+    shape: GraphicShape,
     color: z.string().min(1).max(40).optional(),
   }),
 ]);
-export type SketchContent = z.infer<typeof SketchContent>;
+export type GraphicContent = z.infer<typeof GraphicContent>;
 
-export const SketchAnim = z.object({
+export const GraphicAnim = z.object({
   type: z.enum(['draw', 'handwrite', 'pop', 'fade', 'slide', 'highlight', 'none']),
   /** How long the animation takes; left out, each kind has its own pace. */
   durationSec: finitePositive.optional(),
@@ -117,11 +121,11 @@ export const SketchAnim = z.object({
   /** A pen or marker that follows the line while it is drawn. */
   hand: z.enum(['none', 'marker', 'pencil']).optional(),
 });
-export type SketchAnim = z.infer<typeof SketchAnim>;
+export type GraphicAnim = z.infer<typeof GraphicAnim>;
 
 /** A small move after the item has appeared: where it is, how big, turned, how visible. Values
  * between two keys are blended. Times are from the item's own start. */
-export const SketchKeyframe = z.object({
+export const GraphicKeyframe = z.object({
   atSec: finiteNonNegative,
   x: z.number().finite().optional(),
   y: z.number().finite().optional(),
@@ -130,17 +134,17 @@ export const SketchKeyframe = z.object({
   opacity: z.number().min(0).max(1).optional(),
   ease: Ease.optional(),
 });
-export type SketchKeyframe = z.infer<typeof SketchKeyframe>;
+export type GraphicKeyframe = z.infer<typeof GraphicKeyframe>;
 
 /** Where the item's start came from: a word in the narration. The start time stays what counts;
  * this records it, so an editor can put it back after the item is moved. */
-export const SketchCue = z.object({
+export const GraphicCue = z.object({
   timingHandle: z.string(),
   phrase: z.string().min(1).max(200).optional(),
   wordIndex: z.number().int().nonnegative().optional(),
   offsetSec: z.number().finite().optional(),
 });
-export type SketchCue = z.infer<typeof SketchCue>;
+export type GraphicCue = z.infer<typeof GraphicCue>;
 
 export const TimelineItem = z.discriminatedUnion('type', [
   z.object({
@@ -164,9 +168,22 @@ export const TimelineItem = z.discriminatedUnion('type', [
     transitionIn: MediaTransition.optional(),
     /** How the clip leaves, at its end: the same kinds as `transitionIn`, played backwards. */
     transitionOut: MediaTransition.optional(),
-    /** Uncovers the picture as if it were drawn in, for a still image that should look sketched
+    /** Uncovers the picture as if it were drawn in, for a still image that should look drawn
      * on: a swipe from the left, a circle growing from the middle, or a marker swipe. */
     reveal: MediaReveal.optional(),
+    /** Placed on the frame (or the world) as a box instead of filling it: where, how big, turned.
+     * All four of x, y, w, h or none. Video and overlay tracks only. */
+    space: z.enum(['world', 'screen']).optional(),
+    x: z.number().finite().optional(),
+    y: z.number().finite().optional(),
+    w: finitePositive.optional(),
+    h: finitePositive.optional(),
+    rotate: z.number().finite().optional(),
+    /** Stacking order among placed items; higher is on top. */
+    z: z.number().finite().optional(),
+    /** How a placed item arrives: `pop`, `fade`, `slide` or `none`. */
+    anim: GraphicAnim.optional(),
+    keyframes: z.array(GraphicKeyframe).max(50).optional(),
   }),
   z.object({
     type: z.literal('text'),
@@ -191,7 +208,7 @@ export const TimelineItem = z.discriminatedUnion('type', [
     style: CaptionStyleOverrides.optional(),
   }),
   z.object({
-    type: z.literal('sketch'),
+    type: z.literal('graphic'),
     /** Stable name for the item; seeds its hand-drawn wobble, so it looks the same on every render. */
     id: z.string().min(1).max(80).optional(),
     startSec: finiteNonNegative,
@@ -206,10 +223,10 @@ export const TimelineItem = z.discriminatedUnion('type', [
     rotate: z.number().finite().optional(),
     /** Stacking order among drawn items; higher is on top. */
     z: z.number().finite().optional(),
-    content: SketchContent,
-    anim: SketchAnim,
-    keyframes: z.array(SketchKeyframe).max(50).optional(),
-    cue: SketchCue.optional(),
+    content: GraphicContent,
+    anim: GraphicAnim,
+    keyframes: z.array(GraphicKeyframe).max(50).optional(),
+    cue: GraphicCue.optional(),
   }),
 ]);
 export type TimelineItem = z.infer<typeof TimelineItem>;
@@ -218,7 +235,18 @@ export const Track = z.object({
   id: z.string().min(1),
   type: z.enum(['video', 'audio', 'overlay', 'captions']),
   duckUnder: z.string().optional(),
-  items: z.array(TimelineItem),
+  /** `sketch` was this item's first name; timelines saved with it still read. */
+  items: z.preprocess(
+    (items) =>
+      Array.isArray(items)
+        ? items.map((item) =>
+            item && typeof item === 'object' && (item as { type?: unknown }).type === 'sketch'
+              ? { ...item, type: 'graphic' }
+              : item,
+          )
+        : items,
+    z.array(TimelineItem),
+  ),
 });
 export type Track = z.infer<typeof Track>;
 
@@ -228,10 +256,14 @@ export function timelineVersionFor(timeline: {
   world?: unknown;
   camera?: unknown;
   theme?: unknown;
-  tracks?: ReadonlyArray<{ items: ReadonlyArray<{ type: string; reveal?: unknown }> }>;
+  tracks?: ReadonlyArray<{
+    items: ReadonlyArray<{ type: string; reveal?: unknown; x?: unknown }>;
+  }>;
 }): 1 | 2 {
   const newer = timeline.tracks?.some((track) =>
-    track.items.some((item) => item.type === 'sketch' || item.reveal !== undefined),
+    track.items.some(
+      (item) => item.type === 'graphic' || item.reveal !== undefined || item.x !== undefined,
+    ),
   );
   return timeline.world || timeline.camera || timeline.theme || newer ? 2 : 1;
 }
@@ -290,12 +322,26 @@ export const TimelineTheme = z.object({
 });
 export type TimelineTheme = z.infer<typeof TimelineTheme>;
 
+/** The look drawn items take when a timeline names no theme of its own. The composition keeps a
+ * copy (it can't import runtime values from here); keep the two the same. */
+export const DEFAULT_TIMELINE_THEME: TimelineTheme = {
+  paper: '#fbfaf5',
+  ink: '#1f1f1f',
+  highlight: '#ffd84a',
+  accents: ['#3b82f6', '#22c55e', '#ef4444'],
+  fontHand: 'Caveat',
+  fontBody: 'Patrick Hand',
+  strokeWidth: 4,
+  roughness: 0.35,
+  paperTexture: 'paper',
+};
+
 /** Which tracks each kind of item can sit on. */
 export const ITEM_TRACKS = {
   media: ['video', 'audio', 'overlay'],
   text: ['overlay'],
   captions: ['captions'],
-  sketch: ['overlay'],
+  graphic: ['overlay'],
 } as const satisfies Record<TimelineItem['type'], ReadonlyArray<Track['type']>>;
 
 export const Timeline = z
@@ -347,6 +393,37 @@ export const Timeline = z
             path: ['tracks', trackIndex, 'items', itemIndex],
             message: `${item.type} item is not valid on a ${track.type} track`,
           });
+        }
+        if (item.type === 'media') {
+          const box = [item.x, item.y, item.w, item.h].filter((v) => v !== undefined).length;
+          const placed = box > 0 || item.anim !== undefined || item.keyframes !== undefined;
+          if (box > 0 && box < 4) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              path: ['tracks', trackIndex, 'items', itemIndex],
+              message: 'a placed media item needs all of x, y, w and h',
+            });
+          } else if (placed && box === 0) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              path: ['tracks', trackIndex, 'items', itemIndex],
+              message: 'anim and keyframes need x, y, w and h to place the item',
+            });
+          }
+          if (placed && track.type === 'audio') {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              path: ['tracks', trackIndex, 'items', itemIndex],
+              message: 'an audio item cannot be placed on the frame',
+            });
+          }
+          if (item.anim && !['pop', 'fade', 'slide', 'none'].includes(item.anim.type)) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              path: ['tracks', trackIndex, 'items', itemIndex, 'anim'],
+              message: `${item.anim.type} is for drawn items; a placed media item can pop, fade, slide or stay`,
+            });
+          }
         }
         if (
           item.type === 'media' &&

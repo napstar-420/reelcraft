@@ -1,4 +1,4 @@
-import type { SketchStroke } from '@reelcraft/shared';
+import type { GraphicStroke } from '@reelcraft/shared';
 
 /**
  * The drawings built into Reelcraft, on a 100 by 100 grid. Lines are listed in the order they
@@ -11,7 +11,7 @@ export interface AssetDef {
   label: string;
   /** Words to find it by, such as `idea` for a lightbulb. */
   tags: string[];
-  strokes: SketchStroke[];
+  strokes: GraphicStroke[];
 }
 
 const r = (n: number) => Math.round(n * 100) / 100;
@@ -63,27 +63,27 @@ const gear = (cx: number, cy: number, inner: number, outer: number, teeth: numbe
   return `${parts.join(' ')} Z`;
 };
 
-const ink = (d: string, extra: Partial<SketchStroke> = {}): SketchStroke => ({ d, ...extra });
-const accent = (d: string, color: string, extra: Partial<SketchStroke> = {}): SketchStroke => ({
+const ink = (d: string, extra: Partial<GraphicStroke> = {}): GraphicStroke => ({ d, ...extra });
+const accent = (d: string, color: string, extra: Partial<GraphicStroke> = {}): GraphicStroke => ({
   d,
   color,
   ...extra,
 });
-const filled = (d: string, fill: string, extra: Partial<SketchStroke> = {}): SketchStroke => ({
+const filled = (d: string, fill: string, extra: Partial<GraphicStroke> = {}): GraphicStroke => ({
   d,
   color: 'ink',
   fill,
   ...extra,
 });
-const bold = (d: string, color?: string): SketchStroke => ({
+const bold = (d: string, color?: string): GraphicStroke => ({
   d,
   weight: 'bold',
   ...(color ? { color } : {}),
 });
-const thin = (d: string): SketchStroke => ({ d, weight: 'thin' });
+const thin = (d: string): GraphicStroke => ({ d, weight: 'thin' });
 
 /** A stick figure's head and body; the poses add arms and legs. */
-const person = (...limbs: string[]): SketchStroke[] => [
+const person = (...limbs: string[]): GraphicStroke[] => [
   ink(circle(50, 17, 9)),
   ink(line(50, 26, 50, 60)),
   ...limbs.map((d) => ink(d)),

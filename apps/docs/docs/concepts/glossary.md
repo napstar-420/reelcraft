@@ -94,6 +94,12 @@ See [Characters](../channels/characters.md).
 **Stage cap**: the most one stage may spend in a run. See
 [Budget and costs](../runs/budget-and-costs.md).
 
+**Library**: the assets of a channel (and the ones built into Reelcraft), listed as a catalogue a stage can
+pick from. See [the library](../channels/assets.md#the-library).
+
+**Plan** (of a video): a list of layers, each an asset, words or a shape with a place and a time, that
+[Compose Timeline](../stage-types/compose-timeline.md#the-plan) turns into a timeline.
+
 **Style**: how text or captions look in a timeline. See [Timelines](../video/timelines.md#text-and-styles).
 
 **Timeline**: a plan for a video: tracks of clips, audio, text and captions. See

@@ -31,6 +31,7 @@ const ASSET_KINDS: { value: AssetKind; label: string; accept: string }[] = [
   { value: 'media.image', label: 'Image', accept: 'image/*' },
   { value: 'media.video', label: 'Video', accept: 'video/*' },
   { value: 'media.audio', label: 'Audio', accept: 'audio/*' },
+  { value: 'vector', label: 'Drawing (SVG)', accept: 'image/svg+xml,.svg' },
 ];
 
 export function AssetCreateDialog({
@@ -79,7 +80,9 @@ export function AssetCreateDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>New asset</DialogTitle>
-          <DialogDescription>Upload reusable media for this channel.</DialogDescription>
+          <DialogDescription>
+            Upload reusable images, clips, sounds, music and SVG drawings for this channel.
+          </DialogDescription>
         </DialogHeader>
         <form
           id="asset-form"

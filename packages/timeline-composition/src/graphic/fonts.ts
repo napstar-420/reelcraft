@@ -12,7 +12,7 @@ import patrickHand from '@fontsource/patrick-hand/files/patrick-hand-latin-400-n
 let loading: Promise<void> | undefined;
 
 /** Loads the hand and body fonts once. A font that fails to load leaves the text in its fallback. */
-export function loadSketchFonts(): Promise<void> {
+export function loadGraphicFonts(): Promise<void> {
   loading ??= Promise.all([
     loadFont({ family: 'Caveat', url: caveatBold, weight: '700' }),
     loadFont({ family: 'Patrick Hand', url: patrickHand, weight: '400' }),
@@ -24,10 +24,10 @@ export function loadSketchFonts(): Promise<void> {
 }
 
 /** Holds a frame back until the fonts are in, so a render never draws in a fallback font. */
-export function useSketchFonts(enabled: boolean): void {
-  const [handle] = React.useState(() => (enabled ? delayRender('Loading sketch fonts') : null));
+export function useGraphicFonts(enabled: boolean): void {
+  const [handle] = React.useState(() => (enabled ? delayRender('Loading graphic fonts') : null));
   React.useEffect(() => {
     if (handle === null) return;
-    void loadSketchFonts().then(() => continueRender(handle));
+    void loadGraphicFonts().then(() => continueRender(handle));
   }, [handle]);
 }

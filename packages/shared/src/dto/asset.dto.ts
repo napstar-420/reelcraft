@@ -1,9 +1,16 @@
 import { z } from 'zod';
 
 /** §3.3 — the asset-kind vocabulary is broader than `ArtifactKind`: it also
- * covers `font`/`lut`, consumed by timeline rendering (phase 6) rather than
+ * covers `font`/`lut` (consumed by timeline rendering) and `vector` (an uploaded SVG), rather than
  * the `Ref` binding pipeline. */
-export const AssetKind = z.enum(['media.image', 'media.video', 'media.audio', 'font', 'lut']);
+export const AssetKind = z.enum([
+  'media.image',
+  'media.video',
+  'media.audio',
+  'font',
+  'lut',
+  'vector',
+]);
 export type AssetKind = z.infer<typeof AssetKind>;
 
 export const RequestAssetUploadDto = z.object({

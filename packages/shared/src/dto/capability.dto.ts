@@ -56,6 +56,15 @@ export const ModelInfoDto = z.object({
       inputKinds: z.array(z.string()).optional(),
       /** Set on text-to-speech models. */
       speech: SpeechModelOptions.optional(),
+      /** Set on sound-effect and music models. */
+      sound: z
+        .object({
+          kind: z.enum(['sfx', 'music']),
+          minSec: z.number(),
+          maxSec: z.number(),
+          usdPerSecond: z.number(),
+        })
+        .optional(),
     })
     .passthrough()
     .optional(),
