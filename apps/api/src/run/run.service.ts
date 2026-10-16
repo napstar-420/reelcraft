@@ -3,6 +3,7 @@ import { ConflictException, Inject, Injectable, Logger, NotFoundException } from
 import { and, asc, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import type {
   CreateRunDto,
+  ContinueRunDto,
   ConfigLayer,
   ReferenceImage,
   RoleDef,
@@ -14,6 +15,7 @@ import type {
 import {
   LIBRARY_KINDS,
   ancestorsOf,
+  descendantsOf,
   InputDef,
   RoleDef as RoleDefSchema,
   StageDef,
@@ -260,6 +262,36 @@ export class RunService {
       const upstream = dto.expectReusedBefore
         ? ancestorsOf(stageDependencies(graph), dto.expectReusedBefore)
         : new Set<string>();
+      if (dto.expectReusedBefore) {
+        const target = dto.expectReusedBefore;
+        const dependents = descendantsOf(stageDependencies(graph), target);
+        const discarded = sourceExecutions
+          .filter(
+            (e) =>
+              e.state === 'passed' &&
+              e.stageKey !== target &&
+              !dependents.has(e.stageKey) &&
+              !stageKeys.includes(e.stageKey),
+          )
+          .map((e) => e.stageKey);
+        if (discarded.length > 0) {
+          const relevant = ancestorsOf(stageDependencies(graph), discarded[0]!);
+          relevant.add(discarded[0]!);
+          const changed = reusableStageKeys({ ...reuseParams, relevant }).stop;
+          throw new ConflictException({
+            code: 'completed_work_changed',
+            message: 'This new run would omit completed work from another branch',
+            plan: {
+              reused: stageKeys,
+              stop:
+                stop && upstream.has(stop.stageKey)
+                  ? stop
+                  : (changed ?? { stageKey: discarded[0]!, reason: 'not_in_source' }),
+              discardedStageKeys: discarded,
+            },
+          });
+        }
+      }
       if (stop && upstream.has(stop.stageKey)) {
         throw new ConflictException({
           code: 'upstream_rerun',
@@ -766,6 +798,80 @@ export class RunService {
     );
     await this.dispatchBestEffort(mutation.wakeupId);
     return this.get(runId);
+  }
+
+  /** Extend a partial run without copying or replacing its finished branches. */
+  async continueRun(runId: string, dto: ContinueRunDto) {
+    const current = await this.get(runId);
+    if (current.state !== 'COMPLETED') return { continued: false };
+    if (current.stageExecutions.some((e) => !['passed', 'skipped'].includes(e.state))) {
+      throw new ConflictException('This run already has queued work; wait for it to start');
+    }
+    const versions = await this.db
+      .select()
+      .from(blueprintVersion)
+      .where(inArray(blueprintVersion.id, [current.blueprintVersionId, dto.blueprintVersionId]));
+    const source = versions.find((v) => v.id === current.blueprintVersionId);
+    const requested = versions.find((v) => v.id === dto.blueprintVersionId);
+    if (!source || !requested || source.blueprintId !== requested.blueprintId) {
+      throw new ConflictException('Blueprint version does not belong to this run');
+    }
+    const graph = StageDef.array().parse(source.graph);
+    const requestedGraph = StageDef.array().parse(requested.graph);
+    if (dto.untilStageKey && !graph.some((stage) => stage.key === dto.untilStageKey)) {
+      return { continued: false };
+    }
+    const keep = untilStageKeep(graph, dto.untilStageKey) ?? new Set(graph.map((s) => s.key));
+    const sourceDeps = stageDependencies(graph);
+    const requestedDeps = stageDependencies(requestedGraph);
+    // Edits to a separate branch stay in the draft; this run keeps its immutable snapshot.
+    const samePath = [...keep].every(
+      (key) =>
+        canonicalJson(graph.find((s) => s.key === key)) ===
+          canonicalJson(requestedGraph.find((s) => s.key === key)) &&
+        canonicalJson(sourceDeps.get(key)) === canonicalJson(requestedDeps.get(key)),
+    );
+    if (
+      !samePath ||
+      (!dto.untilStageKey && canonicalJson(source.graph) !== canonicalJson(requested.graph)) ||
+      ['inputs', 'roles', 'defaults'].some(
+        (key) =>
+          canonicalJson(source[key as 'inputs' | 'roles' | 'defaults']) !==
+          canonicalJson(requested[key as 'inputs' | 'roles' | 'defaults']),
+      )
+    )
+      return { continued: false };
+    if (
+      dto.untilStageKey &&
+      current.stageExecutions.some((e) => e.stageKey === dto.untilStageKey && e.state === 'passed')
+    )
+      return { continued: false };
+    const selected = current.stageExecutions.filter(
+      (e) => keep.has(e.stageKey) && e.state === 'skipped',
+    );
+    if (selected.length === 0) return { continued: false };
+    const mutation = await this.runMutation.withLockedRun(
+      runId,
+      'continue',
+      ['COMPLETED'],
+      async (tx, lockedRun) => {
+        if (lockedRun.revision !== current.revision) {
+          throw new ConflictException('The run changed; refresh before continuing');
+        }
+        await tx
+          .update(stageExecution)
+          .set({ state: 'pending', endedAt: null })
+          .where(
+            inArray(
+              stageExecution.id,
+              selected.map((e) => e.id),
+            ),
+          );
+      },
+      'run/resumed',
+    );
+    await this.dispatchBestEffort(mutation.wakeupId);
+    return { continued: true };
   }
 
   /** §12.4 — manual pause. Unlike cancel, this must stay resumable: it flips

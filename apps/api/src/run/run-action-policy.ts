@@ -4,6 +4,7 @@ import type { RunState } from '@reelcraft/shared';
 export type RunAction =
   | 'attach'
   | 'start'
+  | 'continue'
   | 'pause'
   | 'raise_budget'
   | 'retry'
@@ -33,6 +34,7 @@ const PAUSED_STATES = ['PAUSED_BUDGET', 'PAUSED_APPROVAL', 'PAUSED_INPUT', 'PAUS
 export const RUN_ACTION_ALLOWED_STATES = {
   attach: ['CREATED'],
   start: ['CREATED'],
+  continue: ['COMPLETED'],
   pause: ['RUNNING'],
   raise_budget: ['RUNNING', ...PAUSED_STATES, 'PAUSED_MANUAL', 'FAILED'],
   retry: [...PAUSED_STATES, 'FAILED', 'COMPLETED'],

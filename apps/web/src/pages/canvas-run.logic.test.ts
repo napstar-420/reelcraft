@@ -16,6 +16,16 @@ const source: CanvasRunSource = {
 };
 
 describe('canvas-run.logic', () => {
+  it('recognizes a conflict that would omit completed sibling branches', () => {
+    const plan = {
+      reused: ['script'],
+      stop: { stageKey: 'images', reason: 'definition_changed' },
+      discardedStageKeys: ['images'],
+    };
+    expect(
+      upstreamRerunPlan({ status: 409, issues: { code: 'completed_work_changed', plan } }),
+    ).toEqual(plan);
+  });
   it('buildRunStageDto seeds from the source run, forces the target stage, and stops there', () => {
     const dto = buildRunStageDto(source, 'version-2', 'script');
     expect(dto).toMatchObject({

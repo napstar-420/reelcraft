@@ -778,6 +778,7 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
                 graph={draft.graph}
                 budgetCapUsd={draft.budget.runCapUsd}
                 run={canvasRun.run}
+                recentRuns={canvasRun.recentRuns}
                 actions={runActions}
                 selectedKey={selectedKey}
                 onSelectStage={selectStage}

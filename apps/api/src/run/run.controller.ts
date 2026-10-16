@@ -13,6 +13,7 @@ import {
 } from '@nestjs/common';
 import {
   CreateRunDto,
+  ContinueRunDto,
   RaiseBudgetDto,
   RequestInputUploadDto,
   ConfirmRunActionDto,
@@ -72,6 +73,14 @@ export class RunController {
   @Post(':id/start')
   start(@Param('id') id: string) {
     return this.runs.start(id);
+  }
+
+  @Post(':id/continue')
+  continueRun(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(ContinueRunDto)) dto: ContinueRunDto,
+  ) {
+    return this.runs.continueRun(id, dto);
   }
 
   @Post(':id/inputs/:key/upload')

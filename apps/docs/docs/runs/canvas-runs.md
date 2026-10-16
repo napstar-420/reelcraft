@@ -13,6 +13,8 @@ With no runs yet, the tab says **No runs yet**. Select **Run blueprint**, fill i
 run, as in [Starting a run](./starting-a-run.md).
 
 After that, the tab follows the latest run.
+Use the recent-run selector at the top of the tab to return to an earlier run. Your selection stays
+in the page URL, so refreshing keeps that run selected.
 
 ## What the tab shows
 
@@ -27,15 +29,12 @@ After that, the tab follows the latest run.
 
 ## Run all
 
-**Run all** starts a new run of the blueprint as it is on the canvas, using the same inputs as the
-last run. It **reuses** every stage at the start of the blueprint that hasn't changed since, so only the
-stages from the first change onwards run again. Reused stages are marked **Reused**.
+**Run all** continues a completed partial run when its blueprint is unchanged. It keeps the same run ID,
+finished outputs, item progress and spending history, and runs the unfinished branches through their joins.
 
-Only the unbroken run of unchanged stages from the first stage is reused. If you change stage 3, stages
-3 and later run again, even if some of them wouldn't be affected. A stage the last run didn't finish
-(waiting for your review or input, failed, cancelled or never reached) isn't reused either, so it runs
-again. The stage's **Attempts** log says why, for example _Re-running "Script": it was awaiting approval
-in the source run_.
+When the blueprint has changed, it starts a new run using the same inputs and copies unchanged finished
+stages whose dependencies are also reusable. Independent branches can be reused even when another branch
+needs work. Reused stages are marked **Reused**. The **Attempts** log explains why a stage needs to run again.
 
 **Rerun** on the run page and **Run up to** in the run dialog don't reuse anything: they start a fresh run
 from the first stage.
@@ -43,14 +42,20 @@ from the first stage.
 ## Run only the first stages
 
 Before a blueprint has any run, there is no play button on the stages yet. Select **Run**, then pick a stage
-under **Run up to**. Reelcraft runs from the first stage to that one and skips the rest. Once the run
-exists, use the play button on any stage to re-run it (below).
+under **Run up to**. Reelcraft runs that stage and its dependencies, skipping unrelated branches. Once the run
+finishes, use the play button to continue another branch.
 
 ## Run a single stage
 
-Select the play button next to a stage, in the **Run** tab or on its card, to run just that stage. Reelcraft reuses everything before it,
-runs the stage fresh, and stops right after it. Use it to tune one prompt without paying for the stages
-around it.
+Select the play button next to a stage, in the **Run** tab or on its card. If the completed partial run
+has not run this stage yet and its dependency path is unchanged, Reelcraft continues **the same run**
+and stops at that stage. Finished sibling branches stay intact. The run keeps its original blueprint
+snapshot; edits to other branches remain in the canvas draft.
+
+Running a finished stage again, or running a changed dependency path, creates a new run with reusable
+finished work copied across. If that would omit completed work from a separate branch, Reelcraft lists
+those stages and asks before switching runs. Cancel keeps the current run selected. The original run's
+outputs remain available either way.
 
 If an earlier stage can't be reused, for example because it is still waiting for your review, running this
 stage would have to run that one again first. Reelcraft doesn't do that silently. It asks, with a message
@@ -73,7 +78,7 @@ stops the whole run, not just one stage. It can't be undone.**
 ## Unsaved changes
 
 You can run while the canvas has unsaved changes. Reelcraft saves a temporary copy of the canvas as it
-is and runs that. It doesn't appear in the **Versions** menu, and it isn't a new version.
+is and uses it for a new run when the requested path has changed. Continuing a compatible unfinished branch keeps the existing run snapshot. It doesn't appear in the **Versions** menu, and it isn't a new version.
 
 Select **Save** when you're happy. [Versions](../blueprints/versions.md) explains the difference.
 

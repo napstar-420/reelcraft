@@ -6,6 +6,7 @@ import type { InputDef, StageDef } from '@reelcraft/shared';
 import { ChannelService } from '../../src/channel/channel.service';
 import { BlueprintService } from '../../src/blueprint/blueprint.service';
 import { RunService } from '../../src/run/run.service';
+import { RunWakeupClaimService } from '../../src/run/run-wakeup-claim.service';
 import { RunActionService } from '../../src/run/run-action.service';
 import { HumanActionService } from '../../src/run/human-action.service';
 import { StageRunnerService } from '../../src/orchestration/stage-runner.service';
@@ -14,6 +15,7 @@ import {
   artifact,
   blob,
   run,
+  runWakeup,
   stageAttempt,
   stageEvent,
   stageExecution,
@@ -191,6 +193,176 @@ describe('seeded runs — run a stage without re-running upstream (e2e)', () => 
     });
     return outerEngine.execute();
   }
+
+  it('continues an unfinished branch in the same run, retaining completed sibling artifacts despite draft edits', async () => {
+    const runs = testApp.app.get(RunService);
+    const blueprints = testApp.app.get(BlueprintService);
+    const channel = await makeChannel('Continue branches');
+    const blueprintId = await blueprints.ensureBlueprint(channel.id, 'Continue branches');
+    const stage = (key: string, dependsOn: string[]): StageDef => ({
+      ...scriptStage(),
+      key,
+      label: key,
+      dependsOn,
+    });
+    const graph = [
+      stage('script', []),
+      stage('images', ['script']),
+      stage('narration', ['script']),
+      stage('audio', ['narration']),
+      stage('join', ['images', 'audio']),
+    ];
+    const version = await blueprints.createVersion(blueprintId, {
+      graph,
+      inputs: [],
+      roles: [],
+      defaults: {},
+      budget: { runCapUsd: 10 },
+    });
+    const original = await runs.create({
+      channelId: channel.id,
+      blueprintVersionId: version.id,
+      inputs: {},
+      roleBindings: {},
+      budgetCapUsd: 10,
+      rerunStageKeys: [],
+      untilStageKey: 'images',
+    });
+    expect(
+      (await driveRun(original.id, original.stageExecutions, ['script', 'images'])).error,
+    ).toBeUndefined();
+    const before = await runs.get(original.id);
+    const artifactsBefore = await testDb.db
+      .select()
+      .from(artifact)
+      .where(eq(artifact.runId, original.id));
+    const draft = await blueprints.createVersion(
+      blueprintId,
+      {
+        graph: graph.map((s) =>
+          s.key === 'images' ? { ...s, instructions: { template: 'Changed images' } } : s,
+        ),
+        inputs: [],
+        roles: [],
+        defaults: {},
+        budget: { runCapUsd: 10 },
+      },
+      { draft: true },
+    );
+    expect(
+      await runs.continueRun(original.id, {
+        blueprintVersionId: draft.id,
+        untilStageKey: 'narration',
+      }),
+    ).toEqual({ continued: true });
+    await expect(
+      runs.continueRun(original.id, {
+        blueprintVersionId: draft.id,
+        untilStageKey: 'narration',
+      }),
+    ).rejects.toThrow('already has queued work');
+    const [wakeup] = await testDb.db
+      .select()
+      .from(runWakeup)
+      .where(eq(runWakeup.runId, original.id));
+    expect(wakeup?.action).toBe('continue');
+    expect(
+      await testApp.app.get(RunWakeupClaimService).claim({
+        wakeupId: wakeup!.id,
+        runId: original.id,
+        action: 'continue',
+        sourceState: 'COMPLETED',
+        expectedRevision: wakeup!.expectedRevision,
+      }),
+    ).toEqual({ claimed: true, runId: original.id });
+    const continued = await runs.get(original.id);
+    expect(continued.blueprintVersionId).toBe(version.id);
+    expect(continued.stageExecutions.find((e) => e.stageKey === 'images')).toEqual(
+      before.stageExecutions.find((e) => e.stageKey === 'images'),
+    );
+    expect(await testDb.db.select().from(artifact).where(eq(artifact.runId, original.id))).toEqual(
+      artifactsBefore,
+    );
+    expect(
+      (await driveRun(original.id, continued.stageExecutions, ['narration'])).error,
+    ).toBeUndefined();
+    expect(
+      (await runs.get(original.id)).stageExecutions.find((e) => e.stageKey === 'audio')?.state,
+    ).toBe('skipped');
+
+    // Run all extends the same run through the join, with no repeated providers on either finished branch.
+    expect(await runs.continueRun(original.id, { blueprintVersionId: version.id })).toEqual({
+      continued: true,
+    });
+    expect(
+      (await driveRun(original.id, continued.stageExecutions, ['audio', 'join'])).error,
+    ).toBeUndefined();
+    expect((await runs.get(original.id)).stageExecutions.every((e) => e.state === 'passed')).toBe(
+      true,
+    );
+    expect(await runs.continueRun(original.id, { blueprintVersionId: version.id })).toEqual({
+      continued: false,
+    });
+  });
+
+  it('refuses to silently discard completed sibling work when the requested path also changed', async () => {
+    const runs = testApp.app.get(RunService);
+    const blueprints = testApp.app.get(BlueprintService);
+    const channel = await makeChannel('Protect completed work');
+    const blueprintId = await blueprints.ensureBlueprint(channel.id, 'Protect completed work');
+    const graph = ['script', 'images', 'narration'].map((key, i): StageDef => ({
+      ...scriptStage(),
+      key,
+      label: key,
+      dependsOn: i === 0 ? [] : ['script'],
+    }));
+    const dto = { graph, inputs: [], roles: [], defaults: {}, budget: { runCapUsd: 10 } };
+    const version = await blueprints.createVersion(blueprintId, dto);
+    const base = {
+      channelId: channel.id,
+      blueprintVersionId: version.id,
+      inputs: {},
+      roleBindings: {},
+      budgetCapUsd: 10,
+      rerunStageKeys: [],
+    };
+    const original = await runs.create({ ...base, untilStageKey: 'images' });
+    expect(
+      (await driveRun(original.id, original.stageExecutions, ['script', 'images'])).error,
+    ).toBeUndefined();
+    const changed = await blueprints.createVersion(blueprintId, {
+      ...dto,
+      graph: graph.map((s) =>
+        s.key === 'script' ? s : { ...s, instructions: { template: 'Changed prompt' } },
+      ),
+    });
+    expect(
+      await runs.continueRun(original.id, {
+        blueprintVersionId: changed.id,
+        untilStageKey: 'narration',
+      }),
+    ).toEqual({ continued: false });
+    const before = await runs.get(original.id);
+    await expect(
+      runs.create({
+        ...base,
+        blueprintVersionId: changed.id,
+        seedFromRunId: original.id,
+        rerunStageKeys: ['narration'],
+        untilStageKey: 'narration',
+        expectReusedBefore: 'narration',
+      }),
+    ).rejects.toMatchObject({
+      response: {
+        code: 'completed_work_changed',
+        plan: {
+          discardedStageKeys: ['images'],
+          stop: { stageKey: 'images', reason: 'definition_changed' },
+        },
+      },
+    });
+    expect(await runs.get(original.id)).toEqual(before);
+  });
 
   it('carries completed visual work through a separate narration branch and blocks an incomplete join', async () => {
     const runs = testApp.app.get(RunService);

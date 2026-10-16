@@ -2,11 +2,18 @@ import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { Eye, History, Info, Pause, Play, Square } from 'lucide-react';
 import { cn } from 'cn';
-import type { InputDef, RunDetailDto, StageDef } from '@reelcraft/shared';
+import type { InputDef, RunDetailDto, RunSummaryDto, StageDef } from '@reelcraft/shared';
 import { api } from '@/api/client';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { ArtifactPreview } from '@/components/runs/artifact-preview';
 import { RunMemoryCard } from '@/components/runs/run-memory-card';
@@ -72,6 +79,7 @@ export function RunTab({
   graph,
   budgetCapUsd,
   run,
+  recentRuns,
   actions,
   selectedKey,
   onSelectStage,
@@ -84,6 +92,7 @@ export function RunTab({
   graph: StageDef[];
   budgetCapUsd: number;
   run: RunDetailDto | undefined;
+  recentRuns: RunSummaryDto[];
   actions: CanvasRunActions;
   selectedKey: string | null;
   onSelectStage: (stageKey: string) => void;
@@ -138,6 +147,29 @@ export function RunTab({
   return (
     <div className="flex flex-col">
       <section className="flex flex-col gap-3 border-b p-4">
+        <Select
+          value={run.id}
+          onValueChange={onSwitchRun}
+          disabled={
+            actions.runStage.isPending || actions.runAll.isPending || actions.upstreamRerun !== null
+          }
+        >
+          <SelectTrigger size="sm" className="w-full" aria-label="Select a recent run">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {!recentRuns.some((r) => r.id === run.id) && (
+              <SelectItem value={run.id}>
+                #{run.id.slice(-6)} · {run.state}
+              </SelectItem>
+            )}
+            {recentRuns.map((r) => (
+              <SelectItem key={r.id} value={r.id}>
+                #{r.id.slice(-6)} · {r.state}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <div className="flex items-center gap-2">
           <Link
             to={`/runs/${run.id}`}
@@ -188,8 +220,8 @@ export function RunTab({
         {isDirty && (
           <p className="flex items-start gap-2 rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground">
             <Info className="mt-px size-3.5 shrink-0" />
-            You have unsaved changes. Stage runs use a draft snapshot and don&apos;t create a
-            version.
+            You have unsaved changes. Continuing an unchanged branch preserves this run&apos;s
+            settings and outputs. Changed stages use your canvas edits.
           </p>
         )}
       </section>

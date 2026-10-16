@@ -32,6 +32,7 @@ export function CanvasRunSheets({
     run.stageExecutions.some((e) => e.stageKey === stageKey && e.state === 'running');
   const { outputSheetKey, attemptsSheetKey, approvalStageKey, upstreamRerun } = actions;
   const stop = upstreamRerun?.plan.stop;
+  const discarded = upstreamRerun?.plan.discardedStageKeys;
   // The approval sheet only works while the run is parked on that stage.
   const canReview =
     stop?.reason === 'awaiting_approval' &&
@@ -47,13 +48,25 @@ export function CanvasRunSheets({
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>
-                Running &ldquo;{actions.stageLabel(upstreamRerun.stageKey)}&rdquo; re-runs an
-                earlier stage
+                {discarded?.length
+                  ? 'This new run would omit completed work'
+                  : `Running “${actions.stageLabel(upstreamRerun.stageKey)}” re-runs an earlier stage`}
               </AlertDialogTitle>
               <AlertDialogDescription>
-                {describeSeedStop(stop, actions.stageLabel(stop.stageKey))}, so its output
-                can&apos;t be reused and it would run again first
-                {canReview ? '. Review it first to build on its output instead.' : '.'}
+                {discarded?.length ? (
+                  <>
+                    {describeSeedStop(stop, actions.stageLabel(stop.stageKey))}. The new run would
+                    omit: {discarded.map(actions.stageLabel).join(', ')}. Any required upstream
+                    stages will also run. Your original run and outputs remain available. Cancel to
+                    keep this run selected.
+                  </>
+                ) : (
+                  <>
+                    {describeSeedStop(stop, actions.stageLabel(stop.stageKey))}, so its output
+                    can&apos;t be reused and it would run again first
+                    {canReview ? '. Review it first to build on its output instead.' : '.'}
+                  </>
+                )}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
@@ -71,7 +84,9 @@ export function CanvasRunSheets({
                   actions.runStage.mutate({ stageKey: upstreamRerun.stageKey, anyway: true })
                 }
               >
-                Run anyway (also re-runs {actions.stageLabel(stop.stageKey)})
+                {discarded?.length
+                  ? 'Create new run without that work'
+                  : `Run anyway (also re-runs ${actions.stageLabel(stop.stageKey)})`}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

@@ -65,6 +65,7 @@ import type {
   RequestAssetUploadResultDto,
   CreateAssetDto,
   CreateRunDto,
+  ContinueRunDto,
   AttachInputDto,
   RequestInputUploadResultDto,
   RunInputStatusDto,
@@ -513,6 +514,11 @@ export const api = {
   getRunInputStatus: (runId: string, inputKey: string) =>
     request<RunInputStatusDto>(`/runs/${runId}/inputs/${encodeURIComponent(inputKey)}/status`),
   startRun: (runId: string) => request<RunDetailDto>(`/runs/${runId}/start`, { method: 'POST' }),
+  continueRun: (runId: string, dto: ContinueRunDto) =>
+    request<{ continued: boolean }>(`/runs/${runId}/continue`, {
+      method: 'POST',
+      body: JSON.stringify(dto),
+    }),
 
   getUpdateStatus: () => request<UpdateStatusDto>('/system/update'),
   checkForUpdate: () => request<UpdateStatusDto>('/system/update/check', { method: 'POST' }),

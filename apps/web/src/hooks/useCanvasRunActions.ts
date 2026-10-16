@@ -39,6 +39,7 @@ export function useCanvasRunActions({
 
   function afterStart(runId: string) {
     onSwitchRun(runId);
+    void queryClient.invalidateQueries({ queryKey: ['run', runId] });
     void queryClient.invalidateQueries({ queryKey: ['runs', { blueprintId }] });
   }
 
@@ -46,6 +47,16 @@ export function useCanvasRunActions({
     mutationFn: async ({ stageKey, anyway }: { stageKey: string; anyway?: boolean }) => {
       const blueprintVersionId = await prepareRunnableVersion();
       if (!run) throw new Error('No previous run to build on yet.');
+      if (!anyway && run.state === 'COMPLETED') {
+        const result = await api.continueRun(run.id, {
+          blueprintVersionId,
+          untilStageKey: stageKey,
+        });
+        if (result.continued) {
+          toast.success('Continuing this run with its existing blueprint snapshot.');
+          return run.id;
+        }
+      }
       const created = await api.createRun(
         buildRunStageDto(run, blueprintVersionId, stageKey, { anyway }),
       );
@@ -64,6 +75,10 @@ export function useCanvasRunActions({
     mutationFn: async () => {
       const blueprintVersionId = await prepareRunnableVersion();
       if (!run) throw new Error('No previous run to build on yet.');
+      if (run.state === 'COMPLETED') {
+        const result = await api.continueRun(run.id, { blueprintVersionId });
+        if (result.continued) return run.id;
+      }
       const created = await api.createRun(buildRunAllDto(run, blueprintVersionId));
       await api.startRun(created.id);
       return created.id;

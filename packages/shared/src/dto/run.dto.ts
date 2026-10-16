@@ -32,7 +32,11 @@ export type SeedStop = z.infer<typeof SeedStop>;
 
 /** What a seeded run would reuse: the stages copied from the source run, then
  * the stage where reuse stopped. */
-export const SeedPlanDto = z.object({ reused: z.array(z.string()), stop: SeedStop });
+export const SeedPlanDto = z.object({
+  reused: z.array(z.string()),
+  stop: SeedStop,
+  discardedStageKeys: z.array(z.string()).optional(),
+});
 export type SeedPlanDto = z.infer<typeof SeedPlanDto>;
 
 /** Body of the 409 `RunService.create` answers with when `expectReusedBefore`
@@ -71,6 +75,12 @@ export const CreateRunDto = z.object({
   dryRun: z.boolean().optional(),
 });
 export type CreateRunDto = z.infer<typeof CreateRunDto>;
+
+export const ContinueRunDto = z.object({
+  blueprintVersionId: z.string().min(1),
+  untilStageKey: z.string().min(1).optional(),
+});
+export type ContinueRunDto = z.infer<typeof ContinueRunDto>;
 
 /** §12.4 — raising a budget is the one mutation allowed while RUNNING, and
  * also unblocks a PAUSED_BUDGET run. No refinement beyond `number` here —
