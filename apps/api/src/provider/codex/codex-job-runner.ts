@@ -15,6 +15,8 @@ interface Manifest {
   browserMaxSteps: number;
   params: Record<string, unknown>;
   prompt: string;
+  retained?: boolean;
+  threadId?: string;
 }
 
 async function atomicJson(path: string, value: unknown): Promise<void> {
@@ -59,12 +61,30 @@ async function main(): Promise<void> {
   let eventBuffer = '';
   let browserSteps = 0;
   let browserStepLimitExceeded = false;
+  let threadWrite: Promise<void> | undefined;
   child.stdout.on('data', (chunk) => {
     events = appendBounded(events, chunk, 1024 * 1024);
     eventBuffer += String(chunk);
     const lines = eventBuffer.split('\n');
     eventBuffer = lines.pop() ?? '';
     for (const line of lines) {
+      if (manifest.retained && !manifest.threadId && !threadWrite) {
+        try {
+          const event = JSON.parse(line) as { type?: string; thread_id?: unknown };
+          if (
+            event.type === 'thread.started' &&
+            typeof event.thread_id === 'string' &&
+            /^[a-f0-9-]{36}$/i.test(event.thread_id)
+          ) {
+            threadWrite = atomicJson(join(manifest.jobDir, 'thread.json'), {
+              threadId: event.thread_id,
+              createdAt: new Date().toISOString(),
+            });
+          }
+        } catch {
+          /* non-JSON event */
+        }
+      }
       if (
         manifest.modality === 'browser' &&
         /browseros-neo/i.test(line) &&
@@ -90,10 +110,12 @@ async function main(): Promise<void> {
   const exit = await new Promise<{ code: number | null; signal: NodeJS.Signals | null }>(
     (resolve, reject) => {
       child.once('error', reject);
-      child.once('exit', (code, signal) => resolve({ code, signal }));
+      // Wait for stdout/stderr to drain so the final failure event is available.
+      child.once('close', (code, signal) => resolve({ code, signal }));
     },
   ).catch((error: Error) => ({ code: -1, signal: null, error }));
   clearTimeout(timeout);
+  await threadWrite?.catch(() => undefined);
   await releaseBrowserLock?.();
   process.removeListener('SIGTERM', releaseOnSignal);
   process.removeListener('SIGINT', releaseOnSignal);
@@ -113,11 +135,11 @@ async function main(): Promise<void> {
         ? `BrowserOS Neo exceeded the ${manifest.browserMaxSteps} step limit`
         : 'error' in exit
           ? exit.error.message
-          : `Codex exited with ${exit.code ?? exit.signal}`;
+          : codexFailureReason(events, stderr, `Codex exited with ${exit.code ?? exit.signal}`);
     await atomicJson(statusPath, {
       state: 'failed',
       exitCode: exit.code,
-      reason,
+      reason: redact(reason).slice(-4096),
       finishedAt: new Date().toISOString(),
     });
   }
@@ -154,7 +176,7 @@ void main().catch(async (error) => {
   const jobDir = manifestPath ? dirname(manifestPath) : process.cwd();
   await atomicJson(join(jobDir, 'status.json'), {
     state: 'failed',
-    reason: error instanceof Error ? error.message : String(error),
+    reason: redact(error instanceof Error ? error.message : String(error)).slice(-4096),
     finishedAt: new Date().toISOString(),
   }).catch(() => undefined);
   process.exitCode = 1;
@@ -172,6 +194,36 @@ function summarizeEvents(events: string): Record<string, number> {
     }
   }
   return summary;
+}
+
+function codexFailureReason(events: string, stderr: string, fallback: string): string {
+  for (const line of events.split('\n').reverse()) {
+    try {
+      const event = JSON.parse(line) as {
+        type?: string;
+        message?: unknown;
+        error?: { message?: unknown };
+      } | null;
+      if (event?.type !== 'error' && event?.type !== 'turn.failed') continue;
+      const message = event.error?.message ?? event.message;
+      if (typeof message !== 'string' || !message.trim()) continue;
+      // Codex can encode the provider's JSON error inside the event's message.
+      try {
+        const detail = JSON.parse(message) as {
+          message?: unknown;
+          error?: { message?: unknown };
+        } | null;
+        const nested = detail?.error?.message ?? detail?.message;
+        if (typeof nested === 'string' && nested.trim()) return nested.trim();
+      } catch {
+        // Plain text errors already contain the useful message.
+      }
+      return message.trim();
+    } catch {
+      // Ignore incomplete or non-JSON output when looking for a failure event.
+    }
+  }
+  return stderr.trim() || fallback;
 }
 
 function redact(text: string): string {

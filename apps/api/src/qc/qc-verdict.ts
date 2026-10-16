@@ -1,4 +1,45 @@
 import { z } from 'zod';
+import type { JsonSchema } from '@reelcraft/shared';
+import type { QcEnvelope } from './qc-envelope';
+
+export function qcVerdictSchema(envelope: QcEnvelope): JsonSchema {
+  const properties: Record<string, JsonSchema> = {
+    critique: { type: 'string' },
+  };
+  const required = ['critique'];
+  if (envelope.dimensions?.length) {
+    properties.dimensions = {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          key: { type: 'string', enum: envelope.dimensions.map((dimension) => dimension.key) },
+          score: { type: 'number', minimum: 0, maximum: 100 },
+          critique: { type: 'string' },
+        },
+        required: ['key', 'score', 'critique'],
+      },
+      minItems: envelope.dimensions.length,
+      maxItems: envelope.dimensions.length,
+    };
+    required.push('dimensions');
+  } else {
+    properties.score = { type: 'number', minimum: 0, maximum: 100 };
+    required.push('score');
+  }
+  if (envelope.selectBest) {
+    properties.bestImage = {
+      type: 'integer',
+      enum: envelope.images?.map((image) => image.index) ?? [],
+    };
+    required.push('bestImage');
+  }
+  if (envelope.clips?.length) {
+    properties.failedClips = { type: 'array', items: { type: 'integer' } };
+    required.push('failedClips');
+  }
+  return { type: 'object', properties, required };
+}
 
 /** The judge model's raw structured-output contract — constructed fresh
  * over `unknown`, never wraps a `@reelcraft/shared` schema. */

@@ -77,9 +77,29 @@ abstract class ProviderMediaCapability implements CapabilityImpl<MediaConfig> {
     return this.providers.get(ctx.config.provider).estimate(this.providerRequest(ctx));
   }
   async submit(ctx: ExecCtx<MediaConfig>): Promise<JobHandle> {
-    return this.providers
-      .get(ctx.config.provider)
-      .submit(this.providerRequest(ctx), ctx.idempotencyKey);
+    const adapter = this.providers.get(ctx.config.provider);
+    const req = this.providerRequest(ctx);
+    const continuation = ctx.continuation && adapter.continuation;
+    if (continuation?.supports(req)) {
+      return ctx.continuation?.previousHandle && ctx.continuation.revisionPrompt
+        ? continuation.continue(
+            req,
+            ctx.continuation.previousHandle,
+            ctx.continuation.revisionPrompt,
+            ctx.idempotencyKey,
+          )
+        : continuation.start(req, ctx.idempotencyKey);
+    }
+    return adapter.submit(req, ctx.idempotencyKey);
+  }
+  supportsContinuation(ctx: ExecCtx<MediaConfig>): boolean {
+    return (
+      this.providers.get(ctx.config.provider).continuation?.supports(this.providerRequest(ctx)) ??
+      false
+    );
+  }
+  async releaseContinuation(handle: JobHandle): Promise<void> {
+    await this.providers.get(handle.providerId).continuation?.release(handle);
   }
   async poll(handle: JobHandle): Promise<JobStatus> {
     return this.providers.get(handle.providerId).poll(handle);

@@ -239,8 +239,8 @@ export function attachFilesScript(
   return inPage(
     id,
     `const inputs = [...document.querySelectorAll('input[type=file]')];
-const input = inputs.find((i) => i.accept === 'image/*') || inputs.find((i) => /image/.test(i.accept)) || inputs[0];
-if (!input) return { error: 'ChatGPT file input not found' };
+const input = inputs.find((i) => !i.hasAttribute('capture') && i.multiple && /image/.test(i.accept)) || inputs.find((i) => !i.hasAttribute('capture') && /image/.test(i.accept));
+if (!input) return { error: 'ChatGPT image attachment input not found' };
 const dt = new DataTransfer();
 for (const [index, f] of args.files.entries()) {
   const node = document.getElementById('${UPLOAD_NODE}' + index);
@@ -257,6 +257,23 @@ const ok = await waitFor(() => args.files.every((f) => document.querySelector('b
 return ok ? { ok: true } : { error: 'ChatGPT did not accept the reference images' };`,
     { files },
   );
+}
+
+/** The file input exists while the + menu is closed, but only accepts changes while it is open. */
+export function openAttachmentMenuScript(id: number): string {
+  const page = pageId(id);
+  return `const page = browser.page(${page});
+const input = 'input[type="file"]:not([capture])[multiple][accept*="image"]';
+const open = (await page.evaluate(() => document.querySelector('button[aria-label="Add files and more"]')?.getAttribute('aria-expanded') === 'true')).value;
+if (!open) {
+  const snapshot = await page.snapshot({ mode: 'interactive' });
+  const add = snapshot.refs.find((ref) => ref.name === 'Add files and more');
+  if (!add) throw new Error('ChatGPT add-files button not found');
+  await page.click(add.ref);
+}
+const ready = await page.waitForSelector(input, { timeout: 5000 });
+if (!ready.matched) throw new Error('ChatGPT image attachment input did not appear');
+return true;`;
 }
 
 /** `insertText` keeps newlines and literal markup; a synthetic paste is ignored by the composer. */
@@ -286,9 +303,14 @@ return { url: location.href };`,
 
 export type PageState = {
   signedIn: boolean;
+  composer?: boolean;
   generating: boolean;
   replyDone: boolean;
+  replyCount?: number;
   images: number;
+  lastUserPromptMatches?: boolean;
+  replyAfterLastUser?: boolean;
+  imageAfterLastUser?: boolean;
   imagesLoading: boolean;
   errorShown: boolean;
   /** What made `errorShown` true, so a false positive can be read off the failure. */
@@ -296,37 +318,54 @@ export type PageState = {
   tail: string;
 };
 
-export function pageStateScript(id: number): string {
+export function pageStateScript(id: number, comparePrompt?: string): string {
   return inPage(
     id,
     `let signedIn = true;
 // Only a session check that answered says "signed out"; a failed one (network, ChatGPT error) leaves it true.
 try { const r = await fetch('/api/auth/session', { credentials: 'include' }); if (r.ok) { const j = await r.json(); signedIn = !!(j && j.user && j.accessToken); } } catch {}
 const main = document.querySelector('main');
-const text = main ? main.innerText : '';
-// ChatGPT's failure banner ("Message delivery timed out. Please try again." with a Retry button).
-// Only inside <main>: the sidebar has its own "Unable to load history / Retry" that says nothing about this chat.
-const retry = main && [...main.querySelectorAll('button')].find((b) => /^(retry|try again)$/i.test((b.getAttribute('aria-label') || b.innerText || '').trim()));
-const phrase = text.slice(-600).match(/message delivery timed out|something went wrong|network error|error generating/i);
-const errorSignal = retry ? 'button: ' + (retry.getAttribute('aria-label') || retry.innerText).trim() : phrase ? 'text: ' + phrase[0] : undefined;
+const users = [...(main?.querySelectorAll('[data-message-author-role="user"], [class~="group/user-message"]') || [])]
+  .filter((node) => !node.parentElement?.closest('[data-message-author-role="user"], [class~="group/user-message"]'));
+const lastUser = users.pop();
+const afterUserText = (() => {
+  if (!main || !lastUser || !main.lastChild) return '';
+  const range = document.createRange();
+  range.setStartAfter(lastUser);
+  range.setEndAfter(main.lastChild);
+  return range.toString().slice(-800);
+})();
+// A normal completed turn also has a Retry action; only the current turn's error text is a failure.
+const phrase = afterUserText.match(/message delivery timed out|something went wrong|network error|error generating/i);
+const errorSignal = phrase ? 'text: ' + phrase[0] : undefined;
+const replies = [...(main?.querySelectorAll(S.copy) || [])];
+const afterUser = (node) => !!lastUser && !!(lastUser.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING);
+const images = generatedImages();
 return {
   signedIn,
+  composer: !!document.querySelector(S.composer),
   generating: !!document.querySelector(S.stop),
-  replyDone: !!main && main.querySelectorAll(S.copy).length > 0,
-  images: generatedImages().length,
-  imagesLoading: /(loading|creating|generating) image/i.test(text.slice(-800)),
+  replyDone: replies.length > 0,
+  replyCount: replies.length,
+  images: images.length,
+  lastUserPromptMatches: args.comparePrompt === undefined ? undefined : lastUser?.innerText?.trim() === args.comparePrompt,
+  replyAfterLastUser: replies.some(afterUser),
+  imageAfterLastUser: images.some(afterUser),
+  imagesLoading: /(loading|creating|generating) image/i.test(afterUserText),
   errorShown: !!errorSignal,
   errorSignal,
-  tail: text.slice(-400),
+  tail: afterUserText.slice(-400),
 };`,
+    { comparePrompt },
   );
 }
 
 /** Captures what ChatGPT's own Copy button writes (markdown as `text/plain`). */
-export function copyLastReplyScript(id: number): string {
+export function copyLastReplyScript(id: number, index?: number): string {
   return inPage(
     id,
-    `const btn = [...document.querySelectorAll('main ' + S.copy)].pop();
+    `const buttons = [...document.querySelectorAll('main ' + S.copy)];
+const btn = args.index === undefined || buttons.length > args.index ? buttons.pop() : null;
 if (!btn) return null;
 const cb = navigator.clipboard; const write = cb.write.bind(cb); const writeText = cb.writeText.bind(cb);
 let copied = null;
@@ -334,6 +373,7 @@ cb.write = async (items) => { for (const item of items) if (item.types.includes(
 cb.writeText = async (t) => { copied = t; };
 try { btn.click(); await waitFor(() => copied !== null, 3000); } finally { cb.write = write; cb.writeText = writeText; }
 return copied;`,
+    { index },
   );
 }
 

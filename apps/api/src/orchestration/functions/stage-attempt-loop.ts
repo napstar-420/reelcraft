@@ -3,6 +3,13 @@ import { DEFAULT_FEEDBACK_MAX_ATTEMPTS } from '@reelcraft/shared';
 import type { JobHandle, JobStatus, StageDef } from '@reelcraft/shared';
 import { CONSUMES_RETRY_LIMIT } from '../attempt-outcome';
 import { isProviderUnavailable } from '../../provider/provider-unavailable';
+import {
+  QC_POLL_BACKOFF_SEC,
+  qcDeadlineAt,
+  qcPollLive,
+  qcRetryDelayMs,
+  type QcOutcome,
+} from '../../qc/qc-runner.service';
 import type {
   FetchAndFinalizeResult,
   StageAttemptContext,
@@ -107,6 +114,79 @@ export async function runStageAttemptLoop(
     stageItemId,
   } = params;
 
+  const runDurableQc = async (
+    envelope: Extract<FetchAndFinalizeResult, { outcome: 'qc_pending' }>['envelope'],
+    attemptCtx: StageAttemptContext,
+    iteration: number,
+  ): Promise<QcOutcome> => {
+    let last: QcOutcome = { status: 'error', reason: 'qc never attempted', costUsd: 0 };
+    const maxAttempts = runner.qcErrorAttempts();
+    for (let n = 1; n <= maxAttempts; n++) {
+      const submitted = await step.run(`qc-submit-${stageKey}-${iteration}-${n}`, async () => ({
+        result: await runner.submitQc(envelope, effective, attemptCtx, n),
+        deadlineMs: qcDeadlineAt(),
+      }));
+      if ('status' in submitted.result) {
+        last = submitted.result;
+      } else {
+        const handle = submitted.result.handle;
+        const pollQc = (id: string) =>
+          step.run(id, async () => {
+            const status = await runner.pollQc(handle);
+            return {
+              status,
+              live: qcPollLive(status, submitted.deadlineMs),
+            };
+          });
+        let { status: polled, live } = await pollQc(`qc-poll-${stageKey}-${iteration}-${n}-0`);
+        let count = 0;
+        while (!polled.done && live) {
+          const wait = QC_POLL_BACKOFF_SEC[Math.min(count, QC_POLL_BACKOFF_SEC.length - 1)]!;
+          count += 1;
+          await step.sleep(`qc-poll-wait-${stageKey}-${iteration}-${n}-${count}`, `${wait}s`);
+          ({ status: polled, live } = await pollQc(
+            `qc-poll-${stageKey}-${iteration}-${n}-${count}`,
+          ));
+        }
+        if (!polled.done) {
+          await step.run(`qc-cancel-${stageKey}-${iteration}-${n}`, () => runner.cancelQc(handle));
+          last = { status: 'error', reason: 'qc judge call did not complete in time', costUsd: 0 };
+        } else if (polled.outcome === 'failed') {
+          last = {
+            status: 'error',
+            reason: polled.reason,
+            costUsd: 0,
+            ...(polled.failureClass === 'infrastructure' && { transient: true }),
+          };
+        } else {
+          last = await step.run(`qc-fetch-${stageKey}-${iteration}-${n}`, () =>
+            runner.fetchQc(envelope, effective, attemptCtx, n, handle),
+          );
+        }
+      }
+      await step.run(`qc-result-${stageKey}-${iteration}-${n}`, () =>
+        runner.recordQcResult(attemptCtx, last, n),
+      );
+      if (last.status !== 'error') return last;
+      const pause = n < maxAttempts ? qcRetryDelayMs(last, n) : 0;
+      if (pause > 0)
+        await step.sleep(`qc-error-wait-${stageKey}-${iteration}-${n}`, `${pause / 1000}s`);
+    }
+    return last;
+  };
+
+  const finishPendingQc = async (
+    fetched: FetchAndFinalizeResult,
+    attemptCtx: StageAttemptContext,
+    iteration: number,
+  ): Promise<FetchAndFinalizeResult> => {
+    if (fetched.outcome !== 'qc_pending') return fetched;
+    const qcOutcome = await runDurableQc(fetched.envelope, attemptCtx, iteration);
+    return step.run(`qc-finalize-${stageKey}-${iteration}`, () =>
+      runner.retryHeldQc(stage, attemptCtx, prevStageKey, effective, { qcOutcome }),
+    );
+  };
+
   /** What to do with a finished fetch (or a "Retry QC" judging): the stage's
    * outcome when it is decided, or `undefined` to loop to a fresh attempt. */
   const settleFetched = async (
@@ -115,23 +195,34 @@ export async function runStageAttemptLoop(
     iteration: number,
     isLastAttempt = false,
   ): Promise<StageAttemptOutcome | undefined> => {
+    if (fetched.outcome === 'qc_pending')
+      throw new Error('QC verdict is required before settling the attempt');
+    const release = () =>
+      step.run(`release-continuation-${stageKey}-${iteration}`, () =>
+        runner.releaseContinuation?.(stage, attemptCtx),
+      );
     if (fetched.outcome === 'success') {
+      await release();
       return { outcome: 'passed' as const, artifactId: fetched.artifactId };
     }
 
     if (fetched.outcome === 'approval_required') {
+      await release();
       return { outcome: 'approval_required' as const, artifactId: fetched.artifactId };
     }
 
     if (fetched.outcome === 'run_not_running') {
+      await release();
       return { outcome: 'run_not_running' as const };
     }
 
     if (fetched.outcome === 'deferred') {
+      await release();
       return { outcome: 'deferred' as const, resumeAt: fetched.resumeAt };
     }
 
     if (fetched.outcome === 'output_rejected') {
+      await release();
       // Recorded as a provider error (the call was billed and settled), so it
       // spends the crash retry budget exactly as a thrown error would.
       if (!isLastAttempt) return undefined;
@@ -142,6 +233,7 @@ export async function runStageAttemptLoop(
     }
 
     if (fetched.outcome === 'qc_error' || fetched.outcome === 'model_error') {
+      await release();
       await step.run(`fail-stage-${stageKey}`, () =>
         runner.failStageExecution(stageExecutionId, fetched.reason, stageItemId),
       );
@@ -149,6 +241,7 @@ export async function runStageAttemptLoop(
     }
 
     if (fetched.outcome === 'qc_budget_exhausted') {
+      await release();
       await step.run(`fail-stage-${stageKey}`, () =>
         runner.failStageExecution(stageExecutionId, 'qc_budget_exhausted', stageItemId),
       );
@@ -167,6 +260,7 @@ export async function runStageAttemptLoop(
       (failedOutcome === 'qc_failed' ? stage.qc?.maxAttempts : stage.checkMaxAttempts) ??
       DEFAULT_FEEDBACK_MAX_ATTEMPTS;
     if (failuresUsed >= maxAttempts) {
+      await release();
       if (failedOutcome === 'qc_failed' && stage.qc?.onExhausted === 'human_review') {
         const handedOff = await step.run(`qc-handoff-${stageKey}-${iteration}`, () =>
           runner.handOffForReview(stage, attemptCtx),
@@ -203,9 +297,13 @@ export async function runStageAttemptLoop(
     );
     if (held) {
       const retried = await step.run(`retry-qc-${iteration}`, () =>
-        runner.retryHeldQc(stage, held, prevStageKey, effective),
+        runner.retryHeldQc(stage, held, prevStageKey, effective, { deferQc: true }),
       );
-      const settled = await settleFetched(retried, held, iteration);
+      const settled = await settleFetched(
+        await finishPendingQc(retried, held, iteration),
+        held,
+        iteration,
+      );
       if (settled) return settled;
       continue;
     }
@@ -348,7 +446,7 @@ export async function runStageAttemptLoop(
             round === 0
               ? `fetch-${stageKey}-${iteration}`
               : `fetch-${stageKey}-${iteration}-${round}`,
-            () => runner.fetchAndFinalize(stage, attemptCtx, handle, prevStageKey, effective),
+            () => runner.fetchAndFinalize(stage, attemptCtx, handle, prevStageKey, effective, true),
           );
         } catch (err) {
           const wait = FETCH_RESUME_WAITS[round];
@@ -361,7 +459,12 @@ export async function runStageAttemptLoop(
         }
       }
 
-      const settled = await settleFetched(fetched, attemptCtx, iteration, isLastAttempt);
+      const settled = await settleFetched(
+        await finishPendingQc(fetched, attemptCtx, iteration),
+        attemptCtx,
+        iteration,
+        isLastAttempt,
+      );
       if (settled) return settled;
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);

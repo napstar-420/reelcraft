@@ -180,7 +180,9 @@ describe('Generate Image picks the best of several candidates (e2e)', () => {
 
   it('keeps the image quality control chose as the stage output, with the candidates beside it', async () => {
     const { runId, executionIds } = await startRun([pickStage('img')]);
-    const judge = vi.spyOn(testApp.app.get(QcRunner), 'run').mockResolvedValue(picked(2));
+    const judge = vi
+      .spyOn(testApp.app.get(StageRunnerService), 'submitQc')
+      .mockResolvedValue(picked(2));
 
     await expect(runLoop(runId, executionIds[0]!, 'img')).resolves.toMatchObject({
       outcome: 'passed',
@@ -188,14 +190,10 @@ describe('Generate Image picks the best of several candidates (e2e)', () => {
 
     // The judge saw all three candidates and was asked to choose one.
     const [call] = judge.mock.calls[0]!;
-    expect(call.envelope.artifact.kind).toBe('media.image');
-    expect(call.envelope.media).toBeUndefined();
-    expect(call.envelope.selectBest).toBe(true);
-    expect(call.envelope.images?.map((image) => image.label)).toEqual([
-      'Image 1',
-      'Image 2',
-      'Image 3',
-    ]);
+    expect(call.artifact.kind).toBe('media.image');
+    expect(call.media).toBeUndefined();
+    expect(call.selectBest).toBe(true);
+    expect(call.images?.map((image) => image.label)).toEqual(['Image 1', 'Image 2', 'Image 3']);
 
     // One current artifact: a plain image whose file is the third candidate.
     const [image, ...others] = await currentArtifacts(runId, 'img');
@@ -253,7 +251,7 @@ describe('Generate Image picks the best of several candidates (e2e)', () => {
     };
     // A one-image slot accepts a picked image, which a list would not fit.
     const { runId, executionIds } = await startRun([pickStage('img'), clip]);
-    vi.spyOn(testApp.app.get(QcRunner), 'run').mockResolvedValue(picked(1));
+    vi.spyOn(testApp.app.get(StageRunnerService), 'submitQc').mockResolvedValue(picked(1));
 
     await runLoop(runId, executionIds[0]!, 'img');
     await expect(runLoop(runId, executionIds[1]!, 'clip')).resolves.toMatchObject({
@@ -269,7 +267,7 @@ describe('Generate Image picks the best of several candidates (e2e)', () => {
     it('makes all the candidates again and picks from the new ones', async () => {
       const { runId, executionIds } = await startRun([pickStage('img')]);
       const judge = vi
-        .spyOn(testApp.app.get(QcRunner), 'run')
+        .spyOn(testApp.app.get(StageRunnerService), 'submitQc')
         .mockResolvedValueOnce(rejectedAll())
         .mockResolvedValueOnce(picked(1));
 
@@ -293,7 +291,7 @@ describe('Generate Image picks the best of several candidates (e2e)', () => {
       const { runId, executionIds } = await startRun([
         pickStage('img', { qc: qcDef({ maxAttempts: 2 }) }),
       ]);
-      vi.spyOn(testApp.app.get(QcRunner), 'run').mockResolvedValue(rejectedAll());
+      vi.spyOn(testApp.app.get(StageRunnerService), 'submitQc').mockResolvedValue(rejectedAll());
 
       const outcome = await runLoop(runId, executionIds[0]!, 'img');
 
@@ -306,7 +304,7 @@ describe('Generate Image picks the best of several candidates (e2e)', () => {
       const { runId, executionIds } = await startRun([
         pickStage('img', { qc: qcDef({ maxAttempts: 1, onExhausted: 'human_review' }) }),
       ]);
-      vi.spyOn(testApp.app.get(QcRunner), 'run').mockResolvedValue(rejectedAll(1));
+      vi.spyOn(testApp.app.get(StageRunnerService), 'submitQc').mockResolvedValue(rejectedAll(1));
 
       await expect(runLoop(runId, executionIds[0]!, 'img')).resolves.toMatchObject({
         outcome: 'approval_required',
@@ -334,14 +332,16 @@ describe('Generate Image picks the best of several candidates (e2e)', () => {
       vi.spyOn(testApp.app.get(CheckRunner), 'run')
         .mockResolvedValueOnce([fail])
         .mockResolvedValue([pass]);
-      const judge = vi.spyOn(testApp.app.get(QcRunner), 'run').mockResolvedValue(picked(2));
+      const judge = vi
+        .spyOn(testApp.app.get(StageRunnerService), 'submitQc')
+        .mockResolvedValue(picked(2));
 
       await expect(runLoop(runId, executionIds[0]!, 'img')).resolves.toMatchObject({
         outcome: 'passed',
       });
 
       const [call] = judge.mock.calls[0]!;
-      expect(call.envelope.images?.map((image) => image.index)).toEqual([1, 2]);
+      expect(call.images?.map((image) => image.index)).toEqual([1, 2]);
       const [image] = await currentArtifacts(runId, 'img');
       expect((image!.data as { selectedIndex: number }).selectedIndex).toBe(2);
       const events = await testDb.db.select().from(stageEvent).where(eq(stageEvent.runId, runId));
@@ -356,7 +356,9 @@ describe('Generate Image picks the best of several candidates (e2e)', () => {
         }),
       ]);
       vi.spyOn(testApp.app.get(CheckRunner), 'run').mockResolvedValue([fail]);
-      const judge = vi.spyOn(testApp.app.get(QcRunner), 'run').mockResolvedValue(picked(0));
+      const judge = vi
+        .spyOn(testApp.app.get(StageRunnerService), 'submitQc')
+        .mockResolvedValue(picked(0));
 
       const outcome = await runLoop(runId, executionIds[0]!, 'img');
 
@@ -372,13 +374,15 @@ describe('Generate Image picks the best of several candidates (e2e)', () => {
       const { runId, executionIds } = await startRun([
         pickStage('img', { config: { count: 4 }, params: { fakeImageCount: 2 } }),
       ]);
-      const judge = vi.spyOn(testApp.app.get(QcRunner), 'run').mockResolvedValue(picked(1));
+      const judge = vi
+        .spyOn(testApp.app.get(StageRunnerService), 'submitQc')
+        .mockResolvedValue(picked(1));
 
       await expect(runLoop(runId, executionIds[0]!, 'img')).resolves.toMatchObject({
         outcome: 'passed',
       });
 
-      expect(judge.mock.calls[0]![0].envelope.images).toHaveLength(2);
+      expect(judge.mock.calls[0]![0].images).toHaveLength(2);
       const [image] = await currentArtifacts(runId, 'img');
       expect((image!.data as { candidates: Candidates }).candidates).toHaveLength(2);
     });
@@ -390,7 +394,9 @@ describe('Generate Image picks the best of several candidates (e2e)', () => {
           params: { fakeImageCount: 2 },
         }),
       ]);
-      const judge = vi.spyOn(testApp.app.get(QcRunner), 'run').mockResolvedValue(picked(0));
+      const judge = vi
+        .spyOn(testApp.app.get(StageRunnerService), 'submitQc')
+        .mockResolvedValue(picked(0));
 
       const outcome = await runLoop(runId, executionIds[0]!, 'img', 1);
 
@@ -408,7 +414,7 @@ describe('Generate Image picks the best of several candidates (e2e)', () => {
     it('Retry QC picks again from the stored candidates, without making more', async () => {
       const { runId, executionIds } = await startRun([pickStage('img')]);
       const judge = vi
-        .spyOn(testApp.app.get(QcRunner), 'run')
+        .spyOn(testApp.app.get(StageRunnerService), 'submitQc')
         .mockResolvedValue({ status: 'error', reason: 'judge unreachable', costUsd: 0 });
       await expect(runLoop(runId, executionIds[0]!, 'img')).resolves.toMatchObject({
         outcome: 'approval_required',
@@ -429,8 +435,8 @@ describe('Generate Image picks the best of several candidates (e2e)', () => {
       expect(await testDb.db.select().from(blob).where(eq(blob.runId, runId))).toHaveLength(3);
       expect(await attemptsOf(executionIds[0]!)).toHaveLength(1);
       const [call] = judge.mock.calls.at(-1)!;
-      expect(call.envelope.images).toHaveLength(3);
-      expect(call.envelope.selectBest).toBe(true);
+      expect(call.images).toHaveLength(3);
+      expect(call.selectBest).toBe(true);
       const [image] = await currentArtifacts(runId, 'img');
       const data = image!.data as { candidates: Candidates; selectedIndex: number };
       expect(data.selectedIndex).toBe(2);
@@ -521,7 +527,7 @@ describe('Generate Image picks the best of several candidates (e2e)', () => {
 
   it("queues every candidate's file for deletion with the channel", async () => {
     const { channelId, runId, executionIds } = await startRun([pickStage('img')]);
-    vi.spyOn(testApp.app.get(QcRunner), 'run').mockResolvedValue(picked(1));
+    vi.spyOn(testApp.app.get(StageRunnerService), 'submitQc').mockResolvedValue(picked(1));
     await runLoop(runId, executionIds[0]!, 'img');
     const keys = (await testDb.db.select().from(blob).where(eq(blob.runId, runId))).map(
       (row) => row.objectKey,

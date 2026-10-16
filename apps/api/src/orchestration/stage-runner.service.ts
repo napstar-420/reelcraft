@@ -1,15 +1,13 @@
 import { createHash } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 import { and, asc, desc, eq, gt, inArray, isNull, lt, sql } from 'drizzle-orm';
-import type {
-  AttemptOutcome,
-  HumanWaitKind,
-  JobHandle,
-  JobStatus,
-  QcDef,
-  Ref,
+import type { AttemptOutcome, HumanWaitKind, JobHandle, JobStatus, Ref } from '@reelcraft/shared';
+import {
+  JobHandle as JobHandleSchema,
+  StageDef,
+  approvalModeOf,
+  stageRefLeaves,
 } from '@reelcraft/shared';
-import { StageDef, approvalModeOf, stageRefLeaves } from '@reelcraft/shared';
 import { DRIZZLE, type Db, type Tx } from '../db/drizzle.provider';
 import {
   artifact,
@@ -47,9 +45,9 @@ import { SchemaValidatorService } from '../json-schema/schema-validator.service'
 import { EngineConfig } from '../config/engine-config';
 import { CheckRunner } from '../check/check-runner.service';
 import type { CheckArtifact, CheckResult } from '../check/check.types';
-import { QcRunner, qcRetryDelayMs, type QcOutcome, type QcVerdict } from '../qc/qc-runner.service';
+import { QcRunner, type QcOutcome, type QcVerdict } from '../qc/qc-runner.service';
 import { QcAudioService } from '../qc/qc-audio';
-import { buildQcEnvelope } from '../qc/qc-envelope';
+import { buildQcEnvelope, type QcEnvelope } from '../qc/qc-envelope';
 import { storedCandidates } from '../artifact/clip-handle';
 import { HumanWaitService } from '../run/human-wait.service';
 import { TimelineCheckService } from '../check/timeline-check.service';
@@ -58,6 +56,8 @@ import { TimelineResourceResolverService } from '../artifact/timeline-resource-r
 import { FileArtifactService } from '../artifact/file-artifact.service';
 import { ArtifactAttachmentService } from '../artifact/artifact-attachment.service';
 import { StageEventService, type StageEventLevel } from './stage-event.service';
+import { ProviderContinuationUnavailableError } from '../provider/provider-adapter.interface';
+import { feedbackForAttempt, revisionPrompt } from './revision-feedback';
 
 export interface StageAttemptContext {
   runId: string;
@@ -103,7 +103,8 @@ export type FetchAndFinalizeResult =
    * recorded as a provider error, so it is retried like a crash. */
   | { outcome: 'output_rejected'; reason: string }
   | { outcome: 'deferred'; resumeAt: string }
-  | { outcome: 'qc_budget_exhausted'; checkResults: CheckResult[] };
+  | { outcome: 'qc_budget_exhausted'; checkResults: CheckResult[] }
+  | { outcome: 'qc_pending'; artifactId: string; envelope: QcEnvelope };
 
 /** §11 — `reserveAndSubmit`'s outcome: either a reservation was made and
  * the job submitted, or the reserve step itself rejected the attempt
@@ -386,6 +387,16 @@ export class StageRunnerService {
     outcomes: readonly AttemptOutcome[],
     stageItemId?: string,
   ): Promise<number> {
+    const roundPredicate = await this.currentRoundPredicate(stageExecutionId, stageItemId);
+    const [row] = await this.db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(stageAttempt)
+      .innerJoin(stageExecution, eq(stageAttempt.stageExecutionId, stageExecution.id))
+      .where(and(roundPredicate, inArray(stageAttempt.outcome, [...outcomes])));
+    return row?.count ?? 0;
+  }
+
+  private async currentRoundPredicate(stageExecutionId: string, stageItemId?: string) {
     const scopePredicate = stageItemId
       ? eq(stageAttempt.stageItemId, stageItemId)
       : isNull(stageAttempt.stageItemId);
@@ -402,20 +413,142 @@ export class StageRunnerService {
     const roundStart = stageItemId
       ? sql`(select ${stageItem.startedAt} from ${stageItem} where ${stageItem.id} = ${stageItemId})`
       : sql`${stageExecution.startedAt}`;
+    return and(
+      eq(stageAttempt.stageExecutionId, stageExecutionId),
+      scopePredicate,
+      gt(stageAttempt.attemptNo, lastRejection?.attemptNo ?? 0),
+      sql`(${roundStart} is null or ${stageAttempt.createdAt} >= ${roundStart})`,
+    );
+  }
+
+  private async findContinuationSource(
+    ctx: StageAttemptContext,
+    modelId: string,
+    provider: string,
+    modality: string,
+    outputKind: string,
+  ) {
+    const roundPredicate = await this.currentRoundPredicate(ctx.stageExecutionId, ctx.stageItemId);
     const [row] = await this.db
-      .select({ count: sql<number>`count(*)::int` })
+      .select({
+        attemptNo: stageAttempt.attemptNo,
+        outcome: stageAttempt.outcome,
+        jobHandle: stageAttempt.jobHandle,
+        checkResults: stageAttempt.checkResults,
+        qcVerdict: stageAttempt.qcVerdict,
+      })
       .from(stageAttempt)
       .innerJoin(stageExecution, eq(stageAttempt.stageExecutionId, stageExecution.id))
-      .where(
-        and(
-          eq(stageAttempt.stageExecutionId, stageExecutionId),
-          scopePredicate,
-          inArray(stageAttempt.outcome, [...outcomes]),
-          gt(stageAttempt.attemptNo, lastRejection?.attemptNo ?? 0),
-          sql`(${roundStart} is null or ${stageAttempt.createdAt} >= ${roundStart})`,
-        ),
+      .where(and(roundPredicate, eq(stageAttempt.attemptNo, ctx.attemptNo - 1)))
+      .limit(1);
+    if (!row || (row.outcome !== 'check_failed' && row.outcome !== 'qc_failed')) return undefined;
+    const parsed = JobHandleSchema.safeParse(row.jobHandle);
+    if (!parsed.success || parsed.data.providerId !== provider) return undefined;
+    const payload = parsed.data.payload as
+      | { _reelcraftContinuation?: { modelId?: string; modality?: string; outputKind?: string } }
+      | undefined;
+    const meta = payload?._reelcraftContinuation;
+    if (meta?.modelId !== modelId || meta.modality !== modality || meta.outputKind !== outputKind)
+      return undefined;
+    const feedback = feedbackForAttempt(row);
+    return feedback ? { handle: parsed.data, attemptNo: row.attemptNo, feedback } : undefined;
+  }
+
+  async releaseContinuation(stage: StageDef, ctx: StageAttemptContext): Promise<void> {
+    const [row] = await this.db
+      .select({ jobHandle: stageAttempt.jobHandle })
+      .from(stageAttempt)
+      .where(eq(stageAttempt.id, ctx.stageAttemptId))
+      .limit(1);
+    const parsed = JobHandleSchema.safeParse(row?.jobHandle);
+    if (!parsed.success) return;
+    if (
+      !(parsed.data.payload as { _reelcraftContinuation?: unknown } | undefined)
+        ?._reelcraftContinuation
+    )
+      return;
+    try {
+      await this.capabilities.get(stage.capability).releaseContinuation?.(parsed.data);
+      await this.events.record(
+        ctx,
+        'info',
+        'provider.continuation.released',
+        'Provider continuation released',
+        {
+          providerId: parsed.data.providerId,
+          stageKey: ctx.stageKey,
+          stageExecutionId: ctx.stageExecutionId,
+          stageItemId: ctx.stageItemId,
+          attemptNo: ctx.attemptNo,
+        },
       );
-    return row?.count ?? 0;
+    } catch (error) {
+      await this.events.record(
+        ctx,
+        'warn',
+        'provider.continuation.release_failed',
+        'Provider continuation cleanup failed',
+        { error: error instanceof Error ? error.message : String(error) },
+      );
+    }
+  }
+
+  qcErrorAttempts(): number {
+    return 1 + this.engineConfig.qcErrorRetries;
+  }
+
+  submitQc(
+    envelope: QcEnvelope,
+    effective: EffectiveStageConfig,
+    ctx: StageAttemptContext,
+    n: number,
+  ) {
+    if (!effective.qc) throw new Error('QC configuration is unavailable');
+    return this.qc.submit({
+      envelope,
+      judge: effective.qc.judge,
+      threshold: effective.qc.threshold,
+      idempotencyKey: `${ctx.stageAttemptId}:qc:${n}`,
+    });
+  }
+
+  pollQc(handle: JobHandle): Promise<JobStatus> {
+    return this.qc.poll(handle);
+  }
+
+  fetchQc(
+    envelope: QcEnvelope,
+    effective: EffectiveStageConfig,
+    ctx: StageAttemptContext,
+    n: number,
+    handle: JobHandle,
+  ): Promise<QcOutcome> {
+    if (!effective.qc) throw new Error('QC configuration is unavailable');
+    return this.qc.fetch(
+      {
+        envelope,
+        judge: effective.qc.judge,
+        threshold: effective.qc.threshold,
+        idempotencyKey: `${ctx.stageAttemptId}:qc:${n}`,
+      },
+      handle,
+    );
+  }
+
+  cancelQc(handle: JobHandle): Promise<void> {
+    return this.qc.cancel(handle);
+  }
+
+  async recordQcResult(ctx: StageAttemptContext, result: QcOutcome, n: number): Promise<void> {
+    await this.events.record(
+      ctx,
+      result.status === 'passed' ? 'info' : result.status === 'failed' ? 'warn' : 'error',
+      'qc.result',
+      result.status === 'error'
+        ? `QC call ${n}/${this.qcErrorAttempts()} errored: ${result.reason}`
+        : `QC ${result.status}`,
+      result,
+    );
   }
 
   private idempotencyKey(ctx: StageAttemptContext, itemIndex?: number): string {
@@ -490,9 +623,7 @@ export class StageRunnerService {
     beforeAttemptNo: number,
     stageItemId?: string,
   ): Promise<string> {
-    const scopePredicate = stageItemId
-      ? eq(stageAttempt.stageItemId, stageItemId)
-      : isNull(stageAttempt.stageItemId);
+    const roundPredicate = await this.currentRoundPredicate(stageExecutionId, stageItemId);
     const [execution] = await this.db
       .select({ runId: stageExecution.runId, stageKey: stageExecution.stageKey })
       .from(stageExecution)
@@ -507,32 +638,11 @@ export class StageRunnerService {
         qcVerdict: stageAttempt.qcVerdict,
       })
       .from(stageAttempt)
-      .where(
-        and(
-          eq(stageAttempt.stageExecutionId, stageExecutionId),
-          scopePredicate,
-          lt(stageAttempt.attemptNo, beforeAttemptNo),
-        ),
-      )
+      .innerJoin(stageExecution, eq(stageAttempt.stageExecutionId, stageExecution.id))
+      .where(and(roundPredicate, lt(stageAttempt.attemptNo, beforeAttemptNo)))
       .orderBy(asc(stageAttempt.attemptNo));
 
-    const lines: string[] = [];
-    for (const row of rows) {
-      if (row.outcome === 'check_failed') {
-        const results = (row.checkResults as CheckResult[] | null) ?? [];
-        const failed = results
-          .filter((r) => !r.pass)
-          .map((r) => `- ${r.name}${r.message ? `: ${r.message}` : ''}`);
-        lines.push(`Attempt ${row.attemptNo} failed these checks:\n${failed.join('\n')}`);
-      } else if (row.outcome === 'qc_failed') {
-        const verdict = row.qcVerdict as QcVerdict | null;
-        lines.push(`Attempt ${row.attemptNo} was rejected by QC: ${verdict?.critique ?? ''}`);
-        // A clip list names the clips to make again; the stage keeps the rest.
-        if (verdict?.failedClips?.length) {
-          lines.push(`Clips to make again (their index): ${verdict.failedClips.join(', ')}`);
-        }
-      }
-    }
+    const lines = rows.map(feedbackForAttempt).filter((line): line is string => line !== undefined);
     const routed = await this.db
       .select({ reviewNote: stageAttempt.reviewNote })
       .from(stageAttempt)
@@ -651,11 +761,38 @@ export class StageRunnerService {
       stage.instructions?.system,
     );
     const execCtx = capability.prepare?.(unpreparedExecCtx) ?? unpreparedExecCtx;
+    const continuationEligible =
+      (!!stage.checks?.length || !!stage.qc) &&
+      !!effective.model &&
+      capability.supportsContinuation?.(execCtx) === true;
+    const source =
+      continuationEligible && effective.model
+        ? await this.findContinuationSource(
+            ctx,
+            effective.model.modelId,
+            effective.model.provider,
+            capability.modality,
+            stage.output.kind,
+          )
+        : undefined;
+    const continuation = continuationEligible
+      ? source
+        ? {
+            retain: true as const,
+            previousHandle: source.handle,
+            revisionPrompt: revisionPrompt(source.feedback, capability.modality, stage.output),
+          }
+        : { retain: true as const }
+      : undefined;
+    const actualPrompt =
+      continuation && 'revisionPrompt' in continuation
+        ? continuation.revisionPrompt
+        : execCtx.renderedPrompt;
 
     // Persisted before submit so a failed submit still shows what was sent.
     await this.db
       .update(stageAttempt)
-      .set({ renderedPrompt: execCtx.renderedPrompt, resolvedInputs: bindings.provenance })
+      .set({ renderedPrompt: actualPrompt, resolvedInputs: bindings.provenance })
       .where(eq(stageAttempt.id, ctx.stageAttemptId));
     await this.events.record(ctx, 'debug', 'inputs.resolved', 'Inputs resolved', {
       provenance: bindings.provenance,
@@ -665,8 +802,8 @@ export class StageRunnerService {
         ctx,
         'info',
         'prompt.rendered',
-        `Prompt rendered (${execCtx.renderedPrompt?.length ?? 0} chars)`,
-        { system: execCtx.systemPrompt, prompt: execCtx.renderedPrompt },
+        `Prompt rendered (${actualPrompt?.length ?? 0} chars)`,
+        { system: execCtx.systemPrompt, prompt: actualPrompt },
       );
     }
     if (effective.model) {
@@ -727,7 +864,68 @@ export class StageRunnerService {
       .set({ phase: 'submitting' })
       .where(eq(stageAttempt.id, ctx.stageAttemptId));
 
-    const handle = await capability.submit(execCtx);
+    let handle: JobHandle;
+    let sentPrompt = actualPrompt;
+    try {
+      handle = await capability.submit(continuation ? { ...execCtx, continuation } : execCtx);
+    } catch (error) {
+      if (!(error instanceof ProviderContinuationUnavailableError) || !source) throw error;
+      sentPrompt = execCtx.renderedPrompt;
+      await this.db
+        .update(stageAttempt)
+        .set({ renderedPrompt: sentPrompt })
+        .where(eq(stageAttempt.id, ctx.stageAttemptId));
+      await this.events.record(
+        ctx,
+        'warn',
+        'provider.continuation.unavailable',
+        'Provider continuation unavailable; starting fresh',
+        {
+          providerId: effective.model?.provider,
+          stageKey: stage.key,
+          stageExecutionId: ctx.stageExecutionId,
+          stageItemId: ctx.stageItemId,
+          attemptNo: ctx.attemptNo,
+          previousAttemptNo: source.attemptNo,
+          modality: capability.modality,
+        },
+      );
+      handle = await capability.submit({ ...execCtx, continuation: { retain: true } });
+    }
+    if (continuationEligible && effective.model) {
+      handle = {
+        ...handle,
+        payload: {
+          ...(handle.payload && typeof handle.payload === 'object' && !Array.isArray(handle.payload)
+            ? handle.payload
+            : {}),
+          _reelcraftContinuation: {
+            modelId: effective.model.modelId,
+            modality: capability.modality,
+            outputKind: stage.output.kind,
+          },
+        },
+      };
+      await this.events.record(
+        ctx,
+        'info',
+        source && sentPrompt !== execCtx.renderedPrompt
+          ? 'provider.continuation.resumed'
+          : 'provider.continuation.started',
+        source && sentPrompt !== execCtx.renderedPrompt
+          ? 'Provider continuation resumed'
+          : 'Provider continuation started',
+        {
+          providerId: handle.providerId,
+          stageKey: stage.key,
+          stageExecutionId: ctx.stageExecutionId,
+          stageItemId: ctx.stageItemId,
+          attemptNo: ctx.attemptNo,
+          previousAttemptNo: source?.attemptNo,
+          modality: capability.modality,
+        },
+      );
+    }
 
     await this.ledger.markSubmitted(
       reserved.reservationId,
@@ -739,7 +937,7 @@ export class StageRunnerService {
       .set({
         phase: 'submitted',
         idempotencyKey: execCtx.idempotencyKey,
-        renderedPrompt: execCtx.renderedPrompt,
+        renderedPrompt: sentPrompt,
         jobHandle: handle,
         resolvedInputs: bindings.provenance,
       })
@@ -907,6 +1105,7 @@ export class StageRunnerService {
     handle: JobHandle,
     prevStageKey: string | undefined,
     effective: EffectiveStageConfig,
+    deferQc = false,
   ): Promise<FetchAndFinalizeResult> {
     const capability = this.capabilities.get(stage.capability);
     const bindings = await this.resolveBindings(stage, ctx.runId, prevStageKey, ctx.itemIndex);
@@ -1191,6 +1390,7 @@ export class StageRunnerService {
       stage,
       ctx,
       effective,
+      deferQc,
       prevStageKey,
       bindings,
       candidate: {
@@ -1234,6 +1434,8 @@ export class StageRunnerService {
     stage: StageDef;
     ctx: StageAttemptContext;
     effective: EffectiveStageConfig;
+    deferQc?: boolean;
+    qcOutcome?: QcOutcome;
     prevStageKey: string | undefined;
     bindings: ResolvedBindings;
     candidate: Candidate;
@@ -1247,121 +1449,139 @@ export class StageRunnerService {
       data,
       ...(persistedMedia && { probe: persistedMedia.probe }),
     };
-    const resolvedRefs: Array<Record<string, RefEnvelope>> = [];
-    const checkProvenance: ResolvedBindings['provenance'] = {};
-    for (const [checkIndex, check] of stage.checks.entries()) {
-      if (check.type === 'script' && check.refs) {
-        const resolved = await this.bindingResolver.resolveRefEnvelopes(check.refs, {
-          runId: ctx.runId,
-          prevStageKey,
-          inputs: await this.loadRunInputs(ctx.runId),
-          assetBindings: await this.loadAssetBindings(ctx.runId),
-          stageKey: stage.key,
-          itemIndex: ctx.itemIndex,
-          iterateOverValue: bindings.iterateOverValue,
-        });
-        resolvedRefs.push(resolved.refs);
-        for (const [name, provenance] of Object.entries(resolved.provenance)) {
-          checkProvenance[`checks.${checkIndex}.refs.${name}`] = provenance;
-        }
-      } else {
-        resolvedRefs.push({});
-      }
-    }
-    await this.db
-      .update(stageAttempt)
-      .set({ resolvedInputs: { ...bindings.provenance, ...checkProvenance } })
-      .where(eq(stageAttempt.id, ctx.stageAttemptId));
-
-    // Several candidates: each is checked on its own, and only the ones that
-    // pass go on to quality control.
     let survivors = candidate.pick;
     let checkResults: CheckResult[];
-    if (candidate.pick) {
-      checkResults = [];
-      survivors = [];
-      for (const item of candidate.pick) {
-        const results = await this.checks.run({
-          checks: stage.checks,
-          artifact: { kind, data: undefined, probe: item.probe },
-          resolvedRefs,
-        });
-        checkResults.push(...results.map((r) => ({ ...r, name: `${item.label}: ${r.name}` })));
-        if (results.every((r) => r.pass)) survivors.push(item);
-      }
-      const dropped = candidate.pick.filter((item) => !survivors!.includes(item));
-      if (dropped.length && survivors.length) {
-        await this.events.record(
-          ctx,
-          'warn',
-          'checks.dropped',
-          `${dropped.map((item) => item.label).join(', ')} failed checks and will not be judged`,
-        );
-      }
+    if (p.qcOutcome) {
+      const [saved] = await this.db
+        .select({ checkResults: stageAttempt.checkResults })
+        .from(stageAttempt)
+        .where(eq(stageAttempt.id, ctx.stageAttemptId))
+        .limit(1);
+      if (!Array.isArray(saved?.checkResults))
+        throw new Error('QC attempt has no persisted check results');
+      checkResults = saved.checkResults as CheckResult[];
+      survivors = candidate.pick?.filter(
+        (item) =>
+          !checkResults.some((result) => !result.pass && result.name.startsWith(`${item.label}: `)),
+      );
     } else {
-      checkResults = await this.checks.run({
-        checks: stage.checks,
-        artifact: checkArtifact,
-        resolvedRefs,
-        ...(stage.output.kind === 'data' && { outputSchema: stage.output.schema }),
-      });
-    }
-    if (stage.output.kind === 'timeline') {
-      const config = effective.capabilityConfig as {
-        allowGaps?: boolean;
-        toleranceSec?: number;
-      };
-      checkResults.unshift(
-        ...(await this.timelineChecks.run({
-          runId: ctx.runId,
-          timeline: output,
-          allowGaps: config.allowGaps,
-          toleranceSec: config.toleranceSec,
-          aspectRatio: effective.layer.format?.aspectRatio,
-        })),
-      );
-    }
-    // Video is audio-bearing by default. A stage must explicitly request
-    // `forbidden` or `optional` to accept a silent provider result.
-    if (stage.output.kind === 'media.video' && persistedMedia) {
-      const audioPolicy = stage.output.constraints?.audio ?? 'required';
-      const hasAudio = persistedMedia.probe.streams.some((stream) => stream.type === 'audio');
-      if ((audioPolicy === 'required' && !hasAudio) || (audioPolicy === 'forbidden' && hasAudio)) {
-        checkResults.push({
-          name: 'audio_constraint',
-          kind: 'builtin',
-          pass: false,
-          fault: 'artifact',
-          message: `video audio is ${hasAudio ? 'present' : 'absent'} but output requires ${audioPolicy}`,
-        });
+      const resolvedRefs: Array<Record<string, RefEnvelope>> = [];
+      const checkProvenance: ResolvedBindings['provenance'] = {};
+      for (const [checkIndex, check] of stage.checks.entries()) {
+        if (check.type === 'script' && check.refs) {
+          const resolved = await this.bindingResolver.resolveRefEnvelopes(check.refs, {
+            runId: ctx.runId,
+            prevStageKey,
+            inputs: await this.loadRunInputs(ctx.runId),
+            assetBindings: await this.loadAssetBindings(ctx.runId),
+            stageKey: stage.key,
+            itemIndex: ctx.itemIndex,
+            iterateOverValue: bindings.iterateOverValue,
+          });
+          resolvedRefs.push(resolved.refs);
+          for (const [name, provenance] of Object.entries(resolved.provenance)) {
+            checkProvenance[`checks.${checkIndex}.refs.${name}`] = provenance;
+          }
+        } else {
+          resolvedRefs.push({});
+        }
       }
-    }
-
-    // With candidates, a failing one is only dropped; the checks fail the
-    // attempt when none is left.
-    const failedChecks = survivors?.length ? [] : checkResults.filter((r) => !r.pass);
-    if (checkResults.length > 0) {
-      await this.events.record(
-        ctx,
-        failedChecks.length ? 'warn' : 'info',
-        'checks.result',
-        `${checkResults.length - failedChecks.length}/${checkResults.length} checks passed`,
-        { checks: checkResults },
-      );
-    }
-    if (failedChecks.length) {
       await this.db
         .update(stageAttempt)
-        .set({ outcome: 'check_failed', checkResults })
+        .set({ resolvedInputs: { ...bindings.provenance, ...checkProvenance } })
         .where(eq(stageAttempt.id, ctx.stageAttemptId));
-      await this.finishAttempt(
-        ctx,
-        'warn',
-        'check_failed',
-        `Checks failed: ${failedChecks.map((r) => r.name).join(', ')}`,
-        { failed: failedChecks },
-      );
-      return { outcome: 'check_failed', checkResults };
+
+      // Several candidates: each is checked on its own, and only the ones that
+      // pass go on to quality control.
+      if (candidate.pick) {
+        checkResults = [];
+        survivors = [];
+        for (const item of candidate.pick) {
+          const results = await this.checks.run({
+            checks: stage.checks,
+            artifact: { kind, data: undefined, probe: item.probe },
+            resolvedRefs,
+          });
+          checkResults.push(...results.map((r) => ({ ...r, name: `${item.label}: ${r.name}` })));
+          if (results.every((r) => r.pass)) survivors.push(item);
+        }
+        const dropped = candidate.pick.filter((item) => !survivors!.includes(item));
+        if (dropped.length && survivors.length) {
+          await this.events.record(
+            ctx,
+            'warn',
+            'checks.dropped',
+            `${dropped.map((item) => item.label).join(', ')} failed checks and will not be judged`,
+          );
+        }
+      } else {
+        checkResults = await this.checks.run({
+          checks: stage.checks,
+          artifact: checkArtifact,
+          resolvedRefs,
+          ...(stage.output.kind === 'data' && { outputSchema: stage.output.schema }),
+        });
+      }
+      if (stage.output.kind === 'timeline') {
+        const config = effective.capabilityConfig as {
+          allowGaps?: boolean;
+          toleranceSec?: number;
+        };
+        checkResults.unshift(
+          ...(await this.timelineChecks.run({
+            runId: ctx.runId,
+            timeline: output,
+            allowGaps: config.allowGaps,
+            toleranceSec: config.toleranceSec,
+            aspectRatio: effective.layer.format?.aspectRatio,
+          })),
+        );
+      }
+      // Video is audio-bearing by default. A stage must explicitly request
+      // `forbidden` or `optional` to accept a silent provider result.
+      if (stage.output.kind === 'media.video' && persistedMedia) {
+        const audioPolicy = stage.output.constraints?.audio ?? 'required';
+        const hasAudio = persistedMedia.probe.streams.some((stream) => stream.type === 'audio');
+        if (
+          (audioPolicy === 'required' && !hasAudio) ||
+          (audioPolicy === 'forbidden' && hasAudio)
+        ) {
+          checkResults.push({
+            name: 'audio_constraint',
+            kind: 'builtin',
+            pass: false,
+            fault: 'artifact',
+            message: `video audio is ${hasAudio ? 'present' : 'absent'} but output requires ${audioPolicy}`,
+          });
+        }
+      }
+
+      // With candidates, a failing one is only dropped; the checks fail the
+      // attempt when none is left.
+      const failedChecks = survivors?.length ? [] : checkResults.filter((r) => !r.pass);
+      if (checkResults.length > 0) {
+        await this.events.record(
+          ctx,
+          failedChecks.length ? 'warn' : 'info',
+          'checks.result',
+          `${checkResults.length - failedChecks.length}/${checkResults.length} checks passed`,
+          { checks: checkResults },
+        );
+      }
+      if (failedChecks.length) {
+        await this.db
+          .update(stageAttempt)
+          .set({ outcome: 'check_failed', checkResults })
+          .where(eq(stageAttempt.id, ctx.stageAttemptId));
+        await this.finishAttempt(
+          ctx,
+          'warn',
+          'check_failed',
+          `Checks failed: ${failedChecks.map((r) => r.name).join(', ')}`,
+          { failed: failedChecks },
+        );
+        return { outcome: 'check_failed', checkResults };
+      }
     }
 
     let picked = false;
@@ -1372,7 +1592,7 @@ export class StageRunnerService {
       // Decision note in the phase-3 plan for why QC's synchronous,
       // non-reserved execution model doesn't get the reserve/settle
       // treatment stage output does.
-      if (effective.qc.capUsd !== undefined) {
+      if (!p.qcOutcome && effective.qc.capUsd !== undefined) {
         const qcSpent = await this.ledger.qcSpentUsd(ctx.runId, stage.key);
         if (qcSpent >= effective.qc.capUsd) {
           await this.db
@@ -1387,67 +1607,84 @@ export class StageRunnerService {
         }
       }
 
-      let qcMedia =
-        stage.output.kind === 'media.image' && persistedMedia && !candidate.pick
-          ? { sourceKey: persistedMedia.storageKey, mime: persistedMedia.mime ?? 'image/png' }
-          : undefined;
-      // "Include transcript" on an audio output: the judge listens to the
-      // file when its model accepts audio, otherwise Deepgram transcribes it.
-      let qcTranscript: string | undefined;
-      if (
-        stage.qc.media?.includeTranscript &&
-        stage.output.kind === 'media.audio' &&
-        persistedMedia
-      ) {
-        const audioMime = persistedMedia.mime ?? 'audio/mpeg';
-        const audioMode = await this.qcAudio.mode(effective.qc.judge);
-        let audioError: string | undefined;
-        if (audioMode.mode === 'attach') {
-          qcMedia = { sourceKey: persistedMedia.storageKey, mime: audioMime };
-        } else if (audioMode.mode === 'transcribe') {
-          try {
-            const transcribed = await this.qcAudio.transcribe(persistedMedia.storageKey, audioMime);
-            qcTranscript = transcribed.transcript;
-            await this.ledger.recordActual({
-              runId: ctx.runId,
-              stageKey: stage.key,
-              stageAttemptId: ctx.stageAttemptId,
-              category: 'qc',
-              amountUsd: transcribed.costUsd,
-            });
-          } catch (error) {
-            audioError = `could not transcribe the audio: ${(error as Error).message}`;
+      let qcOutcome = p.qcOutcome;
+      if (!qcOutcome) {
+        let qcMedia =
+          stage.output.kind === 'media.image' && persistedMedia && !candidate.pick
+            ? { sourceKey: persistedMedia.storageKey, mime: persistedMedia.mime ?? 'image/png' }
+            : undefined;
+        // "Include transcript" on an audio output: the judge listens to the
+        // file when its model accepts audio, otherwise Deepgram transcribes it.
+        let qcTranscript: string | undefined;
+        if (
+          stage.qc.media?.includeTranscript &&
+          stage.output.kind === 'media.audio' &&
+          persistedMedia
+        ) {
+          const audioMime = persistedMedia.mime ?? 'audio/mpeg';
+          const audioMode = await this.qcAudio.mode(effective.qc.judge);
+          let audioError: string | undefined;
+          if (audioMode.mode === 'attach') {
+            qcMedia = { sourceKey: persistedMedia.storageKey, mime: audioMime };
+          } else if (audioMode.mode === 'transcribe') {
+            try {
+              const transcribed = await this.qcAudio.transcribe(
+                persistedMedia.storageKey,
+                audioMime,
+              );
+              qcTranscript = transcribed.transcript;
+              await this.ledger.recordActual({
+                runId: ctx.runId,
+                stageKey: stage.key,
+                stageAttemptId: ctx.stageAttemptId,
+                category: 'qc',
+                amountUsd: transcribed.costUsd,
+              });
+            } catch (error) {
+              audioError = `could not transcribe the audio: ${(error as Error).message}`;
+            }
+          } else {
+            audioError = audioMode.reason;
           }
-        } else {
-          audioError = audioMode.reason;
+          if (audioError)
+            return this.holdForQcRetry(stage, ctx, checkResults, audioError, artifactId);
         }
-        if (audioError)
-          return this.holdForQcRetry(stage, ctx, checkResults, audioError, artifactId);
+        // A clip list is judged as every clip, in order, as video files; an
+        // image list as every image together, one verdict for the whole set.
+        const qcClips = kind === 'media.video_list' ? candidate.clips : undefined;
+        const qcImages =
+          kind === 'media.image_list'
+            ? candidate.clips
+            : survivors?.map(({ index, label, sourceKey, mime }) => ({
+                index,
+                label,
+                sourceKey,
+                mime,
+              }));
+        const envelope = buildQcEnvelope({
+          criteria: stage.qc.criteria,
+          ...(stage.qc.dimensions !== undefined && { dimensions: stage.qc.dimensions }),
+          artifactKind: checkArtifact.kind,
+          artifactData: checkArtifact.data,
+          ...(checkArtifact.probe !== undefined && { artifactProbe: checkArtifact.probe }),
+          includeInputs: stage.qc.includeInputs,
+          slots: bindings.slots,
+          context: bindings.context,
+          ...(qcMedia !== undefined && { media: qcMedia }),
+          ...(qcTranscript !== undefined && { transcript: qcTranscript }),
+          ...(qcClips?.length && { clips: qcClips }),
+          ...(qcImages?.length && { images: qcImages }),
+          ...(candidate.pick && { selectBest: true }),
+        });
+        if (p.deferQc) {
+          await this.db
+            .update(stageAttempt)
+            .set({ checkResults })
+            .where(eq(stageAttempt.id, ctx.stageAttemptId));
+          return { outcome: 'qc_pending', artifactId, envelope };
+        }
+        qcOutcome = await this.runQcWithRetries(envelope, effective.qc, ctx);
       }
-      // A clip list is judged as every clip, in order, as video files; an
-      // image list as every image together, one verdict for the whole set.
-      const qcClips = kind === 'media.video_list' ? candidate.clips : undefined;
-      const qcImages =
-        kind === 'media.image_list'
-          ? candidate.clips
-          : survivors?.map(({ index, label, sourceKey, mime }) => ({
-              index,
-              label,
-              sourceKey,
-              mime,
-            }));
-      const qcOutcome = await this.runQcWithRetries(
-        stage.qc,
-        effective.qc,
-        ctx,
-        checkArtifact,
-        bindings,
-        qcMedia,
-        qcTranscript,
-        qcClips,
-        qcImages,
-        candidate.pick !== undefined,
-      );
 
       if (qcOutcome.status === 'error') {
         return this.holdForQcRetry(stage, ctx, checkResults, qcOutcome.reason, artifactId);
@@ -1702,6 +1939,7 @@ export class StageRunnerService {
     ctx: StageAttemptContext,
     prevStageKey: string | undefined,
     effective: EffectiveStageConfig,
+    options?: { deferQc?: boolean; qcOutcome?: QcOutcome },
   ): Promise<FetchAndFinalizeResult> {
     const [attempt] = await this.db
       .select({ artifactId: stageAttempt.artifactId, costUsd: stageAttempt.costUsd })
@@ -1767,6 +2005,7 @@ export class StageRunnerService {
       stage,
       ctx,
       effective,
+      ...options,
       prevStageKey,
       bindings,
       candidate: {
@@ -1895,33 +2134,10 @@ export class StageRunnerService {
    * different attempt number. `passed`/`failed` (the judge ran and rendered
    * a verdict) never retries — only `error` does. */
   private async runQcWithRetries(
-    qcDef: QcDef,
+    envelope: QcEnvelope,
     effectiveQc: NonNullable<EffectiveStageConfig['qc']>,
     ctx: StageAttemptContext,
-    artifact: CheckArtifact,
-    bindings: ResolvedBindings,
-    media: { sourceKey: string; mime: string } | undefined,
-    transcript?: string,
-    clips?: Array<{ sourceKey: string; mime: string; index: number; label: string }>,
-    images?: Array<{ sourceKey: string; mime: string; index: number; label: string }>,
-    selectBest = false,
   ): Promise<QcOutcome> {
-    const envelope = buildQcEnvelope({
-      criteria: qcDef.criteria,
-      ...(qcDef.dimensions !== undefined && { dimensions: qcDef.dimensions }),
-      artifactKind: artifact.kind,
-      artifactData: artifact.data,
-      ...(artifact.probe !== undefined && { artifactProbe: artifact.probe }),
-      includeInputs: qcDef.includeInputs,
-      slots: bindings.slots,
-      context: bindings.context,
-      ...(media !== undefined && { media }),
-      ...(transcript !== undefined && { transcript }),
-      ...(clips?.length && { clips }),
-      ...(images?.length && { images }),
-      ...(selectBest && { selectBest }),
-    });
-
     const maxAttempts = 1 + this.engineConfig.qcErrorRetries;
     let last: QcOutcome = { status: 'error', reason: 'qc never attempted', costUsd: 0 };
     for (let n = 1; n <= maxAttempts; n++) {
@@ -1942,10 +2158,6 @@ export class StageRunnerService {
         { ...last, durationMs: Date.now() - qcStartedAt },
       );
       if (last.status !== 'error') return last;
-      // A judge that could not be reached (network drop, browser unavailable) is
-      // worth a pause before the next call; a bad verdict is not.
-      const pause = n < maxAttempts ? qcRetryDelayMs(last, n) : 0;
-      if (pause > 0) await new Promise((resolve) => setTimeout(resolve, pause));
     }
     return last;
   }

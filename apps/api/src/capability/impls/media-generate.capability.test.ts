@@ -9,6 +9,33 @@ import {
 } from './media-generate.capability';
 
 describe('ImageGenerateCapability', () => {
+  it('delegates single-image continuation to the adapter and submits unsupported lists normally', async () => {
+    const start = vi.fn().mockResolvedValue({ providerId: 'chatgpt', externalId: 'one' });
+    const submit = vi.fn().mockResolvedValue({ providerId: 'chatgpt', externalId: 'list' });
+    const continuation = {
+      supports: (req: { params: { count?: number } }) => (req.params.count ?? 1) <= 1,
+      start,
+    };
+    const capability = new ImageGenerateCapability({
+      get: () => ({ submit, continuation }),
+    } as never);
+    const ctx = {
+      runId: 'run',
+      stageKey: 'image',
+      attemptNo: 1,
+      config: { provider: 'chatgpt', modelId: 'chatgpt' },
+      slots: {},
+      context: {},
+      idempotencyKey: 'key',
+      logger: { log: () => {}, error: () => {} },
+      continuation: { retain: true as const },
+    };
+    await capability.submit(ctx);
+    await capability.submit({ ...ctx, config: { ...ctx.config, count: 2 } });
+    expect(start).toHaveBeenCalledTimes(1);
+    expect(submit).toHaveBeenCalledTimes(1);
+  });
+
   it('prepares a stable identity-augmented prompt used for estimate and submission', async () => {
     const estimate = vi
       .fn()

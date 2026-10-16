@@ -36,6 +36,28 @@ const schema = {
 };
 
 describe('TextGenerateCapability', () => {
+  it('uses retained start and continuation only for a supporting adapter', async () => {
+    const start = vi.fn().mockResolvedValue({ providerId: 'chatgpt', externalId: 'one' });
+    const resume = vi.fn().mockResolvedValue({ providerId: 'chatgpt', externalId: 'two' });
+    const submit = vi.fn();
+    const capability = new TextGenerateCapability({
+      get: () => ({ submit, continuation: { supports: () => true, start, continue: resume } }),
+    } as never);
+    const { ctx } = setup({ kind: 'text' });
+    await capability.submit({ ...ctx, continuation: { retain: true } });
+    await capability.submit({
+      ...ctx,
+      continuation: {
+        retain: true,
+        previousHandle: { providerId: 'chatgpt', externalId: 'one' },
+        revisionPrompt: 'fix hook',
+      },
+    });
+    expect(start).toHaveBeenCalledTimes(1);
+    expect(resume).toHaveBeenCalledWith(expect.anything(), expect.anything(), 'fix hook', 'key-1');
+    expect(submit).not.toHaveBeenCalled();
+  });
+
   it('forwards attached files to the provider, in params.slots', async () => {
     const shoe = { name: 'shoe', kind: 'media.image', sourceKey: 'assets/shoe.png' };
     const { capability, ctx, submit } = setup({ kind: 'text' }, [shoe]);

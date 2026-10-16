@@ -32,6 +32,80 @@ describe('withinProviderDeadline', () => {
   });
 });
 
+describe('durable QC polling', () => {
+  it('submits, polls, sleeps and fetches through separate Inngest steps', async () => {
+    const ids: string[] = [];
+    const step = {
+      run: async (id: string, fn: () => unknown) => {
+        ids.push(id);
+        return fn();
+      },
+      sleep: vi.fn(async (id: string) => {
+        ids.push(id);
+      }),
+    };
+    const runner = {
+      findHeldQcAttempt: vi.fn().mockResolvedValue(undefined),
+      beginAttempt: vi.fn().mockResolvedValue({ attemptNo: 1, stageAttemptId: 'attempt' }),
+      countRoundAttempts: vi.fn().mockResolvedValue(0),
+      reserveAndSubmit: vi.fn().mockResolvedValue({
+        outcome: 'submitted',
+        handle: { providerId: 'fake', externalId: 'producer' },
+      }),
+      pollOnce: vi.fn().mockResolvedValue({ done: true, outcome: 'succeeded' }),
+      fetchAndFinalize: vi.fn().mockResolvedValue({
+        outcome: 'qc_pending',
+        artifactId: 'a1',
+        envelope: { criteria: 'Good?', artifact: { kind: 'text', data: 'text' } },
+      }),
+      qcErrorAttempts: () => 1,
+      submitQc: vi.fn().mockResolvedValue({ handle: { providerId: 'fake', externalId: 'judge' } }),
+      pollQc: vi
+        .fn()
+        .mockResolvedValueOnce({ done: false, phase: 'running' })
+        .mockResolvedValue({ done: true, outcome: 'succeeded' }),
+      fetchQc: vi.fn().mockResolvedValue({
+        status: 'passed',
+        verdict: { score: 90, critique: 'Good' },
+        costUsd: 0,
+      }),
+      recordQcResult: vi.fn(),
+      retryHeldQc: vi.fn().mockResolvedValue({ outcome: 'success', artifactId: 'a1' }),
+      releaseContinuation: vi.fn(),
+    };
+    await expect(
+      runStageAttemptLoop({
+        step: step as never,
+        logger: { warn: vi.fn() } as never,
+        runner: runner as never,
+        stage: { qc: {} } as never,
+        effective: { polling: { maxWaitSec: 60 }, qc: {} } as never,
+        prevStageKey: undefined,
+        runId: 'run',
+        stageExecutionId: 'exec',
+        stageKey: 'draft',
+        retryLimit: 1,
+      }),
+    ).resolves.toEqual({ outcome: 'passed', artifactId: 'a1' });
+    expect(ids.indexOf('qc-submit-draft-1-1')).toBeLessThan(ids.indexOf('qc-poll-draft-1-1-0'));
+    expect(ids.indexOf('qc-poll-draft-1-1-0')).toBeLessThan(
+      ids.indexOf('qc-poll-wait-draft-1-1-1'),
+    );
+    expect(ids.indexOf('qc-poll-wait-draft-1-1-1')).toBeLessThan(
+      ids.indexOf('qc-poll-draft-1-1-1'),
+    );
+    expect(ids.indexOf('qc-poll-draft-1-1-1')).toBeLessThan(ids.indexOf('qc-fetch-draft-1-1'));
+    expect(runner.reserveAndSubmit).toHaveBeenCalledTimes(1);
+    expect(runner.retryHeldQc).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      undefined,
+      expect.anything(),
+      { qcOutcome: expect.objectContaining({ status: 'passed' }) },
+    );
+  });
+});
+
 describe('runStageAttemptLoop user_action failures', () => {
   it('fails the stage once with the provider message, without spending retries', async () => {
     const reason = 'Sign in to ChatGPT to continue';
@@ -611,6 +685,7 @@ describe('runStageAttemptLoop Retry QC', () => {
       held,
       undefined,
       expect.anything(),
+      { deferQc: true },
     );
     expect(runner.beginAttempt).not.toHaveBeenCalled();
     expect(runner.reserveAndSubmit).not.toHaveBeenCalled();

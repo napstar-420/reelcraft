@@ -45,6 +45,7 @@ export function strictJsonSchema(schema: JsonSchema): unknown | undefined {
 
 const RESERVED_CONFIG_KEYS = new Set([
   'reasoningEffort',
+  'temperature',
   'model',
   'model_reasoning_effort',
   'cwd',
@@ -88,8 +89,12 @@ export function buildCodexArgs(input: {
   outputSchemaPath?: string;
   profile: string;
   params: Record<string, unknown>;
+  retained?: boolean;
+  threadId?: string;
 }): string[] {
   const args = ['exec', '--profile', input.profile];
+  if (input.threadId)
+    args.push('--approve-for-me', '--skip-git-repo-check', '-C', input.jobDir, 'resume');
   for (const [key, value] of Object.entries(input.params).sort(([a], [b]) => a.localeCompare(b))) {
     if (RESERVED_CONFIG_KEYS.has(key)) continue;
     if (!/^[A-Za-z0-9_.-]+$/.test(key)) throw new Error(`Invalid Codex config key: ${key}`);
@@ -105,7 +110,11 @@ export function buildCodexArgs(input: {
     input.resultPath,
   );
   if (input.outputSchemaPath) args.push('--output-schema', input.outputSchemaPath);
-  args.push('--ephemeral', '--approve-for-me', '--skip-git-repo-check', '-C', input.jobDir, '-');
+  if (input.threadId) args.push(input.threadId, '-');
+  else {
+    if (!input.retained) args.push('--ephemeral');
+    args.push('--approve-for-me', '--skip-git-repo-check', '-C', input.jobDir, '-');
+  }
   return args;
 }
 

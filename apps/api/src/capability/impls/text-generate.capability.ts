@@ -122,7 +122,30 @@ export class TextGenerateCapability implements CapabilityImpl<TextGenerateConfig
   }
 
   async submit(ctx: ExecCtx<TextGenerateConfig>): Promise<JobHandle> {
-    return this.providers.get(ctx.config.provider).submit(this.request(ctx), ctx.idempotencyKey);
+    const adapter = this.providers.get(ctx.config.provider);
+    const req = this.request(ctx);
+    const continuation = ctx.continuation && adapter.continuation;
+    if (continuation?.supports(req)) {
+      return ctx.continuation?.previousHandle && ctx.continuation.revisionPrompt
+        ? continuation.continue(
+            req,
+            ctx.continuation.previousHandle,
+            ctx.continuation.revisionPrompt,
+            ctx.idempotencyKey,
+          )
+        : continuation.start(req, ctx.idempotencyKey);
+    }
+    return adapter.submit(req, ctx.idempotencyKey);
+  }
+
+  supportsContinuation(ctx: ExecCtx<TextGenerateConfig>): boolean {
+    return (
+      this.providers.get(ctx.config.provider).continuation?.supports(this.request(ctx)) ?? false
+    );
+  }
+
+  async releaseContinuation(handle: JobHandle): Promise<void> {
+    await this.providers.get(handle.providerId).continuation?.release(handle);
   }
 
   async poll(handle: JobHandle): Promise<JobStatus> {

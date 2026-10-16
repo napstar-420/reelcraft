@@ -2,6 +2,100 @@ import type { StageDef } from '@reelcraft/shared';
 import { describe, expect, it, vi } from 'vitest';
 import type { EffectiveStageConfig } from '../run-config/config-resolver.service';
 import { StageRunnerService, type StageAttemptContext } from './stage-runner.service';
+import { ProviderContinuationUnavailableError } from '../provider/provider-adapter.interface';
+
+describe('StageRunnerService continuation submission', () => {
+  it('uses latest feedback, audits the revision turn, and falls back to the full prompt before send', async () => {
+    const persisted: Array<Record<string, unknown>> = [];
+    const submit = vi.fn().mockResolvedValue({
+      providerId: 'chatgpt',
+      externalId: 'new',
+      payload: { pageId: 8, retained: true },
+    });
+    const service = Object.assign(Object.create(StageRunnerService.prototype) as object, {
+      db: {
+        update: () => ({
+          set: (value: Record<string, unknown>) => {
+            persisted.push(value);
+            return { where: async () => undefined };
+          },
+        }),
+      },
+      capabilities: {
+        get: () => ({
+          modality: 'text',
+          supportsContinuation: () => true,
+          estimateCost: async () => ({
+            expectedUsd: 0,
+            ceilingUsd: 0,
+            basis: 'configured_ceiling',
+          }),
+          submit,
+        }),
+      },
+      ledger: {
+        reserve: async () => ({ ok: true, reservationId: 'reserve' }),
+        markSubmitted: async () => undefined,
+      },
+      engineConfig: { preSubmitTtlSec: 60, fetchAllowanceSec: 10 },
+      events: { record: async () => undefined },
+      timelineResources: { resolve: vi.fn() },
+    }) as unknown as StageRunnerService;
+    vi.spyOn(service as never, 'resolveBindings').mockResolvedValue({
+      slots: {},
+      context: {},
+      provenance: {},
+    });
+    vi.spyOn(service, 'loadCritiqueLog').mockResolvedValue('Earlier feedback.\nLatest feedback.');
+    const source = {
+      handle: { providerId: 'chatgpt', externalId: 'old', payload: { pageId: 7, retained: true } },
+      attemptNo: 1,
+      feedback: 'Latest feedback.',
+    };
+    vi.spyOn(service as never, 'findContinuationSource').mockResolvedValue(source);
+    const stage = {
+      key: 'draft',
+      capability: 'text.generate',
+      instructions: { template: 'Original {{ priorCritique }}' },
+      output: { kind: 'text' },
+      checks: [{ type: 'regex', pattern: 'x' }],
+    } as never;
+    const ctx = {
+      runId: 'run',
+      stageExecutionId: 'execution',
+      stageKey: 'draft',
+      attemptNo: 2,
+      stageAttemptId: 'attempt',
+    } as StageAttemptContext;
+    const effective = {
+      layer: {},
+      capabilityConfig: {},
+      model: { provider: 'chatgpt', modelId: 'chatgpt' },
+      polling: { maxWaitSec: 60 },
+    } as never;
+    await service.reserveAndSubmit(stage, ctx, undefined, effective);
+    expect(submit.mock.calls[0]?.[0].continuation).toMatchObject({
+      previousHandle: source.handle,
+      revisionPrompt: expect.stringContaining('Latest feedback.'),
+    });
+    expect(submit.mock.calls[0]?.[0].continuation.revisionPrompt).not.toContain(
+      'Earlier feedback.',
+    );
+    expect(persisted.at(-1)?.renderedPrompt).toBe(
+      submit.mock.calls[0]?.[0].continuation.revisionPrompt,
+    );
+
+    submit.mockRejectedValueOnce(new ProviderContinuationUnavailableError('tab gone'));
+    await service.reserveAndSubmit(
+      stage,
+      { ...ctx, stageAttemptId: 'fallback' },
+      undefined,
+      effective,
+    );
+    expect(submit.mock.calls.at(-1)?.[0].continuation).toEqual({ retain: true });
+    expect(persisted.at(-1)?.renderedPrompt).toContain('Earlier feedback.');
+  });
+});
 
 describe('StageRunnerService output-instruction prompt delivery', () => {
   it('estimates, submits, and persists the same composed prompt', async () => {
