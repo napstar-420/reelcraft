@@ -9,7 +9,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { buttonVariants } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { ApprovalReviewSheet } from '@/components/runs/approval-review-sheet';
 import { isApprovalStillOpen } from '@/pages/approval-review.logic';
 import { StageAttemptsSheet } from '@/components/runs/stage-attempts-sheet';
@@ -40,6 +40,99 @@ export function CanvasRunSheets({
     isApprovalStillOpen(stop.stageKey, run);
   return (
     <>
+      <AlertDialog
+        open={actions.executionPlans !== null}
+        onOpenChange={(open) => {
+          if (!open && !actions.confirmExecution.isPending) actions.setExecutionPlans(null);
+        }}
+      >
+        <AlertDialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Choose which outputs to use</AlertDialogTitle>
+            <AlertDialogDescription>
+              Some outputs were produced by older definitions or will be replaced. Your run history
+              is preserved. Confirm one execution plan below. Costs use previous execution costs as
+              an estimate; new work may cost more.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="flex flex-col gap-3">
+            {actions.executionPlans?.map((plan) => (
+              <div
+                key={`${plan.request.mode}-${plan.request.scope}`}
+                className="rounded-lg border p-3 text-sm"
+              >
+                <h3 id={`plan-${plan.request.mode}-${plan.request.scope}`} className="font-medium">
+                  {plan.request.mode === 'validate'
+                    ? 'Check existing output without regenerating'
+                    : plan.request.mode === 'reuse'
+                      ? 'Use existing upstream outputs'
+                      : plan.request.scope === 'stage'
+                        ? 'Apply edits and run through selected stage'
+                        : 'Apply edits and rebuild affected descendants'}
+                </h3>
+                {plan.blockedReason ? (
+                  <p className="mt-2 text-destructive">{plan.blockedReason}</p>
+                ) : (
+                  <>
+                    {plan.staleStageKeys.length > 0 && (
+                      <p className="mt-2 text-muted-foreground">
+                        Older outputs: {plan.staleStageKeys.map(actions.stageLabel).join(', ')}
+                      </p>
+                    )}
+                    {plan.validationStageKeys.length > 0 && (
+                      <p className="mt-2 text-muted-foreground">
+                        Validation outdated:{' '}
+                        {plan.validationStageKeys.map(actions.stageLabel).join(', ')}
+                      </p>
+                    )}
+                    <p className="mt-2">
+                      Will run: {plan.runStageKeys.map(actions.stageLabel).join(', ') || 'Nothing'}
+                    </p>
+                    <p className="mt-1 text-muted-foreground">
+                      Keep completed outputs:{' '}
+                      {plan.reusedStageKeys.map(actions.stageLabel).join(', ') || 'None'}
+                    </p>
+                    {plan.invalidatedStageKeys.length > 0 && (
+                      <p className="mt-1 text-muted-foreground">
+                        Mark stale and defer:{' '}
+                        {plan.invalidatedStageKeys.map(actions.stageLabel).join(', ')}
+                      </p>
+                    )}
+                    {plan.request.mode === 'validate' ? (
+                      <p className="mt-2 text-muted-foreground">
+                        Checks use the stored output. QC may incur judge costs; generation will not
+                        run.
+                      </p>
+                    ) : (
+                      <p className="mt-2 font-mono">
+                        Previous cost for this work: ${plan.estimatedRerunUsd.toFixed(2)} (unrun
+                        stages are unpriced)
+                      </p>
+                    )}
+                    <Button
+                      type="button"
+                      variant={plan.request.mode === 'reuse' ? 'secondary' : 'default'}
+                      className="mt-3"
+                      aria-describedby={`plan-${plan.request.mode}-${plan.request.scope}`}
+                      disabled={
+                        actions.confirmExecution.isPending || plan.runStageKeys.length === 0
+                      }
+                      onClick={() => actions.confirmExecution.mutate(plan)}
+                    >
+                      {actions.confirmExecution.isPending ? 'Starting…' : 'Confirm this plan'}
+                    </Button>
+                  </>
+                )}
+              </div>
+            ))}
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={actions.confirmExecution.isPending}>
+              Cancel
+            </AlertDialogCancel>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <AlertDialog
         open={upstreamRerun !== null}
         onOpenChange={(open) => !open && actions.setUpstreamRerun(null)}
@@ -113,6 +206,13 @@ export function CanvasRunSheets({
         stageKey={outputSheetKey}
         stageLabel={outputSheetKey && actions.stageLabel(outputSheetKey)}
         stageRunning={running(outputSheetKey)}
+        freshness={
+          outputSheetKey && actions.staleStageKeys.has(outputSheetKey)
+            ? 'stale'
+            : outputSheetKey && actions.validationStageKeys.has(outputSheetKey)
+              ? 'validation'
+              : undefined
+        }
         open={outputSheetKey !== null}
         onOpenChange={(open) => !open && actions.setOutputSheetKey(null)}
       />

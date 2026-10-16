@@ -8,6 +8,7 @@ import { StorageModule } from '../storage/storage.module';
 import { JsonSchemaModule } from '../json-schema/json-schema.module';
 import { ArtifactModule } from '../artifact/artifact.module';
 import { CheckModule } from '../check/check.module';
+import { RunStagePlanService } from './run-stage-plan.service';
 import { RunService } from './run.service';
 import { RunInputService } from './run-input.service';
 import { RunController } from './run.controller';
@@ -60,7 +61,13 @@ const runControlProviders = [
     LiveModule,
     NotificationModule,
   ],
-  providers: [RunService, RunInsightService, RunInputService, ...runControlProviders],
+  providers: [
+    RunService,
+    RunStagePlanService,
+    RunInsightService,
+    RunInputService,
+    ...runControlProviders,
+  ],
   controllers: [RunController],
   exports: [RunService, RunInsightService, RunInputService, ...runControlProviders],
 })

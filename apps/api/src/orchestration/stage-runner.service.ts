@@ -60,6 +60,8 @@ import { ProviderContinuationUnavailableError } from '../provider/provider-adapt
 import { feedbackForAttempt, revisionPrompt } from './revision-feedback';
 
 export interface StageAttemptContext {
+  /** Explicit revalidation must never fall through to provider generation. */
+  validationOnly?: boolean;
   runId: string;
   stageExecutionId: string;
   stageKey: string;
@@ -1906,6 +1908,7 @@ export class StageRunnerService {
         id: stageAttempt.id,
         attemptNo: stageAttempt.attemptNo,
         outcome: stageAttempt.outcome,
+        actor: stageAttempt.actor,
         phase: stageAttempt.phase,
         artifactId: stageAttempt.artifactId,
         stageItemId: stageAttempt.stageItemId,
@@ -1924,7 +1927,13 @@ export class StageRunnerService {
       )
       .orderBy(desc(stageAttempt.attemptNo))
       .limit(1);
-    if (!row || row.outcome !== 'qc_error' || row.phase !== 'settled' || !row.artifactId) {
+    const requestedValidation =
+      row?.actor === 'user' && row.outcome === 'user_edit' && row.phase === 'created';
+    if (
+      !row ||
+      (!requestedValidation && (row.outcome !== 'qc_error' || row.phase !== 'settled')) ||
+      !row.artifactId
+    ) {
       return undefined;
     }
     let itemIndex: number | undefined;
@@ -1937,6 +1946,7 @@ export class StageRunnerService {
       itemIndex = item?.itemIndex;
     }
     return {
+      validationOnly: row.actor === 'user',
       runId: row.runId,
       stageExecutionId,
       stageKey: row.stageKey,

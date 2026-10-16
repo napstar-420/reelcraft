@@ -249,6 +249,14 @@ export async function runStageAttemptLoop(
       return { outcome: 'failed' as const, reason: 'qc_budget_exhausted' };
     }
 
+    if (attemptCtx.validationOnly) {
+      const reason = `Existing output did not pass updated validation (${fetched.outcome}); regeneration requires a new execution plan.`;
+      await step.run(`fail-validation-${stageKey}`, () =>
+        runner.failStageExecution(stageExecutionId, reason, stageItemId),
+      );
+      return { outcome: 'failed' as const, reason };
+    }
+
     // check_failed | qc_failed — not a stage failure: loop to a fresh
     // attempt (the critique is spliced into its prompt) until this
     // feedback kind's own cap is spent. This attempt's outcome is already

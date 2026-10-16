@@ -1,7 +1,14 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import type { RunDetailDto, SeedPlanDto, StageDef } from '@reelcraft/shared';
+import type {
+  RunDetailDto,
+  SeedPlanDto,
+  StageDef,
+  StageRunPlanDto,
+  CreateBlueprintVersionDto,
+} from '@reelcraft/shared';
+import { stageFreshness, definitionKey } from '@/lib/stage-freshness';
 import { api } from '@/api/client';
 import { buildRunAllDto, buildRunStageDto, upstreamRerunPlan } from '@/pages/canvas-run.logic';
 import { describeRunActionError } from '@/lib/describe-run-action-error';
@@ -13,12 +20,14 @@ export function useCanvasRunActions({
   blueprintId,
   run,
   graph,
+  draft,
   onSwitchRun,
   prepareRunnableVersion,
 }: {
   blueprintId: string;
   run: RunDetailDto | undefined;
   graph: StageDef[];
+  draft: CreateBlueprintVersionDto;
   onSwitchRun: (runId: string) => void;
   prepareRunnableVersion: () => Promise<string>;
 }) {
@@ -35,6 +44,15 @@ export function useCanvasRunActions({
     sourceRunId: string;
   } | null>(null);
 
+  const [executionPlans, setExecutionPlans] = useState<StageRunPlanDto[] | null>(null);
+  const draftKey = definitionKey(draft);
+  useEffect(() => {
+    setExecutionPlans(null);
+  }, [draftKey, run?.id, run?.blueprintVersionId]);
+  const freshness = run?.definition ? stageFreshness(run.definition, draft) : undefined;
+  const staleStageKeys = new Set(freshness?.staleStageKeys ?? []);
+  const validationStageKeys = new Set(freshness?.validationStageKeys ?? []);
+
   const stageLabel = (stageKey: string) => graph.find((s) => s.key === stageKey)?.label ?? stageKey;
 
   function afterStart(runId: string) {
@@ -43,27 +61,83 @@ export function useCanvasRunActions({
     void queryClient.invalidateQueries({ queryKey: ['runs', { blueprintId }] });
   }
 
+  async function planExecution(blueprintVersionId: string, stageKey?: string) {
+    if (!run) throw new Error('No previous run to build on yet.');
+    const requests = stageKey
+      ? [
+          { blueprintVersionId, stageKey, mode: 'reuse' as const, scope: 'stage' as const },
+          { blueprintVersionId, stageKey, mode: 'rebuild' as const, scope: 'stage' as const },
+          { blueprintVersionId, stageKey, mode: 'rebuild' as const, scope: 'descendants' as const },
+        ]
+      : [{ blueprintVersionId, mode: 'rebuild' as const, scope: 'descendants' as const }];
+    const plans = await Promise.all([
+      ...requests.map((request) => api.previewStageRun(run.id, request)),
+      ...(stageKey && validationStageKeys.has(stageKey)
+        ? [
+            api.previewStageRun(run.id, {
+              blueprintVersionId,
+              stageKey,
+              mode: 'validate',
+              scope: 'stage',
+            }),
+          ]
+        : []),
+    ]);
+    const automatic = plans.find(
+      (plan) =>
+        plan.request.mode === 'rebuild' && (stageKey ? plan.request.scope === 'stage' : true),
+    );
+    if (
+      automatic &&
+      !automatic.blockedReason &&
+      automatic.staleStageKeys.length === 0 &&
+      automatic.validationStageKeys.length === 0 &&
+      automatic.invalidatedStageKeys.length === 0
+    ) {
+      if (automatic.runStageKeys.length === 0) {
+        toast.info('This run has no unfinished work.');
+        return run.id;
+      }
+      const accepted = await api.confirmStageRun(run.id, {
+        ...automatic.request,
+        previewToken: automatic.previewToken,
+      });
+      return accepted.runId;
+    }
+    setExecutionPlans(plans);
+    return undefined;
+  }
+
+  const confirmExecution = useMutation({
+    mutationFn: async (plan: StageRunPlanDto) => {
+      if (!run) throw new Error('The selected run changed.');
+      const currentVersion = await prepareRunnableVersion();
+      if (currentVersion !== plan.request.blueprintVersionId)
+        throw new Error('The draft changed. Close this dialog and review a new execution plan.');
+      return api.confirmStageRun(run.id, { ...plan.request, previewToken: plan.previewToken });
+    },
+    onSuccess: (result) => {
+      setExecutionPlans(null);
+      afterStart(result.runId);
+    },
+    onError: (error) => toast.error(describeRunActionError(error, 'Could not execute this plan.')),
+  });
+
   const runStage = useMutation({
     mutationFn: async ({ stageKey, anyway }: { stageKey: string; anyway?: boolean }) => {
       const blueprintVersionId = await prepareRunnableVersion();
       if (!run) throw new Error('No previous run to build on yet.');
-      if (!anyway && run.state === 'COMPLETED') {
-        const result = await api.continueRun(run.id, {
-          blueprintVersionId,
-          untilStageKey: stageKey,
-        });
-        if (result.continued) {
-          toast.success('Continuing this run with its existing blueprint snapshot.');
-          return run.id;
-        }
-      }
+      if (!anyway && ['COMPLETED', 'FAILED'].includes(run.state))
+        return planExecution(blueprintVersionId, stageKey);
       const created = await api.createRun(
         buildRunStageDto(run, blueprintVersionId, stageKey, { anyway }),
       );
       await api.startRun(created.id);
       return created.id;
     },
-    onSuccess: afterStart,
+    onSuccess: (runId) => {
+      if (runId) afterStart(runId);
+    },
     onError: (error, { stageKey }) => {
       const plan = upstreamRerunPlan(error);
       if (plan && run) setUpstreamRerun({ stageKey, plan, sourceRunId: run.id });
@@ -75,15 +149,14 @@ export function useCanvasRunActions({
     mutationFn: async () => {
       const blueprintVersionId = await prepareRunnableVersion();
       if (!run) throw new Error('No previous run to build on yet.');
-      if (run.state === 'COMPLETED') {
-        const result = await api.continueRun(run.id, { blueprintVersionId });
-        if (result.continued) return run.id;
-      }
+      if (['COMPLETED', 'FAILED'].includes(run.state)) return planExecution(blueprintVersionId);
       const created = await api.createRun(buildRunAllDto(run, blueprintVersionId));
       await api.startRun(created.id);
       return created.id;
     },
-    onSuccess: afterStart,
+    onSuccess: (runId) => {
+      if (runId) afterStart(runId);
+    },
     onError: (error) => toast.error(describeRunActionError(error, 'Could not start the run.')),
   });
 
@@ -101,6 +174,11 @@ export function useCanvasRunActions({
   return {
     runStage,
     runAll,
+    executionPlans,
+    setExecutionPlans,
+    confirmExecution,
+    staleStageKeys,
+    validationStageKeys,
     cancel,
     pause,
     resume,

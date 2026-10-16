@@ -3,6 +3,7 @@ import { RunState, StageExecutionState, AttemptOutcome, HumanWaitKind } from '..
 import { ConfigLayer } from '../config-layer';
 import { Probe } from '../probe';
 import { OutputDef } from '../output';
+import { CreateBlueprintVersionDto } from './blueprint.dto';
 
 /** A media URL the browser loads: absolute, or relative to the app's own
  * origin when a self-hosted install proxies storage (`/storage/...`). */
@@ -81,6 +82,30 @@ export const ContinueRunDto = z.object({
   untilStageKey: z.string().min(1).optional(),
 });
 export type ContinueRunDto = z.infer<typeof ContinueRunDto>;
+
+export const StageRunPlanRequestDto = z.object({
+  blueprintVersionId: z.string().min(1),
+  stageKey: z.string().min(1).optional(),
+  mode: z.enum(['reuse', 'rebuild', 'validate']),
+  scope: z.enum(['stage', 'descendants']).default('stage'),
+});
+export type StageRunPlanRequestDto = z.infer<typeof StageRunPlanRequestDto>;
+export const ConfirmStageRunPlanDto = StageRunPlanRequestDto.extend({
+  previewToken: z.string().min(1),
+});
+export type ConfirmStageRunPlanDto = z.infer<typeof ConfirmStageRunPlanDto>;
+export const StageRunPlanDto = z.object({
+  request: StageRunPlanRequestDto,
+  previewToken: z.string(),
+  runStageKeys: z.array(z.string()),
+  reusedStageKeys: z.array(z.string()),
+  staleStageKeys: z.array(z.string()),
+  invalidatedStageKeys: z.array(z.string()),
+  validationStageKeys: z.array(z.string()),
+  estimatedRerunUsd: z.number(),
+  blockedReason: z.string().nullable(),
+});
+export type StageRunPlanDto = z.infer<typeof StageRunPlanDto>;
 
 /** §12.4 — raising a budget is the one mutation allowed while RUNNING, and
  * also unblocks a PAUSED_BUDGET run. No refinement beyond `number` here —
@@ -325,6 +350,7 @@ export const RunDetailDto = z.object({
   id: z.string(),
   channelId: z.string(),
   blueprintVersionId: z.string(),
+  definition: CreateBlueprintVersionDto.optional(),
   state: RunState,
   inputs: z.record(z.string(), z.unknown()),
   // Created runs initially hold ids; start() replaces them with immutable

@@ -18,6 +18,7 @@ export function StageOutputSheet({
   stageKey,
   stageLabel,
   stageRunning,
+  freshness,
   open,
   onOpenChange,
 }: {
@@ -25,6 +26,7 @@ export function StageOutputSheet({
   stageKey: string | null;
   stageLabel?: string | null;
   stageRunning: boolean;
+  freshness?: 'stale' | 'validation' | undefined;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
@@ -40,7 +42,13 @@ export function StageOutputSheet({
       <SheetContent className="w-full sm:max-w-2xl">
         <SheetHeader className="border-b pr-12">
           <SheetTitle>Output of {stageLabel ?? stageKey}</SheetTitle>
-          <SheetDescription>The current output this stage produced.</SheetDescription>
+          <SheetDescription>
+            {freshness === 'stale'
+              ? 'Stale relative to the current draft: this output or an upstream definition changed. The original output is preserved.'
+              : freshness === 'validation'
+                ? 'Validation outdated: checks or quality criteria changed. You can check this output before regenerating it.'
+                : 'The current output this stage produced.'}
+          </SheetDescription>
         </SheetHeader>
 
         <ScrollArea className="min-h-0 flex-1 px-4">

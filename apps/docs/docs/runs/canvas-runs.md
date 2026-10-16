@@ -32,9 +32,9 @@ in the page URL, so refreshing keeps that run selected.
 **Run all** continues a completed partial run when its blueprint is unchanged. It keeps the same run ID,
 finished outputs, item progress and spending history, and runs the unfinished branches through their joins.
 
-When the blueprint has changed, it starts a new run using the same inputs and copies unchanged finished
-stages whose dependencies are also reusable. Independent branches can be reused even when another branch
-needs work. Reused stages are marked **Reused**. The **Attempts** log explains why a stage needs to run again.
+When edits affect completed outputs, review an execution plan before continuing. The plan lists the
+stages that will run, completed outputs that will remain, outputs that become stale, and historical
+costs for the work. Stages with no previous execution are unpriced. Budget caps still apply.
 
 **Rerun** on the run page and **Run up to** in the run dialog don't reuse anything: they start a fresh run
 from the first stage.
@@ -47,29 +47,26 @@ finishes, use the play button to continue another branch.
 
 ## Run a single stage
 
-Select the play button next to a stage, in the **Run** tab or on its card. If the completed partial run
-has not run this stage yet and its dependency path is unchanged, Reelcraft continues **the same run**
-and stops at that stage. Finished sibling branches stay intact. The run keeps its original blueprint
-snapshot; edits to other branches remain in the canvas draft.
+Select the play button next to a stage, in the **Run** tab or on its card. For completed and failed runs,
+execution stays in the same run. If edits or reruns affect completed work, choose a plan:
 
-Running a finished stage again, or running a changed dependency path, creates a new run with reusable
-finished work copied across. If that would omit completed work from a separate branch, Reelcraft lists
-those stages and asks before switching runs. Cancel keeps the current run selected. The original run's
-outputs remain available either way.
+- **Use existing upstream outputs** executes the selected stage using the run's stored upstream
+  definitions and outputs, even when the draft changed those stages. Independent outputs remain.
+- **Apply edits and run through selected stage** rebuilds changed prerequisites and the selected stage.
+  Affected outputs beyond this boundary become stale and wait for another action.
+- **Apply edits and rebuild affected descendants** also executes every affected descendant, including
+  joins and required unfinished dependencies. Unaffected branches retain their outputs.
+- **Check existing output without regenerating** appears for validation-only edits on
+  non-iterating stages with a stored output. It applies updated checks/QC to the stored output; QC can incur judge costs.
+  A failed check stops execution rather than silently generating another output. Descendant outputs
+  are conservatively invalidated and deferred when revalidation is requested.
+- **Cancel** starts nothing.
 
-If an earlier stage can't be reused, for example because it is still waiting for your review, running this
-stage would have to run that one again first. Reelcraft doesn't do that silently. It asks, with a message
-that starts **Running "Stage" re-runs an earlier stage** and names the stage and the reason, such as
-_"Script" is waiting for your review_. Your choices:
-
-- **Review _Stage_**: opens the approval so you can approve it, then run the stage again to build on its
-  output. It only appears when that stage is waiting for your review in the run on the canvas.
-- **Run anyway (also re-runs _Stage_)**: starts the run, which runs the earlier stage again first and
-  spends on it again.
-- **Cancel**: starts nothing.
-
-Before you select it, the play button's tooltip warns you in the same way, for example _Run this stage.
-"Script" is waiting for your review, so it would run again first._
+A confirmation is bound to the exact snapshot, choice, scope, configuration, and run revision.
+Concurrent changes and duplicate requests require a fresh preview. A consumer with changed bindings,
+iteration or output contracts cannot silently reuse old upstream outputs. Graph additions, deletions,
+rewiring, reordered stages, global input/role/default changes, and replaced pinned assets require a
+new run; the existing run and its output history remain available.
 
 While a stage is running, its button on the card turns into a stop button, labelled **Cancel run**. There's no way
 to stop just one stage: it cancels the whole run, and Reelcraft asks first: **Cancel this run? This
@@ -77,8 +74,18 @@ stops the whole run, not just one stage. It can't be undone.**
 
 ## Unsaved changes
 
-You can run while the canvas has unsaved changes. Reelcraft saves a temporary copy of the canvas as it
-is and uses it for a new run when the requested path has changed. Continuing a compatible unfinished branch keeps the existing run snapshot. It doesn't appear in the **Versions** menu, and it isn't a new version.
+Autosaved execution edits mark affected outputs **Stale** in the workspace, including descendants.
+Independent branches remain valid. Label changes do not stale outputs; check/QC-only edits show
+**Validation outdated**. Output previews explain their freshness. Reverting an edit restores freshness
+when definitions and dependencies match again.
+
+These workspace indicators do not erase artifacts or rewrite historical run validity. An execution
+uses an immutable snapshot; edits made while it runs affect workspace freshness after it finishes.
+Choosing existing outputs records the retained artifact IDs and snapshot lineage in the stage log.
+The resulting output remains stale relative to a draft whose upstream definitions still differ.
+
+Canvas execution creates a temporary snapshot without adding a saved version. Only definitions
+applied by the confirmed plan replace the run snapshot; other draft edits remain in the workspace.
 
 Select **Save** when you're happy. [Versions](../blueprints/versions.md) explains the difference.
 

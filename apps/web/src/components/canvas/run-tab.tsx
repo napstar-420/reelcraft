@@ -151,7 +151,11 @@ export function RunTab({
           value={run.id}
           onValueChange={onSwitchRun}
           disabled={
-            actions.runStage.isPending || actions.runAll.isPending || actions.upstreamRerun !== null
+            actions.runStage.isPending ||
+            actions.runAll.isPending ||
+            actions.upstreamRerun !== null ||
+            actions.executionPlans !== null ||
+            actions.confirmExecution.isPending
           }
         >
           <SelectTrigger size="sm" className="w-full" aria-label="Select a recent run">
@@ -160,12 +164,18 @@ export function RunTab({
           <SelectContent>
             {!recentRuns.some((r) => r.id === run.id) && (
               <SelectItem value={run.id}>
-                #{run.id.slice(-6)} · {run.state}
+                <span className="inline-flex items-center gap-3">
+                  <span className="font-mono">#{run.id.slice(-6)}</span>
+                  <StatusBadge tone={runStateTone(run.state)} label={run.state} />
+                </span>
               </SelectItem>
             )}
             {recentRuns.map((r) => (
               <SelectItem key={r.id} value={r.id}>
-                #{r.id.slice(-6)} · {r.state}
+                <span className="inline-flex items-center gap-3">
+                  <span className="font-mono">#{r.id.slice(-6)}</span>
+                  <StatusBadge tone={runStateTone(r.state)} label={r.state} />
+                </span>
               </SelectItem>
             ))}
           </SelectContent>
@@ -230,7 +240,16 @@ export function RunTab({
         <div className="-mx-2 flex flex-col">
           {graph.map((stage) => {
             const execution = run.stageExecutions.find((e) => e.stageKey === stage.key);
-            const tone = execution ? stageExecutionStateTone(execution.state) : 'neutral';
+            const workspaceStale =
+              execution?.state === 'passed' && actions.staleStageKeys.has(stage.key);
+            const validationOutdated =
+              execution?.state === 'passed' && actions.validationStageKeys.has(stage.key);
+            const tone =
+              workspaceStale || validationOutdated
+                ? 'warning'
+                : execution
+                  ? stageExecutionStateTone(execution.state)
+                  : 'neutral';
             // No per-stage cancel API: stopping a running stage cancels its run.
             const stoppable =
               execution?.state === 'running' && isRunActionAllowed('cancel', run.state);
@@ -269,6 +288,12 @@ export function RunTab({
                 >
                   {stage.label}
                 </button>
+                {(workspaceStale || validationOutdated) && (
+                  <StatusBadge
+                    tone="warning"
+                    label={workspaceStale ? 'Stale' : 'Validation outdated'}
+                  />
+                )}
                 {reusedKeys.has(stage.key) && (
                   <Badge variant="outline" className="text-[10px] tracking-wide uppercase">
                     Reused

@@ -217,6 +217,7 @@ export function upstreamBlocker(
     const execution = run.stageExecutions.find((e) => e.stageKey === key);
     if (!execution) return { stageKey: key, reason: 'not_in_source' };
     if (execution.state === 'passed') continue;
+    if (execution.state === 'stale') return { stageKey: key, reason: 'definition_changed' };
     if (execution.state === 'awaiting_approval' || execution.waiting === 'approval') {
       return { stageKey: key, reason: 'awaiting_approval' };
     }
@@ -233,6 +234,8 @@ export function runStageTitle(
   blocker: SeedStop | undefined,
   labelOf: (stageKey: string) => string,
 ): string {
+  if (blocker?.reason === 'definition_changed')
+    return `Run this stage. ${describeSeedStop(blocker, labelOf(blocker.stageKey))}. Choose existing outputs or rebuild in the execution plan.`;
   return blocker
     ? `Run this stage. ${describeSeedStop(blocker, labelOf(blocker.stageKey))}, so it would run again first.`
     : 'Run this stage';

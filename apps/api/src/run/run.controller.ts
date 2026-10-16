@@ -13,6 +13,8 @@ import {
 } from '@nestjs/common';
 import {
   CreateRunDto,
+  StageRunPlanRequestDto,
+  ConfirmStageRunPlanDto,
   ContinueRunDto,
   RaiseBudgetDto,
   RequestInputUploadDto,
@@ -30,6 +32,7 @@ import {
   ListRunsQueryDto,
 } from '@reelcraft/shared';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
+import { RunStagePlanService } from './run-stage-plan.service';
 import { RunService } from './run.service';
 import { RunInputService } from './run-input.service';
 import { RunActionService } from './run-action.service';
@@ -44,6 +47,7 @@ import { TimelinePreviewService } from './timeline-preview.service';
 export class RunController {
   constructor(
     private readonly runs: RunService,
+    private readonly stagePlans: RunStagePlanService,
     private readonly runInputs: RunInputService,
     private readonly actions: RunActionService,
     private readonly invalidation: InvalidationService,
@@ -81,6 +85,22 @@ export class RunController {
     @Body(new ZodValidationPipe(ContinueRunDto)) dto: ContinueRunDto,
   ) {
     return this.runs.continueRun(id, dto);
+  }
+
+  @Post(':id/execution-plan')
+  executionPlan(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(StageRunPlanRequestDto)) dto: StageRunPlanRequestDto,
+  ) {
+    return this.stagePlans.preview(id, dto);
+  }
+
+  @Post(':id/execution-plan/confirm')
+  confirmExecutionPlan(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(ConfirmStageRunPlanDto)) dto: ConfirmStageRunPlanDto,
+  ) {
+    return this.stagePlans.confirm(id, dto);
   }
 
   @Post(':id/inputs/:key/upload')

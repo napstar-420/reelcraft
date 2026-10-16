@@ -273,6 +273,12 @@ describe('upstreamBlocker', () => {
 });
 
 describe('runStageTitle', () => {
+  it('offers a choice for outdated upstream outputs', () => {
+    expect(
+      runStageTitle({ stageKey: 'a', reason: 'definition_changed' }, () => 'Scenes'),
+    ).toContain('Choose existing outputs or rebuild');
+  });
+
   it('is plain when nothing upstream blocks', () => {
     expect(runStageTitle(undefined, (key) => key)).toBe('Run this stage');
   });

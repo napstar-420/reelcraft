@@ -1,3 +1,4 @@
+import { InvalidationService } from './invalidation.service';
 import { HumanWaitService } from './human-wait.service';
 import { ConflictException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { and, asc, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
@@ -19,6 +20,7 @@ import {
   InputDef,
   RoleDef as RoleDefSchema,
   StageDef,
+  CreateBlueprintVersionDto,
   stageDependencies,
 } from '@reelcraft/shared';
 import { RUN_ACTION_ALLOWED_STATES } from './run-action-policy';
@@ -93,6 +95,7 @@ export class RunService {
     private readonly blobs: BlobService,
     private readonly events: LiveEvents,
     private readonly humanWaits: HumanWaitService,
+    private readonly invalidation: InvalidationService,
   ) {}
 
   /** §6.2/§21 — inserts the run in `CREATED` without sending `run/started`.
@@ -516,7 +519,7 @@ export class RunService {
   /** A pinned model's advertised limit is the authority. Missing metadata is
    * deliberately a start failure: silently truncating selected identity
    * references makes a blueprint non-reproducible. */
-  private async assertReferenceLimits(
+  async assertReferenceLimits(
     graph: StageDef[],
     resolvedConfig: Record<string, ConfigLayer>,
     roleBindings: Record<string, { references: Array<unknown> }>,
@@ -564,7 +567,7 @@ export class RunService {
    * mutable/deletable channel resources, not pinned to the blueprint
    * version, so a real (if rare) race exists between save and this run's
    * start: re-verify rather than trust the earlier validation blindly. */
-  private async resolveAssetBindings(
+  async resolveAssetBindings(
     graph: StageDef[],
     channelId: string,
   ): Promise<Record<string, LibraryBinding & { name: string }>> {
@@ -708,7 +711,7 @@ export class RunService {
    * reaches a real provider either. A modality with no fake model (`human`/
    * `publish`/`compute`, and `media.analyze`'s `probe` path, which never
    * consumes a model pin at all) is left completely untouched. */
-  private applyDryRunOverride(
+  applyDryRunOverride(
     graph: StageDef[],
     resolvedConfig: Record<string, ConfigLayer>,
   ): Record<string, ConfigLayer> {
@@ -824,12 +827,27 @@ export class RunService {
     const keep = untilStageKeep(graph, dto.untilStageKey) ?? new Set(graph.map((s) => s.key));
     const sourceDeps = stageDependencies(graph);
     const requestedDeps = stageDependencies(requestedGraph);
-    // Edits to a separate branch stay in the draft; this run keeps its immutable snapshot.
+    // Edits to a separate branch stay in the draft.
+    const target = graph.find((stage) => stage.key === dto.untilStageKey);
+    const editedTarget = requestedGraph.find((stage) => stage.key === dto.untilStageKey);
+    // Prompt and quality-check edits preserve the stage's input/output contracts.
+    const stageEdit =
+      target &&
+      editedTarget &&
+      canonicalJson({ ...target, instructions: undefined, qc: undefined, checks: undefined }) ===
+        canonicalJson({
+          ...editedTarget,
+          instructions: undefined,
+          qc: undefined,
+          checks: undefined,
+        }) &&
+      canonicalJson(target) !== canonicalJson(editedTarget);
     const samePath = [...keep].every(
       (key) =>
         canonicalJson(graph.find((s) => s.key === key)) ===
-          canonicalJson(requestedGraph.find((s) => s.key === key)) &&
-        canonicalJson(sourceDeps.get(key)) === canonicalJson(requestedDeps.get(key)),
+          canonicalJson(
+            stageEdit && key === target.key ? target : requestedGraph.find((s) => s.key === key),
+          ) && canonicalJson(sourceDeps.get(key)) === canonicalJson(requestedDeps.get(key)),
     );
     if (
       !samePath ||
@@ -841,15 +859,23 @@ export class RunService {
       )
     )
       return { continued: false };
-    if (
+    const rerunTarget =
       dto.untilStageKey &&
-      current.stageExecutions.some((e) => e.stageKey === dto.untilStageKey && e.state === 'passed')
-    )
-      return { continued: false };
+      current.stageExecutions.some((e) => e.stageKey === dto.untilStageKey && e.state === 'passed');
+    if (stageEdit && !requested.runnable) return { continued: false };
     const selected = current.stageExecutions.filter(
       (e) => keep.has(e.stageKey) && e.state === 'skipped',
     );
-    if (selected.length === 0) return { continued: false };
+    if (selected.length === 0 && !rerunTarget) return { continued: false };
+    const invalidation = rerunTarget
+      ? await this.invalidation.preview({
+          runId,
+          seed: {
+            stageKeys: [dto.untilStageKey!],
+            forcedStageKeys: [...descendantsOf(sourceDeps, dto.untilStageKey!)],
+          },
+        })
+      : undefined;
     const mutation = await this.runMutation.withLockedRun(
       runId,
       'continue',
@@ -858,15 +884,48 @@ export class RunService {
         if (lockedRun.revision !== current.revision) {
           throw new ConflictException('The run changed; refresh before continuing');
         }
+        if (stageEdit) {
+          const snapshotId = ulid();
+          await tx.insert(blueprintVersion).values({
+            ...source,
+            id: snapshotId,
+            graph: graph.map((stage) => (stage.key === target.key ? editedTarget : stage)),
+            draft: true,
+            createdAt: new Date().toISOString(),
+          });
+          await tx.update(run).set({ blueprintVersionId: snapshotId }).where(eq(run.id, runId));
+        }
+        if (invalidation) {
+          await this.invalidation.apply(tx, {
+            runId,
+            closure: invalidation.closure,
+            targetStageKey: dto.untilStageKey!,
+            gcBlobs: false,
+          });
+          const downstreamIds = current.stageExecutions
+            .filter(
+              (e) =>
+                invalidation.closure.affectedStageKeys.includes(e.stageKey) &&
+                !keep.has(e.stageKey),
+            )
+            .map((e) => e.id);
+          if (downstreamIds.length > 0) {
+            await tx
+              .update(stageExecution)
+              .set({ state: 'skipped' })
+              .where(inArray(stageExecution.id, downstreamIds));
+          }
+        }
+        const pendingIds = [
+          ...selected.map((e) => e.id),
+          ...current.stageExecutions
+            .filter((e) => rerunTarget && e.stageKey === dto.untilStageKey)
+            .map((e) => e.id),
+        ];
         await tx
           .update(stageExecution)
           .set({ state: 'pending', endedAt: null })
-          .where(
-            inArray(
-              stageExecution.id,
-              selected.map((e) => e.id),
-            ),
-          );
+          .where(inArray(stageExecution.id, pendingIds));
       },
       'run/resumed',
     );
@@ -915,7 +974,7 @@ export class RunService {
       .from(stageExecution)
       .where(eq(stageExecution.runId, runId));
     const [version] = await this.db
-      .select({ graph: blueprintVersion.graph })
+      .select()
       .from(blueprintVersion)
       .where(eq(blueprintVersion.id, row.blueprintVersionId))
       .limit(1);
@@ -969,6 +1028,7 @@ export class RunService {
     const resumeAt = row.state === 'PAUSED_QUOTA' ? await this.quotaResumeAt(runId) : null;
     return {
       ...row,
+      definition: version ? CreateBlueprintVersionDto.parse(version) : undefined,
       budgetBlock,
       resumeAt,
       finalVideo: final
@@ -1428,7 +1488,7 @@ export class RunService {
       .orderBy(asc(stageAttempt.createdAt), asc(stageAttempt.attemptNo));
     return rows.map((attempt) => ({ ...attempt, costUsd: toUsd(attempt.costUsd) }));
   }
-  private async assertProviderPins(
+  async assertProviderPins(
     graph: StageDef[],
     resolvedConfig: Record<string, ConfigLayer>,
   ): Promise<void> {

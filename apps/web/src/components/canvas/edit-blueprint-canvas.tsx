@@ -500,6 +500,7 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
     blueprintId,
     run: canvasRun.run,
     graph: shown.graph,
+    draft: shown,
     onSwitchRun: canvasRun.setActiveRunId,
     prepareRunnableVersion: prepareCanvasRunVersion,
   });
@@ -723,7 +724,20 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
             issues={shownIssues}
             issuesByStage={issuesByStage}
             selectedKey={selectedKey}
-            run={canvasRun.run}
+            run={
+              canvasRun.run
+                ? {
+                    ...canvasRun.run,
+                    stageExecutions: canvasRun.run.stageExecutions.map((e) =>
+                      e.state === 'passed' &&
+                      (runActions.staleStageKeys.has(e.stageKey) ||
+                        runActions.validationStageKeys.has(e.stageKey))
+                        ? { ...e, state: 'stale' as const }
+                        : e,
+                    ),
+                  }
+                : undefined
+            }
             readOnly={readOnly}
             dockOpen={dockOpen}
             onToggleDock={() => setDockOpen((open) => !open)}
