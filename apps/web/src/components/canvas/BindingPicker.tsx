@@ -1,6 +1,6 @@
 import type { InputDef, Ref, RoleDef, StageDef } from '@reelcraft/shared';
 import { deriveMemoryKeys } from '../../lib/memory-writers';
-import { pathSuggestions } from '../../lib/ref-paths';
+import { pathSuggestions, refSourceSchema, schemaPaths } from '../../lib/ref-paths';
 import { PathInput } from './PathInput';
 import { TypedValueInput } from './TypedValueInput';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -98,6 +98,7 @@ export type BindingPickerProps = {
   /** Whether the owning stage itself declares `iterate` — gates `item`/
    * `prevItem`. */
   iterating: boolean;
+  matchable?: boolean;
 };
 
 /** The `Ref` editor (Chunk 3, Phase 9.5) — lets a user pick a slot/context
@@ -113,10 +114,19 @@ export function BindingPicker({
   roles,
   assets,
   iterating,
+  matchable = false,
 }: BindingPickerProps) {
   const kinds = availableRefKinds(stageIndex, iterating);
   const prevStageIterates = stageIndex > 0 && !!graph[stageIndex - 1]?.iterate;
   const memoryKeys = deriveMemoryKeys(graph);
+  const sourceStage =
+    value.from === 'stage' ? graph.find((stage) => stage.key === value.stageKey) : undefined;
+  const sourceSchema = sourceStage?.iterate
+    ? refSourceSchema({ from: 'item' }, graph, graph.indexOf(sourceStage), inputs)
+    : undefined;
+  const currentSchema = iterating
+    ? refSourceSchema({ from: 'item' }, graph, stageIndex, inputs)
+    : undefined;
   // Rendered only for the ref kinds that carry a `path`.
   const pathInput = (
     <PathInput
@@ -166,7 +176,12 @@ export function BindingPicker({
           <Select
             value={value.stageKey || UNSET}
             onValueChange={(next) =>
-              onChange({ ...value, stageKey: next === UNSET ? '' : next, alignWith: undefined })
+              onChange({
+                ...value,
+                stageKey: next === UNSET ? '' : next,
+                alignWith: undefined,
+                match: undefined,
+              })
             }
           >
             <SelectTrigger size="sm" className="w-48">
@@ -181,17 +196,74 @@ export function BindingPicker({
               ))}
             </SelectContent>
           </Select>
-          {pathInput}
+          {!value.match && pathInput}
           {!!graph.find((stage) => stage.key === value.stageKey)?.iterate && (
-            <Label className="font-normal">
-              <Checkbox
-                checked={value.alignWith === 'item'}
-                onCheckedChange={(checked) =>
-                  onChange({ ...value, alignWith: checked === true ? 'item' : undefined })
-                }
-              />
-              align with item
-            </Label>
+            <span className="flex items-center gap-2">
+              <Label className="font-normal">
+                <Checkbox
+                  checked={value.alignWith === 'item'}
+                  onCheckedChange={(checked) =>
+                    onChange({
+                      ...value,
+                      match: undefined,
+                      alignWith: checked === true ? 'item' : undefined,
+                    })
+                  }
+                />{' '}
+                align by item
+              </Label>
+              {matchable && iterating && sourceStage?.output.kind === 'media.image' && (
+                <Label className="font-normal">
+                  <Checkbox
+                    checked={!!value.match}
+                    onCheckedChange={(checked) =>
+                      onChange({
+                        from: 'stage',
+                        stageKey: value.stageKey,
+                        ...(checked === true && { match: { sourcePath: '', itemPath: '' } }),
+                      })
+                    }
+                  />{' '}
+                  match by field
+                </Label>
+              )}
+            </span>
+          )}
+          {value.match && (
+            <span className="flex items-center gap-2">
+              <Label>
+                Source item field
+                <PathInput
+                  value={value.match.sourcePath}
+                  placeholder="e.g. key"
+                  onChange={(sourcePath) =>
+                    onChange({ ...value, match: { ...value.match!, sourcePath: sourcePath ?? '' } })
+                  }
+                  suggestions={
+                    sourceSchema
+                      ? schemaPaths(sourceSchema).filter((path) => path.type === 'string')
+                      : undefined
+                  }
+                />
+              </Label>
+              <Label>
+                Current item field
+                <PathInput
+                  value={value.match.itemPath}
+                  placeholder="e.g. referenceKeys"
+                  onChange={(itemPath) =>
+                    onChange({ ...value, match: { ...value.match!, itemPath: itemPath ?? '' } })
+                  }
+                  suggestions={
+                    currentSchema
+                      ? schemaPaths(currentSchema).filter(
+                          (path) => path.type === 'string' || path.type === 'array',
+                        )
+                      : undefined
+                  }
+                />
+              </Label>
+            </span>
           )}
         </span>
       )}

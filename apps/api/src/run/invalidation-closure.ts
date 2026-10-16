@@ -169,7 +169,10 @@ export function computeInvalidationClosure(params: {
       let wholeStageBecauseGroupRead = false;
 
       for (const read of Object.values(node.provenance)) {
-        if (read.artifactId && affectedArtifacts.has(read.artifactId)) {
+        if (
+          (read.artifactId && affectedArtifacts.has(read.artifactId)) ||
+          read.artifactIds?.some((id) => affectedArtifacts.has(id))
+        ) {
           dependsOnAffected = true;
           break;
         }

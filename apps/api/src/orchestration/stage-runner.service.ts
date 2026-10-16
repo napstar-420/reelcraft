@@ -47,7 +47,7 @@ import { CheckRunner } from '../check/check-runner.service';
 import type { CheckArtifact, CheckResult } from '../check/check.types';
 import { QcRunner, type QcOutcome, type QcVerdict } from '../qc/qc-runner.service';
 import { QcAudioService } from '../qc/qc-audio';
-import { buildQcEnvelope, type QcEnvelope } from '../qc/qc-envelope';
+import { buildQcEnvelope, qcReferenceImages, type QcEnvelope } from '../qc/qc-envelope';
 import { storedCandidates } from '../artifact/clip-handle';
 import { HumanWaitService } from '../run/human-wait.service';
 import { TimelineCheckService } from '../check/timeline-check.service';
@@ -1343,6 +1343,8 @@ export class StageRunnerService {
       runId: ctx.runId,
       producerStageKey: stage.key,
       itemIndex: ctx.itemIndex,
+      iterationValue:
+        ctx.itemIndex !== undefined ? bindings.iterateOverValue?.[ctx.itemIndex] : undefined,
       kind,
       data,
       ...(persistedMedia && { blobId: persistedMedia.blobId, probe: persistedMedia.probe }),
@@ -1683,6 +1685,11 @@ export class StageRunnerService {
           ...(qcTranscript !== undefined && { transcript: qcTranscript }),
           ...(qcClips?.length && { clips: qcClips }),
           ...(qcImages?.length && { images: qcImages }),
+          ...(kind === 'media.image' || kind === 'media.image_list'
+            ? {
+                referenceImages: qcReferenceImages(bindings.slots.references),
+              }
+            : {}),
           ...(candidate.pick && { selectBest: true }),
         });
         if (p.deferQc) {

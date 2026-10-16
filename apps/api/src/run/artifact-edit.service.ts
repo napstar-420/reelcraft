@@ -85,7 +85,7 @@ export class ArtifactEditService {
           throw new ConflictException('The run changed; request a new preview');
         }
         const [source] = await tx
-          .select({ id: artifact.id })
+          .select({ id: artifact.id, iterationValue: artifact.iterationValue })
           .from(artifact)
           .where(
             and(
@@ -106,6 +106,7 @@ export class ArtifactEditService {
           {
             runId,
             producerStageKey: stageKey,
+            iterationValue: source.iterationValue,
             kind: context.stage.output.kind,
             data,
             ...(context.stage.output.kind === 'data'

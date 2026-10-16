@@ -36,6 +36,44 @@ export interface SourceTypeResult {
   issue?: ValidationIssue;
 }
 
+/** Checks item fields where the iteration schema (or literal items) is known. */
+export function matchedIterationFieldProblem(
+  stage: StageDef,
+  stageIndex: number,
+  ctx: ValidationContext,
+  field: string,
+  allowArray: boolean,
+): string | undefined {
+  if (!stage.iterate) return undefined;
+  const over = resolveBoundType(stage.iterate.over, ctx, stageIndex, 'iterate.over');
+  if (over.issue) return undefined;
+  const elements: SourceType[] =
+    over.type.kind === 'data' && over.type.schema.type === 'array' && over.type.schema.items
+      ? [{ kind: 'data', schema: over.type.schema.items }]
+      : over.type.kind === 'literal' && Array.isArray(over.type.value)
+        ? over.type.value.map((value) => ({ kind: 'literal' as const, value }))
+        : [];
+  for (const element of elements) {
+    const narrowed = narrowRefPath(element, field, true);
+    if (!narrowed.ok) return narrowed.reason;
+    const type = narrowed.type;
+    const valid =
+      type.kind === 'unknown' ||
+      (type.kind === 'data' &&
+        (type.schema.type === 'string' ||
+          (allowArray &&
+            type.schema.type === 'array' &&
+            (!type.schema.items || type.schema.items.type === 'string')))) ||
+      (type.kind === 'literal' &&
+        (typeof type.value === 'string' ||
+          (allowArray &&
+            Array.isArray(type.value) &&
+            type.value.every((value) => typeof value === 'string'))));
+    if (!valid) return `must resolve to ${allowArray ? 'string or string[]' : 'string'}`;
+  }
+  return undefined;
+}
+
 function unresolved(message: string, path: string): SourceTypeResult {
   return {
     type: { kind: 'unknown', reason: message },

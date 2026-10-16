@@ -267,6 +267,13 @@
       "when": 1792032517004,
       "tag": "0037_asset_vector_kind",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1792136692377,
+      "tag": "0038_brave_molten_man",
+      "breakpoints": true
     }
   ]
 }

@@ -1400,6 +1400,7 @@ export function StageInspector({
                     roles={roles}
                     assets={assets}
                     iterating={!!stage.iterate}
+                    matchable={slot.cardinality === 'many' && slot.accepts.includes('media.image')}
                   />
                   {stage.capability === FLOW_CAPABILITY &&
                     slot.name === lastIngredientSlot &&

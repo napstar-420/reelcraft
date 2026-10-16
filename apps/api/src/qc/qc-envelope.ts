@@ -24,6 +24,8 @@ export interface QcEnvelope {
   clips?: QcClip[];
   /** Image lists only: every image, in order, judged together as one set. */
   images?: QcClip[];
+  /** Source-of-truth images for comparison, separate from candidate images. */
+  referenceImages?: QcClip[];
   /** With `images`: they are candidates for one image, and the judge picks the best. */
   selectBest?: true;
 }
@@ -48,6 +50,7 @@ export interface QcEnvelopeSource {
   media?: { sourceKey: string; mime: string };
   clips?: QcClip[];
   images?: QcClip[];
+  referenceImages?: QcClip[];
   selectBest?: boolean;
 }
 
@@ -101,6 +104,30 @@ export function buildQcEnvelope(source: QcEnvelopeSource): QcEnvelope {
       label: c.label,
     }));
   }
+  if (source.referenceImages !== undefined) {
+    envelope.referenceImages = source.referenceImages.map((image) => ({
+      sourceKey: image.sourceKey,
+      mime: image.mime,
+      index: image.index,
+      label: image.label,
+    }));
+  }
   if (source.selectBest && envelope.images) envelope.selectBest = true;
   return envelope;
+}
+
+/** The generation bindings are authoritative; QC never selects references again. */
+export function qcReferenceImages(references: unknown): QcClip[] {
+  const images = Array.isArray(references) ? references : references ? [references] : [];
+  return images.flatMap((image, index) => {
+    if (!image || typeof image !== 'object' || typeof image.sourceKey !== 'string') return [];
+    return [
+      {
+        sourceKey: image.sourceKey,
+        mime: typeof image.mime === 'string' ? image.mime : 'image/png',
+        index: index + 1,
+        label: `Reference ${index + 1}`,
+      },
+    ];
+  });
 }

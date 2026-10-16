@@ -21,7 +21,11 @@ export function narrowTemplatePath(source: SourceType, path: string): NarrowOutc
  * wrong one here would validate a `Ref.path` that resolves to `undefined`
  * at run time.
  */
-export function narrowRefPath(source: SourceType, path: string): NarrowOutcome {
+export function narrowRefPath(
+  source: SourceType,
+  path: string,
+  deferUnknownSchema = false,
+): NarrowOutcome {
   if (path.includes('[') || path.includes(']')) {
     return {
       ok: false,
@@ -34,18 +38,22 @@ export function narrowRefPath(source: SourceType, path: string): NarrowOutcome {
       ? { kind: 'index', index: asIndex }
       : { kind: 'prop', name: raw };
   });
-  return narrowSegments(source, segments);
+  return narrowSegments(source, segments, deferUnknownSchema);
 }
 
 /** Exported so callers that already have parsed segments (the blueprint
  * validator, root-stripping a template path down to the part after the
  * bound slot/context name) can walk them directly without re-parsing a
  * path string. */
-export function narrowSegments(source: SourceType, segments: PathSegment[]): NarrowOutcome {
+export function narrowSegments(
+  source: SourceType,
+  segments: PathSegment[],
+  deferUnknownSchema = false,
+): NarrowOutcome {
   if (segments.length === 0) return { ok: true, type: source };
   switch (source.kind) {
     case 'data':
-      return narrowDataSchema(source.schema, segments);
+      return narrowDataSchema(source.schema, segments, deferUnknownSchema);
     case 'literal':
       return narrowLiteral(source.value, segments);
     case 'unknown':
@@ -55,9 +63,26 @@ export function narrowSegments(source: SourceType, segments: PathSegment[]): Nar
   }
 }
 
-function narrowDataSchema(schema: JsonSchema, segments: PathSegment[]): NarrowOutcome {
+function narrowDataSchema(
+  schema: JsonSchema,
+  segments: PathSegment[],
+  deferUnknownSchema: boolean,
+): NarrowOutcome {
   let current = schema;
   for (const segment of segments) {
+    // Matched item fields are checked at runtime when an iteration schema is opaque.
+    if (
+      deferUnknownSchema &&
+      ((segment.kind === 'prop' &&
+        current.type === 'object' &&
+        (!current.properties || !Object.keys(current.properties).length)) ||
+        (segment.kind === 'index' && current.type === 'array' && !current.items))
+    ) {
+      return {
+        ok: true,
+        type: { kind: 'unknown', reason: 'iteration schema does not declare fields at this path' },
+      };
+    }
     if (segment.kind === 'index') {
       if (current.type !== 'array' || !current.items) {
         return { ok: false, reason: `cannot index into a "${current.type}" schema` };

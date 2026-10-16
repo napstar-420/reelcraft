@@ -34,8 +34,11 @@ const covered = (name: string) =>
   guideText.includes(`\`${name}\``) || guideText.includes(`'${name}'`);
 
 function refKinds(): string[] {
-  const options = (Ref as unknown as { options: Array<{ shape: { from: { value: string } } }> })
-    .options;
+  const options = (
+    Ref as unknown as {
+      innerType(): { options: Array<{ shape: { from: { value: string } } }> };
+    }
+  ).innerType().options;
   return options.map((o) => o.shape.from.value);
 }
 
