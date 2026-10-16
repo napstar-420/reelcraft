@@ -143,7 +143,13 @@ describe('Generate Image picks the best of several candidates (e2e)', () => {
     };
   }
 
-  async function runLoop(runId: string, executionId: string, stageKey: string, retryLimit = 0) {
+  async function runLoop(
+    runId: string,
+    executionId: string,
+    stageKey: string,
+    retryLimit = 0,
+    item?: { itemIndex: number; stageItemId: string },
+  ) {
     const runner = testApp.app.get(StageRunnerService);
     const { stage, effective, prevStageKey } = await runner.loadStageContext(runId, stageKey);
     return runStageAttemptLoop({
@@ -157,6 +163,7 @@ describe('Generate Image picks the best of several candidates (e2e)', () => {
       stageExecutionId: executionId,
       stageKey,
       retryLimit,
+      ...item,
     });
   }
 
@@ -472,18 +479,9 @@ describe('Generate Image picks the best of several candidates (e2e)', () => {
 
     for (let itemIndex = 0; itemIndex < resolved.itemCount; itemIndex += 1) {
       const item = await runner.itemState(executionIds[1]!, itemIndex);
-      const attempt = await runner.beginAttempt({
-        runId,
-        stageExecutionId: executionIds[1]!,
-        stageKey: 'images',
-        itemIndex,
-        stageItemId: item.id,
-      });
-      const submitted = await runner.reserveAndSubmit(stage, attempt, prevStageKey, effective);
-      if (submitted.outcome !== 'submitted') throw new Error(submitted.outcome);
       await expect(
-        runner.fetchAndFinalize(stage, attempt, submitted.handle, prevStageKey, effective),
-      ).resolves.toMatchObject({ outcome: 'success' });
+        runLoop(runId, executionIds[1]!, 'images', 0, { itemIndex, stageItemId: item.id }),
+      ).resolves.toMatchObject({ outcome: 'passed' });
     }
 
     expect(judge.submit).toHaveBeenCalledTimes(2);

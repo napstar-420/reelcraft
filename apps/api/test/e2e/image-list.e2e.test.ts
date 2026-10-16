@@ -391,7 +391,7 @@ describe('Generate Image makes an image list (e2e)', () => {
         outcome: 'passed',
       });
 
-      expect(judge).toHaveBeenCalledTimes(2);
+      expect(judge.submit).toHaveBeenCalledTimes(2);
       for (const [call] of judge.submit.mock.calls) {
         expect(call.artifact.kind).toBe('media.image_list');
         expect(call.clips).toBeUndefined();
