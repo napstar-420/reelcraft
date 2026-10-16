@@ -223,7 +223,7 @@ export class RunService {
         itemAwaitingApproval: awaitingApprovalItemExecutionIds.has(e.id),
       }));
 
-      const { keys: stageKeys, stop } = reusableStageKeys({
+      const reuseParams = {
         sourceGraph,
         newGraph: graph,
         sourceResolvedConfig: source.resolvedConfig as Record<string, ConfigLayer>,
@@ -238,8 +238,20 @@ export class RunService {
         newRoles,
         sourceExecutions,
         rerunStageKeys: dto.rerunStageKeys,
+      };
+      const { keys: requiredKeys, stop } = reusableStageKeys({
+        ...reuseParams,
         ...(keep && { relevant: keep }),
       });
+      // A one-stage run still carries finished sibling branches forward.
+      const stageKeys = keep
+        ? reusableStageKeys({
+            ...reuseParams,
+            relevant: new Set(
+              sourceExecutions.filter((e) => e.state === 'passed').map((e) => e.stageKey),
+            ),
+          }).keys
+        : requiredKeys;
       if (stageKeys.length > 0) seed = { sourceRunId: dto.seedFromRunId, stageKeys };
       seedStop = stop;
 

@@ -183,6 +183,39 @@ describe('reusableStageKeys', () => {
     });
   });
 
+  it('reuses explicitly connected work moved earlier when its input sources stay the same', () => {
+    const sourceGraph = [
+      stage('script', { dependsOn: [] }),
+      stage('narration', { dependsOn: ['script'] }),
+      stage('sheets', { dependsOn: ['script'] }),
+    ];
+    const newGraph = [sourceGraph[0]!, sourceGraph[2]!, sourceGraph[1]!];
+    const p = baseParams({
+      sourceGraph,
+      newGraph,
+      sourceExecutions: sourceGraph.map(({ key }) => ({
+        stageKey: key,
+        state: 'passed',
+        needsItemWork: false,
+      })),
+    });
+    expect(reusableStageKeys(p)).toEqual({ keys: ['script', 'sheets', 'narration'] });
+    const withPrev = stage('sheets', {
+      dependsOn: ['script'],
+      context: { input: { from: 'prev' } },
+    });
+    expect(
+      reusableStageKeys({
+        ...p,
+        sourceGraph: [sourceGraph[0]!, sourceGraph[1]!, withPrev],
+        newGraph: [sourceGraph[0]!, withPrev, sourceGraph[1]!],
+      }),
+    ).toEqual({
+      keys: ['script', 'narration'],
+      stop: { stageKey: 'sheets', reason: 'definition_changed' },
+    });
+  });
+
   it('ignores iterate.concurrency when comparing stage definitions', () => {
     const iterate = {
       over: { from: 'memory' as const, key: 'shots' },
@@ -214,8 +247,57 @@ describe('reusableStageKeys', () => {
       keys: ['a', 'c'],
     });
     expect(reusableStageKeys(p)).toEqual({
-      keys: ['a'],
+      keys: ['a', 'c'],
       stop: { stageKey: 'b', reason: 'definition_changed' },
+    });
+  });
+
+  it('keeps a finished sibling branch when another branch starts later', () => {
+    const graph = [
+      stage('script', { dependsOn: [] }),
+      stage('visual', { dependsOn: ['script'] }),
+      stage('sheets', { dependsOn: ['visual'] }),
+      stage('narration', { dependsOn: ['script'] }),
+      stage('audio', { dependsOn: ['narration'] }),
+    ];
+    const p = baseParams({
+      sourceGraph: graph,
+      newGraph: graph,
+      sourceExecutions: graph.map(({ key }) => ({
+        stageKey: key,
+        state: key === 'narration' || key === 'audio' ? 'skipped' : 'passed',
+        needsItemWork: false,
+      })),
+      rerunStageKeys: ['narration'],
+      relevant: new Set(['script', 'visual', 'sheets']),
+    });
+    expect(reusableStageKeys(p)).toEqual({ keys: ['script', 'visual', 'sheets'] });
+    expect(reusableStageKeys({ ...p, relevant: new Set(graph.map((s) => s.key)) })).toEqual({
+      keys: ['script', 'visual', 'sheets'],
+      stop: { stageKey: 'narration', reason: 'rerun_requested' },
+    });
+  });
+
+  it('does not reuse a passed stage after its dependency is rerun', () => {
+    const graph = [
+      stage('script', { dependsOn: [] }),
+      stage('visual', { dependsOn: ['script'] }),
+      stage('narration', { dependsOn: ['script'] }),
+      stage('audio', { dependsOn: ['narration'] }),
+    ];
+    const p = baseParams({
+      sourceGraph: graph,
+      newGraph: graph,
+      sourceExecutions: graph.map(({ key }) => ({
+        stageKey: key,
+        state: 'passed',
+        needsItemWork: false,
+      })),
+      rerunStageKeys: ['narration'],
+    });
+    expect(reusableStageKeys(p)).toEqual({
+      keys: ['script', 'visual'],
+      stop: { stageKey: 'narration', reason: 'rerun_requested' },
     });
   });
 

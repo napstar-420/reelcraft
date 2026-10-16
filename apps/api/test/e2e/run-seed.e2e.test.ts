@@ -192,6 +192,131 @@ describe('seeded runs — run a stage without re-running upstream (e2e)', () => 
     return outerEngine.execute();
   }
 
+  it('carries completed visual work through a separate narration branch and blocks an incomplete join', async () => {
+    const runs = testApp.app.get(RunService);
+    const blueprints = testApp.app.get(BlueprintService);
+    const channel = await makeChannel('Seed Branches');
+    const blueprintId = await blueprints.ensureBlueprint(channel.id, 'Seed Branches Blueprint');
+    const branch = (key: string, dependsOn: string[]) => ({
+      ...scriptStage(),
+      key,
+      label: key,
+      dependsOn,
+    });
+    const sourceGraph = [
+      branch('script', []),
+      branch('visual', ['script']),
+      branch('narration', ['script']),
+      branch('audio', ['narration']),
+      branch('timing', ['audio']),
+      branch('sheets', ['visual']),
+    ];
+    const sourceVersion = await blueprints.createVersion(blueprintId, {
+      graph: sourceGraph,
+      inputs: [],
+      roles: [],
+      defaults: {},
+      budget: { runCapUsd: 10 },
+    });
+    expect(sourceVersion.runnable).toBe(true);
+    const base = {
+      channelId: channel.id,
+      inputs: {},
+      roleBindings: {},
+      budgetCapUsd: 10,
+    };
+    const visualRun = await runs.create({
+      ...base,
+      blueprintVersionId: sourceVersion.id,
+      rerunStageKeys: [],
+      untilStageKey: 'sheets',
+    });
+    const visualResult = await driveRun(visualRun.id, visualRun.stageExecutions, [
+      'script',
+      'visual',
+      'sheets',
+    ]);
+    expect(visualResult.error).toBeUndefined();
+
+    const graph = [
+      ...sourceGraph.slice(0, 4),
+      sourceGraph[5]!,
+      branch('timing', ['audio', 'sheets']),
+    ];
+    const version = await blueprints.createVersion(blueprintId, {
+      graph,
+      inputs: [],
+      roles: [],
+      defaults: {},
+      budget: { runCapUsd: 10 },
+    });
+    expect(version.runnable).toBe(true);
+    const nextBase = { ...base, blueprintVersionId: version.id };
+
+    const narrationRun = await runs.create({
+      ...nextBase,
+      seedFromRunId: visualRun.id,
+      rerunStageKeys: ['narration'],
+      untilStageKey: 'narration',
+      expectReusedBefore: 'narration',
+    });
+    expect(
+      narrationRun.stageExecutions
+        .filter((e) => ['script', 'visual', 'sheets'].includes(e.stageKey))
+        .map((e) => e.state),
+    ).toEqual(['passed', 'passed', 'passed']);
+    expect(
+      (await testDb.db.select().from(artifact).where(eq(artifact.runId, narrationRun.id))).filter(
+        (a) => ['visual', 'sheets'].includes(a.producerStageKey),
+      ),
+    ).toHaveLength(2);
+    const narrationResult = await driveRun(narrationRun.id, narrationRun.stageExecutions, [
+      'narration',
+    ]);
+    expect(narrationResult.error).toBeUndefined();
+
+    const audioRun = await runs.create({
+      ...nextBase,
+      seedFromRunId: narrationRun.id,
+      rerunStageKeys: ['audio'],
+      untilStageKey: 'audio',
+      expectReusedBefore: 'audio',
+    });
+    expect(audioRun.stageExecutions.find((e) => e.stageKey === 'sheets')?.state).toBe('passed');
+    expect(
+      (await driveRun(audioRun.id, audioRun.stageExecutions, ['audio'])).error,
+    ).toBeUndefined();
+
+    const incompleteVisual = await runs.create({
+      ...nextBase,
+      rerunStageKeys: [],
+      untilStageKey: 'audio',
+    });
+    expect(
+      (
+        await driveRun(incompleteVisual.id, incompleteVisual.stageExecutions, [
+          'script',
+          'narration',
+          'audio',
+        ])
+      ).error,
+    ).toBeUndefined();
+    await expect(
+      runs.create({
+        ...nextBase,
+        seedFromRunId: incompleteVisual.id,
+        rerunStageKeys: ['timing'],
+        untilStageKey: 'timing',
+        expectReusedBefore: 'timing',
+      }),
+    ).rejects.toMatchObject({
+      response: {
+        code: 'upstream_rerun',
+        plan: { stop: { stageKey: 'visual', reason: 'not_run' } },
+      },
+    });
+  });
+
   it('copies a still-valid prefix into a new run at $0 and only executes the appended stage', async () => {
     const runs = testApp.app.get(RunService);
     const blueprints = testApp.app.get(BlueprintService);
