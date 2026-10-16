@@ -1071,6 +1071,15 @@ export class StageRunnerService {
     });
   }
 
+  async settlePreSubmitFailure(ctx: StageAttemptContext): Promise<void> {
+    await this.ledger.settleRelease({
+      runId: ctx.runId,
+      stageKey: ctx.stageKey,
+      stageAttemptId: ctx.stageAttemptId,
+      reservationId: await this.ledger.reservationIdFor(ctx.stageAttemptId),
+    });
+  }
+
   /** A poll can come back `failed` because the run was cancelled out from
    * under it — `RunCancellationService.settleOutstanding` cancels the
    * provider job directly, racing this same attempt's own poll loop. That

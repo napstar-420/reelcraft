@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { JobStatus } from '@reelcraft/shared';
+import { ProviderRequestError } from '../../provider/provider-adapter.interface';
 import { runStageAttemptLoop, withinProviderDeadline } from './stage-attempt-loop';
 
 describe('withinProviderDeadline', () => {
@@ -166,6 +167,7 @@ describe('runStageAttemptLoop abandoned jobs', () => {
       pollOnce: vi.fn().mockResolvedValue({ done: true, outcome: 'succeeded' }),
       fetchAndFinalize: vi.fn().mockResolvedValue({ outcome: 'success', artifactId: 'a1' }),
       cancelJob: vi.fn().mockResolvedValue(undefined),
+      settlePreSubmitFailure: vi.fn(),
       recordAttemptError: vi.fn(),
       recordFailure: vi.fn(),
       ...over,
@@ -224,6 +226,22 @@ describe('runStageAttemptLoop abandoned jobs', () => {
 
     await expect(result).resolves.toEqual({ outcome: 'failed', reason: 'no tab' });
     expect(r.cancelJob).not.toHaveBeenCalled();
+  });
+
+  it('surfaces invalid provider requests immediately instead of retrying them', async () => {
+    const reason = 'ChatGPT accepts at most 5 attached files';
+    const r = runner({
+      reserveAndSubmit: vi.fn().mockRejectedValue(new ProviderRequestError(reason)),
+      settlePreSubmitFailure: vi.fn(),
+      recordFailure: vi.fn(),
+    });
+    const { result } = loop(r, 3);
+
+    await expect(result).resolves.toEqual({ outcome: 'failed', reason });
+    expect(r.reserveAndSubmit).toHaveBeenCalledTimes(1);
+    expect(r.settlePreSubmitFailure).toHaveBeenCalledTimes(1);
+    expect(r.recordFailure).toHaveBeenCalledWith(expect.anything(), reason);
+    expect(r.recordAttemptError).not.toHaveBeenCalled();
   });
 
   it('does not cancel a job its provider already reported as failed', async () => {

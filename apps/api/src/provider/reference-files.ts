@@ -1,6 +1,7 @@
 import { basename, extname } from 'node:path';
 import type { StorageAdapter } from '../storage/storage.adapter';
 import { collectSourceKeys } from './source-keys';
+import { ProviderRequestError } from './provider-adapter.interface';
 
 export type ReferenceFile = { name: string; mime: string; base64: string };
 
@@ -26,7 +27,7 @@ export async function loadReferenceFiles(
 ): Promise<ReferenceFile[]> {
   const keys = collectSourceKeys(slots);
   if (keys.length > limits.max) {
-    throw new Error(`${limits.label} accepts at most ${limits.max} attached files`);
+    throw new ProviderRequestError(`${limits.label} accepts at most ${limits.max} attached files`);
   }
   return Promise.all(
     keys.map(async (key, index) => {
@@ -36,7 +37,7 @@ export async function loadReferenceFiles(
         const buffer = Buffer.from(chunk as Buffer);
         bytes += buffer.length;
         if (bytes > limits.maxBytes) {
-          throw new Error(
+          throw new ProviderRequestError(
             `Attached file "${basename(key)}" exceeds ${limits.maxBytes / (1024 * 1024)} MiB`,
           );
         }

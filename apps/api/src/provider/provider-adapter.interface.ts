@@ -72,6 +72,9 @@ export interface CancelResult {
 /** Raised only when no continuation turn has been sent, so a fresh submission is safe. */
 export class ProviderContinuationUnavailableError extends Error {}
 
+/** A request cannot be submitted as configured; repeating it unchanged will fail again. */
+export class ProviderRequestError extends Error {}
+
 export interface ProviderContinuation {
   supports(req: ProviderRequest): boolean;
   start(req: ProviderRequest, idempotencyKey: string): Promise<JobHandle>;

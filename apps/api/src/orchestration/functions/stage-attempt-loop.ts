@@ -3,6 +3,7 @@ import { DEFAULT_FEEDBACK_MAX_ATTEMPTS } from '@reelcraft/shared';
 import type { JobHandle, JobStatus, StageDef } from '@reelcraft/shared';
 import { CONSUMES_RETRY_LIMIT } from '../attempt-outcome';
 import { isProviderUnavailable } from '../../provider/provider-unavailable';
+import { ProviderRequestError } from '../../provider/provider-adapter.interface';
 import {
   QC_POLL_BACKOFF_SEC,
   qcDeadlineAt,
@@ -328,9 +329,26 @@ export async function runStageAttemptLoop(
     // be open: a throw gives it up, and the catch below cancels it.
     let submittedHandle: JobHandle | undefined;
     try {
-      const submission = await step.run(`submit-${stageKey}-${iteration}`, () =>
-        runner.reserveAndSubmit(stage, attemptCtx, prevStageKey, effective),
-      );
+      const submission = await step.run(`submit-${stageKey}-${iteration}`, async () => {
+        try {
+          return await runner.reserveAndSubmit(stage, attemptCtx, prevStageKey, effective);
+        } catch (err) {
+          // Inngest retries a failed step before the surrounding loop can catch it.
+          if (err instanceof ProviderRequestError)
+            return { outcome: 'invalid_request' as const, reason: err.message };
+          throw err;
+        }
+      });
+
+      if (submission.outcome === 'invalid_request') {
+        await step.run(`settle-invalid-request-${stageKey}-${iteration}`, () =>
+          runner.settlePreSubmitFailure(attemptCtx),
+        );
+        await step.run(`record-invalid-request-${stageKey}-${iteration}`, () =>
+          runner.recordFailure(attemptCtx, submission.reason),
+        );
+        return { outcome: 'failed' as const, reason: submission.reason };
+      }
 
       if (submission.outcome === 'budget_blocked') {
         return { outcome: 'budget_blocked' as const, reason: submission.reason };
