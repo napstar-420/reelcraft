@@ -41,6 +41,26 @@ Every slot and context entry has a picker for where its value comes from:
 `prev` isn't offered on the first stage, because there's nothing before it. `item` and `prevItem`
 only appear on a stage that iterates.
 
+### Matching reference images per item
+
+For a many-image slot on an iterating stage, **Align by item** reads producer item N for consumer
+item N. **Match by field** instead reads only earlier image artifacts named by the current item:
+
+```json
+{
+  "from": "stage",
+  "stageKey": "reference_sheets",
+  "match": { "sourcePath": "key", "itemPath": "referenceKeys" }
+}
+```
+
+If the current item has `referenceKeys: ["bob", "castle"]`, this selects the earlier image items
+whose iteration values have `key: "bob"` and `key: "castle"`, in that order. The current field may
+also be one string. Matching is exact and case-sensitive. A missing key or duplicate producer key
+stops the stage before image generation. Historical reference artifacts without item metadata must
+be regenerated. Match requires an iterating image producer, an iterating consumer, and a many-value
+image slot; it cannot be combined with a stage path or item alignment.
+
 ### Paths
 
 When the value is `data` (a JSON object), a **path** picks one field out of it. The picked field is still

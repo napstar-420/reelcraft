@@ -48,6 +48,11 @@ export function buildQcPrompt(envelope: QcEnvelope): { system: string; user: str
             'Give one verdict for the whole set: the set is accepted or rejected together. Name any image that is a problem, and what is wrong with it, in the critique.',
           ]
       : []),
+    ...(envelope.referenceImages?.length
+      ? [
+          `The ${envelope.referenceImages.length} additional reference images are source-of-truth visual references for identity, appearance, objects and environment. Compare the generated artifact against them. Do not judge or rank the reference images.`,
+        ]
+      : []),
     ...(envelope.transcript !== undefined
       ? ['A transcript of the artifact audio is included as "transcript".']
       : []),

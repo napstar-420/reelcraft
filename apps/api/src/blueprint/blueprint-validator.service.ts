@@ -23,7 +23,7 @@ import {
   type BlueprintValidationInput,
   type ValidationContext,
 } from './validation-context';
-import { resolveBoundType } from './binding-types';
+import { matchedIterationFieldProblem, resolveBoundType } from './binding-types';
 
 /**
  * §14.3/§16 — save-time validation. §16.2 error rules and §16.3/§16.5
@@ -916,7 +916,9 @@ export class BlueprintValidatorService {
       this.checkAlignWith(stage, stageIndex, ctx, path, issues);
     } else if (ref.from === 'stage') {
       const producerIndex = ctx.stageIndexByKey.get(ref.stageKey)!;
-      if (ref.alignWith === 'item') {
+      if (ref.match) {
+        this.checkMatchedStageRef(ref, stage, stageIndex, producerIndex, ctx, path, issues);
+      } else if (ref.alignWith === 'item') {
         this.checkAlignWith(stage, stageIndex, ctx, path, issues, producerIndex);
       } else if (ctx.graph[producerIndex]?.iterate) {
         issues.push({
@@ -941,6 +943,40 @@ export class BlueprintValidatorService {
           severity: 'error',
         });
       }
+    }
+  }
+
+  private checkMatchedStageRef(
+    ref: Extract<Ref, { from: 'stage' }>,
+    stage: StageDef,
+    stageIndex: number,
+    producerIndex: number,
+    ctx: ValidationContext,
+    path: string,
+    issues: ValidationIssue[],
+  ): void {
+    if (!ref.match) return;
+    const producer = ctx.graph[producerIndex];
+    if (!stage.iterate || !producer?.iterate || producer.output.kind !== 'media.image') {
+      issues.push({
+        path,
+        message:
+          'match requires an iterating consumer and an earlier iterating media.image producer',
+        severity: 'error',
+      });
+      return;
+    }
+    for (const [owner, index, field, expected] of [
+      [producer, producerIndex, ref.match.sourcePath, 'source'],
+      [stage, stageIndex, ref.match.itemPath, 'item'],
+    ] as const) {
+      const problem = matchedIterationFieldProblem(owner, index, ctx, field, expected === 'item');
+      if (problem)
+        issues.push({
+          path,
+          message: `matched reference ${expected} path "${field}": ${problem}`,
+          severity: 'error',
+        });
     }
   }
 
@@ -1156,6 +1192,7 @@ function iterateProducedArity(
   stageIndex: number,
 ): 'many' | 'scalar-iterate' | undefined {
   if (ref.from === 'item' || ref.from === 'prevItem') return 'scalar-iterate';
+  if (flattenCoalesce(ref).some((leaf) => leaf.from === 'stage' && leaf.match)) return 'many';
   if ((ref.from === 'prev' || ref.from === 'stage') && ref.alignWith === 'item') {
     return 'scalar-iterate';
   }

@@ -13,6 +13,11 @@ export interface TroubleshootingEntry {
 
 export const TROUBLESHOOTING: TroubleshootingEntry[] = [
   {
+    matches: ['match requires an iterating consumer', 'matched reference'],
+    means: 'A matched stage reference needs valid item fields on two iterating stages.',
+    fix: 'Use an earlier iterating media.image stage and an iterating consumer. Bind a many-image slot with match.sourcePath pointing to a string field of the producer item and match.itemPath to a string or string-array field of the current item.',
+  },
+  {
     matches: ['a blueprint must declare at least one stage'],
     means: 'The draft has no stages.',
     fix: 'Add stages: start from a recipe (read_guide recipes).',

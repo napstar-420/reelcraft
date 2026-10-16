@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { and, desc, eq, inArray, isNull } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, isNull } from 'drizzle-orm';
 import { LIBRARY_KINDS } from '@reelcraft/shared';
 import type { ArtifactKind, Ref } from '@reelcraft/shared';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
@@ -187,6 +187,9 @@ export class BindingResolverService {
 
       case 'prev':
       case 'stage': {
+        if (ref.from === 'stage' && ref.match) {
+          return this.resolveMatchedStageArtifacts(ref, ctx);
+        }
         const row = await this.fetchProducerArtifact(
           ctx,
           ref.from === 'prev' ? ctx.prevStageKey : ref.stageKey,
@@ -533,6 +536,13 @@ export class BindingResolverService {
     switch (ref.from) {
       case 'prev':
       case 'stage': {
+        if (ref.from === 'stage' && ref.match) {
+          const resolved = await this.resolveMatchedStageArtifacts(ref, ctx);
+          return {
+            envelope: { kind: 'literal', data: resolved.value },
+            provenance: resolved.provenance,
+          };
+        }
         const row = await this.fetchProducerArtifact(
           ctx,
           ref.from === 'prev' ? ctx.prevStageKey : ref.stageKey,
@@ -669,6 +679,64 @@ export class BindingResolverService {
       );
     }
     return row;
+  }
+
+  private async resolveMatchedStageArtifacts(ref: StageRef, ctx: BindingScope) {
+    if (!ref.match || ctx.itemIndex === undefined || !ctx.iterateOverValue) {
+      throw new Error('BindingResolverService: matched stage reference requires an iterating item');
+    }
+    const wanted = getPath(ctx.iterateOverValue[ctx.itemIndex], ref.match.itemPath);
+    if (
+      typeof wanted !== 'string' &&
+      !(Array.isArray(wanted) && wanted.every((key) => typeof key === 'string'))
+    ) {
+      throw new Error(
+        `BindingResolverService: current item field "${ref.match.itemPath}" must be a string or string array`,
+      );
+    }
+    const keys = [...new Set(typeof wanted === 'string' ? [wanted] : (wanted as string[]))];
+    const rows = await this.db
+      .select()
+      .from(artifact)
+      .where(
+        and(
+          eq(artifact.runId, ctx.runId),
+          eq(artifact.producerStageKey, ref.stageKey),
+          isNotNull(artifact.itemIndex),
+          eq(artifact.stale, false),
+        ),
+      )
+      .orderBy(artifact.itemIndex);
+    const byKey = new Map<string, ArtifactRow[]>();
+    for (const row of rows) {
+      if (row.iterationValue == null) {
+        throw new Error(
+          `BindingResolverService: stage "${ref.stageKey}" has artifacts created before matched reference metadata was recorded. Rerun that stage before using matched references.`,
+        );
+      }
+      const key = getPath(row.iterationValue, ref.match.sourcePath);
+      if (typeof key !== 'string') {
+        throw new Error(
+          `BindingResolverService: stage "${ref.stageKey}" iteration field "${ref.match.sourcePath}" must be a string`,
+        );
+      }
+      byKey.set(key, [...(byKey.get(key) ?? []), row]);
+    }
+    const selected = keys.map((key) => {
+      const matches = byKey.get(key) ?? [];
+      if (matches.length !== 1) {
+        throw new Error(
+          `BindingResolverService: stage "${ref.stageKey}" has ${matches.length ? 'multiple active items' : 'no active item'} whose iteration field "${ref.match!.sourcePath}" matches "${key}"`,
+        );
+      }
+      return matches[0]!;
+    });
+    return {
+      value: await Promise.all(
+        selected.map((row) => this.mediaManifest(row, `artifact:${row.id}`)),
+      ),
+      provenance: { ref, artifactIds: selected.map((row) => row.id) },
+    };
   }
 
   /** §14.4 — same shape as `fetchProducerArtifact`, but keyed on `stageKey` (the

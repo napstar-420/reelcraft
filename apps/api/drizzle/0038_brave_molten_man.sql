@@ -1,0 +1,1 @@
+ALTER TABLE "artifact" ADD COLUMN "iteration_value" jsonb;

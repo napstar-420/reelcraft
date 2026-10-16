@@ -25,6 +25,22 @@ describe('Ref', () => {
     expect(ref.alignWith).toBe('item');
   });
 
+  it('parses matched stage refs and rejects incompatible options', () => {
+    const base = {
+      from: 'stage',
+      stageKey: 'sheets',
+      match: { sourcePath: 'key', itemPath: 'referenceKeys' },
+    };
+    expect(Ref.parse(base)).toEqual(base);
+    expect(() => Ref.parse({ ...base, path: 'image' })).toThrow();
+    expect(() => Ref.parse({ ...base, path: '' })).toThrow();
+    expect(() => Ref.parse({ ...base, alignWith: 'item' })).toThrow();
+    expect(() => Ref.parse({ ...base, match: { sourcePath: '', itemPath: 'keys' } })).toThrow();
+    expect(() => Ref.parse({ ...base, match: { sourcePath: 'key', itemPath: '' } })).toThrow();
+    expect(() => Ref.parse({ ...base, match: { sourcePath: 'key' } })).toThrow();
+    expect(() => Ref.parse({ ...base, match: { itemPath: 'keys' } })).toThrow();
+  });
+
   it('rejects a stage binding without a stage key', () => {
     expect(() => Ref.parse({ from: 'stage' })).toThrow();
   });

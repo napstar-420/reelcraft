@@ -4,6 +4,7 @@ import { ProviderRegistry } from '../provider/provider.registry';
 import type { QcEnvelope } from './qc-envelope';
 import { buildQcPrompt } from './qc-prompt';
 import { JudgeResponse, qcVerdictSchema, weightedScore } from './qc-verdict';
+import { judgeImagesProblem } from './qc-images';
 
 export interface QcVerdict {
   score: number;
@@ -107,6 +108,18 @@ export class QcRunner {
     args: QcCall,
   ): Promise<{ handle: JobHandle } | Extract<QcOutcome, { status: 'error' }>> {
     const adapter = this.providers.get(args.judge.provider);
+    const imageCount =
+      (args.envelope.images?.length ?? (args.envelope.media?.mime.startsWith('image/') ? 1 : 0)) +
+      (args.envelope.referenceImages?.length ?? 0);
+    if (args.envelope.referenceImages?.length) {
+      const problem = await judgeImagesProblem(this.providers, args.judge, imageCount);
+      if (problem)
+        return {
+          status: 'error',
+          reason: `${problem} QC requires ${imageCount} images including ${args.envelope.referenceImages.length} reference images.`,
+          costUsd: 0,
+        };
+    }
     const prompt = buildQcPrompt(args.envelope);
     const browserOrCodex = args.judge.provider === 'chatgpt' || args.judge.provider === 'codex';
     const params = browserOrCodex
@@ -218,13 +231,22 @@ function qcParams(
   envelope: QcEnvelope,
   judgeProvider: string,
 ): Record<string, unknown> {
+  const referenceSlots = Object.fromEntries(
+    (envelope.referenceImages ?? []).map((image, i) => [
+      `qcReference${i + 1}`,
+      { sourceKey: image.sourceKey },
+    ]),
+  );
   if (envelope.clips?.length) {
     return {
       ...params,
       __inspectFiles: true,
-      slots: Object.fromEntries(
-        envelope.clips.map((clip, i) => [`qcClip${i + 1}`, { sourceKey: clip.sourceKey }]),
-      ),
+      slots: {
+        ...Object.fromEntries(
+          envelope.clips.map((clip, i) => [`qcClip${i + 1}`, { sourceKey: clip.sourceKey }]),
+        ),
+        ...referenceSlots,
+      },
     };
   }
   if (envelope.images?.length) {
@@ -232,13 +254,21 @@ function qcParams(
       ...params,
       // Codex can't be sent files; it opens them itself. Other judges get them attached.
       ...(judgeProvider === 'codex' && { __inspectFiles: true }),
-      slots: Object.fromEntries(
-        envelope.images.map((image, i) => [`qcImage${i + 1}`, { sourceKey: image.sourceKey }]),
-      ),
+      slots: {
+        ...Object.fromEntries(
+          envelope.images.map((image, i) => [`qcImage${i + 1}`, { sourceKey: image.sourceKey }]),
+        ),
+        ...referenceSlots,
+      },
     };
   }
   return envelope.media
-    ? { ...params, slots: { qcArtifact: { sourceKey: envelope.media.sourceKey } } }
+    ? {
+        ...params,
+        ...(judgeProvider === 'codex' &&
+          Object.keys(referenceSlots).length && { __inspectFiles: true }),
+        slots: { qcArtifact: { sourceKey: envelope.media.sourceKey }, ...referenceSlots },
+      }
     : params;
 }
 

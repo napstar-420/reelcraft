@@ -9,7 +9,13 @@ export const LIBRARY_KINDS = ['image', 'video', 'audio', 'vector'] as const;
 export type Ref =
   | { from: 'prev'; path?: string | undefined; alignWith?: 'item' | undefined }
   /** The output of any earlier stage, by key (`prev` reads only the stage just before). */
-  | { from: 'stage'; stageKey: string; path?: string | undefined; alignWith?: 'item' | undefined }
+  | {
+      from: 'stage';
+      stageKey: string;
+      path?: string | undefined;
+      alignWith?: 'item' | undefined;
+      match?: { sourcePath: string; itemPath: string } | undefined;
+    }
   | { from: 'memory'; key: string; path?: string | undefined }
   | { from: 'input'; inputKey: string; index?: number | undefined; path?: string | undefined }
   | { from: 'asset'; assetId: string }
@@ -34,38 +40,48 @@ export type Ref =
    * validation error, not a run-time surprise. */
   | { from: 'coalesce'; refs: Ref[] };
 
-export const Ref: z.ZodType<Ref> = z.discriminatedUnion('from', [
-  z.object({
-    from: z.literal('prev'),
-    path: z.string().optional(),
-    alignWith: z.literal('item').optional(),
-  }),
-  z.object({
-    from: z.literal('stage'),
-    stageKey: z.string(),
-    path: z.string().optional(),
-    alignWith: z.literal('item').optional(),
-  }),
-  z.object({ from: z.literal('memory'), key: z.string(), path: z.string().optional() }),
-  z.object({
-    from: z.literal('input'),
-    inputKey: z.string(),
-    index: z.number().optional(),
-    path: z.string().optional(),
-  }),
-  z.object({ from: z.literal('asset'), assetId: z.string() }),
-  z.object({
-    from: z.literal('library'),
-    kinds: z.array(z.enum(LIBRARY_KINDS)).min(1).max(4).optional(),
-    tags: z.array(z.string().min(1).max(60)).max(10).optional(),
-    builtin: z.boolean().optional(),
-  }),
-  z.object({ from: z.literal('role'), roleKey: z.string() }),
-  z.object({ from: z.literal('item'), path: z.string().optional() }),
-  z.object({ from: z.literal('prevItem'), path: z.string().optional() }),
-  z.object({ from: z.literal('const'), value: z.unknown() }),
-  z.object({
-    from: z.literal('coalesce'),
-    refs: z.array(z.lazy(() => Ref)).min(2),
-  }),
-]);
+export const Ref: z.ZodType<Ref> = z
+  .discriminatedUnion('from', [
+    z.object({
+      from: z.literal('prev'),
+      path: z.string().optional(),
+      alignWith: z.literal('item').optional(),
+    }),
+    z.object({
+      from: z.literal('stage'),
+      stageKey: z.string(),
+      path: z.string().optional(),
+      alignWith: z.literal('item').optional(),
+      match: z.object({ sourcePath: z.string().min(1), itemPath: z.string().min(1) }).optional(),
+    }),
+    z.object({ from: z.literal('memory'), key: z.string(), path: z.string().optional() }),
+    z.object({
+      from: z.literal('input'),
+      inputKey: z.string(),
+      index: z.number().optional(),
+      path: z.string().optional(),
+    }),
+    z.object({ from: z.literal('asset'), assetId: z.string() }),
+    z.object({
+      from: z.literal('library'),
+      kinds: z.array(z.enum(LIBRARY_KINDS)).min(1).max(4).optional(),
+      tags: z.array(z.string().min(1).max(60)).max(10).optional(),
+      builtin: z.boolean().optional(),
+    }),
+    z.object({ from: z.literal('role'), roleKey: z.string() }),
+    z.object({ from: z.literal('item'), path: z.string().optional() }),
+    z.object({ from: z.literal('prevItem'), path: z.string().optional() }),
+    z.object({ from: z.literal('const'), value: z.unknown() }),
+    z.object({
+      from: z.literal('coalesce'),
+      refs: z.array(z.lazy(() => Ref)).min(2),
+    }),
+  ])
+  .superRefine((ref, ctx) => {
+    if (ref.from === 'stage' && ref.match && (ref.path !== undefined || ref.alignWith)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'match cannot be combined with path or alignWith',
+      });
+    }
+  });

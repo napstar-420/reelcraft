@@ -2,6 +2,65 @@ import { describe, expect, it, vi } from 'vitest';
 import { ArtifactEditService } from './artifact-edit.service';
 
 describe('ArtifactEditService', () => {
+  it('inherits the replaced artifact iteration snapshot', async () => {
+    const iterationValue = { key: 'bob', name: 'Bob' };
+    const records = [[{ id: 'source', iterationValue }], [{ max: 1 }]];
+    const tx = {
+      select: () => ({
+        from: () => ({
+          where: () => ({
+            limit: async () => records.shift(),
+            then: (resolve: (value: unknown) => unknown) =>
+              Promise.resolve(records.shift()).then(resolve),
+          }),
+        }),
+      }),
+      insert: () => ({ values: vi.fn() }),
+      update: () => ({ set: () => ({ where: vi.fn() }) }),
+    };
+    const recordAttemptArtifact = vi.fn().mockResolvedValue('replacement');
+    const preview = {
+      closure: {},
+      totals: { spentUsd: 0, estimatedRerunUsd: 0 },
+      fingerprint: 'fp',
+    };
+    const service = Object.assign(Object.create(ArtifactEditService.prototype) as object, {
+      loadContext: vi.fn().mockResolvedValue({
+        run: { revision: 5 },
+        stage: { key: 'draft', output: { kind: 'text' } },
+        execution: { id: 'execution' },
+        sourceArtifactId: 'source',
+      }),
+      validateValue: () => ({ text: 'new copy' }),
+      invalidation: { preview: async () => preview, apply: vi.fn() },
+      tokens: { verify: () => ({ preview: { fingerprint: 'fp' }, runRevision: 5 }) },
+      mutation: {
+        withLockedRun: async (
+          _runId: string,
+          _action: string,
+          _states: unknown,
+          callback: (tx: unknown, run: unknown) => Promise<void>,
+        ) => {
+          await callback(tx, { revision: 5 });
+          return { wakeupId: 'wakeup', revision: 6 };
+        },
+      },
+      artifacts: { recordAttemptArtifact, finalize: vi.fn() },
+      memory: { buildWriteCallback: vi.fn() },
+      waits: { resolve: vi.fn() },
+      dispatcher: { dispatch: vi.fn() },
+      logger: { log: vi.fn() },
+    }) as unknown as ArtifactEditService;
+    await service.edit('run', 'draft', {
+      value: 'new copy',
+      sourceArtifactId: 'source',
+      previewToken: 'signed',
+    });
+    expect(recordAttemptArtifact).toHaveBeenCalledWith(
+      expect.objectContaining({ iterationValue }),
+      tx,
+    );
+  });
   it('binds manual-edit previews to the replacement value and explicit source artifact', async () => {
     const service = Object.assign(Object.create(ArtifactEditService.prototype) as object, {
       loadContext: vi.fn().mockResolvedValue({

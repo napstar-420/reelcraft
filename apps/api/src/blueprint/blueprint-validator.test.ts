@@ -846,6 +846,139 @@ describe('BlueprintValidatorService — iterate (Phase 7, §14/§16.2)', () => {
     await sandbox.ready();
   });
 
+  describe('matched stage references', () => {
+    function matchedGraph(): StageDef[] {
+      const iterate = (value: unknown) => ({
+        over: { from: 'const' as const, value },
+        itemAlias: 'item',
+        itemRetryLimit: 0,
+      });
+      return [
+        stage({
+          key: 'sheets',
+          capability: 'image.generate',
+          output: { kind: 'media.image' },
+          iterate: iterate([{ key: 'bob' }]),
+        }),
+        stage({
+          key: 'scenes',
+          capability: 'image.generate',
+          output: { kind: 'media.image' },
+          iterate: iterate([{ referenceKeys: ['bob'] }]),
+          slots: {
+            references: {
+              from: 'stage',
+              stageKey: 'sheets',
+              match: { sourcePath: 'key', itemPath: 'referenceKeys' },
+            },
+          },
+        }),
+      ];
+    }
+    const validator = () =>
+      makeValidator({
+        'image.generate': { ...withManyImageReferences, allowedOutputs: () => ['media.image'] },
+      });
+
+    it('accepts scalar and array fields', () => {
+      for (const value of ['bob', ['bob']]) {
+        const graph = matchedGraph();
+        graph[1]!.iterate!.over = { from: 'const', value: [{ referenceKeys: value }] };
+        expect(
+          validator()
+            .validate({ graph, inputs: [], roles: [] })
+            .filter((issue) => issue.severity === 'error'),
+        ).toEqual([]);
+      }
+    });
+
+    it.each([
+      'consumer',
+      'producer',
+      'kind',
+      'sourcePath',
+      'itemPath',
+      'sourceType',
+      'itemType',
+      'later',
+    ] as const)('rejects invalid %s', (problem) => {
+      const graph = matchedGraph();
+      const ref = graph[1]!.slots.references;
+      if (ref?.from !== 'stage' || !ref.match) throw new Error('expected match');
+      if (problem === 'consumer') delete graph[1]!.iterate;
+      if (problem === 'producer') delete graph[0]!.iterate;
+      if (problem === 'kind') graph[0]!.output = { kind: 'text' };
+      if (problem === 'sourcePath') ref.match.sourcePath = 'missing';
+      if (problem === 'itemPath') ref.match.itemPath = 'missing';
+      if (problem === 'sourceType')
+        graph[0]!.iterate!.over = { from: 'const', value: [{ key: 1 }] };
+      if (problem === 'itemType')
+        graph[1]!.iterate!.over = { from: 'const', value: [{ referenceKeys: 1 }] };
+      if (problem === 'later') graph.reverse();
+      expect(hasError(validator().validate({ graph, inputs: [], roles: [] }))).toBe(true);
+    });
+
+    it('rejects a one-cardinality target', () => {
+      const graph = matchedGraph();
+      const one = makeValidator({
+        'image.generate': {
+          ...withManyImageReferences,
+          allowedOutputs: () => ['media.image'],
+          slots: () => [
+            { name: 'references', accepts: ['media.image'], required: false, cardinality: 'one' },
+          ],
+        },
+      });
+      expect(
+        one
+          .validate({ graph, inputs: [], roles: [] })
+          .some((issue) => issue.message.includes("cardinality:'one'")),
+      ).toBe(true);
+    });
+
+    it('validates paths against declared iteration schemas', () => {
+      const graph = matchedGraph();
+      graph[0]!.iterate!.over = { from: 'input', inputKey: 'subjects' };
+      graph[1]!.iterate!.over = { from: 'input', inputKey: 'scenes' };
+      const inputs: InputDef[] = [
+        {
+          key: 'subjects',
+          label: 'Subjects',
+          required: true,
+          accepts: {
+            kind: 'data',
+            schema: {
+              type: 'array',
+              items: { type: 'object', properties: { key: { type: 'string' } } },
+            },
+          },
+        },
+        {
+          key: 'scenes',
+          label: 'Scenes',
+          required: true,
+          accepts: {
+            kind: 'data',
+            schema: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: { referenceKeys: { type: 'array', items: { type: 'string' } } },
+              },
+            },
+          },
+        },
+      ];
+      expect(hasError(validator().validate({ graph, inputs, roles: [] }))).toBe(false);
+      const ref = graph[1]!.slots.references;
+      if (ref?.from !== 'stage' || !ref.match) throw new Error('expected match');
+      ref.match.sourcePath = 'missing';
+      expect(hasError(validator().validate({ graph, inputs, roles: [] }))).toBe(true);
+      inputs[0]!.accepts = { kind: 'data', schema: { type: 'array', items: { type: 'object' } } };
+      expect(hasError(validator().validate({ graph, inputs, roles: [] }))).toBe(false);
+    });
+  });
+
   const listInput: InputDef = {
     key: 'list',
     label: 'List',

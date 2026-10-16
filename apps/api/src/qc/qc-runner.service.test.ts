@@ -20,6 +20,71 @@ const envelope = buildQcEnvelope({
 });
 
 describe('QcRunner', () => {
+  it('attaches references separately and checks the total image limit before submission', async () => {
+    const submit = vi.fn().mockResolvedValue({ providerId: 'vision', externalId: 'judge' });
+    const listModels = vi
+      .fn()
+      .mockResolvedValue([
+        { modelId: 'judge', capabilities: { inputKinds: ['media.image'], maxRefs: 3 } },
+      ]);
+    const runner = new QcRunner({ get: () => ({ submit, listModels }) } as never);
+    const imageEnvelope = buildQcEnvelope({
+      criteria: 'Match identity',
+      artifactKind: 'media.image',
+      artifactData: undefined,
+      includeInputs: false,
+      media: { sourceKey: 'scene.png', mime: 'image/png' },
+      referenceImages: ['bob', 'castle'].map((key, index) => ({
+        sourceKey: `${key}.png`,
+        mime: 'image/png',
+        index,
+        label: key,
+      })),
+    });
+    const call = {
+      envelope: imageEnvelope,
+      judge: { provider: 'vision', modelId: 'judge', params: {} },
+      threshold: 70,
+      idempotencyKey: 'qc-refs',
+    };
+    expect(await runner.submit(call)).toHaveProperty('handle');
+    expect(submit.mock.calls[0]![0].params.slots).toEqual({
+      qcArtifact: { sourceKey: 'scene.png' },
+      qcReference1: { sourceKey: 'bob.png' },
+      qcReference2: { sourceKey: 'castle.png' },
+    });
+    expect(submit.mock.calls[0]![0].system).toContain('Do not judge or rank the reference images');
+    submit.mockClear();
+    listModels.mockResolvedValue([
+      { modelId: 'judge', capabilities: { inputKinds: ['media.image'], maxRefs: 2 } },
+    ]);
+    expect(await runner.submit(call)).toMatchObject({ status: 'error' });
+    expect(submit).not.toHaveBeenCalled();
+    listModels.mockResolvedValue([
+      { modelId: 'judge', capabilities: { inputKinds: ['media.image'], maxRefs: 4 } },
+    ]);
+    const candidates = buildQcEnvelope({
+      criteria: 'Choose the best match',
+      artifactKind: 'media.image',
+      artifactData: undefined,
+      includeInputs: false,
+      images: ['candidate-a', 'candidate-b'].map((key, index) => ({
+        sourceKey: `${key}.png`,
+        mime: 'image/png',
+        index,
+        label: key,
+      })),
+      selectBest: true,
+      referenceImages: imageEnvelope.referenceImages!,
+    });
+    expect(await runner.submit({ ...call, envelope: candidates })).toHaveProperty('handle');
+    expect(submit.mock.calls[0]![0].params.slots).toEqual({
+      qcImage1: { sourceKey: 'candidate-a.png' },
+      qcImage2: { sourceKey: 'candidate-b.png' },
+      qcReference1: { sourceKey: 'bob.png' },
+      qcReference2: { sourceKey: 'castle.png' },
+    });
+  });
   it.each(['chatgpt', 'codex'])(
     '%s uses a fresh structured judge call without fake temperature',
     async (provider) => {

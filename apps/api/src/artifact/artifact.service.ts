@@ -21,6 +21,7 @@ export interface RecordAttemptArtifactInput {
   runId: string;
   producerStageKey: string;
   itemIndex?: number | undefined;
+  iterationValue?: unknown;
   kind: ArtifactKind;
   data?: unknown;
   blobId?: string;
@@ -89,6 +90,7 @@ export class ArtifactService {
       runId: input.runId,
       producerStageKey: input.producerStageKey,
       itemIndex: input.itemIndex,
+      iterationValue: input.iterationValue,
       kind: input.kind,
       data: input.data,
       blobId: input.blobId,

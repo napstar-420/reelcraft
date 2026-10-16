@@ -140,6 +140,97 @@ describe('BindingResolverService — media manifests carry blobId', () => {
     ).rejects.toThrow('no active artifact for stage "music"');
   });
 
+  it('matches only requested items in consumer order and records precise provenance', async () => {
+    const rows = ['alice', 'bob', 'castle'].map((key, itemIndex) => ({
+      id: key,
+      itemIndex,
+      iterationValue: { key },
+      kind: 'media.image',
+      blobId: key,
+      probe: null,
+      data: null,
+    }));
+    const ctx: BindingScope = {
+      runId: 'run-1',
+      inputs: {},
+      itemIndex: 0,
+      iterateOverValue: [{ referenceKeys: ['castle', 'bob', 'bob'] }],
+    };
+    const ref: Ref = {
+      from: 'stage',
+      stageKey: 'sheets',
+      match: { sourcePath: 'key', itemPath: 'referenceKeys' },
+    };
+    const result = await serviceWith(
+      rows,
+      [{ objectKey: 'castle.png' }],
+      [{ objectKey: 'bob.png' }],
+    ).resolve(ref, ctx);
+    expect(result.value).toMatchObject([{ artifactId: 'castle' }, { artifactId: 'bob' }]);
+    expect(result.provenance).toEqual({ ref, artifactIds: ['castle', 'bob'] });
+  });
+
+  it('rejects missing, ambiguous and historical producer identities', async () => {
+    const ref: Ref = {
+      from: 'stage',
+      stageKey: 'sheets',
+      match: { sourcePath: 'key', itemPath: 'wanted' },
+    };
+    const ctx: BindingScope = {
+      runId: 'run-1',
+      inputs: {},
+      itemIndex: 0,
+      iterateOverValue: [{ wanted: 'bob' }],
+    };
+    const row = { id: 'a', itemIndex: 0, iterationValue: { key: 'alice' }, kind: 'media.image' };
+    await expect(serviceWith([row]).resolve(ref, ctx)).rejects.toThrow('no active item');
+    await expect(
+      serviceWith([row, { ...row, id: 'b', iterationValue: { key: 'alice' } }]).resolve(ref, {
+        ...ctx,
+        iterateOverValue: [{ wanted: 'alice' }],
+      }),
+    ).rejects.toThrow('multiple active items');
+    await expect(serviceWith([{ ...row, iterationValue: null }]).resolve(ref, ctx)).rejects.toThrow(
+      'Rerun that stage',
+    );
+  });
+
+  it('accepts a scalar or empty selection and rejects invalid runtime fields', async () => {
+    const ref: Ref = {
+      from: 'stage',
+      stageKey: 'sheets',
+      match: { sourcePath: 'key', itemPath: 'wanted' },
+    };
+    const ctx: BindingScope = {
+      runId: 'run-1',
+      inputs: {},
+      itemIndex: 0,
+      iterateOverValue: [{ wanted: 'bob' }],
+    };
+    const row = {
+      id: 'bob',
+      itemIndex: 0,
+      iterationValue: { key: 'bob' },
+      kind: 'media.image',
+      blobId: 'b',
+    };
+    expect(
+      (await serviceWith([row], [{ objectKey: 'bob.png' }]).resolve(ref, ctx)).provenance
+        .artifactIds,
+    ).toEqual(['bob']);
+    expect(
+      (await serviceWith([row]).resolve(ref, { ...ctx, iterateOverValue: [{ wanted: [] }] })).value,
+    ).toEqual([]);
+    for (const wanted of [undefined, 1, {}, [['bob']]]) {
+      await expect(
+        serviceWith([row]).resolve(ref, { ...ctx, iterateOverValue: [{ wanted }] }),
+      ).rejects.toThrow('must be a string or string array');
+    }
+    await expect(
+      serviceWith([{ ...row, iterationValue: { key: 1 } }]).resolve(ref, ctx),
+    ).rejects.toThrow('must be a string');
+  });
+
   it('{from:"prev"} on a media.image_list gives each item its own blobId', async () => {
     const row = {
       id: 'art-2',

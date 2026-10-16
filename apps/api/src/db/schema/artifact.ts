@@ -47,6 +47,7 @@ export const artifact = pgTable(
       .references(() => run.id), // run this artifact was produced in
     producerStageKey: text('producer_stage_key').notNull(), // or '$input:<key>' (§6.2)
     itemIndex: integer('item_index'), // stage_item index this artifact belongs to, when iterating
+    iterationValue: jsonb('iteration_value'), // immutable snapshot of the item represented by this artifact
     generation: integer('generation').notNull().default(0), // increments each time this producer/item slot is superseded
     kind: artifactKind('kind').notNull(),
     schemaHash: text('schema_hash'), // sha256 of canonical JSON Schema; null for fixed kinds

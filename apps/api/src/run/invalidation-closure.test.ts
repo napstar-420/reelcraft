@@ -174,6 +174,42 @@ function brollItems(
 }
 
 describe('computeInvalidationClosure — item-level (phase 7 chunk 5)', () => {
+  it('tracks every selected artifact in multi-artifact provenance', () => {
+    const result = computeInvalidationClosure({
+      graphOrder: ['sheets', 'scenes'],
+      memoryVersionWriters: [],
+      executions: [
+        itemExecution('sheets', 0, 'alice'),
+        itemExecution('sheets', 1, 'bob'),
+        itemExecution('scenes', 0, 'scene-bob', {
+          provenance: {
+            references: {
+              ref: {
+                from: 'stage',
+                stageKey: 'sheets',
+                match: { sourcePath: 'key', itemPath: 'keys' },
+              },
+              artifactIds: ['bob'],
+            },
+          },
+        }),
+        itemExecution('scenes', 1, 'scene-alice', {
+          provenance: {
+            references: {
+              ref: {
+                from: 'stage',
+                stageKey: 'sheets',
+                match: { sourcePath: 'key', itemPath: 'keys' },
+              },
+              artifactIds: ['alice'],
+            },
+          },
+        }),
+      ],
+      seed: { items: [{ stageKey: 'sheets', itemIndex: 1 }] },
+    });
+    expect(result.affectedArtifactIds).toEqual(['bob', 'scene-bob']);
+  });
   it('leaves later items of a non-prevItem-binding stage untouched', () => {
     const { executions } = brollItems(6, false);
 
