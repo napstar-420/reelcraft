@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { and, eq, isNull } from 'drizzle-orm';
 import type { StageDef } from '@reelcraft/shared';
 import { BlueprintService } from '../../src/blueprint/blueprint.service';
@@ -7,7 +7,8 @@ import { RunService } from '../../src/run/run.service';
 import { HumanActionService } from '../../src/run/human-action.service';
 import { StageRunnerService } from '../../src/orchestration/stage-runner.service';
 import { runStageAttemptLoop } from '../../src/orchestration/functions/stage-attempt-loop';
-import { QcRunner, type QcOutcome } from '../../src/qc/qc-runner.service';
+import type { QcOutcome } from '../../src/qc/qc-runner.service';
+import { mockQcOutcomes } from '../support/mock-qc-outcomes';
 import { humanWait, run, runWakeup, stageAttempt, stageExecution } from '../../src/db/schema/index';
 import { buildTestApp, type TestApp } from '../support/build-app';
 import { createTestDb, type TestDb } from '../support/test-db';
@@ -33,6 +34,8 @@ describe('QC unavailable pauses for review, and Retry QC judges again (e2e)', ()
       await testDb.teardown();
     }
   });
+
+  afterEach(() => vi.restoreAllMocks());
 
   const stage: StageDef = {
     key: 'draft',
@@ -140,7 +143,7 @@ describe('QC unavailable pauses for review, and Retry QC judges again (e2e)', ()
 
   it('parks the output instead of failing the stage when the judge cannot run', async () => {
     const { runId, executionId } = await startRun();
-    vi.spyOn(testApp.app.get(QcRunner), 'run').mockResolvedValue(judgeDown);
+    mockQcOutcomes(testApp.app.get(StageRunnerService), judgeDown);
 
     await expect(runLoop(runId, executionId)).resolves.toMatchObject({
       outcome: 'approval_required',
@@ -165,7 +168,7 @@ describe('QC unavailable pauses for review, and Retry QC judges again (e2e)', ()
 
   it('Retry QC judges the stored output again and passes it, with no second generation', async () => {
     const { runId, executionId } = await startRun();
-    const judge = vi.spyOn(testApp.app.get(QcRunner), 'run').mockResolvedValue(judgeDown);
+    const judge = mockQcOutcomes(testApp.app.get(StageRunnerService), judgeDown);
     await runLoop(runId, executionId);
     await pausedForApproval(runId);
 
@@ -181,7 +184,7 @@ describe('QC unavailable pauses for review, and Retry QC judges again (e2e)', ()
     expect(released).toMatchObject({ outcome: 'qc_error', phase: 'settled' });
 
     // The judge is back; the run resumes into the stage.
-    judge.mockResolvedValue(judgeSaysYes);
+    judge.setFallback(judgeSaysYes);
     await resumed(runId);
     await expect(runLoop(runId, executionId)).resolves.toMatchObject({ outcome: 'passed' });
 
@@ -197,7 +200,7 @@ describe('QC unavailable pauses for review, and Retry QC judges again (e2e)', ()
 
   it('pauses again when QC still cannot run on the retry', async () => {
     const { runId, executionId } = await startRun();
-    vi.spyOn(testApp.app.get(QcRunner), 'run').mockResolvedValue(judgeDown);
+    mockQcOutcomes(testApp.app.get(StageRunnerService), judgeDown);
     await runLoop(runId, executionId);
     await pausedForApproval(runId);
     await testApp.app.get(HumanActionService).retryQc(runId, 'draft');
@@ -213,12 +216,13 @@ describe('QC unavailable pauses for review, and Retry QC judges again (e2e)', ()
 
   it('regenerates with the critique when the retried QC rejects the output', async () => {
     const { runId, executionId } = await startRun();
-    const judge = vi.spyOn(testApp.app.get(QcRunner), 'run').mockResolvedValue(judgeDown);
+    const judge = mockQcOutcomes(testApp.app.get(StageRunnerService), judgeDown);
     await runLoop(runId, executionId);
     await pausedForApproval(runId);
     await testApp.app.get(HumanActionService).retryQc(runId, 'draft');
 
-    judge.mockResolvedValueOnce(judgeSaysNo).mockResolvedValue(judgeSaysYes);
+    judge.queue(judgeSaysNo);
+    judge.setFallback(judgeSaysYes);
     await resumed(runId);
     await expect(runLoop(runId, executionId)).resolves.toMatchObject({ outcome: 'passed' });
 
@@ -229,7 +233,7 @@ describe('QC unavailable pauses for review, and Retry QC judges again (e2e)', ()
 
   it('refuses to retry QC on an output that was not parked for it', async () => {
     const { runId, executionId } = await startRun();
-    vi.spyOn(testApp.app.get(QcRunner), 'run').mockResolvedValue(judgeSaysYes);
+    mockQcOutcomes(testApp.app.get(StageRunnerService), judgeSaysYes);
     await runLoop(runId, executionId);
     await pausedForApproval(runId);
     await expect(testApp.app.get(HumanActionService).retryQc(runId, 'draft')).rejects.toThrow(

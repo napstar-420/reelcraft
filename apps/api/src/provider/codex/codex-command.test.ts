@@ -2,6 +2,28 @@ import { describe, expect, it } from 'vitest';
 import { buildCodexArgs, buildCodexPrompt, strictJsonSchema, toTomlValue } from './codex-command';
 
 describe('Codex command construction', () => {
+  it('keeps normal jobs ephemeral and resumes only retained text jobs', () => {
+    const input = {
+      modelId: 'gpt-example',
+      reasoningEffort: 'high',
+      jobDir: '/tmp/job',
+      resultPath: '/tmp/job/result.txt',
+      outputSchemaPath: '/tmp/job/schema.json',
+      profile: 'reelcraft',
+      params: {},
+    };
+    expect(buildCodexArgs(input)).toContain('--ephemeral');
+    expect(buildCodexArgs({ ...input, retained: true })).not.toContain('--ephemeral');
+    const resumed = buildCodexArgs({
+      ...input,
+      retained: true,
+      threadId: '12345678-1234-1234-1234-123456789abc',
+    });
+    expect(resumed).not.toContain('--ephemeral');
+    expect(resumed).toContain('--output-schema');
+    expect(resumed.slice(-2)).toEqual(['12345678-1234-1234-1234-123456789abc', '-']);
+    expect(resumed).toContain('resume');
+  });
   it('pins model and effort while forwarding raw dotted config values', () => {
     const args = buildCodexArgs({
       modelId: 'gpt-example',

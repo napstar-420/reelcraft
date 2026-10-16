@@ -8,7 +8,8 @@ import { StageRunnerService } from '../../src/orchestration/stage-runner.service
 import { runStageAttemptLoop } from '../../src/orchestration/functions/stage-attempt-loop';
 import { TimelineResourceResolverService } from '../../src/artifact/timeline-resource-resolver.service';
 import { ProviderRegistry } from '../../src/provider/provider.registry';
-import { QcRunner, type QcOutcome } from '../../src/qc/qc-runner.service';
+import type { QcOutcome } from '../../src/qc/qc-runner.service';
+import { mockQcOutcomes } from '../support/mock-qc-outcomes';
 import {
   artifact,
   artifactAttachment,
@@ -384,30 +385,23 @@ describe('Generate Image makes an image list (e2e)', () => {
 
     it('shows the judge every image together and makes the whole set again when it is rejected', async () => {
       const { runId, executionIds } = await startRun([judged()]);
-      const judge = vi
-        .spyOn(testApp.app.get(QcRunner), 'run')
-        .mockResolvedValueOnce(rejected)
-        .mockResolvedValueOnce(accepted);
+      const judge = mockQcOutcomes(testApp.app.get(StageRunnerService), rejected, accepted);
 
       await expect(runLoop(runId, executionIds[0]!, 'img')).resolves.toMatchObject({
         outcome: 'passed',
       });
 
-      expect(judge).toHaveBeenCalledTimes(2);
-      for (const [call] of judge.mock.calls) {
-        expect(call.envelope.artifact.kind).toBe('media.image_list');
-        expect(call.envelope.clips).toBeUndefined();
-        expect(call.envelope.images).toHaveLength(3);
-        expect(call.envelope.images?.map((image) => image.mime)).toEqual([
+      expect(judge.submit).toHaveBeenCalledTimes(2);
+      for (const [call] of judge.submit.mock.calls) {
+        expect(call.artifact.kind).toBe('media.image_list');
+        expect(call.clips).toBeUndefined();
+        expect(call.images).toHaveLength(3);
+        expect(call.images?.map((image) => image.mime)).toEqual([
           'image/png',
           'image/png',
           'image/png',
         ]);
-        expect(call.envelope.images?.map((image) => image.label)).toEqual([
-          'Image 1',
-          'Image 2',
-          'Image 3',
-        ]);
+        expect(call.images?.map((image) => image.label)).toEqual(['Image 1', 'Image 2', 'Image 3']);
       }
       const attempts = await attemptsOf(executionIds[0]!);
       expect(attempts.map((attempt) => attempt.outcome)).toEqual(['qc_failed', 'success']);
@@ -431,7 +425,7 @@ describe('Generate Image makes an image list (e2e)', () => {
           },
         }),
       ]);
-      vi.spyOn(testApp.app.get(QcRunner), 'run').mockResolvedValue(rejected);
+      mockQcOutcomes(testApp.app.get(StageRunnerService), rejected);
 
       const outcome = await runLoop(runId, executionIds[0]!, 'img');
 

@@ -8,6 +8,7 @@ import type {
   ProviderRequest,
   ProviderResult,
 } from '../provider-adapter.interface';
+import { ProviderContinuationUnavailableError } from '../provider-adapter.interface';
 import { STORAGE_ADAPTER, type StorageAdapter } from '../../storage/storage.adapter';
 import { loadReferenceFiles, type ReferenceFile } from '../reference-files';
 import { buildChatgptPrompt } from './chatgpt-prompt';
@@ -21,6 +22,7 @@ import {
   closePageScript,
   copyLastReplyScript,
   openChatScript,
+  openAttachmentMenuScript,
   pageStateScript,
   parkImageScript,
   readParkedImageCdpScript,
@@ -55,8 +57,8 @@ const MAX_REFERENCE_BYTES = 8 * 1024 * 1024;
  * this point is cancelled and retried, so it only has to be longer than any
  * real reply. */
 const JOB_DEADLINE_MS = 45 * 60_000;
-/** A tab showing no Stop button, no reply and no error for this long has
- * stalled (it was closed, never sent, or ChatGPT fell over). */
+/** A regular tab showing no Stop button, reply, or error for this long has
+ * stalled. Web search can have these signals absent while still researching. */
 const IDLE_STALL_MS = 4 * 60_000;
 /** A finished image reply with no image yet may still be rendering it. */
 const IMAGE_GRACE_MS = 30_000;
@@ -71,8 +73,11 @@ export type ChatgptJobPayload = {
   outputKind?: string | undefined;
   submittedAt: number;
   pastedPrompt: string;
+  webSearch?: boolean;
   /** Image stages: how many images were asked for (above 1 for an image list). */
   imageCount?: number | undefined;
+  retained?: boolean;
+  turnCursor?: { replyCount: number; imageCount: number };
 };
 
 type Readiness = {
@@ -93,6 +98,18 @@ class ChatgptPageError extends Error {}
 export class ChatgptProviderAdapter implements ProviderAdapter {
   readonly id = 'chatgpt';
   readonly modalities: readonly Modality[] = ['text', 'image'];
+  readonly continuation = {
+    supports: (req: ProviderRequest) =>
+      req.modality === undefined ||
+      req.modality === 'text' ||
+      (req.modality === 'image' &&
+        req.params.__mediaKind !== 'media.image_list' &&
+        (req.params.count === undefined || req.params.count === 1)),
+    start: (req: ProviderRequest, key: string) => this.submitJob(req, key, true),
+    continue: (req: ProviderRequest, previous: JobHandle, prompt: string, key: string) =>
+      this.continueJob(req, previous, prompt, key),
+    release: (handle: JobHandle) => this.releaseJob(handle),
+  };
   private readonly logger = new Logger(ChatgptProviderAdapter.name);
   private readiness?: { expiresAt: number; value: Promise<Readiness> } | undefined;
   /** externalId → when an image reply first looked finished without an image. */
@@ -139,6 +156,14 @@ export class ChatgptProviderAdapter implements ProviderAdapter {
   }
 
   async submit(req: ProviderRequest, idempotencyKey: string): Promise<JobHandle> {
+    return this.submitJob(req, idempotencyKey, false);
+  }
+
+  private async submitJob(
+    req: ProviderRequest,
+    idempotencyKey: string,
+    retained: boolean,
+  ): Promise<JobHandle> {
     const modality = req.modality ?? 'text';
     if (modality !== 'text' && modality !== 'image') {
       throw new Error(`ChatGPT does not support modality "${modality}"`);
@@ -191,6 +216,9 @@ export class ChatgptProviderAdapter implements ProviderAdapter {
         return { providerId: this.id, externalId: idempotencyKey, payload: { signedOut: true } };
       }
       if (!signIn.composer) throw new ChatgptPageError('ChatGPT composer not found');
+      const baseline = retained
+        ? await this.neo.run<PageState>(pageStateScript(pageId))
+        : undefined;
 
       // Files go into this tab's own composer and do not depend on the
       // account-wide effort slider, so without web search they are attached
@@ -226,7 +254,12 @@ export class ChatgptProviderAdapter implements ProviderAdapter {
         outputKind: req.output?.kind,
         submittedAt: Date.now(),
         pastedPrompt,
+        ...(webSearch && { webSearch: true }),
         ...(imageCount && { imageCount }),
+        ...(retained && {
+          retained: true,
+          turnCursor: { replyCount: baseline?.replyCount ?? 0, imageCount: baseline?.images ?? 0 },
+        }),
       };
       this.logger.log(
         { providerId: this.id, pageId, modality, effort, webSearch },
@@ -242,6 +275,87 @@ export class ChatgptProviderAdapter implements ProviderAdapter {
     }
   }
 
+  private async continueJob(
+    req: ProviderRequest,
+    previous: JobHandle,
+    revisionPrompt: string,
+    idempotencyKey: string,
+  ): Promise<JobHandle> {
+    const job = this.job(previous);
+    if (
+      !job?.retained ||
+      !job.turnCursor ||
+      !this.continuation.supports(req) ||
+      job.modality !== (req.modality ?? 'text')
+    ) {
+      throw new ProviderContinuationUnavailableError('ChatGPT continuation handle is unavailable');
+    }
+    let state: PageState;
+    try {
+      state = await this.neo.run<PageState>(pageStateScript(job.pageId, revisionPrompt));
+    } catch {
+      throw new ProviderContinuationUnavailableError('ChatGPT continuation tab is unavailable');
+    }
+    if (!state.composer)
+      throw new ProviderContinuationUnavailableError(
+        'ChatGPT continuation composer is unavailable',
+      );
+    const effort = req.params.reasoningEffort;
+    if (typeof effort !== 'string' || !EFFORTS.includes(effort as ChatgptEffort)) {
+      throw new Error(`Unsupported ChatGPT effort "${String(effort)}"`);
+    }
+    const webSearch = req.params.webSearch === true;
+    const alreadySent =
+      state.lastUserPromptMatches === true &&
+      (state.generating || state.replyAfterLastUser || state.imageAfterLastUser);
+    const cursor = {
+      replyCount: (state.replyCount ?? 0) - (alreadySent && state.replyAfterLastUser ? 1 : 0),
+      imageCount: state.images - (alreadySent && state.imageAfterLastUser ? 1 : 0),
+    };
+    let sentUrl = job.conversationUrl;
+    if (!alreadySent) {
+      if (!state.signedIn)
+        throw new ProviderContinuationUnavailableError('ChatGPT continuation tab is signed out');
+      // Once the send starts, any uncertainty must be treated as a normal error, not clean fallback.
+      const sent = await this.exclusive(async () => {
+        const set = this.pageResult(
+          await this.neo.run<{ value?: number; error?: string }>(
+            setEffortScript(job.pageId, effort as ChatgptEffort),
+          ),
+        );
+        if (set.value !== EFFORT_STOPS[effort as ChatgptEffort])
+          throw new ChatgptPageError(`Could not set ChatGPT effort to "${effort}"`);
+        if (webSearch && !(await this.neo.run<boolean>(enableWebSearchScript(job.pageId))))
+          throw new ChatgptPageError('Could not turn on ChatGPT web search');
+        return this.pageResult(
+          await this.neo.run<{ url?: string; error?: string }>(
+            sendPromptScript(job.pageId, revisionPrompt, webSearch),
+          ),
+        );
+      });
+      sentUrl = sent.url ?? sentUrl;
+    }
+    return {
+      providerId: this.id,
+      externalId: idempotencyKey,
+      payload: {
+        ...job,
+        conversationUrl: sentUrl,
+        submittedAt: Date.now(),
+        pastedPrompt: revisionPrompt,
+        turnCursor: cursor,
+        webSearch,
+      } satisfies ChatgptJobPayload,
+    };
+  }
+
+  private async releaseJob(handle: JobHandle): Promise<void> {
+    const job = this.job(handle);
+    if (!job?.retained) return;
+    await this.neo.run(stopGeneratingScript(job.pageId)).catch(() => undefined);
+    await this.closeJob(job.pageId, job.modality);
+  }
+
   async poll(handle: JobHandle): Promise<JobStatus> {
     const job = this.job(handle);
     if (!job) {
@@ -254,21 +368,34 @@ export class ChatgptProviderAdapter implements ProviderAdapter {
       state = await this.neo.run<PageState>(pageStateScript(job.pageId));
     } catch (error) {
       this.logger.warn({ err: error, pageId: job.pageId }, 'chatgpt tab unreadable');
+      const message = (error as Error).message;
+      // A timed-out read says nothing about the model turn; the next durable poll can read it again.
+      if (/run exceeded 30000ms/.test(message)) return running(job);
       return {
         done: true,
         outcome: 'failed',
-        reason: `The ChatGPT tab could not be read (it may have been closed): ${(error as Error).message}`,
+        reason: `The ChatGPT tab could not be read (it may have been closed): ${message}`,
         retryable: true,
         failureClass: 'infrastructure',
       };
     }
-    const status = decidePoll(state, job, this.imagelessSince.get(handle.externalId), Date.now());
+    const current = job.turnCursor
+      ? {
+          ...state,
+          replyDone: (state.replyCount ?? 0) > job.turnCursor.replyCount,
+          images: Math.max(0, state.images - job.turnCursor.imageCount),
+        }
+      : state;
+    const status = decidePoll(current, job, this.imagelessSince.get(handle.externalId), Date.now());
     if (status === 'imageless') {
       this.imagelessSince.set(handle.externalId, Date.now());
       return running(job);
     }
     if (!status.done) {
-      if (!isIdle(state)) {
+      // Web search may be active without a Stop button or a finished reply.
+      // Its provider deadline bounds the wait; the idle heuristic cannot.
+      if (job.webSearch) return status;
+      if (!isIdle(current)) {
         this.idleSince.delete(handle.externalId);
         return status;
       }
@@ -292,10 +419,10 @@ export class ChatgptProviderAdapter implements ProviderAdapter {
     if (status.failureClass === 'user_action') this.forgetReadiness();
     // Surface what ChatGPT said (e.g. an image refusal) instead of a generic reason.
     const reply =
-      state.replyDone && status.failureClass !== 'user_action'
-        ? await this.copyReply(job.pageId).catch(() => undefined)
+      current.replyDone && status.failureClass !== 'user_action'
+        ? await this.copyReply(job.pageId, job.turnCursor?.replyCount).catch(() => undefined)
         : undefined;
-    await this.closeJob(job.pageId, job.modality);
+    if (!job.retained) await this.closeJob(job.pageId, job.modality);
     return reply ? { ...status, reason: `${status.reason}: ${reply.slice(0, 500)}` } : status;
   }
 
@@ -318,7 +445,7 @@ export class ChatgptProviderAdapter implements ProviderAdapter {
     const job = this.job(handle);
     if (!job) throw new Error(CHATGPT_SIGN_IN_MESSAGE);
     const result = await this.readResult(job);
-    await this.closeJob(job.pageId, job.modality);
+    if (!job.retained) await this.closeJob(job.pageId, job.modality);
     return result;
   }
 
@@ -326,7 +453,7 @@ export class ChatgptProviderAdapter implements ProviderAdapter {
     const rawResponse = { conversationUrl: job.conversationUrl, pastedPrompt: job.pastedPrompt };
     const repro = { level: 'none' as const, providerVersion: 'chatgpt-web' };
     if (job.modality === 'image') {
-      const downloaded = await this.downloadImages(job.pageId);
+      const downloaded = await this.downloadImages(job.pageId, job.turnCursor?.imageCount ?? 0);
       if (job.imageCount) {
         // An image list: every image in the reply, up to the number asked for.
         if (downloaded.length === 0) throw new Error('ChatGPT reply contained no generated image');
@@ -365,7 +492,7 @@ export class ChatgptProviderAdapter implements ProviderAdapter {
         rawResponse,
       };
     }
-    const reply = await this.copyReply(job.pageId);
+    const reply = await this.copyReply(job.pageId, job.turnCursor?.replyCount);
     if (reply === undefined) throw new Error('Could not copy the ChatGPT reply');
     const output =
       job.outputKind === 'data' || job.outputKind === 'timeline' ? parseJsonReply(reply) : reply;
@@ -384,14 +511,15 @@ export class ChatgptProviderAdapter implements ProviderAdapter {
     return { confirmed: true, billed: false };
   }
 
-  private async copyReply(pageId: number): Promise<string | undefined> {
-    const copied = await this.neo.run<string | null>(copyLastReplyScript(pageId));
+  private async copyReply(pageId: number, index?: number): Promise<string | undefined> {
+    const copied = await this.neo.run<string | null>(copyLastReplyScript(pageId, index));
     return copied === null ? undefined : stripCitations(copied);
   }
 
   /** Files go to the page in `UPLOAD_CHUNK` slices (Neo caps a request at
    * 4 MB), then are attached together from there. */
   private async uploadReferences(pageId: number, references: ReferenceFile[]): Promise<void> {
+    await this.neo.run(openAttachmentMenuScript(pageId));
     for (const [index, file] of references.entries()) {
       for (let from = 0; from === 0 || from < file.base64.length; from += UPLOAD_CHUNK) {
         const chunk = file.base64.slice(from, from + UPLOAD_CHUNK);
@@ -412,9 +540,12 @@ export class ChatgptProviderAdapter implements ProviderAdapter {
     );
   }
 
-  private async downloadImages(pageId: number): Promise<Array<{ mime: string; base64: string }>> {
+  private async downloadImages(
+    pageId: number,
+    from = 0,
+  ): Promise<Array<{ mime: string; base64: string }>> {
     const images: Array<{ mime: string; base64: string }> = [];
-    for (let index = 0; ; index++) {
+    for (let index = from; ; index++) {
       const parked = await this.neo.run<{ mime: string; length: number } | null>(
         parkImageScript(pageId, index),
       );

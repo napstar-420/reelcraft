@@ -85,6 +85,10 @@ response as `pastedPrompt`.
 
 ## Manual acceptance
 
+For a live text and single-image continuation check against the signed-in Neo session, run
+`pnpm --filter @reelcraft/api build` then
+`REELCRAFT_CHATGPT_ACCEPTANCE=1 node apps/api/test/acceptance/chatgpt-continuation.mjs`.
+
 With `pnpm dev` running and Neo signed in:
 
 1. Text stage, Instant, no search: the output matches ChatGPT's copied reply, and no new chat
@@ -95,3 +99,13 @@ With `pnpm dev` running and Neo signed in:
 4. Image stage with one reference: a media artifact appears, and the chat is under Archived chats (the sidebar may still list it for a while).
 5. Cancel mid-generation: the tab closes and the attempt is cancelled.
 6. Sign out of ChatGPT in Neo: the pin editor and Run show the sign-in message.
+7. Text stage with a check or QC that rejects its first response: attempt 2 uses the same producer
+   tab, sees only the latest rejection feedback, and returns a full revised response. The second
+   attempt must wait for its own new reply; an earlier Copy button must not complete it. Once the
+   stage passes, the producer tab closes. Each QC judgment uses a different temporary chat.
+8. Single-image stage with a rejection: the revision asks ChatGPT to edit the prior image in the
+   same conversation. Attempt 2 stores only the new image. After the final result, the conversation
+   is archived and its tab closes. A stage requesting two images still uses separate normal calls.
+9. Close a retained producer tab after a rejected attempt, then allow the retry: ReelCraft starts
+   a fresh chat with the full prompt and cumulative feedback, and the attempt log records that
+   fallback. A manual stage retry also starts a new conversation.

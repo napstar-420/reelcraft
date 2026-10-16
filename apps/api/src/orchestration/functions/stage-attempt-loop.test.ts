@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { JobStatus } from '@reelcraft/shared';
+import { ProviderRequestError } from '../../provider/provider-adapter.interface';
 import { runStageAttemptLoop, withinProviderDeadline } from './stage-attempt-loop';
 
 describe('withinProviderDeadline', () => {
@@ -29,6 +30,80 @@ describe('withinProviderDeadline', () => {
       deadlineMs: Date.now() - 1,
     };
     expect(withinProviderDeadline(status)).toBe(false);
+  });
+});
+
+describe('durable QC polling', () => {
+  it('submits, polls, sleeps and fetches through separate Inngest steps', async () => {
+    const ids: string[] = [];
+    const step = {
+      run: async (id: string, fn: () => unknown) => {
+        ids.push(id);
+        return fn();
+      },
+      sleep: vi.fn(async (id: string) => {
+        ids.push(id);
+      }),
+    };
+    const runner = {
+      findHeldQcAttempt: vi.fn().mockResolvedValue(undefined),
+      beginAttempt: vi.fn().mockResolvedValue({ attemptNo: 1, stageAttemptId: 'attempt' }),
+      countRoundAttempts: vi.fn().mockResolvedValue(0),
+      reserveAndSubmit: vi.fn().mockResolvedValue({
+        outcome: 'submitted',
+        handle: { providerId: 'fake', externalId: 'producer' },
+      }),
+      pollOnce: vi.fn().mockResolvedValue({ done: true, outcome: 'succeeded' }),
+      fetchAndFinalize: vi.fn().mockResolvedValue({
+        outcome: 'qc_pending',
+        artifactId: 'a1',
+        envelope: { criteria: 'Good?', artifact: { kind: 'text', data: 'text' } },
+      }),
+      qcErrorAttempts: () => 1,
+      submitQc: vi.fn().mockResolvedValue({ handle: { providerId: 'fake', externalId: 'judge' } }),
+      pollQc: vi
+        .fn()
+        .mockResolvedValueOnce({ done: false, phase: 'running' })
+        .mockResolvedValue({ done: true, outcome: 'succeeded' }),
+      fetchQc: vi.fn().mockResolvedValue({
+        status: 'passed',
+        verdict: { score: 90, critique: 'Good' },
+        costUsd: 0,
+      }),
+      recordQcResult: vi.fn(),
+      retryHeldQc: vi.fn().mockResolvedValue({ outcome: 'success', artifactId: 'a1' }),
+      releaseContinuation: vi.fn(),
+    };
+    await expect(
+      runStageAttemptLoop({
+        step: step as never,
+        logger: { warn: vi.fn() } as never,
+        runner: runner as never,
+        stage: { qc: {} } as never,
+        effective: { polling: { maxWaitSec: 60 }, qc: {} } as never,
+        prevStageKey: undefined,
+        runId: 'run',
+        stageExecutionId: 'exec',
+        stageKey: 'draft',
+        retryLimit: 1,
+      }),
+    ).resolves.toEqual({ outcome: 'passed', artifactId: 'a1' });
+    expect(ids.indexOf('qc-submit-draft-1-1')).toBeLessThan(ids.indexOf('qc-poll-draft-1-1-0'));
+    expect(ids.indexOf('qc-poll-draft-1-1-0')).toBeLessThan(
+      ids.indexOf('qc-poll-wait-draft-1-1-1'),
+    );
+    expect(ids.indexOf('qc-poll-wait-draft-1-1-1')).toBeLessThan(
+      ids.indexOf('qc-poll-draft-1-1-1'),
+    );
+    expect(ids.indexOf('qc-poll-draft-1-1-1')).toBeLessThan(ids.indexOf('qc-fetch-draft-1-1'));
+    expect(runner.reserveAndSubmit).toHaveBeenCalledTimes(1);
+    expect(runner.retryHeldQc).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      undefined,
+      expect.anything(),
+      { qcOutcome: expect.objectContaining({ status: 'passed' }) },
+    );
   });
 });
 
@@ -92,6 +167,7 @@ describe('runStageAttemptLoop abandoned jobs', () => {
       pollOnce: vi.fn().mockResolvedValue({ done: true, outcome: 'succeeded' }),
       fetchAndFinalize: vi.fn().mockResolvedValue({ outcome: 'success', artifactId: 'a1' }),
       cancelJob: vi.fn().mockResolvedValue(undefined),
+      settlePreSubmitFailure: vi.fn(),
       recordAttemptError: vi.fn(),
       recordFailure: vi.fn(),
       ...over,
@@ -150,6 +226,22 @@ describe('runStageAttemptLoop abandoned jobs', () => {
 
     await expect(result).resolves.toEqual({ outcome: 'failed', reason: 'no tab' });
     expect(r.cancelJob).not.toHaveBeenCalled();
+  });
+
+  it('surfaces invalid provider requests immediately instead of retrying them', async () => {
+    const reason = 'ChatGPT accepts at most 5 attached files';
+    const r = runner({
+      reserveAndSubmit: vi.fn().mockRejectedValue(new ProviderRequestError(reason)),
+      settlePreSubmitFailure: vi.fn(),
+      recordFailure: vi.fn(),
+    });
+    const { result } = loop(r, 3);
+
+    await expect(result).resolves.toEqual({ outcome: 'failed', reason });
+    expect(r.reserveAndSubmit).toHaveBeenCalledTimes(1);
+    expect(r.settlePreSubmitFailure).toHaveBeenCalledTimes(1);
+    expect(r.recordFailure).toHaveBeenCalledWith(expect.anything(), reason);
+    expect(r.recordAttemptError).not.toHaveBeenCalled();
   });
 
   it('does not cancel a job its provider already reported as failed', async () => {
@@ -611,6 +703,7 @@ describe('runStageAttemptLoop Retry QC', () => {
       held,
       undefined,
       expect.anything(),
+      { deferQc: true },
     );
     expect(runner.beginAttempt).not.toHaveBeenCalled();
     expect(runner.reserveAndSubmit).not.toHaveBeenCalled();

@@ -2,7 +2,9 @@ import { and, eq, inArray } from 'drizzle-orm';
 import {
   LIBRARY_KINDS,
   ancestorsOf,
+  memoryWritersBefore,
   stageDependencies,
+  stageRefLeaves,
   type ConfigLayer,
   type RoleDef,
   type SeedStop,
@@ -49,11 +51,10 @@ export interface ReusableStageKeysParams {
   sourceRoles: RoleDef[];
   newRoles: RoleDef[];
   sourceExecutions: SourceExecutionSummary[];
-  /** Force these keys (and everything from the earliest one on) to re-run. */
+  /** Force these keys and stages that depend on them to re-run. */
   rerunStageKeys: string[];
-  /** When the new run stops at a stage, only that stage and what it waits for
-   * matter: any other stage is skipped here, neither reused nor a reason to
-   * stop reusing. */
+  /** Limits this pass to selected stages; callers can assess the requested
+   * path separately from already-finished sibling branches. */
   relevant?: Set<string>;
 }
 
@@ -97,22 +98,8 @@ export function describeSeedStop(stop: SeedStop, lead = 'Re-running'): string {
   return `${lead} "${stop.stageKey}": ${SEED_STOP_CLAUSES[stop.reason]}`;
 }
 
-/**
- * The longest PREFIX of `newGraph` that can be copied verbatim from the
- * source run, per the plan's "longest unchanged prefix" rule: stages run
- * strictly in array order and `prev` only ever looks at the immediately
- * preceding stage (`stage-runner.service.ts`'s `prevStageKey`), so once one
- * stage in the prefix differs, every stage from there on must re-run —
- * there's no need for a dependency graph to get this right. `stop` names the
- * first stage that is not reused and why (absent when everything is).
- *
- * ponytail: prefix-only reuse. Inserting a stage in the MIDDLE of an
- * otherwise-unchanged graph re-runs everything after it, even stages that
- * don't actually depend on the insertion. Upgrade path: a per-stage
- * fingerprint built from its transitive `prev`/`memory`/`input` refs instead
- * of "index i matches" — not needed for the common case (append a stage, or
- * edit one stage) this feature targets.
- */
+/** Reuse each unchanged, passed stage whose own dependencies were also reused.
+ * `stop` records the first stage that needs work in the requested scope. */
 export function reusableStageKeys(p: ReusableStageKeysParams): {
   keys: string[];
   stop?: SeedStop;
@@ -123,25 +110,61 @@ export function reusableStageKeys(p: ReusableStageKeysParams): {
   }
 
   const sourceByKey = new Map(p.sourceExecutions.map((e) => [e.stageKey, e]));
+  const sourceIndexByKey = new Map(p.sourceGraph.map((stage, index) => [stage.key, index]));
   const rerunSet = new Set(p.rerunStageKeys);
+  const deps = stageDependencies(p.newGraph);
   const keys: string[] = [];
+  const reusable = new Set<string>();
+  let stop: SeedStop | undefined;
 
   for (let i = 0; i < p.newGraph.length; i++) {
     const newStage = p.newGraph[i]!;
     if (p.relevant && !p.relevant.has(newStage.key)) continue;
-    const sourceStage = p.sourceGraph[i];
+    const sourceIndex = sourceIndexByKey.get(newStage.key);
+    const sourceStage = sourceIndex === undefined ? undefined : p.sourceGraph[sourceIndex];
     const sourceExecution = sourceByKey.get(newStage.key);
-    const stopAt = (reason: SeedStopReason) => ({
-      keys,
-      stop: { stageKey: newStage.key, reason },
-    });
+    const stopAt = (reason: SeedStopReason) => {
+      stop ??= { stageKey: newStage.key, reason };
+    };
 
-    if (!sourceStage || sourceStage.key !== newStage.key || !sourceExecution) {
-      return stopAt('not_in_source');
+    if (sourceIndex === undefined || !sourceStage || !sourceExecution) {
+      stopAt('not_in_source');
+      continue;
     }
-    if (rerunSet.has(newStage.key)) return stopAt('rerun_requested');
+    if (
+      sourceIndex !== i &&
+      (sourceStage.dependsOn === undefined || newStage.dependsOn === undefined)
+    ) {
+      stopAt('not_in_source');
+      continue;
+    }
+    const sameReadSources = stageRefLeaves(newStage).every((ref) => {
+      if (ref.from === 'prev') {
+        return p.sourceGraph[sourceIndex - 1]?.key === p.newGraph[i - 1]?.key;
+      }
+      if (ref.from === 'memory') {
+        return (
+          canonicalJson(memoryWritersBefore(p.sourceGraph, ref.key, sourceIndex)) ===
+          canonicalJson(memoryWritersBefore(p.newGraph, ref.key, i))
+        );
+      }
+      return true;
+    });
+    if (!sameReadSources) {
+      stopAt('definition_changed');
+      continue;
+    }
+    if (rerunSet.has(newStage.key)) {
+      stopAt('rerun_requested');
+      continue;
+    }
+    if (!(deps.get(newStage.key) ?? []).every((key) => reusable.has(key))) {
+      stopAt('not_run');
+      continue;
+    }
     if (canonicalJson(comparableStage(sourceStage)) !== canonicalJson(comparableStage(newStage))) {
-      return stopAt('definition_changed');
+      stopAt('definition_changed');
+      continue;
     }
 
     const sourceLayer = mergeLayer(
@@ -149,7 +172,8 @@ export function reusableStageKeys(p: ReusableStageKeysParams): {
       p.sourceOverrides[newStage.key] ?? {},
     );
     if (canonicalJson(sourceLayer) !== canonicalJson(p.newResolvedConfig[newStage.key] ?? {})) {
-      return stopAt('config_changed');
+      stopAt('config_changed');
+      continue;
     }
 
     const assetIds = collectAssetIds([newStage]);
@@ -162,16 +186,21 @@ export function reusableStageKeys(p: ReusableStageKeysParams): {
         canonicalJson(libraryView(p.sourceAssetBindings, ref.kinds)) ===
         canonicalJson(libraryView(p.newAssetBindings, ref.kinds)),
     );
-    if (!bindingsMatch || !libraryMatch) return stopAt('assets_changed');
+    if (!bindingsMatch || !libraryMatch) {
+      stopAt('assets_changed');
+      continue;
+    }
 
     if (sourceExecution.state !== 'passed' || sourceExecution.needsItemWork) {
-      return stopAt(sourceStopReason(sourceExecution));
+      stopAt(sourceStopReason(sourceExecution));
+      continue;
     }
 
     keys.push(newStage.key);
+    reusable.add(newStage.key);
   }
 
-  return { keys };
+  return { keys, ...(stop && { stop }) };
 }
 
 /** Deep-remaps every `artifactId`/`artifactIds` inside a `resolvedInputs`

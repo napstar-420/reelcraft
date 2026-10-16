@@ -20,6 +20,44 @@ const envelope = buildQcEnvelope({
 });
 
 describe('QcRunner', () => {
+  it.each(['chatgpt', 'codex'])(
+    '%s uses a fresh structured judge call without fake temperature',
+    async (provider) => {
+      const submit = vi.fn().mockResolvedValue({ providerId: provider, externalId: 'judge' });
+      const adapter = {
+        submit,
+        poll: vi.fn().mockResolvedValue({ done: true, outcome: 'succeeded' }),
+        fetch: vi.fn().mockResolvedValue({
+          output: { score: 80, critique: 'Good' },
+          costUsd: 0,
+          repro: { level: 'none' },
+        }),
+        continuation: { start: vi.fn(), continue: vi.fn() },
+      };
+      const runner = new QcRunner({ get: () => adapter } as never);
+      const result = await runner.run({
+        envelope,
+        judge: { provider, modelId: 'judge', params: { reasoningEffort: 'high' } },
+        threshold: 70,
+        idempotencyKey: 'qc',
+      });
+      expect(result.status).toBe('passed');
+      expect(submit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          output: {
+            kind: 'data',
+            schemaName: 'qc_verdict',
+            schema: expect.objectContaining({ required: ['critique', 'score'] }),
+          },
+        }),
+        'qc',
+      );
+      expect(submit.mock.calls[0]?.[0].params).not.toHaveProperty('temperature');
+      expect(adapter.continuation.start).not.toHaveBeenCalled();
+      expect(adapter.continuation.continue).not.toHaveBeenCalled();
+    },
+  );
+
   it('passes when the judge score meets the threshold', async () => {
     const { runner } = makeRunner();
     const outcome = await runner.run({

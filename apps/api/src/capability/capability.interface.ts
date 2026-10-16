@@ -35,6 +35,7 @@ export interface ExecCtx<Cfg> {
   systemPrompt?: string | undefined;
   output?: OutputDef | undefined;
   idempotencyKey: string;
+  continuation?: { retain: true; previousHandle?: JobHandle; revisionPrompt?: string };
   /** The merged run config layer, for capabilities that read shared
    * defaults (e.g. the Flow stage's account list). */
   layer?: Pick<ConfigLayer, 'format'> | undefined;
@@ -125,6 +126,8 @@ export interface CapabilityImpl<Cfg = Record<string, unknown>> {
 
   estimateCost(ctx: ExecCtx<Cfg>): Promise<CostEstimate>;
   submit(ctx: ExecCtx<Cfg>): Promise<JobHandle>;
+  supportsContinuation?(ctx: ExecCtx<Cfg>): boolean;
+  releaseContinuation?(handle: JobHandle): Promise<void>;
   poll(handle: JobHandle): Promise<JobStatus>;
   fetch(handle: JobHandle, ctx: ExecCtx<Cfg>): Promise<ExecResult>;
   cancel?(handle: JobHandle): Promise<CancelResult>;

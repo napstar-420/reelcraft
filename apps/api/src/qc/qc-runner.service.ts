@@ -1,9 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
-import type { ModelPin } from '@reelcraft/shared';
+import type { JobHandle, JobStatus, ModelPin } from '@reelcraft/shared';
 import { ProviderRegistry } from '../provider/provider.registry';
 import type { QcEnvelope } from './qc-envelope';
 import { buildQcPrompt } from './qc-prompt';
-import { JudgeResponse, weightedScore } from './qc-verdict';
+import { JudgeResponse, qcVerdictSchema, weightedScore } from './qc-verdict';
 
 export interface QcVerdict {
   score: number;
@@ -37,14 +37,23 @@ function isTransientError(err: unknown): boolean {
   return /unavailable|timed out|network|ECONN/i.test(describeError(err));
 }
 
-/** Backoff between judge polls (the last step repeats). A real judge goes
- * through the same submit/poll adapter as the stage's own call and takes real
- * time: a ChatGPT judge thinks for minutes. The adapters fail a job that
- * outlives their own deadline, so this cap only guards a poll that never ends.
- * ponytail: still an inline blocking poll rather than `stage-attempt-loop.ts`'s
- * durable per-poll steps; revisit if judges routinely run this long. */
-const POLL_BACKOFF_SEC = [5, 15, 30];
-const JUDGE_DEADLINE_MS = 20 * 60_000;
+export const QC_POLL_BACKOFF_SEC = [5, 15, 30];
+export const QC_JUDGE_DEADLINE_MS = 20 * 60_000;
+
+export function qcDeadlineAt(): number {
+  return Date.now() + QC_JUDGE_DEADLINE_MS;
+}
+
+export function qcPollLive(status: JobStatus, deadlineMs: number): boolean {
+  return !status.done && Date.now() < Math.max(deadlineMs, status.deadlineMs ?? 0);
+}
+
+export interface QcCall {
+  envelope: QcEnvelope;
+  judge: ModelPin;
+  threshold: number;
+  idempotencyKey: string;
+}
 
 /**
  * §10 — runs a QC judge call against `ProviderRegistry` directly (not
@@ -58,21 +67,25 @@ export class QcRunner {
 
   constructor(private readonly providers: ProviderRegistry) {}
 
-  async run(args: {
-    envelope: QcEnvelope;
-    /** Resolved by the CALLER from `EffectiveStageConfig`, never read off
-     * `QcDef` directly — `run.overrides` can change `qc.model` at run time. */
-    judge: ModelPin;
-    /** Resolved by the CALLER — same reasoning as `judge` (`qc.threshold`). */
-    threshold: number;
-    /** MUST be distinct from the stage's own idempotency key — reusing it
-     * makes `FakeProviderAdapter` (and any real idempotent adapter) hand
-     * back the STAGE's job, so QC would "judge" the stage's own completion
-     * and fail with a message pointing nowhere near the real cause. */
-    idempotencyKey: string;
-  }): Promise<QcOutcome> {
+  async run(args: QcCall): Promise<QcOutcome> {
     const startedAt = Date.now();
-    const outcome = await this.judge(args);
+    const submitted = await this.submit(args);
+    let outcome: QcOutcome;
+    if ('status' in submitted) outcome = submitted;
+    else {
+      const status = await this.poll(submitted.handle);
+      if (!status.done) {
+        await this.cancel(submitted.handle);
+        outcome = { status: 'error', reason: 'qc judge requires durable polling', costUsd: 0 };
+      } else if (status.outcome === 'failed') {
+        outcome = {
+          status: 'error',
+          reason: status.reason,
+          costUsd: 0,
+          ...(status.failureClass === 'infrastructure' && { transient: true }),
+        };
+      } else outcome = await this.fetch(args, submitted.handle);
+    }
     const fields = {
       provider: args.judge.provider,
       modelId: args.judge.modelId,
@@ -90,25 +103,35 @@ export class QcRunner {
     return outcome;
   }
 
-  private async judge(args: Parameters<QcRunner['run']>[0]): Promise<QcOutcome> {
+  async submit(
+    args: QcCall,
+  ): Promise<{ handle: JobHandle } | Extract<QcOutcome, { status: 'error' }>> {
     const adapter = this.providers.get(args.judge.provider);
     const prompt = buildQcPrompt(args.envelope);
-    // §10 — pinned model, temperature forced to 0: a judge's determinism
-    // matters more than any author-set creativity knob on the pin.
-    const params = { ...args.judge.params, temperature: 0 };
+    const browserOrCodex = args.judge.provider === 'chatgpt' || args.judge.provider === 'codex';
+    const params = browserOrCodex
+      ? { ...args.judge.params }
+      : { ...args.judge.params, temperature: 0 };
 
-    let handle;
     try {
-      handle = await adapter.submit(
+      const handle = await adapter.submit(
         {
           modality: 'text',
           modelId: args.judge.modelId,
           params: qcParams(params, args.envelope, args.judge.provider),
           renderedPrompt: prompt.user,
           system: prompt.system,
+          ...(browserOrCodex && {
+            output: {
+              kind: 'data' as const,
+              schemaName: 'qc_verdict',
+              schema: qcVerdictSchema(args.envelope),
+            },
+          }),
         },
         args.idempotencyKey,
       );
+      return { handle };
     } catch (err) {
       // A judge that cannot be reached is an errored judge call, not a crash of
       // the stage's own attempt: the caller retries it and then parks the output.
@@ -119,28 +142,31 @@ export class QcRunner {
         ...(isTransientError(err) && { transient: true }),
       };
     }
+  }
 
-    let status = await adapter.poll(handle);
-    const giveUpAt = Date.now() + JUDGE_DEADLINE_MS;
-    for (let i = 0; !status.done && Date.now() < giveUpAt; i++) {
-      await sleep(POLL_BACKOFF_SEC[Math.min(i, POLL_BACKOFF_SEC.length - 1)]! * 1000);
-      status = await adapter.poll(handle);
-    }
-
-    if (!status.done) {
-      // Don't leave the judge's page open (ChatGPT) or its job running.
-      await adapter.cancel(handle).catch(() => undefined);
-      return { status: 'error', reason: 'qc judge call did not complete in time', costUsd: 0 };
-    }
-    if (status.outcome === 'failed') {
+  async poll(handle: JobHandle): Promise<JobStatus> {
+    try {
+      return await this.providers.get(handle.providerId).poll(handle);
+    } catch (error) {
       return {
-        status: 'error',
-        reason: status.reason,
-        costUsd: 0,
-        ...(status.failureClass === 'infrastructure' && { transient: true }),
+        done: true,
+        outcome: 'failed',
+        reason: describeError(error),
+        retryable: true,
+        failureClass: 'infrastructure',
       };
     }
+  }
 
+  async cancel(handle: JobHandle): Promise<void> {
+    await this.providers
+      .get(handle.providerId)
+      .cancel(handle)
+      .catch(() => undefined);
+  }
+
+  async fetch(args: QcCall, handle: JobHandle): Promise<QcOutcome> {
+    const adapter = this.providers.get(handle.providerId);
     let result;
     try {
       result = await adapter.fetch(handle);
@@ -262,8 +288,4 @@ function scoreOf(response: JudgeResponse, envelope: QcEnvelope): QcVerdict {
 
 function describeError(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }

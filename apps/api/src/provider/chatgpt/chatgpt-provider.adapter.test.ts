@@ -77,6 +77,7 @@ const job = (over: Record<string, unknown> = {}): JobHandle => ({
 });
 const state = (over: Partial<PageState> = {}): PageState => ({
   signedIn: true,
+  composer: true,
   generating: false,
   replyDone: false,
   images: 0,
@@ -84,6 +85,140 @@ const state = (over: Partial<PageState> = {}): PageState => ({
   errorShown: false,
   tail: '',
   ...over,
+});
+
+describe('ChatGPT producer continuation', () => {
+  it('keeps a single-image chat and downloads only the revised image', async () => {
+    const imageReq = {
+      ...textReq,
+      modality: 'image' as const,
+      params: { reasoningEffort: 'instant' },
+    };
+    const { adapter, scripts, closed, archived } = fixture([
+      8,
+      signedIn,
+      state({ images: 0 }),
+      { value: 0 },
+      { url: 'https://chatgpt.com/c/img' },
+      state({ images: 1 }),
+      { mime: 'image/png', length: 4 },
+      'AAAA',
+      null,
+      state({ images: 1 }),
+      { value: 0 },
+      { url: 'https://chatgpt.com/c/img' },
+      state({ images: 1 }),
+      state({ images: 2 }),
+      { mime: 'image/png', length: 4 },
+      'BBBB',
+      null,
+      true,
+    ]);
+    const first = await adapter.continuation.start(imageReq, 'image-1');
+    expect(await adapter.poll(first)).toMatchObject({ done: true, outcome: 'succeeded' });
+    expect((await adapter.fetch(first)).output).toMatchObject({ base64: 'AAAA' });
+    expect(closed()).toBe(0);
+    expect(archived()).toBe(0);
+    const second = await adapter.continuation.continue(
+      imageReq,
+      first,
+      'change the sky only',
+      'image-2',
+    );
+    expect(second.payload).toMatchObject({ pageId: 8, turnCursor: { imageCount: 1 } });
+    expect(await adapter.poll(second)).toMatchObject({ done: false });
+    expect(await adapter.poll(second)).toMatchObject({ done: true, outcome: 'succeeded' });
+    expect((await adapter.fetch(second)).output).toMatchObject({ base64: 'BBBB' });
+    expect(scripts).toContain(parkImageScript(8, 1));
+    await adapter.continuation.release(second);
+    expect(archived()).toBe(1);
+    expect(closed()).toBe(1);
+  });
+
+  it('keeps a text tab, ignores its old reply, and reads only the revised turn', async () => {
+    const { adapter, scripts, closed } = fixture([
+      7,
+      signedIn,
+      state({ replyCount: 0 }),
+      { value: 2 },
+      true,
+      { url: 'https://chatgpt.com/c/abc' },
+      state({ replyDone: true, replyCount: 1 }),
+      'first answer',
+      state({ replyDone: true, replyCount: 1 }),
+      { value: 2 },
+      true,
+      { url: 'https://chatgpt.com/c/abc' },
+      state({ replyDone: true, replyCount: 1 }),
+      state({ replyDone: true, replyCount: 2 }),
+      'revised answer',
+      true,
+    ]);
+    const first = await adapter.continuation.start(textReq, 'first');
+    expect(await adapter.poll(first)).toMatchObject({ done: true, outcome: 'succeeded' });
+    expect((await adapter.fetch(first)).output).toBe('first answer');
+    expect(closed()).toBe(0);
+    const second = await adapter.continuation.continue(textReq, first, 'fix the hook', 'second');
+    expect(second.payload).toMatchObject({
+      pageId: 7,
+      retained: true,
+      turnCursor: { replyCount: 1 },
+    });
+    expect(scripts.filter((script) => script.includes('\\"stop\\":2'))).toHaveLength(2);
+    expect(await adapter.poll(second)).toMatchObject({ done: false });
+    expect(await adapter.poll(second)).toMatchObject({ done: true, outcome: 'succeeded' });
+    expect((await adapter.fetch(second)).output).toBe('revised answer');
+    expect(closed()).toBe(0);
+    await adapter.continuation.release(second);
+    expect(closed()).toBe(1);
+    expect(scripts.at(-2)).toContain('S.stop');
+  });
+
+  it('does not resend an already submitted revision', async () => {
+    const { adapter, scripts } = fixture([
+      state({
+        replyDone: true,
+        replyCount: 2,
+        lastUserPromptMatches: true,
+        replyAfterLastUser: true,
+      }),
+    ]);
+    const previous = job({ retained: true, turnCursor: { replyCount: 0, imageCount: 0 } });
+    const next = await adapter.continuation.continue(textReq, previous, 'fix', 'second');
+    expect(next.payload).toMatchObject({ turnCursor: { replyCount: 1 } });
+    expect(scripts).toHaveLength(1);
+  });
+
+  it('falls back cleanly before sending when the old tab is gone', async () => {
+    const { adapter, scripts } = fixture([new Error('Unknown page')]);
+    await expect(
+      adapter.continuation.continue(
+        textReq,
+        job({ retained: true, turnCursor: { replyCount: 0, imageCount: 0 } }),
+        'fix',
+        'second',
+      ),
+    ).rejects.toThrow('continuation tab is unavailable');
+    expect(scripts).toHaveLength(1);
+  });
+
+  it('supports only text and single-image requests', () => {
+    const { adapter } = fixture([]);
+    expect(adapter.continuation.supports(textReq)).toBe(true);
+    expect(
+      adapter.continuation.supports({ ...textReq, modality: 'image', params: { count: 1 } }),
+    ).toBe(true);
+    expect(
+      adapter.continuation.supports({ ...textReq, modality: 'image', params: { count: 2 } }),
+    ).toBe(false);
+    expect(
+      adapter.continuation.supports({
+        ...textReq,
+        modality: 'image',
+        params: { __mediaKind: 'media.image_list' },
+      }),
+    ).toBe(false);
+  });
 });
 
 describe('ChatgptProviderAdapter.submit', () => {
@@ -105,7 +240,12 @@ describe('ChatgptProviderAdapter.submit', () => {
     expect(handle).toMatchObject({
       providerId: 'chatgpt',
       externalId: 'key-1',
-      payload: { pageId: 7, modality: 'text', conversationUrl: expect.stringContaining('/c/abc') },
+      payload: {
+        pageId: 7,
+        modality: 'text',
+        webSearch: true,
+        conversationUrl: expect.stringContaining('/c/abc'),
+      },
     });
   });
 
@@ -168,6 +308,7 @@ describe('ChatgptProviderAdapter.submit', () => {
     const { adapter, scripts, storage } = fixture([
       8,
       signedIn,
+      true,
       { length: 12 },
       { ok: true },
       { value: 0 },
@@ -187,10 +328,11 @@ describe('ChatgptProviderAdapter.submit', () => {
     );
     expect(scripts[0]).toContain('"https://chatgpt.com/"');
     expect(storage.getStream).toHaveBeenCalledWith('assets/ref.jpg');
-    expect(scripts[2]).toContain(Buffer.from('png-bytes').toString('base64'));
-    expect(scripts[3]).toContain('1-ref.jpg');
-    expect(scripts[3]).toContain('image/jpeg');
-    expect(scripts[3]).not.toContain(Buffer.from('png-bytes').toString('base64'));
+    expect(scripts[2]).toContain('Add files and more');
+    expect(scripts[3]).toContain(Buffer.from('png-bytes').toString('base64'));
+    expect(scripts[4]).toContain('1-ref.jpg');
+    expect(scripts[4]).toContain('image/jpeg');
+    expect(scripts[4]).not.toContain(Buffer.from('png-bytes').toString('base64'));
   });
 
   it('uploads large references in chunks that each fit a Neo request', async () => {
@@ -198,6 +340,7 @@ describe('ChatgptProviderAdapter.submit', () => {
     const { adapter, scripts, storage } = fixture([
       8,
       signedIn,
+      true,
       { length: 0 },
       { length: 0 },
       { length: 0 },
@@ -216,13 +359,13 @@ describe('ChatgptProviderAdapter.submit', () => {
       'k',
     );
     const base64 = big.toString('base64');
-    const chunks = scripts.slice(2, 5).map((s) => {
+    const chunks = scripts.slice(3, 6).map((s) => {
       const match = /\\"chunk\\":\\"([A-Za-z0-9+/=]*)\\"/.exec(s);
       if (!match) throw new Error('chunk not found');
       return match[1];
     });
     expect(chunks.join('')).toBe(base64);
-    expect(scripts[5]).toContain(`"length\\":${base64.length}`);
+    expect(scripts[6]).toContain(`"length\\":${base64.length}`);
     expect(Math.max(...scripts.map((s) => s.length))).toBeLessThan(4 * 1024 * 1024);
   });
 });
@@ -593,6 +736,43 @@ describe('reply helpers', () => {
 });
 
 describe('ChatgptProviderAdapter.poll stall', () => {
+  it('polls the same tab again after a Neo read timeout', async () => {
+    const { adapter, closed } = fixture([
+      new Error('BrowserOS Neo script failed: run exceeded 30000ms'),
+      state({ replyDone: true }),
+    ]);
+    const handle = job();
+    await expect(adapter.poll(handle)).resolves.toMatchObject({
+      done: false,
+      deadlineMs: expect.any(Number),
+    });
+    expect(closed()).toBe(0);
+    await expect(adapter.poll(handle)).resolves.toMatchObject({
+      done: true,
+      outcome: 'succeeded',
+    });
+  });
+
+  it('keeps a web search tab open through idle-looking research until the reply arrives', async () => {
+    vi.useFakeTimers();
+    try {
+      const { adapter, closed } = fixture([state(), state(), state({ replyDone: true })]);
+      const submittedAt = Date.now();
+      const handle = job({ submittedAt, webSearch: true });
+      await expect(adapter.poll(handle)).resolves.toMatchObject({ done: false });
+      vi.advanceTimersByTime(5 * 60_000);
+      await expect(adapter.poll(handle)).resolves.toMatchObject({
+        done: false,
+        deadlineMs: submittedAt + 45 * 60_000,
+      });
+      expect(closed()).toBe(0);
+      await expect(adapter.poll(handle)).resolves.toEqual({ done: true, outcome: 'succeeded' });
+      expect(closed()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('cancels a tab that sat idle for minutes so the stage retries it as an infrastructure error', async () => {
     vi.useFakeTimers();
     try {
@@ -659,13 +839,8 @@ describe('decidePoll error banner classes', () => {
   const failure = (errorSignal: string) =>
     decidePoll(state({ errorShown: true, errorSignal, tail: 'x' }), text, undefined, 0);
 
-  it('treats a Retry button and delivery or network errors as infrastructure, which a retry can clear', () => {
-    for (const signal of [
-      'button: Retry',
-      'button: Try again',
-      'text: Message delivery timed out',
-      'text: network error',
-    ]) {
+  it('treats delivery and network errors as infrastructure, which a retry can clear', () => {
+    for (const signal of ['text: Message delivery timed out', 'text: network error']) {
       expect(failure(signal), signal).toMatchObject({ failureClass: 'infrastructure' });
     }
   });
@@ -774,18 +949,21 @@ describe('ChatgptProviderAdapter reference uploads and the turn lock', () => {
 describe('error banner detection', () => {
   it('names what tripped it in the failure reason', () => {
     const status = decidePoll(
-      state({ errorShown: true, errorSignal: 'button: Retry', tail: 'oops' }),
+      state({ errorShown: true, errorSignal: 'text: network error', tail: 'oops' }),
       { modality: 'image' as const, submittedAt: 1_000 },
       undefined,
       0,
     );
-    expect(status).toMatchObject({ reason: 'ChatGPT reported an error (button: Retry): oops' });
+    expect(status).toMatchObject({
+      reason: 'ChatGPT reported an error (text: network error): oops',
+    });
   });
 
-  it('only looks inside <main>, not at the sidebar\'s own Retry ("Unable to load history")', () => {
+  it('checks error text after the last user turn rather than a normal Retry action', () => {
     const script = pageStateScript(7);
-    expect(script).toContain("main.querySelectorAll('button')");
-    expect(script).not.toContain("document.querySelectorAll('button')");
+    expect(script).toContain('range.setStartAfter(lastUser)');
+    expect(script).toContain('const phrase = afterUserText.match(');
+    expect(script).not.toContain("main.querySelectorAll('button')");
   });
 
   it('waits for a saved chat id before archiving, since a fresh chat sits on a local placeholder', () => {

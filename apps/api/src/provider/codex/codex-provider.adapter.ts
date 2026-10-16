@@ -10,6 +10,7 @@ import type {
   ProviderRequest,
   ProviderResult,
 } from '../provider-adapter.interface';
+import { ProviderContinuationUnavailableError } from '../provider-adapter.interface';
 import type { EngineConfig } from '../../config/engine-config';
 import { buildCodexPrompt, requestedImageCount, strictJsonSchema } from './codex-command';
 import type { CodexAppServerClient, CodexModel } from './codex-app-server.client';
@@ -57,6 +58,13 @@ async function atomicJson(path: string, value: unknown): Promise<void> {
 export class CodexProviderAdapter implements ProviderAdapter {
   readonly id = 'codex';
   readonly modalities: Modality[] = ['text', 'image', 'browser'];
+  readonly continuation = {
+    supports: (req: ProviderRequest) => req.modality === undefined || req.modality === 'text',
+    start: (req: ProviderRequest, key: string) => this.submitJob(req, key, true),
+    continue: (req: ProviderRequest, previous: JobHandle, prompt: string, key: string) =>
+      this.continueJob(req, previous, prompt, key),
+    release: async (_handle: JobHandle) => undefined,
+  };
   private readonly logger = new Logger(CodexProviderAdapter.name);
   private readonly jobsRoot: string;
   private readonly profile: string;
@@ -116,6 +124,40 @@ export class CodexProviderAdapter implements ProviderAdapter {
   }
 
   async submit(req: ProviderRequest, idempotencyKey: string): Promise<JobHandle> {
+    return this.submitJob(req, idempotencyKey, false);
+  }
+
+  private async continueJob(
+    req: ProviderRequest,
+    previous: JobHandle,
+    revisionPrompt: string,
+    idempotencyKey: string,
+  ): Promise<JobHandle> {
+    let threadId: string;
+    try {
+      const data = JSON.parse(
+        await readFile(join(this.jobDir(previous), 'thread.json'), 'utf8'),
+      ) as { threadId?: unknown };
+      if (typeof data.threadId !== 'string' || !/^[a-f0-9-]{36}$/i.test(data.threadId))
+        throw new Error('invalid thread ID');
+      threadId = data.threadId;
+    } catch {
+      throw new ProviderContinuationUnavailableError('Codex thread is unavailable');
+    }
+    return this.submitJob(
+      { ...req, renderedPrompt: revisionPrompt },
+      idempotencyKey,
+      true,
+      threadId,
+    );
+  }
+
+  private async submitJob(
+    req: ProviderRequest,
+    idempotencyKey: string,
+    retained: boolean,
+    threadId?: string,
+  ): Promise<JobHandle> {
     const modality = req.modality ?? 'text';
     if (!this.modalities.includes(modality)) {
       throw new Error(`Codex does not support modality "${modality}"`);
@@ -148,6 +190,11 @@ export class CodexProviderAdapter implements ProviderAdapter {
       }
       throw error;
     }
+    if (threadId)
+      await atomicJson(join(jobDir, 'thread.json'), {
+        threadId,
+        createdAt: new Date().toISOString(),
+      });
 
     const resultPath = join(jobDir, modality === 'text' ? 'result.txt' : 'result.json');
     const outputDir = join(jobDir, 'outputs');
@@ -209,6 +256,8 @@ export class CodexProviderAdapter implements ProviderAdapter {
           ...(progressDir && { __progressDir: progressDir }),
         },
       }),
+      ...(retained && { retained: true }),
+      ...(threadId && { threadId }),
     });
     await atomicJson(join(jobDir, 'status.json'), {
       state: 'queued',
@@ -487,7 +536,7 @@ export class CodexProviderAdapter implements ProviderAdapter {
             },
           },
         },
-        required: ['version', 'output'],
+        required: ['version', 'output', 'attachments'],
       };
     }
     if (req.output?.kind === 'data') return req.output.schema;

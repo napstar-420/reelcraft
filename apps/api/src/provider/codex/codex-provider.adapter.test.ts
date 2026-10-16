@@ -36,6 +36,54 @@ async function fixture() {
 }
 
 describe('CodexProviderAdapter', () => {
+  it('starts a durable thread and resumes it in a separate job directory', async () => {
+    const { adapter, root, launcher } = await fixture();
+    const req = {
+      modality: 'text' as const,
+      modelId: 'gpt-example',
+      params: { reasoningEffort: 'low' },
+      renderedPrompt: 'A B C',
+      output: { kind: 'text' as const, instructions: '' },
+    };
+    const first = await adapter.continuation.start(req, 'turn-1');
+    const firstDir = join(root, 'codex-jobs', first.externalId);
+    const firstManifest = JSON.parse(await readFile(join(firstDir, 'manifest.json'), 'utf8'));
+    expect(firstManifest.outputKind).toBe('text');
+    const firstRunner = JSON.parse(await readFile(join(firstDir, 'runner-request.json'), 'utf8'));
+    expect(firstRunner.retained).toBe(true);
+    await writeFile(
+      join(firstDir, 'thread.json'),
+      JSON.stringify({ threadId: '12345678-1234-1234-1234-123456789abc' }),
+    );
+    const second = await adapter.continuation.continue(req, first, 'Change B only', 'turn-2');
+    expect(second.externalId).not.toBe(first.externalId);
+    const secondDir = join(root, 'codex-jobs', second.externalId);
+    const secondRunner = JSON.parse(await readFile(join(secondDir, 'runner-request.json'), 'utf8'));
+    expect(secondRunner.threadId).toBe('12345678-1234-1234-1234-123456789abc');
+    expect(secondRunner.prompt).toContain('Change B only');
+    expect(secondRunner.prompt).not.toContain('A B C');
+    expect(JSON.parse(await readFile(join(secondDir, 'thread.json'), 'utf8')).threadId).toBe(
+      secondRunner.threadId,
+    );
+    expect(launcher.launch).toHaveBeenCalledTimes(2);
+    await expect(adapter.poll(second)).resolves.toMatchObject({ done: true, outcome: 'succeeded' });
+  });
+
+  it('reports a missing thread before launching a resumed job', async () => {
+    const { adapter, launcher } = await fixture();
+    const req = {
+      modality: 'text' as const,
+      modelId: 'gpt-example',
+      params: { reasoningEffort: 'low' },
+    };
+    const first = await adapter.continuation.start(req, 'turn-1');
+    await expect(adapter.continuation.continue(req, first, 'fix', 'turn-2')).rejects.toThrow(
+      'thread is unavailable',
+    );
+    expect(launcher.launch).toHaveBeenCalledTimes(1);
+    expect(adapter.continuation.supports({ ...req, modality: 'image' })).toBe(false);
+    expect(adapter.continuation.supports({ ...req, modality: 'browser' })).toBe(false);
+  });
   it('advertises text models with structured output and reasoning metadata', async () => {
     const { adapter } = await fixture();
     await expect(adapter.listModels()).resolves.toEqual([
@@ -152,47 +200,60 @@ describe('CodexProviderAdapter', () => {
     await expect(adapter.fetch(handle)).rejects.toThrow('escapes');
   });
 
-  it('returns structured browser data and supporting evidence', async () => {
-    const { adapter, launcher } = await fixture();
-    launcher.launch.mockImplementationOnce(async ({ jobDir }: { jobDir: string }) => {
-      await writeFile(join(jobDir, 'outputs', 'final.png'), 'screenshot');
-      await writeFile(
-        join(jobDir, 'result.json'),
-        JSON.stringify({
-          version: 1,
-          output: { title: 'Done' },
-          attachments: [
-            {
-              path: 'outputs/final.png',
-              mime: 'image/png',
-              filename: 'final.png',
-              role: 'evidence',
+  it.each([true, false])(
+    'returns structured browser data with evidence=%s',
+    async (withEvidence) => {
+      const { adapter, launcher } = await fixture();
+      launcher.launch.mockImplementationOnce(async ({ jobDir }: { jobDir: string }) => {
+        const schema = JSON.parse(await readFile(join(jobDir, 'schema.json'), 'utf8'));
+        expect(schema.required).toEqual(Object.keys(schema.properties));
+        await writeFile(join(jobDir, 'outputs', 'final.png'), 'screenshot');
+        await writeFile(
+          join(jobDir, 'result.json'),
+          JSON.stringify({
+            version: 1,
+            output: { title: 'Done' },
+            attachments: withEvidence
+              ? [
+                  {
+                    path: 'outputs/final.png',
+                    mime: 'image/png',
+                    filename: 'final.png',
+                    role: 'evidence',
+                  },
+                ]
+              : [],
+          }),
+        );
+        await writeFile(join(jobDir, 'status.json'), JSON.stringify({ state: 'succeeded' }));
+        return 654;
+      });
+      const handle = await adapter.submit(
+        {
+          modality: 'browser',
+          modelId: 'gpt-example',
+          params: { reasoningEffort: 'low', startUrl: 'https://example.com' },
+          output: {
+            kind: 'data',
+            schema: {
+              type: 'object',
+              properties: { title: { type: 'string' } },
+              required: ['title'],
             },
-          ],
+          },
+        },
+        'browser-key',
+      );
+      await expect(adapter.fetch(handle)).resolves.toEqual(
+        expect.objectContaining({
+          output: { title: 'Done' },
+          attachments: withEvidence
+            ? [expect.objectContaining({ role: 'evidence', filename: 'final.png' })]
+            : [],
         }),
       );
-      await writeFile(join(jobDir, 'status.json'), JSON.stringify({ state: 'succeeded' }));
-      return 654;
-    });
-    const handle = await adapter.submit(
-      {
-        modality: 'browser',
-        modelId: 'gpt-example',
-        params: { reasoningEffort: 'low', startUrl: 'https://example.com' },
-        output: {
-          kind: 'data',
-          schema: { type: 'object', properties: { title: { type: 'string' } } },
-        },
-      },
-      'browser-key',
-    );
-    await expect(adapter.fetch(handle)).resolves.toEqual(
-      expect.objectContaining({
-        output: { title: 'Done' },
-        attachments: [expect.objectContaining({ role: 'evidence', filename: 'final.png' })],
-      }),
-    );
-  });
+    },
+  );
 
   it('uses zero-cost accounting and launches once per idempotency key', async () => {
     const { adapter, launcher } = await fixture();

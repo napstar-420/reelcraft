@@ -69,6 +69,24 @@ export interface CancelResult {
   reason?: string;
 }
 
+/** Raised only when no continuation turn has been sent, so a fresh submission is safe. */
+export class ProviderContinuationUnavailableError extends Error {}
+
+/** A request cannot be submitted as configured; repeating it unchanged will fail again. */
+export class ProviderRequestError extends Error {}
+
+export interface ProviderContinuation {
+  supports(req: ProviderRequest): boolean;
+  start(req: ProviderRequest, idempotencyKey: string): Promise<JobHandle>;
+  continue(
+    req: ProviderRequest,
+    previous: JobHandle,
+    revisionPrompt: string,
+    idempotencyKey: string,
+  ): Promise<JobHandle>;
+  release(handle: JobHandle): Promise<void>;
+}
+
 /**
  * §8 — all external providers accessed through one uniform adapter
  * implementing the async job lifecycle: estimate -> submit -> poll -> fetch
@@ -83,6 +101,7 @@ export interface ProviderAdapter {
   poll(handle: JobHandle): Promise<JobStatus>;
   fetch(handle: JobHandle): Promise<ProviderResult>;
   cancel(handle: JobHandle): Promise<CancelResult>;
+  readonly continuation?: ProviderContinuation;
   /** Text-to-speech providers: the voices to pick from. */
   listVoices?(query: VoiceQuery): Promise<VoiceListDto>;
   /** Text-to-speech providers: why these params can't be used together, if they can't. */
