@@ -9,6 +9,7 @@ import { runStageAttemptLoop } from '../../src/orchestration/functions/stage-att
 import { TimelineResourceResolverService } from '../../src/artifact/timeline-resource-resolver.service';
 import { ProviderRegistry } from '../../src/provider/provider.registry';
 import type { QcOutcome } from '../../src/qc/qc-runner.service';
+import { mockQcOutcomes } from '../support/mock-qc-outcomes';
 import {
   artifact,
   artifactAttachment,
@@ -384,17 +385,14 @@ describe('Generate Image makes an image list (e2e)', () => {
 
     it('shows the judge every image together and makes the whole set again when it is rejected', async () => {
       const { runId, executionIds } = await startRun([judged()]);
-      const judge = vi
-        .spyOn(testApp.app.get(StageRunnerService), 'submitQc')
-        .mockResolvedValueOnce(rejected)
-        .mockResolvedValueOnce(accepted);
+      const judge = mockQcOutcomes(testApp.app.get(StageRunnerService), rejected, accepted);
 
       await expect(runLoop(runId, executionIds[0]!, 'img')).resolves.toMatchObject({
         outcome: 'passed',
       });
 
       expect(judge).toHaveBeenCalledTimes(2);
-      for (const [call] of judge.mock.calls) {
+      for (const [call] of judge.submit.mock.calls) {
         expect(call.artifact.kind).toBe('media.image_list');
         expect(call.clips).toBeUndefined();
         expect(call.images).toHaveLength(3);
@@ -427,7 +425,7 @@ describe('Generate Image makes an image list (e2e)', () => {
           },
         }),
       ]);
-      vi.spyOn(testApp.app.get(StageRunnerService), 'submitQc').mockResolvedValue(rejected);
+      mockQcOutcomes(testApp.app.get(StageRunnerService), rejected);
 
       const outcome = await runLoop(runId, executionIds[0]!, 'img');
 
