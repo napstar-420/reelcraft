@@ -9,16 +9,17 @@ start it. The page updates by itself while the run is going.
 ## The header
 
 - **Run** and its id, with a coloured status. See [Run statuses](../reference/run-statuses.md).
-- Buttons for what you can do right now:
-  - **Rerun**: for a finished run. See [Retries](./retries.md#start-over-with-rerun).
-  - **Pause** or **Resume**.
-  - **Cancel run**, with a confirmation: **Cancel this run? This stops the run permanently and can't be
-    undone.**
-    See [Pause, resume and cancel](./pause-resume-cancel.md).
+- **Run blueprint**, **Re-run blueprint**, **Pause**, **Resume**, **Cancel run** and **Continue run**,
+  according to backend eligibility. These match the canvas controls.
+- **Concurrent branches**: maximum active stages, initially **2** from the blueprint default. Change
+  it while execution is inactive. Item concurrency and provider limits remain separate.
+- **Open canvas** returns to the same selected run without losing progress.
 
-If an action can't be done, a red **Action failed** box says why.
+Cancellation preserves work and allows continuation. The run shows **Pausing** while active attempts
+drain and **Cancelling** while interrupted requests are reconciled. See
+[Pause, resume and cancel](./pause-resume-cancel.md).
 
-![A completed run: its stages, with View output and Attempts buttons](/img/usage/run-page.png)
+![A cancelled run with six saved items, Continue stage and shared run controls](/img/usage/unified-run-page.png)
 
 ## The budget bar
 
@@ -47,15 +48,14 @@ One card per stage, in order. While a run has several stages running side by sid
 - the stage's label, and its key in small text if it differs;
 - its status: **Pending**, **Running**, **Awaiting Approval**, **Awaiting Input**, **Passed**, **Failed**,
   **Stale**, **Skipped** or **Cancelled**;
-- how many attempts it has made and how long it took.
+- item progress, such as **6/14 completed**, separately from attempt counts and duration.
 
 Buttons on the right appear when they apply:
 
 - **Review output**: the stage is waiting for your approval.
 - **Provide input**: a Human Input stage is waiting for you.
 - **Open editor**: a Human Timeline Edit stage is waiting for you.
-- **Re-run** (or **Retry** for a failed stage), with a menu of what to redo. See
-  [Retries](./retries.md).
+- **Run stage**, **Continue stage** and **Re-run stage**, when eligible. Blocked stages show the missing prerequisite or input. Stage actions disappear during Running, Pausing and Cancelling. See [Continue and re-run work](./retries.md).
 - **View output**: what the stage made.
 - **Attempts**: every attempt, with its log.
 

@@ -148,7 +148,7 @@ describe('stage re-run scopes (e2e)', () => {
     expect(await rerun(runId, 'topics', 'stage')).toEqual({
       cover: 'passed',
       topics: 'stale',
-      selector: 'passed',
+      selector: 'stale',
     });
   });
 

@@ -44,7 +44,9 @@ function setup() {
       preview: { fingerprint: 'fingerprint-1' },
     }),
   };
-  const tx = {};
+  const tx = {
+    update: vi.fn().mockReturnValue({ set: vi.fn().mockReturnValue({ where: vi.fn() }) }),
+  };
   const mutation = {
     withLockedRun: vi.fn(async (_id, _action, _states, callback) => {
       await callback(tx, { revision: 4 });

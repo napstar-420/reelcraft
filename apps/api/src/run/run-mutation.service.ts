@@ -68,9 +68,16 @@ export class RunMutationService {
       const value = await callback(tx, lockedRun);
       const [updated] = await tx
         .update(run)
-        .set({ revision: sql`${run.revision} + 1` })
+        .set({
+          revision: sql`${run.revision} + 1`,
+          ...(eventName === 'run/resumed'
+            ? {
+                executionEpoch: sql`greatest(${run.executionEpoch}, ${lockedRun.executionEpoch + 1})`,
+              }
+            : {}),
+        })
         .where(eq(run.id, runId))
-        .returning({ revision: run.revision });
+        .returning({ revision: run.revision, executionEpoch: run.executionEpoch });
       if (!updated) throw new NotFoundException(`Run ${runId} disappeared during mutation`);
 
       if (!wake(value)) return { value, revision: updated.revision, wakeupId: undefined };
@@ -83,6 +90,8 @@ export class RunMutationService {
         sourceState,
         expectedRevision: updated.revision,
         eventName,
+        executionEpoch:
+          eventName === 'run/cancelled' ? lockedRun.executionEpoch : updated.executionEpoch,
       });
 
       return { value, revision: updated.revision, wakeupId };

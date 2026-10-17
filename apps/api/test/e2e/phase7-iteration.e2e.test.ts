@@ -173,7 +173,9 @@ describe('phase 7 chunk 4 — iterating stage per-item loop (e2e)', () => {
   ) {
     const maxAttempts = effective.iterate!.itemRetryLimit + 1;
     for (let attemptNo = 1; attemptNo <= maxAttempts; attemptNo += 1) {
+      const [owner] = await testDb.db.select().from(run).where(eq(run.id, runId));
       const attemptCtx = await runner.beginAttempt({
+        executionEpoch: owner!.executionEpoch,
         runId,
         stageExecutionId: executionId,
         stageKey: stage.key,
@@ -227,7 +229,8 @@ describe('phase 7 chunk 4 — iterating stage per-item loop (e2e)', () => {
       );
       if (result.outcome !== 'success') return { outcome: 'failed' };
     }
-    const finished = await runner.finishIteratingStage(executionId);
+    const [owner] = await testDb.db.select().from(run).where(eq(run.id, runId));
+    const finished = await runner.finishIteratingStage(executionId, owner!.executionEpoch);
     return { outcome: 'passed', artifactId: finished.artifactId };
   }
 
@@ -248,7 +251,7 @@ describe('phase 7 chunk 4 — iterating stage per-item loop (e2e)', () => {
       effective,
       prevStageKey,
     );
-    expect(resolved).toEqual({ ok: true, itemCount: 4 });
+    expect(resolved).toMatchObject({ ok: true, itemCount: 4 });
     if (!resolved.ok) throw new Error('expected ok');
 
     await runner.ensureStageItems(brollExecution.id, resolved.itemCount);

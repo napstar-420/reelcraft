@@ -1,4 +1,14 @@
-import { bigint, boolean, jsonb, numeric, pgEnum, pgTable, text, timestamptz } from './pg-helpers';
+import {
+  bigint,
+  boolean,
+  integer,
+  jsonb,
+  numeric,
+  pgEnum,
+  pgTable,
+  text,
+  timestamptz,
+} from './pg-helpers';
 import { channel } from './channel';
 import { blueprintVersion } from './blueprint';
 
@@ -6,6 +16,9 @@ import { blueprintVersion } from './blueprint';
 export const runStateEnum = pgEnum('run_state', [
   'CREATED',
   'RUNNING',
+  'IDLE',
+  'PAUSING',
+  'CANCELLING',
   'PAUSED_BUDGET',
   'PAUSED_APPROVAL',
   'PAUSED_INPUT',
@@ -33,6 +46,9 @@ export const run = pgTable('run', {
    * number: a run cannot practically approach Number.MAX_SAFE_INTEGER
    * mutations. */
   revision: bigint('revision', { mode: 'number' }).notNull().default(0), // optimistic-concurrency counter, bumped on every mutation
+  executionEpoch: integer('execution_epoch').notNull().default(0),
+  executionScope: jsonb('execution_scope').$type<import('@reelcraft/shared').ExecutionScope>(),
+  concurrentBranches: integer('concurrent_branches').notNull().default(2),
   inputs: jsonb('inputs').notNull().default({}), // resolved input values supplied when the run was started
   roleBindings: jsonb('role_bindings').notNull().default({}), // snapshot of character/role assignments used by this run
   resolvedConfig: jsonb('resolved_config').notNull(), // Record<stageKey, ConfigLayer> at start (§5.3)

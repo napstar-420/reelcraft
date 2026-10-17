@@ -1,55 +1,48 @@
 ---
 title: Pause, resume and cancel
-description: Stop a run for a while, carry on later, or end it for good.
+description: Stop admitting work, preserve progress, and continue the same run later.
 ---
 
-## Pause
+The canvas toolbar, canvas **Run** tab and run page use the same controls and run records.
+Moving between them preserves the selected run and its progress.
 
-**Pause** holds a running run. You can use it, for example, when you've spotted a mistake and want to stop
-spending while you think.
+## Pause and resume
 
-- Select **Pause** on the run page, or the pause button on the run's row in the
-  [Runs list](./runs-list.md). It's only there while the run is **Running**.
-- The stage that is working is allowed to finish its current attempt; no new stage starts. The run's status
-  becomes **Paused Manual**.
+**Pause** changes Running to **Pausing**. Active attempts, including their checks and quality control,
+finish; no new stages, iteration items or generation retries start. Once active work drains, the run
+becomes **Paused Manual**. **Resume** continues the same execution scope using the pinned snapshot.
+It does not expand a stage-only action into the whole blueprint.
 
-## Resume
+Stage execution controls are hidden while Running, Pausing or Cancelling. The server also rejects
+new execution actions during those transitions. Output previews and attempt history remain available.
 
-**Resume** carries on from where the run stopped. It's available for:
+## Cancel and continue
 
-- a run you paused (**Paused Manual**);
-- a run that paused for money (**Paused Budget**). Raising the budget does this for you. See
-  [Budget and costs](./budget-and-costs.md);
-- a **Failed** run, once you've fixed the cause, such as a missing model. Everything that worked is kept
-  and the stage that failed tries again.
+**Cancel run** stops execution and preserves finished outputs, spending and saved approval/input
+candidates. The run enters **Cancelling** while provider requests and reservations are reconciled,
+then becomes **Cancelled**. Cancellation is resumable; it does not erase progress.
 
-A failed run can only resume when its failed stage is the one in progress. If it can't, Reelcraft says
-there is **no resumable cursor execution**: use [Retry](./retries.md) on the stage or **Rerun** instead.
+Use **Continue run** to continue the saved execution scope, or **Continue stage** to continue only the
+selected interrupted stage. Use **Run blueprint** to expand to all unfinished blueprint work. For an iterating stage with **6/14 completed**, Continue preserves those
+six artifacts and submits the other eight items. Passed items need not be consecutive.
 
-## Cancel
+Provider cancellation is best effort. If cancellation cannot be confirmed, restarting an unfinished
+request may cause additional charges. Review that warning, acknowledge the risk, and confirm the new
+execution plan before restarting. Late results and delayed cancellation events from an earlier
+execution generation cannot replace resumed work.
 
-**Cancel run** stops a run for good. Reelcraft asks first: **Cancel this run? This stops the run
-permanently and can't be undone.** Select **Yes, cancel run**, or **Keep running**.
+A saved approval or input request remains available when continuation parks on it again. Answer that
+request instead of regenerating its candidate.
 
-- Anything already made is kept, and you can still look at it.
-- A cancelled run can't be resumed, but you can **Rerun** it to start a new one.
-- Money already spent stays spent. A call to a provider that was in progress may still be charged.
+## Other pauses
 
-Cancel is available while a run is waiting to start, running, paused for any reason, or failed.
+- **Paused Budget**: raise the run or stage cap, then resume. See [Budget and costs](./budget-and-costs.md).
+- **Paused Quota**: a scheduled wakeup resumes after provider quota resets. Manual resume replaces
+  that scheduled recovery; a delayed old wakeup cannot start a second execution.
+- **Paused Approval / Paused Input**: independent runnable branches finish before the run parks.
+  Descendants of a waiting stage stay blocked until you answer.
+- **Failed**: independent branches continue until runnable work settles. Resume retries unfinished
+  work within the saved scope; **Re-run stage** explicitly regenerates a selected stage.
 
-A run you want to delete along with its blueprint or channel must be finished or cancelled first. See
-[Blueprints](../blueprints/blueprints.md#delete-a-blueprint).
-
-## Which buttons when
-
-| The run is…                     | You can                                                 |
-| ------------------------------- | ------------------------------------------------------- |
-| Running                         | Pause, Cancel, Raise budget                             |
-| Paused Manual                   | Resume, Cancel, Raise budget                            |
-| Paused Budget                   | Raise budget (continues), Resume, Retry a stage, Cancel |
-| Paused Approval or Paused Input | Do what it asks, Retry a stage, Cancel, Raise budget    |
-| Failed                          | Resume, Retry a stage, Raise budget, Cancel             |
-| Completed                       | Retry a stage, Rerun                                    |
-| Cancelled                       | Rerun                                                   |
-
-See [Run statuses](../reference/run-statuses.md).
+**Idle** means the selected scope finished while other required blueprint work remains. Use
+**Run blueprint** to expand to all unfinished work. **Completed** means all required work finished.

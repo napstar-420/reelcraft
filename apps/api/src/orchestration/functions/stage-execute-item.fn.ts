@@ -4,6 +4,8 @@ import { runStageAttemptLoop } from './stage-attempt-loop';
 
 export interface StageExecuteItemEventData {
   runId: string;
+  executionEpoch?: number;
+  executionKey?: string;
   stageExecutionId: string;
   stageKey: string;
   itemIndex: number;
@@ -27,10 +29,21 @@ export interface StageExecuteItemEventData {
  */
 export function buildStageExecuteItemFunction(client: Inngest, runner: StageRunnerService) {
   return client.createFunction(
-    { id: 'stage.execute.item', retries: 3 },
+    {
+      id: 'stage.execute.item',
+      retries: 3,
+      cancelOn: [{ event: 'run/cancelled', match: 'data.executionKey' }],
+    },
     { event: 'stage/execute.item.requested' },
     async ({ event, step, logger }) => {
       const data = event.data as StageExecuteItemEventData;
+      if (
+        data.executionEpoch !== undefined &&
+        !(await step.run('admit-execution', () =>
+          runner.isCurrentExecution(data.runId, data.executionEpoch!),
+        ))
+      )
+        return { outcome: 'run_not_running' as const };
       const { stage, effective, prevStageKey } = await step.run('load-stage-context', () =>
         runner.loadStageContext(data.runId, data.stageKey),
       );
@@ -45,6 +58,7 @@ export function buildStageExecuteItemFunction(client: Inngest, runner: StageRunn
         stage,
         effective,
         prevStageKey,
+        executionEpoch: data.executionEpoch,
         runId: data.runId,
         stageExecutionId: data.stageExecutionId,
         stageKey: data.stageKey,

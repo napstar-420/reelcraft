@@ -488,6 +488,7 @@ export function BlueprintSettingsPanel({
   inputs,
   roles,
   budget,
+  execution,
   defaults,
   channelId,
   onChange,
@@ -495,12 +496,14 @@ export function BlueprintSettingsPanel({
   inputs: InputDef[];
   roles: RoleDef[];
   budget: { runCapUsd: number };
+  execution?: { concurrentBranches: number } | undefined;
   defaults: ConfigLayer;
   channelId: string;
   onChange: (patch: {
     inputs?: InputDef[];
     roles?: RoleDef[];
     budget?: { runCapUsd: number };
+    execution?: { concurrentBranches: number };
     defaults?: ConfigLayer;
   }) => void;
 }) {
@@ -520,6 +523,27 @@ export function BlueprintSettingsPanel({
 
       <SettingsSection icon={<CircleDollarSign />} title="Budget">
         <BudgetEditor budget={budget} onChange={(next) => onChange({ budget: next })} />
+      </SettingsSection>
+
+      <SettingsSection icon={<SlidersHorizontal />} title="Execution">
+        <label className="flex items-center gap-3 text-sm">
+          Concurrent branches
+          <Input
+            type="number"
+            min={1}
+            step={1}
+            value={execution?.concurrentBranches ?? 2}
+            onChange={(event) => {
+              const value = event.target.valueAsNumber;
+              if (Number.isSafeInteger(value) && value > 0)
+                onChange({ execution: { concurrentBranches: value } });
+            }}
+          />
+        </label>
+        <p className="text-xs text-muted-foreground">
+          Active stages per run. Each iterating stage has its own item concurrency; provider limits
+          also apply.
+        </p>
       </SettingsSection>
 
       <SettingsSection icon={<SlidersHorizontal />} title="Defaults" last>

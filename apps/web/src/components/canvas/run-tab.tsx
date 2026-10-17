@@ -1,6 +1,7 @@
+import { RunExecutionToolbar, StageExecutionControls } from '@/components/runs/execution-controls';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { Eye, History, Info, Pause, Play, Square } from 'lucide-react';
+import { Eye, History, Info, Play } from 'lucide-react';
 import { cn } from 'cn';
 import type { InputDef, RunDetailDto, RunSummaryDto, StageDef } from '@reelcraft/shared';
 import { api } from '@/api/client';
@@ -18,10 +19,10 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import { ArtifactPreview } from '@/components/runs/artifact-preview';
 import { RunMemoryCard } from '@/components/runs/run-memory-card';
 import type { CanvasRunActions } from '@/hooks/useCanvasRunActions';
-import { runStageTitle, upstreamBlocker } from '@/components/canvas/stage-card.logic';
+
 import { RunLaunchDialog } from '@/pages/RunLaunchDialog';
 import { formatRunDuration } from '@/pages/runs-page.logic';
-import { isRunActionAllowed } from '@/lib/run-action-policy';
+
 import { isApprovalStillOpen } from '@/pages/approval-review.logic';
 import { runStateTone, stageExecutionStateTone, toneDotClassName } from '@/lib/status';
 import { formatCapUsd } from '@/lib/format-cap';
@@ -139,7 +140,6 @@ export function RunTab({
     );
   }
 
-  const labelOf = actions.stageLabel;
   const spent = Number(run.spentUsd);
   const cap = Number(run.budgetCapUsd);
   const percent = cap > 0 ? Math.min(100, (spent / cap) * 100) : 0;
@@ -153,7 +153,6 @@ export function RunTab({
           disabled={
             actions.runStage.isPending ||
             actions.runAll.isPending ||
-            actions.upstreamRerun !== null ||
             actions.executionPlans !== null ||
             actions.confirmExecution.isPending
           }
@@ -200,33 +199,7 @@ export function RunTab({
             <span>cap {formatCapUsd(cap)}</span>
           </div>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Button
-            size="sm"
-            onClick={() => actions.runAll.mutate()}
-            disabled={actions.runAll.isPending}
-          >
-            <Play />
-            {actions.runAll.isPending ? 'Starting…' : 'Run all'}
-          </Button>
-          {isRunActionAllowed('pause', run.state) && (
-            <Button size="sm" variant="outline" onClick={() => actions.pause.mutate()}>
-              <Pause />
-              Pause
-            </Button>
-          )}
-          {isRunActionAllowed('resume', run.state) && (
-            <Button size="sm" variant="outline" onClick={() => actions.resume.mutate()}>
-              <Play />
-              Resume
-            </Button>
-          )}
-          {isRunActionAllowed('cancel', run.state) && (
-            <Button size="sm" variant="outline" onClick={() => actions.setConfirmCancel(true)}>
-              Cancel run
-            </Button>
-          )}
-        </div>
+        <RunExecutionToolbar run={run} actions={actions} />
         {isDirty && (
           <p className="flex items-start gap-2 rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground">
             <Info className="mt-px size-3.5 shrink-0" />
@@ -250,35 +223,14 @@ export function RunTab({
                 : execution
                   ? stageExecutionStateTone(execution.state)
                   : 'neutral';
-            // No per-stage cancel API: stopping a running stage cancels its run.
-            const stoppable =
-              execution?.state === 'running' && isRunActionAllowed('cancel', run.state);
             return (
               <div
                 key={stage.key}
                 className={cn(
-                  'flex items-center gap-2 rounded-lg py-1.5 pr-1.5 pl-3 text-sm hover:bg-muted',
+                  'flex flex-wrap items-center gap-2 rounded-lg py-1.5 pr-1.5 pl-3 text-sm hover:bg-muted',
                   selectedKey === stage.key && 'bg-primary/10 hover:bg-primary/10',
                 )}
               >
-                <Button
-                  size="icon-xs"
-                  variant="ghost"
-                  title={
-                    stoppable
-                      ? 'Cancel run'
-                      : runStageTitle(upstreamBlocker(run, graph, stage.key), labelOf)
-                  }
-                  aria-label={stoppable ? 'Cancel run' : 'Run this stage'}
-                  disabled={stoppable ? actions.cancel.isPending : actions.runStage.isPending}
-                  onClick={() =>
-                    stoppable
-                      ? actions.setConfirmCancel(true)
-                      : actions.runStage.mutate({ stageKey: stage.key })
-                  }
-                >
-                  {stoppable ? <Square /> : <Play />}
-                </Button>
                 <span className={cn('size-2 shrink-0 rounded-full', toneDotClassName[tone])} />
                 <button
                   type="button"
@@ -322,6 +274,17 @@ export function RunTab({
                 >
                   <History />
                 </Button>
+                <div className="w-full pl-4">
+                  <StageExecutionControls
+                    available={execution?.availableActions}
+                    busy={run.availableActions?.busy ?? true}
+                    pending={actions.runStage.isPending}
+                    compact
+                    onAction={(request) =>
+                      actions.runStage.mutate({ stageKey: stage.key, ...request })
+                    }
+                  />
+                </div>
               </div>
             );
           })}

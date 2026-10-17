@@ -75,6 +75,9 @@ export function draftJsonSchema(n: NarrowedEnums): JsonObject {
       inputs: { type: 'array', items: { type: 'object' }, description: 'What a run asks for.' },
       roles: { type: 'array', items: { type: 'object' }, maxItems: 1 },
       defaults: freeObject('Blueprint defaults layer (models, retries, caps, format).'),
+      execution: obj({ concurrentBranches: { type: 'integer', minimum: 1 } }, [
+        'concurrentBranches',
+      ]),
       budget: obj({ runCapUsd: { type: 'number', minimum: 0 } }, ['runCapUsd']),
     },
     ['graph', 'budget'],

@@ -169,12 +169,30 @@ describe('seeded runs — run a stage without re-running upstream (e2e)', () => 
     executions: Array<{ id: string; stageKey: string }>,
     onlyKeys?: string[],
   ) {
+    const [owner] = await testDb.db.select().from(run).where(eq(run.id, runId));
+    const [wakeup] = await testDb.db
+      .select()
+      .from(runWakeup)
+      .where(and(eq(runWakeup.runId, runId), eq(runWakeup.expectedRevision, owner!.revision)))
+      .limit(1);
+    const eventData = {
+      runId,
+      executionEpoch: owner!.executionEpoch,
+      ...(wakeup &&
+        !wakeup.claimedAt && {
+          wakeupId: wakeup.id,
+          action: wakeup.action,
+          sourceState: wakeup.sourceState,
+          expectedRevision: wakeup.expectedRevision,
+        }),
+    };
     const targets = onlyKeys ? executions.filter((e) => onlyKeys.includes(e.stageKey)) : executions;
     const invokeSteps = targets.map((execution) => ({
       id: `invoke-stage-${execution.stageKey}`,
       handler: async () => {
         const data: StageExecuteEventData = {
           runId,
+          executionEpoch: owner!.executionEpoch,
           stageExecutionId: execution.id,
           stageKey: execution.stageKey,
         };
@@ -189,7 +207,7 @@ describe('seeded runs — run a stage without re-running upstream (e2e)', () => 
     }));
     const outerEngine = new InngestTestEngine({
       function: runOrchestrateFn,
-      events: [{ name: 'run/started', data: { runId } }],
+      events: [{ name: 'run/started', data: eventData }],
       steps: invokeSteps,
     });
     return outerEngine.execute();
@@ -273,11 +291,12 @@ describe('seeded runs — run a stage without re-running upstream (e2e)', () => 
       f.plans.confirm(f.created.id, { ...request, previewToken: plan.previewToken }),
     ).rejects.toBeInstanceOf(ConflictException);
     const ready = await f.runs.get(f.created.id);
-    expect(ready.stageExecutions.find((e) => e.stageKey === 'images')).toEqual(
-      before.stageExecutions.find((e) => e.stageKey === 'images'),
-    );
+    expect(ready.stageExecutions.find((e) => e.stageKey === 'images')).toEqual({
+      ...before.stageExecutions.find((e) => e.stageKey === 'images'),
+      availableActions: expect.anything(),
+    });
     expect((await driveRun(f.created.id, ready.stageExecutions, ['sync'])).error).toBeUndefined();
-    expect((await f.runs.get(f.created.id)).state).toBe('COMPLETED');
+    expect((await f.runs.get(f.created.id)).state).toBe('IDLE');
     expect(
       (await f.runs.get(f.created.id)).definition?.graph.find((s) => s.key === 'scenes'),
     ).toEqual(f.dto.graph[1]);
@@ -320,9 +339,10 @@ describe('seeded runs — run a stage without re-running upstream (e2e)', () => 
     const before = await f.runs.get(f.created.id);
     await f.plans.confirm(f.created.id, { ...request, previewToken: plan.previewToken });
     const ready = await f.runs.get(f.created.id);
-    expect(ready.stageExecutions.find((e) => e.stageKey === 'voice')).toEqual(
-      before.stageExecutions.find((e) => e.stageKey === 'voice'),
-    );
+    expect(ready.stageExecutions.find((e) => e.stageKey === 'voice')).toEqual({
+      ...before.stageExecutions.find((e) => e.stageKey === 'voice'),
+      availableActions: expect.anything(),
+    });
     expect(
       (await driveRun(f.created.id, ready.stageExecutions, plan.runStageKeys)).error,
     ).toBeUndefined();
@@ -384,7 +404,7 @@ describe('seeded runs — run a stage without re-running upstream (e2e)', () => 
         ).toBeUndefined();
         expect(submit).not.toHaveBeenCalled();
         const after = await f.runs.get(f.created.id);
-        expect(after.state).toBe(pass ? 'COMPLETED' : 'FAILED');
+        expect(after.state).toBe(pass ? 'IDLE' : 'FAILED');
         expect(
           (await testDb.db.select().from(artifact).where(eq(artifact.id, oldArtifactId)))[0],
         ).toEqual({ ...oldArtifact, stale: true });
@@ -432,7 +452,7 @@ describe('seeded runs — run a stage without re-running upstream (e2e)', () => 
           expect(
             (await driveRun(f.created.id, ready.stageExecutions, ['scenes'])).error,
           ).toBeUndefined();
-          expect((await f.runs.get(f.created.id)).state).toBe('COMPLETED');
+          expect((await f.runs.get(f.created.id)).state).toBe('IDLE');
           expect(submit).not.toHaveBeenCalled();
         }
       } finally {
@@ -484,7 +504,7 @@ describe('seeded runs — run a stage without re-running upstream (e2e)', () => 
         (await driveRun(f.created.id, ready.stageExecutions, ['scenes'])).error,
       ).toBeUndefined();
       expect(submit).not.toHaveBeenCalled();
-      expect((await f.runs.get(f.created.id)).state).toBe('COMPLETED');
+      expect((await f.runs.get(f.created.id)).state).toBe('IDLE');
     } finally {
       submit.mockRestore();
     }
@@ -592,15 +612,16 @@ describe('seeded runs — run a stage without re-running upstream (e2e)', () => 
         wakeupId: wakeup!.id,
         runId: original.id,
         action: 'continue',
-        sourceState: 'COMPLETED',
+        sourceState: wakeup!.sourceState,
         expectedRevision: wakeup!.expectedRevision,
       }),
     ).toEqual({ claimed: true, runId: original.id });
     const continued = await runs.get(original.id);
     expect(continued.blueprintVersionId).toBe(version.id);
-    expect(continued.stageExecutions.find((e) => e.stageKey === 'images')).toEqual(
-      before.stageExecutions.find((e) => e.stageKey === 'images'),
-    );
+    expect(continued.stageExecutions.find((e) => e.stageKey === 'images')).toEqual({
+      ...before.stageExecutions.find((e) => e.stageKey === 'images'),
+      availableActions: expect.anything(),
+    });
     expect(await testDb.db.select().from(artifact).where(eq(artifact.runId, original.id))).toEqual(
       artifactsBefore,
     );
@@ -609,7 +630,7 @@ describe('seeded runs — run a stage without re-running upstream (e2e)', () => 
     ).toBeUndefined();
     expect(
       (await runs.get(original.id)).stageExecutions.find((e) => e.stageKey === 'audio')?.state,
-    ).toBe('skipped');
+    ).toBe('pending');
 
     // Run all extends the same run through the join, with no repeated providers on either finished branch.
     expect(await runs.continueRun(original.id, { blueprintVersionId: version.id })).toEqual({
@@ -747,9 +768,10 @@ describe('seeded runs — run a stage without re-running upstream (e2e)', () => 
       }),
     ).toEqual({ continued: true });
     const updated = await runs.get(original.id);
-    expect(updated.stageExecutions.find((e) => e.stageKey === 'images')).toEqual(
-      before.stageExecutions.find((e) => e.stageKey === 'images'),
-    );
+    expect(updated.stageExecutions.find((e) => e.stageKey === 'images')).toEqual({
+      ...before.stageExecutions.find((e) => e.stageKey === 'images'),
+      availableActions: expect.anything(),
+    });
     const snapshot = await blueprints.getVersion(updated.blueprintVersionId);
     expect(
       StageDef.array()
@@ -763,8 +785,8 @@ describe('seeded runs — run a stage without re-running upstream (e2e)', () => 
     ).toEqual({
       template: 'Edited narration',
     });
-    expect(updated.stageExecutions.find((e) => e.stageKey === 'audio')?.state).toBe('skipped');
-    expect(updated.stageExecutions.find((e) => e.stageKey === 'join')?.state).toBe('skipped');
+    expect(updated.stageExecutions.find((e) => e.stageKey === 'audio')?.state).toBe('pending');
+    expect(updated.stageExecutions.find((e) => e.stageKey === 'join')?.state).toBe('pending');
     const oldNarration = before.stageExecutions.find((e) => e.stageKey === 'narration')!;
     expect(
       (
@@ -778,7 +800,7 @@ describe('seeded runs — run a stage without re-running upstream (e2e)', () => 
       (await driveRun(original.id, updated.stageExecutions, ['narration'])).error,
     ).toBeUndefined();
     const after = await runs.get(original.id);
-    expect(after.state).toBe('COMPLETED');
+    expect(after.state).toBe('IDLE');
     expect(after.stageExecutions.find((e) => e.stageKey === 'narration')?.state).toBe('passed');
     expect(
       await runs.continueRun(original.id, {
@@ -790,7 +812,7 @@ describe('seeded runs — run a stage without re-running upstream (e2e)', () => 
     expect(
       (await driveRun(original.id, repeated.stageExecutions, ['narration'])).error,
     ).toBeUndefined();
-    expect((await runs.get(original.id)).state).toBe('COMPLETED');
+    expect((await runs.get(original.id)).state).toBe('IDLE');
     expect(after.stageExecutions.find((e) => e.stageKey === 'images')?.outputArtifactId).toBe(
       before.stageExecutions.find((e) => e.stageKey === 'images')?.outputArtifactId,
     );
@@ -1071,15 +1093,15 @@ describe('seeded runs — run a stage without re-running upstream (e2e)', () => 
 
     expect(run2.stageExecutions.find((e) => e.stageKey === 'topics')?.state).toBe('passed');
     expect(run2.stageExecutions.find((e) => e.stageKey === 'cover')?.state).toBe('passed');
-    expect(run2.stageExecutions.find((e) => e.stageKey === 'script')?.state).toBe('skipped');
+    expect(run2.stageExecutions.find((e) => e.stageKey === 'script')?.state).toBe('pending');
 
     // No mocks at all — if the orchestrator tried to invoke ANYTHING, this fails.
     const { error, result } = await driveRun(run2.id, run2.stageExecutions, []);
     expect(error).toBeUndefined();
-    expect(result).toEqual({ state: 'COMPLETED' });
+    expect(result).toEqual({ state: 'IDLE' });
 
     const [run2Row] = await testDb.db.select().from(run).where(eq(run.id, run2.id));
-    expect(run2Row?.state).toBe('COMPLETED');
+    expect(run2Row?.state).toBe('IDLE');
     expect(Number(run2Row?.spentUsd)).toBe(0);
   });
 
@@ -1212,7 +1234,7 @@ describe('seeded runs — run a stage without re-running upstream (e2e)', () => 
     const preview2 = await actions.previewStageRetry(run2.id, 'cover');
     await actions.confirmStageRetry(run2.id, 'cover', preview2.previewToken);
     const [blobAfterSecond] = await testDb.db.select().from(blob).where(eq(blob.id, blobId));
-    expect(blobAfterSecond?.gcEligible).toBe(true);
+    expect(blobAfterSecond?.gcEligible).toBe(false);
   });
 
   it('seeds a run whose source had a text input, without duplicating the input artifact', async () => {

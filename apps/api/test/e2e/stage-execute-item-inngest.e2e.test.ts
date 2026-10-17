@@ -374,7 +374,16 @@ describe("stage.execute's outer per-item loop (real Inngest steps, mocked stage.
     const runner = testApp.app.get(StageRunnerService);
     // Pre-seed stage_item rows and mark item 0 already 'passed', simulating
     // a resumed run whose item 0 finished in an earlier invocation.
-    await runner.ensureStageItems(brollExecution.id, 3);
+    const context = await runner.loadStageContext(created.id, 'broll');
+    const resolved = await runner.resolveIterateCount(
+      created.id,
+      brollExecution.id,
+      context.stage,
+      context.effective,
+      context.prevStageKey,
+    );
+    if (!resolved.ok) throw new Error(resolved.reason);
+    await runner.ensureStageItems(brollExecution.id, 3, resolved.fingerprints);
     const item0 = await runner.itemState(brollExecution.id, 0);
     await testDb.db.update(stageItem).set({ state: 'passed' }).where(eq(stageItem.id, item0.id));
 

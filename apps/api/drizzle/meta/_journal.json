@@ -274,6 +274,13 @@
       "when": 1792136692377,
       "tag": "0038_brave_molten_man",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1792220990379,
+      "tag": "0039_resumable_dag_execution",
+      "breakpoints": true
     }
   ]
 }

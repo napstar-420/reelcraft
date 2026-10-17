@@ -1,3 +1,4 @@
+import { RunExecutionToolbar } from '@/components/runs/execution-controls';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -66,6 +67,7 @@ type BlueprintDraft = {
   inputs: InputDef[];
   roles: RoleDef[];
   defaults: ConfigLayer;
+  execution?: { concurrentBranches: number } | undefined;
   budget: { runCapUsd: number };
 };
 
@@ -81,6 +83,7 @@ function draftOf(v: BlueprintDraft): BlueprintDraft {
     inputs: v.inputs,
     roles: v.roles,
     defaults: v.defaults,
+    execution: v.execution ?? { concurrentBranches: 2 },
     budget: v.budget,
   };
 }
@@ -497,9 +500,7 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
   const bannerIssues = useMemo(() => graphLevelIssues(shownIssues), [shownIssues]);
 
   const runActions = useCanvasRunActions({
-    blueprintId,
     run: canvasRun.run,
-    graph: shown.graph,
     draft: shown,
     onSwitchRun: canvasRun.setActiveRunId,
     prepareRunnableVersion: prepareCanvasRunVersion,
@@ -595,6 +596,7 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
     inputs?: InputDef[];
     roles?: RoleDef[];
     budget?: { runCapUsd: number };
+    execution?: { concurrentBranches: number } | undefined;
     defaults?: ConfigLayer;
   }) {
     setDraft((prev) => prev && { ...prev, ...patch });
@@ -631,15 +633,19 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
         onDiscard={discardChanges}
         runBlockedReason={runBlockedReason}
         runButton={
-          <RunLaunchDialog
-            key={draftKey}
-            channelId={channelId ?? ''}
-            inputs={draft.inputs}
-            stages={draft.graph}
-            defaultBudgetCapUsd={draft.budget.runCapUsd}
-            prepareVersion={prepareSavedVersion}
-            disabled={runBlocked}
-          />
+          canvasRun.run ? (
+            <RunExecutionToolbar run={canvasRun.run} actions={runActions} />
+          ) : (
+            <RunLaunchDialog
+              key={draftKey}
+              channelId={channelId ?? ''}
+              inputs={draft.inputs}
+              stages={draft.graph}
+              defaultBudgetCapUsd={draft.budget.runCapUsd}
+              prepareVersion={prepareSavedVersion}
+              disabled={runBlocked}
+            />
+          )
         }
       />
 
@@ -746,7 +752,8 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
             onAddStage={addStage}
             onOpenBlueprintSettings={openBlueprintSettings}
             runActions={{
-              onRunStage: (stageKey) => runActions.runStage.mutate({ stageKey }),
+              onRunStage: (stageKey, request) =>
+                runActions.runStage.mutate({ stageKey, ...request }),
               onCancelRun: () => runActions.setConfirmCancel(true),
               onReviewStage: runActions.setApprovalStageKey,
               onMoveStage: (key, delta) => {
@@ -804,6 +811,7 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
             blueprint={
               <fieldset disabled={readOnly} className="min-w-0">
                 <BlueprintSettingsPanel
+                  execution={shown.execution}
                   inputs={shown.inputs}
                   roles={shown.roles}
                   budget={shown.budget}

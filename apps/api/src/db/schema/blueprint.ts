@@ -39,6 +39,10 @@ export const blueprintVersion = pgTable(
     inputs: jsonb('inputs').notNull().default([]), // InputDef[]: input parameters a run of this version accepts
     roles: jsonb('roles').notNull().default([]), // RoleDef[]; v1 permits 0 or 1 (§18.5)
     defaults: jsonb('defaults').notNull(), // ConfigLayer: default config values for runs of this version
+    execution: jsonb('execution')
+      .$type<{ concurrentBranches: number }>()
+      .notNull()
+      .default({ concurrentBranches: 2 }),
     budget: jsonb('budget').notNull(), // { runCapUsd }: spending limit for runs of this version
     validation: jsonb('validation').notNull(), // validation rules/results applied to this version's graph
     runnable: boolean('runnable').notNull().default(false), // whether this version has passed validation and can be run

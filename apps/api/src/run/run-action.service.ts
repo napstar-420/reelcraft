@@ -1,8 +1,11 @@
+import { unresolvedCancellation } from './cancellation-risk';
+import { RunService } from './run.service';
 import {
   BadRequestException,
   ConflictException,
   Inject,
   Injectable,
+  Optional,
   Logger,
   NotFoundException,
 } from '@nestjs/common';
@@ -17,7 +20,7 @@ import {
   type RetryScope,
 } from '@reelcraft/shared';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
-import { blueprintVersion, run, stageExecution, stageItem } from '../db/schema/index';
+import { blueprintVersion, run, stageAttempt, stageExecution, stageItem } from '../db/schema/index';
 import { mergeLayer } from '../run-config/layer-merge';
 import { InvalidationService, type InvalidationPreview } from './invalidation.service';
 import type { InvalidationSeed } from './invalidation-closure';
@@ -71,6 +74,7 @@ export class RunActionService {
     private readonly tokens: PreviewTokenService,
     private readonly mutation: RunMutationService,
     private readonly dispatcher: RunWakeupDispatcher,
+    @Optional() private readonly runs?: RunService,
   ) {}
 
   async previewInvalidation(runId: string, stageKey: string, itemIndex?: number) {
@@ -95,6 +99,7 @@ export class RunActionService {
     scope: RetryScope = 'dependents',
     items?: RetryItems,
   ) {
+    await this.assertExecutionReady(runId, stageKey);
     const payload = retryPayload(stageKey, itemIndex, scope, items);
     const revision = await this.currentRevision(runId);
     const claims = this.tokens.verify<RetryTokenPreview>(previewToken, {
@@ -121,8 +126,21 @@ export class RunActionService {
           runId,
           closure: preview.closure,
           targetStageKey: stageKey,
-          gcBlobs: scope !== 'stage',
+          gcBlobs: false,
         });
+        await tx
+          .update(run)
+          .set({
+            executionEpoch: lockedRun.executionEpoch + 1,
+            executionScope: {
+              kind: 'selection',
+              stageKeys:
+                scope === 'stage' || itemIndex !== undefined
+                  ? [stageKey]
+                  : preview.closure.affectedStageKeys,
+            },
+          })
+          .where(eq(run.id, runId));
       },
       'run/resumed',
     );
@@ -157,7 +175,7 @@ export class RunActionService {
     items?: RetryItems,
   ): Promise<InvalidationSeed> {
     const target = await this.resolveRetryTarget(runId, stageKey, itemIndex, items);
-    if (scope === 'stage') return { ...target, cascade: false };
+    if (scope === 'stage') return target;
     if (scope === 'downstream') {
       const graph = await this.runGraph(runId);
       if (!graph.some((stage) => stage.key === stageKey)) {
@@ -362,6 +380,32 @@ export class RunActionService {
     return { applied: true, revision: result.revision, resumes: hasActiveOutputs };
   }
 
+  private async assertExecutionReady(runId: string, stageKey: string) {
+    if (!this.runs) return;
+    const current = await this.runs.get(runId);
+    const available = current.stageExecutions.find(
+      (e) => e.stageKey === stageKey,
+    )?.availableActions;
+    if (current.availableActions.busy || available?.blockedReason)
+      throw new ConflictException(available?.blockedReason ?? 'Execution is active.');
+    const uncertain = await this.db
+      .select({ id: stageAttempt.id })
+      .from(stageAttempt)
+      .innerJoin(stageExecution, eq(stageAttempt.stageExecutionId, stageExecution.id))
+      .where(
+        and(
+          eq(stageExecution.runId, runId),
+          eq(stageExecution.stageKey, stageKey),
+          unresolvedCancellation(),
+        ),
+      )
+      .limit(1);
+    if (uncertain.length)
+      throw new ConflictException(
+        'Use an execution plan to confirm possible additional charges before restarting.',
+      );
+  }
+
   private async buildStagePreview(
     runId: string,
     stageKey: string,
@@ -372,6 +416,7 @@ export class RunActionService {
   ) {
     const revision = await this.currentRevision(runId);
     const seed = await this.resolveRetrySeed(runId, stageKey, itemIndex, scope, items);
+    if (action === 'retry') await this.assertExecutionReady(runId, stageKey);
     const preview = await this.invalidation.preview({ runId, seed });
     const payload = retryPayload(stageKey, itemIndex, scope, items);
     const issued = this.tokens.issue({

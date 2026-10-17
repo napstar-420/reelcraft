@@ -1,3 +1,4 @@
+import { RunCancellationService } from '../../run/run-cancellation.service';
 import type { INestApplicationContext } from '@nestjs/common';
 import type { Inngest } from 'inngest';
 import { DRIZZLE, type Db } from '../../db/drizzle.provider';
@@ -54,11 +55,22 @@ export function buildInngestFunctions(app: INestApplicationContext) {
   );
   const runWakeupDispatch = buildRunWakeupDispatchFunction(client, wakeupDispatcher);
   const humanReminderSweep = buildHumanReminderSweepFunction(client, reminders);
+  const cancellation = client.createFunction(
+    { id: 'run.reconcile-cancellation', concurrency: { limit: 1, key: 'event.data.runId' } },
+    { event: 'run/cancelled' },
+    async ({ event, step }) =>
+      step.run('reconcile', () =>
+        app
+          .get(RunCancellationService)
+          .reconcileCancellation(event.data.runId, event.data.executionEpoch),
+      ),
+  );
   const budgetSweep = buildBudgetSweepFunction(client, ledger);
   const cronShells = buildCronShellFunctions(client, blobs, computeJobs);
 
   return [
     runOrchestrate,
+    cancellation,
     stageExecute,
     stageExecuteItem,
     runWakeupDispatch,

@@ -56,6 +56,7 @@ export class LedgerService {
     runId: string;
     stageKey: string;
     stageAttemptId: string;
+    executionEpoch?: number | undefined;
     category: ReservationCategory;
     ceilingUsd: number;
     stageCapUsd?: number | undefined;
@@ -64,7 +65,10 @@ export class LedgerService {
     return this.db.transaction(async (tx) => {
       const runRow = await this.lockRunRow(tx, params.runId);
 
-      if (runRow.state !== 'RUNNING') {
+      if (
+        runRow.state !== 'RUNNING' ||
+        (params.executionEpoch !== undefined && runRow.executionEpoch !== params.executionEpoch)
+      ) {
         this.logger.log(
           { runId: params.runId, stageKey: params.stageKey, reason: 'run_not_running' },
           'budget reservation rejected',
@@ -619,13 +623,20 @@ export class LedgerService {
   private async lockRunRow(
     tx: Tx,
     runId: string,
-  ): Promise<{ reservedUsd: string; spentUsd: string; budgetCapUsd: string; state: string }> {
+  ): Promise<{
+    reservedUsd: string;
+    spentUsd: string;
+    budgetCapUsd: string;
+    state: string;
+    executionEpoch: number;
+  }> {
     const [row] = await tx
       .select({
         reservedUsd: run.reservedUsd,
         spentUsd: run.spentUsd,
         budgetCapUsd: run.budgetCapUsd,
         state: run.state,
+        executionEpoch: run.executionEpoch,
       })
       .from(run)
       .where(eq(run.id, runId))

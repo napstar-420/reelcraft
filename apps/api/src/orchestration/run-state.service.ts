@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { RunState } from '@reelcraft/shared';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
 import { ulid } from '../common/ulid';
@@ -15,8 +15,34 @@ export class RunStateService {
     private readonly events: LiveEvents,
   ) {}
 
-  async transition(runId: string, state: RunState): Promise<void> {
-    const isTerminal = state === 'COMPLETED' || state === 'FAILED' || state === 'CANCELLED';
+  async admitLegacy(runId: string, executionEpoch: number): Promise<boolean> {
+    const updated = await this.db
+      .update(run)
+      .set({ state: 'RUNNING', endedAt: null })
+      .where(
+        and(
+          eq(run.id, runId),
+          eq(run.executionEpoch, executionEpoch),
+          inArray(run.state, [
+            'CREATED',
+            'RUNNING',
+            'PAUSED_MANUAL',
+            'PAUSED_BUDGET',
+            'PAUSED_INPUT',
+            'PAUSED_APPROVAL',
+            'PAUSED_QUOTA',
+            'FAILED',
+          ]),
+        ),
+      )
+      .returning({ id: run.id });
+    if (updated.length) this.events.publish({ type: 'run', runId });
+    return updated.length > 0;
+  }
+
+  async transition(runId: string, state: RunState, epoch?: number): Promise<void> {
+    const isTerminal =
+      state === 'COMPLETED' || state === 'FAILED' || state === 'CANCELLED' || state === 'IDLE';
     const timestamps =
       state === 'RUNNING'
         ? { endedAt: null }
@@ -25,8 +51,21 @@ export class RunStateService {
           : {};
     await this.db
       .update(run)
-      .set({ state, ...timestamps })
-      .where(eq(run.id, runId));
+      .set({
+        state:
+          epoch === undefined
+            ? state
+            : sql`case when ${run.state} = 'PAUSING' then 'PAUSED_MANUAL'::run_state else ${state}::run_state end`,
+        ...timestamps,
+      })
+      .where(
+        and(
+          eq(run.id, runId),
+          ...(epoch === undefined
+            ? []
+            : [eq(run.executionEpoch, epoch), inArray(run.state, ['RUNNING', 'PAUSING'])]),
+        ),
+      );
     this.logger.log({ runId, toState: state }, 'run state changed');
     this.events.publish({ type: 'run', runId });
   }
@@ -36,13 +75,19 @@ export class RunStateService {
    * bound to the run's revision, so a manual resume or any other operator
    * action in the meantime makes it stale and it is dropped. A run that is
    * no longer RUNNING (cancelled, paused by hand) is left alone. */
-  async pauseForQuota(runId: string, resumeAt: string): Promise<boolean> {
+  async pauseForQuota(runId: string, resumeAt: string, epoch?: number): Promise<boolean> {
     const paused = await this.db.transaction(async (tx) => {
       const [row] = await tx
         .update(run)
-        .set({ state: 'PAUSED_QUOTA' })
-        .where(and(eq(run.id, runId), eq(run.state, 'RUNNING')))
-        .returning({ revision: run.revision });
+        .set({ state: 'PAUSED_QUOTA', executionEpoch: sql`${run.executionEpoch} + 1` })
+        .where(
+          and(
+            eq(run.id, runId),
+            eq(run.state, 'RUNNING'),
+            ...(epoch === undefined ? [] : [eq(run.executionEpoch, epoch)]),
+          ),
+        )
+        .returning({ revision: run.revision, executionEpoch: run.executionEpoch });
       if (!row) return false;
       await tx.insert(runWakeup).values({
         id: ulid(),
@@ -50,6 +95,7 @@ export class RunStateService {
         action: 'resume',
         sourceState: 'PAUSED_QUOTA',
         expectedRevision: row.revision,
+        executionEpoch: row.executionEpoch,
         eventName: 'run/resumed',
         notBefore: resumeAt,
       });
@@ -61,17 +107,41 @@ export class RunStateService {
     return true;
   }
 
-  async setCursor(runId: string, stageKey: string | null): Promise<void> {
-    await this.db.update(run).set({ cursorStageKey: stageKey }).where(eq(run.id, runId));
+  async setCursor(runId: string, stageKey: string | null, executionEpoch?: number): Promise<void> {
+    await this.db
+      .update(run)
+      .set({ cursorStageKey: stageKey })
+      .where(
+        and(
+          eq(run.id, runId),
+          executionEpoch === undefined ? undefined : eq(run.executionEpoch, executionEpoch),
+        ),
+      );
   }
 
   /** §16 — a stage whose "Enabled when" condition doesn't match the run's
    * input is marked `skipped` and never executed. */
-  async skipStage(runId: string, stageExecutionId: string, stageKey: string): Promise<void> {
+  async skipStage(
+    runId: string,
+    stageExecutionId: string,
+    stageKey: string,
+    epoch?: number,
+  ): Promise<void> {
     await this.db
       .update(stageExecution)
-      .set({ state: 'skipped', endedAt: new Date().toISOString() })
-      .where(eq(stageExecution.id, stageExecutionId));
+      .set({
+        state: 'skipped',
+        skipReason: 'Disabled by Enabled when condition',
+        endedAt: new Date().toISOString(),
+      })
+      .where(
+        and(
+          eq(stageExecution.id, stageExecutionId),
+          epoch === undefined
+            ? undefined
+            : sql`exists (select 1 from ${run} where ${run.id} = ${runId} and ${run.executionEpoch} = ${epoch} and ${run.state} = 'RUNNING')`,
+        ),
+      );
     this.logger.log({ runId, stageKey }, 'stage skipped: enabledWhen did not match');
     this.events.publish({ type: 'stage', runId, stageKey });
   }

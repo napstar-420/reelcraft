@@ -154,6 +154,7 @@ describe('iterate.concurrency (real Inngest steps, e2e)', () => {
     itemCount: number,
     override: Record<number, unknown> = {},
   ) {
+    const [owner] = await testDb.db.select().from(run).where(eq(run.id, created.id));
     const execution = created.stageExecutions.find((e) => e.stageKey === 'broll')!;
     const runner = testApp.app.get(StageRunnerService);
     const events: string[] = [];
@@ -167,6 +168,7 @@ describe('iterate.concurrency (real Inngest steps, e2e)', () => {
         }
         const item = await runner.itemState(execution.id, i);
         const data: StageExecuteItemEventData = {
+          executionEpoch: owner!.executionEpoch,
           runId: created.id,
           stageExecutionId: execution.id,
           stageKey: 'broll',
@@ -185,6 +187,7 @@ describe('iterate.concurrency (real Inngest steps, e2e)', () => {
       },
     }));
     const data: StageExecuteEventData = {
+      executionEpoch: owner!.executionEpoch,
       runId: created.id,
       stageExecutionId: execution.id,
       stageKey: 'broll',

@@ -1,10 +1,11 @@
+import type { StageActionRequest } from '@/components/runs/execution-controls';
 import { createContext, useContext } from 'react';
 
 /** What the nodes and edges on the canvas can ask the page to do. Passed
  * through context so node/edge `data` stays plain and nodes don't re-render
  * when a handler's identity changes. */
 export type CanvasActions = {
-  onRunStage: (stageKey: string) => void;
+  onRunStage: (stageKey: string, request?: StageActionRequest) => void;
   onCancelRun: () => void;
   onReviewStage: (stageKey: string) => void;
   onMoveStage: (stageKey: string, delta: -1 | 1) => void;

@@ -298,6 +298,7 @@ export class BlueprintService {
         roles: dto.roles,
         defaults: dto.defaults,
         budget: dto.budget,
+        execution: dto.execution ?? { concurrentBranches: 2 },
         validation: issues,
         runnable,
         draft,

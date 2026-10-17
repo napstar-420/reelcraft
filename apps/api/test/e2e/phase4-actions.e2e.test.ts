@@ -143,7 +143,7 @@ describe('Phase 4 approval, human input, and cancellation (e2e)', () => {
     ).toHaveLength(0);
   });
 
-  it('accepts a checked human value without provider spend, and cancellation resolves an open wait', async () => {
+  it('accepts a checked human value without provider spend, and cancellation preserves an open wait', async () => {
     const human = stage({ key: 'answer', capability: 'human.input' });
     const created = await createRun([human]);
     const execution = created.stageExecutions[0]!;
@@ -177,7 +177,7 @@ describe('Phase 4 approval, human input, and cancellation (e2e)', () => {
         .select()
         .from(humanWait)
         .where(and(eq(humanWait.runId, waitingRun.id), isNull(humanWait.resolvedAt))),
-    ).toHaveLength(0);
+    ).toHaveLength(1);
   });
 
   it('lets an in-flight attempt commit through a manual pause, but still discards it on cancel', async () => {
@@ -265,7 +265,8 @@ describe('Phase 4 approval, human input, and cancellation (e2e)', () => {
     const runs = testApp.app.get(RunService);
 
     const paused = await runs.pause(created.id);
-    expect(paused.state).toBe('PAUSED_MANUAL');
+    expect(paused.state).toBe('PAUSING');
+    await testDb.db.update(run).set({ state: 'PAUSED_MANUAL' }).where(eq(run.id, created.id));
 
     // resume() only enqueues a `run/resumed` wakeup — the actual RUNNING
     // transition happens later, asynchronously, when the orchestrator's

@@ -1,99 +1,68 @@
 ---
 title: Canvas runs
-description: Try stages one at a time while you build, without saving a version or starting from scratch.
+description: Run, continue and rebuild stages on the canvas with the same controls as the run page.
 ---
 
-While you build a blueprint, you don't want to rerun everything after each small change. The **Run**
-tab beside the canvas lets you run a blueprint, or one stage of it, and see the results next to the
-canvas. Each stage card shows the same status, so you can watch a run without leaving the diagram.
+The blueprint canvas and [run page](./run-page.md) share one execution model, run history, eligibility
+rules and control components. Development on the canvas and production on the run page use the same
+runs. Moving between them keeps your selected run and its progress.
+
+![Canvas toolbar, stage cards and Run tab showing six saved Motion Planning items](/img/usage/unified-canvas-runs.png)
 
 ## The first run
 
-With no runs yet, the tab says **No runs yet**. Select **Run blueprint**, fill in the inputs and start a
-run, as in [Starting a run](./starting-a-run.md).
+With no runs yet, select **Run blueprint**, provide inputs and start a run. **Run up to** is an explicit
+initial scope: it includes the selected stage and its prerequisites. All stages are created Pending;
+work outside that scope stays Pending. See [Starting a run](./starting-a-run.md).
 
-After that, the tab follows the latest run.
-Use the recent-run selector at the top of the tab to return to an earlier run. Your selection stays
-in the page URL, so refreshing keeps that run selected.
+## Shared run controls
 
-## What the tab shows
+Once a run is selected, the canvas toolbar and **Run** tab offer the same controls as the run page:
 
-- The run's short id, as a link to its [run page](./run-page.md), with its status and how long it has
-  taken, and a bar showing what it has spent against the run's cap.
-- **Run all**, **Cancel run**, **Pause** and **Resume**, whichever apply.
-- A list of the stages, each with a status dot, its label and buttons. Select a label to open that stage
-  in the **Stage** tab.
-- **Blueprint output**: the result of the last stage, once it has run.
-- **Memory**: the values stages have saved. See
-  [Connecting stages](../blueprints/connecting-stages.md#memory).
+- **Run blueprint** executes unfinished, failed or stale required stages, retaining completed work.
+- **Re-run blueprint** explicitly regenerates everything after a rebuild/cost confirmation.
+- **Pause**, **Resume**, **Cancel run** and **Continue run** preserve the same run and saved scope.
+- **Concurrent branches** sets the maximum active stage executions. The blueprint default is **2**;
+  an inactive run can override it without changing artifacts. Iteration item concurrency and provider
+  request limits are separate controls.
 
-## Run all
+Independent ready branches fill available slots. A finished stage releases its slot immediately;
+there is no full-wave barrier. Failures and human waits block their descendants while other ready
+branches continue. A stage-only scope ends **Idle** when required blueprint work remains.
 
-**Run all** continues a completed partial run when its blueprint is unchanged. It keeps the same run ID,
-finished outputs, item progress and spending history, and runs the unfinished branches through their joins.
+## Stage controls
 
-When edits affect completed outputs, review an execution plan before continuing. The plan lists the
-stages that will run, completed outputs that will remain, outputs that become stale, and historical
-costs for the work. Stages with no previous execution are unpriced. Budget caps still apply.
+The canvas cards and **Run** tab use the same stage controls:
 
-**Rerun** on the run page and **Run up to** in the run dialog don't reuse anything: they start a fresh run
-from the first stage.
+- **Run stage** runs only an eligible selected stage. Missing prerequisites or inputs are shown beside
+  a blocked stage; prerequisites are never launched implicitly.
+- **Continue stage** preserves passed items. For **6/14 completed**, only eight items remain.
+- **Re-run stage** explicitly regenerates the stage, including completed items. Its affected
+  descendants become stale, but do not execute.
+- **More execution actions** contains **Run through stage** and **Rebuild descendants**, each with an
+  explicit scope. In compact cards, **Re-run stage** may also appear here.
 
-## Run only the first stages
+Stage execution controls are hidden while the run is Running, Pausing or Cancelling. Progress,
+output previews and attempt history remain visible. Cancel is a run action; a cancelled run can
+continue later. See [Continue and re-run work](./retries.md).
 
-Before a blueprint has any run, there is no play button on the stages yet. Select **Run**, then pick a stage
-under **Run up to**. Reelcraft runs that stage and its dependencies, skipping unrelated branches. Once the run
-finishes, use the play button to continue another branch.
-
-## Run a single stage
-
-Select the play button next to a stage, in the **Run** tab or on its card. For completed and failed runs,
-execution stays in the same run. If edits or reruns affect completed work, choose a plan:
-
-- **Use existing upstream outputs** executes the selected stage using the run's stored upstream
-  definitions and outputs, even when the draft changed those stages. Independent outputs remain.
-- **Apply edits and run through selected stage** rebuilds changed prerequisites and the selected stage.
-  Affected outputs beyond this boundary become stale and wait for another action.
-- **Apply edits and rebuild affected descendants** also executes every affected descendant, including
-  joins and required unfinished dependencies. Unaffected branches retain their outputs.
-- **Check existing output without regenerating** appears for validation-only edits on
-  non-iterating stages with a stored output. It applies updated checks/QC to the stored output; QC can incur judge costs.
-  A failed check stops execution rather than silently generating another output. Descendant outputs
-  are conservatively invalidated and deferred when revalidation is requested.
-- **Cancel** starts nothing.
-
-A confirmation is bound to the exact snapshot, choice, scope, configuration, and run revision.
-Concurrent changes and duplicate requests require a fresh preview. A consumer with changed bindings,
-iteration or output contracts cannot silently reuse old upstream outputs. Graph additions, deletions,
-rewiring, reordered stages, global input/role/default changes, and replaced pinned assets require a
-new run; the existing run and its output history remain available.
-
-While a stage is running, its button on the card turns into a stop button, labelled **Cancel run**. There's no way
-to stop just one stage: it cancels the whole run, and Reelcraft asks first: **Cancel this run? This
-stops the whole run, not just one stage. It can't be undone.**
-
-## Unsaved changes
+## Definitions and existing outputs
 
 Autosaved execution edits mark affected outputs **Stale** in the workspace, including descendants.
 Independent branches remain valid. Label changes do not stale outputs; check/QC-only edits show
-**Validation outdated**. Output previews explain their freshness. Reverting an edit restores freshness
-when definitions and dependencies match again.
+**Validation outdated**. Reverting an edit restores freshness when definitions and dependencies match.
 
-These workspace indicators do not erase artifacts or rewrite historical run validity. An execution
-uses an immutable snapshot; edits made while it runs affect workspace freshness after it finishes.
-Choosing existing outputs records the retained artifact IDs and snapshot lineage in the stage log.
-The resulting output remains stale relative to a draft whose upstream definitions still differ.
+These indicators preserve historical artifacts. Execution uses a pinned snapshot. If you apply edits,
+review a plan choosing existing outputs or rebuilding affected work; ordinary **Run stage** stays
+stage-only. **Check existing output** applies check/QC-only edits without generation where supported.
 
-Canvas execution creates a temporary snapshot without adding a saved version. Only definitions
-applied by the confirmed plan replace the run snapshot; other draft edits remain in the workspace.
+Plans bind the exact action, scope, items, snapshot, concurrency setting and run revision. Duplicate
+or outdated confirmations are rejected. Added/removed stages, rewiring, reordered stages, global
+input/role/default changes and replaced pinned assets require a new run. Scheduling concurrency alone
+does not stale artifacts.
 
-Select **Save** when you're happy. [Versions](../blueprints/versions.md) explains the difference.
+## History and navigation
 
-The blueprint must be **Runnable** for any of these to start.
-
-## The stage buttons
-
-- **View output** (the eye): the stage's current output.
-- **Attempts** (the clock): every attempt, with its log.
-- **Review** (on the card) or **Review output** (in the tab): appears on the stage waiting for your approval. See
-  [When a run needs you](./when-a-run-needs-you.md).
+Use the recent-run selector to return to an earlier run. The selection is stored in the URL, so
+refreshing preserves it. Select the short run ID to open its run page; **Open canvas** returns to the
+same selected run. **View output**, **Attempts** and approval/input controls retain their usual roles.

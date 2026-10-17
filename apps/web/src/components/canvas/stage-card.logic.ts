@@ -147,6 +147,8 @@ export function capabilityGroup(key: string): CapabilityGroup {
 }
 
 export type NodeRunStatus = {
+  availableActions?: StageExecutionDto['availableActions'];
+  executionBusy?: boolean;
   state: StageExecutionState;
   tone: StatusTone;
   label: string;
@@ -175,7 +177,7 @@ const NODE_STATE_LABELS: Record<StageExecutionState, string> = {
  * run yet, or the stage was added after it). */
 export function nodeRunStatus(
   execution: StageExecutionDto | undefined,
-  run: Pick<RunDetailDto, 'id' | 'state'> | undefined,
+  run: Pick<RunDetailDto, 'id' | 'state' | 'availableActions'> | undefined,
 ): NodeRunStatus | undefined {
   if (!execution) return undefined;
   const parts: string[] = [];
@@ -185,6 +187,8 @@ export function nodeRunStatus(
     parts.push(formatRunDuration(execution.startedAt, execution.endedAt));
   }
   return {
+    availableActions: execution.availableActions,
+    executionBusy: run?.availableActions?.busy ?? true,
     state: execution.state,
     tone: stageExecutionStateTone(execution.state),
     label: NODE_STATE_LABELS[execution.state],

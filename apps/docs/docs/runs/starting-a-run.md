@@ -3,7 +3,7 @@ title: Starting a run
 description: Run a saved blueprint version, fill in its inputs and set a spending limit.
 ---
 
-A **run** is one go at making a video: Reelcraft carries out the blueprint's stages in order, with the
+A **run** is one go at making a video: Reelcraft carries out the blueprint's dependency graph, with the
 inputs and budget you give it. You can start as many runs as you like from the same blueprint.
 
 ## Before you start
@@ -50,7 +50,8 @@ Codex, and may consume provider usage.**
    change this run.
 2. It checks that everything the run needs still exists, such as the assets and the character. If
    something is missing, you're told, for example that a character was deleted.
-3. It starts the first stage.
+3. All stages begin Pending. It admits ready stages up to **Concurrent branches**, which defaults to two.
+   Stage item concurrency and provider limits apply separately.
 
 ## If starting fails
 
@@ -63,6 +64,6 @@ If the run can't start at all, the reason appears under **Run could not start**.
 
 ## Other ways to start a run
 
-- **Rerun** on a finished run starts a new one from the beginning with the same inputs. See
-  [Retries](./retries.md#start-over-with-rerun).
-- The [**Run** tab](./canvas-runs.md) on the canvas runs stages one at a time while you're building.
+- **Re-run blueprint** on an existing run regenerates all required work after confirmation, preserving
+  its history. **Run blueprint** preserves current completed work. See [Continue and re-run work](./retries.md).
+- The [**Run** tab](./canvas-runs.md) on the canvas uses the same controls and execution rules as the run page.

@@ -517,6 +517,11 @@ export const api = {
   getRunInputStatus: (runId: string, inputKey: string) =>
     request<RunInputStatusDto>(`/runs/${runId}/inputs/${encodeURIComponent(inputKey)}/status`),
   startRun: (runId: string) => request<RunDetailDto>(`/runs/${runId}/start`, { method: 'POST' }),
+  updateExecutionSettings: (id: string, dto: { concurrentBranches: number }) =>
+    request<RunDetailDto>(`/runs/${id}/execution-settings`, {
+      method: 'PATCH',
+      body: JSON.stringify(dto),
+    }),
   previewStageRun: (id: string, dto: StageRunPlanRequestDto) =>
     request<StageRunPlanDto>(`/runs/${id}/execution-plan`, {
       method: 'POST',

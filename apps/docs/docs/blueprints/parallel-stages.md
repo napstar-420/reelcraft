@@ -59,11 +59,10 @@ run at the same time — make one run after the other**. Set **Runs after** on o
 
 ## What a run does
 
-- Everything that can start does, in one go. The run page says **Running now: …** and lists them.
+- Ready stages start up to **Concurrent branches** (blueprint default **2**, with an inactive-run override). A freed stage slot refills immediately. The run page lists **Running now: …**. Item concurrency and provider limits are separate.
 - If one of them fails, the others are allowed to finish, then the run is **Failed**. Nothing is thrown away: retry
   only the stage that failed, and the stages that passed stay passed.
-- If one of them needs your approval or input, the others finish first. Then the run pauses and
-  nothing new starts until you have answered. If several stages are waiting for you, answer each; the run
+- If one of them needs your approval or input, independent runnable branches continue. Its descendants stay blocked, and the run parks after independent work settles. If several stages are waiting for you, answer each; the run
   carries on once the last one is answered. See [When a run needs you](../runs/when-a-run-needs-you.md#several-things-waiting).
 - If the budget runs out, the run pauses after the stages that were already running have finished.
 
@@ -83,8 +82,7 @@ together.
 
 ## Running to a stage
 
-**Run to here** and **Run this stage** run only the chosen stage and the stages it waits for. Stages on
-other branches are skipped. A reused earlier run doesn't re-run a branch you didn't ask for.
+**Run stage** executes only the selected eligible stage. **Run through stage** explicitly includes required unfinished prerequisites. Stages outside the selected scope remain Pending. A reused earlier run doesn't re-run a branch you didn't ask for.
 
 ## Changing **Runs after** later
 

@@ -13,6 +13,7 @@ export interface RunWakeupEventData {
   action: RunAction;
   sourceState: RunState;
   expectedRevision: number;
+  executionEpoch?: number;
 }
 
 export type RunWakeupClaimResult =
@@ -82,11 +83,21 @@ export class RunWakeupClaimService {
       }
 
       const [lockedRun] = await tx
-        .select({ id: run.id, state: run.state, revision: run.revision })
+        .select({
+          id: run.id,
+          state: run.state,
+          revision: run.revision,
+          executionEpoch: run.executionEpoch,
+        })
         .from(run)
         .where(eq(run.id, event.runId))
         .for('update');
       if (!lockedRun) return { result: { claimed: false, reason: 'run_not_found' } };
+      if (
+        lockedRun.executionEpoch !== wakeup.executionEpoch ||
+        (event.executionEpoch !== undefined && event.executionEpoch !== lockedRun.executionEpoch)
+      )
+        return { result: { claimed: false, reason: 'stale_revision' } };
       if (lockedRun.revision !== event.expectedRevision) {
         return { result: { claimed: false, reason: 'stale_revision' } };
       }

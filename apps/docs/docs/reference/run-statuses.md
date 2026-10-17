@@ -12,19 +12,19 @@ Statuses appear as coloured badges on the [Runs list](../runs/runs-list.md), the
 | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
 | **Created**         | The run exists but hasn't started, for example while files upload                                                                             | Wait, or cancel                                                    |
 | **Running**         | Stages are being carried out                                                                                                                  | Pause, cancel, raise the budget                                    |
+| **Idle**            | The selected scope finished; other required work remains                                                                                      | Run blueprint or an eligible stage                                 |
+| **Pausing**         | Active attempts are finishing; no new work is admitted                                                                                        | Wait, or cancel                                                    |
+| **Cancelling**      | Interrupted provider requests and reservations are being reconciled                                                                           | Wait                                                               |
 | **Paused Budget**   | The next step would go over the run's or a stage's spending limit                                                                             | Raise the budget (it continues), resume, retry a stage, cancel     |
 | **Paused Approval** | A stage with human approval, or QC that could not run, is waiting for your review (also shown when an approval and an input are both waiting) | Review output (Retry QC, Approve or Reject), retry a stage, cancel |
 | **Paused Input**    | A Human Input or Human Timeline Edit stage is waiting for you                                                                                 | Provide input or open the editor, retry a stage, cancel            |
 | **Paused Manual**   | You paused it                                                                                                                                 | Resume, cancel, raise the budget                                   |
 | **Failed**          | A stage couldn't finish                                                                                                                       | Resume, retry a stage, rerun, raise the budget, cancel             |
 | **Completed**       | Every stage finished                                                                                                                          | Rerun, retry a stage                                               |
-| **Cancelled**       | You stopped it for good                                                                                                                       | Rerun                                                              |
+| **Cancelled**       | Execution stopped with progress preserved                                                                                                     | Continue run, Continue stage, Re-run stage                         |
 
-Retrying a stage isn't offered on a run you paused yourself, because that would quietly resume it. Resume
-it first.
-
-A run can only move between these statuses in the ways above: for instance, you can't pause a run that's
-paused, and you can't resume a completed one.
+Stage execution actions are available only while execution is inactive and dependencies and inputs
+are ready. Both the canvas and run page use the backend's action eligibility and blocking reasons.
 
 **Completed**, **Failed** and **Cancelled** are the finished statuses. A run waiting for you or for money
 isn't finished, and blocks deleting its blueprint or channel until it is. See
@@ -32,17 +32,17 @@ isn't finished, and blocks deleting its blueprint or channel until it is. See
 
 ## Stage statuses
 
-| Status                | Meaning                                                                                                                       |
-| --------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| **Pending**           | Hasn't started yet                                                                                                            |
-| **Running**           | Working on it                                                                                                                 |
-| **Awaiting Approval** | Finished, and waiting for your review                                                                                         |
-| **Awaiting Input**    | Waiting for you to provide something                                                                                          |
-| **Passed**            | Finished successfully                                                                                                         |
-| **Failed**            | Couldn't finish, after its retries                                                                                            |
-| **Stale**             | Its output was made from something that has since been redone                                                                 |
-| **Skipped**           | It didn't run, for example because its **Enabled when** condition wasn't met, or the run stopped before it. It costs nothing. |
-| **Cancelled**         | The run was cancelled before it finished                                                                                      |
+| Status                | Meaning                                                                                                                                    |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Pending**           | Hasn't started yet                                                                                                                         |
+| **Running**           | Working on it                                                                                                                              |
+| **Awaiting Approval** | Finished, and waiting for your review                                                                                                      |
+| **Awaiting Input**    | Waiting for you to provide something                                                                                                       |
+| **Passed**            | Finished successfully                                                                                                                      |
+| **Failed**            | Couldn't finish, after its retries                                                                                                         |
+| **Stale**             | Its output was made from something that has since been redone                                                                              |
+| **Skipped**           | It didn't run, for example because its **Enabled when** condition wasn't met, with a recorded disabled-condition reason. It costs nothing. |
+| **Cancelled**         | The run was cancelled before it finished                                                                                                   |
 
 ## Attempt outcomes
 

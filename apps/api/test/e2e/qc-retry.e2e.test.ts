@@ -107,7 +107,9 @@ describe('QC unavailable pauses for review, and Retry QC judges again (e2e)', ()
       effective,
       prevStageKey,
     } = await runner.loadStageContext(runId, 'draft');
+    const [owner] = await testDb.db.select().from(run).where(eq(run.id, runId));
     return runStageAttemptLoop({
+      executionEpoch: owner!.executionEpoch,
       step: { run: (_id: string, fn: () => unknown) => fn(), sleep: vi.fn() } as never,
       logger: { warn: vi.fn() } as never,
       runner,

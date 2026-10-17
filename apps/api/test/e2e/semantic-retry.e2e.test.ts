@@ -405,6 +405,7 @@ describe('semantic retry loop (e2e)', () => {
       runId: run.id,
       stageExecutionId: execution.id,
       stageKey: 'racy',
+      invocationKey: '0:stage:0',
     };
     const [a, b] = await Promise.all([
       stageRunner.beginAttempt(beginCtx),

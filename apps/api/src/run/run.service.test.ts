@@ -131,7 +131,7 @@ describe('RunService durable control wakeups', () => {
       expect(setup.runMutation.withLockedRun).toHaveBeenCalledWith(
         'run-1',
         'resume',
-        ['PAUSED_BUDGET', 'PAUSED_MANUAL', 'PAUSED_QUOTA', 'FAILED'],
+        ['PAUSED_BUDGET', 'PAUSED_MANUAL', 'PAUSED_QUOTA', 'FAILED', 'CANCELLED'],
         expect.any(Function),
         'run/resumed',
       );
@@ -159,7 +159,7 @@ describe('RunService durable control wakeups', () => {
       expect.any(Function),
       'run/paused',
     );
-    expect(setup.txUpdate.set).toHaveBeenCalledWith({ state: 'PAUSED_MANUAL' });
+    expect(setup.txUpdate.set).toHaveBeenCalledWith({ state: 'PAUSING' });
     expect(setup.wakeupDispatcher.dispatch).toHaveBeenCalledWith('wake-1');
     expect(result.state).toBe('PAUSED_MANUAL');
   });

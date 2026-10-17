@@ -1,3 +1,5 @@
+import type { RunExecutionActions } from '@/hooks/useRunExecutionActions';
+import { Button } from '@/components/ui/button';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/api/client';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -14,6 +16,7 @@ import { describeRunActionError } from '@/lib/describe-run-action-error';
 import { ArtifactPreview } from './artifact-preview';
 
 export function StageOutputSheet({
+  actions,
   runId,
   stageKey,
   stageLabel,
@@ -22,6 +25,7 @@ export function StageOutputSheet({
   open,
   onOpenChange,
 }: {
+  actions?: RunExecutionActions | undefined;
   runId: string;
   stageKey: string | null;
   stageLabel?: string | null;
@@ -76,7 +80,25 @@ export function StageOutputSheet({
               {items.map((item) => (
                 <section key={item.artifact.id} className="flex flex-col gap-2">
                   {item.itemIndex !== null ? (
-                    <h3 className="text-sm font-medium">Item {item.itemIndex + 1}</h3>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-sm font-medium">Item {item.itemIndex + 1}</h3>
+                      {actions && !stageRunning && (
+                        <Button
+                          size="xs"
+                          variant="outline"
+                          disabled={actions.runStage.isPending}
+                          onClick={() =>
+                            actions.runStage.mutate({
+                              stageKey: stageKey!,
+                              action: 'rerun',
+                              itemIndex: item.itemIndex!,
+                            })
+                          }
+                        >
+                          Re-run item
+                        </Button>
+                      )}
+                    </div>
                   ) : null}
                   <ArtifactPreview artifact={item.artifact} />
                 </section>

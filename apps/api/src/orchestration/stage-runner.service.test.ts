@@ -41,6 +41,18 @@ describe('StageRunnerService continuation submission', () => {
       events: { record: async () => undefined },
       timelineResources: { resolve: vi.fn() },
     }) as unknown as StageRunnerService;
+    const submissionDb = (service as unknown as { db: { update: unknown } }).db;
+    Object.assign(submissionDb, {
+      transaction: async (callback: (tx: unknown) => Promise<unknown>) =>
+        callback({
+          update: submissionDb.update,
+          select: () => ({
+            from: () => ({
+              where: () => ({ for: async () => [{ state: 'RUNNING', executionEpoch: 0 }] }),
+            }),
+          }),
+        }),
+    });
     vi.spyOn(service as never, 'resolveBindings').mockResolvedValue({
       slots: {},
       context: {},
@@ -126,6 +138,18 @@ describe('StageRunnerService output-instruction prompt delivery', () => {
       timelineResources: { resolve: vi.fn() },
       events: { record },
     }) as unknown as StageRunnerService;
+    const submissionDb = (service as unknown as { db: { update: unknown } }).db;
+    Object.assign(submissionDb, {
+      transaction: async (callback: (tx: unknown) => Promise<unknown>) =>
+        callback({
+          update: submissionDb.update,
+          select: () => ({
+            from: () => ({
+              where: () => ({ for: async () => [{ state: 'RUNNING', executionEpoch: 0 }] }),
+            }),
+          }),
+        }),
+    });
     vi.spyOn(service as never, 'resolveBindings').mockResolvedValue({
       slots: { topic: 'reefs' },
       context: {},
@@ -190,11 +214,16 @@ describe('StageRunnerService.beginAttempt', () => {
       })),
       select: vi.fn().mockReturnValue({
         from: vi.fn().mockReturnValue({
-          where: vi.fn().mockResolvedValue([{ maxAttempt: 0 }]),
+          where: vi.fn().mockReturnValue(
+            Object.assign(Promise.resolve([{ maxAttempt: 0 }]), {
+              for: vi.fn().mockResolvedValue([{ state: 'RUNNING', executionEpoch: 0 }]),
+            }),
+          ),
         }),
       }),
       insert: vi.fn().mockReturnValue({ values: vi.fn().mockResolvedValue(undefined) }),
     };
+    Object.assign(db, { transaction: async (callback: (tx: unknown) => unknown) => callback(db) });
     const service = Object.assign(Object.create(StageRunnerService.prototype) as object, {
       db,
       events: { record: vi.fn().mockResolvedValue(undefined) },
@@ -206,7 +235,9 @@ describe('StageRunnerService.beginAttempt', () => {
       stageKey: 'draft',
     });
 
-    expect(setCalls).toContainEqual({ values: { state: 'running', failure: null, endedAt: null } });
+    expect(setCalls).toContainEqual({
+      values: expect.objectContaining({ state: 'running', failure: null, endedAt: null }),
+    });
   });
 });
 
@@ -216,7 +247,7 @@ describe('StageRunnerService.stopIfRunNotRunning', () => {
     const db = {
       select: vi.fn().mockReturnValue({
         from: vi.fn().mockReturnValue({
-          where: vi.fn().mockResolvedValue([{ state: runState }]),
+          where: vi.fn().mockResolvedValue([{ state: runState, epoch: 0 }]),
         }),
       }),
       update: vi.fn().mockReturnValue({

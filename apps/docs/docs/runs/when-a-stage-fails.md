@@ -90,9 +90,9 @@ Running into a budget limit pauses the run, it doesn't fail it. See
 
 1. Fix the cause: the prompt, the check, the key, the budget.
 2. If you changed the blueprint, remember a run uses the version it started with. To use your changes,
-   save a new version and **Rerun**, or [run stages from the canvas](./canvas-runs.md).
+   save a new version and review the explicit reuse/rebuild plan from the [canvas](./canvas-runs.md).
 3. If you only fixed something outside the blueprint, such as a key or your credit, select **Resume**, or
-   **Retry** the failed stage. If the stage repeats for each item and only some items failed, choose
-   **Only the failed items** to keep the ones that passed. See [Retries](./retries.md).
+   **Continue stage** to execute unfinished work while keeping passed items. Choose **Re-run stage**
+   only when you want to regenerate completed items too. See [Retries](./retries.md).
 
 Still stuck? See [Troubleshooting](../troubleshooting.md).

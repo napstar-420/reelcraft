@@ -1,51 +1,29 @@
-import { useEffect, useState } from 'react';
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useRunExecutionActions } from '@/hooks/useRunExecutionActions';
 import {
-  Ban,
-  Eye,
-  FileText,
-  History,
-  Loader2,
-  Pause,
-  Play,
-  RefreshCw,
-  RotateCcw,
-  Wallet,
-} from 'lucide-react';
-import type { RetryItems, RetryScope } from '@reelcraft/shared';
-import { api } from '../api/client';
+  RunExecutionToolbar,
+  StageExecutionControls,
+  ExecutionPlanDialog,
+} from '@/components/runs/execution-controls';
+import { useEffect, useState } from 'react';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
+
+import { Eye, FileText, History, Wallet } from 'lucide-react';
+
 import { useRun } from '../hooks/useRun';
 import { formatRunDuration, runningNow } from './runs-page.logic';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from '@/components/ui/alert-dialog';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+
 import { runStateTone, stageExecutionStateTone } from '@/lib/status';
 import { canAnswerWaits, isRunActionAllowed } from '@/lib/run-action-policy';
-import { describeRunActionError } from '@/lib/describe-run-action-error';
+
 import { ApprovalReviewSheet } from '@/components/runs/approval-review-sheet';
 import { RaiseBudgetDialog } from '@/components/runs/raise-budget-dialog';
-import { StageRetryDialog } from '@/components/runs/stage-retry-dialog';
+
 import { SubmitFormInputDialog } from '@/components/runs/submit-form-input-dialog';
 import { StageAttemptsSheet } from '@/components/runs/stage-attempts-sheet';
 import { StageOutputSheet } from '@/components/runs/stage-output-sheet';
@@ -57,16 +35,9 @@ import { formatCapUsd } from '@/lib/format-cap';
 
 export function RunPage() {
   const { runId } = useParams<{ runId: string }>();
-  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { data: run, isLoading, isFetching } = useRun(runId);
-  const queryClient = useQueryClient();
   const [reviewStageKey, setReviewStageKey] = useState<string | null>(null);
-  const [retry, setRetry] = useState<{
-    stageKey: string;
-    scope: RetryScope;
-    items?: RetryItems;
-  } | null>(null);
   const [formInputStageKey, setFormInputStageKey] = useState<string | null>(null);
   const [attemptsStageKey, setAttemptsStageKey] = useState<string | null>(null);
   const [outputStageKey, setOutputStageKey] = useState<string | null>(null);
@@ -93,34 +64,7 @@ export function RunPage() {
     setSearchParams({}, { replace: true });
   }, [run, isFetching, searchParams, setSearchParams]);
 
-  const cancelRun = useMutation({
-    mutationFn: () => api.cancelRun(runId!),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['run', runId] }),
-  });
-  const pauseRun = useMutation({
-    mutationFn: () => api.pauseRun(runId!),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['run', runId] }),
-  });
-  const resumeRun = useMutation({
-    mutationFn: () => api.resumeRun(runId!),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['run', runId] }),
-  });
-  const rerun = useMutation({
-    mutationFn: async () => {
-      const created = await api.createRun({
-        channelId: run!.channelId,
-        blueprintVersionId: run!.blueprintVersionId,
-        budgetCapUsd: Number(run!.budgetCapUsd),
-        inputs: run!.inputs,
-        // Roles come from the blueprint version: starting the new run takes a
-        // fresh snapshot of each character as it is now.
-        roleBindings: {},
-        rerunStageKeys: [],
-      });
-      return api.startRun(created.id);
-    },
-    onSuccess: (created) => navigate(`/runs/${created.id}`),
-  });
+  const actions = useRunExecutionActions({ run });
 
   if (isLoading || !run) {
     return (
@@ -140,16 +84,9 @@ export function RunPage() {
   const budgetCapUsd = Number(run.budgetCapUsd);
   const spentPct = budgetCapUsd > 0 ? Math.min(100, (spentUsd / budgetCapUsd) * 100) : 0;
 
-  const canCancel = isRunActionAllowed('cancel', run.state);
-  const canPause = isRunActionAllowed('pause', run.state);
-  const canResume = isRunActionAllowed('resume', run.state);
   const canRaiseBudget = isRunActionAllowed('raise_budget', run.state);
-  const canRetry = isRunActionAllowed('retry', run.state);
   const isStageRunning = (stageKey: string | null) =>
     run.stageExecutions.some((se) => se.stageKey === stageKey && se.state === 'running');
-  const isTerminal = ['COMPLETED', 'FAILED', 'CANCELLED'].includes(run.state);
-  const canRerun = isTerminal;
-  const usesCharacter = Object.keys(run.roleBindings).length > 0;
 
   return (
     <section className="flex flex-col gap-6">
@@ -169,14 +106,7 @@ export function RunPage() {
         open={raiseBudgetOpen}
         onOpenChange={setRaiseBudgetOpen}
       />
-      <StageRetryDialog
-        runId={run.id}
-        stageKey={retry?.stageKey ?? null}
-        scope={retry?.scope ?? 'dependents'}
-        {...(retry?.items && { items: retry.items })}
-        open={retry !== null}
-        onOpenChange={(open) => !open && setRetry(null)}
-      />
+      <ExecutionPlanDialog actions={actions} />
       <SubmitFormInputDialog
         runId={run.id}
         stageKey={formInputStageKey}
@@ -192,6 +122,7 @@ export function RunPage() {
         onOpenChange={(open) => !open && setAttemptsStageKey(null)}
       />
       <StageOutputSheet
+        actions={run.availableActions?.busy ? undefined : actions}
         runId={run.id}
         stageKey={outputStageKey}
         stageRunning={isStageRunning(outputStageKey)}
@@ -212,103 +143,24 @@ export function RunPage() {
               </span>
             ) : null}
           </div>
-          <div className="flex items-center gap-2">
-            {canRerun ? (
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <Button size="sm" variant="outline" disabled={rerun.isPending}>
-                    {rerun.isPending ? <Loader2 className="animate-spin" /> : <RotateCcw />}
-                    Rerun
-                  </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>Start a new run?</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      A new run starts from the beginning with the same blueprint version, inputs
-                      and budget cap.
-                      {usesCharacter
-                        ? ' It uses the character as it is now, including any changes made since this run.'
-                        : ''}
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    <AlertDialogAction onClick={() => rerun.mutate()}>
-                      Start new run
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
-            ) : null}
-            {canPause ? (
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={pauseRun.isPending}
-                onClick={() => pauseRun.mutate()}
-              >
-                {pauseRun.isPending ? <Loader2 className="animate-spin" /> : <Pause />}
-                Pause
+          <div className="flex flex-wrap items-center gap-2">
+            {run.blueprintId && (
+              <Button size="sm" variant="ghost" asChild>
+                <Link to={`/blueprints/${run.blueprintId}/build?run=${run.id}`}>Open canvas</Link>
               </Button>
-            ) : null}
-            {canResume ? (
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={resumeRun.isPending}
-                onClick={() => resumeRun.mutate()}
-              >
-                {resumeRun.isPending ? <Loader2 className="animate-spin" /> : <Play />}
-                Resume
-              </Button>
-            ) : null}
-            {canCancel ? (
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <Button size="sm" variant="destructive" disabled={cancelRun.isPending}>
-                    <Ban /> Cancel run
-                  </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>Cancel this run?</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      This stops the run permanently and can&apos;t be undone.
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>Keep running</AlertDialogCancel>
-                    <AlertDialogAction onClick={() => cancelRun.mutate()}>
-                      Yes, cancel run
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
-            ) : null}
+            )}
+            <RunExecutionToolbar run={run} actions={actions} />
           </div>
         </div>
-
-        {cancelRun.isError || pauseRun.isError || resumeRun.isError || rerun.isError ? (
-          <Alert variant="destructive">
-            <AlertTitle>Action failed</AlertTitle>
-            <AlertDescription>
-              {describeRunActionError(
-                cancelRun.error ?? pauseRun.error ?? resumeRun.error ?? rerun.error,
-                'The action could not be completed.',
-              )}
-            </AlertDescription>
-          </Alert>
-        ) : null}
 
         <div className="flex flex-col gap-1.5">
           <div className="flex max-w-md items-center gap-2">
             <Progress value={spentPct} className="flex-1" />
-            {canRaiseBudget ? (
+            {canRaiseBudget && (
               <Button size="sm" variant="ghost" onClick={() => setRaiseBudgetOpen(true)}>
                 <Wallet /> Raise budget
               </Button>
-            ) : null}
+            )}
           </div>
           <p className="text-sm text-muted-foreground">
             ${spentUsd.toFixed(2)} spent
@@ -386,45 +238,14 @@ export function RunPage() {
                     <Link to={`/runs/${run.id}/stages/${se.stageKey}/edit`}>Open editor</Link>
                   </Button>
                 ) : null}
-                {canRetry && ['passed', 'failed', 'stale'].includes(se.state) ? (
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button size="sm" variant="outline">
-                        <RefreshCw /> {se.state === 'passed' ? 'Re-run' : 'Retry'}
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      {se.isIterating && se.state === 'failed' ? (
-                        <DropdownMenuItem
-                          onSelect={() =>
-                            setRetry({
-                              stageKey: se.stageKey,
-                              scope: 'dependents',
-                              items: 'failed',
-                            })
-                          }
-                        >
-                          Only the failed items
-                        </DropdownMenuItem>
-                      ) : null}
-                      <DropdownMenuItem
-                        onSelect={() => setRetry({ stageKey: se.stageKey, scope: 'dependents' })}
-                      >
-                        With stages that use its output
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onSelect={() => setRetry({ stageKey: se.stageKey, scope: 'stage' })}
-                      >
-                        Only this stage
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onSelect={() => setRetry({ stageKey: se.stageKey, scope: 'downstream' })}
-                      >
-                        This and all later stages
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                ) : null}
+                <StageExecutionControls
+                  available={se.availableActions}
+                  busy={run.availableActions?.busy ?? true}
+                  pending={actions.runStage.isPending}
+                  onAction={(request) =>
+                    actions.runStage.mutate({ stageKey: se.stageKey, ...request })
+                  }
+                />
                 {se.outputArtifactId !== null || (se.isIterating && se.state !== 'pending') ? (
                   <Button size="sm" variant="ghost" onClick={() => setOutputStageKey(se.stageKey)}>
                     <FileText /> View output

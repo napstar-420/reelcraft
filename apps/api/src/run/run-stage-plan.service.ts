@@ -1,3 +1,4 @@
+import { unresolvedCancellation } from './cancellation-risk';
 import { ConflictException, Inject, Injectable, Logger } from '@nestjs/common';
 import { and, desc, eq, inArray, isNotNull } from 'drizzle-orm';
 import {
@@ -22,6 +23,7 @@ import {
   artifact,
   artifactAttachment,
   stageAttempt,
+  stageItem,
 } from '../db/schema/index';
 import { mergeLayer } from '../run-config/layer-merge';
 import { toUsd } from '../common/money';
@@ -91,16 +93,8 @@ export class RunStagePlanService {
     const validationArtifactId = targetExecution?.outputArtifactId ?? storedCandidate?.artifactId;
 
     let blockedReason: string | null = null;
-    if (
-      !['COMPLETED', 'FAILED'].includes(current.state) ||
-      current.stageExecutions.some((e) =>
-        ['running', 'awaiting_input', 'awaiting_approval'].includes(e.state),
-      ) ||
-      (current.state === 'COMPLETED' &&
-        current.stageExecutions.some((e) => !['passed', 'skipped'].includes(e.state)))
-    )
-      blockedReason =
-        'Wait for this run to finish or resolve its pending work before planning another stage.';
+    if (current.availableActions?.busy || current.state === 'CREATED')
+      blockedReason = 'Wait for execution to settle before starting another action.';
     if (request.stageKey && (!target || !edited))
       blockedReason = 'This stage was added or removed. Start a new run for the changed graph.';
     if (!requested.runnable) blockedReason = 'Fix blueprint validation errors before running.';
@@ -119,9 +113,9 @@ export class RunStagePlanService {
     )
       blockedReason =
         'Blueprint inputs, roles, or defaults changed. Start a new run to apply those changes.';
-    if (request.mode === 'reuse' && !request.stageKey)
+    if (request.mode === 'reuse' && !request.stageKey && !request.action)
       blockedReason = 'Choose a single stage to use existing upstream outputs.';
-    if (request.mode === 'reuse' && request.scope === 'descendants')
+    if (request.mode === 'reuse' && request.scope === 'descendants' && request.stageKey)
       blockedReason = 'Rebuilding descendants requires applying the draft changes.';
     // A changed consumer contract cannot be assumed compatible with old upstream outputs.
     const contract = (stage: StageDef) => ({
@@ -138,6 +132,7 @@ export class RunStagePlanService {
     });
     if (
       request.mode === 'reuse' &&
+      request.itemIndex === undefined &&
       target &&
       edited &&
       definitionKey(contract(target)) !== definitionKey(contract(edited))
@@ -162,15 +157,30 @@ export class RunStagePlanService {
     const graphForScope = request.mode !== 'rebuild' ? before.graph : draft.graph;
     const deps = stageDependencies(graphForScope);
     const keep = request.stageKey
-      ? new Set([request.stageKey, ...ancestorsOf(deps, request.stageKey)])
-      : new Set(graphForScope.map((s) => s.key));
+      ? new Set([
+          request.stageKey,
+          ...(request.scope === 'through' || !request.action
+            ? ancestorsOf(deps, request.stageKey)
+            : []),
+        ])
+      : new Set(
+          request.action === 'continue'
+            ? (current.executionScope?.stageKeys ??
+                current.stageExecutions
+                  .filter((e) => e.state !== 'skipped' || e.skipReason)
+                  .map((e) => e.stageKey))
+            : graphForScope.map((s) => s.key),
+        );
     const roots = new Set<string>();
-    if (request.stageKey) roots.add(request.stageKey);
+    const regenerate = request.action === 'rerun' || !request.action;
+    if (request.stageKey && (regenerate || request.mode === 'validate'))
+      roots.add(request.stageKey);
+    if (!request.stageKey && regenerate) for (const key of keep) roots.add(key);
     if (request.mode === 'rebuild') {
       for (const key of [...freshness.changedStageKeys, ...freshness.validationStageKeys])
         if (keep.has(key)) roots.add(key);
     }
-    for (const key of keep) if (!passed.has(key)) roots.add(key);
+
     const affected = new Set(roots);
     for (const key of roots)
       for (const edges of [oldDeps, newDeps])
@@ -178,16 +188,50 @@ export class RunStagePlanService {
     const execute = new Set(
       [...affected].filter((key) => request.scope === 'descendants' || keep.has(key)),
     );
-    // A rewired descendant may introduce an additional upstream prerequisite.
-    for (const key of [...execute])
-      for (const ancestor of ancestorsOf(deps, key))
-        if (
-          !passed.has(ancestor) ||
-          (request.mode === 'rebuild' && freshness.staleStageKeys.includes(ancestor))
-        )
-          execute.add(ancestor);
+    if (!regenerate) for (const key of keep) if (!passed.has(key)) execute.add(key);
+    // Through-stage and rebuild-descendants operations explicitly include prerequisites.
+    if (
+      (request.scope !== 'stage' || !request.action) &&
+      !(request.action === 'continue' && !request.stageKey)
+    )
+      for (const key of [...execute])
+        for (const ancestor of ancestorsOf(deps, key))
+          if (
+            !passed.has(ancestor) ||
+            (request.mode === 'rebuild' && freshness.staleStageKeys.includes(ancestor))
+          )
+            execute.add(ancestor);
+    if (request.action && request.stageKey && request.scope === 'stage') {
+      const eligibility = targetExecution?.availableActions;
+      if (eligibility?.blockedReason) blockedReason ??= eligibility.blockedReason;
+      if (request.action === 'continue' && !eligibility?.continue)
+        blockedReason ??= 'This stage has no interrupted work to continue.';
+      if (
+        request.action === 'run' &&
+        !eligibility?.run &&
+        !freshness.staleStageKeys.includes(request.stageKey)
+      )
+        blockedReason ??= 'Use Continue stage or Re-run stage for existing work.';
+    }
+    if (request.itemIndex !== undefined) {
+      if (
+        request.action !== 'rerun' ||
+        !target?.iterate ||
+        !targetExecution ||
+        request.itemIndex >= (targetExecution.itemCount ?? 0)
+      )
+        blockedReason = 'Choose an existing iteration item to re-run.';
+    }
     const changedKeys = new Set(
-      [...execute].filter((key) => request.mode === 'rebuild' || key === request.stageKey),
+      [...execute].filter(
+        (key) =>
+          (request.mode === 'rebuild' ||
+            (key === request.stageKey &&
+              request.action !== 'continue' &&
+              request.itemIndex === undefined)) &&
+          definitionKey(before.graph.find((s) => s.key === key)) !==
+            definitionKey(draft.graph.find((s) => s.key === key)),
+      ),
     );
     const graph = graphForScope.map((s) =>
       changedKeys.has(s.key)
@@ -204,6 +248,13 @@ export class RunStagePlanService {
     )
       blockedReason =
         'The graph was reordered or rewired. Start a new run to apply changed dependencies.';
+    if (
+      request.itemIndex !== undefined &&
+      request.mode === 'rebuild' &&
+      [...freshness.changedStageKeys, ...freshness.validationStageKeys].includes(request.stageKey!)
+    )
+      blockedReason =
+        'The stage definition changed. Re-run the stage to apply it to every item, or use its pinned definition to re-run one item.';
     const [channelRow] = await this.db
       .select()
       .from(channel)
@@ -259,15 +310,55 @@ export class RunStagePlanService {
     }
     const configFingerprint = previewPayloadDigest({
       config,
+      concurrentBranches: current.concurrentBranches,
+      executionEpoch: current.executionEpoch,
       assetBindings,
       validationArtifactId: request.mode === 'validate' ? validationArtifactId : undefined,
     });
     const preview = await this.invalidation.preview({
       runId,
-      seed: { stageKeys: [...roots], forcedStageKeys: [...affected] },
+      seed:
+        request.itemIndex !== undefined && request.stageKey
+          ? { items: [{ stageKey: request.stageKey, itemIndex: request.itemIndex }] }
+          : { stageKeys: [...roots], forcedStageKeys: [...affected] },
     });
+    const uncertain = current.stageExecutions.length
+      ? await this.db
+          .select({ id: stageAttempt.id, stageKey: stageExecution.stageKey })
+          .from(stageAttempt)
+          .innerJoin(stageExecution, eq(stageAttempt.stageExecutionId, stageExecution.id))
+          .where(and(eq(stageExecution.runId, runId), unresolvedCancellation()))
+      : [];
+    const uncertainAttemptIds = uncertain.filter((a) => execute.has(a.stageKey)).map((a) => a.id);
+    if (uncertainAttemptIds.length && !request.allowUncertainRestart)
+      blockedReason ??=
+        'Provider cancellation could not be confirmed. Restarting unfinished requests may incur additional charges. Confirm this risk before continuing.';
+    const executionIds = current.stageExecutions
+      .filter((e) => execute.has(e.stageKey))
+      .map((e) => e.id);
+    const savedItems = executionIds.length
+      ? await this.db
+          .select({ executionId: stageItem.stageExecutionId, index: stageItem.itemIndex })
+          .from(stageItem)
+          .where(
+            and(inArray(stageItem.stageExecutionId, executionIds), eq(stageItem.state, 'passed')),
+          )
+      : [];
+    const retainedItemCount = savedItems.filter((item) => {
+      const execution = current.stageExecutions.find((e) => e.id === item.executionId);
+      return (
+        (execution?.itemCount === null || item.index < (execution?.itemCount ?? 0)) &&
+        !preview.closure.affectedItems.some(
+          (affected) =>
+            affected.stageExecutionId === item.executionId &&
+            (affected.itemIndex === undefined || affected.itemIndex === item.index),
+        )
+      );
+    }).length;
     const plan: Omit<StageRunPlanDto, 'previewToken'> = {
       request,
+      uncertainAttemptIds,
+      retainedItemCount,
       runStageKeys: graph.filter((s) => execute.has(s.key)).map((s) => s.key),
       reusedStageKeys: graph
         .filter(
@@ -282,9 +373,14 @@ export class RunStagePlanService {
       invalidatedStageKeys: preview.closure.affectedStageKeys.filter(
         (key) => passed.has(key) && !execute.has(key),
       ),
-      estimatedRerunUsd: current.stageExecutions
-        .filter((e) => execute.has(e.stageKey))
-        .reduce((sum, e) => sum + toUsd(e.costUsd), 0),
+      estimatedRerunUsd:
+        request.itemIndex !== undefined
+          ? preview.costs
+              .filter((c) => execute.has(c.stageKey))
+              .reduce((sum, c) => sum + c.estimatedRerunUsd, 0)
+          : current.stageExecutions
+              .filter((e) => execute.has(e.stageKey))
+              .reduce((sum, e) => sum + toUsd(e.costUsd), 0),
       blockedReason,
     };
     return {
@@ -341,7 +437,17 @@ export class RunStagePlanService {
     const result = await this.mutation.withLockedRun(
       runId,
       built.current.state === 'FAILED' ? 'retry' : 'continue',
-      ['COMPLETED', 'FAILED'],
+      [
+        'COMPLETED',
+        'FAILED',
+        'IDLE',
+        'CANCELLED',
+        'PAUSED_MANUAL',
+        'PAUSED_BUDGET',
+        'PAUSED_QUOTA',
+        'PAUSED_APPROVAL',
+        'PAUSED_INPUT',
+      ],
       async (tx, locked) => {
         if (locked.revision !== built.current.revision)
           throw new ConflictException('The run changed. Review a new preview.');
@@ -418,10 +524,12 @@ export class RunStagePlanService {
             ...previous,
             artifactId: validationOutputId,
             id: ulid(),
+            invocationKey: null,
             attemptNo: (latest?.attemptNo ?? 0) + 1,
             actor: 'user',
             outcome: 'user_edit',
             phase: 'created',
+            executionEpoch: locked.executionEpoch + 1,
             costUsd: '0',
             checkResults: null,
             qcVerdict: null,
@@ -440,24 +548,26 @@ export class RunStagePlanService {
               .where(eq(stageExecution.id, execution.id));
         }
         const pending = built.current.stageExecutions
-          .filter((e) => built.execute.has(e.stageKey))
+          .filter((e) => built.execute.has(e.stageKey) && !e.waiting)
           .map((e) => e.id);
         const deferred = built.current.stageExecutions
-          .filter(
-            (e) =>
-              !pending.includes(e.id) &&
-              (built.preview.closure.affectedExecutionIds.includes(e.id) || e.state !== 'passed'),
-          )
+          .filter((e) => !pending.includes(e.id) && e.state === 'skipped' && !e.skipReason)
           .map((e) => e.id);
         if (deferred.length)
           await tx
             .update(stageExecution)
-            .set({ state: 'skipped' })
+            .set({ state: 'pending', skipReason: null })
             .where(inArray(stageExecution.id, deferred));
         if (pending.length)
           await tx
             .update(stageExecution)
-            .set({ state: 'pending', failure: null, startedAt: null, endedAt: null })
+            .set({
+              state: 'pending',
+              skipReason: null,
+              failure: null,
+              startedAt: null,
+              endedAt: null,
+            })
             .where(inArray(stageExecution.id, pending));
         const resolvedConfig = { ...(built.current.resolvedConfig as Record<string, ConfigLayer>) };
         for (const key of built.changedKeys) resolvedConfig[key] = built.config[key] ?? {};
@@ -465,6 +575,16 @@ export class RunStagePlanService {
           .update(run)
           .set({
             blueprintVersionId: snapshotId,
+            executionEpoch: locked.executionEpoch + 1,
+            executionScope: {
+              kind:
+                request.stageKey ||
+                (request.action === 'continue' &&
+                  built.current.executionScope?.kind === 'selection')
+                  ? 'selection'
+                  : 'blueprint',
+              stageKeys: [...built.execute],
+            },
             resolvedConfig,
             assetBindings: built.assetBindings,
           })

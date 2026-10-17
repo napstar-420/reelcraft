@@ -2,6 +2,7 @@ import {
   Delete,
   Body,
   BadRequestException,
+  ConflictException,
   Controller,
   Get,
   Param,
@@ -13,6 +14,7 @@ import {
 } from '@nestjs/common';
 import {
   CreateRunDto,
+  ExecutionSettingsDto,
   StageRunPlanRequestDto,
   ConfirmStageRunPlanDto,
   ContinueRunDto,
@@ -80,11 +82,31 @@ export class RunController {
   }
 
   @Post(':id/continue')
-  continueRun(
+  async continueRun(
     @Param('id') id: string,
     @Body(new ZodValidationPipe(ContinueRunDto)) dto: ContinueRunDto,
   ) {
-    return this.runs.continueRun(id, dto);
+    const plan = await this.stagePlans.preview(id, {
+      blueprintVersionId: dto.blueprintVersionId,
+      stageKey: dto.untilStageKey,
+      mode: 'reuse',
+      action: 'continue',
+      scope: dto.untilStageKey ? 'through' : 'descendants',
+    });
+    if (plan.blockedReason || plan.invalidatedStageKeys.length || plan.staleStageKeys.length)
+      throw new ConflictException(
+        plan.blockedReason ?? 'Review an execution plan before applying definition changes.',
+      );
+    await this.stagePlans.confirm(id, { ...plan.request, previewToken: plan.previewToken });
+    return { continued: true };
+  }
+
+  @Patch(':id/execution-settings')
+  updateExecutionSettings(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(ExecutionSettingsDto)) dto: ExecutionSettingsDto,
+  ) {
+    return this.runs.updateExecutionSettings(id, dto.concurrentBranches);
   }
 
   @Post(':id/execution-plan')

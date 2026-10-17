@@ -1,3 +1,4 @@
+import { StageExecutionControls } from '@/components/runs/execution-controls';
 import { memo } from 'react';
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react';
 import { Link } from 'react-router-dom';
@@ -8,9 +9,7 @@ import {
   ChevronRight,
   CircleDollarSign,
   Database,
-  Play,
   Plus,
-  Square,
   Trash2,
   UserRound,
   XCircle,
@@ -73,7 +72,6 @@ function IoRow({ icon, name, detail }: { icon: React.ReactNode; name: string; de
 function RunFooter({
   stageKey,
   status,
-  runTitle,
 }: {
   stageKey: string;
   status: NodeRunStatus;
@@ -82,7 +80,7 @@ function RunFooter({
   const actions = useCanvasActions();
   const running = status.state === 'running';
   return (
-    <div className="flex items-center gap-2 rounded-b-xl border-t bg-muted/50 py-1.5 pr-2 pl-3 text-xs">
+    <div className="flex flex-wrap items-center gap-2 rounded-b-xl border-t bg-muted/50 py-1.5 pr-2 pl-3 text-xs">
       <span
         className={cn(
           'size-2 shrink-0 rounded-full',
@@ -108,17 +106,15 @@ function RunFooter({
           Review
         </Button>
       ) : (
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-xs"
-          className="nodrag nopan"
-          title={running ? 'Cancel run' : (runTitle ?? 'Run this stage')}
-          aria-label={running ? 'Cancel run' : 'Run this stage'}
-          onClick={() => (running ? actions.onCancelRun() : actions.onRunStage(stageKey))}
-        >
-          {running ? <Square /> : <Play />}
-        </Button>
+        <div className="nodrag nopan">
+          <StageExecutionControls
+            available={status.availableActions}
+            busy={status.executionBusy ?? true}
+            pending={false}
+            compact
+            onAction={(request) => actions.onRunStage(stageKey, request)}
+          />
+        </div>
       )}
     </div>
   );

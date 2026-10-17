@@ -29,6 +29,9 @@ export const toneDotClassName: Record<StatusTone, string> = {
 const runStateTones: Record<RunState, StatusTone> = {
   CREATED: 'neutral',
   RUNNING: 'running',
+  IDLE: 'neutral',
+  PAUSING: 'warning',
+  CANCELLING: 'warning',
   PAUSED_BUDGET: 'warning',
   PAUSED_APPROVAL: 'warning',
   PAUSED_INPUT: 'warning',

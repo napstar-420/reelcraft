@@ -79,6 +79,7 @@ export const stageExecution = pgTable(
       .references(() => run.id), // run this stage execution belongs to
     stageKey: text('stage_key').notNull(), // key of the blueprint stage being executed
     state: stageExecutionStateEnum('state').notNull(), // current lifecycle state of the stage execution
+    skipReason: text('skip_reason'),
     isIterating: boolean('is_iterating').notNull().default(false), // whether this stage fans out into per-item stage_item rows
     itemCount: integer('item_count'), // number of stage_item rows expected, when iterating
     attemptCount: integer('attempt_count').notNull().default(0), // number of attempts made at the stage level
@@ -99,6 +100,7 @@ export const stageItem = pgTable(
     stageExecutionId: text('stage_execution_id')
       .notNull()
       .references(() => stageExecution.id), // stage execution this item belongs to
+    inputFingerprint: text('input_fingerprint'),
     itemIndex: integer('item_index').notNull(), // position of this item within the iterating stage
     state: stageItemStateEnum('state').notNull(),
     attemptCount: integer('attempt_count').notNull().default(0), // number of attempts made for this item
@@ -134,6 +136,9 @@ export const stageAttempt = pgTable(
       .references(() => stageExecution.id), // stage execution this attempt belongs to
     stageItemId: text('stage_item_id').references(() => stageItem.id), // stage item this attempt belongs to, when iterating
     attemptNo: integer('attempt_no').notNull(), // monotonic attempt number, never reset (see class comment)
+    invocationKey: text('invocation_key'),
+    executionEpoch: integer('execution_epoch').notNull().default(0),
+    cancellationConfirmed: boolean('cancellation_confirmed'),
     outcome: attemptOutcomeEnum('outcome').notNull(), // §3.8.1
     resolvedInputs: jsonb('resolved_inputs').notNull(), // includes memory versions read (§6.3)
     renderedPrompt: text('rendered_prompt'), // fully rendered prompt sent to the provider
@@ -158,6 +163,7 @@ export const stageAttempt = pgTable(
       sql`coalesce(${t.stageItemId}, '')`,
       t.attemptNo,
     ),
+    uniqueIndex('stage_attempt_invocation_uq').on(t.stageExecutionId, t.invocationKey),
     index('stage_attempt_artifact_id_idx').on(t.artifactId),
     index('stage_attempt_critique_target_outcome_idx').on(t.critiqueTargetStageKey, t.outcome),
   ],
