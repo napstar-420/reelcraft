@@ -175,7 +175,7 @@ export class EngineConfig implements OnModuleInit {
   }
 
   get codexBrowserMaxSteps(): number {
-    return this.config.get('CODEX_BROWSER_MAX_STEPS', { infer: true }) ?? 50;
+    return this.config.get('CODEX_BROWSER_MAX_STEPS', { infer: true }) ?? 500;
   }
 
   get codexOutputMaxBytes(): number {

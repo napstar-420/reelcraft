@@ -144,7 +144,7 @@ export function buildCodexPrompt(input: {
     input.modality === 'browser'
       ? [
           `Session name: ${String(input.params?.__sessionName ?? 'reelcraft-browser')}`,
-          `Maximum browser steps: ${String(input.params?.__browserMaxSteps ?? 50)}`,
+          `Maximum browser steps: ${String(input.params?.__browserMaxSteps ?? 500)}`,
           ...(typeof input.params?.startUrl === 'string'
             ? [`Start URL: ${input.params.startUrl}`]
             : []),

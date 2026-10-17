@@ -58,6 +58,7 @@ export const GUIDE: Record<string, GuideSection> = {
 - \`human.input\`: pauses the run for a person to type or paste text or data.
 - \`human.timeline_edit\`: pauses for a person to edit a timeline in the timeline editor.
 - \`browser.automate\`: Codex uses a signed-in browser to do a task; \`data\` output, or files it downloads (\`media.audio\`, \`media.image\`, \`media.video\`, or an image or video list; needs an instructions template saying what to find; the licence it reads is recorded in the stage log). Uses the user's accounts: only if they ask for it.
+- Browser jobs default to 500 steps. An explicit CODEX_BROWSER_MAX_STEPS environment value (1–500) overrides the default after an API restart; existing 50-step overrides still apply. An exceeded step limit fails the attempt and normal retry rules apply. This limit is separate from job timeout and item/branch concurrency; it is not yet configurable in Settings. Do not claim you changed the user's environment or restarted the API.
 - \`browser.flow_video\`: makes clips in Google Flow with Codex and the user's Flow accounts (\`media.video_list\`). Only if they ask for it.
 - \`publish.stub\`: a placeholder that publishes NOTHING. Never describe it as publishing.
 

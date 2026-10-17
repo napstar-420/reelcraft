@@ -36,6 +36,17 @@ async function fixture() {
 }
 
 describe('CodexProviderAdapter', () => {
+  it('defaults browser jobs to 500 steps', async () => {
+    const { adapter, launcher } = await fixture();
+    await adapter.submit(
+      { modality: 'browser', modelId: 'gpt-example', params: { reasoningEffort: 'low' } },
+      'browser-default',
+    );
+    const { jobDir } = launcher.launch.mock.calls[0]![0];
+    const runner = JSON.parse(await readFile(join(jobDir, 'runner-request.json'), 'utf8'));
+    expect(runner.browserMaxSteps).toBe(500);
+    expect(runner.prompt).toContain('Maximum browser steps: 500');
+  });
   it('starts a durable thread and resumes it in a separate job directory', async () => {
     const { adapter, root, launcher } = await fixture();
     const req = {
