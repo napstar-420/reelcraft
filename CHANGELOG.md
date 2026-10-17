@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.11.0](https://github.com/napstar-420/reelcraft/compare/v0.10.0...v0.11.0) (2026-10-17)
+
+
+### Features
+
+* **api:** add provider continuation and fix invalid request retries ([#168](https://github.com/napstar-420/reelcraft/issues/168)) ([04b9a4c](https://github.com/napstar-420/reelcraft/commit/04b9a4cc6d07533e474f4bf3bc7fed93a3b7811d))
+* **api:** run independent stages in parallel ([#152](https://github.com/napstar-420/reelcraft/issues/152)) ([a3ef862](https://github.com/napstar-420/reelcraft/commit/a3ef86220bfb0a38b967bfffa97ba2369bf68466))
+* layered videos from generic blocks (compose timeline, one asset library, audio) ([#154](https://github.com/napstar-420/reelcraft/issues/154)) ([666be9c](https://github.com/napstar-420/reelcraft/commit/666be9c710984914d4c1d4139cac9980dba991c5))
+* **qwen-tts:** set up, start and stop Qwen3-TTS from the app ([#150](https://github.com/napstar-420/reelcraft/issues/150)) ([9eb623a](https://github.com/napstar-420/reelcraft/commit/9eb623a178e4d7b821f7f326fa16f5ee827daef3))
+* redesign DAG canvas and stage inspection ([#173](https://github.com/napstar-420/reelcraft/issues/173)) ([c82b192](https://github.com/napstar-420/reelcraft/commit/c82b192a2c20ea594c2e05150826f2a8eb1d48b8))
+* select per-item reference images through matched bindings ([#169](https://github.com/napstar-420/reelcraft/issues/169)) ([b348ec0](https://github.com/napstar-420/reelcraft/commit/b348ec06f185f25d481fb49b68010f0634d16f2a))
+
+
+### Bug Fixes
+
+* **api:** raise browser step limit to 500 ([#174](https://github.com/napstar-420/reelcraft/issues/174)) ([90d106a](https://github.com/napstar-420/reelcraft/commit/90d106a9bbf0e08c9b2c1d6afc05e48cd2c388c1))
+* **api:** recover cancelled DAG attempts and settle cancellation phases ([#171](https://github.com/napstar-420/reelcraft/issues/171)) ([3eb36eb](https://github.com/napstar-420/reelcraft/commit/3eb36eb1156ded7652758e5fb83751361863db20))
+* unify resumable DAG execution and controls ([#170](https://github.com/napstar-420/reelcraft/issues/170)) ([5f2a8b0](https://github.com/napstar-420/reelcraft/commit/5f2a8b00a7d7640f1cdd753e214df37c7b29f431))
+
 ## [0.10.0](https://github.com/napstar-420/reelcraft/compare/v0.9.0...v0.10.0) (2026-10-13)
 
 
