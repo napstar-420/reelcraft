@@ -558,7 +558,24 @@ export class RunStagePlanService {
             .update(stageExecution)
             .set({ state: 'pending', skipReason: null })
             .where(inArray(stageExecution.id, deferred));
-        if (pending.length)
+        if (pending.length) {
+          // Recover legacy cancelled items without changing passed outputs or saved waits.
+          await tx
+            .update(stageItem)
+            .set({ state: 'pending' })
+            .where(
+              and(inArray(stageItem.stageExecutionId, pending), eq(stageItem.state, 'running')),
+            );
+          await tx
+            .update(stageAttempt)
+            .set({ phase: 'settled' })
+            .where(
+              and(
+                inArray(stageAttempt.stageExecutionId, pending),
+                eq(stageAttempt.outcome, 'cancelled'),
+                inArray(stageAttempt.phase, ['created', 'reserved', 'submitting', 'submitted']),
+              ),
+            );
           await tx
             .update(stageExecution)
             .set({
@@ -569,6 +586,7 @@ export class RunStagePlanService {
               endedAt: null,
             })
             .where(inArray(stageExecution.id, pending));
+        }
         const resolvedConfig = { ...(built.current.resolvedConfig as Record<string, ConfigLayer>) };
         for (const key of built.changedKeys) resolvedConfig[key] = built.config[key] ?? {};
         await tx

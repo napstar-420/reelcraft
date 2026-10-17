@@ -141,6 +141,7 @@ export class RunCancellationService {
         stageKey: stageExecution.stageKey,
         jobHandle: stageAttempt.jobHandle,
         phase: stageAttempt.phase,
+        cancellationConfirmed: stageAttempt.cancellationConfirmed,
       })
       .from(stageAttempt)
       .innerJoin(stageExecution, eq(stageAttempt.stageExecutionId, stageExecution.id))
@@ -168,26 +169,28 @@ export class RunCancellationService {
       try {
         const cancel = this.capabilities.get(stage.capability).cancel;
         cancellation =
-          attempt.phase === 'settled'
-            ? {
-                confirmed: false,
-                reason:
-                  'Checks or quality control were interrupted; a provider request may still be billed',
-              }
-            : !attempt.jobHandle
+          attempt.cancellationConfirmed === true
+            ? { confirmed: true }
+            : attempt.phase === 'settled'
               ? {
-                  confirmed: ['created', 'reserved'].includes(attempt.phase),
+                  confirmed: false,
                   reason:
-                    attempt.phase === 'submitting'
-                      ? 'Provider submission was interrupted; billing is uncertain'
-                      : undefined,
+                    'Checks or quality control were interrupted; a provider request may still be billed',
                 }
-              : cancel
-                ? await cancel.call(
-                    this.capabilities.get(stage.capability),
-                    attempt.jobHandle as JobHandle,
-                  )
-                : { confirmed: false, reason: 'capability does not support cancellation' };
+              : !attempt.jobHandle
+                ? {
+                    confirmed: ['created', 'reserved'].includes(attempt.phase),
+                    reason:
+                      attempt.phase === 'submitting'
+                        ? 'Provider submission was interrupted; billing is uncertain'
+                        : undefined,
+                  }
+                : cancel
+                  ? await cancel.call(
+                      this.capabilities.get(stage.capability),
+                      attempt.jobHandle as JobHandle,
+                    )
+                  : { confirmed: false, reason: 'capability does not support cancellation' };
       } catch (error) {
         this.logger.warn(
           { runId, stageKey: attempt.stageKey, stageAttemptId: attempt.id, err: error },
@@ -211,14 +214,19 @@ export class RunCancellationService {
         },
         'in-flight attempt cancelled',
       );
-      if (reservationId && cancellation.confirmed && cancellation.billed !== true) {
+      if (
+        attempt.cancellationConfirmed !== true &&
+        reservationId &&
+        cancellation.confirmed &&
+        cancellation.billed !== true
+      ) {
         await this.ledger.settleRelease({
           runId,
           stageKey: attempt.stageKey,
           stageAttemptId: attempt.id,
           reservationId,
         });
-      } else if (reservationId) {
+      } else if (attempt.cancellationConfirmed !== true && reservationId) {
         await this.ledger.settleProvisional({
           runId,
           stageKey: attempt.stageKey,
@@ -230,18 +238,13 @@ export class RunCancellationService {
         .update(stageAttempt)
         .set({
           outcome: 'cancelled',
-          cancellationConfirmed: cancellation.confirmed,
+          // Overlapping reconcilers must never undo confirmed cancellation.
+          cancellationConfirmed: sql`coalesce(${stageAttempt.cancellationConfirmed}, false) or ${cancellation.confirmed}`,
           phase: 'settled',
           reviewNote: cancellation.reason ?? null,
         })
         .where(
-          and(
-            eq(stageAttempt.id, attempt.id),
-            or(
-              isNull(stageAttempt.cancellationConfirmed),
-              eq(stageAttempt.cancellationConfirmed, false),
-            ),
-          ),
+          and(eq(stageAttempt.id, attempt.id), lt(stageAttempt.executionEpoch, cancelledEpoch)),
         );
     }
   }

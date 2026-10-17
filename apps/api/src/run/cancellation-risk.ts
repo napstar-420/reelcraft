@@ -7,7 +7,7 @@ export function unresolvedCancellation() {
     ${stageAttempt.cancellationConfirmed} = false or (
       ${stageAttempt.cancellationConfirmed} is null
       and ${stageAttempt.outcome} = 'cancelled'
-      and ${stageAttempt.jobHandle} is not null
+      and (${stageAttempt.jobHandle} is not null or ${stageAttempt.phase} in ('submitting', 'submitted'))
       and not exists (
         select 1 from ledger_entry settled
         where settled.stage_attempt_id = ${stageAttempt.id}

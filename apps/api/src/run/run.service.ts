@@ -2,7 +2,7 @@ import { executionEligibility } from './execution-eligibility';
 import { InvalidationService } from './invalidation.service';
 import { HumanWaitService } from './human-wait.service';
 import { ConflictException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { and, asc, desc, eq, inArray, isNotNull, isNull, lte, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNotNull, isNull, lte, ne, or, sql } from 'drizzle-orm';
 import type {
   CreateRunDto,
   ContinueRunDto,
@@ -1114,6 +1114,8 @@ export class RunService {
                 executions.map((e) => e.id),
               ),
               eq(stageAttempt.executionEpoch, row.executionEpoch),
+              // Legacy cancellation finished attempts without settling their phase.
+              ne(stageAttempt.outcome, 'cancelled'),
               inArray(stageAttempt.phase, ['created', 'reserved', 'submitting', 'submitted']),
             ),
           )
