@@ -152,7 +152,9 @@ describe('Generate Image picks the best of several candidates (e2e)', () => {
   ) {
     const runner = testApp.app.get(StageRunnerService);
     const { stage, effective, prevStageKey } = await runner.loadStageContext(runId, stageKey);
+    const [owner] = await testDb.db.select().from(runTable).where(eq(runTable.id, runId));
     return runStageAttemptLoop({
+      executionEpoch: owner!.executionEpoch,
       step: { run: (_id: string, fn: () => unknown) => fn(), sleep: vi.fn() } as never,
       logger: { warn: vi.fn() } as never,
       runner,

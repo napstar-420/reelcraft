@@ -65,6 +65,7 @@ const getBlueprint: AssistantTool = {
               roles: latest.roles,
               defaults: latest.defaults,
               budget: latest.budget,
+              execution: latest.execution,
             } as typeof draft)
           : draft.graph.length > 0,
       },

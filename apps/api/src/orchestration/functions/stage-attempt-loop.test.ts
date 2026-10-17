@@ -147,7 +147,7 @@ describe('runStageAttemptLoop user_action failures', () => {
 
     expect(result).toEqual({ outcome: 'failed', reason });
     expect(runner.reserveAndSubmit).toHaveBeenCalledTimes(1);
-    expect(runner.failStageExecution).toHaveBeenCalledWith('exec', reason, undefined);
+    expect(runner.failStageExecution).toHaveBeenCalledWith('exec', reason, undefined, undefined);
     expect(runner.recordAttemptError).not.toHaveBeenCalled();
   });
 });

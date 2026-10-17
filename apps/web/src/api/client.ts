@@ -43,6 +43,9 @@ import type {
   CreateBlueprintVersionDto,
   VersionBump,
   RunDetailDto,
+  StageRunPlanDto,
+  StageRunPlanRequestDto,
+  ConfirmStageRunPlanDto,
   RunMemoryDto,
   CapabilityDto,
   FlowAccountsDto,
@@ -65,6 +68,7 @@ import type {
   RequestAssetUploadResultDto,
   CreateAssetDto,
   CreateRunDto,
+  ContinueRunDto,
   AttachInputDto,
   RequestInputUploadResultDto,
   RunInputStatusDto,
@@ -513,6 +517,26 @@ export const api = {
   getRunInputStatus: (runId: string, inputKey: string) =>
     request<RunInputStatusDto>(`/runs/${runId}/inputs/${encodeURIComponent(inputKey)}/status`),
   startRun: (runId: string) => request<RunDetailDto>(`/runs/${runId}/start`, { method: 'POST' }),
+  updateExecutionSettings: (id: string, dto: { concurrentBranches: number }) =>
+    request<RunDetailDto>(`/runs/${id}/execution-settings`, {
+      method: 'PATCH',
+      body: JSON.stringify(dto),
+    }),
+  previewStageRun: (id: string, dto: StageRunPlanRequestDto) =>
+    request<StageRunPlanDto>(`/runs/${id}/execution-plan`, {
+      method: 'POST',
+      body: JSON.stringify(dto),
+    }),
+  confirmStageRun: (id: string, dto: ConfirmStageRunPlanDto) =>
+    request<{ accepted: boolean; runId: string }>(`/runs/${id}/execution-plan/confirm`, {
+      method: 'POST',
+      body: JSON.stringify(dto),
+    }),
+  continueRun: (runId: string, dto: ContinueRunDto) =>
+    request<{ continued: boolean }>(`/runs/${runId}/continue`, {
+      method: 'POST',
+      body: JSON.stringify(dto),
+    }),
 
   getUpdateStatus: () => request<UpdateStatusDto>('/system/update'),
   checkForUpdate: () => request<UpdateStatusDto>('/system/update/check', { method: 'POST' }),

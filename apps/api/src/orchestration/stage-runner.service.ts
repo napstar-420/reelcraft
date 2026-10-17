@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { canonicalJson } from '../json-schema/schema-hash';
 import { Inject, Injectable } from '@nestjs/common';
 import { and, asc, desc, eq, gt, inArray, isNull, lt, sql } from 'drizzle-orm';
 import type { AttemptOutcome, HumanWaitKind, JobHandle, JobStatus, Ref } from '@reelcraft/shared';
@@ -59,7 +60,12 @@ import { StageEventService, type StageEventLevel } from './stage-event.service';
 import { ProviderContinuationUnavailableError } from '../provider/provider-adapter.interface';
 import { feedbackForAttempt, revisionPrompt } from './revision-feedback';
 
+export class ExecutionRetiredError extends Error {}
+
 export interface StageAttemptContext {
+  /** Explicit revalidation must never fall through to provider generation. */
+  validationOnly?: boolean;
+  executionEpoch?: number | undefined;
   runId: string;
   stageExecutionId: string;
   stageKey: string;
@@ -187,10 +193,6 @@ function isImageSet(output: unknown): boolean {
   return Array.isArray((output as Partial<ImageListOutput> | null)?.images);
 }
 
-function isUniqueViolation(err: unknown): boolean {
-  return typeof err === 'object' && err !== null && (err as { code?: unknown }).code === '23505';
-}
-
 /**
  * §3/§7.2/§13 — the engine loop for one stage attempt: resolve inputs,
  * submit, poll, fetch, check, QC, finalize. Split into small methods so the
@@ -242,8 +244,18 @@ export class StageRunnerService {
     runId: string,
     stageExecutionId: string,
     kind: Extract<HumanWaitKind, 'input' | 'timeline_edit'> = 'input',
+    executionEpoch?: number,
   ): Promise<void> {
     await this.db.transaction(async (tx) => {
+      const [owner] = await tx.select().from(run).where(eq(run.id, runId)).for('update');
+      if (
+        !owner ||
+        owner.executionEpoch !== (executionEpoch ?? 0) ||
+        (executionEpoch !== undefined
+          ? !['RUNNING', 'PAUSING'].includes(owner.state)
+          : ['CANCELLED', 'CANCELLING'].includes(owner.state))
+      )
+        return;
       await tx
         .update(stageExecution)
         .set({ state: 'awaiting_input', startedAt: new Date().toISOString() })
@@ -273,103 +285,93 @@ export class StageRunnerService {
     return { stage, effective, prevStageKey };
   }
 
-  /**
-   * §3.8/§13.2 Rule 2 — `attemptNo` is derived from the DB, never a
-   * loop-local variable: `SELECT coalesce(max(attemptNo), 0) + 1` then
-   * insert. On a unique-violation (a replayed Inngest step recomputing the
-   * same attemptNo), re-select the existing row instead of erroring — this
-   * is what makes the step idempotent without a separate locking mechanism,
-   * given each stage execution is driven by one `stage.execute` at a time
-   * (stages of a run may run in parallel, but never the same stage twice), so
-   * no two inserts race for the same execution's `attemptNo`.
-   */
+  /** Lock admission against operator actions; replay uses the invocation identity,
+   * while attempt numbers stay monotonic across generations and invalidation. */
   async beginAttempt(ctx: {
     runId: string;
     stageExecutionId: string;
     stageKey: string;
+    invocationKey?: string;
     itemIndex?: number | undefined;
     stageItemId?: string | undefined;
+    executionEpoch?: number | undefined;
   }): Promise<StageAttemptContext> {
-    const scopePredicate = ctx.stageItemId
-      ? eq(stageAttempt.stageItemId, ctx.stageItemId)
-      : isNull(stageAttempt.stageItemId);
-
-    // First attempt of the stage (any item) marks when it actually started
-    // running, for display in the run timeline. Coalesce so a replayed step
-    // or a retry of an already-started stage doesn't push the time forward.
-    await this.db
-      .update(stageExecution)
-      .set({ startedAt: sql`coalesce(${stageExecution.startedAt}, now())` })
-      .where(eq(stageExecution.id, ctx.stageExecutionId));
-
-    // The UI's only signal that a stage is actively executing (as opposed
-    // to not started yet) — flip 'pending' -> 'running' here. A resumed
-    // 'failed' stage or a retried 'stale' one runs again too, so they flip
-    // as well (clearing the failure and end time they left behind). Scoped
-    // to those states so a replayed step, or an attempt that finds the stage
-    // in some other state (e.g. 'awaiting_approval'), never clobbers it. One
-    // conditional UPDATE: concurrent items of a batch serialize on the row
-    // and the later ones match nothing.
-    await this.db
-      .update(stageExecution)
-      .set({ state: 'running', failure: null, endedAt: null })
-      .where(
-        and(
-          eq(stageExecution.id, ctx.stageExecutionId),
-          inArray(stageExecution.state, ['pending', 'failed', 'stale']),
-        ),
-      );
-
-    // phase 7 chunk 4 — an item's first attempt (and every retry of it)
-    // marks the stage_item 'running'. Idempotent to repeat on a replayed
-    // step or a resumed retry of a previously-'failed' item.
-    if (ctx.stageItemId) {
-      await this.db
-        .update(stageItem)
-        .set({ state: 'running', startedAt: sql`coalesce(${stageItem.startedAt}, now())` })
-        .where(eq(stageItem.id, ctx.stageItemId));
-    }
-
-    const [row] = await this.db
-      .select({ maxAttempt: sql<number>`coalesce(max(${stageAttempt.attemptNo}), 0)` })
-      .from(stageAttempt)
-      .where(and(eq(stageAttempt.stageExecutionId, ctx.stageExecutionId), scopePredicate));
-    const attemptNo = (row?.maxAttempt ?? 0) + 1;
-    const stageAttemptId = ulid();
-
-    try {
-      await this.db.insert(stageAttempt).values({
+    const started = await this.db.transaction(async (tx) => {
+      const [owner] = await tx.select().from(run).where(eq(run.id, ctx.runId)).for('update');
+      if (!owner || owner.state !== 'RUNNING' || owner.executionEpoch !== (ctx.executionEpoch ?? 0))
+        throw new ExecutionRetiredError('Execution retired or paused before attempt admission');
+      if (ctx.invocationKey) {
+        const [existing] = await tx
+          .select()
+          .from(stageAttempt)
+          .where(
+            and(
+              eq(stageAttempt.stageExecutionId, ctx.stageExecutionId),
+              eq(stageAttempt.invocationKey, ctx.invocationKey),
+            ),
+          )
+          .limit(1);
+        if (existing)
+          return {
+            ...ctx,
+            attemptNo: existing.attemptNo,
+            stageAttemptId: existing.id,
+            executionEpoch: existing.executionEpoch,
+          };
+      }
+      const scope = ctx.stageItemId
+        ? eq(stageAttempt.stageItemId, ctx.stageItemId)
+        : isNull(stageAttempt.stageItemId);
+      await tx
+        .update(stageExecution)
+        .set({
+          state: 'running',
+          failure: null,
+          endedAt: null,
+          startedAt: sql`coalesce(${stageExecution.startedAt}, now())`,
+        })
+        .where(
+          and(
+            eq(stageExecution.id, ctx.stageExecutionId),
+            inArray(stageExecution.state, ['pending', 'failed', 'stale', 'running', 'cancelled']),
+          ),
+        );
+      if (ctx.stageItemId)
+        await tx
+          .update(stageItem)
+          .set({ state: 'running', startedAt: sql`coalesce(${stageItem.startedAt}, now())` })
+          .where(eq(stageItem.id, ctx.stageItemId));
+      const [row] = await tx
+        .select({ maxAttempt: sql<number>`coalesce(max(${stageAttempt.attemptNo}), 0)` })
+        .from(stageAttempt)
+        .where(and(eq(stageAttempt.stageExecutionId, ctx.stageExecutionId), scope));
+      const attemptNo = (row?.maxAttempt ?? 0) + 1;
+      const stageAttemptId = ulid();
+      await tx.insert(stageAttempt).values({
         id: stageAttemptId,
         stageExecutionId: ctx.stageExecutionId,
         stageItemId: ctx.stageItemId,
+        invocationKey: ctx.invocationKey,
+        executionEpoch: owner.executionEpoch,
         attemptNo,
-        outcome: 'success', // provisional; overwritten by fetchAndFinalize/recordFailure/etc.
+        outcome: 'success',
         resolvedInputs: {},
         phase: 'created',
         actor: 'engine',
       });
-      const started = { ...ctx, attemptNo, stageAttemptId };
-      await this.events.record(started, 'info', 'attempt.started', `Attempt ${attemptNo} started`, {
-        attemptNo,
+      return { ...ctx, executionEpoch: owner.executionEpoch, attemptNo, stageAttemptId };
+    });
+    await this.events.record(
+      started,
+      'info',
+      'attempt.started',
+      `Attempt ${started.attemptNo} started`,
+      {
+        attemptNo: started.attemptNo,
         ...(ctx.itemIndex !== undefined && { item: ctx.itemIndex + 1 }),
-      });
-      return started;
-    } catch (err) {
-      if (!isUniqueViolation(err)) throw err;
-      const [existing] = await this.db
-        .select({ id: stageAttempt.id })
-        .from(stageAttempt)
-        .where(
-          and(
-            eq(stageAttempt.stageExecutionId, ctx.stageExecutionId),
-            scopePredicate,
-            eq(stageAttempt.attemptNo, attemptNo),
-          ),
-        )
-        .limit(1);
-      if (!existing) throw err;
-      return { ...ctx, attemptNo, stageAttemptId: existing.id };
-    }
+      },
+    );
+    return started;
   }
 
   /** Attempts with one of `outcomes` in the stage's (or item's) CURRENT
@@ -818,6 +820,7 @@ export class StageRunnerService {
 
     const costEstimate = await capability.estimateCost(execCtx);
     const reserved = await this.ledger.reserve({
+      executionEpoch: ctx.executionEpoch,
       runId: ctx.runId,
       stageKey: stage.key,
       stageAttemptId: ctx.stageAttemptId,
@@ -832,7 +835,10 @@ export class StageRunnerService {
       // provider, so there is nothing for the sweep to release either.
       await this.db
         .update(stageAttempt)
-        .set({ outcome: reserved.reason === 'run_not_running' ? 'cancelled' : 'budget_blocked' })
+        .set({
+          outcome: reserved.reason === 'run_not_running' ? 'cancelled' : 'budget_blocked',
+          phase: 'settled',
+        })
         .where(eq(stageAttempt.id, ctx.stageAttemptId));
       if (reserved.reason === 'run_not_running') {
         await this.finishAttempt(ctx, 'info', 'cancelled', 'Run is no longer running');
@@ -859,10 +865,33 @@ export class StageRunnerService {
       .update(stageAttempt)
       .set({ phase: 'reserved' })
       .where(eq(stageAttempt.id, ctx.stageAttemptId));
-    await this.db
-      .update(stageAttempt)
-      .set({ phase: 'submitting' })
-      .where(eq(stageAttempt.id, ctx.stageAttemptId));
+    const admitted = await this.db.transaction(async (tx) => {
+      const [owner] = await tx.select().from(run).where(eq(run.id, ctx.runId)).for('update');
+      if (
+        !owner ||
+        owner.executionEpoch !== (ctx.executionEpoch ?? 0) ||
+        !['RUNNING', 'PAUSING'].includes(owner.state)
+      )
+        return false;
+      await tx
+        .update(stageAttempt)
+        .set({ phase: 'submitting' })
+        .where(eq(stageAttempt.id, ctx.stageAttemptId));
+      return true;
+    });
+    if (!admitted) {
+      await this.ledger.settleRelease({
+        runId: ctx.runId,
+        stageKey: stage.key,
+        stageAttemptId: ctx.stageAttemptId,
+        reservationId: reserved.reservationId,
+      });
+      await this.db
+        .update(stageAttempt)
+        .set({ phase: 'settled', outcome: 'cancelled' })
+        .where(eq(stageAttempt.id, ctx.stageAttemptId));
+      return { outcome: 'run_not_running' };
+    }
 
     let handle: JobHandle;
     let sentPrompt = actualPrompt;
@@ -1089,8 +1118,7 @@ export class StageRunnerService {
    * (idempotent — `settleOutstanding` may have already done so) instead of
    * letting the caller fail the stage over what is really just a cancel. */
   async stopIfRunNotRunning(ctx: StageAttemptContext): Promise<boolean> {
-    const state = await this.getRunState(ctx.runId);
-    if (state === 'RUNNING' || state === 'PAUSED_MANUAL') return false;
+    if (await this.isCurrentExecution(ctx.runId, ctx.executionEpoch ?? 0, true)) return false;
     await this.db
       .update(stageAttempt)
       .set({ outcome: 'cancelled', phase: 'settled' })
@@ -1758,7 +1786,7 @@ export class StageRunnerService {
 
     const finalized = await this.db.transaction(async (tx) => {
       const [lockedRun] = await tx
-        .select({ state: run.state })
+        .select({ state: run.state, executionEpoch: run.executionEpoch })
         .from(run)
         .where(eq(run.id, ctx.runId))
         .for('update');
@@ -1767,7 +1795,11 @@ export class StageRunnerService {
       // allowed to finish and commit here rather than being thrown away —
       // it's already been paid for. Every other non-RUNNING state (in
       // particular CANCELLED) still discards the output.
-      if (!lockedRun || (lockedRun.state !== 'RUNNING' && lockedRun.state !== 'PAUSED_MANUAL')) {
+      if (
+        !lockedRun ||
+        lockedRun.executionEpoch !== (ctx.executionEpoch ?? 0) ||
+        !['RUNNING', 'PAUSING', 'PAUSED_MANUAL'].includes(lockedRun.state)
+      ) {
         await tx
           .update(stageAttempt)
           .set({ outcome: 'cancelled', phase: 'settled', checkResults })
@@ -1868,11 +1900,15 @@ export class StageRunnerService {
   ): Promise<FetchAndFinalizeResult> {
     const held = await this.db.transaction(async (tx) => {
       const [lockedRun] = await tx
-        .select({ state: run.state })
+        .select({ state: run.state, executionEpoch: run.executionEpoch })
         .from(run)
         .where(eq(run.id, ctx.runId))
         .for('update');
-      if (!lockedRun || (lockedRun.state !== 'RUNNING' && lockedRun.state !== 'PAUSED_MANUAL')) {
+      if (
+        !lockedRun ||
+        lockedRun.executionEpoch !== (ctx.executionEpoch ?? 0) ||
+        !['RUNNING', 'PAUSING', 'PAUSED_MANUAL'].includes(lockedRun.state)
+      ) {
         await tx
           .update(stageAttempt)
           .set({ outcome: 'cancelled', phase: 'settled', checkResults })
@@ -1900,12 +1936,15 @@ export class StageRunnerService {
   async findHeldQcAttempt(
     stageExecutionId: string,
     stageItemId?: string,
+    executionEpoch?: number,
   ): Promise<StageAttemptContext | undefined> {
     const [row] = await this.db
       .select({
+        executionEpoch: stageAttempt.executionEpoch,
         id: stageAttempt.id,
         attemptNo: stageAttempt.attemptNo,
         outcome: stageAttempt.outcome,
+        actor: stageAttempt.actor,
         phase: stageAttempt.phase,
         artifactId: stageAttempt.artifactId,
         stageItemId: stageAttempt.stageItemId,
@@ -1924,7 +1963,13 @@ export class StageRunnerService {
       )
       .orderBy(desc(stageAttempt.attemptNo))
       .limit(1);
-    if (!row || row.outcome !== 'qc_error' || row.phase !== 'settled' || !row.artifactId) {
+    const requestedValidation =
+      row?.actor === 'user' && row.outcome === 'user_edit' && row.phase === 'created';
+    if (
+      !row ||
+      (!requestedValidation && (row.outcome !== 'qc_error' || row.phase !== 'settled')) ||
+      !row.artifactId
+    ) {
       return undefined;
     }
     let itemIndex: number | undefined;
@@ -1937,6 +1982,8 @@ export class StageRunnerService {
       itemIndex = item?.itemIndex;
     }
     return {
+      validationOnly: row.actor === 'user',
+      executionEpoch: executionEpoch ?? row.executionEpoch,
       runId: row.runId,
       stageExecutionId,
       stageKey: row.stageKey,
@@ -2114,11 +2161,15 @@ export class StageRunnerService {
   > {
     const result = await this.db.transaction(async (tx) => {
       const [lockedRun] = await tx
-        .select({ state: run.state })
+        .select({ state: run.state, executionEpoch: run.executionEpoch })
         .from(run)
         .where(eq(run.id, ctx.runId))
         .for('update');
-      if (!lockedRun || (lockedRun.state !== 'RUNNING' && lockedRun.state !== 'PAUSED_MANUAL')) {
+      if (
+        !lockedRun ||
+        lockedRun.executionEpoch !== (ctx.executionEpoch ?? 0) ||
+        !['RUNNING', 'PAUSING', 'PAUSED_MANUAL'].includes(lockedRun.state)
+      ) {
         return { outcome: 'run_not_running' as const };
       }
       const [attempt] = await tx
@@ -2192,24 +2243,29 @@ export class StageRunnerService {
     stageExecutionId: string,
     reason: string,
     stageItemId?: string,
+    executionEpoch = 0,
   ): Promise<void> {
     const [execution] = await this.db
       .select({ runId: stageExecution.runId, stageKey: stageExecution.stageKey })
       .from(stageExecution)
       .where(eq(stageExecution.id, stageExecutionId))
       .limit(1);
+    const current =
+      executionEpoch === undefined
+        ? undefined
+        : sql`exists (select 1 from ${run} where ${run.id} = ${execution?.runId ?? ''} and ${run.executionEpoch} = ${executionEpoch} and ${run.state} in ('RUNNING','PAUSING'))`;
     // The state is written first so the live update the log event triggers
     // refetches the failed stage, not the one before the failure.
     if (stageItemId) {
       await this.db
         .update(stageItem)
         .set({ state: 'failed', failure: { reason } })
-        .where(eq(stageItem.id, stageItemId));
+        .where(and(eq(stageItem.id, stageItemId), current));
     } else {
       await this.db
         .update(stageExecution)
         .set({ state: 'failed', failure: { reason }, endedAt: new Date().toISOString() })
-        .where(eq(stageExecution.id, stageExecutionId));
+        .where(and(eq(stageExecution.id, stageExecutionId), current));
     }
     if (execution) {
       await this.events.record(
@@ -2257,12 +2313,13 @@ export class StageRunnerService {
       .where(eq(stageAttempt.id, ctx.stageAttemptId))
       .limit(1);
     const durationMs = row ? Date.now() - Date.parse(row.createdAt) : undefined;
-    if (durationMs !== undefined) {
-      await this.db
-        .update(stageAttempt)
-        .set({ durationMs })
-        .where(eq(stageAttempt.id, ctx.stageAttemptId));
-    }
+    await this.db
+      .update(stageAttempt)
+      .set({
+        ...(durationMs !== undefined && { durationMs }),
+        ...(!['qc_error', 'awaiting_approval'].includes(outcome) && { phase: 'settled' as const }),
+      })
+      .where(eq(stageAttempt.id, ctx.stageAttemptId));
     await this.events.record(ctx, level, 'attempt.finished', message, {
       outcome,
       durationMs,
@@ -2274,7 +2331,12 @@ export class StageRunnerService {
    * terminal attempt row AND the stage_execution failure. */
   async recordFailure(ctx: StageAttemptContext, reason: string): Promise<void> {
     await this.recordAttemptError(ctx, reason);
-    await this.failStageExecution(ctx.stageExecutionId, reason, ctx.stageItemId);
+    await this.failStageExecution(
+      ctx.stageExecutionId,
+      reason,
+      ctx.stageItemId,
+      ctx.executionEpoch,
+    );
   }
 
   // ---------------------------------------------------------------------
@@ -2297,7 +2359,9 @@ export class StageRunnerService {
     stage: StageDef,
     effective: EffectiveStageConfig,
     prevStageKey: string | undefined,
-  ): Promise<{ ok: true; itemCount: number } | { ok: false; reason: string }> {
+  ): Promise<
+    { ok: true; itemCount: number; fingerprints: string[] } | { ok: false; reason: string }
+  > {
     const iterate = stage.iterate;
     if (!iterate) {
       throw new Error(
@@ -2308,7 +2372,7 @@ export class StageRunnerService {
       this.loadRunInputs(runId),
       this.loadAssetBindings(runId),
     ]);
-    const { value } = await this.bindingResolver.resolve(iterate.over, {
+    const { value, provenance } = await this.bindingResolver.resolve(iterate.over, {
       runId,
       prevStageKey,
       inputs,
@@ -2365,7 +2429,45 @@ export class StageRunnerService {
       }
     }
 
-    return { ok: true, itemCount };
+    const fingerprints = value.map((item) =>
+      createHash('sha256')
+        .update(canonicalJson({ value: item, provenance }))
+        .digest('hex'),
+    );
+    const saved = await this.db
+      .select()
+      .from(stageItem)
+      .where(and(eq(stageItem.stageExecutionId, stageExecutionId), eq(stageItem.state, 'passed')));
+    for (const item of saved) {
+      if (item.inputFingerprint) {
+        if (item.inputFingerprint !== fingerprints[item.itemIndex])
+          return { ok: false, reason: 'iteration_identity_changed_rebuild_required' };
+      } else {
+        const [output] = item.outputArtifactId
+          ? await this.db.select().from(artifact).where(eq(artifact.id, item.outputArtifactId))
+          : [];
+        const [attempt] = await this.db
+          .select()
+          .from(stageAttempt)
+          .where(
+            and(
+              eq(stageAttempt.stageItemId, item.id),
+              eq(stageAttempt.artifactId, item.outputArtifactId ?? ''),
+            ),
+          )
+          .limit(1);
+        const oldProvenance = (attempt?.resolvedInputs as Record<string, unknown> | undefined)?.[
+          'iterate.over'
+        ];
+        if (
+          !output ||
+          canonicalJson(output.iterationValue) !== canonicalJson(value[item.itemIndex]) ||
+          canonicalJson(oldProvenance) !== canonicalJson(provenance)
+        )
+          return { ok: false, reason: 'iteration_identity_changed_rebuild_required' };
+      }
+    }
+    return { ok: true, itemCount, fingerprints };
   }
 
   private async loadGraph(runId: string): Promise<StageDef[]> {
@@ -2444,49 +2546,68 @@ export class StageRunnerService {
    * with real attempts would either violate that FK or silently destroy
    * spend/audit history; `ON CONFLICT DO NOTHING` leaving them in place is
    * the safe choice. */
-  async ensureStageItems(stageExecutionId: string, itemCount: number): Promise<void> {
-    const [execution] = await this.db
-      .select({ itemCount: stageExecution.itemCount })
-      .from(stageExecution)
-      .where(eq(stageExecution.id, stageExecutionId))
-      .limit(1);
-    if (!execution) {
-      throw new Error(
-        `StageRunnerService.ensureStageItems: stage execution ${stageExecutionId} not found`,
-      );
-    }
-    if (execution.itemCount !== null && execution.itemCount !== itemCount) {
-      const existingItems = await this.db
-        .select({ itemIndex: stageItem.itemIndex, state: stageItem.state })
-        .from(stageItem)
-        .where(eq(stageItem.stageExecutionId, stageExecutionId));
-      const notStale = existingItems.find((item) => item.state !== 'stale');
-      if (notStale) {
+  async ensureStageItems(
+    stageExecutionId: string,
+    itemCount: number,
+    fingerprints?: string[],
+    executionEpoch = 0,
+  ): Promise<void> {
+    await this.db.transaction(async (tx) => {
+      const [execution] = await tx
+        .select({ itemCount: stageExecution.itemCount, runId: stageExecution.runId })
+        .from(stageExecution)
+        .where(eq(stageExecution.id, stageExecutionId))
+        .limit(1);
+      if (!execution) {
         throw new Error(
-          `StageRunnerService.ensureStageItems: stage execution ${stageExecutionId} item count ` +
-            `changed from ${execution.itemCount} to ${itemCount}, but item ${notStale.itemIndex} ` +
-            `is '${notStale.state}' (expected 'stale') — an item count change must go through ` +
-            `InvalidationService.apply() first`,
+          `StageRunnerService.ensureStageItems: stage execution ${stageExecutionId} not found`,
         );
       }
-    }
+      const [owner] = await tx.select().from(run).where(eq(run.id, execution.runId)).for('update');
+      if (!owner || owner.executionEpoch !== executionEpoch || owner.state !== 'RUNNING')
+        throw new ExecutionRetiredError('Execution retired or paused before item admission');
+      if (execution.itemCount !== null && execution.itemCount !== itemCount) {
+        const existingItems = await tx
+          .select({ itemIndex: stageItem.itemIndex, state: stageItem.state })
+          .from(stageItem)
+          .where(eq(stageItem.stageExecutionId, stageExecutionId));
+        const notStale = existingItems.find((item) => item.state !== 'stale');
+        if (notStale) {
+          throw new Error(
+            `StageRunnerService.ensureStageItems: stage execution ${stageExecutionId} item count ` +
+              `changed from ${execution.itemCount} to ${itemCount}, but item ${notStale.itemIndex} ` +
+              `is '${notStale.state}' (expected 'stale') — an item count change must go through ` +
+              `InvalidationService.apply() first`,
+          );
+        }
+      }
 
-    await this.db
-      .update(stageExecution)
-      .set({ isIterating: true, itemCount })
-      .where(eq(stageExecution.id, stageExecutionId));
-    if (itemCount === 0) return;
-    await this.db
-      .insert(stageItem)
-      .values(
-        Array.from({ length: itemCount }, (_, itemIndex) => ({
-          id: ulid(),
-          stageExecutionId,
-          itemIndex,
-          state: 'pending' as const,
-        })),
-      )
-      .onConflictDoNothing();
+      await tx
+        .update(stageExecution)
+        .set({ isIterating: true, itemCount })
+        .where(eq(stageExecution.id, stageExecutionId));
+      if (itemCount === 0) return;
+      await tx
+        .insert(stageItem)
+        .values(
+          Array.from({ length: itemCount }, (_, itemIndex) => ({
+            id: ulid(),
+            stageExecutionId,
+            itemIndex,
+            state: 'pending' as const,
+            inputFingerprint: fingerprints?.[itemIndex],
+          })),
+        )
+        .onConflictDoNothing();
+      if (fingerprints)
+        for (let index = 0; index < itemCount; index++)
+          await tx
+            .update(stageItem)
+            .set({ inputFingerprint: fingerprints[index] })
+            .where(
+              and(eq(stageItem.stageExecutionId, stageExecutionId), eq(stageItem.itemIndex, index)),
+            );
+    });
   }
 
   /** §14.5's partial resume, expressed the same way `run.orchestrate`
@@ -2517,16 +2638,34 @@ export class StageRunnerService {
    * instead of running an iterating stage to completion. Unlocked read (no
    * `for('update')`): this is a runnability check, not a mutation
    * precondition. */
-  async getRunState(runId: string) {
-    const [row] = await this.db.select({ state: run.state }).from(run).where(eq(run.id, runId));
-    return row?.state;
+  async isCurrentExecution(runId: string, epoch: number, drain = false): Promise<boolean> {
+    const [row] = await this.db
+      .select({ state: run.state, epoch: run.executionEpoch })
+      .from(run)
+      .where(eq(run.id, runId));
+    return (
+      !!row &&
+      row.epoch === epoch &&
+      (row.state === 'RUNNING' || (drain && ['PAUSING', 'PAUSED_MANUAL'].includes(row.state)))
+    );
+  }
+
+  async getRunState(runId: string, executionEpoch = 0) {
+    const [row] = await this.db
+      .select({ state: run.state, executionEpoch: run.executionEpoch })
+      .from(run)
+      .where(eq(run.id, runId));
+    return row?.executionEpoch === executionEpoch ? row.state : undefined;
   }
 
   /** Locked Decision 6 — once every item has passed, the stage_execution
    * itself turns 'passed' and its `outputArtifactId` becomes a convenience
    * pointer at the LAST item's artifact (not a sanctioned read path —
    * Run Memory and `{from:'prev', alignWith:'item'}` are). */
-  async finishIteratingStage(stageExecutionId: string): Promise<{ artifactId: string }> {
+  async finishIteratingStage(
+    stageExecutionId: string,
+    executionEpoch = 0,
+  ): Promise<{ artifactId: string }> {
     const [execution] = await this.db
       .select({
         itemCount: stageExecution.itemCount,
@@ -2541,22 +2680,20 @@ export class StageRunnerService {
         `StageRunnerService.finishIteratingStage: stage execution ${stageExecutionId} has no itemCount`,
       );
     }
-    if (execution.itemCount === 0) {
-      throw new Error(
-        `StageRunnerService.finishIteratingStage: stage execution ${stageExecutionId} has zero items`,
-      );
-    }
-    const [lastItem] = await this.db
-      .select({ outputArtifactId: stageItem.outputArtifactId })
-      .from(stageItem)
-      .where(
-        and(
-          eq(stageItem.stageExecutionId, stageExecutionId),
-          eq(stageItem.itemIndex, execution.itemCount - 1),
-        ),
-      )
-      .limit(1);
-    if (!lastItem?.outputArtifactId) {
+    const [lastItem] =
+      execution.itemCount === 0
+        ? []
+        : await this.db
+            .select({ outputArtifactId: stageItem.outputArtifactId })
+            .from(stageItem)
+            .where(
+              and(
+                eq(stageItem.stageExecutionId, stageExecutionId),
+                eq(stageItem.itemIndex, execution.itemCount - 1),
+              ),
+            )
+            .limit(1);
+    if (execution.itemCount > 0 && !lastItem?.outputArtifactId) {
       throw new Error(
         `StageRunnerService.finishIteratingStage: last item of ${stageExecutionId} has no outputArtifactId`,
       );
@@ -2567,10 +2704,17 @@ export class StageRunnerService {
         state: 'passed',
         failure: null,
         endedAt: new Date().toISOString(),
-        outputArtifactId: lastItem.outputArtifactId,
+        outputArtifactId: lastItem?.outputArtifactId ?? null,
       })
-      .where(eq(stageExecution.id, stageExecutionId));
+      .where(
+        and(
+          eq(stageExecution.id, stageExecutionId),
+          executionEpoch === undefined
+            ? undefined
+            : sql`exists (select 1 from ${run} where ${run.id} = ${execution.runId} and ${run.executionEpoch} = ${executionEpoch} and ${run.state} in ('RUNNING','PAUSING'))`,
+        ),
+      );
     this.events.publishStageChanged(execution.runId, execution.stageKey);
-    return { artifactId: lastItem.outputArtifactId };
+    return { artifactId: lastItem?.outputArtifactId ?? '' };
   }
 }

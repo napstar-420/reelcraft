@@ -147,6 +147,8 @@ export function capabilityGroup(key: string): CapabilityGroup {
 }
 
 export type NodeRunStatus = {
+  availableActions?: StageExecutionDto['availableActions'];
+  executionBusy?: boolean;
   state: StageExecutionState;
   tone: StatusTone;
   label: string;
@@ -175,7 +177,7 @@ const NODE_STATE_LABELS: Record<StageExecutionState, string> = {
  * run yet, or the stage was added after it). */
 export function nodeRunStatus(
   execution: StageExecutionDto | undefined,
-  run: Pick<RunDetailDto, 'id' | 'state'> | undefined,
+  run: Pick<RunDetailDto, 'id' | 'state' | 'availableActions'> | undefined,
 ): NodeRunStatus | undefined {
   if (!execution) return undefined;
   const parts: string[] = [];
@@ -185,6 +187,8 @@ export function nodeRunStatus(
     parts.push(formatRunDuration(execution.startedAt, execution.endedAt));
   }
   return {
+    availableActions: execution.availableActions,
+    executionBusy: run?.availableActions?.busy ?? true,
     state: execution.state,
     tone: stageExecutionStateTone(execution.state),
     label: NODE_STATE_LABELS[execution.state],
@@ -217,6 +221,7 @@ export function upstreamBlocker(
     const execution = run.stageExecutions.find((e) => e.stageKey === key);
     if (!execution) return { stageKey: key, reason: 'not_in_source' };
     if (execution.state === 'passed') continue;
+    if (execution.state === 'stale') return { stageKey: key, reason: 'definition_changed' };
     if (execution.state === 'awaiting_approval' || execution.waiting === 'approval') {
       return { stageKey: key, reason: 'awaiting_approval' };
     }
@@ -233,6 +238,8 @@ export function runStageTitle(
   blocker: SeedStop | undefined,
   labelOf: (stageKey: string) => string,
 ): string {
+  if (blocker?.reason === 'definition_changed')
+    return `Run this stage. ${describeSeedStop(blocker, labelOf(blocker.stageKey))}. Choose existing outputs or rebuild in the execution plan.`;
   return blocker
     ? `Run this stage. ${describeSeedStop(blocker, labelOf(blocker.stageKey))}, so it would run again first.`
     : 'Run this stage';

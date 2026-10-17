@@ -44,6 +44,8 @@ export class RunWakeupDispatcher {
           action: wakeup.action,
           sourceState: wakeup.sourceState,
           expectedRevision: wakeup.expectedRevision,
+          executionEpoch: wakeup.executionEpoch,
+          executionKey: `${wakeup.runId}:${wakeup.executionEpoch}`,
         },
       });
     } catch (error) {

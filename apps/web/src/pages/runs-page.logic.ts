@@ -22,6 +22,9 @@ export type RunsListFilters = {
 const RUN_STATE_SET: Record<RunState, true> = {
   CREATED: true,
   RUNNING: true,
+  IDLE: true,
+  PAUSING: true,
+  CANCELLING: true,
   PAUSED_BUDGET: true,
   PAUSED_APPROVAL: true,
   PAUSED_INPUT: true,

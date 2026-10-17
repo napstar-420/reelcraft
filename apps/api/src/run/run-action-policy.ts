@@ -4,6 +4,7 @@ import type { RunState } from '@reelcraft/shared';
 export type RunAction =
   | 'attach'
   | 'start'
+  | 'continue'
   | 'pause'
   | 'raise_budget'
   | 'retry'
@@ -33,9 +34,18 @@ const PAUSED_STATES = ['PAUSED_BUDGET', 'PAUSED_APPROVAL', 'PAUSED_INPUT', 'PAUS
 export const RUN_ACTION_ALLOWED_STATES = {
   attach: ['CREATED'],
   start: ['CREATED'],
+  continue: [
+    'CREATED',
+    'COMPLETED',
+    'IDLE',
+    'CANCELLED',
+    'FAILED',
+    'PAUSED_MANUAL',
+    ...PAUSED_STATES,
+  ],
   pause: ['RUNNING'],
   raise_budget: ['RUNNING', ...PAUSED_STATES, 'PAUSED_MANUAL', 'FAILED'],
-  retry: [...PAUSED_STATES, 'FAILED', 'COMPLETED'],
+  retry: [...PAUSED_STATES, 'FAILED', 'COMPLETED', 'IDLE', 'CANCELLED', 'PAUSED_MANUAL'],
   edit_artifact: [...PAUSED_STATES, 'FAILED', 'COMPLETED'],
   replace_input: [...PAUSED_STATES, 'FAILED', 'COMPLETED'],
   patch_overrides: [...PAUSED_STATES, 'FAILED'],
@@ -45,8 +55,8 @@ export const RUN_ACTION_ALLOWED_STATES = {
   reject: ['PAUSED_APPROVAL', 'PAUSED_INPUT'],
   retry_qc: ['PAUSED_APPROVAL', 'PAUSED_INPUT'],
   submit_input: ['PAUSED_APPROVAL', 'PAUSED_INPUT'],
-  resume: ['PAUSED_BUDGET', 'PAUSED_MANUAL', 'PAUSED_QUOTA', 'FAILED'],
-  cancel: ['CREATED', 'RUNNING', ...PAUSED_STATES, 'PAUSED_MANUAL', 'FAILED'],
+  resume: ['PAUSED_BUDGET', 'PAUSED_MANUAL', 'PAUSED_QUOTA', 'FAILED', 'CANCELLED'],
+  cancel: ['CREATED', 'RUNNING', 'IDLE', 'PAUSING', ...PAUSED_STATES, 'PAUSED_MANUAL', 'FAILED'],
 } as const satisfies Record<RunAction, readonly RunState[]>;
 
 @Injectable()

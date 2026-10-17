@@ -1,3 +1,5 @@
+import type { RunExecutionActions } from '@/hooks/useRunExecutionActions';
+import { Button } from '@/components/ui/button';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/api/client';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -14,17 +16,21 @@ import { describeRunActionError } from '@/lib/describe-run-action-error';
 import { ArtifactPreview } from './artifact-preview';
 
 export function StageOutputSheet({
+  actions,
   runId,
   stageKey,
   stageLabel,
   stageRunning,
+  freshness,
   open,
   onOpenChange,
 }: {
+  actions?: RunExecutionActions | undefined;
   runId: string;
   stageKey: string | null;
   stageLabel?: string | null;
   stageRunning: boolean;
+  freshness?: 'stale' | 'validation' | undefined;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
@@ -40,7 +46,13 @@ export function StageOutputSheet({
       <SheetContent className="w-full sm:max-w-2xl">
         <SheetHeader className="border-b pr-12">
           <SheetTitle>Output of {stageLabel ?? stageKey}</SheetTitle>
-          <SheetDescription>The current output this stage produced.</SheetDescription>
+          <SheetDescription>
+            {freshness === 'stale'
+              ? 'Stale relative to the current draft: this output or an upstream definition changed. The original output is preserved.'
+              : freshness === 'validation'
+                ? 'Validation outdated: checks or quality criteria changed. You can check this output before regenerating it.'
+                : 'The current output this stage produced.'}
+          </SheetDescription>
         </SheetHeader>
 
         <ScrollArea className="min-h-0 flex-1 px-4">
@@ -68,7 +80,25 @@ export function StageOutputSheet({
               {items.map((item) => (
                 <section key={item.artifact.id} className="flex flex-col gap-2">
                   {item.itemIndex !== null ? (
-                    <h3 className="text-sm font-medium">Item {item.itemIndex + 1}</h3>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-sm font-medium">Item {item.itemIndex + 1}</h3>
+                      {actions && !stageRunning && (
+                        <Button
+                          size="xs"
+                          variant="outline"
+                          disabled={actions.runStage.isPending}
+                          onClick={() =>
+                            actions.runStage.mutate({
+                              stageKey: stageKey!,
+                              action: 'rerun',
+                              itemIndex: item.itemIndex!,
+                            })
+                          }
+                        >
+                          Re-run item
+                        </Button>
+                      )}
+                    </div>
                   ) : null}
                   <ArtifactPreview artifact={item.artifact} />
                 </section>

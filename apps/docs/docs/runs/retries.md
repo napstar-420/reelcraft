@@ -1,68 +1,52 @@
 ---
-title: Retries
-description: Redo a stage that failed or that you want different, without starting the whole run over.
+title: Continue and re-run work
+description: Preserve passed items, regenerate a stage or item, or explicitly rebuild a blueprint.
 ---
 
-There are three ways to redo work, depending on how much you want to keep.
+The canvas and run page share these actions, eligibility rules and confirmations.
 
-## Automatic tries
+| Action                  | What executes                                                             | What is preserved or invalidated                                                               |
+| ----------------------- | ------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| **Run stage**           | Only the selected eligible stage                                          | Prerequisites must already be ready; they never launch automatically                           |
+| **Continue stage**      | Unfinished items or interrupted work in that stage                        | Passed items and saved candidates are preserved                                                |
+| **Re-run stage**        | The selected stage and all its items                                      | Completed items are regenerated; affected descendants become stale without executing           |
+| **Re-run item**         | One item                                                                  | Other items remain; observed item consumers, including sequential item consumers, become stale |
+| **Run blueprint**       | All unfinished, failed or stale required work                             | Current completed work stays passed                                                            |
+| **Re-run blueprint**    | Every required stage and item                                             | Explicit full regeneration, with cost/rebuild confirmation; history remains                    |
+| **Run through stage**   | Selected stage and required unfinished prerequisites                      | Explicitly expands the scope upstream                                                          |
+| **Rebuild descendants** | Selected work, affected descendants and required unfinished prerequisites | Explicitly expands downstream; independent current branches remain                             |
 
-Before you do anything, a stage already tries again by itself in some cases. A crash uses its **Retries**,
-a failed check uses **Max check attempts** and a low quality control score uses **Max attempts**. A
-rejected output, which is your decision, is not limited. See
-[Stages](../blueprints/stages.md#three-kinds-of-try-again).
+**Run through stage** and **Rebuild descendants** are in the stage's **More execution actions** menu.
+They are separate from ordinary **Run stage**.
 
-## Redo a stage in the same run
+## Partial iteration
 
-Use this when one stage failed, or when you don't like what it made and want to keep everything else.
+For **6/14 completed**, choose **Continue stage** to submit eight unfinished items in the same run.
+Continue uses persisted item states, including non-consecutive successes. Item values and dependency
+identity must still match the pinned snapshot; equal item counts alone do not establish compatibility.
+If they differ, explicitly rebuild rather than silently mixing outputs.
 
-1. On the [run page](./run-page.md), find the stage. A stage that finished shows **Re-run**, one that
-   failed shows **Retry**.
-2. Open its menu and choose how much to redo:
+**Re-run stage** warns that all completed items will regenerate. To replace only one output, open
+**View output**, find the item and select **Re-run item**. Its confirmation lists affected consumers.
 
-   | Choice                              | What it does                                                                                                                                                             |
-   | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-   | **With stages that use its output** | Redoes this stage and the later stages that use its output                                                                                                               |
-   | **Only this stage**                 | Redoes just this stage. Later stages keep their current outputs                                                                                                          |
-   | **This and all later stages**       | Redoes this stage and every stage that waits for it, directly or through others. Stages on other [parallel branches](../blueprints/parallel-stages.md) keep their output |
+Progress counts and attempt counts are separate: six completed items can have more than six attempts.
+Earlier artifacts, attempts and spending remain in history after any rerun.
 
-   A stage that repeats for each item, such as one that makes an image for every scene, and that has
-   failed items also offers **Only the failed items**. It redoes just those items, each with its full
-   **Retries** again, and keeps the items that passed and their outputs.
+## Confirming a rebuild
 
-3. A summary appears, with the **Affected stages**, what is **Already spent** and the **Estimated rerun
-   cost**. For **Only the failed items** it also lists the **Items** it will redo. Select **Confirm
-   re-run**, or **Cancel**.
+The execution plan lists exactly which stages execute, which completed outputs stay, which consumers
+become stale and historical costs. New work may cost more; unrun stages are unpriced. Confirmations
+are bound to the selected action, items, snapshot, concurrency setting and run revision. A changed run,
+duplicate confirmation or concurrent resume requires a fresh plan.
 
-The run then continues from that stage. Earlier attempts stay in the stage's **Attempts** list. The
-stages whose outputs depended on the old result are marked **Stale** until they run again.
+Definition changes retain explicit **Use existing outputs** and rebuild choices. Continue ordinarily
+uses the pinned snapshot. **Check existing output** can apply check/QC-only edits to a stored
+non-iterating output without generating it again. QC may cost money.
 
-Choosing **Only this stage** can leave later stages built on the old output. Use it when you know the
-change won't matter to them.
+## Automatic retries
 
-This is available from the paused states, **Failed** and **Completed**. It isn't available while a run
-is **Running** or after it was **Paused** by hand. See [Run statuses](../reference/run-statuses.md).
+Crash retries, check feedback and quality-control feedback retain their separate limits. See
+[Stages](../blueprints/stages.md#three-kinds-of-try-again). A pause stops admission of a new generation
+attempt after the current attempt finishes. A human rejection explicitly starts another attempt.
 
-## Resume
-
-A **Failed** run can sometimes simply **Resume** where it stopped, after you fix the cause, for example by
-raising the budget, adding a model or topping up credit. It keeps all the work that succeeded. In a stage
-that repeats for each item, it tries the failed items once more and then carries on with the rest. See
-[Pause, resume and cancel](./pause-resume-cancel.md).
-
-## Start over with Rerun
-
-**Rerun** starts a brand-new run from the very beginning, once the old one is **Completed**,
-**Failed** or **Cancelled**. It uses the same blueprint version, the same inputs and the same budget cap.
-
-If the blueprint uses a [character](../channels/characters.md), the new run uses the character **as it
-is now**, including any changes since the old run, so a rerun after improving a character's images uses
-the new ones.
-
-Nothing is reused: every stage runs again and is paid for again. To redo only part, use the section
-above.
-
-## Reusing work while you build
-
-The [**Run** tab on the canvas](./canvas-runs.md) offers a middle path: **Run all** and single-stage runs
-start a new run that reuses the unchanged stages from the previous one.
+See [Pause, resume and cancel](./pause-resume-cancel.md) for interrupted requests and possible charges.

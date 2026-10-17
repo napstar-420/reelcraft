@@ -3,6 +3,7 @@ import { RunState, StageExecutionState, AttemptOutcome, HumanWaitKind } from '..
 import { ConfigLayer } from '../config-layer';
 import { Probe } from '../probe';
 import { OutputDef } from '../output';
+import { CreateBlueprintVersionDto } from './blueprint.dto';
 
 /** A media URL the browser loads: absolute, or relative to the app's own
  * origin when a self-hosted install proxies storage (`/storage/...`). */
@@ -32,7 +33,11 @@ export type SeedStop = z.infer<typeof SeedStop>;
 
 /** What a seeded run would reuse: the stages copied from the source run, then
  * the stage where reuse stopped. */
-export const SeedPlanDto = z.object({ reused: z.array(z.string()), stop: SeedStop });
+export const SeedPlanDto = z.object({
+  reused: z.array(z.string()),
+  stop: SeedStop,
+  discardedStageKeys: z.array(z.string()).optional(),
+});
 export type SeedPlanDto = z.infer<typeof SeedPlanDto>;
 
 /** Body of the 409 `RunService.create` answers with when `expectReusedBefore`
@@ -44,9 +49,41 @@ export const UpstreamRerunDto = z.object({
 });
 export type UpstreamRerunDto = z.infer<typeof UpstreamRerunDto>;
 
+export const ExecutionScope = z.object({
+  kind: z.enum(['blueprint', 'selection']),
+  stageKeys: z.array(z.string()),
+});
+export type ExecutionScope = z.infer<typeof ExecutionScope>;
+export const ExecutionSettingsDto = z.object({
+  concurrentBranches: z.number().int().positive().safe(),
+});
+export type ExecutionSettingsDto = z.infer<typeof ExecutionSettingsDto>;
+export const StageAvailableActions = z.object({
+  run: z.boolean(),
+  continue: z.boolean(),
+  rerun: z.boolean(),
+  runThrough: z.boolean().optional(),
+  rebuildDescendants: z.boolean().optional(),
+  blockedReason: z.string().nullable(),
+  completedItems: z.number(),
+  totalItems: z.number().nullable(),
+});
+export type StageAvailableActions = z.infer<typeof StageAvailableActions>;
+export const RunAvailableActions = z.object({
+  runBlueprint: z.boolean(),
+  rerunBlueprint: z.boolean(),
+  pause: z.boolean(),
+  resume: z.boolean(),
+  cancel: z.boolean(),
+  changeConcurrency: z.boolean(),
+  busy: z.boolean(),
+});
+export type RunAvailableActions = z.infer<typeof RunAvailableActions>;
+
 export const CreateRunDto = z.object({
   channelId: z.string(),
   blueprintVersionId: z.string(),
+  concurrentBranches: z.number().int().positive().safe().optional(),
   inputs: z.record(z.string(), z.unknown()).default({}),
   roleBindings: z.record(z.string(), z.string()).default({}),
   /** Zero means no limit. */
@@ -59,8 +96,7 @@ export const CreateRunDto = z.object({
   // `reusableStageKeys`) to re-run even if they'd otherwise be reusable —
   // e.g. the user edited stage 3's prompt.
   rerunStageKeys: z.array(z.string()).default([]),
-  // Stop the run after this stage; later stages are created 'skipped'
-  // rather than 'pending', so the run completes without executing them.
+  // Initial scope through this stage; unrelated stages remain pending and the run ends Idle.
   untilStageKey: z.string().optional(),
   // With `seedFromRunId`: refuse (409 `upstream_rerun`, nothing created) if any
   // stage before this one would be re-run rather than reused, so "run this
@@ -71,6 +107,41 @@ export const CreateRunDto = z.object({
   dryRun: z.boolean().optional(),
 });
 export type CreateRunDto = z.infer<typeof CreateRunDto>;
+
+export const ContinueRunDto = z.object({
+  blueprintVersionId: z.string().min(1),
+  untilStageKey: z.string().min(1).optional(),
+});
+export type ContinueRunDto = z.infer<typeof ContinueRunDto>;
+
+export const StageRunPlanRequestDto = z.object({
+  blueprintVersionId: z.string().min(1),
+  stageKey: z.string().min(1).optional(),
+  mode: z.enum(['reuse', 'rebuild', 'validate']),
+  action: z.enum(['run', 'continue', 'rerun']).optional(),
+  itemIndex: z.number().int().nonnegative().optional(),
+  allowUncertainRestart: z.boolean().optional(),
+  scope: z.enum(['stage', 'through', 'descendants']).default('stage'),
+});
+export type StageRunPlanRequestDto = z.infer<typeof StageRunPlanRequestDto>;
+export const ConfirmStageRunPlanDto = StageRunPlanRequestDto.extend({
+  previewToken: z.string().min(1),
+});
+export type ConfirmStageRunPlanDto = z.infer<typeof ConfirmStageRunPlanDto>;
+export const StageRunPlanDto = z.object({
+  request: StageRunPlanRequestDto,
+  previewToken: z.string(),
+  runStageKeys: z.array(z.string()),
+  reusedStageKeys: z.array(z.string()),
+  staleStageKeys: z.array(z.string()),
+  invalidatedStageKeys: z.array(z.string()),
+  validationStageKeys: z.array(z.string()),
+  estimatedRerunUsd: z.number(),
+  blockedReason: z.string().nullable(),
+  uncertainAttemptIds: z.array(z.string()).optional(),
+  retainedItemCount: z.number().optional(),
+});
+export type StageRunPlanDto = z.infer<typeof StageRunPlanDto>;
 
 /** §12.4 — raising a budget is the one mutation allowed while RUNNING, and
  * also unblocks a PAUSED_BUDGET run. No refinement beyond `number` here —
@@ -286,6 +357,8 @@ export const StageExecutionDto = z.object({
    * input form can be built for it. */
   output: OutputDef.nullable(),
   state: StageExecutionState,
+  skipReason: z.string().nullable().optional(),
+  availableActions: StageAvailableActions.optional(),
   isIterating: z.boolean(),
   itemCount: z.number().nullable(),
   attemptCount: z.number(),
@@ -312,9 +385,16 @@ export const StageExecutionDto = z.object({
 export type StageExecutionDto = z.infer<typeof StageExecutionDto>;
 
 export const RunDetailDto = z.object({
+  revision: z.number().int().nonnegative().optional(),
   id: z.string(),
   channelId: z.string(),
   blueprintVersionId: z.string(),
+  blueprintId: z.string().optional(),
+  definition: CreateBlueprintVersionDto.optional(),
+  executionEpoch: z.number().optional(),
+  executionScope: ExecutionScope.nullable().optional(),
+  concurrentBranches: z.number().optional(),
+  availableActions: RunAvailableActions.optional(),
   state: RunState,
   inputs: z.record(z.string(), z.unknown()),
   // Created runs initially hold ids; start() replaces them with immutable

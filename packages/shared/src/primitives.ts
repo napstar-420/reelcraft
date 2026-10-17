@@ -39,6 +39,9 @@ export type OutputKind = ArtifactKind;
 export const RunState = z.enum([
   'CREATED',
   'RUNNING',
+  'IDLE',
+  'PAUSING',
+  'CANCELLING',
   'PAUSED_BUDGET',
   'PAUSED_APPROVAL',
   'PAUSED_INPUT',

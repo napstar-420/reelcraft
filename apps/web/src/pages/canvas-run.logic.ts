@@ -70,7 +70,9 @@ export function upstreamRerunPlan(error: unknown): SeedPlanDto | undefined {
   const { status, issues } = (error ?? {}) as { status?: unknown; issues?: unknown };
   if (status !== 409 || !issues || typeof issues !== 'object') return undefined;
   const { code, plan } = issues as { code?: unknown; plan?: SeedPlanDto };
-  return code === 'upstream_rerun' && plan?.stop ? plan : undefined;
+  return (code === 'upstream_rerun' || code === 'completed_work_changed') && plan?.stop
+    ? plan
+    : undefined;
 }
 
 /** Why an earlier stage has to run again, as a sentence about `stageLabel`

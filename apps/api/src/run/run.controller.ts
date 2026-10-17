@@ -2,6 +2,7 @@ import {
   Delete,
   Body,
   BadRequestException,
+  ConflictException,
   Controller,
   Get,
   Param,
@@ -13,6 +14,10 @@ import {
 } from '@nestjs/common';
 import {
   CreateRunDto,
+  ExecutionSettingsDto,
+  StageRunPlanRequestDto,
+  ConfirmStageRunPlanDto,
+  ContinueRunDto,
   RaiseBudgetDto,
   RequestInputUploadDto,
   ConfirmRunActionDto,
@@ -29,6 +34,7 @@ import {
   ListRunsQueryDto,
 } from '@reelcraft/shared';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
+import { RunStagePlanService } from './run-stage-plan.service';
 import { RunService } from './run.service';
 import { RunInputService } from './run-input.service';
 import { RunActionService } from './run-action.service';
@@ -43,6 +49,7 @@ import { TimelinePreviewService } from './timeline-preview.service';
 export class RunController {
   constructor(
     private readonly runs: RunService,
+    private readonly stagePlans: RunStagePlanService,
     private readonly runInputs: RunInputService,
     private readonly actions: RunActionService,
     private readonly invalidation: InvalidationService,
@@ -72,6 +79,50 @@ export class RunController {
   @Post(':id/start')
   start(@Param('id') id: string) {
     return this.runs.start(id);
+  }
+
+  @Post(':id/continue')
+  async continueRun(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(ContinueRunDto)) dto: ContinueRunDto,
+  ) {
+    const plan = await this.stagePlans.preview(id, {
+      blueprintVersionId: dto.blueprintVersionId,
+      stageKey: dto.untilStageKey,
+      mode: 'reuse',
+      action: 'continue',
+      scope: dto.untilStageKey ? 'through' : 'descendants',
+    });
+    if (plan.blockedReason || plan.invalidatedStageKeys.length || plan.staleStageKeys.length)
+      throw new ConflictException(
+        plan.blockedReason ?? 'Review an execution plan before applying definition changes.',
+      );
+    await this.stagePlans.confirm(id, { ...plan.request, previewToken: plan.previewToken });
+    return { continued: true };
+  }
+
+  @Patch(':id/execution-settings')
+  updateExecutionSettings(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(ExecutionSettingsDto)) dto: ExecutionSettingsDto,
+  ) {
+    return this.runs.updateExecutionSettings(id, dto.concurrentBranches);
+  }
+
+  @Post(':id/execution-plan')
+  executionPlan(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(StageRunPlanRequestDto)) dto: StageRunPlanRequestDto,
+  ) {
+    return this.stagePlans.preview(id, dto);
+  }
+
+  @Post(':id/execution-plan/confirm')
+  confirmExecutionPlan(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(ConfirmStageRunPlanDto)) dto: ConfirmStageRunPlanDto,
+  ) {
+    return this.stagePlans.confirm(id, dto);
   }
 
   @Post(':id/inputs/:key/upload')

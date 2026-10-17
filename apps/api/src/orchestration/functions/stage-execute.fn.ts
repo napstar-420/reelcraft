@@ -1,4 +1,5 @@
 import type { Inngest } from 'inngest';
+import { ExecutionRetiredError } from '../stage-runner.service';
 import type { StageRunnerService } from '../stage-runner.service';
 import { runStageAttemptLoop } from './stage-attempt-loop';
 import { worstOutcome } from './stage-outcome';
@@ -6,6 +7,8 @@ import type { buildStageExecuteItemFunction } from './stage-execute-item.fn';
 
 export interface StageExecuteEventData {
   runId: string;
+  executionEpoch?: number;
+  executionKey?: string;
   stageExecutionId: string;
   stageKey: string;
 }
@@ -41,10 +44,21 @@ export function buildStageExecuteFunction(
     // endpoint. Retrying replays memoized steps and reuses the persisted
     // provider handle, so it resumes poll/fetch without submitting a second
     // provider job. `0` strands a submitted attempt after a callback EOF.
-    { id: 'stage.execute', retries: 3 },
+    {
+      id: 'stage.execute',
+      retries: 3,
+      cancelOn: [{ event: 'run/cancelled', match: 'data.executionKey' }],
+    },
     { event: 'stage/execute.requested' },
     async ({ event, step, logger }) => {
       const data = event.data as StageExecuteEventData;
+      if (
+        data.executionEpoch !== undefined &&
+        !(await step.run('admit-execution', () =>
+          runner.isCurrentExecution(data.runId, data.executionEpoch!),
+        ))
+      )
+        return { outcome: 'run_not_running' as const };
       const { stage, effective, prevStageKey } = await step.run('load-stage-context', () =>
         runner.loadStageContext(data.runId, data.stageKey),
       );
@@ -56,6 +70,7 @@ export function buildStageExecuteFunction(
             data.runId,
             data.stageExecutionId,
             humanInteraction === 'timeline_editor' ? 'timeline_edit' : 'input',
+            data.executionEpoch,
           ),
         );
         return { outcome: 'input_required' as const };
@@ -73,14 +88,31 @@ export function buildStageExecuteFunction(
         );
         if (!resolved.ok) {
           await step.run('fail-stage-iterate-count', () =>
-            runner.failStageExecution(data.stageExecutionId, resolved.reason),
+            runner.failStageExecution(
+              data.stageExecutionId,
+              resolved.reason,
+              undefined,
+              data.executionEpoch,
+            ),
           );
           return { outcome: 'failed' as const, reason: resolved.reason };
         }
         const { itemCount } = resolved;
-        await step.run('ensure-stage-items', () =>
-          runner.ensureStageItems(data.stageExecutionId, itemCount),
-        );
+        const admitted = await step.run('ensure-stage-items', async () => {
+          try {
+            await runner.ensureStageItems(
+              data.stageExecutionId,
+              itemCount,
+              resolved.fingerprints,
+              data.executionEpoch,
+            );
+            return true;
+          } catch (error) {
+            if (error instanceof ExecutionRetiredError) return false;
+            throw error;
+          }
+        });
+        if (!admitted) return { outcome: 'run_not_running' as const };
 
         // Items run in batches of `concurrency` (one at a time when unset). A
         // fixed batch, not a sliding window, so the step order stays the same
@@ -91,7 +123,7 @@ export function buildStageExecuteFunction(
           // §12.4 manual pause — stop after the current batch rather than
           // running the whole iterating stage to completion.
           const runState = await step.run(`check-runnable-item-${start}`, () =>
-            runner.getRunState(data.runId),
+            runner.getRunState(data.runId, data.executionEpoch),
           );
           if (runState !== 'RUNNING') return { outcome: 'run_not_running' as const };
 
@@ -119,6 +151,8 @@ export function buildStageExecuteFunction(
               step.invoke(`run-item-${i}`, {
                 function: stageExecuteItemFn,
                 data: {
+                  executionEpoch: data.executionEpoch,
+                  executionKey: data.executionKey,
                   runId: data.runId,
                   stageExecutionId: data.stageExecutionId,
                   stageKey: data.stageKey,
@@ -147,7 +181,12 @@ export function buildStageExecuteFunction(
                 ? `Item ${first.item}: ${first.reason}`
                 : `${failures.length} items failed; first, item ${first.item}: ${first.reason}`;
             await step.run(`fail-stage-items-${start}`, () =>
-              runner.failStageExecution(data.stageExecutionId, reason),
+              runner.failStageExecution(
+                data.stageExecutionId,
+                reason,
+                undefined,
+                data.executionEpoch,
+              ),
             );
           }
           if (worst) return worst;
@@ -155,7 +194,7 @@ export function buildStageExecuteFunction(
         }
 
         const finished = await step.run('finish-iterating-stage', () =>
-          runner.finishIteratingStage(data.stageExecutionId),
+          runner.finishIteratingStage(data.stageExecutionId, data.executionEpoch),
         );
         return { outcome: 'passed' as const, artifactId: finished.artifactId };
       }
@@ -167,6 +206,8 @@ export function buildStageExecuteFunction(
         stage,
         effective,
         prevStageKey,
+        executionEpoch: data.executionEpoch,
+        executionKey: data.executionKey,
         runId: data.runId,
         stageExecutionId: data.stageExecutionId,
         stageKey: data.stageKey,

@@ -1,12 +1,12 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
-import { and, eq, isNotNull, notInArray } from 'drizzle-orm';
+import { and, eq, inArray, notInArray, lt, sql, or, isNull } from 'drizzle-orm';
 import { StageDef, type JobHandle } from '@reelcraft/shared';
 import { LedgerService } from '../budget/ledger.service';
 import { CapabilityRegistry } from '../capability/capability.registry';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
 import { LiveEvents } from '../live/live-events';
 import { NotificationService } from '../notification/notification.service';
-import { blueprintVersion, run, stageAttempt, stageExecution } from '../db/schema/index';
+import { blueprintVersion, run, stageAttempt, stageExecution, stageItem } from '../db/schema/index';
 import { HumanWaitService } from './human-wait.service';
 import { RunMutationService } from './run-mutation.service';
 import { RunWakeupDispatcher } from './run-wakeup-dispatcher.service';
@@ -32,16 +32,16 @@ export class RunCancellationService {
       runId,
       'cancel',
       RUN_ACTION_ALLOWED_STATES.cancel,
-      async (tx) => {
+      async (tx, locked) => {
         await tx
           .update(run)
-          .set({ state: 'CANCELLED', endedAt: new Date().toISOString() })
+          .set({ state: 'CANCELLING', executionEpoch: locked.executionEpoch + 1 })
           .where(eq(run.id, runId));
-        await this.waits.resolveAll(tx, runId);
+
         return this.notifications?.insertSafely(tx, {
           runId,
           kind: 'cancelled',
-          dedupeKey: `cancelled:${runId}`,
+          dedupeKey: `cancelled:${runId}:${locked.executionEpoch}`,
         });
       },
       'run/cancelled',
@@ -50,36 +50,77 @@ export class RunCancellationService {
       { runId, wakeupId: result.wakeupId, revision: result.revision },
       'run cancelled',
     );
-    await this.settleOutstanding(runId);
-    // `withLockedRun` already announced the run; settling changed its stages after that.
-    this.events?.publish({ type: 'run', runId });
-    this.notifications?.deliver(result.value);
+    // Persisted cancellation also reconciles in Inngest if this process stops here.
     try {
       await this.dispatcher.dispatch(result.wakeupId);
     } catch (error) {
-      this.logger.warn(
-        { runId, wakeupId: result.wakeupId, err: error },
-        'run wakeup dispatch deferred to retry',
-      );
+      this.logger.warn({ runId, err: error }, 'cancellation dispatch deferred');
     }
+    await this.reconcileCancellation(runId);
+    this.events?.publish({ type: 'run', runId });
+    this.notifications?.deliver(result.value);
     return { state: 'CANCELLED' as const, revision: result.revision };
   }
 
-  private async settleOutstanding(runId: string): Promise<void> {
+  async reconcileCancellation(runId: string, interruptedEpoch?: number): Promise<void> {
+    if (!this.db) return;
+    const [owner] = await this.db.select().from(run).where(eq(run.id, runId));
+    if (
+      !owner ||
+      owner.state !== 'CANCELLING' ||
+      (interruptedEpoch !== undefined && owner.executionEpoch !== interruptedEpoch + 1)
+    )
+      return;
+    await this.settleOutstanding(runId, owner.executionEpoch);
+    await this.db
+      .update(run)
+      .set({ state: 'CANCELLED', endedAt: new Date().toISOString() })
+      .where(
+        and(
+          eq(run.id, runId),
+          eq(run.state, 'CANCELLING'),
+          eq(run.executionEpoch, owner.executionEpoch),
+        ),
+      );
+    this.events?.publish({ type: 'run', runId });
+  }
+
+  private async settleOutstanding(runId: string, cancelledEpoch: number): Promise<void> {
     if (!this.db || !this.capabilities || !this.ledger) return;
-    // A stage_execution frozen in a non-terminal state (pending/running/
-    // awaiting_*) when its run is cancelled would otherwise sit there
-    // forever — the Run page reads it straight (`formatRunDuration` treats
-    // a null `endedAt` as still-running), showing "Pending"/"Running…" under
-    // an overall Cancelled run. Mark every one of this run's stages that
-    // hasn't already reached a terminal state as cancelled.
+    const retired = sql`exists (select 1 from ${run} where ${run.id} = ${runId} and ${run.executionEpoch} = ${cancelledEpoch} and ${run.state} = 'CANCELLING')`;
     await this.db
       .update(stageExecution)
       .set({ state: 'cancelled', endedAt: new Date().toISOString() })
       .where(
         and(
           eq(stageExecution.runId, runId),
-          notInArray(stageExecution.state, ['passed', 'failed', 'stale', 'skipped', 'cancelled']),
+          retired,
+          notInArray(stageExecution.state, [
+            'passed',
+            'failed',
+            'stale',
+            'skipped',
+            'cancelled',
+            'pending',
+            'awaiting_approval',
+            'awaiting_input',
+          ]),
+        ),
+      );
+    await this.db
+      .update(stageItem)
+      .set({ state: 'pending' })
+      .where(
+        and(
+          inArray(
+            stageItem.stageExecutionId,
+            this.db
+              .select({ id: stageExecution.id })
+              .from(stageExecution)
+              .where(eq(stageExecution.runId, runId)),
+          ),
+          eq(stageItem.state, 'running'),
+          retired,
         ),
       );
     const [context] = await this.db
@@ -99,29 +140,54 @@ export class RunCancellationService {
         id: stageAttempt.id,
         stageKey: stageExecution.stageKey,
         jobHandle: stageAttempt.jobHandle,
+        phase: stageAttempt.phase,
       })
       .from(stageAttempt)
       .innerJoin(stageExecution, eq(stageAttempt.stageExecutionId, stageExecution.id))
       .where(
         and(
           eq(stageExecution.runId, runId),
-          eq(stageAttempt.phase, 'submitted'),
-          isNotNull(stageAttempt.jobHandle),
+          lt(stageAttempt.executionEpoch, cancelledEpoch),
+          or(
+            inArray(stageAttempt.phase, ['created', 'reserved', 'submitting', 'submitted']),
+            and(
+              eq(stageAttempt.phase, 'settled'),
+              isNull(stageAttempt.durationMs),
+              eq(stageAttempt.actor, 'engine'),
+              eq(stageAttempt.outcome, 'success'),
+              eq(stageExecution.state, 'cancelled'),
+            ),
+          ),
         ),
       );
 
     for (const attempt of attempts) {
       const stage = stages.get(attempt.stageKey);
       if (!stage) continue;
-      let cancellation: { confirmed: boolean; billed?: boolean; reason?: string };
+      let cancellation: { confirmed: boolean; billed?: boolean; reason?: string | undefined };
       try {
         const cancel = this.capabilities.get(stage.capability).cancel;
-        cancellation = cancel
-          ? await cancel.call(
-              this.capabilities.get(stage.capability),
-              attempt.jobHandle as JobHandle,
-            )
-          : { confirmed: false, reason: 'capability does not support cancellation' };
+        cancellation =
+          attempt.phase === 'settled'
+            ? {
+                confirmed: false,
+                reason:
+                  'Checks or quality control were interrupted; a provider request may still be billed',
+              }
+            : !attempt.jobHandle
+              ? {
+                  confirmed: ['created', 'reserved'].includes(attempt.phase),
+                  reason:
+                    attempt.phase === 'submitting'
+                      ? 'Provider submission was interrupted; billing is uncertain'
+                      : undefined,
+                }
+              : cancel
+                ? await cancel.call(
+                    this.capabilities.get(stage.capability),
+                    attempt.jobHandle as JobHandle,
+                  )
+                : { confirmed: false, reason: 'capability does not support cancellation' };
       } catch (error) {
         this.logger.warn(
           { runId, stageKey: attempt.stageKey, stageAttemptId: attempt.id, err: error },
@@ -133,7 +199,7 @@ export class RunCancellationService {
         };
       }
 
-      const reservationId = await this.ledger.reservationIdFor(attempt.id);
+      const reservationId = await this.ledger.reservationIdFor(attempt.id).catch(() => undefined);
       this.logger.log(
         {
           runId,
@@ -145,14 +211,14 @@ export class RunCancellationService {
         },
         'in-flight attempt cancelled',
       );
-      if (cancellation.confirmed && cancellation.billed !== true) {
+      if (reservationId && cancellation.confirmed && cancellation.billed !== true) {
         await this.ledger.settleRelease({
           runId,
           stageKey: attempt.stageKey,
           stageAttemptId: attempt.id,
           reservationId,
         });
-      } else {
+      } else if (reservationId) {
         await this.ledger.settleProvisional({
           runId,
           stageKey: attempt.stageKey,
@@ -164,10 +230,19 @@ export class RunCancellationService {
         .update(stageAttempt)
         .set({
           outcome: 'cancelled',
+          cancellationConfirmed: cancellation.confirmed,
           phase: 'settled',
           reviewNote: cancellation.reason ?? null,
         })
-        .where(eq(stageAttempt.id, attempt.id));
+        .where(
+          and(
+            eq(stageAttempt.id, attempt.id),
+            or(
+              isNull(stageAttempt.cancellationConfirmed),
+              eq(stageAttempt.cancellationConfirmed, false),
+            ),
+          ),
+        );
     }
   }
 }

@@ -1,8 +1,11 @@
+import { executionEligibility } from './execution-eligibility';
+import { InvalidationService } from './invalidation.service';
 import { HumanWaitService } from './human-wait.service';
 import { ConflictException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { and, asc, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNotNull, isNull, lte, or, sql } from 'drizzle-orm';
 import type {
   CreateRunDto,
+  ContinueRunDto,
   ConfigLayer,
   ReferenceImage,
   RoleDef,
@@ -14,9 +17,11 @@ import type {
 import {
   LIBRARY_KINDS,
   ancestorsOf,
+  descendantsOf,
   InputDef,
   RoleDef as RoleDefSchema,
   StageDef,
+  CreateBlueprintVersionDto,
   stageDependencies,
 } from '@reelcraft/shared';
 import { RUN_ACTION_ALLOWED_STATES } from './run-action-policy';
@@ -91,6 +96,7 @@ export class RunService {
     private readonly blobs: BlobService,
     private readonly events: LiveEvents,
     private readonly humanWaits: HumanWaitService,
+    private readonly invalidation: InvalidationService,
   ) {}
 
   /** §6.2/§21 — inserts the run in `CREATED` without sending `run/started`.
@@ -260,6 +266,36 @@ export class RunService {
       const upstream = dto.expectReusedBefore
         ? ancestorsOf(stageDependencies(graph), dto.expectReusedBefore)
         : new Set<string>();
+      if (dto.expectReusedBefore) {
+        const target = dto.expectReusedBefore;
+        const dependents = descendantsOf(stageDependencies(graph), target);
+        const discarded = sourceExecutions
+          .filter(
+            (e) =>
+              e.state === 'passed' &&
+              e.stageKey !== target &&
+              !dependents.has(e.stageKey) &&
+              !stageKeys.includes(e.stageKey),
+          )
+          .map((e) => e.stageKey);
+        if (discarded.length > 0) {
+          const relevant = ancestorsOf(stageDependencies(graph), discarded[0]!);
+          relevant.add(discarded[0]!);
+          const changed = reusableStageKeys({ ...reuseParams, relevant }).stop;
+          throw new ConflictException({
+            code: 'completed_work_changed',
+            message: 'This new run would omit completed work from another branch',
+            plan: {
+              reused: stageKeys,
+              stop:
+                stop && upstream.has(stop.stageKey)
+                  ? stop
+                  : (changed ?? { stageKey: discarded[0]!, reason: 'not_in_source' }),
+              discardedStageKeys: discarded,
+            },
+          });
+        }
+      }
       if (stop && upstream.has(stop.stageKey)) {
         throw new ConflictException({
           code: 'upstream_rerun',
@@ -275,6 +311,10 @@ export class RunService {
         channelId: dto.channelId,
         blueprintVersionId: dto.blueprintVersionId,
         state: 'CREATED',
+        executionScope: keep
+          ? { kind: 'selection', stageKeys: [...keep] }
+          : { kind: 'blueprint', stageKeys: graph.map((s) => s.key) },
+        concurrentBranches: dto.concurrentBranches ?? version.execution.concurrentBranches,
         inputs: mergedInputs,
         roleBindings: dto.roleBindings,
         resolvedConfig,
@@ -288,11 +328,7 @@ export class RunService {
       for (const stage of graph) {
         const id = ulid();
         newExecutionIdByKey.set(stage.key, id);
-        const state = reusedKeys.has(stage.key)
-          ? 'passed'
-          : keep && !keep.has(stage.key)
-            ? 'skipped'
-            : 'pending';
+        const state = reusedKeys.has(stage.key) ? 'passed' : 'pending';
         stateByKey.set(stage.key, state);
         await tx.insert(stageExecution).values({ id, runId, stageKey: stage.key, state });
       }
@@ -484,7 +520,7 @@ export class RunService {
   /** A pinned model's advertised limit is the authority. Missing metadata is
    * deliberately a start failure: silently truncating selected identity
    * references makes a blueprint non-reproducible. */
-  private async assertReferenceLimits(
+  async assertReferenceLimits(
     graph: StageDef[],
     resolvedConfig: Record<string, ConfigLayer>,
     roleBindings: Record<string, { references: Array<unknown> }>,
@@ -532,7 +568,7 @@ export class RunService {
    * mutable/deletable channel resources, not pinned to the blueprint
    * version, so a real (if rare) race exists between save and this run's
    * start: re-verify rather than trust the earlier validation blindly. */
-  private async resolveAssetBindings(
+  async resolveAssetBindings(
     graph: StageDef[],
     channelId: string,
   ): Promise<Record<string, LibraryBinding & { name: string }>> {
@@ -676,7 +712,7 @@ export class RunService {
    * reaches a real provider either. A modality with no fake model (`human`/
    * `publish`/`compute`, and `media.analyze`'s `probe` path, which never
    * consumes a model pin at all) is left completely untouched. */
-  private applyDryRunOverride(
+  applyDryRunOverride(
     graph: StageDef[],
     resolvedConfig: Record<string, ConfigLayer>,
   ): Record<string, ConfigLayer> {
@@ -739,6 +775,14 @@ export class RunService {
    * only if the persisted source state and revision are still current. */
   async resume(runId: string) {
     const current = await this.get(runId);
+    if (current.availableActions?.busy)
+      throw new ConflictException(
+        `Action resume is not allowed while run is ${current.state}; wait for execution to settle.`,
+      );
+    if (current.state === 'CANCELLED')
+      throw new ConflictException(
+        'Continue this run using an execution plan to review interrupted requests.',
+      );
     if (current.state === 'PAUSED_BUDGET' || current.state === 'FAILED') {
       // Something must still be left to do: a stage that is neither settled
       // nor waiting on a person (parallel stages leave no single cursor).
@@ -757,7 +801,14 @@ export class RunService {
       runId,
       'resume',
       RUN_ACTION_ALLOWED_STATES.resume,
-      async () => undefined,
+      async (tx, locked) => {
+        if (locked.revision !== current.revision)
+          throw new ConflictException('The run changed; refresh before resuming.');
+        await tx
+          .update(run)
+          .set({ executionEpoch: locked.executionEpoch + 1 })
+          .where(eq(run.id, runId));
+      },
       'run/resumed',
     );
     this.logger.log(
@@ -766,6 +817,148 @@ export class RunService {
     );
     await this.dispatchBestEffort(mutation.wakeupId);
     return this.get(runId);
+  }
+
+  /** Extend a partial run without copying or replacing its finished branches. */
+  async continueRun(runId: string, dto: ContinueRunDto) {
+    const current = await this.get(runId);
+    if (!['COMPLETED', 'IDLE'].includes(current.state)) return { continued: false };
+    if (current.availableActions.busy)
+      throw new ConflictException('This run already has queued work; wait for it to start');
+    if (current.stageExecutions.some((e) => !['passed', 'skipped', 'pending'].includes(e.state))) {
+      throw new ConflictException('This run already has queued work; wait for it to start');
+    }
+    const versions = await this.db
+      .select()
+      .from(blueprintVersion)
+      .where(inArray(blueprintVersion.id, [current.blueprintVersionId, dto.blueprintVersionId]));
+    const source = versions.find((v) => v.id === current.blueprintVersionId);
+    const requested = versions.find((v) => v.id === dto.blueprintVersionId);
+    if (!source || !requested || source.blueprintId !== requested.blueprintId) {
+      throw new ConflictException('Blueprint version does not belong to this run');
+    }
+    const graph = StageDef.array().parse(source.graph);
+    const requestedGraph = StageDef.array().parse(requested.graph);
+    if (dto.untilStageKey && !graph.some((stage) => stage.key === dto.untilStageKey)) {
+      return { continued: false };
+    }
+    const keep = untilStageKeep(graph, dto.untilStageKey) ?? new Set(graph.map((s) => s.key));
+    const sourceDeps = stageDependencies(graph);
+    const requestedDeps = stageDependencies(requestedGraph);
+    // Edits to a separate branch stay in the draft.
+    const target = graph.find((stage) => stage.key === dto.untilStageKey);
+    const editedTarget = requestedGraph.find((stage) => stage.key === dto.untilStageKey);
+    // Prompt and quality-check edits preserve the stage's input/output contracts.
+    const stageEdit =
+      target &&
+      editedTarget &&
+      canonicalJson({ ...target, instructions: undefined, qc: undefined, checks: undefined }) ===
+        canonicalJson({
+          ...editedTarget,
+          instructions: undefined,
+          qc: undefined,
+          checks: undefined,
+        }) &&
+      canonicalJson(target) !== canonicalJson(editedTarget);
+    const samePath = [...keep].every(
+      (key) =>
+        canonicalJson(graph.find((s) => s.key === key)) ===
+          canonicalJson(
+            stageEdit && key === target.key ? target : requestedGraph.find((s) => s.key === key),
+          ) && canonicalJson(sourceDeps.get(key)) === canonicalJson(requestedDeps.get(key)),
+    );
+    if (
+      !samePath ||
+      (!dto.untilStageKey && canonicalJson(source.graph) !== canonicalJson(requested.graph)) ||
+      ['inputs', 'roles', 'defaults'].some(
+        (key) =>
+          canonicalJson(source[key as 'inputs' | 'roles' | 'defaults']) !==
+          canonicalJson(requested[key as 'inputs' | 'roles' | 'defaults']),
+      )
+    )
+      return { continued: false };
+    const rerunTarget =
+      dto.untilStageKey &&
+      current.stageExecutions.some((e) => e.stageKey === dto.untilStageKey && e.state === 'passed');
+    if (stageEdit && !requested.runnable) return { continued: false };
+    const selected = current.stageExecutions.filter(
+      (e) => keep.has(e.stageKey) && ['skipped', 'pending'].includes(e.state),
+    );
+    if (selected.length === 0 && !rerunTarget) return { continued: false };
+    const invalidation = rerunTarget
+      ? await this.invalidation.preview({
+          runId,
+          seed: {
+            stageKeys: [dto.untilStageKey!],
+            forcedStageKeys: [...descendantsOf(sourceDeps, dto.untilStageKey!)],
+          },
+        })
+      : undefined;
+    const mutation = await this.runMutation.withLockedRun(
+      runId,
+      'continue',
+      ['COMPLETED', 'IDLE'],
+      async (tx, lockedRun) => {
+        if (lockedRun.revision !== current.revision) {
+          throw new ConflictException('The run changed; refresh before continuing');
+        }
+        await tx
+          .update(run)
+          .set({
+            executionScope: {
+              kind: dto.untilStageKey ? 'selection' : 'blueprint',
+              stageKeys: [...keep],
+            },
+            executionEpoch: lockedRun.executionEpoch + 1,
+          })
+          .where(eq(run.id, runId));
+        if (stageEdit) {
+          const snapshotId = ulid();
+          await tx.insert(blueprintVersion).values({
+            ...source,
+            id: snapshotId,
+            graph: graph.map((stage) => (stage.key === target.key ? editedTarget : stage)),
+            draft: true,
+            createdAt: new Date().toISOString(),
+          });
+          await tx.update(run).set({ blueprintVersionId: snapshotId }).where(eq(run.id, runId));
+        }
+        if (invalidation) {
+          await this.invalidation.apply(tx, {
+            runId,
+            closure: invalidation.closure,
+            targetStageKey: dto.untilStageKey!,
+            gcBlobs: false,
+          });
+          const downstreamIds = current.stageExecutions
+            .filter(
+              (e) =>
+                invalidation.closure.affectedStageKeys.includes(e.stageKey) &&
+                !keep.has(e.stageKey),
+            )
+            .map((e) => e.id);
+          if (downstreamIds.length > 0) {
+            await tx
+              .update(stageExecution)
+              .set({ state: 'pending', skipReason: null })
+              .where(inArray(stageExecution.id, downstreamIds));
+          }
+        }
+        const pendingIds = [
+          ...selected.map((e) => e.id),
+          ...current.stageExecutions
+            .filter((e) => rerunTarget && e.stageKey === dto.untilStageKey)
+            .map((e) => e.id),
+        ];
+        await tx
+          .update(stageExecution)
+          .set({ state: 'pending', endedAt: null })
+          .where(inArray(stageExecution.id, pendingIds));
+      },
+      'run/resumed',
+    );
+    await this.dispatchBestEffort(mutation.wakeupId);
+    return { continued: true };
   }
 
   /** §12.4 — manual pause. Unlike cancel, this must stay resumable: it flips
@@ -782,12 +975,42 @@ export class RunService {
       'pause',
       RUN_ACTION_ALLOWED_STATES.pause,
       async (tx) => {
-        await tx.update(run).set({ state: 'PAUSED_MANUAL' }).where(eq(run.id, runId));
+        await tx.update(run).set({ state: 'PAUSING' }).where(eq(run.id, runId));
       },
       'run/paused',
     );
     this.logger.log({ runId, wakeupId: mutation.wakeupId }, 'run paused');
     await this.dispatchBestEffort(mutation.wakeupId);
+    return this.get(runId);
+  }
+
+  async updateExecutionSettings(runId: string, concurrentBranches: number) {
+    const detail = await this.get(runId);
+    if (detail.availableActions.busy)
+      throw new ConflictException('Concurrency can only change while execution is inactive.');
+    await this.runMutation.withLockedRunMaybeWake(
+      runId,
+      'continue',
+      [
+        'CREATED',
+        'IDLE',
+        'COMPLETED',
+        'FAILED',
+        'CANCELLED',
+        'PAUSED_MANUAL',
+        'PAUSED_APPROVAL',
+        'PAUSED_INPUT',
+        'PAUSED_BUDGET',
+        'PAUSED_QUOTA',
+      ],
+      async (tx, locked) => {
+        if (locked.revision !== detail.revision)
+          throw new ConflictException('The run changed; refresh its controls.');
+        await tx.update(run).set({ concurrentBranches }).where(eq(run.id, runId));
+      },
+      'run/settings-updated',
+      () => false,
+    );
     return this.get(runId);
   }
 
@@ -809,7 +1032,7 @@ export class RunService {
       .from(stageExecution)
       .where(eq(stageExecution.runId, runId));
     const [version] = await this.db
-      .select({ graph: blueprintVersion.graph })
+      .select()
       .from(blueprintVersion)
       .where(eq(blueprintVersion.id, row.blueprintVersionId))
       .limit(1);
@@ -858,11 +1081,77 @@ export class RunService {
       const known = waitingByExecution.get(wait.stageExecutionId);
       if (known !== 'approval') waitingByExecution.set(wait.stageExecutionId, wait.kind);
     }
+    const itemRows = executions.length
+      ? await this.db
+          .select({
+            stageExecutionId: stageItem.stageExecutionId,
+            state: stageItem.state,
+            itemIndex: stageItem.itemIndex,
+          })
+          .from(stageItem)
+          .where(
+            inArray(
+              stageItem.stageExecutionId,
+              executions.map((e) => e.id),
+            ),
+          )
+      : [];
+    const completedItems = (execution: typeof stageExecution.$inferSelect) =>
+      itemRows.filter(
+        (item) =>
+          item.stageExecutionId === execution.id &&
+          item.state === 'passed' &&
+          (execution.itemCount === null || item.itemIndex < execution.itemCount),
+      ).length;
+    const activeAttempts = executions.length
+      ? await this.db
+          .select({ id: stageAttempt.id })
+          .from(stageAttempt)
+          .where(
+            and(
+              inArray(
+                stageAttempt.stageExecutionId,
+                executions.map((e) => e.id),
+              ),
+              eq(stageAttempt.executionEpoch, row.executionEpoch),
+              inArray(stageAttempt.phase, ['created', 'reserved', 'submitting', 'submitted']),
+            ),
+          )
+          .limit(1)
+      : [];
+    const [queued] = await this.db
+      .select({ id: runWakeup.id })
+      .from(runWakeup)
+      .where(
+        and(
+          eq(runWakeup.runId, runId),
+          eq(runWakeup.expectedRevision, row.revision),
+          eq(runWakeup.executionEpoch, row.executionEpoch),
+          isNull(runWakeup.claimedAt),
+          or(isNull(runWakeup.notBefore), lte(runWakeup.notBefore, sql`now()`)),
+          inArray(runWakeup.eventName, ['run/started', 'run/resumed']),
+        ),
+      )
+      .limit(1);
+    const eligibility = executionEligibility(
+      graph,
+      executions.map((e) => ({
+        ...e,
+        completedItems: completedItems(e),
+        waiting: waitingByExecution.get(e.id) ?? null,
+      })),
+      row.inputs as Record<string, unknown>,
+      row.state,
+      activeAttempts.length > 0 || !!queued,
+    );
     const final = await findFinalVideo(this.db, runId);
     const budgetBlock = row.state === 'PAUSED_BUDGET' ? await this.budgetBlock(row) : null;
     const resumeAt = row.state === 'PAUSED_QUOTA' ? await this.quotaResumeAt(runId) : null;
     return {
       ...row,
+      availableActions: eligibility.run,
+      blueprintId: version?.blueprintId,
+      definition: version ? CreateBlueprintVersionDto.parse(version) : undefined,
       budgetBlock,
       resumeAt,
       finalVideo: final
@@ -879,6 +1168,7 @@ export class RunService {
           const capability = definition?.capability ?? 'unknown';
           return {
             ...execution,
+            availableActions: eligibility.stages[execution.stageKey],
             label: definition?.label || execution.stageKey,
             output: definition?.output ?? null,
             attemptCount: attemptCounts.get(execution.id) ?? 0,
@@ -1322,7 +1612,7 @@ export class RunService {
       .orderBy(asc(stageAttempt.createdAt), asc(stageAttempt.attemptNo));
     return rows.map((attempt) => ({ ...attempt, costUsd: toUsd(attempt.costUsd) }));
   }
-  private async assertProviderPins(
+  async assertProviderPins(
     graph: StageDef[],
     resolvedConfig: Record<string, ConfigLayer>,
   ): Promise<void> {

@@ -49,6 +49,9 @@ export const CreateBlueprintVersionDto = z.object({
   roles: z.array(RoleDef).max(1).default([]),
   defaults: ConfigLayer.default({}),
   budget: z.object({ runCapUsd: z.number() }),
+  execution: z
+    .object({ concurrentBranches: z.number().int().positive().safe().default(2) })
+    .optional(),
 });
 export type CreateBlueprintVersionDto = z.infer<typeof CreateBlueprintVersionDto>;
 
@@ -95,6 +98,7 @@ export const CreateVersionQueryDto = z.object({
 export type CreateVersionQueryDto = z.infer<typeof CreateVersionQueryDto>;
 
 export const BlueprintVersionDto = z.object({
+  execution: z.object({ concurrentBranches: z.number().int().positive().safe() }).optional(),
   id: z.string(),
   blueprintId: z.string(),
   major: z.number().int(),

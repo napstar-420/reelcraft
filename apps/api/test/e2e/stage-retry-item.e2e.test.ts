@@ -164,7 +164,9 @@ describe('phase 7 MEDIUM #3 — item-scoped stage retry preview/confirm (e2e)', 
     itemIndex: number,
     stageItemId: string,
   ) {
+    const [owner] = await testDb.db.select().from(run).where(eq(run.id, runId));
     const attemptCtx = await runner.beginAttempt({
+      executionEpoch: owner!.executionEpoch,
       runId,
       stageExecutionId: executionId,
       stageKey: stage.key,

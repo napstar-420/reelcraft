@@ -4,13 +4,13 @@ import { RunCancellationService } from './run-cancellation.service';
 import { RUN_ACTION_ALLOWED_STATES } from './run-action-policy';
 
 describe('RunCancellationService', () => {
-  it('marks the run cancelled and resolves waits before emitting cancellation', async () => {
+  it('retires the execution and preserves saved waits before emitting cancellation', async () => {
     const set = vi.fn().mockReturnValue({ where: vi.fn() });
     const tx = { update: vi.fn().mockReturnValue({ set }) };
     const waits = { resolveAll: vi.fn() };
     const mutation = {
       withLockedRun: vi.fn(async (_id, _action, _states, callback) => {
-        await callback(tx);
+        await callback(tx, { executionEpoch: 0 });
         return { wakeupId: 'wake-cancel', revision: 8 };
       }),
     };
@@ -23,8 +23,8 @@ describe('RunCancellationService', () => {
 
     await service.cancel('run-1');
 
-    expect(set).toHaveBeenCalledWith({ state: 'CANCELLED', endedAt: expect.any(String) });
-    expect(waits.resolveAll).toHaveBeenCalledWith(tx, 'run-1');
+    expect(set).toHaveBeenCalledWith({ state: 'CANCELLING', executionEpoch: 1 });
+    expect(waits.resolveAll).not.toHaveBeenCalled();
     expect(dispatcher.dispatch).toHaveBeenCalledWith('wake-cancel');
   });
 
@@ -92,6 +92,7 @@ describe('RunCancellationService', () => {
       })),
       select: vi.fn().mockReturnValue({
         from: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue([{ state: 'CANCELLING', executionEpoch: 1 }]),
           innerJoin: vi.fn().mockReturnValue({
             where: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue([]) }),
           }),
@@ -100,7 +101,7 @@ describe('RunCancellationService', () => {
     };
     const mutation = {
       withLockedRun: vi.fn(async (_id, _action, _states, callback) => {
-        await callback(db);
+        await callback(db, { executionEpoch: 0 });
         return { wakeupId: 'wake-cancel', revision: 1 };
       }),
     };

@@ -285,7 +285,7 @@ describe('notifications (e2e)', () => {
       await http.app.get(RunCancellationService).cancel(created.id);
       const rows = await rowsFor(created.id);
       expect(rows.map((r) => r.kind)).toEqual(['cancelled']);
-      expect(rows[0]!.dedupeKey).toBe(`cancelled:${created.id}`);
+      expect(rows[0]!.dedupeKey).toBe(`cancelled:${created.id}:0`);
     });
   });
 

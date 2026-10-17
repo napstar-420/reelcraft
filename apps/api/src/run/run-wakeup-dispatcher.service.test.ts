@@ -21,6 +21,7 @@ describe('RunWakeupDispatcher', () => {
     action: 'resume',
     sourceState: 'FAILED',
     expectedRevision: 3,
+    executionEpoch: 0,
     eventName: 'run/resumed',
     dispatchedAt: null,
   };
@@ -45,6 +46,8 @@ describe('RunWakeupDispatcher', () => {
         action: 'resume',
         sourceState: 'FAILED',
         expectedRevision: 3,
+        executionKey: 'run-1:0',
+        executionEpoch: 0,
       },
     });
     expect(update.set).toHaveBeenLastCalledWith(

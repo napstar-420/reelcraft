@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../api/client';
 import { useRun } from './useRun';
@@ -8,20 +9,33 @@ import { useRun } from './useRun';
  * started/switched to) and layers `useRun`'s live-updating detail fetch on
  * top of it. */
 export function useCanvasRun(blueprintId: string | undefined) {
-  const [activeRunId, setActiveRunId] = useState<string | undefined>(undefined);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeRunId = searchParams.get('run') || undefined;
+  const setActiveRunId = useCallback(
+    (runId: string) => {
+      setSearchParams(
+        (params) => {
+          params.set('run', runId);
+          return params;
+        },
+        { replace: true },
+      );
+    },
+    [setSearchParams],
+  );
 
   const latestRuns = useQuery({
-    queryKey: ['runs', { blueprintId, limit: 1 }],
+    queryKey: ['runs', { blueprintId, limit: 20 }],
     queryFn: () =>
-      api.listRuns({ blueprintId, includeDryRuns: true, includeDrafts: true, limit: 1 }),
-    enabled: Boolean(blueprintId) && activeRunId === undefined,
+      api.listRuns({ blueprintId, includeDryRuns: true, includeDrafts: true, limit: 20 }),
+    enabled: Boolean(blueprintId),
   });
 
   useEffect(() => {
     if (activeRunId !== undefined) return;
     const latest = latestRuns.data?.items[0];
     if (latest) setActiveRunId(latest.id);
-  }, [activeRunId, latestRuns.data]);
+  }, [activeRunId, latestRuns.data, setActiveRunId]);
 
   const run = useRun(activeRunId);
 
@@ -29,6 +43,7 @@ export function useCanvasRun(blueprintId: string | undefined) {
     activeRunId,
     setActiveRunId,
     run: run.data,
+    recentRuns: latestRuns.data?.items ?? [],
     isLoading: activeRunId === undefined && latestRuns.isLoading,
   };
 }

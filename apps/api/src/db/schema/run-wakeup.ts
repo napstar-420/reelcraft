@@ -11,6 +11,7 @@ export const runWakeup = pgTable(
     runId: text('run_id')
       .notNull()
       .references(() => run.id), // run this wakeup event is for
+    executionEpoch: integer('execution_epoch').notNull().default(0),
     action: text('action').notNull(), // orchestration action to perform on dispatch (may also be a dynamic reminder tag, e.g. attention_reminder_24h)
     sourceState: runStateEnum('source_state').notNull(), // run state the wakeup was created from, for staleness checks
     expectedRevision: bigint('expected_revision', { mode: 'number' }).notNull(), // run.revision this wakeup is conditioned on

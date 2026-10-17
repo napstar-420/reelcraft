@@ -20,6 +20,7 @@ const toDraft = (v: VersionRow): CreateBlueprintVersionDto =>
     roles: v.roles,
     defaults: v.defaults,
     budget: v.budget,
+    execution: v.execution,
   }) as CreateBlueprintVersionDto;
 
 async function findVersion(ctx: TurnContext, deps: ToolDeps, version: string) {

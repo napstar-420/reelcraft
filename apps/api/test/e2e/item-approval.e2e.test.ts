@@ -215,7 +215,9 @@ describe('phase 7 chunk 6 — item-mode approval (e2e)', () => {
     itemIndex: number,
     stageItemId: string,
   ): Promise<FetchAndFinalizeResult> {
+    const [owner] = await testDb.db.select().from(run).where(eq(run.id, runId));
     const attemptCtx = await runner.beginAttempt({
+      executionEpoch: owner!.executionEpoch,
       runId,
       stageExecutionId: executionId,
       stageKey: stage.key,
@@ -263,7 +265,8 @@ describe('phase 7 chunk 6 — item-mode approval (e2e)', () => {
         return { outcome: 'approval_required', itemIndex: i };
       if (result.outcome !== 'success') return { outcome: 'failed' };
     }
-    const finished = await runner.finishIteratingStage(executionId);
+    const [owner] = await testDb.db.select().from(run).where(eq(run.id, runId));
+    const finished = await runner.finishIteratingStage(executionId, owner!.executionEpoch);
     return { outcome: 'passed', artifactId: finished.artifactId };
   }
 

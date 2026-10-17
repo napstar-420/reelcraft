@@ -1,3 +1,4 @@
+import { ExecutionRetiredError } from '../stage-runner.service';
 import type { Context, Logger } from 'inngest';
 import { DEFAULT_FEEDBACK_MAX_ATTEMPTS } from '@reelcraft/shared';
 import type { JobHandle, JobStatus, StageDef } from '@reelcraft/shared';
@@ -72,6 +73,8 @@ export interface StageAttemptLoopParams {
   /** `effective.retryLimit` for the non-iterating path, or
    * `effective.iterate!.itemRetryLimit` for one item's own loop — crash
    * retries only; check/QC feedback loops have their own caps. */
+  executionEpoch?: number | undefined;
+  executionKey?: string | undefined;
   retryLimit: number;
   /** phase 7 chunk 4 — set only by `stage.execute.item`'s caller. */
   itemIndex?: number;
@@ -228,7 +231,12 @@ export async function runStageAttemptLoop(
       // spends the crash retry budget exactly as a thrown error would.
       if (!isLastAttempt) return undefined;
       await step.run(`fail-stage-${stageKey}`, () =>
-        runner.failStageExecution(stageExecutionId, fetched.reason, stageItemId),
+        runner.failStageExecution(
+          stageExecutionId,
+          fetched.reason,
+          stageItemId,
+          params.executionEpoch,
+        ),
       );
       return { outcome: 'failed' as const, reason: fetched.reason };
     }
@@ -236,7 +244,12 @@ export async function runStageAttemptLoop(
     if (fetched.outcome === 'qc_error' || fetched.outcome === 'model_error') {
       await release();
       await step.run(`fail-stage-${stageKey}`, () =>
-        runner.failStageExecution(stageExecutionId, fetched.reason, stageItemId),
+        runner.failStageExecution(
+          stageExecutionId,
+          fetched.reason,
+          stageItemId,
+          params.executionEpoch,
+        ),
       );
       return { outcome: 'failed' as const, reason: fetched.reason };
     }
@@ -244,9 +257,22 @@ export async function runStageAttemptLoop(
     if (fetched.outcome === 'qc_budget_exhausted') {
       await release();
       await step.run(`fail-stage-${stageKey}`, () =>
-        runner.failStageExecution(stageExecutionId, 'qc_budget_exhausted', stageItemId),
+        runner.failStageExecution(
+          stageExecutionId,
+          'qc_budget_exhausted',
+          stageItemId,
+          params.executionEpoch,
+        ),
       );
       return { outcome: 'failed' as const, reason: 'qc_budget_exhausted' };
+    }
+
+    if (attemptCtx.validationOnly) {
+      const reason = `Existing output did not pass updated validation (${fetched.outcome}); regeneration requires a new execution plan.`;
+      await step.run(`fail-validation-${stageKey}`, () =>
+        runner.failStageExecution(stageExecutionId, reason, stageItemId, params.executionEpoch),
+      );
+      return { outcome: 'failed' as const, reason };
     }
 
     // check_failed | qc_failed — not a stage failure: loop to a fresh
@@ -278,7 +304,7 @@ export async function runStageAttemptLoop(
               .join(', ')}`
           : `qc_failed after ${failuresUsed} attempts: ${fetched.qcVerdict.critique}`;
       await step.run(`fail-stage-${stageKey}`, () =>
-        runner.failStageExecution(stageExecutionId, reason, stageItemId),
+        runner.failStageExecution(stageExecutionId, reason, stageItemId, params.executionEpoch),
       );
       return { outcome: 'failed' as const, reason };
     }
@@ -289,12 +315,21 @@ export async function runStageAttemptLoop(
   while (true) {
     iteration += 1;
 
+    if (
+      params.executionEpoch !== undefined &&
+      !(await step.run(`admit-attempt-${iteration}`, () =>
+        runner.isCurrentExecution(runId, params.executionEpoch!),
+      ))
+    )
+      return { outcome: 'run_not_running' };
     // "Retry QC": quality control could not run, the output was parked for
     // review and a person released it to be judged again. Judge the stored
     // output; nothing is generated and no attempt is spent.
     const held = await step.run(
       `find-held-qc-${iteration}`,
-      async () => (await runner.findHeldQcAttempt(stageExecutionId, stageItemId)) ?? null,
+      async () =>
+        (await runner.findHeldQcAttempt(stageExecutionId, stageItemId, params.executionEpoch)) ??
+        null,
     );
     if (held) {
       const retried = await step.run(`retry-qc-${iteration}`, () =>
@@ -309,9 +344,23 @@ export async function runStageAttemptLoop(
       continue;
     }
 
-    const attemptCtx: StageAttemptContext = await step.run(`begin-attempt-${iteration}`, () =>
-      runner.beginAttempt({ runId, stageExecutionId, stageKey, itemIndex, stageItemId }),
-    );
+    const attemptCtx = await step.run(`begin-attempt-${iteration}`, async () => {
+      try {
+        return await runner.beginAttempt({
+          runId,
+          stageExecutionId,
+          stageKey,
+          itemIndex,
+          stageItemId,
+          executionEpoch: params.executionEpoch,
+          invocationKey: `${params.executionEpoch ?? 0}:${stageItemId ?? 'stage'}:${iteration}`,
+        });
+      } catch (error) {
+        if (error instanceof ExecutionRetiredError) return null;
+        throw error;
+      }
+    });
+    if (!attemptCtx) return { outcome: 'run_not_running' };
     // DB-derived, not `attemptCtx.attemptNo` itself: only crashes spend
     // `retryLimit` — check/QC failures, human rejections and
     // `budget_blocked` all loop without consuming it. Counts attempts
@@ -392,7 +441,7 @@ export async function runStageAttemptLoop(
         );
         if (infraAttemptsUsed + 1 >= runner.infraAttemptLimit()) {
           await step.run(`fail-stage-infra-${stageKey}`, () =>
-            runner.failStageExecution(stageExecutionId, reason, stageItemId),
+            runner.failStageExecution(stageExecutionId, reason, stageItemId, params.executionEpoch),
           );
           return { outcome: 'failed' as const, reason };
         }
@@ -405,7 +454,12 @@ export async function runStageAttemptLoop(
         );
         if (isLastAttempt) {
           await step.run(`fail-stage-${stageKey}`, () =>
-            runner.failStageExecution(stageExecutionId, 'provider_timeout', stageItemId),
+            runner.failStageExecution(
+              stageExecutionId,
+              'provider_timeout',
+              stageItemId,
+              params.executionEpoch,
+            ),
           );
           return { outcome: 'failed' as const, reason: 'provider_timeout' };
         }
@@ -428,7 +482,12 @@ export async function runStageAttemptLoop(
           // Retrying can't help until the user acts (e.g. signs in) — fail
           // now with the provider's message so it's the one they see.
           await step.run(`fail-stage-user-action-${stageKey}`, () =>
-            runner.failStageExecution(stageExecutionId, status.reason, stageItemId),
+            runner.failStageExecution(
+              stageExecutionId,
+              status.reason,
+              stageItemId,
+              params.executionEpoch,
+            ),
           );
           return { outcome: 'failed' as const, reason: status.reason };
         }
@@ -438,7 +497,12 @@ export async function runStageAttemptLoop(
           );
           if (infraAttemptsUsed + 1 >= runner.infraAttemptLimit()) {
             await step.run(`fail-stage-infra-${stageKey}`, () =>
-              runner.failStageExecution(stageExecutionId, status.reason, stageItemId),
+              runner.failStageExecution(
+                stageExecutionId,
+                status.reason,
+                stageItemId,
+                params.executionEpoch,
+              ),
             );
             return { outcome: 'failed' as const, reason: status.reason };
           }

@@ -1,20 +1,28 @@
+import { RunExecutionToolbar, StageExecutionControls } from '@/components/runs/execution-controls';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { Eye, History, Info, Pause, Play, Square } from 'lucide-react';
+import { Eye, History, Info, Play } from 'lucide-react';
 import { cn } from 'cn';
-import type { InputDef, RunDetailDto, StageDef } from '@reelcraft/shared';
+import type { InputDef, RunDetailDto, RunSummaryDto, StageDef } from '@reelcraft/shared';
 import { api } from '@/api/client';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { ArtifactPreview } from '@/components/runs/artifact-preview';
 import { RunMemoryCard } from '@/components/runs/run-memory-card';
 import type { CanvasRunActions } from '@/hooks/useCanvasRunActions';
-import { runStageTitle, upstreamBlocker } from '@/components/canvas/stage-card.logic';
+
 import { RunLaunchDialog } from '@/pages/RunLaunchDialog';
 import { formatRunDuration } from '@/pages/runs-page.logic';
-import { isRunActionAllowed } from '@/lib/run-action-policy';
+
 import { isApprovalStillOpen } from '@/pages/approval-review.logic';
 import { runStateTone, stageExecutionStateTone, toneDotClassName } from '@/lib/status';
 import { formatCapUsd } from '@/lib/format-cap';
@@ -72,6 +80,7 @@ export function RunTab({
   graph,
   budgetCapUsd,
   run,
+  recentRuns,
   actions,
   selectedKey,
   onSelectStage,
@@ -84,6 +93,7 @@ export function RunTab({
   graph: StageDef[];
   budgetCapUsd: number;
   run: RunDetailDto | undefined;
+  recentRuns: RunSummaryDto[];
   actions: CanvasRunActions;
   selectedKey: string | null;
   onSelectStage: (stageKey: string) => void;
@@ -130,7 +140,6 @@ export function RunTab({
     );
   }
 
-  const labelOf = actions.stageLabel;
   const spent = Number(run.spentUsd);
   const cap = Number(run.budgetCapUsd);
   const percent = cap > 0 ? Math.min(100, (spent / cap) * 100) : 0;
@@ -138,6 +147,38 @@ export function RunTab({
   return (
     <div className="flex flex-col">
       <section className="flex flex-col gap-3 border-b p-4">
+        <Select
+          value={run.id}
+          onValueChange={onSwitchRun}
+          disabled={
+            actions.runStage.isPending ||
+            actions.runAll.isPending ||
+            actions.executionPlans !== null ||
+            actions.confirmExecution.isPending
+          }
+        >
+          <SelectTrigger size="sm" className="w-full" aria-label="Select a recent run">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {!recentRuns.some((r) => r.id === run.id) && (
+              <SelectItem value={run.id}>
+                <span className="inline-flex items-center gap-3">
+                  <span className="font-mono">#{run.id.slice(-6)}</span>
+                  <StatusBadge tone={runStateTone(run.state)} label={run.state} />
+                </span>
+              </SelectItem>
+            )}
+            {recentRuns.map((r) => (
+              <SelectItem key={r.id} value={r.id}>
+                <span className="inline-flex items-center gap-3">
+                  <span className="font-mono">#{r.id.slice(-6)}</span>
+                  <StatusBadge tone={runStateTone(r.state)} label={r.state} />
+                </span>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <div className="flex items-center gap-2">
           <Link
             to={`/runs/${run.id}`}
@@ -158,38 +199,12 @@ export function RunTab({
             <span>cap {formatCapUsd(cap)}</span>
           </div>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Button
-            size="sm"
-            onClick={() => actions.runAll.mutate()}
-            disabled={actions.runAll.isPending}
-          >
-            <Play />
-            {actions.runAll.isPending ? 'Starting…' : 'Run all'}
-          </Button>
-          {isRunActionAllowed('pause', run.state) && (
-            <Button size="sm" variant="outline" onClick={() => actions.pause.mutate()}>
-              <Pause />
-              Pause
-            </Button>
-          )}
-          {isRunActionAllowed('resume', run.state) && (
-            <Button size="sm" variant="outline" onClick={() => actions.resume.mutate()}>
-              <Play />
-              Resume
-            </Button>
-          )}
-          {isRunActionAllowed('cancel', run.state) && (
-            <Button size="sm" variant="outline" onClick={() => actions.setConfirmCancel(true)}>
-              Cancel run
-            </Button>
-          )}
-        </div>
+        <RunExecutionToolbar run={run} actions={actions} />
         {isDirty && (
           <p className="flex items-start gap-2 rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground">
             <Info className="mt-px size-3.5 shrink-0" />
-            You have unsaved changes. Stage runs use a draft snapshot and don&apos;t create a
-            version.
+            You have unsaved changes. Continuing an unchanged branch preserves this run&apos;s
+            settings and outputs. Changed stages use your canvas edits.
           </p>
         )}
       </section>
@@ -198,36 +213,24 @@ export function RunTab({
         <div className="-mx-2 flex flex-col">
           {graph.map((stage) => {
             const execution = run.stageExecutions.find((e) => e.stageKey === stage.key);
-            const tone = execution ? stageExecutionStateTone(execution.state) : 'neutral';
-            // No per-stage cancel API: stopping a running stage cancels its run.
-            const stoppable =
-              execution?.state === 'running' && isRunActionAllowed('cancel', run.state);
+            const workspaceStale =
+              execution?.state === 'passed' && actions.staleStageKeys.has(stage.key);
+            const validationOutdated =
+              execution?.state === 'passed' && actions.validationStageKeys.has(stage.key);
+            const tone =
+              workspaceStale || validationOutdated
+                ? 'warning'
+                : execution
+                  ? stageExecutionStateTone(execution.state)
+                  : 'neutral';
             return (
               <div
                 key={stage.key}
                 className={cn(
-                  'flex items-center gap-2 rounded-lg py-1.5 pr-1.5 pl-3 text-sm hover:bg-muted',
+                  'flex flex-wrap items-center gap-2 rounded-lg py-1.5 pr-1.5 pl-3 text-sm hover:bg-muted',
                   selectedKey === stage.key && 'bg-primary/10 hover:bg-primary/10',
                 )}
               >
-                <Button
-                  size="icon-xs"
-                  variant="ghost"
-                  title={
-                    stoppable
-                      ? 'Cancel run'
-                      : runStageTitle(upstreamBlocker(run, graph, stage.key), labelOf)
-                  }
-                  aria-label={stoppable ? 'Cancel run' : 'Run this stage'}
-                  disabled={stoppable ? actions.cancel.isPending : actions.runStage.isPending}
-                  onClick={() =>
-                    stoppable
-                      ? actions.setConfirmCancel(true)
-                      : actions.runStage.mutate({ stageKey: stage.key })
-                  }
-                >
-                  {stoppable ? <Square /> : <Play />}
-                </Button>
                 <span className={cn('size-2 shrink-0 rounded-full', toneDotClassName[tone])} />
                 <button
                   type="button"
@@ -237,6 +240,12 @@ export function RunTab({
                 >
                   {stage.label}
                 </button>
+                {(workspaceStale || validationOutdated) && (
+                  <StatusBadge
+                    tone="warning"
+                    label={workspaceStale ? 'Stale' : 'Validation outdated'}
+                  />
+                )}
                 {reusedKeys.has(stage.key) && (
                   <Badge variant="outline" className="text-[10px] tracking-wide uppercase">
                     Reused
@@ -265,6 +274,17 @@ export function RunTab({
                 >
                   <History />
                 </Button>
+                <div className="w-full pl-4">
+                  <StageExecutionControls
+                    available={execution?.availableActions}
+                    busy={run.availableActions?.busy ?? true}
+                    pending={actions.runStage.isPending}
+                    compact
+                    onAction={(request) =>
+                      actions.runStage.mutate({ stageKey: stage.key, ...request })
+                    }
+                  />
+                </div>
               </div>
             );
           })}
