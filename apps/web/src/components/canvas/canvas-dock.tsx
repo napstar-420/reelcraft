@@ -1,3 +1,4 @@
+import { useState, type CSSProperties } from 'react';
 import {
   Maximize2,
   Minimize2,
@@ -12,7 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toneDotClassName, type StatusTone } from '@/lib/status';
 
-export type DockTab = 'stage' | 'run' | 'blueprint' | 'assistant';
+export type DockTab = 'stage' | 'run' | 'blueprint' | 'assistant' | 'details';
 
 /** The canvas's one side panel: the stage inspector, the run, the
  * blueprint's settings and the assistant, as tabs. Docked beside the canvas, so selecting a
@@ -28,6 +29,7 @@ export function CanvasDock({
   runDisabled,
   assistantBusy,
   stage,
+  details,
   run,
   blueprint,
   assistant,
@@ -44,20 +46,50 @@ export function CanvasDock({
   /** The assistant is working: shown as a dot on its tab. */
   assistantBusy: boolean;
   stage: React.ReactNode;
+  details?: React.ReactNode;
   run: React.ReactNode;
   blueprint: React.ReactNode;
   assistant: React.ReactNode;
 }) {
+  const [width, setWidth] = useState<number | null>(null);
   return (
     <aside
       aria-label="Inspector"
+      style={
+        { '--inspector-width': `min(${width ?? (wide ? 620 : 440)}px, 85vw)` } as CSSProperties
+      }
       className={cn(
-        'z-30 flex min-h-0 shrink-0 flex-col border-l bg-card',
-        wide ? 'lg:w-[620px]' : 'lg:w-[440px]',
+        'relative z-30 flex min-h-0 shrink-0 flex-col border-l bg-card',
+        'md:w-[var(--inspector-width)]',
         'max-lg:w-[380px]',
         'max-md:fixed max-md:inset-x-0 max-md:bottom-0 max-md:h-[64%] max-md:w-auto max-md:rounded-t-2xl max-md:border-t max-md:border-l-0 max-md:shadow-2xl',
       )}
     >
+      <div
+        role="separator"
+        aria-label="Resize inspector"
+        aria-orientation="vertical"
+        tabIndex={0}
+        className="absolute inset-y-0 -left-1 z-40 hidden w-2 cursor-ew-resize focus-visible:bg-primary/40 md:block"
+        onKeyDown={(event) => {
+          if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+            event.preventDefault();
+            setWidth(
+              Math.max(365, (width ?? (wide ? 620 : 440)) + (event.key === 'ArrowLeft' ? 30 : -30)),
+            );
+          }
+        }}
+        onPointerDown={(event) => {
+          event.currentTarget.setPointerCapture(event.pointerId);
+        }}
+        onPointerMove={(event) => {
+          if (event.currentTarget.hasPointerCapture(event.pointerId))
+            setWidth(
+              Math.max(365, Math.min(window.innerWidth * 0.85, window.innerWidth - event.clientX)),
+            );
+        }}
+        onPointerUp={(event) => event.currentTarget.releasePointerCapture(event.pointerId)}
+      />
       <Tabs
         value={tab}
         onValueChange={(next) => onTabChange(next as DockTab)}
@@ -69,6 +101,7 @@ export function CanvasDock({
               <SlidersHorizontal />
               Stage
             </TabsTrigger>
+            {details && <TabsTrigger value="details">Details</TabsTrigger>}
             <TabsTrigger value="run" disabled={runDisabled}>
               <Play />
               Run
@@ -108,6 +141,9 @@ export function CanvasDock({
             <X />
           </Button>
         </div>
+        <TabsContent value="details" className="min-h-0 overflow-hidden">
+          {details}
+        </TabsContent>
         <TabsContent value="stage" className="min-h-0 overflow-y-auto">
           {stage}
         </TabsContent>

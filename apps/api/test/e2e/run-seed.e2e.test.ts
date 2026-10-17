@@ -683,6 +683,12 @@ describe('seeded runs — run a stage without re-running upstream (e2e)', () => 
       }),
     ).toEqual({ continued: false });
     const before = await runs.get(original.id);
+    vi.spyOn(runs, 'get').mockResolvedValueOnce({
+      ...before,
+      stageExecutions: ['images', 'script', 'narration'].map((key) =>
+        before.stageExecutions.find((e) => e.stageKey === key)!,
+      ),
+    });
     await expect(
       runs.create({
         ...base,

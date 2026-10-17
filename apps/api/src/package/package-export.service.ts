@@ -248,6 +248,8 @@ export class PackageExportService {
     }));
     return {
       graph,
+      presentation: plan.version.presentation ?? undefined,
+      execution: plan.version.execution,
       inputs: plan.version.inputs as PackagePipeline['inputs'],
       roles,
       defaults: plan.version.defaults as PackagePipeline['defaults'],

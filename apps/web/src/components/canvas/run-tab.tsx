@@ -1,9 +1,17 @@
+import { DagOverview } from './dag-overview';
+import { stageDependencies } from '@/lib/stage-deps';
 import { RunExecutionToolbar, StageExecutionControls } from '@/components/runs/execution-controls';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { Eye, History, Info, Play } from 'lucide-react';
 import { cn } from 'cn';
-import type { InputDef, RunDetailDto, RunSummaryDto, StageDef } from '@reelcraft/shared';
+import type {
+  BlueprintPresentation,
+  InputDef,
+  RunDetailDto,
+  RunSummaryDto,
+  StageDef,
+} from '@reelcraft/shared';
 import { api } from '@/api/client';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -83,6 +91,7 @@ export function RunTab({
   recentRuns,
   actions,
   selectedKey,
+  presentation,
   onSelectStage,
   isDirty,
   onSwitchRun,
@@ -96,6 +105,7 @@ export function RunTab({
   recentRuns: RunSummaryDto[];
   actions: CanvasRunActions;
   selectedKey: string | null;
+  presentation?: BlueprintPresentation | undefined;
   onSelectStage: (stageKey: string) => void;
   isDirty: boolean;
   onSwitchRun: (runId: string) => void;
@@ -209,85 +219,106 @@ export function RunTab({
         )}
       </section>
 
-      <Section title="Stages">
+      <Section title="Dependency overview">
+        <DagOverview
+          graph={graph}
+          run={run}
+          presentation={presentation}
+          selectedKey={selectedKey}
+          onSelect={onSelectStage}
+        />
         <div className="-mx-2 flex flex-col">
-          {graph.map((stage) => {
-            const execution = run.stageExecutions.find((e) => e.stageKey === stage.key);
-            const workspaceStale =
-              execution?.state === 'passed' && actions.staleStageKeys.has(stage.key);
-            const validationOutdated =
-              execution?.state === 'passed' && actions.validationStageKeys.has(stage.key);
-            const tone =
-              workspaceStale || validationOutdated
-                ? 'warning'
-                : execution
-                  ? stageExecutionStateTone(execution.state)
-                  : 'neutral';
-            return (
-              <div
-                key={stage.key}
-                className={cn(
-                  'flex flex-wrap items-center gap-2 rounded-lg py-1.5 pr-1.5 pl-3 text-sm hover:bg-muted',
-                  selectedKey === stage.key && 'bg-primary/10 hover:bg-primary/10',
-                )}
-              >
-                <span className={cn('size-2 shrink-0 rounded-full', toneDotClassName[tone])} />
-                <button
-                  type="button"
-                  className="min-w-0 flex-1 truncate text-left text-sm"
-                  title={stage.key}
-                  onClick={() => onSelectStage(stage.key)}
+          {graph
+            .filter((stage) => stage.key === (selectedKey ?? graph[0]?.key))
+            .map((stage) => {
+              const execution = run.stageExecutions.find((e) => e.stageKey === stage.key);
+              const workspaceStale =
+                execution?.state === 'passed' && actions.staleStageKeys.has(stage.key);
+              const validationOutdated =
+                execution?.state === 'passed' && actions.validationStageKeys.has(stage.key);
+              const tone =
+                workspaceStale || validationOutdated
+                  ? 'warning'
+                  : execution
+                    ? stageExecutionStateTone(execution.state)
+                    : 'neutral';
+              return (
+                <div
+                  key={stage.key}
+                  className={cn(
+                    'flex flex-wrap items-center gap-2 rounded-lg py-1.5 pr-1.5 pl-3 text-sm hover:bg-muted',
+                    selectedKey === stage.key && 'bg-primary/10 hover:bg-primary/10',
+                  )}
                 >
-                  {stage.label}
-                </button>
-                {(workspaceStale || validationOutdated) && (
-                  <StatusBadge
-                    tone="warning"
-                    label={workspaceStale ? 'Stale' : 'Validation outdated'}
-                  />
-                )}
-                {reusedKeys.has(stage.key) && (
-                  <Badge variant="outline" className="text-[10px] tracking-wide uppercase">
-                    Reused
-                  </Badge>
-                )}
-                {isApprovalStillOpen(stage.key, run) && (
-                  <Button size="xs" onClick={() => actions.setApprovalStageKey(stage.key)}>
-                    Review output
+                  <span className={cn('size-2 shrink-0 rounded-full', toneDotClassName[tone])} />
+                  <button
+                    type="button"
+                    className="min-w-0 flex-1 truncate text-left text-sm"
+                    title={stage.key}
+                    onClick={() => onSelectStage(stage.key)}
+                  >
+                    {stage.label}
+                    <span className="mt-1 block truncate text-[11px] text-muted-foreground">
+                      {(stageDependencies(graph).get(stage.key) ?? [])
+                        .map((key) => graph.find((s) => s.key === key)?.label ?? key)
+                        .join(' + ') || 'Blueprint inputs'}{' '}
+                      → {stage.label}
+                    </span>
+                  </button>
+                  {(workspaceStale || validationOutdated) && (
+                    <StatusBadge
+                      tone="warning"
+                      label={workspaceStale ? 'Stale' : 'Validation outdated'}
+                    />
+                  )}
+                  {reusedKeys.has(stage.key) && (
+                    <Badge variant="outline" className="text-[10px] tracking-wide uppercase">
+                      Reused
+                    </Badge>
+                  )}
+                  {isApprovalStillOpen(stage.key, run) && (
+                    <Button size="xs" onClick={() => actions.setApprovalStageKey(stage.key)}>
+                      Review output
+                    </Button>
+                  )}
+                  <Button
+                    size="icon-xs"
+                    variant="ghost"
+                    title="View output"
+                    aria-label="View output"
+                    onClick={() => actions.setOutputSheetKey(stage.key)}
+                  >
+                    <Eye />
                   </Button>
-                )}
-                <Button
-                  size="icon-xs"
-                  variant="ghost"
-                  title="View output"
-                  aria-label="View output"
-                  onClick={() => actions.setOutputSheetKey(stage.key)}
-                >
-                  <Eye />
-                </Button>
-                <Button
-                  size="icon-xs"
-                  variant="ghost"
-                  title="Attempts"
-                  aria-label="Attempts"
-                  onClick={() => actions.setAttemptsSheetKey(stage.key)}
-                >
-                  <History />
-                </Button>
-                <div className="w-full pl-4">
-                  <StageExecutionControls
-                    available={execution?.availableActions}
-                    busy={run.availableActions?.busy ?? true}
-                    pending={actions.runStage.isPending}
-                    compact
-                    onAction={(request) =>
-                      actions.runStage.mutate({ stageKey: stage.key, ...request })
-                    }
-                  />
+                  <Button
+                    size="icon-xs"
+                    variant="ghost"
+                    title="Attempts"
+                    aria-label="Attempts"
+                    onClick={() => actions.setAttemptsSheetKey(stage.key)}
+                  >
+                    <History />
+                  </Button>
+                  {stage.disabled && <Badge variant="outline">Disabled</Badge>}
+                  {execution?.availableActions?.blockedReason && (
+                    <p className="w-full pl-4 text-xs text-destructive">
+                      {execution.availableActions.blockedReason}
+                    </p>
+                  )}
+                  <div className="w-full pl-4">
+                    <StageExecutionControls
+                      available={execution?.availableActions}
+                      busy={run.availableActions?.busy ?? true}
+                      pending={actions.runStage.isPending}
+                      compact
+                      onAction={(request) =>
+                        actions.runStage.mutate({ stageKey: stage.key, ...request })
+                      }
+                    />
+                  </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })}
         </div>
       </Section>
 

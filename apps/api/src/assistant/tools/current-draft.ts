@@ -38,6 +38,7 @@ export async function currentDraft(
         roles: latest.roles,
         defaults: latest.defaults,
         budget: latest.budget,
+        presentation: latest.presentation ?? undefined,
         execution: latest.execution,
       } as CreateBlueprintVersionDto,
       source: 'latest saved version',

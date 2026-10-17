@@ -7,7 +7,14 @@ import { buildHttpTestApp } from '../support/build-http-test-app';
 import { ChannelService } from '../../src/channel/channel.service';
 import { BlueprintService } from '../../src/blueprint/blueprint.service';
 import { RunService } from '../../src/run/run.service';
-import { run, stageExecution, stageItem } from '../../src/db/schema';
+import {
+  run,
+  stageExecution,
+  stageItem,
+  artifact,
+  stageAttempt,
+  runMemory,
+} from '../../src/db/schema';
 import { ulid } from '../../src/common/ulid';
 
 // Interactive browser acceptance uses a disposable DB and an Inngest client that never dispatches jobs.
@@ -62,14 +69,32 @@ it.skipIf(!process.env.DAG_BROWSER_FIXTURE)(
         },
         {
           ...base,
+          key: 'voice',
+          label: 'Voice-over planning',
+          dependsOn: ['scenes'],
+          output: { kind: 'text' },
+        },
+        {
+          ...base,
+          key: 'sound',
+          label: 'Source music and SFX',
+          dependsOn: ['scenes'],
+          output: { kind: 'text' },
+        },
+        {
+          ...base,
           key: 'final',
           label: 'Render Final Video',
-          dependsOn: ['motion'],
+          dependsOn: ['motion', 'voice', 'sound'],
           output: { kind: 'text' },
         },
       ]);
       const version = await blueprints.createVersion(blueprintId, {
         graph,
+        presentation: {
+          positions: {},
+          branchNames: { motion: 'Visuals', voice: 'Narration', sound: 'Sound' },
+        },
         inputs: [],
         roles: [],
         defaults: {},
@@ -106,11 +131,73 @@ it.skipIf(!process.env.DAG_BROWSER_FIXTURE)(
           state: index < 6 ? ('passed' as const) : ('pending' as const),
         })),
       );
+      const sourceArtifactId = ulid();
+      await database.db.insert(artifact).values({
+        id: sourceArtifactId,
+        runId: created.id,
+        producerStageKey: 'scenes',
+        stale: false,
+        kind: 'data',
+        reproLevel: 'exact',
+        data: Array.from({ length: 14 }, (_, i) => `Scene ${i + 1}`),
+      });
+      await database.db
+        .update(stageExecution)
+        .set({ outputArtifactId: sourceArtifactId })
+        .where(eq(stageExecution.id, source.id));
+      for (let i = 0; i < 6; i++) {
+        const artifactId = ulid();
+        const items = await database.db
+          .select()
+          .from(stageItem)
+          .where(eq(stageItem.stageExecutionId, motion.id));
+        const item = items.find((item) => item.itemIndex === i)!;
+        await database.db.insert(artifact).values({
+          id: artifactId,
+          runId: created.id,
+          producerStageKey: 'motion',
+          stale: false,
+          itemIndex: i,
+          kind: 'text',
+          reproLevel: 'exact',
+          data: {
+            text: `Scene ${i + 1}: slow push toward the church entrance. Keep framing stable; preserve the source image.`,
+          },
+        });
+        await database.db.insert(stageAttempt).values({
+          id: ulid(),
+          stageExecutionId: motion.id,
+          stageItemId: item.id,
+          attemptNo: 1,
+          outcome: 'success',
+          phase: 'settled',
+          resolvedInputs: {
+            slots: { scene: `Scene ${i + 1}` },
+            provenance: {
+              scene: { ref: { from: 'stage', stageKey: 'scenes' }, artifactId: sourceArtifactId },
+            },
+          },
+          renderedPrompt: `Plan camera motion for Scene ${i + 1}.`,
+          artifactId,
+          durationMs: 2340,
+        });
+        await database.db.insert(runMemory).values({
+          id: ulid(),
+          runId: created.id,
+          memKey: `motion_plans#${i}`,
+          version: 1,
+          writtenBy: 'motion',
+          writtenItem: i,
+          kind: 'text',
+          data: { text: `Scene ${i + 1}: slow push.` },
+        });
+      }
       await writeFile(
         '/tmp/reelcraft-dag-browser.json',
         JSON.stringify({ api: server.baseUrl, runId: created.id, blueprintId }),
       );
-      for (let n = 0; n < 1200; n++) {
+      const expiresAt = Date.now() + 900_000;
+      while (Date.now() < expiresAt) {
         if (
           await access('/tmp/reelcraft-dag-browser-stop').then(
             () => true,
@@ -127,5 +214,5 @@ it.skipIf(!process.env.DAG_BROWSER_FIXTURE)(
       await unlink('/tmp/reelcraft-dag-browser-stop').catch(() => {});
     }
   },
-  310_000,
+  930_000,
 );

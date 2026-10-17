@@ -140,6 +140,7 @@ export const StageRunPlanDto = z.object({
   blockedReason: z.string().nullable(),
   uncertainAttemptIds: z.array(z.string()).optional(),
   retainedItemCount: z.number().optional(),
+  availabilityChangedStageKeys: z.array(z.string()).optional(),
 });
 export type StageRunPlanDto = z.infer<typeof StageRunPlanDto>;
 
@@ -348,6 +349,13 @@ export const StageOutputDto = z.object({
 });
 export type StageOutputDto = z.infer<typeof StageOutputDto>;
 
+export const StageAttemptDetailDto = StageAttemptDto.extend({
+  resolvedInputs: z.unknown().nullable(),
+  durationMs: z.number().nullable(),
+  artifact: ArtifactViewDto.nullable(),
+});
+export type StageAttemptDetailDto = z.infer<typeof StageAttemptDetailDto>;
+
 export const StageExecutionDto = z.object({
   id: z.string(),
   stageKey: z.string(),
@@ -358,6 +366,9 @@ export const StageExecutionDto = z.object({
   output: OutputDef.nullable(),
   state: StageExecutionState,
   skipReason: z.string().nullable().optional(),
+  disabled: z.boolean().optional(),
+  outputAvailable: z.boolean().optional(),
+  failure: z.unknown().optional(),
   availableActions: StageAvailableActions.optional(),
   isIterating: z.boolean(),
   itemCount: z.number().nullable(),

@@ -55,6 +55,11 @@ export function stageJsonSchema(n: NarrowedEnums): JsonObject {
     approval: freeObject('Human approval: { mode: "stage"|"item", onReject? }.'),
     budget: freeObject('{ stageCapUsd?, qcCapUsd? }.'),
     model: freeObject('{ provider, modelId, version?, params }; omit to use the default.'),
+    disabled: {
+      type: 'boolean',
+      description:
+        'Skip blueprint execution and block descendant output consumption. Explicit stage-only actions remain possible.',
+    },
     enabledWhen: freeObject('{ input, equals }: run only when a run input has this value.'),
     dependsOn: {
       type: 'array',
@@ -75,6 +80,9 @@ export function draftJsonSchema(n: NarrowedEnums): JsonObject {
       inputs: { type: 'array', items: { type: 'object' }, description: 'What a run asks for.' },
       roles: { type: 'array', items: { type: 'object' }, maxItems: 1 },
       defaults: freeObject('Blueprint defaults layer (models, retries, caps, format).'),
+      presentation: freeObject(
+        'Presentation only: positions by stage key {x,y}; branchNames by first stage key. Does not change execution.',
+      ),
       execution: obj({ concurrentBranches: { type: 'integer', minimum: 1 } }, [
         'concurrentBranches',
       ]),

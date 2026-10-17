@@ -41,6 +41,10 @@ import { formatCapUsd } from '@/lib/format-cap';
 const MEMORY_PORT_INSET = 34;
 
 export type StageNodeData = {
+  failureReason?: string | undefined;
+  branchName?: string | undefined;
+  modelLabel?: string | undefined;
+  costUsd?: string | number | undefined;
   index: number;
   count: number;
   stage: StageDef;
@@ -136,9 +140,12 @@ function StageNodeView({ data, selected }: NodeProps<StageFlowNode>) {
       className={cn(
         'group relative rounded-xl border bg-card text-card-foreground shadow-sm transition-shadow',
         'hover:border-foreground/25',
+        stage.disabled && 'border-dashed opacity-80',
         selected && 'border-primary shadow-md ring-3 ring-primary/25 hover:border-primary',
         errors > 0 && !selected && 'border-destructive/60',
       )}
+      tabIndex={0}
+      aria-label={`${stage.label || stage.key}, ${data.modelLabel ?? ''}, ${runStatus?.label ?? 'Not started'}`}
       style={{ width: STAGE_NODE_WIDTH }}
     >
       <Handle
@@ -170,6 +177,23 @@ function StageNodeView({ data, selected }: NodeProps<StageFlowNode>) {
         style={{ left: STAGE_NODE_WIDTH - MEMORY_PORT_INSET }}
       />
 
+      {!readOnly && (
+        <input
+          aria-label={`Branch name for ${stage.label}`}
+          placeholder="Name branch…"
+          defaultValue={data.branchName ?? ''}
+          key={`${stage.key}:${data.branchName ?? ''}`}
+          maxLength={80}
+          onBlur={(event) => {
+            const name = event.target.value.trim();
+            if (name !== (data.branchName ?? '')) actions.onRenameBranch(stage.key, name);
+          }}
+          className="nodrag nopan absolute -top-12 left-0 w-56 border-0 bg-transparent text-xs font-semibold text-primary outline-none placeholder:text-muted-foreground/50"
+        />
+      )}
+      {readOnly && data.branchName && (
+        <p className="absolute -top-12 text-xs text-primary">{data.branchName}</p>
+      )}
       <div className="pointer-events-none absolute -top-[22px] left-0.5 flex items-center gap-1.5 font-mono text-[11px] whitespace-nowrap text-muted-foreground">
         <b className="font-medium text-foreground/75">{String(index + 1).padStart(2, '0')}</b>
         {stage.key}
@@ -251,12 +275,21 @@ function StageNodeView({ data, selected }: NodeProps<StageFlowNode>) {
         </div>
       </div>
 
-      {snippet ? (
-        <p className="mx-3 mb-2.5 line-clamp-2 text-xs leading-snug text-muted-foreground">
-          {snippet}
+      <div className="flex items-center justify-between gap-2 px-3 pb-2 text-[11px] text-muted-foreground">
+        <span className="truncate" title={data.modelLabel}>
+          {data.modelLabel}
+        </span>
+        <span className="shrink-0">{describeOutputKind(stage.output.kind)}</span>
+      </div>
+      <div className="pointer-events-none absolute top-full left-0 z-50 hidden w-80 rounded-lg border bg-popover p-3 text-xs shadow-lg group-hover:block group-focus-within:block">
+        <p className="mb-2 font-semibold">{stage.label}</p>
+        <p className="line-clamp-4 text-muted-foreground">{snippet || 'No custom instructions'}</p>
+        <p className="mt-2">Writes: {writes.join(', ') || 'No memory writes'}</p>
+        <p>
+          Cost:{' '}
+          {data.costUsd === undefined ? 'Not recorded' : `$${Number(data.costUsd).toFixed(4)}`}
         </p>
-      ) : null}
-
+      </div>
       <div className="grid gap-1.5 border-t px-3 py-2.5">
         {slots.slice(0, 3).map(([name, ref]) => (
           <IoRow
@@ -310,6 +343,55 @@ function StageNodeView({ data, selected }: NodeProps<StageFlowNode>) {
         </div>
       )}
 
+      {!readOnly && (
+        <div className="nodrag nopan flex items-center justify-between px-3 py-2 text-xs">
+          <Button variant="ghost" size="xs" onClick={() => actions.onCreateBranch(stage.key)}>
+            + Create branch
+          </Button>
+          <span className="tabular-nums text-muted-foreground">
+            {data.costUsd === undefined ? '' : `$${Number(data.costUsd).toFixed(4)}`}
+          </span>
+        </div>
+      )}
+      {data.failureReason && (
+        <p className="border-t px-3 py-2 text-xs text-destructive">{data.failureReason}</p>
+      )}
+      {stage.disabled && (
+        <p className="border-t px-3 py-2 text-xs text-muted-foreground">
+          Disabled · outputs unavailable to descendants
+        </p>
+      )}
+      {(issues?.find((issue) => issue.severity === 'error')?.message ||
+        runStatus?.availableActions?.blockedReason) && (
+        <p className="border-t px-3 py-2 text-xs text-destructive">
+          {issues?.find((issue) => issue.severity === 'error')?.message ??
+            runStatus?.availableActions?.blockedReason}
+        </p>
+      )}
+      {runStatus && (
+        <div className="nodrag nopan flex gap-2 border-t px-3 py-1">
+          <Button
+            variant="ghost"
+            size="xs"
+            onClick={(event) => {
+              event.stopPropagation();
+              actions.onInspectStage(stage.key, 'Output');
+            }}
+          >
+            Output
+          </Button>
+          <Button
+            variant="ghost"
+            size="xs"
+            onClick={(event) => {
+              event.stopPropagation();
+              actions.onInspectStage(stage.key, 'Attempts');
+            }}
+          >
+            Attempts
+          </Button>
+        </div>
+      )}
       {runStatus ? <RunFooter stageKey={stage.key} status={runStatus} runTitle={runTitle} /> : null}
     </div>
   );
@@ -394,6 +476,10 @@ export type AddNodeData = {
   empty: boolean;
   /** Most common capabilities, offered as one-click starters when empty. */
   starters: CapabilityDto[];
+  failureReason?: string | undefined;
+  branchName?: string | undefined;
+  modelLabel?: string | undefined;
+  costUsd?: string | number | undefined;
   index: number;
 };
 export type AddFlowNode = Node<AddNodeData, 'add'>;

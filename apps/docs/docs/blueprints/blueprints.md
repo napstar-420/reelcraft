@@ -3,7 +3,7 @@ title: Blueprints
 description: Create a blueprint, find your way around its canvas, and archive or delete blueprints you no longer need.
 ---
 
-A **blueprint** is the recipe for a video. It's a list of **stages** that run in order. Each stage
+A **blueprint** is the recipe for a video. It's a dependency graph of **stages**. Each stage
 does one job, such as writing a script, making images, recording a voice-over or putting the video
 together. Each stage can use the outputs of the stages before it.
 
@@ -41,25 +41,29 @@ See [Versions](./versions.md) for saving, and [Starting a run](../runs/starting-
 
 - The **Start** card, **Blueprint inputs**, lists the inputs a run asks for, the role and the run cap.
   Select it to open the **Blueprint** tab.
-- One card for each stage, in the order they run.
+- One card for each stage. Connections show dependencies; independent branches can run together.
 - An **Add stage** card at the end.
 
 Drag the canvas to move around. Scroll to move, and pinch or hold Ctrl (or ⌘) and scroll to zoom.
 
-**The strip along the bottom** has a pill for every stage (select one to jump to it), a **problems**
-button when there are any, and the zoom buttons. The last one fits every stage on screen.
+**Format canvas** arranges nodes in dependency layers. **Fit workflow** shows the complete graph;
+**Focus selected** centers the selected stage. Drag cards freely to place them wherever you prefer.
+Position changes never change dependencies or make artifacts stale. Layout and branch names are shared
+with the blueprint and retained in drafts, saved versions, and exported packages. **Undo** and **Redo**
+restore position, Format, connection, branch-name, and enable/disable edits.
 
-**The panel on the right** has three tabs:
+**The panel on the right** has tabs for stage configuration, execution details, runs, blueprint settings, and the assistant:
 
 - **Stage**: the settings of the selected stage. See [Stages](./stages.md).
-- **Run**: the latest run, for trying stages out. See [Canvas runs](../runs/canvas-runs.md).
+- **Details**: linked Output, Attempts, Inputs & dependencies, and Memory views for a stage.
+- **Assistant**: help editing the blueprint.
+- **Run**: the selected run, for trying stages out. See [Canvas runs](../runs/canvas-runs.md).
 - **Blueprint**: the run cap, inputs, the character role and defaults. See
   [Blueprint settings](./settings.md).
 
-Select **✕** to hide the panel, and **Panel** to bring it back. The expand button next to it makes the
-panel wider.
+Select **✕** to hide the panel, and **Panel** to bring it back. Drag the panel divider or focus it and press the arrow keys to resize it. The expand button makes it wider.
 
-![The blueprint canvas: the stage cards, the stage strip and the Stage tab](/img/usage/blueprint-canvas.png)
+![Editable DAG canvas and dependency overview](/img/usage/dag-canvas-inspection.jpg)
 
 ### Add a stage
 
@@ -84,22 +88,46 @@ Select a stage's card. Its settings open in the **Stage** tab. See [Stages](./st
 Each card shows:
 
 - the stage's label and type, with its key above it;
-- the start of its instructions;
+- its model/provider, with full details on hover or keyboard focus;
 - the inputs it takes and the output it makes, and the memory keys it writes;
 - what it does beyond the basics: **Each item**, **Approval**, **QC**, its checks, and **If …** when it
   only runs on a condition;
 - its problems, if it has any: **✗** with the number of errors, **⚠** with the number of warnings;
-- once there's a run, the stage's status, what it cost, and a play button to run just that stage.
+- once there's a run, its status, duration, cost, item progress and eligible execution action;
+- the specific failure or blocking reason, including the responsible upstream stage;
+- **Output** and **Attempts** shortcuts into the same details workspace.
 
-Solid lines join each stage to the next one. Dashed purple lines show **memory**: a value one stage
+Execution connections join prerequisite stages to their consumers, including branches and joins. Dashed purple lines show **memory**: a value one stage
 saves and a later stage reads, labelled with its key. A red dashed line means two stages write the
-same memory key, which you'll need to fix. Turn **Memory links** off to hide them. See
+same memory key, which you'll need to fix. Memory links are hidden by default; turn **Memory links** on to inspect them. See
 [Connecting stages](./connecting-stages.md#memory).
 
-### Reorder stages
+### Connect stages and name branches
 
-Drag a card left or right and drop it where it should go. Or hover over a card and select **Move
-earlier** or **Move later**. The stages run in the order shown, from left to right.
+Select **Create branch** on B to add a new stage after B without changing an existing B → C branch.
+Drag from a stage's right output handle to another stage's left input handle to add an execution dependency.
+Self-connections and cycles are rejected. The inspector also provides keyboard-accessible **Add dependency**
+and **Disconnect…** selectors.
+
+Select a connection and choose **Disconnect / edit binding**, or use Delete on a selected connection.
+An input, context, iteration, check, or memory binding still creates a dependency: remove or replace that
+binding in the inspector before disconnecting it. Existing positional references are preserved explicitly
+when connection editing changes graph order.
+
+Enter a label in **Name branch…** above its first stage. Branch names also appear in the Run tab's
+compact dependency overview. Renaming a branch changes presentation only.
+
+### Temporarily disable a stage
+
+Uncheck **Stage enabled** in its inspector. Blueprint execution skips the stage. Every descendant shows
+a validation error naming the disabled ancestor; whole-blueprint execution is blocked until those errors
+are resolved. Independent branches remain eligible for stage-only execution.
+
+The disabled stage can still **Run**, **Continue**, or **Re-run** explicitly when its prerequisites and
+inputs are ready. Its outputs remain stored and inspectable, but direct output references and memory
+cannot consume them until it is enabled again. Re-enabling restores compatible output availability;
+it does not run descendants or clear unrelated stale reasons. Re-running still stales affected descendants.
+Changes to an existing run use an explicit, revision-bound execution plan; active runs retain their snapshot.
 
 ### Delete a stage
 

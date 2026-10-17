@@ -82,6 +82,7 @@ export function useRunExecutionActions({
       action !== 'rerun' &&
       !first.blockedReason &&
       !first.invalidatedStageKeys.length &&
+      !first.availabilityChangedStageKeys?.length &&
       !first.uncertainAttemptIds?.length
     ) {
       const result = await api.confirmStageRun(run.id, {

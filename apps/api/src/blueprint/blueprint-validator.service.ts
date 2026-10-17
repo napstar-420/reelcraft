@@ -1,3 +1,4 @@
+import { disabledAncestor } from '@reelcraft/shared';
 import { Injectable } from '@nestjs/common';
 import type {
   CheckDef,
@@ -66,6 +67,13 @@ export class BlueprintValidatorService {
     const ctx = buildValidationContext(input);
     for (const stage of graph) {
       this.validateStage(stage, ctx, issues);
+      const disabled = disabledAncestor(graph, stage.key);
+      if (disabled)
+        issues.push({
+          path: `graph.${stage.key}.dependsOn`,
+          severity: 'error',
+          message: `Disabled ancestor: ${disabled.label || disabled.key}. Enable it before running this stage.`,
+        });
     }
 
     this.checkMemoryWrittenByMultiple(ctx, issues);

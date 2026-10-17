@@ -22,6 +22,12 @@ describe('package export (e2e)', () => {
     testApp = await buildTestApp(testDb);
     exporter = testApp.app.get(PackageExportService);
     ids = await seedSource(testDb, testApp.app.get<StorageAdapter>(STORAGE_ADAPTER));
+    await testDb.db
+      .update(blueprintVersion)
+      .set({
+        presentation: { positions: { img: { x: 94, y: 208 } }, branchNames: { img: 'Visuals' } },
+      })
+      .where(eq(blueprintVersion.id, ids.versionId));
   });
 
   afterAll(async () => {
@@ -69,6 +75,10 @@ describe('package export (e2e)', () => {
       expect(raw).not.toContain(local);
     }
     const pipeline = PackagePipeline.parse(JSON.parse(raw));
+    expect(pipeline.presentation).toEqual({
+      positions: { img: { x: 94, y: 208 } },
+      branchNames: { img: 'Visuals' },
+    });
     expect(pipeline.graph[0]!.slots.logo).toEqual({
       from: 'coalesce',
       refs: [

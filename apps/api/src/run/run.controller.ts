@@ -201,6 +201,20 @@ export class RunController {
     return this.runs.listStageAttempts(id, key);
   }
 
+  @Get(':id/artifacts/:artifactId')
+  inspectArtifact(@Param('id') id: string, @Param('artifactId') artifactId: string) {
+    return this.runs.inspectArtifact(id, artifactId);
+  }
+
+  @Get(':id/stages/:key/attempts/:attemptId')
+  stageAttemptDetail(
+    @Param('id') id: string,
+    @Param('key') key: string,
+    @Param('attemptId') attemptId: string,
+  ) {
+    return this.runs.stageAttemptDetail(id, key, attemptId);
+  }
+
   @Get(':id/stages/:key/logs')
   stageLogs(
     @Param('id') id: string,

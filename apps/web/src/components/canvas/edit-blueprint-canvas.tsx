@@ -1,3 +1,4 @@
+import { connectStages, disconnectStages, explicitGraph } from '@/pages/dag-edit.logic';
 import { RunExecutionToolbar } from '@/components/runs/execution-controls';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -35,6 +36,7 @@ import {
 } from '@/pages/canvas-graph.logic';
 import { RunLaunchDialog } from '@/pages/RunLaunchDialog';
 import type {
+  BlueprintPresentation,
   BlueprintDto,
   BlueprintVersionDto,
   ConfigLayer,
@@ -54,6 +56,7 @@ import {
   pickInitialDraft,
   withWorkingDraft,
 } from './canvas-draft.logic';
+import { StageDetailsWorkspace } from '@/components/runs/stage-details-workspace';
 import { CanvasRunSheets } from './canvas-run-sheets';
 import { CanvasToolbar } from './canvas-toolbar';
 import { CanvasWorkspace } from './canvas-workspace';
@@ -63,6 +66,7 @@ import { createStage } from './stage-factory.logic';
 import { StagePanel } from './stage-panel';
 
 type BlueprintDraft = {
+  presentation?: BlueprintPresentation | undefined;
   graph: StageDef[];
   inputs: InputDef[];
   roles: RoleDef[];
@@ -79,6 +83,7 @@ type SavedVersion = { id: string; major: number; minor: number; contentKey: stri
 
 function draftOf(v: BlueprintDraft): BlueprintDraft {
   return {
+    presentation: v.presentation,
     graph: v.graph,
     inputs: v.inputs,
     roles: v.roles,
@@ -88,9 +93,16 @@ function draftOf(v: BlueprintDraft): BlueprintDraft {
   };
 }
 
-async function assertRunnable(blueprintId: string, draft: BlueprintDraft) {
+async function assertRunnable(blueprintId: string, draft: BlueprintDraft, allowDisabled = false) {
   const validation = await api.validateBlueprint(blueprintId, draft);
-  if (validation.runnable) return;
+  if (
+    validation.runnable ||
+    (allowDisabled &&
+      validation.issues
+        .filter((i) => i.severity === 'error')
+        .every((i) => i.message.startsWith('Disabled ancestor:')))
+  )
+    return;
   const summary = validation.issues
     .filter((issue) => issue.severity === 'error')
     .slice(0, 3)
@@ -128,6 +140,25 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
   const capabilities = useQuery({ queryKey: ['capabilities'], queryFn: api.listCapabilities });
 
   const [draft, setDraft] = useState<BlueprintDraft | null>(null);
+  const undoStack = useRef<BlueprintDraft[]>([]);
+  const redoStack = useRef<BlueprintDraft[]>([]);
+  function editDraft(next: BlueprintDraft) {
+    if (!draft || readOnly) return;
+    undoStack.current.push(draft);
+    redoStack.current = [];
+    setDraft(next);
+  }
+  function historyEdit(redo: boolean) {
+    if (!draft || viewing) return;
+    const from = redo ? redoStack.current : undoStack.current;
+    const to = redo ? undoStack.current : redoStack.current;
+    const next = from.pop();
+    if (next) {
+      to.push(draft);
+      setDraft(next);
+    }
+  }
+
   const [selectedStageKey, setSelectedStageKey] = useState<string | null>(null);
   const [tab, setTab] = useState<DockTab>('stage');
   const [dockOpen, setDockOpen] = useState(() => window.matchMedia(DESKTOP_QUERY).matches);
@@ -272,7 +303,7 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
    * content is unchanged. */
   async function prepareCanvasRunVersion() {
     if (!draft) throw new Error('Blueprint is still loading.');
-    await assertRunnable(blueprintId, draft);
+    await assertRunnable(blueprintId, draft, true);
     if (!isDirty && latestSaved) return latestSaved.id;
     if (runSnapshot?.contentKey === draftKey) return runSnapshot.id;
     const snapshot = await api.createDraftVersion(blueprintId, draft);
@@ -506,6 +537,14 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
     prepareRunnableVersion: prepareCanvasRunVersion,
   });
 
+  const detailsKey = runActions.outputSheetKey ?? runActions.attemptsSheetKey;
+  useEffect(() => {
+    if (detailsKey) {
+      setTab('details');
+      setDockOpen(true);
+    }
+  }, [detailsKey]);
+
   if (versions.isLoading || !draft) {
     return <p className="p-6 text-sm text-muted-foreground">Loading…</p>;
   }
@@ -528,7 +567,7 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
     setDockOpen(true);
   }
 
-  async function addStage(capabilityKey: string, index: number) {
+  async function addStage(capabilityKey: string, index: number, branchFrom?: string) {
     const capability = capabilities.data?.find((c) => c.key === capabilityKey);
     try {
       const { allowedOutputs } = await api.resolveCapability(capabilityKey, {});
@@ -537,7 +576,12 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
         { key: capabilityKey, label: capability?.label ?? capabilityKey },
         allowedOutputs,
       );
-      setDraft((prev) => prev && { ...prev, graph: insertStage(prev.graph, stage, index) });
+      editDraft({
+        ...draft!,
+        graph: branchFrom
+          ? [...explicitGraph(draft!.graph), { ...stage, dependsOn: [branchFrom] }]
+          : insertStage(draft!.graph, stage, index),
+      });
       selectStage(stage.key);
     } catch (error) {
       toast.error(apiErrorMessage(error, 'Failed to add stage'));
@@ -586,10 +630,7 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
   }
 
   function updateStage(updated: StageDef) {
-    setDraft(
-      (prev) =>
-        prev && { ...prev, graph: prev.graph.map((s) => (s.key === updated.key ? updated : s)) },
-    );
+    editDraft({ ...draft!, graph: draft!.graph.map((s) => (s.key === updated.key ? updated : s)) });
   }
 
   function updateSettings(patch: {
@@ -721,6 +762,21 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
       <div className="flex min-h-0 flex-1">
         <div className="flex min-w-0 flex-1 flex-col">
           <CanvasWorkspace
+            presentation={shown.presentation}
+            onPresentationChange={(presentation) => editDraft({ ...draft!, presentation })}
+            onConnectStages={(source, target, remove) => {
+              try {
+                editDraft({
+                  ...draft!,
+                  graph: (remove ? disconnectStages : connectStages)(draft!.graph, source, target),
+                });
+              } catch (error) {
+                toast.error((error as Error).message);
+                selectStage(target);
+              }
+            }}
+            onUndo={() => historyEdit(false)}
+            onRedo={() => historyEdit(true)}
             graph={shown.graph}
             inputs={shown.inputs}
             roles={shown.roles}
@@ -752,6 +808,10 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
             onAddStage={addStage}
             onOpenBlueprintSettings={openBlueprintSettings}
             runActions={{
+              onInspectStage: (key, tab) =>
+                tab === 'Output'
+                  ? runActions.setOutputSheetKey(key)
+                  : runActions.setAttemptsSheetKey(key),
               onRunStage: (stageKey, request) =>
                 runActions.runStage.mutate({ stageKey, ...request }),
               onCancelRun: () => runActions.setConfirmCancel(true),
@@ -777,6 +837,28 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
             runDisabled={readOnly}
             assistantBusy={assistant.running}
             assistant={<AssistantPanel assistant={assistant} />}
+            details={
+              detailsKey && canvasRun.run ? (
+                <StageDetailsWorkspace
+                  onToggleExpanded={() => setDockWide((wide) => !wide)}
+                  embedded
+                  runId={canvasRun.run.id}
+                  stageKey={detailsKey}
+                  stageLabel={runActions.stageLabel(detailsKey)}
+                  open
+                  actions={canvasRun.run.availableActions?.busy ? undefined : runActions}
+                  freshness={runActions.staleStageKeys.has(detailsKey) ? 'stale' : undefined}
+                  stageRunning={canvasRun.run.availableActions?.busy}
+                  initialTab={runActions.attemptsSheetKey ? 'Attempts' : 'Output'}
+                  onOpenChange={(open) => {
+                    if (!open) {
+                      runActions.setOutputSheetKey(null);
+                      runActions.setAttemptsSheetKey(null);
+                    }
+                  }}
+                />
+              ) : undefined
+            }
             stage={
               <StagePanel
                 stageKey={selectedKey}
@@ -789,11 +871,27 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
                 capabilityLabel={capabilityLabel}
                 readOnly={readOnly}
                 onChange={updateStage}
+                onSelectStage={selectStage}
+                onConnectStages={(source, target, remove) => {
+                  try {
+                    editDraft({
+                      ...draft!,
+                      graph: (remove ? disconnectStages : connectStages)(
+                        draft!.graph,
+                        source,
+                        target,
+                      ),
+                    });
+                  } catch (error) {
+                    toast.error((error as Error).message);
+                  }
+                }}
                 onDelete={deleteStage}
               />
             }
             run={
               <RunTab
+                presentation={shown.presentation}
                 channelId={channelId ?? ''}
                 inputs={draft.inputs}
                 graph={draft.graph}
@@ -802,7 +900,10 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
                 recentRuns={canvasRun.recentRuns}
                 actions={runActions}
                 selectedKey={selectedKey}
-                onSelectStage={selectStage}
+                onSelectStage={(key) => {
+                  setSelectedStageKey(key);
+                  setTab('run');
+                }}
                 isDirty={isDirty}
                 onSwitchRun={canvasRun.setActiveRunId}
                 prepareRunnableVersion={prepareCanvasRunVersion}
@@ -825,7 +926,7 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
         )}
       </div>
 
-      <CanvasRunSheets run={canvasRun.run} actions={runActions} />
+      <CanvasRunSheets run={canvasRun.run} actions={runActions} embeddedDetails />
     </div>
   );
 }

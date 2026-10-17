@@ -296,6 +296,8 @@ export class PackageInstallService {
           blueprintId,
           {
             graph,
+            presentation: pipeline.presentation,
+            execution: pipeline.execution,
             inputs: pipeline.inputs,
             roles,
             defaults: pipeline.defaults,

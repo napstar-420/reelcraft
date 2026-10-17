@@ -1,4 +1,5 @@
 import {
+  disabledAncestor,
   stageDependencies,
   stageRefLeaves,
   type StageDef,
@@ -34,6 +35,9 @@ export function executionEligibility(
     let blockedReason: string | null = busy
       ? 'The run is executing. Pause or cancel it before starting another action.'
       : null;
+    const ancestor = disabledAncestor(graph, stage.key);
+    if (ancestor)
+      blockedReason ??= `Disabled ancestor: ${ancestor.label || ancestor.key}. Enable it before running this stage.`;
     if (!isStageEnabled(stage.enabledWhen, inputs))
       blockedReason = 'This stage is disabled by its Enabled when condition.';
     const missingInput = (ref: Ref): string | undefined => {
@@ -80,6 +84,8 @@ export function executionEligibility(
       ((execution.state !== 'pending' && execution.state !== 'skipped') || completed > 0);
     const scopeReady =
       inactive &&
+      !ancestor &&
+      !stage.disabled &&
       isStageEnabled(stage.enabledWhen, inputs) &&
       !execution?.waiting &&
       !blockedReason?.startsWith('Missing input:');
@@ -96,8 +102,8 @@ export function executionEligibility(
   }
   const run: RunAvailableActions = {
     busy,
-    runBlueprint: inactive,
-    rerunBlueprint: inactive,
+    runBlueprint: inactive && !graph.some((s) => disabledAncestor(graph, s.key)),
+    rerunBlueprint: inactive && !graph.some((s) => disabledAncestor(graph, s.key)),
     pause: state === 'RUNNING',
     resume:
       !busy &&

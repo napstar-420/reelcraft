@@ -1,4 +1,10 @@
-import type { CapabilityDto, RunDetailDto, StageDef, ValidationIssue } from '@reelcraft/shared';
+import type {
+  BlueprintPresentation,
+  CapabilityDto,
+  RunDetailDto,
+  StageDef,
+  ValidationIssue,
+} from '@reelcraft/shared';
 import type { AddFlowNode, StageFlowNode, StartFlowNode } from '../components/canvas/stage-node';
 import type {
   MemoryFlowEdge,
@@ -11,16 +17,8 @@ import {
   upstreamBlocker,
 } from '../components/canvas/stage-card.logic';
 import { memoryLinks } from './canvas-graph.logic';
-import {
-  isChainLayout,
-  NODE_TOP_Y,
-  reducedEdges,
-  START_NODE_X,
-  stageLayout,
-  stageX,
-  stageY,
-} from './canvas-layout.logic';
-import { stageDependencies } from '../lib/stage-deps';
+import { NODE_TOP_Y, START_NODE_X, stageLayout, stageX, stageY } from './canvas-layout.logic';
+import { ancestorsOf, descendantsOf, stageDependencies } from '../lib/stage-deps';
 
 export const START_NODE_ID = '__start__';
 export const ADD_NODE_ID = '__add__';
@@ -32,6 +30,7 @@ export type FlowNode = StartFlowNode | StageFlowNode | AddFlowNode;
 export type FlowEdge = TrunkFlowEdge | MemoryFlowEdge;
 
 export type StageGraphInput = {
+  presentation?: BlueprintPresentation | undefined;
   graph: StageDef[];
   inputs: StartFlowNode['data']['inputs'];
   roles: StartFlowNode['data']['roles'];
@@ -44,16 +43,18 @@ export type StageGraphInput = {
   showMemoryLinks: boolean;
 };
 
-/** Layered layout, recomputed from the graph on every change and never
- * persisted: x is the column (the longest chain of stages a stage waits for),
- * y the lane among stages in the same column. A chain is one row, exactly as
- * before. The Start node sits one slot before the first column; the "Add
- * stage" card one column after the last. */
+/** Saved positions override the deterministic dependency-layer layout. */
 export function buildStageGraph(input: StageGraphInput): { nodes: FlowNode[]; edges: FlowEdge[] } {
   const { graph, readOnly } = input;
   const layout = stageLayout(graph);
-  const chainLayout = isChainLayout(layout);
   const deps = stageDependencies(graph);
+  const relevant = input.selectedKey
+    ? new Set([
+        input.selectedKey,
+        ...ancestorsOf(deps, input.selectedKey),
+        ...descendantsOf(deps, input.selectedKey),
+      ])
+    : null;
   const lastColumn = layout.reduce((max, slot) => Math.max(max, slot.level), -1);
   const labelOf = new Map(input.capabilities.map((c) => [c.key, c.label]));
   const executions = new Map(input.run?.stageExecutions.map((e) => [e.stageKey, e]));
@@ -72,11 +73,29 @@ export function buildStageGraph(input: StageGraphInput): { nodes: FlowNode[]; ed
     ...graph.map<StageFlowNode>((stage, index) => ({
       id: stage.key,
       type: 'stage',
-      position: { x: stageX(layout[index]!.level), y: stageY(layout[index]!.lane) },
-      draggable: !readOnly && chainLayout,
+      position: input.presentation?.positions[stage.key] ?? {
+        x: stageX(layout[index]!.level),
+        y: stageY(layout[index]!.lane),
+      },
+      draggable: !readOnly,
       selected: stage.key === input.selectedKey,
+      deletable: false,
       data: {
         index,
+        branchName: input.presentation?.branchNames[stage.key],
+        modelLabel: (() => {
+          const model = input.run?.resolvedConfig[stage.key]?.model ?? stage.model;
+          return model
+            ? `${model.provider ?? 'Inherited'} / ${model.modelId ?? 'default'}`
+            : 'Inherited model';
+        })(),
+        costUsd: executions.get(stage.key)?.costUsd,
+        failureReason: (() => {
+          const failure = executions.get(stage.key)?.failure;
+          return failure && typeof failure === 'object' && 'reason' in failure
+            ? String(failure.reason)
+            : undefined;
+        })(),
         count: graph.length,
         stage,
         capabilityLabel: labelOf.get(stage.capability) ?? stage.capability,
@@ -118,9 +137,13 @@ export function buildStageGraph(input: StageGraphInput): { nodes: FlowNode[]; ed
     target,
     sourceHandle: 'out',
     targetHandle: 'in',
-    selectable: false,
-    focusable: false,
-    data,
+    selectable: source !== START_NODE_ID && target !== ADD_NODE_ID,
+    focusable: source !== START_NODE_ID && target !== ADD_NODE_ID,
+    data: {
+      ...data,
+      highlighted: !!relevant?.has(source) && !!relevant?.has(target),
+      faded: !!relevant && !(relevant.has(source) && relevant.has(target)),
+    },
   });
   // Start feeds every stage that waits for nothing. The `+` on a connector
   // inserts a stage at that point, so only the connector a stage gets by
@@ -135,7 +158,9 @@ export function buildStageGraph(input: StageGraphInput): { nodes: FlowNode[]; ed
       );
     }
   });
-  for (const [from, to] of reducedEdges(graph)) {
+  for (const [from, to] of graph.flatMap((stage) =>
+    (deps.get(stage.key) ?? []).map((dep) => [dep, stage.key] as [string, string]),
+  )) {
     const index = graph.findIndex((s) => s.key === to);
     const implicit = graph[index]!.dependsOn === undefined && graph[index - 1]?.key === from;
     edges.push(trunk(from, to, { readOnly, ...(implicit ? { insertIndex: index } : {}) }));

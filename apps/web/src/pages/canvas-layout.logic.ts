@@ -19,7 +19,7 @@ export const START_NODE_WIDTH = 208;
 export const START_NODE_X = -(START_NODE_WIDTH + STAGE_GAP_X);
 
 /** Top of every node, leaving room for the frame label above it. */
-export const NODE_TOP_Y = 44;
+export const NODE_TOP_Y = 144;
 
 /** Vertical distance between two lanes: stages that run side by side stack
  * with this spacing. */

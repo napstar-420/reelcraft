@@ -64,6 +64,7 @@ export interface ReusableStageKeysParams {
 function comparableStage(stage: StageDef): unknown {
   const rest: StageDef = { ...stage };
   delete rest.dependsOn;
+  delete rest.disabled;
   if (!rest.iterate || !('concurrency' in rest.iterate)) return rest;
   const iterate: Record<string, unknown> = { ...rest.iterate };
   delete iterate.concurrency;

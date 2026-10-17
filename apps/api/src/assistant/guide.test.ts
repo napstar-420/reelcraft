@@ -50,6 +50,25 @@ describe('assistant guide coverage', () => {
     expect(readGuide('nope')).toBeUndefined();
   });
 
+  it('explains the unified DAG controls and preserves presentation in proposals', () => {
+    const execution = GUIDE.execution!.body;
+    for (const label of [
+      'Run stage',
+      'Continue stage',
+      'Re-run item',
+      'Run blueprint',
+      'Pause',
+      'Cancel',
+      'Concurrent branches',
+    ])
+      expect(execution).toContain(label);
+    expect(execution).toContain('same run');
+    expect(GUIDE.iterate!.body).toContain('Disabled ancestor');
+    expect(GUIDE.overview!.body).toContain('Preserve execution and presentation');
+    expect(GUIDE.glossary!.body).toContain('Not recorded');
+    expect(GUIDE.glossary!.body).toContain('Create branch');
+  });
+
   it('mentions every registered capability', () => {
     const keys = realCapabilities().map((c) => c.key);
     expect(keys.length).toBeGreaterThan(10);

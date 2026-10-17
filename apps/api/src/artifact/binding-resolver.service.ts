@@ -3,7 +3,7 @@ import { and, desc, eq, inArray, isNotNull, isNull } from 'drizzle-orm';
 import { LIBRARY_KINDS } from '@reelcraft/shared';
 import type { ArtifactKind, Ref } from '@reelcraft/shared';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
-import { artifact, blob, runMemory } from '../db/schema/index';
+import { artifact, blob, runMemory, run, blueprintVersion } from '../db/schema/index';
 import {
   ASSET_KIND_FOR_LIBRARY,
   libraryCatalog,
@@ -640,6 +640,23 @@ export class BindingResolverService {
     }
   }
 
+  private async assertProducerAvailable(ctx: BindingScope, producerKey: string): Promise<void> {
+    if (producerKey === ctx.stageKey) return; // A disabled stage can continue its own iteration.
+    const [owner] = await this.db
+      .select({ graph: blueprintVersion.graph })
+      .from(run)
+      .innerJoin(blueprintVersion, eq(run.blueprintVersionId, blueprintVersion.id))
+      .where(eq(run.id, ctx.runId))
+      .limit(1);
+    const stage = (owner?.graph as StageDef[] | undefined)?.find(
+      (stage) => stage.key === producerKey,
+    );
+    if (stage?.disabled)
+      throw new Error(
+        `Disabled stage ${stage.label || producerKey}: its output cannot be consumed until enabled.`,
+      );
+  }
+
   /** §6.1 / §14.3 — reads the artifact `producerKey` made: the previous stage
    * for `prev`, the named stage for `stage`. The default (no `alignWith`) query
    * shape is unchanged from before phase 7: `isNull(artifact.itemIndex)`, same error message.
@@ -653,6 +670,7 @@ export class BindingResolverService {
     if (!producerKey) {
       throw new Error('BindingResolverService: {from: "prev"} on the first stage is invalid');
     }
+    await this.assertProducerAvailable(ctx, producerKey);
     const alignWithItem = ref?.alignWith === 'item';
     if (alignWithItem && ctx.itemIndex === undefined) {
       throw new Error(
@@ -682,6 +700,7 @@ export class BindingResolverService {
   }
 
   private async resolveMatchedStageArtifacts(ref: StageRef, ctx: BindingScope) {
+    await this.assertProducerAvailable(ctx, ref.stageKey);
     if (!ref.match || ctx.itemIndex === undefined || !ctx.iterateOverValue) {
       throw new Error('BindingResolverService: matched stage reference requires an iterating item');
     }
@@ -797,6 +816,8 @@ export class BindingResolverService {
     ctx: BindingScope,
   ): Promise<{ rows: MemoryRow[]; group: boolean }> {
     const found = await this.findMemoryRows(ref, ctx);
+    for (const producer of new Set(found.rows.map((row) => row.writtenBy)))
+      await this.assertProducerAvailable(ctx, producer);
     // A media row stores only its artifact; without one the stage would get `null`.
     const orphan = found.rows.find((row) => row.kind.startsWith('media.') && !row.artifactId);
     if (orphan) {

@@ -12,9 +12,11 @@ import type { CanvasRunActions } from '@/hooks/useCanvasRunActions';
 export function CanvasRunSheets({
   run,
   actions,
+  embeddedDetails = false,
 }: {
   run: RunDetailDto | undefined;
   actions: CanvasRunActions;
+  embeddedDetails?: boolean;
 }) {
   if (!run) return null;
   const running = (stageKey: string | null) =>
@@ -23,29 +25,33 @@ export function CanvasRunSheets({
   return (
     <>
       <ExecutionPlanDialog actions={actions} />
-      <StageOutputSheet
-        actions={run.availableActions?.busy ? undefined : actions}
-        runId={run.id}
-        stageKey={outputSheetKey}
-        stageLabel={outputSheetKey && actions.stageLabel(outputSheetKey)}
-        stageRunning={running(outputSheetKey)}
-        freshness={
-          outputSheetKey && actions.staleStageKeys.has(outputSheetKey)
-            ? 'stale'
-            : outputSheetKey && actions.validationStageKeys.has(outputSheetKey)
-              ? 'validation'
-              : undefined
-        }
-        open={outputSheetKey !== null}
-        onOpenChange={(open) => !open && actions.setOutputSheetKey(null)}
-      />
-      <StageAttemptsSheet
-        runId={run.id}
-        stageKey={attemptsSheetKey}
-        stageLabel={attemptsSheetKey && actions.stageLabel(attemptsSheetKey)}
-        open={attemptsSheetKey !== null}
-        onOpenChange={(open) => !open && actions.setAttemptsSheetKey(null)}
-      />
+      {!embeddedDetails && (
+        <StageOutputSheet
+          actions={run.availableActions?.busy ? undefined : actions}
+          runId={run.id}
+          stageKey={outputSheetKey}
+          stageLabel={outputSheetKey && actions.stageLabel(outputSheetKey)}
+          stageRunning={running(outputSheetKey)}
+          freshness={
+            outputSheetKey && actions.staleStageKeys.has(outputSheetKey)
+              ? 'stale'
+              : outputSheetKey && actions.validationStageKeys.has(outputSheetKey)
+                ? 'validation'
+                : undefined
+          }
+          open={outputSheetKey !== null}
+          onOpenChange={(open) => !open && actions.setOutputSheetKey(null)}
+        />
+      )}
+      {!embeddedDetails && (
+        <StageAttemptsSheet
+          runId={run.id}
+          stageKey={attemptsSheetKey}
+          stageLabel={attemptsSheetKey && actions.stageLabel(attemptsSheetKey)}
+          open={attemptsSheetKey !== null}
+          onOpenChange={(open) => !open && actions.setAttemptsSheetKey(null)}
+        />
+      )}
       <ApprovalReviewSheet
         runId={run.id}
         stageKey={approvalStageKey}

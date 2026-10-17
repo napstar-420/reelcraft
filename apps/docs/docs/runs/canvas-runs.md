@@ -66,3 +66,10 @@ does not stale artifacts.
 Use the recent-run selector to return to an earlier run. The selection is stored in the URL, so
 refreshing preserves it. Select the short run ID to open its run page; **Open canvas** returns to the
 same selected run. **View output**, **Attempts** and approval/input controls retain their usual roles.
+
+## Follow branches and inspect a stage
+
+The **Run** tab shows a dependency overview with branches, joins, status, and saved branch names.
+Select a node to focus that stage and see its controls and blocking reason. **Output** or **Attempts**
+opens the shared **Details** tab beside the canvas; drag the divider to resize it or select **Expand**.
+The same details workspace is available on the run page, with identical execution semantics.

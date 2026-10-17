@@ -1,3 +1,4 @@
+import { StageDependencies } from './stage-dependencies';
 import { SlidersHorizontal, Trash2 } from 'lucide-react';
 import { cn } from 'cn';
 import type { AssetDto, InputDef, RoleDef, StageDef, ValidationIssue } from '@reelcraft/shared';
@@ -20,6 +21,8 @@ export function StagePanel({
   readOnly,
   onChange,
   onDelete,
+  onSelectStage,
+  onConnectStages,
 }: {
   stageKey: string | null;
   graph: StageDef[];
@@ -32,6 +35,8 @@ export function StagePanel({
   readOnly: boolean;
   onChange: (stage: StageDef) => void;
   onDelete: (stageKey: string) => void;
+  onSelectStage: (key: string) => void;
+  onConnectStages: (source: string, target: string, remove?: boolean) => void;
 }) {
   const index = graph.findIndex((s) => s.key === stageKey);
   const stage = graph[index];
@@ -51,7 +56,7 @@ export function StagePanel({
             <li>
               <kbd className="mr-2 rounded border bg-muted px-1.5 font-mono">A</kbd>Add a stage
             </li>
-            <li>Drag a node sideways to reorder it</li>
+            <li>Drag a node freely to position it</li>
             <li>Click the dot between two nodes to insert a stage</li>
           </ul>
         )}
@@ -98,6 +103,27 @@ export function StagePanel({
             <Trash2 />
           </Button>
         )}
+      </div>
+      <StageDependencies
+        stage={stage}
+        graph={graph}
+        readOnly={readOnly}
+        onSelect={onSelectStage}
+        onConnect={onConnectStages}
+      />
+      <div className="border-b px-4 py-3">
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={!stage.disabled}
+            disabled={readOnly}
+            onChange={(event) => onChange({ ...stage, disabled: !event.target.checked })}
+          />
+          Stage enabled
+        </label>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Disabled outputs remain stored, but cannot be consumed. Descendants are blocked.
+        </p>
       </div>
       <fieldset disabled={readOnly} className="min-w-0">
         <StageInspector

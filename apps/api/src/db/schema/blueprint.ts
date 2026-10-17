@@ -35,6 +35,10 @@ export const blueprintVersion = pgTable(
       .references(() => blueprint.id), // blueprint this version belongs to
     major: integer('major').notNull(), // major version: bumped by an explicit "Bump version"
     minor: integer('minor').notNull(), // minor version: bumped by every Save, reset to 0 on a major bump
+    presentation: jsonb('presentation').$type<{
+      positions: Record<string, { x: number; y: number }>;
+      branchNames: Record<string, string>;
+    }>(),
     graph: jsonb('graph').notNull(), // StageDef[]: the pipeline stage graph for this version
     inputs: jsonb('inputs').notNull().default([]), // InputDef[]: input parameters a run of this version accepts
     roles: jsonb('roles').notNull().default([]), // RoleDef[]; v1 permits 0 or 1 (§18.5)
