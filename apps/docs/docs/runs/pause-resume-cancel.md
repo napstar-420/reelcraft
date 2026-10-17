@@ -26,6 +26,10 @@ Use **Continue run** to continue the saved execution scope, or **Continue stage*
 selected interrupted stage. Use **Run blueprint** to expand to all unfinished blueprint work. For an iterating stage with **6/14 completed**, Continue preserves those
 six artifacts and submits the other eight items. Passed items need not be consecutive.
 
+Older cancelled runs may contain interrupted items still labelled running. Continuing recovers those
+items in the same run without replacing completed outputs. Finished cancelled attempts do not block
+the execution controls; uncertain provider submissions still require the billing warning below.
+
 Provider cancellation is best effort. If cancellation cannot be confirmed, restarting an unfinished
 request may cause additional charges. Review that warning, acknowledge the risk, and confirm the new
 execution plan before restarting. Late results and delayed cancellation events from an earlier

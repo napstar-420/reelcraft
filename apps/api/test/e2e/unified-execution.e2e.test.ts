@@ -277,9 +277,45 @@ describe('unified resumable execution', () => {
       .update(run)
       .set({ executionScope: { kind: 'selection', stageKeys: ['motion'] } })
       .where(eq(run.id, created.id));
+    if (name === 'non-contiguous') {
+      for (const index of [1, 3]) {
+        const saved = await runner.itemState(execution.id, index);
+        await runner.beginAttempt({
+          runId: created.id,
+          stageExecutionId: execution.id,
+          stageKey: 'motion',
+          stageItemId: saved.id,
+          itemIndex: index,
+          executionEpoch: 0,
+        });
+      }
+    }
     await app.app.get(RunCancellationService).cancel(created.id);
+    if (name === 'consecutive') {
+      // Exact pre-generation cancellation shape: terminal outcomes, live phases/items, epoch zero.
+      await database.db.update(run).set({ executionEpoch: 0 }).where(eq(run.id, created.id));
+      for (const index of [6, 7]) {
+        const saved = await runner.itemState(execution.id, index);
+        await database.db
+          .update(stageItem)
+          .set({ state: 'running' })
+          .where(eq(stageItem.id, saved.id));
+        await database.db.insert(stageAttempt).values({
+          id: `legacy-cancel-${saved.id}`,
+          stageExecutionId: execution.id,
+          stageItemId: saved.id,
+          attemptNo: 1,
+          outcome: 'cancelled',
+          phase: 'created',
+          durationMs: 481,
+          actor: 'engine',
+          resolvedInputs: {},
+        });
+      }
+    }
     const cancelled = await runs.get(created.id);
     expect(cancelled.state).toBe('CANCELLED');
+    expect(cancelled.availableActions).toMatchObject({ busy: false, resume: true });
     expect(
       cancelled.stageExecutions.find((e) => e.stageKey === 'motion')!.availableActions,
     ).toMatchObject({ continue: true, completedItems: 6, totalItems: 14 });
@@ -290,6 +326,18 @@ describe('unified resumable execution', () => {
     );
     expect(plan.runStageKeys).toEqual(['motion']);
     expect(plan.retainedItemCount).toBe(6);
+    const recoveredItems = await database.db
+      .select()
+      .from(stageItem)
+      .where(eq(stageItem.stageExecutionId, execution.id));
+    expect(recoveredItems.filter((i) => i.state === 'running')).toHaveLength(0);
+    const recoveredAttempts = await database.db
+      .select()
+      .from(stageAttempt)
+      .where(
+        and(eq(stageAttempt.stageExecutionId, execution.id), eq(stageAttempt.outcome, 'cancelled')),
+      );
+    expect(recoveredAttempts.every((a) => a.phase === 'settled')).toBe(true);
     const continued = await drive(created.id, ['motion']);
     expect(continued.submitted.sort((a, b) => a - b)).toEqual(
       values.map((_, i) => i).filter((i) => !passed.includes(i)),
@@ -304,6 +352,46 @@ describe('unified resumable execution', () => {
     await execute(created.id);
     await drive(created.id, ['final']);
     expect((await runs.get(created.id)).state).toBe('COMPLETED');
+  });
+  it('cancellation settles all admission phases, including previously confirmed attempts', async () => {
+    const phases = ['created', 'reserved', 'submitting', 'submitted', 'created'] as const;
+    const { created } = await fixture(phases.map((_, index) => stage(`a${index}`)));
+    await database.db.update(run).set({ state: 'RUNNING' }).where(eq(run.id, created.id));
+    for (const [index, phase] of phases.entries()) {
+      const execution = created.stageExecutions.find((e) => e.stageKey === `a${index}`)!;
+      const attempt = await runner.beginAttempt({
+        runId: created.id,
+        stageExecutionId: execution.id,
+        stageKey: execution.stageKey,
+        executionEpoch: 0,
+      });
+      await database.db
+        .update(stageAttempt)
+        .set({ phase, cancellationConfirmed: index === 4 ? true : null })
+        .where(eq(stageAttempt.id, attempt.stageAttemptId));
+    }
+    expect((await runs.get(created.id)).availableActions?.busy).toBe(true);
+    await app.app.get(RunCancellationService).cancel(created.id);
+    const detail = await runs.get(created.id);
+    expect(detail.availableActions).toMatchObject({ busy: false, resume: true });
+    for (const execution of created.stageExecutions) {
+      const [attempt] = await database.db
+        .select()
+        .from(stageAttempt)
+        .where(eq(stageAttempt.stageExecutionId, execution.id));
+      expect(attempt).toMatchObject({ phase: 'settled', outcome: 'cancelled' });
+      expect(attempt!.cancellationConfirmed).toBe(!['a2', 'a3'].includes(execution.stageKey));
+    }
+    const plan = await plans.preview(created.id, {
+      blueprintVersionId: created.blueprintVersionId,
+      action: 'continue',
+      mode: 'reuse',
+      scope: 'stage',
+    });
+    expect(plan.uncertainAttemptIds).toHaveLength(2);
+    await expect(
+      plans.confirm(created.id, { ...plan.request, previewToken: plan.previewToken }),
+    ).rejects.toThrow();
   });
   it('rejects blocked stage-only work without admitting prerequisites; reruns stale descendants only when explicitly selected', async () => {
     const { created } = await fixture([stage('a'), stage('b', ['a']), stage('c', ['b'])]);
@@ -474,6 +562,14 @@ describe('unified resumable execution', () => {
     const blocked = await plans.preview(created.id, request);
     expect(blocked.uncertainAttemptIds).toEqual([attempt.stageAttemptId]);
     expect(blocked.blockedReason).toContain('additional charges');
+    await database.db
+      .update(stageAttempt)
+      .set({ phase: 'submitting', jobHandle: null })
+      .where(eq(stageAttempt.id, attempt.stageAttemptId));
+    expect((await runs.get(created.id)).availableActions?.busy).toBe(false);
+    expect((await plans.preview(created.id, request)).uncertainAttemptIds).toEqual([
+      attempt.stageAttemptId,
+    ]);
     const allowed = await plans.preview(created.id, { ...request, allowUncertainRestart: true });
     expect(allowed.blockedReason).toBeNull();
     const results = await Promise.allSettled([
