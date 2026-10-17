@@ -72,6 +72,7 @@ describe('buildStageGraph', () => {
       [START_NODE_ID, 'a', 0],
       ['a', 'b', 1],
       ['b', 'c', 2],
+      ['a', 'c', undefined],
       ['c', ADD_NODE_ID, undefined],
     ]);
   });
@@ -144,7 +145,7 @@ describe('buildStageGraph with parallel stages', () => {
     expect(at('b').x).toBe(at('c').x);
     expect(at('c').y).toBeGreaterThan(at('b').y);
     expect(at('d').x).toBeGreaterThan(at('b').x);
-    expect(nodes.find((n) => n.id === 'b')!.draggable).toBe(false);
+    expect(nodes.find((n) => n.id === 'b')!.draggable).toBe(true);
   });
 
   it('draws one connector per dependency, without an insert point on explicit ones', () => {

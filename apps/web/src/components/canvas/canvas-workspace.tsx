@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ReactFlowProvider } from '@xyflow/react';
 import { Database, PanelRight, Plus } from 'lucide-react';
 import { cn } from 'cn';
 import type {
+  BlueprintPresentation,
   CapabilityDto,
   InputDef,
   RoleDef,
@@ -12,13 +13,17 @@ import type {
 } from '@reelcraft/shared';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover';
-import { stageExecutionStateTone, type StatusTone } from '@/lib/status';
 import { CanvasActionsContext, type CanvasActions } from './canvas-actions';
 import { StageGraph, useStageGraphApi } from './stage-graph';
 import { StagePalette } from './stage-palette';
-import { StageStrip } from './stage-strip';
+import { stageLayout, stageX, stageY } from '@/pages/canvas-layout.logic';
 
 export type CanvasWorkspaceProps = {
+  presentation?: BlueprintPresentation | undefined;
+  onPresentationChange: (value: BlueprintPresentation) => void;
+  onConnectStages: (source: string, target: string, remove?: boolean) => void;
+  onUndo: () => void;
+  onRedo: () => void;
   graph: StageDef[];
   inputs: InputDef[];
   roles: RoleDef[];
@@ -35,11 +40,16 @@ export type CanvasWorkspaceProps = {
   onSelectStage: (stageKey: string | null) => void;
   onReorder: (fromIndex: number, toIndex: number) => void;
   /** Add a stage of this capability at `index`; resolves once it is in the graph. */
-  onAddStage: (capabilityKey: string, index: number) => Promise<void>;
+  onAddStage: (capabilityKey: string, index: number, branchFrom?: string) => Promise<void>;
   onOpenBlueprintSettings: () => void;
   runActions: Pick<
     CanvasActions,
-    'onRunStage' | 'onCancelRun' | 'onReviewStage' | 'onMoveStage' | 'onDeleteStage'
+    | 'onRunStage'
+    | 'onCancelRun'
+    | 'onReviewStage'
+    | 'onMoveStage'
+    | 'onDeleteStage'
+    | 'onInspectStage'
   >;
 };
 
@@ -59,9 +69,9 @@ function paletteContext(graph: StageDef[], index: number): string {
 
 function Workspace(props: CanvasWorkspaceProps) {
   const { graph, readOnly } = props;
-  const graphApi = useStageGraphApi(graph);
-  const [palette, setPalette] = useState<{ index: number } | null>(null);
-  const [showMemoryLinks, setShowMemoryLinks] = useState(true);
+  const graphApi = useStageGraphApi(graph, props.presentation);
+  const [palette, setPalette] = useState<{ index: number; branchFrom?: string } | null>(null);
+  const [showMemoryLinks, setShowMemoryLinks] = useState(false);
   const [adding, setAdding] = useState(false);
 
   const openPalette = useCallback(
@@ -76,7 +86,7 @@ function Workspace(props: CanvasWorkspaceProps) {
     async (capabilityKey: string, index: number) => {
       setAdding(true);
       try {
-        await onAddStage(capabilityKey, index);
+        await onAddStage(capabilityKey, index, palette?.branchFrom);
         setPalette(null);
         graphApi.focusStage(index);
       } catch {
@@ -85,7 +95,7 @@ function Workspace(props: CanvasWorkspaceProps) {
         setAdding(false);
       }
     },
-    [onAddStage, graphApi],
+    [onAddStage, graphApi, palette],
   );
 
   // `A` opens the palette from anywhere that isn't a text field.
@@ -104,16 +114,33 @@ function Workspace(props: CanvasWorkspaceProps) {
   const actions = useMemo<CanvasActions>(
     () => ({
       ...runActions,
+      onDisconnect: (source, target) => props.onConnectStages(source, target, true),
+      onRenameBranch: (key, name) => {
+        const branchNames = { ...props.presentation?.branchNames };
+        if (name) branchNames[key] = name;
+        else delete branchNames[key];
+        props.onPresentationChange({ positions: props.presentation?.positions ?? {}, branchNames });
+      },
+      onCreateBranch: (key) => setPalette({ index: graph.length, branchFrom: key }),
       onOpenPalette: openPalette,
       onAddStage: (key, index) => void addStage(key, index),
       onOpenBlueprintSettings,
     }),
-    [runActions, openPalette, addStage, onOpenBlueprintSettings],
+    [
+      runActions,
+      openPalette,
+      addStage,
+      onOpenBlueprintSettings,
+      props.presentation,
+      props.onPresentationChange,
+      graph.length,
+    ],
   );
 
   const graphInput = useMemo(
     () => ({
       graph,
+      presentation: props.presentation,
       inputs: props.inputs,
       roles: props.roles,
       runCapUsd: props.runCapUsd,
@@ -126,6 +153,7 @@ function Workspace(props: CanvasWorkspaceProps) {
     }),
     [
       graph,
+      props.presentation,
       props.inputs,
       props.roles,
       props.runCapUsd,
@@ -158,16 +186,16 @@ function Workspace(props: CanvasWorkspaceProps) {
     [onSelectStage, graphApi, graph],
   );
 
-  const statusTone = useCallback(
-    (key: string): StatusTone | undefined => {
-      if (readOnly) return undefined;
-      const execution = props.run?.stageExecutions.find((e) => e.stageKey === key);
-      return execution ? stageExecutionStateTone(execution.state) : undefined;
-    },
-    [props.run, readOnly],
-  );
-
   // Only the first mount decides the opening view.
+  const lastFocused = useRef(props.selectedKey);
+  useEffect(() => {
+    if (props.selectedKey !== lastFocused.current) {
+      lastFocused.current = props.selectedKey;
+      if (props.selectedKey)
+        graphApi.focusStage(graph.findIndex((s) => s.key === props.selectedKey));
+    }
+  }, [props.selectedKey, graph, graphApi]);
+
   const [initialFocusIndex] = useState(() => {
     const index = graph.findIndex((s) => s.key === props.selectedKey);
     return index === -1 ? null : index;
@@ -182,9 +210,16 @@ function Workspace(props: CanvasWorkspaceProps) {
           onClearSelection={() => onSelectStage(null)}
           onOpenBlueprintSettings={onOpenBlueprintSettings}
           onReorder={props.onReorder}
+          onPositionsChange={(positions) =>
+            props.onPresentationChange({
+              positions,
+              branchNames: props.presentation?.branchNames ?? {},
+            })
+          }
+          onConnectStages={props.onConnectStages}
           initialFocusIndex={initialFocusIndex}
         />
-        <div className="pointer-events-none absolute inset-x-4 top-3.5 z-10 flex items-center gap-2">
+        <div className="pointer-events-none absolute inset-x-4 top-3.5 z-10 flex flex-wrap items-center gap-2">
           <Popover open={palette !== null} onOpenChange={(open) => !open && setPalette(null)}>
             {!readOnly && (
               <PopoverAnchor asChild>
@@ -233,6 +268,61 @@ function Workspace(props: CanvasWorkspaceProps) {
             <Database className="size-3.5" />
             <span className="hidden sm:inline">Memory links</span>
           </button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="pointer-events-auto"
+            disabled={readOnly}
+            onClick={() => {
+              const layout = stageLayout(graph);
+              props.onPresentationChange({
+                positions: Object.fromEntries(
+                  graph.map((s, i) => [
+                    s.key,
+                    { x: stageX(layout[i]!.level), y: stageY(layout[i]!.lane) },
+                  ]),
+                ),
+                branchNames: props.presentation?.branchNames ?? {},
+              });
+            }}
+          >
+            Format canvas
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="pointer-events-auto"
+            onClick={() => graphApi.fit()}
+          >
+            Fit workflow
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="pointer-events-auto"
+            disabled={!props.selectedKey}
+            onClick={() => props.selectedKey && focusAndSelect(props.selectedKey)}
+          >
+            Focus selected
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="pointer-events-auto"
+            disabled={readOnly}
+            onClick={props.onUndo}
+          >
+            Undo
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="pointer-events-auto"
+            disabled={readOnly}
+            onClick={props.onRedo}
+          >
+            Redo
+          </Button>
           <span className="flex-1" />
           {!props.dockOpen && (
             <Button
@@ -248,13 +338,6 @@ function Workspace(props: CanvasWorkspaceProps) {
           )}
         </div>
       </div>
-      <StageStrip
-        graph={graph}
-        selectedKey={props.selectedKey}
-        issues={props.issues}
-        statusTone={statusTone}
-        onSelectStage={focusAndSelect}
-      />
     </CanvasActionsContext.Provider>
   );
 }

@@ -13,6 +13,12 @@ export interface TroubleshootingEntry {
 
 export const TROUBLESHOOTING: TroubleshootingEntry[] = [
   {
+    matches: ['Disabled ancestor:'],
+    means:
+      'An upstream stage is manually disabled, so descendants cannot run or consume its outputs.',
+    fix: 'Enable the ancestor or disconnect the dependency and remove its bindings. A disabled stage may still be run explicitly on its own.',
+  },
+  {
     matches: ['match requires an iterating consumer', 'matched reference'],
     means: 'A matched stage reference needs valid item fields on two iterating stages.',
     fix: 'Use an earlier iterating media.image stage and an iterating consumer. Bind a many-image slot with match.sourcePath pointing to a string field of the producer item and match.itemPath to a string or string-array field of the current item.',

@@ -66,3 +66,23 @@ describe('authoritative execution eligibility', () => {
     ).toContain('saved approval');
   });
 });
+
+describe('disabled stage policy', () => {
+  it('allows manual execution of the disabled stage, blocks every descendant and preserves independent branches', () => {
+    const next = [
+      ...graph.map((s) => (s.key === 'source' ? { ...s, disabled: true } : s)),
+      { ...graph[0]!, key: 'independent', label: 'independent', dependsOn: [] },
+    ];
+    const actions = executionEligibility(next, rows, {}, 'IDLE');
+    expect(actions.stages.source?.rerun).toBe(true);
+    expect(actions.stages.motion?.blockedReason).toContain('Disabled ancestor: source');
+    expect(actions.stages.final?.blockedReason).toContain('Disabled ancestor: source');
+    expect(actions.stages.independent?.run).toBe(true);
+    expect(actions.run.runBlueprint).toBe(false);
+    expect(actions.run.rerunBlueprint).toBe(false);
+  });
+  it('restores descendant eligibility when re-enabled', () => {
+    const actions = executionEligibility(graph, rows, {}, 'IDLE');
+    expect(actions.stages.motion?.continue).toBe(true);
+  });
+});

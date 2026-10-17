@@ -116,6 +116,7 @@ export function RunPage() {
         onOpenChange={(open) => !open && setFormInputStageKey(null)}
       />
       <StageAttemptsSheet
+        actions={run.availableActions?.busy ? undefined : actions}
         runId={run.id}
         stageKey={attemptsStageKey}
         open={attemptsStageKey !== null}

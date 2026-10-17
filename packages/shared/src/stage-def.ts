@@ -64,6 +64,7 @@ export const StageDef = z.object({
     .object({ stageCapUsd: z.number().optional(), qcCapUsd: z.number().optional() })
     .optional(),
   model: PartialModelPin.optional(),
+  disabled: z.boolean().optional(),
   enabledWhen: EnabledWhen.optional(),
   /** Stages that must settle before this one starts. Unset waits for the
    * previous stage (a chain); `[]` starts as soon as the stages its bindings

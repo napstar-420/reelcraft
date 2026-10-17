@@ -99,7 +99,12 @@ describe('BindingResolverService — media manifests carry blobId', () => {
       orderBy: () => query,
       then: (resolve: (rows: unknown[]) => unknown) => next().then(resolve),
     };
-    const select = () => ({ from: () => ({ where: () => query }) });
+    const select = () => ({
+      from: () => ({
+        where: () => query,
+        innerJoin: () => ({ where: () => ({ limit: () => Promise.resolve([{ graph: [] }]) }) }),
+      }),
+    });
     return Object.assign(Object.create(BindingResolverService.prototype) as object, {
       db: { select },
       logger: { warn: () => undefined, debug: () => undefined },

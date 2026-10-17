@@ -8,10 +8,23 @@ run is going or long after.
 
 ## View an output
 
-On a stage's row in the canvas **Run** tab, select **View output**. A panel opens, titled **Output of**
-the stage. It shows the stage's current output, or **No output yet. This stage is still running.**
-A stage that [iterates](../blueprints/iterate-conditions-approval.md#iterate) shows one block per item:
-**Item 1**, **Item 2**, and so on.
+Select **Output** on a canvas card, **View output** in its Run tab, or the output control on the run page.
+The shared stage details workspace opens beside the canvas, or as an expandable panel on the run page.
+
+- **Output** shows the accepted artifact, linked to its producing attempt. Iteration items appear in a
+  searchable, numerically ordered navigator, including unfinished items. Progress is separate from attempts.
+- **Attempts** shows candidates, duration, cost, check results, QC/review feedback, and expandable raw logs.
+  Rejected and historical candidates are identified separately from the current accepted output.
+- **Inputs & dependencies** shows recorded inputs, source artifact/memory versions, and the rendered prompt.
+  Source artifacts open on demand. Missing historical fields say **Not recorded**.
+- **Memory** groups keys by producer and item. Search and filters narrow large collections; version history
+  expands without replacing current values.
+
+Changing tabs or expanding the panel preserves the selected item and attempt. **Re-run item** uses the
+same backend eligibility and confirmation rules on both surfaces. A disabled stage's stored outputs
+remain inspectable, but are unavailable to descendants until the stage is enabled again.
+
+![Shared stage details, item progress, and attempt provenance](/img/usage/dag-stage-details.jpg)
 
 How each kind of output looks:
 

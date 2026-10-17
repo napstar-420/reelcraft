@@ -4,6 +4,7 @@ import { StageDef, stageDependencies } from '@reelcraft/shared';
 import type { Db } from '../../db/drizzle.provider';
 import { artifact, blueprintVersion, run, stageExecution, stageItem } from '../../db/schema/index';
 import type { RunStateService } from '../run-state.service';
+import { disabledAncestor } from '@reelcraft/shared';
 import { isStageEnabled } from '../enabled-when';
 import { buildStageExecuteFunction } from './stage-execute.fn';
 import type { StageAttemptOutcome } from './stage-attempt-loop';
@@ -222,7 +223,14 @@ export function buildRunOrchestrateFunction(
         return orderStageExecutions(graph, rows).map((r) => ({
           ...r,
           needsItemWork: executionIdsNeedingItemWork.has(r.id),
-          enabled: isStageEnabled(enabledWhenByKey.get(r.stageKey), inputs),
+          enabled:
+            isStageEnabled(enabledWhenByKey.get(r.stageKey), inputs) &&
+            (!graph.find((s) => s.key === r.stageKey)?.disabled ||
+              (settings.scope?.kind === 'selection' &&
+                settings.scope.stageKeys.length === 1 &&
+                settings.scope.stageKeys[0] === r.stageKey)),
+          disabledAncestor: disabledAncestor(graph, r.stageKey)?.label,
+          manuallyDisabled: graph.find((s) => s.key === r.stageKey)?.disabled ?? false,
           deps: deps.get(r.stageKey) ?? [],
           openWait: waitingExecutionIds.has(r.id),
         }));
@@ -272,12 +280,20 @@ export function buildRunOrchestrateFunction(
         });
         if (!admission || admission.epoch !== settings.epoch) return { ignored: true };
         if (admission.state === 'RUNNING' && !stopped) {
-          const ready = planWave(rows).ready.filter((row) => selected.has(row.stageKey));
+          const ready = planWave(rows).ready.filter(
+            (row) => selected.has(row.stageKey) && !row.disabledAncestor,
+          );
           for (const execution of ready) {
             if (active.size >= settings.concurrency) break;
             if (!execution.enabled) {
               await step.run(`skip-disabled-${execution.stageKey}`, () =>
-                runState.skipStage(runId, execution.id, execution.stageKey, settings.epoch),
+                runState.skipStage(
+                  runId,
+                  execution.id,
+                  execution.stageKey,
+                  settings.epoch,
+                  execution.manuallyDisabled ? 'Stage disabled by user' : undefined,
+                ),
               );
               execution.state = 'skipped';
               continue;

@@ -293,6 +293,7 @@ export class BlueprintService {
         id,
         blueprintId,
         ...next,
+        presentation: dto.presentation ?? null,
         graph: dto.graph,
         inputs: dto.inputs,
         roles: dto.roles,

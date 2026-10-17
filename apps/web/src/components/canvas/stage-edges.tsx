@@ -8,13 +8,24 @@ export type TrunkEdgeData = {
    * closing connector that leads to the "Add stage" card. */
   insertIndex?: number;
   readOnly: boolean;
+  highlighted?: boolean;
+  faded?: boolean;
 };
 export type TrunkFlowEdge = Edge<TrunkEdgeData, 'trunk'>;
 
 /** The straight connector between neighbouring nodes, with a `+` on it that
  * inserts a stage at that point. Hidden until the canvas is hovered or the
  * button is focused. */
-export function TrunkEdge({ sourceX, sourceY, targetX, targetY, data }: EdgeProps<TrunkFlowEdge>) {
+export function TrunkEdge({
+  source,
+  target,
+  selected,
+  sourceX,
+  sourceY,
+  targetX,
+  targetY,
+  data,
+}: EdgeProps<TrunkFlowEdge>) {
   const actions = useCanvasActions();
   // Straight when both ends are level (a chain); otherwise an S-curve between lanes.
   const middle = (sourceX + targetX) / 2;
@@ -28,15 +39,26 @@ export function TrunkEdge({ sourceX, sourceY, targetX, targetY, data }: EdgeProp
     <>
       <BaseEdge
         path={path}
-        // The connector isn't selectable, and its invisible hit area would
-        // sit over the insert button and swallow its clicks.
-        interactionWidth={0}
+        interactionWidth={16}
         style={{
-          stroke: 'var(--edge)',
+          opacity: data?.faded ? 0.2 : 1,
+          stroke: selected || data?.highlighted ? 'var(--primary)' : 'var(--edge)',
           strokeWidth: 1.75,
           strokeDasharray: insertIndex === undefined ? '5 5' : undefined,
         }}
       />
+      {selected && !data?.readOnly && (
+        <EdgeLabelRenderer>
+          <button
+            type="button"
+            className="nodrag nopan pointer-events-auto absolute rounded border bg-card px-2 py-1 text-xs"
+            style={{ left: middle, top: (sourceY + targetY) / 2 }}
+            onClick={() => actions.onDisconnect(source, target)}
+          >
+            Disconnect / edit binding
+          </button>
+        </EdgeLabelRenderer>
+      )}
       {insertIndex !== undefined && (
         <path
           d={arrow}

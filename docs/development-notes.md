@@ -271,3 +271,18 @@ received object"` error with no hint of a module-identity problem underneath. Ca
   (applies repo-wide rather than only under `packages/shared/**`) — harmless in practice since
   no import specifier in this codebase literally contains `apps/`, but worth tightening. See
   also the `allowDefaultProject` gap noted above — both need the same protected-config change.
+
+## DAG canvas presentation and stage inspection
+
+Migration `0040_canvas_presentation` adds nullable blueprint-version presentation JSON. Legacy versions
+use computed layout. Presentation stores positions and branch names by stage key, travels with drafts
+and packages, and is excluded from artifact freshness. Node dragging does not mutate graph order.
+
+`StageDef.disabled` is separate from `enabledWhen`. Disabled ancestors are checked at validation,
+planning, durable stage admission, and direct/matched/memory binding resolution. Explicit stage-only
+scope permits the disabled stage itself. Availability changes are displayed in signed execution plans;
+changing availability alone does not stale generation history. Reruns retain normal invalidation.
+
+Attempt detail and source-artifact endpoints are scoped to the requested run/stage. They expose existing
+recorded provenance and historical previews on demand; neither endpoint resolves new provider work.
+Canvas and run-page output/attempt entry points share the stage details implementation.

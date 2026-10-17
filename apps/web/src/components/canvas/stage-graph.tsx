@@ -18,15 +18,13 @@ import {
   type FlowNode,
 } from '@/pages/stage-graph.logic';
 import {
-  dropIndex,
-  isChainLayout,
   START_NODE_X,
   STAGE_NODE_WIDTH,
   stageLayout,
   stageX,
   stageY,
 } from '@/pages/canvas-layout.logic';
-import type { StageDef } from '@reelcraft/shared';
+import type { BlueprintPresentation, StageDef } from '@reelcraft/shared';
 import { MemoryEdge, TrunkEdge } from './stage-edges';
 import { AddNode, StageNode, StartNode } from './stage-node';
 
@@ -50,39 +48,51 @@ function keepMeasured(next: FlowNode[], previous: FlowNode[]): FlowNode[] {
 /** Imperative handle used by the page to move the viewport. */
 export type StageGraphApi = {
   focusStage: (index: number) => void;
+  fit: () => void;
 };
 
-export function useStageGraphApi(graph: StageDef[]): StageGraphApi {
-  const { setCenter } = useReactFlow();
+export function useStageGraphApi(
+  graph: StageDef[],
+  presentation?: BlueprintPresentation,
+): StageGraphApi {
+  const { setCenter, fitView } = useReactFlow();
   const latest = useRef(graph);
   latest.current = graph;
   return useMemo(
     () => ({
+      fit: () => {
+        void fitView({ padding: 0.15, duration: 250 });
+      },
       focusStage(index: number) {
         // A stage added a moment ago may not be in the graph yet: assume the
         // next column of the first lane, as in a chain.
         const slot = stageLayout(latest.current)[index] ?? { level: index, lane: 0 };
-        void setCenter(stageX(slot.level) + STAGE_NODE_WIDTH / 2, stageY(slot.lane) + 150, {
+        const position = presentation?.positions[latest.current[index]?.key ?? ''] ?? {
+          x: stageX(slot.level),
+          y: stageY(slot.lane),
+        };
+        void setCenter(position.x + STAGE_NODE_WIDTH / 2, position.y + 150, {
           zoom: FOCUS_ZOOM,
           duration: 300,
         });
       },
     }),
-    [setCenter],
+    [setCenter, fitView, presentation],
   );
 }
 
-/** The React Flow canvas: Start node, one card per stage, the trunk
- * connectors with their insert buttons, and the memory links. Stages only
- * move sideways; dropping one on another slot reorders the graph. */
+/** Editable DAG canvas; dragging changes presentation without changing dependencies. */
 export function StageGraph({
   input,
   onSelectStage,
   onClearSelection,
   onOpenBlueprintSettings,
-  onReorder,
   initialFocusIndex,
+  onPositionsChange,
+  onConnectStages,
 }: {
+  onPositionsChange: (positions: Record<string, { x: number; y: number }>) => void;
+  onConnectStages: (source: string, target: string, remove?: boolean) => void;
   input: StageGraphInput;
   onSelectStage: (stageKey: string) => void;
   onClearSelection: () => void;
@@ -93,8 +103,6 @@ export function StageGraph({
   const derived = useMemo(() => buildStageGraph(input), [input]);
   const [nodes, setNodes] = useState<FlowNode[]>(derived.nodes);
   const dragging = useRef(false);
-  const latest = useRef(derived.nodes);
-  latest.current = derived.nodes;
 
   useEffect(() => {
     if (dragging.current) return;
@@ -102,13 +110,7 @@ export function StageGraph({
   }, [derived.nodes]);
 
   const onNodesChange = useCallback((changes: NodeChange<FlowNode>[]) => {
-    // Cards slide along the trunk only (and only when the stages form one row).
-    const locked = changes.map((change) => {
-      if (change.type !== 'position' || !change.position) return change;
-      const home = latest.current.find((node) => node.id === change.id);
-      return { ...change, position: { x: change.position.x, y: home?.position.y ?? 0 } };
-    });
-    setNodes((previous) => applyNodeChanges(locked, previous));
+    setNodes((previous) => applyNodeChanges(changes, previous));
   }, []);
 
   const onNodeDragStart: OnNodeDrag<FlowNode> = useCallback(() => {
@@ -118,17 +120,9 @@ export function StageGraph({
   const onNodeDragStop: OnNodeDrag<FlowNode> = useCallback(
     (_event, node) => {
       dragging.current = false;
-      const from = input.graph.findIndex((s) => s.key === node.id);
-      if (!isChainLayout(stageLayout(input.graph))) return;
-      const to = dropIndex(node.position.x, input.graph.length);
-      if (from === -1 || from === to) {
-        // Not moved: put the card back on its slot.
-        setNodes((previous) => keepMeasured(latest.current, previous));
-        return;
-      }
-      onReorder(from, to);
+      onPositionsChange({ ...input.presentation?.positions, [node.id]: node.position });
     },
-    [input.graph, onReorder],
+    [input.presentation, onPositionsChange],
   );
 
   const { setViewport } = useReactFlow();
@@ -167,7 +161,17 @@ export function StageGraph({
         else if (node.id !== ADD_NODE_ID) onSelectStage(node.id);
       }}
       onPaneClick={onClearSelection}
-      nodesConnectable={false}
+      nodesConnectable={!input.readOnly}
+      onConnect={(connection) => {
+        if (connection.sourceHandle === 'out' && connection.targetHandle === 'in')
+          onConnectStages(connection.source, connection.target);
+      }}
+      onEdgesDelete={(edges) =>
+        edges.forEach((edge) => onConnectStages(edge.source, edge.target, true))
+      }
+      onEdgeDoubleClick={(_event, edge) => {
+        if (!input.readOnly) onConnectStages(edge.source, edge.target, true);
+      }}
       elementsSelectable
       selectNodesOnDrag={false}
       panOnScroll
@@ -176,7 +180,7 @@ export function StageGraph({
       zoomOnDoubleClick={false}
       minZoom={0.25}
       maxZoom={1.6}
-      deleteKeyCode={null}
+      deleteKeyCode={input.readOnly ? null : ['Backspace', 'Delete']}
       proOptions={{ hideAttribution: false }}
     >
       <Background variant={BackgroundVariant.Dots} gap={24} size={1.3} />

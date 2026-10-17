@@ -1,7 +1,9 @@
+import { executionEligibility } from './execution-eligibility';
 import { unresolvedCancellation } from './cancellation-risk';
 import { ConflictException, Inject, Injectable, Logger } from '@nestjs/common';
 import { and, desc, eq, inArray, isNotNull } from 'drizzle-orm';
 import {
+  disabledAncestor,
   CreateBlueprintVersionDto,
   StageDef,
   ancestorsOf,
@@ -97,7 +99,20 @@ export class RunStagePlanService {
       blockedReason = 'Wait for execution to settle before starting another action.';
     if (request.stageKey && (!target || !edited))
       blockedReason = 'This stage was added or removed. Start a new run for the changed graph.';
-    if (!requested.runnable) blockedReason = 'Fix blueprint validation errors before running.';
+    const validationErrors = (
+      requested.validation as Array<{ severity: string; message: string }>
+    ).filter((issue) => issue.severity === 'error');
+    if (
+      !requested.runnable &&
+      (!request.stageKey ||
+        validationErrors.some((issue) => !issue.message.startsWith('Disabled ancestor:')))
+    )
+      blockedReason = 'Fix blueprint validation errors before running.';
+    const disabled = request.stageKey
+      ? disabledAncestor(draft.graph, request.stageKey)
+      : draft.graph.find((s) => disabledAncestor(draft.graph, s.key));
+    if (disabled)
+      blockedReason = `Disabled ancestor: ${disabled.label || disabled.key}. Enable it before running this stage.`;
     if (
       definitionKey(before.graph.map((s) => s.key).sort()) !==
       definitionKey(draft.graph.map((s) => s.key).sort())
@@ -121,6 +136,7 @@ export class RunStagePlanService {
     const contract = (stage: StageDef) => ({
       ...stage,
       label: undefined,
+      disabled: undefined,
       instructions: undefined,
       qc: undefined,
       checks: undefined,
@@ -202,8 +218,28 @@ export class RunStagePlanService {
           )
             execute.add(ancestor);
     if (request.action && request.stageKey && request.scope === 'stage') {
-      const eligibility = targetExecution?.availableActions;
-      if (eligibility?.blockedReason) blockedReason ??= eligibility.blockedReason;
+      const availabilityGraph = before.graph.map((stage) => ({
+        ...stage,
+        disabled: draft.graph.find((s) => s.key === stage.key)?.disabled ?? false,
+      }));
+      const eligibility = executionEligibility(
+        availabilityGraph,
+        current.stageExecutions.map((execution) => ({
+          ...execution,
+          completedItems: execution.availableActions?.completedItems ?? 0,
+        })),
+        current.inputs as Record<string, unknown>,
+        current.state,
+        current.availableActions?.busy,
+      ).stages[request.stageKey];
+      if (
+        eligibility?.blockedReason &&
+        !(
+          eligibility.blockedReason.startsWith('Disabled ancestor:') &&
+          !disabledAncestor(draft.graph, request.stageKey)
+        )
+      )
+        blockedReason ??= eligibility.blockedReason;
       if (request.action === 'continue' && !eligibility?.continue)
         blockedReason ??= 'This stage has no interrupted work to continue.';
       if (
@@ -233,11 +269,22 @@ export class RunStagePlanService {
             definitionKey(draft.graph.find((s) => s.key === key)),
       ),
     );
-    const graph = graphForScope.map((s) =>
-      changedKeys.has(s.key)
-        ? (draft.graph.find((d) => d.key === s.key) ?? s)
-        : (before.graph.find((d) => d.key === s.key) ?? s),
-    );
+    const availabilityChangedStageKeys = draft.graph
+      .filter(
+        (stage) => !!stage.disabled !== !!before.graph.find((s) => s.key === stage.key)?.disabled,
+      )
+      .map((s) => s.key);
+    const graph = graphForScope
+      .map((s) =>
+        changedKeys.has(s.key)
+          ? (draft.graph.find((d) => d.key === s.key) ?? s)
+          : (before.graph.find((d) => d.key === s.key) ?? s),
+      )
+      .map((stage) =>
+        availabilityChangedStageKeys.includes(stage.key)
+          ? { ...stage, disabled: draft.graph.find((s) => s.key === stage.key)?.disabled ?? false }
+          : stage,
+      );
     if (
       request.mode === 'rebuild' &&
       (definitionKey(before.graph.map((s) => s.key)) !==
@@ -359,6 +406,7 @@ export class RunStagePlanService {
       request,
       uncertainAttemptIds,
       retainedItemCount,
+      availabilityChangedStageKeys,
       runStageKeys: graph.filter((s) => execute.has(s.key)).map((s) => s.key),
       reusedStageKeys: graph
         .filter(

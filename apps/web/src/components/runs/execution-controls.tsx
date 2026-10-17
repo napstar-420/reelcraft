@@ -260,6 +260,13 @@ export function ExecutionPlanDialog({ actions }: { actions: RunExecutionActions 
                       : 'Completed items in this selection will be regenerated.'}
                   </p>
                 )}
+                {!!plan.availabilityChangedStageKeys?.length && (
+                  <p className="text-sm">
+                    Enable/disable changes:{' '}
+                    {plan.availabilityChangedStageKeys.map(actions.stageLabel).join(', ')}. Disabled
+                    outputs cannot be consumed.
+                  </p>
+                )}
                 {!!plan.staleStageKeys.length && (
                   <p>
                     Outdated definitions: {plan.staleStageKeys.map(actions.stageLabel).join(', ')}

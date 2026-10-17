@@ -81,6 +81,15 @@ describe('package export → import (e2e)', () => {
     installer = testApp.app.get(PackageInstallService);
     identity = testApp.app.get(IdentityService);
     src = await seedSource(testDb, storage);
+    await testDb.db
+      .update(blueprintVersion)
+      .set({
+        presentation: {
+          positions: { script: { x: 420, y: 180 } },
+          branchNames: { script: 'Story' },
+        },
+      })
+      .where(eq(blueprintVersion.id, src.versionId));
     target = await seedChannel(testDb, 'Target');
   });
 
@@ -131,6 +140,10 @@ describe('package export → import (e2e)', () => {
       .where(eq(blueprintVersion.id, result.blueprintVersionId));
     expect(version).toMatchObject({ major: 1, minor: 0, runnable: true });
     expect(version!.budget).toEqual({ runCapUsd: 3 });
+    expect(version!.presentation).toEqual({
+      positions: { script: { x: 420, y: 180 } },
+      branchNames: { script: 'Story' },
+    });
     const roles = version!.roles as Array<{ characterId: string; referenceBlobIds: string[] }>;
     expect(roles[0]!.characterId).toBe(newCharacter!.id);
     expect(roles[0]!.referenceBlobIds).toEqual([refs[0]!.blobId]);

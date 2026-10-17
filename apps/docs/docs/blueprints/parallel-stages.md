@@ -73,8 +73,9 @@ together.
 
 ## Moving and deleting stages
 
-- You can drag stages to reorder them only while the blueprint is a single line. With branches, use
-  **Runs after**.
+- Dragging changes node position only, in both chains and branched workflows. Use connection handles,
+  **Create branch**, or the inspector’s dependency controls to change execution order. **Format canvas**
+  arranges branches automatically; branch names are presentation metadata.
 - A stage can't move before a stage it waits for, or after a stage that waits for it.
 - Deleting a stage makes the stages that waited for it wait for what it waited for, so the blueprint
   stays connected. **Undo** brings it back as it was. A stage that read the deleted stage with

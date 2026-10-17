@@ -1,3 +1,4 @@
+import { disabledAncestor } from '@reelcraft/shared';
 import { createHash } from 'node:crypto';
 import { canonicalJson } from '../json-schema/schema-hash';
 import { Inject, Injectable } from '@nestjs/common';
@@ -266,7 +267,7 @@ export class StageRunnerService {
 
   async loadStageContext(runId: string, stageKey: string): Promise<StageContext> {
     const [row] = await this.db
-      .select({ graph: blueprintVersion.graph })
+      .select({ graph: blueprintVersion.graph, scope: run.executionScope })
       .from(run)
       .innerJoin(blueprintVersion, eq(run.blueprintVersionId, blueprintVersion.id))
       .where(eq(run.id, runId))
@@ -278,6 +279,17 @@ export class StageRunnerService {
     if (!stage)
       throw new Error(`StageRunnerService: stage "${stageKey}" not in run ${runId}'s graph`);
 
+    const disabled = disabledAncestor(graph, stageKey);
+    if (disabled) throw new Error(`Disabled ancestor: ${disabled.label || disabled.key}`);
+    if (
+      stage.disabled &&
+      !(
+        row.scope?.kind === 'selection' &&
+        row.scope.stageKeys.length === 1 &&
+        row.scope.stageKeys[0] === stageKey
+      )
+    )
+      throw new Error('Disabled stages require an explicit stage-only execution.');
     const index = graph.indexOf(stage);
     const prevStageKey = index > 0 ? graph[index - 1]?.key : undefined;
     const effective = await this.configResolver.effectiveStageConfig(runId, stageKey, stage);
@@ -2472,7 +2484,7 @@ export class StageRunnerService {
 
   private async loadGraph(runId: string): Promise<StageDef[]> {
     const [row] = await this.db
-      .select({ graph: blueprintVersion.graph })
+      .select({ graph: blueprintVersion.graph, scope: run.executionScope })
       .from(run)
       .innerJoin(blueprintVersion, eq(run.blueprintVersionId, blueprintVersion.id))
       .where(eq(run.id, runId))

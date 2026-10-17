@@ -77,3 +77,10 @@ best place to look when a stage did something you didn't expect.
 
 At the bottom, every value stages have saved. If the blueprint saves nothing, it says **This blueprint
 doesn't write memory.** See [Connecting stages](../blueprints/connecting-stages.md#memory).
+
+## Trace an artifact
+
+Stage output and attempt controls open the same expandable details workspace used by the canvas.
+Use **Output**, **Attempts**, **Inputs & dependencies**, and **Memory** to trace an artifact from its
+recorded sources through retries and quality checks. Historical candidates remain inspectable.
+See [Outputs and downloads](./outputs-and-downloads.md).

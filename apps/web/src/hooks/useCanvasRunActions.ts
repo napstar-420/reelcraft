@@ -22,9 +22,15 @@ export function useCanvasRunActions({
   return {
     ...execution,
     outputSheetKey,
-    setOutputSheetKey,
+    setOutputSheetKey: (key: string | null) => {
+      setAttemptsSheetKey(null);
+      setOutputSheetKey(key);
+    },
     attemptsSheetKey,
-    setAttemptsSheetKey,
+    setAttemptsSheetKey: (key: string | null) => {
+      setOutputSheetKey(null);
+      setAttemptsSheetKey(key);
+    },
     approvalStageKey,
     setApprovalStageKey,
   };

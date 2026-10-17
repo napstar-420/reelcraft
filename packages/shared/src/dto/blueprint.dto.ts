@@ -43,7 +43,16 @@ export type UpdateBlueprintDto = z.infer<typeof UpdateBlueprintDto>;
 /** `blueprint.service.ts`'s row shape — the whole `blueprint` table row.
  * Moved here from `apps/web/src/api/client.ts` (A2) so the DTO carries the
  * new `description`/`tags` fields as the single source of truth. */
+export const BlueprintPresentation = z.object({
+  positions: z
+    .record(z.string(), z.object({ x: z.number().finite(), y: z.number().finite() }))
+    .default({}),
+  branchNames: z.record(z.string(), z.string().trim().min(1).max(80)).default({}),
+});
+export type BlueprintPresentation = z.infer<typeof BlueprintPresentation>;
+
 export const CreateBlueprintVersionDto = z.object({
+  presentation: BlueprintPresentation.nullish().transform((value) => value ?? undefined),
   graph: z.array(StageDef),
   inputs: z.array(InputDef).default([]),
   roles: z.array(RoleDef).max(1).default([]),
@@ -98,6 +107,7 @@ export const CreateVersionQueryDto = z.object({
 export type CreateVersionQueryDto = z.infer<typeof CreateVersionQueryDto>;
 
 export const BlueprintVersionDto = z.object({
+  presentation: BlueprintPresentation.nullish().transform((value) => value ?? undefined),
   execution: z.object({ concurrentBranches: z.number().int().positive().safe() }).optional(),
   id: z.string(),
   blueprintId: z.string(),

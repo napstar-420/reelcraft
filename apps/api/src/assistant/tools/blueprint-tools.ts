@@ -20,6 +20,7 @@ const toDraft = (v: VersionRow): CreateBlueprintVersionDto =>
     roles: v.roles,
     defaults: v.defaults,
     budget: v.budget,
+    presentation: v.presentation ?? undefined,
     execution: v.execution,
   }) as CreateBlueprintVersionDto;
 

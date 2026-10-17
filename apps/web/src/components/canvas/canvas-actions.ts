@@ -5,6 +5,10 @@ import { createContext, useContext } from 'react';
  * through context so node/edge `data` stays plain and nodes don't re-render
  * when a handler's identity changes. */
 export type CanvasActions = {
+  onInspectStage: (key: string, tab: 'Output' | 'Attempts') => void;
+  onDisconnect: (source: string, target: string) => void;
+  onCreateBranch: (stageKey: string) => void;
+  onRenameBranch: (stageKey: string, name: string) => void;
   onRunStage: (stageKey: string, request?: StageActionRequest) => void;
   onCancelRun: () => void;
   onReviewStage: (stageKey: string) => void;
@@ -19,6 +23,10 @@ export type CanvasActions = {
 const noop = () => undefined;
 
 export const CanvasActionsContext = createContext<CanvasActions>({
+  onInspectStage: noop,
+  onDisconnect: noop,
+  onCreateBranch: noop,
+  onRenameBranch: noop,
   onRunStage: noop,
   onCancelRun: noop,
   onReviewStage: noop,

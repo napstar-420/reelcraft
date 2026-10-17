@@ -83,6 +83,8 @@ import type {
   RetryScope,
   InvalidationPreviewDto,
   HumanInputSubmissionDto,
+  ArtifactViewDto,
+  StageAttemptDetailDto,
   StageAttemptDto,
   BlueprintDto,
   UpdateBlueprintDto,
@@ -392,6 +394,12 @@ export const api = {
     request<{ accepted: true; revision: number }>(
       `/runs/${runId}/stages/${encodeURIComponent(stageKey)}/retry/confirm`,
       { method: 'POST', body: JSON.stringify(dto) },
+    ),
+  inspectRunArtifact: (runId: string, artifactId: string) =>
+    request<ArtifactViewDto>(`/runs/${runId}/artifacts/${encodeURIComponent(artifactId)}`),
+  getStageAttempt: (runId: string, stageKey: string, attemptId: string) =>
+    request<StageAttemptDetailDto>(
+      `/runs/${runId}/stages/${encodeURIComponent(stageKey)}/attempts/${encodeURIComponent(attemptId)}`,
     ),
   listStageAttempts: (runId: string, stageKey: string) =>
     request<StageAttemptDto[]>(`/runs/${runId}/stages/${encodeURIComponent(stageKey)}/attempts`),

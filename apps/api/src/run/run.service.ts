@@ -1,4 +1,5 @@
 import { executionEligibility } from './execution-eligibility';
+import { disabledAncestor } from '@reelcraft/shared';
 import { InvalidationService } from './invalidation.service';
 import { HumanWaitService } from './human-wait.service';
 import { ConflictException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
@@ -1170,6 +1171,8 @@ export class RunService {
           const capability = definition?.capability ?? 'unknown';
           return {
             ...execution,
+            disabled: definition?.disabled ?? false,
+            outputAvailable: !definition?.disabled && !disabledAncestor(graph, execution.stageKey),
             availableActions: eligibility.stages[execution.stageKey],
             label: definition?.label || execution.stageKey,
             output: definition?.output ?? null,
@@ -1586,6 +1589,69 @@ export class RunService {
         ),
       )
       .orderBy(asc(stageEvent.id));
+  }
+
+  async inspectArtifact(runId: string, artifactId: string) {
+    const [row] = await this.db
+      .select({ artifact, ownerId: channel.ownerId })
+      .from(artifact)
+      .innerJoin(run, eq(run.id, artifact.runId))
+      .innerJoin(channel, eq(channel.id, run.channelId))
+      .where(and(eq(artifact.id, artifactId), eq(run.id, runId)))
+      .limit(1);
+    if (!row) throw new NotFoundException('Artifact not found in this run');
+    return this.toArtifactView(row.ownerId, row.artifact);
+  }
+
+  async stageAttemptDetail(runId: string, stageKey: string, attemptId: string) {
+    const [row] = await this.db
+      .select({ attempt: stageAttempt, itemIndex: stageItem.itemIndex, ownerId: channel.ownerId })
+      .from(stageAttempt)
+      .innerJoin(stageExecution, eq(stageAttempt.stageExecutionId, stageExecution.id))
+      .innerJoin(run, eq(stageExecution.runId, run.id))
+      .innerJoin(channel, eq(channel.id, run.channelId))
+      .leftJoin(stageItem, eq(stageAttempt.stageItemId, stageItem.id))
+      .where(
+        and(
+          eq(stageAttempt.id, attemptId),
+          eq(run.id, runId),
+          eq(stageExecution.stageKey, stageKey),
+        ),
+      )
+      .limit(1);
+    if (!row) throw new NotFoundException('Attempt not found in this stage');
+    const [candidate] = row.attempt.artifactId
+      ? await this.db
+          .select()
+          .from(artifact)
+          .where(
+            and(
+              eq(artifact.id, row.attempt.artifactId),
+              eq(artifact.runId, runId),
+              eq(artifact.producerStageKey, stageKey),
+            ),
+          )
+          .limit(1)
+      : [];
+    return {
+      id: row.attempt.id,
+      attemptNo: row.attempt.attemptNo,
+      itemIndex: row.itemIndex,
+      outcome: row.attempt.outcome,
+      phase: row.attempt.phase,
+      actor: row.attempt.actor,
+      renderedPrompt: row.attempt.renderedPrompt,
+      artifactId: row.attempt.artifactId,
+      reviewNote: row.attempt.reviewNote,
+      critiqueTargetStageKey: row.attempt.critiqueTargetStageKey,
+      checkResults: row.attempt.checkResults,
+      qcVerdict: row.attempt.qcVerdict,
+      costUsd: toUsd(row.attempt.costUsd),
+      createdAt: row.attempt.createdAt,
+      resolvedInputs: row.attempt.resolvedInputs,
+      durationMs: row.attempt.durationMs,
+      artifact: candidate ? await this.toArtifactView(row.ownerId, candidate) : null,
+    };
   }
 
   async listStageAttempts(runId: string, stageKey: string) {

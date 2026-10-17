@@ -126,12 +126,13 @@ export class RunStateService {
     stageExecutionId: string,
     stageKey: string,
     epoch?: number,
+    reason = 'Disabled by Enabled when condition',
   ): Promise<void> {
     await this.db
       .update(stageExecution)
       .set({
         state: 'skipped',
-        skipReason: 'Disabled by Enabled when condition',
+        skipReason: reason,
         endedAt: new Date().toISOString(),
       })
       .where(

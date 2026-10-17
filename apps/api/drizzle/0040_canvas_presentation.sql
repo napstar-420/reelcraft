@@ -1,0 +1,1 @@
+ALTER TABLE "blueprint_version" ADD COLUMN "presentation" jsonb;

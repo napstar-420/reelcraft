@@ -99,3 +99,9 @@ export function descendantsOf(deps: ReadonlyMap<string, string[]>, key: string):
   }
   return found;
 }
+
+/** A manual disabled stage may run, but no descendant can consume or bypass it. */
+export function disabledAncestor(graph: StageDef[], key: string): StageDef | undefined {
+  const ancestors = ancestorsOf(stageDependencies(graph), key);
+  return graph.find((stage) => stage.disabled && ancestors.has(stage.key));
+}
