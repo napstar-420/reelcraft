@@ -89,7 +89,7 @@ export class CodexProviderAdapter implements ProviderAdapter {
     this.profile = config.codexProfile ?? 'reelcraft';
     this.resultLimit = config.codexOutputMaxBytes ?? 16 * 1024 * 1024;
     this.jobTimeoutMs = config.codexJobTimeoutMs ?? 900_000;
-    this.browserMaxSteps = config.codexBrowserMaxSteps ?? 50;
+    this.browserMaxSteps = config.codexBrowserMaxSteps ?? 500;
   }
 
   async listModels(): Promise<ModelInfo[]> {

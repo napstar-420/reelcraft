@@ -48,6 +48,16 @@ Under **Config**:
 - **startUrl**: a web address to open first. It must start with `http://` or `https://`.
 - **maxFiles**: the most files a list output downloads, from 1 to 50 (default 10).
 
+## Browser step limit
+
+Browser jobs allow **500 steps** by default. Reaching the limit fails the attempt with a message such
+as `BrowserOS Neo exceeded the 500 step limit`; normal retry rules then apply. This is a browser-work
+limit, separate from branch concurrency, iteration size, and the job timeout.
+
+An administrator can set `CODEX_BROWSER_MAX_STEPS` to an integer from 1 to 500 and restart the API.
+An existing explicit value such as `50` still overrides the new default. There is no Settings control
+for this limit yet; it is tracked in [issue #172](https://github.com/napstar-420/reelcraft/issues/172).
+
 ## Downloading files and licences
 
 The browser is told to prefer files that are free to use and to read the licence on the page. It
