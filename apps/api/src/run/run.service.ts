@@ -278,7 +278,11 @@ export class RunService {
               !dependents.has(e.stageKey) &&
               !stageKeys.includes(e.stageKey),
           )
-          .map((e) => e.stageKey);
+          .map((e) => e.stageKey)
+          .sort(
+            (a, b) =>
+              sourceGraph.findIndex((s) => s.key === a) - sourceGraph.findIndex((s) => s.key === b),
+          );
         if (discarded.length > 0) {
           const relevant = ancestorsOf(stageDependencies(graph), discarded[0]!);
           relevant.add(discarded[0]!);
