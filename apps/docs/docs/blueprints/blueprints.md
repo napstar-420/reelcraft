@@ -97,9 +97,9 @@ Each card shows:
 - the specific failure or blocking reason, including the responsible upstream stage;
 - **Output** and **Attempts** shortcuts into the same details workspace.
 
-Solid lines join each stage to the next one. Dashed purple lines show **memory**: a value one stage
+Execution connections join prerequisite stages to their consumers, including branches and joins. Dashed purple lines show **memory**: a value one stage
 saves and a later stage reads, labelled with its key. A red dashed line means two stages write the
-same memory key, which you'll need to fix. Turn **Memory links** off to hide them. See
+same memory key, which you'll need to fix. Memory links are hidden by default; turn **Memory links** on to inspect them. See
 [Connecting stages](./connecting-stages.md#memory).
 
 ### Connect stages and name branches
