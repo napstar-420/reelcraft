@@ -3,6 +3,7 @@ import { api } from '@/api/client';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AboutCard } from '@/components/settings/about-card';
 import { BrowserOsCard } from '@/components/settings/browser-os-card';
+import { ClaudeCard } from '@/components/settings/claude-card';
 import { CodexCard } from '@/components/settings/codex-card';
 import { IdentityCard } from '@/components/settings/identity-card';
 import { NotificationsCard } from '@/components/settings/notifications-card';
@@ -19,8 +20,8 @@ export function SettingsPage() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
         <p className="text-sm text-muted-foreground">
-          Connect AI providers, BrowserOS Neo and Codex, choose your notifications, manage your
-          package identity, and keep Reelcraft up to date.
+          Connect AI providers, BrowserOS Neo, Codex and Claude, choose your notifications, manage
+          your package identity, and keep Reelcraft up to date.
         </p>
       </div>
       {settings.isPending ? (
@@ -37,6 +38,7 @@ export function SettingsPage() {
         </>
       )}
       <CodexCard />
+      <ClaudeCard />
       <NotificationsCard />
       <IdentityCard />
       <AboutCard />

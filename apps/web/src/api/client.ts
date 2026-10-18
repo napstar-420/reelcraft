@@ -18,6 +18,8 @@ import type {
   QwenTtsBackend,
   QwenTtsSettingsDto,
   QwenTtsSetupDto,
+  ClaudeLoginDto,
+  ClaudeStatusDto,
   CodexLoginDto,
   CodexStatusDto,
   ConnectionTestDto,
@@ -650,6 +652,17 @@ export const api = {
   cancelCodexLogin: () =>
     request<{ login: CodexLoginDto | null }>('/codex/login', { method: 'DELETE' }),
   codexLogout: () => request<CodexStatusDto>('/codex/logout', { method: 'POST' }),
+  getClaudeStatus: () => request<ClaudeStatusDto>('/claude/status'),
+  getClaudeLogin: () => request<{ login: ClaudeLoginDto | null }>('/claude/login'),
+  startClaudeLogin: () => request<ClaudeLoginDto>('/claude/login', { method: 'POST' }),
+  sendClaudeLoginCode: (code: string) =>
+    request<ClaudeLoginDto>('/claude/login/code', {
+      method: 'POST',
+      body: JSON.stringify({ code }),
+    }),
+  cancelClaudeLogin: () =>
+    request<{ login: ClaudeLoginDto | null }>('/claude/login', { method: 'DELETE' }),
+  claudeLogout: () => request<ClaudeStatusDto>('/claude/logout', { method: 'POST' }),
   listAssistantProviders: () => request<AssistantProviderDto[]>('/assistant/providers'),
   listAssistantSessions: (blueprintId: string) =>
     request<AssistantSessionDto[]>(`/blueprints/${blueprintId}/assistant/sessions`),

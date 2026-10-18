@@ -14,7 +14,7 @@ import { docsUrl } from '@/lib/docs-url';
 import {
   CODEX_LOGIN_KEY,
   CODEX_STATUS_KEY,
-  codexCapabilities,
+  capabilityLines,
   loginActive,
   loginStep,
   neoRegistrationLabel,
@@ -140,7 +140,7 @@ function CodexStatus({ status }: { status: CodexStatusDto }) {
       </div>
       {status.connected ? (
         <ul className="flex flex-col gap-1 text-xs">
-          {codexCapabilities(status).map((item) => (
+          {capabilityLines(status, ['text', 'image', 'browser']).map((item) => (
             <li key={item.label} className="flex items-start gap-1.5">
               {item.ok ? (
                 <CheckCircle2 className="mt-px size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />

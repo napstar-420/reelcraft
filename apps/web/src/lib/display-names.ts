@@ -13,6 +13,7 @@ export const ASSET_KIND_LABELS: Record<AssetKind, string> = {
 const PROVIDER_NAMES: Record<string, string> = {
   openrouter: 'OpenRouter',
   codex: 'Codex',
+  claude: 'Claude',
   chatgpt: 'ChatGPT',
   fal: 'fal',
   elevenlabs: 'ElevenLabs',

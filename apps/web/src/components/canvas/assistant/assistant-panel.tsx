@@ -66,6 +66,25 @@ export function AssistantPanel({ assistant }: { assistant: AssistantController }
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex shrink-0 flex-wrap items-center gap-2 border-b px-3 py-2">
+        {assistant.providers.length > 1 && (
+          <Select
+            value={assistant.provider?.id ?? ''}
+            onValueChange={assistant.setProvider}
+            disabled={running}
+          >
+            <SelectTrigger size="sm" className="h-7 w-auto text-xs" aria-label="Provider">
+              <SelectValue placeholder="Provider" />
+            </SelectTrigger>
+            <SelectContent>
+              {assistant.providers.map((p) => (
+                <SelectItem key={p.id} value={p.id}>
+                  {p.label}
+                  {p.unavailableReason ? ' (not connected)' : ''}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
         <Select
           value={assistant.model?.modelId ?? ''}
           onValueChange={assistant.setModel}
@@ -172,12 +191,12 @@ export function AssistantPanel({ assistant }: { assistant: AssistantController }
               </Link>
               {' · '}
               <a
-                href={docsUrl('codex')}
+                href={docsUrl(assistant.provider?.id === 'claude' ? 'claude' : 'codex')}
                 target="_blank"
                 rel="noreferrer"
                 className="underline underline-offset-2"
               >
-                Connect Codex
+                Connect {assistant.provider?.label ?? 'Codex'}
               </a>
             </p>
           </div>

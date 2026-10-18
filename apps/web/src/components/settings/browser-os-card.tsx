@@ -42,7 +42,7 @@ export function BrowserOsCard({ settings }: { settings: SettingsDto }) {
         <CardTitle>BrowserOS Neo</CardTitle>
         <CardDescription>
           BrowserOS Neo runs on your own computer. Reelcraft uses it for the ChatGPT provider, for
-          Codex browser tasks, and to help you connect Codex.{' '}
+          Codex and Claude browser tasks, and to help you connect Codex and Claude.{' '}
           <a
             href={docsUrl('browseros-neo')}
             target="_blank"

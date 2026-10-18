@@ -231,7 +231,7 @@ function TextModelPinEditor({
             info={
               isChatgpt
                 ? 'ChatGPT thinking effort, as in the ChatGPT model menu.'
-                : 'Reasoning effort supported by the selected Codex model.'
+                : 'Reasoning effort supported by the selected model.'
             }
           >
             Effort
