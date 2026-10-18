@@ -142,6 +142,28 @@ export const CodexStatusDto = z.object({
 });
 export type CodexStatusDto = z.infer<typeof CodexStatusDto>;
 
+/** "Connect Claude": the `claude` CLI's sign-in link, and how far it got. There
+ * is no one-time code to show: the sign-in page hands back an authorization
+ * code that Reelcraft reads from the Neo tab, or the user pastes. */
+export const ClaudeLoginDto = CodexLoginDto.omit({ code: true });
+export type ClaudeLoginDto = z.infer<typeof ClaudeLoginDto>;
+
+/** The authorization code shown after approving the sign-in, pasted by hand. */
+export const ClaudeLoginCodeDto = z.object({ code: z.string().trim().min(1).max(4096) });
+export type ClaudeLoginCodeDto = z.infer<typeof ClaudeLoginCodeDto>;
+
+export const ClaudeStatusDto = z.object({
+  /** The `claude` CLI is installed where the API runs. */
+  installed: z.boolean(),
+  connected: z.boolean(),
+  /** Such as "Signed in with Claude (pro)". */
+  detail: z.string().nullable(),
+  modalities: z.array(Modality),
+  unavailable: z.record(z.string()),
+  login: ClaudeLoginDto.nullable(),
+});
+export type ClaudeStatusDto = z.infer<typeof ClaudeStatusDto>;
+
 function isHttpUrl(value: string): boolean {
   try {
     const url = new URL(value);

@@ -29,6 +29,7 @@ import { CodexNeoRegistrar } from './codex/codex-neo-registrar';
 import { ChatgptProviderAdapter } from './chatgpt/chatgpt-provider.adapter';
 import { ClaudeProviderAdapter } from './claude/claude-provider.adapter';
 import { ClaudeRuntimeReadiness } from './claude/claude-runtime-readiness';
+import { ClaudeLoginService } from './claude/claude-login.service';
 
 @Module({
   imports: [DbModule, StorageModule, SettingsModule],
@@ -100,6 +101,12 @@ import { ClaudeRuntimeReadiness } from './claude/claude-runtime-readiness';
         new ClaudeRuntimeReadiness(config, settings),
     },
     {
+      provide: ClaudeLoginService,
+      inject: [NeoClient, ClaudeRuntimeReadiness],
+      useFactory: (neo: NeoClient, readiness: ClaudeRuntimeReadiness) =>
+        new ClaudeLoginService(neo, readiness),
+    },
+    {
       provide: ClaudeProviderAdapter,
       inject: [
         EngineConfig,
@@ -136,6 +143,7 @@ import { ClaudeRuntimeReadiness } from './claude/claude-runtime-readiness';
     CodexProviderAdapter,
     ClaudeProviderAdapter,
     ClaudeRuntimeReadiness,
+    ClaudeLoginService,
     ChatgptProviderAdapter,
   ],
 })
