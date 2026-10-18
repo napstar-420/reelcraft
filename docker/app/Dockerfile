@@ -53,6 +53,8 @@ FROM ${RUNTIME_IMAGE} AS runtime
 ARG TARGETARCH
 ARG S6_OVERLAY_VERSION=3.2.1.0
 ARG CODEX_VERSION=0.160.0
+# Claude Code: the `claude` CLI behind the Claude provider and assistant.
+ARG CLAUDE_CODE_VERSION=2.1.286
 ARG REELCRAFT_VERSION=dev
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -83,7 +85,8 @@ RUN case "${TARGETARCH:-amd64}" in \
  && curl -fsSL "${base}/s6-overlay-noarch.tar.xz" | tar -C / -Jxp \
  && curl -fsSL "${base}/s6-overlay-${s6arch}.tar.xz" | tar -C / -Jxp
 
-RUN npm install -g "@openai/codex@${CODEX_VERSION}" && npm cache clean --force
+RUN npm install -g "@openai/codex@${CODEX_VERSION}" "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
+ && npm cache clean --force
 
 COPY --from=minio /go/bin/minio /usr/local/bin/minio
 COPY --from=inngest /usr/bin/inngest /usr/local/bin/inngest
@@ -141,6 +144,8 @@ ENV PATH=/usr/lib/postgresql/16/bin:${PATH} \
     INNGEST_SYNC_ON_BOOT=true \
     WORKSPACE_ROOT=/data/workspace \
     CODEX_HOME=/data/codex \
+    CLAUDE_CONFIG_DIR=/data/claude \
+    DISABLE_AUTOUPDATER=1 \
     QWEN_TTS_SOURCE_DIR=/opt/reelcraft/qwen-tts \
     QWEN_TTS_HOME=/data/qwen-tts \
     UV_CACHE_DIR=/data/qwen-tts/cache \

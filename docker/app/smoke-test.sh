@@ -56,6 +56,11 @@ echo "    $health"
 step "serving the web app"
 curl -fsS "${base}/" | grep -q '<div id="root">' || fail "web app index not served"
 
+step "checking the agent CLIs run as the API user"
+docker exec -u reelcraft "$name" codex --version >/dev/null || fail "codex is missing from the image"
+docker exec -u reelcraft "$name" claude --version >/dev/null || fail "claude is missing from the image"
+[ "$(docker exec "$name" stat -c %U /data/claude)" = reelcraft ] || fail "/data/claude is not owned by reelcraft"
+
 step "checking uv and the Qwen3-TTS setup"
 docker exec "$name" uv --version >/dev/null || fail "uv is missing from the image"
 docker exec -u reelcraft "$name" uv --version >/dev/null || fail "the app user cannot run uv"
