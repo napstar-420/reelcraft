@@ -13,6 +13,8 @@ import { AssistantController } from './assistant.controller';
 import { AssistantService } from './assistant.service';
 import { ASSISTANT_AGENTS } from './agent/assistant-agent.interface';
 import { CodexAssistantAgent } from './agent/codex-assistant.agent';
+import { ClaudeAssistantAgent } from './agent/claude-assistant.agent';
+import { EngineConfig } from '../config/engine-config';
 import { CodexAppServerClient } from '../provider/codex/codex-app-server.client';
 import { CodexNeoRegistrar } from '../provider/codex/codex-neo-registrar';
 
@@ -34,12 +36,17 @@ import { CodexNeoRegistrar } from '../provider/codex/codex-neo-registrar';
   controllers: [AssistantController],
   providers: [
     AssistantService,
-    // Codex first; a Claude agent would be added to this list.
+    // The order is the default: a new chat starts on the first available agent.
     {
       provide: ASSISTANT_AGENTS,
-      inject: [CodexAppServerClient, CodexNeoRegistrar],
-      useFactory: (models: CodexAppServerClient, registrar: CodexNeoRegistrar) => [
+      inject: [CodexAppServerClient, CodexNeoRegistrar, EngineConfig],
+      useFactory: (
+        models: CodexAppServerClient,
+        registrar: CodexNeoRegistrar,
+        config: EngineConfig,
+      ) => [
         new CodexAssistantAgent({ models, registrar }),
+        new ClaudeAssistantAgent({ workspaceRoot: config.workspaceRoot }),
       ],
     },
   ],

@@ -55,7 +55,11 @@ type ItemRow = typeof assistantItem.$inferSelect;
 /** A turn that runs longer than this is stopped and marked failed. */
 export const TURN_TIMEOUT_MS = 20 * 60 * 1000;
 
-const PROVIDER_LABELS: Record<string, string> = { codex: 'Codex', fake: 'Fake (test)' };
+const PROVIDER_LABELS: Record<string, string> = {
+  codex: 'Codex',
+  claude: 'Claude',
+  fake: 'Fake (test)',
+};
 
 /**
  * The blueprint assistant's chats. A turn runs in this process, not through Inngest: it isn't run
