@@ -45,7 +45,7 @@ export class BrowserAutomateCapability implements CapabilityImpl<BrowserAutomati
   readonly kind = 'async' as const;
   readonly label = 'Automate Browser';
   readonly description =
-    'Use Codex with BrowserOS Neo and its persistent signed-in browser profile. Returns data, or files it downloads (audio, images, videos).';
+    'Use Codex or Claude with BrowserOS Neo and its persistent signed-in browser profile. Returns data, or files it downloads (audio, images, videos).';
   readonly configSchema: JsonSchema = {
     type: 'object',
     properties: {

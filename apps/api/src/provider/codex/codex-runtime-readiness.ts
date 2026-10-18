@@ -4,7 +4,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { Modality } from '@reelcraft/shared';
 import { EngineConfig } from '../../config/engine-config';
 import { SettingsService } from '../../settings/settings.service';
-import { browserOsFetch, browserOsHostHeaders } from '../chatgpt/browseros-host';
+import { browserOsReachable } from '../chatgpt/browseros-host';
 
 const execFileAsync = promisify(execFile);
 
@@ -104,19 +104,10 @@ export class CodexRuntimeReadiness {
   }
 
   private async browserOsReachable(): Promise<boolean> {
-    try {
-      const url = await this.settings.browserOsUrl();
-      const response = await browserOsFetch(url, {
-        method: 'GET',
-        headers: browserOsHostHeaders(url),
-        signal: AbortSignal.timeout(this.config.codexReadinessTimeoutMs),
-      });
-      if (response.status >= 500)
-        this.logger.warn({ statusCode: response.status }, 'browseros health check failed');
-      return response.status < 500;
-    } catch (error) {
-      this.logger.warn({ err: error }, 'browseros unreachable');
-      return false;
-    }
+    const url = await this.settings.browserOsUrl().catch(() => undefined);
+    const reachable =
+      url !== undefined && (await browserOsReachable(url, this.config.codexReadinessTimeoutMs));
+    if (!reachable) this.logger.warn('browseros unreachable');
+    return reachable;
   }
 }

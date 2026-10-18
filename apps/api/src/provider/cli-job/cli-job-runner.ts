@@ -1,10 +1,11 @@
 import { spawn } from 'node:child_process';
 import { open, readFile, rename, unlink, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
+import { claudeDialect } from '../claude/claude-command';
 import { codexDialect } from '../codex/codex-command';
 import type { CliDialect, CliEvent, CliKind, CliRunnerManifest } from './cli-dialect';
 
-const DIALECTS: Partial<Record<CliKind, CliDialect>> = { codex: codexDialect };
+const DIALECTS: Record<CliKind, CliDialect> = { codex: codexDialect, claude: claudeDialect };
 
 async function atomicJson(path: string, value: unknown): Promise<void> {
   const temp = `${path}.${process.pid}.tmp`;
@@ -33,7 +34,6 @@ async function main(): Promise<void> {
   await unlink(manifestPath);
   const manifest = JSON.parse(manifestJson) as CliRunnerManifest;
   const dialect = DIALECTS[manifest.cli ?? 'codex'];
-  if (!dialect) throw new Error(`Unknown CLI "${manifest.cli}"`);
   const statusPath = join(manifest.jobDir, 'status.json');
   const releaseBrowserLock =
     manifest.modality === 'browser' ? await acquireBrowserLock(manifest) : undefined;

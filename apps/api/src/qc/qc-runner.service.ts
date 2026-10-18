@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { JobHandle, JobStatus, ModelPin } from '@reelcraft/shared';
-import { ProviderRegistry } from '../provider/provider.registry';
+import { ProviderRegistry, SELF_INSPECTING_PROVIDERS } from '../provider/provider.registry';
 import type { QcEnvelope } from './qc-envelope';
 import { buildQcPrompt } from './qc-prompt';
 import { JudgeResponse, qcVerdictSchema, weightedScore } from './qc-verdict';
@@ -121,10 +121,10 @@ export class QcRunner {
         };
     }
     const prompt = buildQcPrompt(args.envelope);
-    const browserOrCodex = args.judge.provider === 'chatgpt' || args.judge.provider === 'codex';
-    const params = browserOrCodex
-      ? { ...args.judge.params }
-      : { ...args.judge.params, temperature: 0 };
+    // ChatGPT and the agent CLIs take no temperature and want the verdict schema in the request.
+    const agentJudge =
+      args.judge.provider === 'chatgpt' || SELF_INSPECTING_PROVIDERS.has(args.judge.provider);
+    const params = agentJudge ? { ...args.judge.params } : { ...args.judge.params, temperature: 0 };
 
     try {
       const handle = await adapter.submit(
@@ -134,7 +134,7 @@ export class QcRunner {
           params: qcParams(params, args.envelope, args.judge.provider),
           renderedPrompt: prompt.user,
           system: prompt.system,
-          ...(browserOrCodex && {
+          ...(agentJudge && {
             output: {
               kind: 'data' as const,
               schemaName: 'qc_verdict',
@@ -224,7 +224,7 @@ export class QcRunner {
 
 /** The judge's request params: the attached image or audio, or a clip list's
  * videos or an image list's images. A judge given clips must open the files
- * itself (`__inspectFiles`); so must Codex given images, while other judges
+ * itself (`__inspectFiles`); so must Codex or Claude given images, while other judges
  * get the images attached. */
 function qcParams(
   params: Record<string, unknown>,
@@ -252,8 +252,8 @@ function qcParams(
   if (envelope.images?.length) {
     return {
       ...params,
-      // Codex can't be sent files; it opens them itself. Other judges get them attached.
-      ...(judgeProvider === 'codex' && { __inspectFiles: true }),
+      // The agent CLIs can't be sent files; they open them themselves. Other judges get them attached.
+      ...(SELF_INSPECTING_PROVIDERS.has(judgeProvider) && { __inspectFiles: true }),
       slots: {
         ...Object.fromEntries(
           envelope.images.map((image, i) => [`qcImage${i + 1}`, { sourceKey: image.sourceKey }]),
@@ -265,7 +265,7 @@ function qcParams(
   return envelope.media
     ? {
         ...params,
-        ...(judgeProvider === 'codex' &&
+        ...(SELF_INSPECTING_PROVIDERS.has(judgeProvider) &&
           Object.keys(referenceSlots).length && { __inspectFiles: true }),
         slots: { qcArtifact: { sourceKey: envelope.media.sourceKey }, ...referenceSlots },
       }

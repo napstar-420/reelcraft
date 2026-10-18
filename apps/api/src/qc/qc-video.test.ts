@@ -10,8 +10,8 @@ const providers = (kinds: string[] | 'throw') =>
   }) as never;
 
 describe('judgeWatchesVideo', () => {
-  it('always accepts Codex, which opens the files itself', async () => {
-    expect(await judgeWatchesVideo(providers([]), { provider: 'codex', modelId: 'x' })).toBe(true);
+  it.each(['codex', 'claude'])('always accepts %s, which opens the files itself', async (id) => {
+    expect(await judgeWatchesVideo(providers([]), { provider: id, modelId: 'x' })).toBe(true);
   });
   it('accepts a model that declares video input', async () => {
     expect(

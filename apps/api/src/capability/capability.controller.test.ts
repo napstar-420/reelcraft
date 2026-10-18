@@ -118,6 +118,7 @@ describe('CapabilityController.resolve', () => {
 
 describe('CapabilityController.listProviders', () => {
   const adapters: Record<string, string[]> = {
+    claude: ['text', 'browser'],
     codex: ['text', 'image', 'browser'],
     fal: ['video'],
     openrouter: ['text'],
@@ -134,12 +135,13 @@ describe('CapabilityController.listProviders', () => {
   );
 
   it('lists every provider without a modality', () => {
-    expect(controller.listProviders()).toEqual(['codex', 'fal', 'openrouter']);
+    expect(controller.listProviders()).toEqual(['claude', 'codex', 'fal', 'openrouter']);
   });
 
   it('keeps only the providers that support the requested modality', () => {
-    expect(controller.listProviders('browser')).toEqual(['codex']);
-    expect(controller.listProviders('text')).toEqual(['codex', 'openrouter']);
+    expect(controller.listProviders('browser')).toEqual(['claude', 'codex']);
+    expect(controller.listProviders('text')).toEqual(['claude', 'codex', 'openrouter']);
+    expect(controller.listProviders('image')).toEqual(['codex']);
     expect(controller.listProviders('audio')).toEqual([]);
   });
 });

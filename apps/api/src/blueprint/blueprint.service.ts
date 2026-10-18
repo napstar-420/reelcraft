@@ -790,7 +790,7 @@ export class BlueprintService {
         continue;
       }
       // Flow uploads references as browser ingredients, so its limit is the
-      // Codex browser job's input cap, not the model's image-generation one.
+      // agent CLI browser job's input cap, not the model's image-generation one.
       const maxRefs = stageReferenceLimit(stage.capability, info?.capabilities);
       if (maxRefs === undefined || (!info && stage.capability !== 'browser.flow_video')) {
         issues.push({

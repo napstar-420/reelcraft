@@ -20,7 +20,8 @@
     "acceptance:codex": "pnpm build && node test/acceptance/codex-provider.mjs",
     "acceptance:codex-image": "pnpm build && node test/acceptance/codex-image.mjs",
     "acceptance:codex-browser": "pnpm build && node test/acceptance/codex-browseros.mjs",
-    "acceptance:codex-assistant": "pnpm build && node test/acceptance/codex-assistant.mjs"
+    "acceptance:codex-assistant": "pnpm build && node test/acceptance/codex-assistant.mjs",
+    "acceptance:claude": "pnpm build && node test/acceptance/claude-provider.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.716.0",
