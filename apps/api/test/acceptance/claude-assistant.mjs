@@ -115,11 +115,9 @@ function png(w, h, [r, g, b]) {
   ]);
 }
 
-let models = [];
 const agent = makeAgent();
 const reason = await agent.unavailableReason();
 if (reason) throw new Error(`Claude is not ready: ${reason}`);
-models = await agent.listModels();
 
 try {
   const sessionId = await agent.startSession({ instructions, tools });
