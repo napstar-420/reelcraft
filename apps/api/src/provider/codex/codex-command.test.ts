@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { buildCodexArgs, buildCodexPrompt, strictJsonSchema, toTomlValue } from './codex-command';
+import { buildJobPrompt } from '../cli-job/cli-job-prompt';
+import { buildCodexArgs, strictJsonSchema, toTomlValue } from './codex-command';
 
 describe('Codex command construction', () => {
   it('keeps normal jobs ephemeral and resumes only retained text jobs', () => {
@@ -109,7 +110,7 @@ describe('Codex command construction', () => {
   });
 
   it('tells a browser job about its input files and persistent progress directory', () => {
-    const prompt = buildCodexPrompt({
+    const prompt = buildJobPrompt({
       modality: 'browser',
       params: {
         __referenceFiles: ['inputs/1-a.png'],
@@ -123,9 +124,9 @@ describe('Codex command construction', () => {
   });
 
   it('asks an image job for the whole list when several images are wanted', () => {
-    const one = buildCodexPrompt({ modality: 'image', params: {} });
+    const one = buildJobPrompt({ modality: 'image', params: {} });
     expect(one).toContain('Write exactly one final image');
-    const several = buildCodexPrompt({ modality: 'image', params: { count: 3 } });
+    const several = buildJobPrompt({ modality: 'image', params: { count: 3 } });
     expect(several).toContain('Make 3 different final images');
     expect(several).toContain('"images" list of 3 entries');
     expect(several).not.toContain('exactly one final image');
@@ -145,16 +146,16 @@ describe('Codex command construction', () => {
   });
 
   it('tells a text judge to open its input files itself', () => {
-    const prompt = buildCodexPrompt({
+    const prompt = buildJobPrompt({
       modality: 'text',
       params: { __referenceFiles: ['inputs/1-a.mp4', 'inputs/2-b.mp4'] },
     });
     expect(prompt).toContain('Files to inspect, in order: inputs/1-a.mp4, inputs/2-b.mp4');
-    expect(buildCodexPrompt({ modality: 'text' })).not.toContain('Files to inspect');
+    expect(buildJobPrompt({ modality: 'text' })).not.toContain('Files to inspect');
   });
 
   it('delimits system, user, and output requirements', () => {
-    const prompt = buildCodexPrompt({
+    const prompt = buildJobPrompt({
       modality: 'text',
       system: 'Research carefully.',
       renderedPrompt: 'Find the answer.',

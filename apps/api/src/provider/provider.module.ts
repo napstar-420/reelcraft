@@ -19,10 +19,10 @@ import { EngineConfig } from '../config/engine-config';
 import { SETTING, SettingsService } from '../settings/settings.service';
 import { SettingsModule } from '../settings/settings.module';
 import { CodexAppServerClient } from './codex/codex-app-server.client';
-import { CodexJobLauncher } from './codex/codex-job-launcher';
+import { CliJobLauncher } from './cli-job/cli-job-launcher';
 import { CodexProviderAdapter } from './codex/codex-provider.adapter';
 import { CodexRuntimeReadiness } from './codex/codex-runtime-readiness';
-import { CodexInputMaterializer } from './codex/codex-input-materializer';
+import { CliInputMaterializer } from './cli-job/cli-input-materializer';
 import { NeoClient } from './chatgpt/neo-client';
 import { CodexLoginService } from './codex/codex-login.service';
 import { CodexNeoRegistrar } from './codex/codex-neo-registrar';
@@ -53,9 +53,9 @@ import { ChatgptProviderAdapter } from './chatgpt/chatgpt-provider.adapter';
     },
     DeepgramInboxService,
     CodexAppServerClient,
-    CodexJobLauncher,
+    CliJobLauncher,
     CodexRuntimeReadiness,
-    CodexInputMaterializer,
+    CliInputMaterializer,
     NeoClient,
     ChatgptProviderAdapter,
     {
@@ -79,16 +79,16 @@ import { ChatgptProviderAdapter } from './chatgpt/chatgpt-provider.adapter';
       inject: [
         EngineConfig,
         CodexAppServerClient,
-        CodexJobLauncher,
+        CliJobLauncher,
         CodexRuntimeReadiness,
-        CodexInputMaterializer,
+        CliInputMaterializer,
       ],
       useFactory: (
         config: EngineConfig,
         models: CodexAppServerClient,
-        launcher: CodexJobLauncher,
+        launcher: CliJobLauncher,
         readiness: CodexRuntimeReadiness,
-        inputs: CodexInputMaterializer,
+        inputs: CliInputMaterializer,
       ) => new CodexProviderAdapter(config, models, launcher, readiness, inputs),
     },
   ],

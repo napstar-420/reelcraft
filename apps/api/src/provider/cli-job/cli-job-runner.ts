@@ -1,23 +1,10 @@
 import { spawn } from 'node:child_process';
 import { open, readFile, rename, unlink, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { buildCodexArgs } from './codex-command';
+import { codexDialect } from '../codex/codex-command';
+import type { CliDialect, CliEvent, CliKind, CliRunnerManifest } from './cli-dialect';
 
-interface Manifest {
-  modelId: string;
-  reasoningEffort: string;
-  jobDir: string;
-  resultPath: string;
-  outputSchemaPath?: string;
-  modality: 'text' | 'image' | 'browser';
-  profile: string;
-  timeoutMs: number;
-  browserMaxSteps: number;
-  params: Record<string, unknown>;
-  prompt: string;
-  retained?: boolean;
-  threadId?: string;
-}
+const DIALECTS: Partial<Record<CliKind, CliDialect>> = { codex: codexDialect };
 
 async function atomicJson(path: string, value: unknown): Promise<void> {
   const temp = `${path}.${process.pid}.tmp`;
@@ -30,12 +17,23 @@ function appendBounded(current: string, chunk: unknown, limit: number): string {
   return next.length <= limit ? next : next.slice(-limit);
 }
 
+function parseEvent(line: string): CliEvent | undefined {
+  try {
+    const event = JSON.parse(line) as unknown;
+    return event && typeof event === 'object' ? (event as CliEvent) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 async function main(): Promise<void> {
   const manifestPath = process.argv[2];
-  if (!manifestPath) throw new Error('Codex runner requires a manifest path');
+  if (!manifestPath) throw new Error('CLI job runner requires a manifest path');
   const manifestJson = await readFile(manifestPath, 'utf8');
   await unlink(manifestPath);
-  const manifest = JSON.parse(manifestJson) as Manifest;
+  const manifest = JSON.parse(manifestJson) as CliRunnerManifest;
+  const dialect = DIALECTS[manifest.cli ?? 'codex'];
+  if (!dialect) throw new Error(`Unknown CLI "${manifest.cli}"`);
   const statusPath = join(manifest.jobDir, 'status.json');
   const releaseBrowserLock =
     manifest.modality === 'browser' ? await acquireBrowserLock(manifest) : undefined;
@@ -51,7 +49,7 @@ async function main(): Promise<void> {
     pid: process.pid,
     startedAt: new Date().toISOString(),
   });
-  const child = spawn('codex', buildCodexArgs(manifest), {
+  const child = spawn(dialect.command, await dialect.args(manifest), {
     cwd: manifest.jobDir,
     stdio: ['pipe', 'pipe', 'pipe'],
     env: process.env,
@@ -62,41 +60,33 @@ async function main(): Promise<void> {
   let browserSteps = 0;
   let browserStepLimitExceeded = false;
   let threadWrite: Promise<void> | undefined;
+  let result: { text: string } | { error: string } | undefined;
+  const onLine = (line: string) => {
+    const event = parseEvent(line);
+    if (event && manifest.retained && !manifest.threadId && !threadWrite) {
+      const threadId = dialect.sessionId(event);
+      if (threadId && /^[a-f0-9-]{36}$/i.test(threadId)) {
+        threadWrite = atomicJson(join(manifest.jobDir, 'thread.json'), {
+          threadId,
+          createdAt: new Date().toISOString(),
+        });
+      }
+    }
+    if (event && dialect.result) result = dialect.result(event, manifest) ?? result;
+    if (manifest.modality === 'browser') {
+      browserSteps += dialect.browserSteps(line, event);
+      if (browserSteps > manifest.browserMaxSteps && !browserStepLimitExceeded) {
+        browserStepLimitExceeded = true;
+        child.kill('SIGTERM');
+      }
+    }
+  };
   child.stdout.on('data', (chunk) => {
     events = appendBounded(events, chunk, 1024 * 1024);
     eventBuffer += String(chunk);
     const lines = eventBuffer.split('\n');
     eventBuffer = lines.pop() ?? '';
-    for (const line of lines) {
-      if (manifest.retained && !manifest.threadId && !threadWrite) {
-        try {
-          const event = JSON.parse(line) as { type?: string; thread_id?: unknown };
-          if (
-            event.type === 'thread.started' &&
-            typeof event.thread_id === 'string' &&
-            /^[a-f0-9-]{36}$/i.test(event.thread_id)
-          ) {
-            threadWrite = atomicJson(join(manifest.jobDir, 'thread.json'), {
-              threadId: event.thread_id,
-              createdAt: new Date().toISOString(),
-            });
-          }
-        } catch {
-          /* non-JSON event */
-        }
-      }
-      if (
-        manifest.modality === 'browser' &&
-        /browseros-neo/i.test(line) &&
-        /(mcp_tool_call|tool_call|tool\.started)/i.test(line)
-      ) {
-        browserSteps += 1;
-        if (browserSteps > manifest.browserMaxSteps) {
-          browserStepLimitExceeded = true;
-          child.kill('SIGTERM');
-        }
-      }
-    }
+    for (const line of lines) onLine(line);
   });
   child.stderr.on('data', (chunk) => {
     stderr = appendBounded(stderr, chunk, 64 * 1024);
@@ -115,6 +105,7 @@ async function main(): Promise<void> {
     },
   ).catch((error: Error) => ({ code: -1, signal: null, error }));
   clearTimeout(timeout);
+  if (eventBuffer.trim()) onLine(eventBuffer);
   await threadWrite?.catch(() => undefined);
   await releaseBrowserLock?.();
   process.removeListener('SIGTERM', releaseOnSignal);
@@ -122,20 +113,27 @@ async function main(): Promise<void> {
   await atomicJson(join(manifest.jobDir, 'events-summary.json'), summarizeEvents(events));
   await writeFile(join(manifest.jobDir, 'events.log'), redact(events), { mode: 0o600 });
   await writeFile(join(manifest.jobDir, 'stderr.log'), redact(stderr), { mode: 0o600 });
-  if (exit.code === 0) {
+  let reason: string | undefined;
+  if (timedOut) reason = `${dialect.label} job exceeded the ${manifest.timeoutMs}ms timeout`;
+  else if (browserStepLimitExceeded)
+    reason = `BrowserOS Neo exceeded the ${manifest.browserMaxSteps} step limit`;
+  else if ('error' in exit) reason = exit.error.message;
+  else if (result && 'error' in result) reason = result.error;
+  else if (exit.code !== 0)
+    reason = dialect.failureReason(
+      events,
+      stderr,
+      `${dialect.label} exited with ${exit.code ?? exit.signal}`,
+    );
+  else if (dialect.result && !result) reason = `${dialect.label} finished without a result`;
+  else if (result) await writeFile(manifest.resultPath, result.text, { mode: 0o600 });
+  if (reason === undefined) {
     await atomicJson(statusPath, {
       state: 'succeeded',
       exitCode: 0,
       finishedAt: new Date().toISOString(),
     });
   } else {
-    const reason = timedOut
-      ? `Codex job exceeded the ${manifest.timeoutMs}ms timeout`
-      : browserStepLimitExceeded
-        ? `BrowserOS Neo exceeded the ${manifest.browserMaxSteps} step limit`
-        : 'error' in exit
-          ? exit.error.message
-          : codexFailureReason(events, stderr, `Codex exited with ${exit.code ?? exit.signal}`);
     await atomicJson(statusPath, {
       state: 'failed',
       exitCode: exit.code,
@@ -145,8 +143,10 @@ async function main(): Promise<void> {
   }
 }
 
-async function acquireBrowserLock(manifest: Manifest): Promise<() => Promise<void>> {
-  const lockPath = join(dirname(manifest.jobDir), 'browseros-neo.lock');
+/** One BrowserOS Neo session is shared by every CLI, so the lock lives in the
+ * workspace root, above each CLI's jobs directory. */
+async function acquireBrowserLock(manifest: CliRunnerManifest): Promise<() => Promise<void>> {
+  const lockPath = join(dirname(dirname(manifest.jobDir)), 'browseros-neo.lock');
   const deadline = Date.now() + manifest.timeoutMs;
   while (Date.now() < deadline) {
     try {
@@ -194,36 +194,6 @@ function summarizeEvents(events: string): Record<string, number> {
     }
   }
   return summary;
-}
-
-function codexFailureReason(events: string, stderr: string, fallback: string): string {
-  for (const line of events.split('\n').reverse()) {
-    try {
-      const event = JSON.parse(line) as {
-        type?: string;
-        message?: unknown;
-        error?: { message?: unknown };
-      } | null;
-      if (event?.type !== 'error' && event?.type !== 'turn.failed') continue;
-      const message = event.error?.message ?? event.message;
-      if (typeof message !== 'string' || !message.trim()) continue;
-      // Codex can encode the provider's JSON error inside the event's message.
-      try {
-        const detail = JSON.parse(message) as {
-          message?: unknown;
-          error?: { message?: unknown };
-        } | null;
-        const nested = detail?.error?.message ?? detail?.message;
-        if (typeof nested === 'string' && nested.trim()) return nested.trim();
-      } catch {
-        // Plain text errors already contain the useful message.
-      }
-      return message.trim();
-    } catch {
-      // Ignore incomplete or non-JSON output when looking for a failure event.
-    }
-  }
-  return stderr.trim() || fallback;
 }
 
 function redact(text: string): string {

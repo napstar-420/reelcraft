@@ -7,12 +7,13 @@ import { STORAGE_ADAPTER, type StorageAdapter } from '../../storage/storage.adap
 import { collectSourceKeys } from '../source-keys';
 
 @Injectable()
-export class CodexInputMaterializer {
+export class CliInputMaterializer {
   constructor(@Inject(STORAGE_ADAPTER) private readonly storage: StorageAdapter) {}
 
   async materialize(jobDir: string, slots: unknown, max = 5): Promise<string[]> {
     const sourceKeys = collectSourceKeys(slots);
-    if (sourceKeys.length > max) throw new Error(`Codex accepts at most ${max} reference files`);
+    if (sourceKeys.length > max)
+      throw new Error(`This stage accepts at most ${max} reference files`);
     const inputDir = join(jobDir, 'inputs');
     await mkdir(inputDir, { mode: 0o700 });
     const paths: string[] = [];

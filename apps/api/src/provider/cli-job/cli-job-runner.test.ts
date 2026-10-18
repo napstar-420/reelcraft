@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('node:child_process', () => ({ spawn: mocks.spawn }));
 vi.mock('node:fs/promises', () => ({ ...mocks, open: vi.fn() }));
 
-describe('Codex job runner failure reporting', () => {
+describe('CLI job runner with Codex', () => {
   const originalArgv = process.argv;
   const originalExitCode = process.exitCode;
 
@@ -24,7 +24,7 @@ describe('Codex job runner failure reporting', () => {
   beforeEach(() => {
     vi.resetModules();
     vi.resetAllMocks();
-    process.argv = [process.execPath, 'codex-job-runner.js', '/tmp/codex-job/runner-request.json'];
+    process.argv = [process.execPath, 'cli-job-runner.js', '/tmp/codex-job/runner-request.json'];
     mocks.readFile.mockResolvedValue(
       JSON.stringify({
         modelId: 'gpt-example',
@@ -63,7 +63,7 @@ describe('Codex job runner failure reporting', () => {
       });
     });
 
-    await import('./codex-job-runner');
+    await import('./cli-job-runner');
     let status: { reason: string } | undefined;
     await vi.waitFor(() => {
       const call = mocks.writeFile.mock.calls.find(
@@ -142,7 +142,7 @@ describe('Codex job runner failure reporting', () => {
         child.emit('close', 0, null);
       }),
     );
-    await import('./codex-job-runner');
+    await import('./cli-job-runner');
     await vi.waitFor(() =>
       expect(
         mocks.writeFile.mock.calls.some(
