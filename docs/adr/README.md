@@ -22,5 +22,6 @@ one, take the next number, and add a row here. Supersede an ADR instead of editi
 | [0013](0013-managed-qwen3-tts.md)                              | Reelcraft installs and runs the Qwen3-TTS service itself, on request           | accepted                             | 2026-10-14 |
 | [0014](0014-dependency-derived-scheduling-in-waves.md)         | Stages are scheduled from their dependencies, in waves                         | accepted                             | 2026-10-14 |
 | [0015](0015-layered-videos-from-generic-blocks.md)             | Layered videos are built from generic blocks, not from a style                 | accepted                             | 2026-10-15 |
+| [0016](0016-claude-through-claude-code-cli.md)                 | Claude runs through the Claude Code CLI, signed in with the user's Claude plan | accepted                             | 2026-10-18 |
 
 ADRs 0001–0007 were decided during the self-hosting work in October 2026 and recorded together on 2026-10-03, so the dates are when they were written down.

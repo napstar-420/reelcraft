@@ -191,7 +191,7 @@ export function AssistantPanel({ assistant }: { assistant: AssistantController }
               </Link>
               {' · '}
               <a
-                href={docsUrl(assistant.provider?.id === 'claude' ? 'claude' : 'codex')}
+                href={docsUrl(assistant.provider?.id === 'claude' ? 'claude-code' : 'codex')}
                 target="_blank"
                 rel="noreferrer"
                 className="underline underline-offset-2"

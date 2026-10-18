@@ -7,8 +7,9 @@ The **Assistant** builds and edits a blueprint for you. Describe what you want (
 reel: script, voice-over, one image per scene, then render") and it proposes the stages, wired together
 and checked, for you to apply.
 
-It uses **Codex**, so you need to [connect Codex](../codex.md) first. If Codex isn't connected, the
-Assistant tab says so and links to **Settings**.
+It runs on **Codex** or **Claude**, so you need to [connect Codex](../codex.md) or
+[connect Claude](../claude-code.md) first. If the one you picked isn't connected, the Assistant tab
+says so and links to **Settings**.
 
 ## Open it
 
@@ -16,8 +17,11 @@ On the blueprint's canvas, open the **Assistant** tab in the panel next to the c
 you'll see a few example requests. Pick one or type your own and press **Enter**
 (**Shift + Enter** starts a new line).
 
-Pick the **Model** and its **Effort** at the top. They start as the model set in your Codex
-configuration. A higher effort is slower and uses more of your ChatGPT plan.
+When both are connected, pick **Codex** or **Claude** in the provider menu at the top. A chat keeps
+the provider it started with: switching starts a new chat.
+
+Pick the **Model** and its **Effort** next to it. On Codex they start as the model set in your Codex
+configuration; on Claude, as Claude Sonnet. A higher effort is slower and uses more of your plan.
 
 ## What it does, and what it can't
 
@@ -91,10 +95,10 @@ chat started**. Select **Start new chat** so the assistant uses the new version'
 ## Good to know
 
 - The assistant sees this blueprint, its channel's defaults, assets and characters, and your
-  conversation. That text goes to Codex, under your ChatGPT plan's terms. Your provider keys and
-  settings never do.
+  conversation. That text goes to Codex or Claude, under your ChatGPT or Claude plan's terms. Your
+  provider keys and settings never do.
 - It works with the blueprint on the canvas, including edits you haven't saved. While you view an older
   version, the assistant is switched off.
-- Codex usage counts against your ChatGPT plan, and a long chat uses more of it than a short one.
-- If a request fails with a message from Codex, such as a model that isn't available to your account,
+- Usage counts against your ChatGPT or Claude plan, and a long chat uses more of it than a short one.
+- If a request fails with a message from Codex or Claude, such as a model that isn't available to your account,
   pick another **Model** and send it again.

@@ -1,9 +1,9 @@
 ---
 title: Automate Browser
-description: Let Codex use a signed-in browser to do a task for you.
+description: Let Codex or Claude use a signed-in browser to do a task for you.
 ---
 
-**Automate Browser** gives Codex a real web browser, with your **signed-in profile**, to carry out a
+**Automate Browser** gives Codex or Claude a real web browser, with your **signed-in profile**, to carry out a
 task, such as collecting information from a website you're logged in to, or finding and downloading
 a sound effect, a piece of music or an image.
 
@@ -33,7 +33,8 @@ several single files, iterate a stage with one file output instead.
 
 ## Providers and models
 
-**Codex** with **BrowserOS Neo**. Both need setting up first: see [Connect Codex](../codex.md) and
+**Codex** or **Claude**, with **BrowserOS Neo**. Both need setting up first: see
+[Connect Codex](../codex.md) or [Connect Claude](../claude-code.md), and
 [BrowserOS Neo](../browseros-neo.md). If either isn't ready, the model picker says why.
 
 ## Inputs
@@ -70,7 +71,8 @@ suitable file or the licence isn't clear, the stage fails with the reason it giv
 
 ## Cost
 
-Uses your ChatGPT plan through Codex. There's no per-use bill from Reelcraft.
+Uses your ChatGPT plan through Codex, or your Claude plan through Claude. There's no per-use bill from
+Reelcraft.
 
 ## Tips
 

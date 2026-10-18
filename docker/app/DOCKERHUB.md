@@ -36,7 +36,7 @@ Reelcraft works out of the box with a free test provider. Open **Settings** in i
 - connect Codex with your ChatGPT plan
   ([guide](https://napstar-420.github.io/reelcraft/docs/codex));
 - connect Claude with your Claude plan
-  ([guide](https://napstar-420.github.io/reelcraft/docs/claude)).
+  ([guide](https://napstar-420.github.io/reelcraft/docs/claude-code)).
 
 Keys can also be set as environment variables (`OPENROUTER_API_KEY`, `FAL_KEY`,
 `ELEVENLABS_API_KEY`, `DEEPGRAM_API_KEY`), which take priority over saved ones.

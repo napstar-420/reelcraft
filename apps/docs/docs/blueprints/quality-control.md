@@ -93,8 +93,8 @@ A [Generate Video with Flow](../stage-types/generate-video-with-flow.md) stage m
 quality control can judge it. The judge **watches every clip, in order**, and gives one score for the
 whole set.
 
-- The judge must be able to watch video. **Codex** can: it opens the clips itself with its local tools,
-  so the machine running Codex needs **ffmpeg**. Any other model must accept video input. Otherwise the
+- The judge must be able to watch video. **Codex** and **Claude** can: they open the clips themselves
+  with their local tools, so the machine running them needs **ffmpeg** (the Reelcraft image has it). Any other model must accept video input. Otherwise the
   blueprint shows **This judge model can't watch video.**
 - The judge also names the clips that are wrong. On a failed score, the next attempt makes **only those
   clips again** and keeps the others, so you don't spend Flow credits on clips that were fine. The
@@ -111,8 +111,9 @@ together, in order**, and gives **one score for the whole set**.
 - The set is accepted or rejected **as a whole**. There is no per-image verdict. On a failed score the
   critique, which names any image that is a problem, is added to the next attempt's prompt, and the next
   attempt makes **every image again**.
-- The judge must be able to look at images, and at as many as the stage makes. **Codex** can: it opens the
-  files itself with its local tools, so the machine running Codex needs **ffmpeg**. Any other model must
+- The judge must be able to look at images, and at as many as the stage makes. **Codex** and **Claude**
+  can: they open the files themselves with their local tools, so the machine running them needs
+  **ffmpeg**. Any other model must
   accept image input, and some take only a few at once (a ChatGPT judge takes 5). Otherwise the blueprint
   shows **This judge model can't look at images.** or **This judge model can look at 5 images at a time,
   fewer than this stage makes.**

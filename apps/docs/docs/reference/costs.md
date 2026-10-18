@@ -23,11 +23,12 @@ on their sites.
 Every attempt costs, including ones that fail a check, fail quality control or are rejected. Redoing
 work costs again.
 
-## What uses your ChatGPT plan
+## What uses your ChatGPT or Claude plan
 
 **Codex** and **ChatGPT** models, including [Automate Browser](../stage-types/automate-browser.md), use
-your ChatGPT plan instead of a per-use bill. They count against your plan's own limits. See
-[Connect Codex](../codex.md) and [BrowserOS Neo](../browseros-neo.md).
+your ChatGPT plan instead of a per-use bill, and **Claude** models use your Claude plan. They count
+against your plan's own limits and are recorded as $0. See [Connect Codex](../codex.md),
+[Connect Claude](../claude-code.md) and [BrowserOS Neo](../browseros-neo.md).
 
 ## What is free
 

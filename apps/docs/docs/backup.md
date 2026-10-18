@@ -4,7 +4,7 @@ description: Save the Reelcraft volume to a file, restore it on another computer
 ---
 
 Everything Reelcraft keeps is in one Docker volume, `reelcraft-data`: your projects, media,
-settings, saved keys, the Codex sign-in, and the passwords Reelcraft generated on its first start
+settings, saved keys, the Codex and Claude sign-ins, and the passwords Reelcraft generated on its first start
 (`/data/secrets.env`). Backing up means saving that volume to a file.
 
 These commands run in a terminal: **PowerShell** on Windows, **Terminal** on macOS and Linux. They

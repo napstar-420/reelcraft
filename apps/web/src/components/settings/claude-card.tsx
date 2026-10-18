@@ -62,7 +62,7 @@ export function ClaudeCard() {
           Code. Connecting signs Claude Code in to your Claude account inside this Reelcraft
           installation. Claude can’t generate images.{' '}
           <a
-            href={docsUrl('claude')}
+            href={docsUrl('claude-code')}
             target="_blank"
             rel="noreferrer"
             className="inline-flex items-center gap-0.5 underline underline-offset-2"
