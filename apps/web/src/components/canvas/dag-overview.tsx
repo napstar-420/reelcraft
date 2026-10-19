@@ -56,7 +56,7 @@ export function DagOverview({
               key={stage.key}
               role="button"
               tabIndex={0}
-              aria-label={`Inspect ${stage.label}, ${stage.disabled ? 'disabled' : (execution?.state ?? 'pending')}`}
+              aria-label={`Inspect ${stage.label}, ${stage.disabled ? 'Disabled' : stageStatusLabel(execution?.state, isStale(stage.key))}`}
               onClick={() => onSelect(stage.key)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') {

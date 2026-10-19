@@ -106,11 +106,12 @@ export function executionEligibility(
     resume:
       !busy &&
       ['PAUSED_MANUAL', 'CANCELLED', 'FAILED', 'PAUSED_BUDGET', 'PAUSED_QUOTA'].includes(state),
-    // Stop ends live or paused work; a failed run has nothing left to stop.
+    // Stop ends live, paused or never-started work; a failed run has nothing left to stop.
     cancel: [
       'RUNNING',
       'PAUSING',
       'IDLE',
+      'CREATED',
       'PAUSED_MANUAL',
       'PAUSED_APPROVAL',
       'PAUSED_INPUT',

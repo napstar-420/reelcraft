@@ -361,11 +361,10 @@ function StageNodeView({ data, selected }: NodeProps<StageFlowNode>) {
           Disabled · outputs unavailable to descendants
         </p>
       )}
-      {(issues?.find((issue) => issue.severity === 'error')?.message ||
-        runStatus?.availableActions?.blockedReason) && (
+      {/* Why a stage can't run yet is not an error: its run buttons say it, quietly. */}
+      {issues?.find((issue) => issue.severity === 'error')?.message && (
         <p className="border-t px-3 py-2 text-xs text-destructive">
-          {issues?.find((issue) => issue.severity === 'error')?.message ??
-            runStatus?.availableActions?.blockedReason}
+          {issues.find((issue) => issue.severity === 'error')?.message}
         </p>
       )}
       {runStatus && (
