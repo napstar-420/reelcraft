@@ -434,6 +434,45 @@ describe('unified resumable execution', () => {
       plans.confirm(created.id, { ...plan.request, previewToken: plan.previewToken }),
     ).rejects.toThrow();
   });
+  it('keeps a production run on its saved version through stage actions; draftsOnly lists only test runs', async () => {
+    const { created, version } = await fixture([stage('a'), stage('b', ['a'])]);
+    await execute(created.id);
+    await drive(created.id, ['a', 'b']);
+    await execute(created.id, 'b', 'rerun');
+    const after = await runs.get(created.id);
+    expect(after.blueprintVersionId).toBe(version.id);
+    const blueprintId = version.blueprintId;
+    const draftVersion = await app.app.get(BlueprintService).createVersion(
+      blueprintId,
+      {
+        graph: [stage('a'), stage('b', ['a'])],
+        inputs: [],
+        roles: [],
+        defaults: {},
+        budget: { runCapUsd: 100 },
+      },
+      { draft: true },
+    );
+    const test = await runs.create({
+      channelId: after.channelId,
+      blueprintVersionId: draftVersion.id,
+      inputs: {},
+      roleBindings: {},
+      budgetCapUsd: 100,
+      rerunStageKeys: [],
+    });
+    const list = (draftsOnly: boolean) =>
+      runs.list({
+        blueprintId,
+        includeDryRuns: false,
+        includeDrafts: false,
+        draftsOnly,
+        limit: 20,
+        offset: 0,
+      });
+    expect((await list(true)).items.map((r) => r.id)).toEqual([test.id]);
+    expect((await list(false)).items.map((r) => r.id)).toEqual([created.id]);
+  });
   it('fences retired attempt admission and publication and binds concurrency changes to plan revisions', async () => {
     const { created } = await fixture([stage('a')]);
     await database.db.update(run).set({ state: 'RUNNING' }).where(eq(run.id, created.id));

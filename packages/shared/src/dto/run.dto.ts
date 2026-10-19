@@ -70,8 +70,6 @@ export const StageAvailableActions = z.object({
 });
 export type StageAvailableActions = z.infer<typeof StageAvailableActions>;
 export const RunAvailableActions = z.object({
-  runBlueprint: z.boolean(),
-  rerunBlueprint: z.boolean(),
   pause: z.boolean(),
   resume: z.boolean(),
   cancel: z.boolean(),
@@ -485,6 +483,8 @@ export const ListRunsQueryDto = z.object({
   state: RunState.optional(),
   includeDryRuns: z.coerce.boolean().optional().default(false),
   includeDrafts: z.coerce.boolean().optional().default(false),
+  /** Only test runs (draft snapshots): the canvas's run list. Implies includeDrafts. */
+  draftsOnly: z.coerce.boolean().optional(),
   limit: z.coerce.number().int().positive().max(100).optional().default(20),
   offset: z.coerce.number().int().nonnegative().optional().default(0),
 });

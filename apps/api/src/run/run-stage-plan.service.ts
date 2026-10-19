@@ -499,14 +499,20 @@ export class RunStagePlanService {
       async (tx, locked) => {
         if (locked.revision !== built.current.revision)
           throw new ConflictException('The run changed. Review a new preview.');
-        const snapshotId = ulid();
-        await tx.insert(blueprintVersion).values({
-          ...built.source,
-          id: snapshotId,
-          graph: built.graph,
-          draft: true,
-          createdAt: new Date().toISOString(),
-        });
+        // Only a changed graph needs a draft snapshot; an unchanged one keeps the run on its
+        // own version, so a production run stays pinned to the saved version it started from.
+        const graphChanged =
+          definitionKey(built.graph) !==
+          definitionKey(CreateBlueprintVersionDto.parse(built.source).graph);
+        const snapshotId = graphChanged ? ulid() : built.source.id;
+        if (graphChanged)
+          await tx.insert(blueprintVersion).values({
+            ...built.source,
+            id: snapshotId,
+            graph: built.graph,
+            draft: true,
+            createdAt: new Date().toISOString(),
+          });
         await this.invalidation.apply(tx, {
           runId,
           closure: built.preview.closure,
