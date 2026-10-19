@@ -61,7 +61,9 @@ export function TestRunControls({
           </Button>
         }
         startOver={
-          <DropdownMenuItem onSelect={() => setOpen(true)}>Start over (new test run)</DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => setOpen(true)}>
+            Start over (new test run)
+          </DropdownMenuItem>
         }
       />
       <RunLaunchDialog

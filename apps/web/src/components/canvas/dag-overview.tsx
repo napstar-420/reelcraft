@@ -88,7 +88,9 @@ export function DagOverview({
                 {stage.label.length > 20 ? stage.label.slice(0, 19) + '…' : stage.label}
               </text>
               <text x={p.x + 9} y={p.y + 39} fill="var(--muted-foreground)" fontSize="10">
-                {stage.disabled ? 'Disabled' : stageStatusLabel(execution?.state, isStale(stage.key))}
+                {stage.disabled
+                  ? 'Disabled'
+                  : stageStatusLabel(execution?.state, isStale(stage.key))}
               </text>
             </g>
           );

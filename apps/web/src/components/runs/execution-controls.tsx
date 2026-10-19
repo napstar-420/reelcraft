@@ -218,8 +218,7 @@ export function ExecutionPlanDialog({ actions }: { actions: RunExecutionActions 
               {plan?.blockedReason ? 'This can’t run yet' : 'Replace finished work?'}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              {plan?.blockedReason ??
-                'Earlier outputs and spending stay in the run’s history.'}
+              {plan?.blockedReason ?? 'Earlier outputs and spending stay in the run’s history.'}
             </AlertDialogDescription>
           </AlertDialogHeader>
           {plan && !plan.blockedReason && (

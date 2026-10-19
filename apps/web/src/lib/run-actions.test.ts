@@ -27,12 +27,18 @@ describe('primaryRunAction', () => {
     expect(primaryRunAction(run('IDLE', [{ state: 'passed' }]))).toBe('start');
   });
   it('pauses while running and shows nothing while settling or waiting on a person', () => {
-    expect(primaryRunAction(run('RUNNING', [], actions({ pause: true, busy: true })))).toBe('pause');
+    expect(primaryRunAction(run('RUNNING', [], actions({ pause: true, busy: true })))).toBe(
+      'pause',
+    );
     expect(primaryRunAction(run('PAUSING', [], actions({ busy: true })))).toBe('none');
     expect(primaryRunAction(run('PAUSED_APPROVAL', []))).toBe('none');
   });
   it('continues a failed, paused, stopped or partly run run unless the edits need a new run', () => {
-    const failed = run('FAILED', [{ state: 'passed' }, { state: 'failed' }], actions({ resume: true }));
+    const failed = run(
+      'FAILED',
+      [{ state: 'passed' }, { state: 'failed' }],
+      actions({ resume: true }),
+    );
     expect(primaryRunAction(failed)).toBe('continue');
     expect(primaryRunAction(run('IDLE', [{ state: 'passed' }, { state: 'pending' }]))).toBe(
       'continue',
@@ -49,7 +55,9 @@ describe('stageStatusLabel and runHeadline', () => {
   });
   it('says what runs now, or where the run failed', () => {
     expect(
-      runHeadline(run('RUNNING', [{ state: 'passed' }, { state: 'running' }, { state: 'pending' }])),
+      runHeadline(
+        run('RUNNING', [{ state: 'passed' }, { state: 'running' }, { state: 'pending' }]),
+      ),
     ).toBe('Running: S2 (1/3 done)');
     expect(
       runHeadline(run('FAILED', [{ state: 'failed', failure: { reason: 'Model refused' } }])),
