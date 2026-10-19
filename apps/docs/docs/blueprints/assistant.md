@@ -17,6 +17,9 @@ On the blueprint's canvas, open the **Assistant** tab in the panel next to the c
 you'll see a few example requests. Pick one or type your own and press **Enter**
 (**Shift + Enter** starts a new line).
 
+Messages can contain up to 64,000 characters. This is Reelcraft's per-message limit; the selected
+model's context capacity also includes conversation history and tool results.
+
 When both are connected, pick **Codex** or **Claude** in the provider menu at the top. A chat keeps
 the provider it started with: switching starts a new chat.
 
