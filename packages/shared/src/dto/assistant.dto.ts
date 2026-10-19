@@ -189,7 +189,7 @@ export type UpdateAssistantSessionDto = z.infer<typeof UpdateAssistantSessionDto
  * become the turn's text). A plain message while a question is pending dismisses the question. */
 export const StartAssistantTurnDto = z
   .object({
-    text: z.string().trim().max(8000).optional(),
+    text: z.string().trim().max(64_000).optional(),
     answer: z.object({ questionItemId: z.string(), answers: AssistantAnswers }).optional(),
     /** The canvas draft right now (null when the canvas has none). */
     draft: CreateBlueprintVersionDto.nullable(),
