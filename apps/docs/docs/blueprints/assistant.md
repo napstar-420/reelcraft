@@ -16,6 +16,9 @@ On the blueprint's canvas, open the **Assistant** tab in the panel next to the c
 you'll see a few example requests. Pick one or type your own and press **Enter**
 (**Shift + Enter** starts a new line).
 
+Messages can contain up to 64,000 characters. This is Reelcraft's per-message limit; the selected
+model's context capacity also includes conversation history and tool results.
+
 Pick the **Model** and its **Effort** at the top. They start as the model set in your Codex
 configuration. A higher effort is slower and uses more of your ChatGPT plan.
 
