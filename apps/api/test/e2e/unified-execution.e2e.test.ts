@@ -436,6 +436,7 @@ describe('unified resumable execution', () => {
   });
   it('keeps a production run on its saved version through stage actions; draftsOnly lists only test runs', async () => {
     const { created, version } = await fixture([stage('a'), stage('b', ['a'])]);
+    await database.db.update(run).set({ state: 'IDLE' }).where(eq(run.id, created.id));
     await execute(created.id);
     await drive(created.id, ['a', 'b']);
     await execute(created.id, 'b', 'rerun');
