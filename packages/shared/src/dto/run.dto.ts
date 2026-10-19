@@ -400,6 +400,8 @@ export const RunDetailDto = z.object({
   blueprintVersionId: z.string(),
   blueprintId: z.string().optional(),
   definition: CreateBlueprintVersionDto.optional(),
+  /** A test run: it runs a canvas draft snapshot, not a saved version. */
+  draft: z.boolean().optional(),
   executionEpoch: z.number().optional(),
   executionScope: ExecutionScope.nullable().optional(),
   concurrentBranches: z.number().optional(),

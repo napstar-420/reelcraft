@@ -1159,6 +1159,7 @@ export class RunService {
       availableActions: eligibility.run,
       blueprintId: version?.blueprintId,
       definition: version ? CreateBlueprintVersionDto.parse(version) : undefined,
+      draft: version?.draft,
       budgetBlock,
       resumeAt,
       finalVideo: final

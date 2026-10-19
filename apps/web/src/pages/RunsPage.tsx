@@ -343,8 +343,8 @@ export function RunsPage({ channelId: fixedChannelId }: { channelId?: string } =
                             variant="ghost"
                             size="icon"
                             className="size-8"
-                            aria-label="Resume run"
-                            title="Resume run"
+                            aria-label="Continue run"
+                            title="Continue run"
                             disabled={rowBusy}
                             onClick={() => resumeRun.mutate(run.id)}
                           >
@@ -355,13 +355,13 @@ export function RunsPage({ channelId: fixedChannelId }: { channelId?: string } =
                             )}
                           </Button>
                         )}
-                        {isRunActionAllowed('cancel', run.state) && (
+                        {isRunActionAllowed('cancel', run.state) && run.state !== 'FAILED' && (
                           <Button
                             variant="ghost"
                             size="icon"
                             className="size-8 text-destructive hover:text-destructive"
-                            aria-label="Cancel run"
-                            title="Cancel run"
+                            aria-label="Stop run"
+                            title="Stop run"
                             disabled={rowBusy}
                             onClick={() => setCancelTarget(run)}
                           >
@@ -382,9 +382,9 @@ export function RunsPage({ channelId: fixedChannelId }: { channelId?: string } =
           >
             <AlertDialogContent>
               <AlertDialogHeader>
-                <AlertDialogTitle>Cancel run {cancelTarget?.id.slice(0, 8)}?</AlertDialogTitle>
+                <AlertDialogTitle>Stop run {cancelTarget?.id.slice(0, 8)}?</AlertDialogTitle>
                 <AlertDialogDescription>
-                  This stops the run permanently and can&apos;t be undone.
+                  Finished outputs are kept and you can continue it later from the run page.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
@@ -393,7 +393,7 @@ export function RunsPage({ channelId: fixedChannelId }: { channelId?: string } =
                   disabled={cancelRun.isPending}
                   onClick={() => cancelTarget && cancelRun.mutate(cancelTarget.id)}
                 >
-                  Yes, cancel run
+                  Stop run
                 </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>

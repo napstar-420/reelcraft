@@ -7,7 +7,7 @@ import {
 import { useEffect, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 
-import { Eye, FileText, History, Wallet } from 'lucide-react';
+import { Eye, FileText, History, Play, Wallet } from 'lucide-react';
 
 import { useRun } from '../hooks/useRun';
 import { formatRunDuration, runningNow } from './runs-page.logic';
@@ -28,6 +28,7 @@ import { SubmitFormInputDialog } from '@/components/runs/submit-form-input-dialo
 import { StageAttemptsSheet } from '@/components/runs/stage-attempts-sheet';
 import { StageOutputSheet } from '@/components/runs/stage-output-sheet';
 import { RunMemoryCard } from '@/components/runs/run-memory-card';
+import { ProductionRunDialog } from '@/components/runs/production-run-dialog';
 import { isApprovalStillOpen } from './approval-review.logic';
 import { deepLinkTarget } from './run-deep-link.logic';
 import { quotaPauseMessage } from '@/lib/quota-pause';
@@ -147,10 +148,32 @@ export function RunPage() {
           <div className="flex flex-wrap items-center gap-2">
             {run.blueprintId && (
               <Button size="sm" variant="ghost" asChild>
-                <Link to={`/blueprints/${run.blueprintId}/build?run=${run.id}`}>Open canvas</Link>
+                <Link
+                  to={`/blueprints/${run.blueprintId}/build${run.draft ? `?run=${run.id}` : ''}`}
+                >
+                  Open canvas
+                </Link>
               </Button>
             )}
-            <RunExecutionToolbar run={run} actions={actions} />
+            <RunExecutionToolbar
+              run={run}
+              actions={actions}
+              start={
+                run.draft || !run.blueprintId ? null : (
+                  <ProductionRunDialog
+                    blueprintId={run.blueprintId}
+                    channelId={run.channelId}
+                    previous={run}
+                    trigger={(open) => (
+                      <Button size="sm" onClick={open}>
+                        <Play />
+                        Run again
+                      </Button>
+                    )}
+                  />
+                )
+              }
+            />
           </div>
         </div>
 

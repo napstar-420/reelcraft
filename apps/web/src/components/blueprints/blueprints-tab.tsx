@@ -1,10 +1,19 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Archive, ArchiveRestore, MoreHorizontal, Pencil, Share2, Trash2 } from 'lucide-react';
+import {
+  Archive,
+  ArchiveRestore,
+  MoreHorizontal,
+  Pencil,
+  Play,
+  Share2,
+  Trash2,
+} from 'lucide-react';
 import { toast } from 'sonner';
 import type { BlueprintDto } from '@reelcraft/shared';
 import { api } from '@/api/client';
+import { ProductionRunDialog } from '@/components/runs/production-run-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -283,10 +292,30 @@ export function BlueprintsTab({ channelId }: { channelId?: string | undefined })
                     </div>
                   )}
                 </CardHeader>
-                <CardFooter className="mt-auto flex items-center justify-between">
-                  <Button variant="outline" asChild>
-                    <Link to={`/blueprints/${b.id}/build`}>Open →</Link>
-                  </Button>
+                <CardFooter className="mt-auto flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <Button variant="outline" asChild>
+                      <Link to={`/blueprints/${b.id}/build`}>Open →</Link>
+                    </Button>
+                    <ProductionRunDialog
+                      blueprintId={b.id}
+                      channelId={b.channelId}
+                      trigger={(open) => (
+                        <Button
+                          disabled={!b.currentVersionId}
+                          title={
+                            b.currentVersionId
+                              ? 'Run a saved version'
+                              : 'Save the blueprint once to run it'
+                          }
+                          onClick={open}
+                        >
+                          <Play />
+                          Run
+                        </Button>
+                      )}
+                    />
+                  </div>
                   <span className="text-xs text-muted-foreground">
                     {b.runCount} {b.runCount === 1 ? 'run' : 'runs'}
                   </span>
