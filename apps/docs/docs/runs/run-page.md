@@ -9,17 +9,20 @@ start it. The page updates by itself while the run is going.
 ## The header
 
 - **Run** and its id, with a coloured status. See [Run statuses](../reference/run-statuses.md).
-- **Run blueprint**, **Re-run blueprint**, **Pause**, **Resume**, **Cancel run** and **Continue run**,
-  according to backend eligibility. These match the canvas controls.
-- **Concurrent branches**: maximum active stages, initially **2** from the blueprint default. Change
-  it while execution is inactive. Item concurrency and provider limits remain separate.
-- **Open canvas** returns to the same selected run without losing progress.
+- **Running now** names the stages that are running.
+- One main button for the run's state: **Pause** while it runs, **Continue** after a failure, pause or
+  stop, and **Run again** once a production run has finished. **Run again** opens the run dialog with
+  this run's version, inputs and budget filled in.
+- The **⋯** menu: **Stop run** and **Concurrent branches** (how many stages may run at once, default
+  **2**).
+- **Open canvas** opens the blueprint. For a test run it opens that test run; production runs never
+  appear on the canvas.
 
-Cancellation preserves work and allows continuation. The run shows **Pausing** while active attempts
-drain and **Cancelling** while interrupted requests are reconciled. See
+Stopping keeps finished work, and you can continue later. The run shows **Pausing** while running work
+finishes and **Cancelling** while interrupted requests are wound down. See
 [Pause, resume and cancel](./pause-resume-cancel.md).
 
-![A cancelled run with six saved items, Continue stage and shared run controls](/img/usage/unified-run-page.png)
+![A stopped run with six saved items and its run controls](/img/usage/unified-run-page.png)
 
 ## The budget bar
 
@@ -55,7 +58,10 @@ Buttons on the right appear when they apply:
 - **Review output**: the stage is waiting for your approval.
 - **Provide input**: a Human Input stage is waiting for you.
 - **Open editor**: a Human Timeline Edit stage is waiting for you.
-- **Run stage**, **Continue stage** and **Re-run stage**, when eligible. Blocked stages show the missing prerequisite or input. Stage actions disappear during Running, Pausing and Cancelling. See [Continue and re-run work](./retries.md).
+- **Run this stage only**, with **Run up to this stage** and **Run from this stage to the end** in its
+  **⋯** menu. A production run always uses its saved version. A stage that can't run yet says why,
+  such as **Waiting for …**. Stage buttons disappear while the run is Running, Pausing or Cancelling.
+  See [Continue and re-run work](./retries.md).
 - **View output**: what the stage made.
 - **Attempts**: every attempt, with its log.
 

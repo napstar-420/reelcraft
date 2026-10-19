@@ -48,7 +48,7 @@ The run's status becomes **Paused Budget**, and the page says which limit was re
 3. Select **Raise and continue**.
 
 For a run that is paused for budget, the run **continues straight away**: you don't need to press
-**Resume**. Raising a stage cap only changes that stage, for this run only. The blueprint isn't touched.
+**Continue**. Raising a stage cap only changes that stage, for this run only. The blueprint isn't touched.
 
 If the new amount isn't higher, you're told: _The new budget cap ($…) must be higher than the current cap
 ($…)_.

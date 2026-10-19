@@ -93,7 +93,7 @@ Flow charges credits for each clip, and an account can run out partway through.
 3. When an account runs out of credits, the stage switches to the next one and carries on.
 4. When **every** account is out, the run pauses as **Paused Quota**. It resumes by itself when the
    credits come back, using the time Flow shows (or in 6 hours if Flow doesn't say), and carries on
-   with the clips it hasn't made yet. You can also select **Resume** at any time to try again now.
+   with the clips it hasn't made yet. You can also select **Continue** at any time to try again now.
 
 If you leave the list empty, the stage uses whichever account Flow is signed in with, and the run
 pauses when that one runs out.

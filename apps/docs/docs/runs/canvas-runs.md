@@ -1,75 +1,70 @@
 ---
-title: Canvas runs
-description: Run, continue and rebuild stages on the canvas with the same controls as the run page.
+title: Test runs on the canvas
+description: Test what's on the canvas, saved or not, and continue or start over while you build.
 ---
 
-The blueprint canvas and [run page](./run-page.md) share one execution model, run history, eligibility
-rules and control components. Development on the canvas and production on the run page use the same
-runs. Moving between them keeps your selected run and its progress.
+The canvas is for building and testing. Every run you start there is a **test run**: it runs what's on
+the canvas right now, **saved or not**. You never have to save just to try a change. Saving only
+creates a version. See [Versions](../blueprints/versions.md).
+
+Production runs of a saved version start from the blueprints page and never show on the canvas. See
+[Starting a run](./starting-a-run.md).
 
 ![Canvas toolbar, stage cards and Run tab showing six saved Motion Planning items](/img/usage/unified-canvas-runs.png)
 
-## The first run
+## The run buttons
 
-With no runs yet, select **Run blueprint**, provide inputs and start a run. **Run up to** is an explicit
-initial scope: it includes the selected stage and its prerequisites. All stages are created Pending;
-work outside that scope stays Pending. See [Starting a run](./starting-a-run.md).
+The canvas toolbar shows one main button, which changes with the test run's state:
 
-## Shared run controls
+| The test run is…                      | Main button        | What it does                                                                                  |
+| ------------------------------------- | ------------------ | --------------------------------------------------------------------------------------------- |
+| Not started yet, or finished          | **Start test run** | Opens the inputs dialog, filled in with the last test run's inputs, and starts a new test run |
+| Running                               | **Pause**          | Lets the current work finish, then pauses                                                     |
+| Failed, paused, stopped or partly run | **Continue**       | Keeps every passed stage and runs the rest to the end, using your current canvas edits        |
+| Waiting for your review or input      | none               | Answer it with **Review output** or **Provide input**                                         |
 
-Once a run is selected, the canvas toolbar and **Run** tab offer the same controls as the run page:
+The **⋯** menu next to it holds:
 
-- **Run blueprint** executes unfinished, failed or stale required stages, retaining completed work.
-- **Re-run blueprint** explicitly regenerates everything after a rebuild/cost confirmation.
-- **Pause**, **Resume**, **Cancel run** and **Continue run** preserve the same run and saved scope.
-- **Concurrent branches** sets the maximum active stage executions. The blueprint default is **2**;
-  an inactive run can override it without changing artifacts. Iteration item concurrency and provider
-  request limits are separate controls.
+- **Stop run**: ends the run. Finished outputs are kept, and you can **Continue** later.
+- **Start over (new test run)**: the same as **Start test run**, while a run is still open.
+- **Concurrent branches**: how many stages may run at once (default **2**).
 
-Independent ready branches fill available slots. A finished stage releases its slot immediately;
-there is no full-wave barrier. Failures and human waits block their descendants while other ready
-branches continue. A stage-only scope ends **Idle** when required blueprint work remains.
+If you added, removed or reconnected stages, or changed the blueprint's inputs, roles or defaults, the
+open test run can't take those changes. The main button becomes **Start test run**, and a short line
+beside it says why.
 
-## Stage controls
+## Stage buttons
 
-The canvas cards and **Run** tab use the same stage controls:
+Select a stage on the canvas or in the **Run** tab to see its buttons:
 
-- **Run stage** runs only an eligible selected stage. Missing prerequisites or inputs are shown beside
-  a blocked stage; prerequisites are never launched implicitly.
-- **Continue stage** preserves passed items. For **6/14 completed**, only eight items remain.
-- **Re-run stage** explicitly regenerates the stage, including completed items. Its affected
-  descendants become stale, but do not execute.
-- **More execution actions** contains **Run through stage** and **Rebuild descendants**, each with an
-  explicit scope. In compact cards, **Re-run stage** may also appear here.
+- **Run this stage only**: runs just this stage, using the outputs that already exist before it.
+- In its **⋯** menu:
+  - **Run up to this stage**: runs any unfinished or stale stages before it, then this one, then stops.
+  - **Run from this stage to the end**: runs this stage and everything after it.
+  - **Re-check output**: shown only when you changed just the stage's checks or quality criteria. It
+    checks the existing output again without generating it.
 
-Stage execution controls are hidden while the run is Running, Pausing or Cancelling. Progress,
-output previews and attempt history remain visible. Cancel is a run action; a cancelled run can
-continue later. See [Continue and re-run work](./retries.md).
+Stage buttons are hidden while the run is running, pausing or stopping. Progress, outputs and attempts
+stay visible.
 
-## Definitions and existing outputs
+## Stale stages
 
-Autosaved execution edits mark affected outputs **Stale** in the workspace, including descendants.
-Independent branches remain valid. Label changes do not stale outputs; check/QC-only edits show
-**Validation outdated**. Reverting an edit restores freshness when definitions and dependencies match.
+When you edit a stage that already passed, it and the stages after it are marked **Stale**. Their
+outputs stay in history. **Continue**, **Run up to this stage** and **Run from this stage to the end**
+redo stale stages automatically. **Run this stage only** leaves them alone. Renaming a stage doesn't
+make it stale.
 
-These indicators preserve historical artifacts. Execution uses a pinned snapshot. If you apply edits,
-review a plan choosing existing outputs or rebuilding affected work; ordinary **Run stage** stays
-stage-only. **Check existing output** applies check/QC-only edits without generation where supported.
+## Confirmations
 
-Plans bind the exact action, scope, items, snapshot, concurrency setting and run revision. Duplicate
-or outdated confirmations are rejected. Added/removed stages, rewiring, reordered stages, global
-input/role/default changes and replaced pinned assets require a new run. Scheduling concurrency alone
-does not stale artifacts.
+Most buttons start straight away. You're asked to confirm only when the action would replace work that
+already passed, or when a provider request may have been charged already. The confirmation lists the
+stages that will run and what they cost last time.
 
-## History and navigation
+## The Run tab
 
-Use the recent-run selector to return to an earlier run. The selection is stored in the URL, so
-refreshing preserves it. Select the short run ID to open its run page; **Open canvas** returns to the
-same selected run. **View output**, **Attempts** and approval/input controls retain their usual roles.
-
-## Follow branches and inspect a stage
-
-The **Run** tab shows a dependency overview with branches, joins, status, and saved branch names.
-Select a node to focus that stage and see its controls and blocking reason. **Output** or **Attempts**
-opens the shared **Details** tab beside the canvas; drag the divider to resize it or select **Expand**.
-The same details workspace is available on the run page, with identical execution semantics.
+- The top line says what's happening, such as **Running: Write the draft narration (4/12 done)**, or
+  where it stopped, such as **Failed at Write the draft narration: …**.
+- The recent-run selector switches between test runs. **Open run page** opens the full run page.
+- **Stages** shows every stage with its status: Done, Running, Failed, Waiting for review, Not started,
+  Stale. Click one to select it. The selected stage's buttons, **View output** and **Attempts** appear
+  under the map.
