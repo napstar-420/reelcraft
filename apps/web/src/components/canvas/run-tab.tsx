@@ -1,13 +1,12 @@
 import { DagOverview } from './dag-overview';
 import { stageDependencies } from '@/lib/stage-deps';
-import { RunExecutionToolbar, StageExecutionControls } from '@/components/runs/execution-controls';
+import { StageExecutionControls } from '@/components/runs/execution-controls';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { Eye, History, Info, Play } from 'lucide-react';
 import { cn } from 'cn';
 import type {
   BlueprintPresentation,
-  InputDef,
   RunDetailDto,
   RunSummaryDto,
   StageDef,
@@ -28,12 +27,12 @@ import { ArtifactPreview } from '@/components/runs/artifact-preview';
 import { RunMemoryCard } from '@/components/runs/run-memory-card';
 import type { CanvasRunActions } from '@/hooks/useCanvasRunActions';
 
-import { RunLaunchDialog } from '@/pages/RunLaunchDialog';
 import { formatRunDuration } from '@/pages/runs-page.logic';
 
 import { isApprovalStillOpen } from '@/pages/approval-review.logic';
 import { runStateTone, stageExecutionStateTone, toneDotClassName } from '@/lib/status';
 import { formatCapUsd } from '@/lib/format-cap';
+import { runHeadline } from '@/lib/run-actions';
 
 /** One reused-stage badge per row, driven by the `stage.reused` event
  * `run-seed.ts`'s `copyReusedStages` writes — fetched lazily per run since
@@ -79,14 +78,11 @@ function Section({
   );
 }
 
-/** The Run tab: the active run's state and spend, Run all / Pause / Cancel,
- * every stage with its output and attempts, the blueprint's final output and
- * the run's memory. Per-stage play buttons also live on the canvas cards. */
+/** The Run tab: the active test run's headline and spend, the stage map with the
+ * selected stage's buttons, the blueprint's final output and the run's memory.
+ * The run buttons themselves live in the canvas toolbar. */
 export function RunTab({
-  channelId,
-  inputs,
   graph,
-  budgetCapUsd,
   run,
   recentRuns,
   actions,
@@ -95,12 +91,8 @@ export function RunTab({
   onSelectStage,
   isDirty,
   onSwitchRun,
-  prepareRunnableVersion,
 }: {
-  channelId: string;
-  inputs: InputDef[];
   graph: StageDef[];
-  budgetCapUsd: number;
   run: RunDetailDto | undefined;
   recentRuns: RunSummaryDto[];
   actions: CanvasRunActions;
@@ -109,7 +101,6 @@ export function RunTab({
   onSelectStage: (stageKey: string) => void;
   isDirty: boolean;
   onSwitchRun: (runId: string) => void;
-  prepareRunnableVersion: () => Promise<string>;
 }) {
   const reusedKeys = useReusedStageKeys(run?.id, run?.stageExecutions.map((e) => e.stageKey) ?? []);
 
@@ -127,29 +118,16 @@ export function RunTab({
         <div className="flex size-11 items-center justify-center rounded-xl bg-muted text-muted-foreground">
           <Play className="size-5" />
         </div>
-        <h3 className="mt-1.5 text-[15px] font-semibold">No runs yet</h3>
+        <h3 className="mt-1.5 text-[15px] font-semibold">No test runs yet</h3>
         <p className="max-w-72 text-sm text-muted-foreground">
-          Save the blueprint, then run it. To run just the first stages, pick one under Run up to.
-          After that, each stage shows its status on the canvas and you can re-run a single stage
-          from there.
-        </p>
-        <div className="mt-2">
-          <RunLaunchDialog
-            channelId={channelId}
-            inputs={inputs}
-            stages={graph}
-            defaultBudgetCapUsd={budgetCapUsd}
-            prepareVersion={prepareRunnableVersion}
-            onLaunched={onSwitchRun}
-          />
-        </div>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Dry runs use the fake provider and cost nothing.
+          Start a test run from the toolbar. It uses what&apos;s on the canvas, saved or not.
+          Production runs of a saved version start from the blueprints page.
         </p>
       </div>
     );
   }
 
+  const headline = runHeadline(run);
   const spent = Number(run.spentUsd);
   const cap = Number(run.budgetCapUsd);
   const percent = cap > 0 ? Math.min(100, (spent / cap) * 100) : 0;
@@ -162,8 +140,7 @@ export function RunTab({
           onValueChange={onSwitchRun}
           disabled={
             actions.runStage.isPending ||
-            actions.runAll.isPending ||
-            actions.executionPlans !== null ||
+            actions.executionPlan !== null ||
             actions.confirmExecution.isPending
           }
         >
@@ -189,44 +166,51 @@ export function RunTab({
             ))}
           </SelectContent>
         </Select>
-        <div className="flex items-center gap-2">
-          <Link
-            to={`/runs/${run.id}`}
-            className="font-mono text-sm font-medium hover:underline"
-            title="Open the run page"
+        {headline && (
+          <p
+            className={cn(
+              'text-sm font-medium',
+              run.state === 'FAILED' ? 'text-destructive' : 'text-foreground',
+            )}
           >
-            #{run.id.slice(-6)}
-          </Link>
-          <StatusBadge tone={runStateTone(run.state)} label={run.state} />
-          <span className="ml-auto font-mono text-xs text-muted-foreground">
-            {formatRunDuration(run.startedAt, run.endedAt)}
-          </span>
-        </div>
+            {headline}
+          </p>
+        )}
         <div className="flex flex-col gap-1.5">
           <Progress value={percent} aria-label="Spend against the run cap" />
           <div className="flex justify-between font-mono text-xs text-muted-foreground">
             <span>${spent.toFixed(2)} spent</span>
-            <span>cap {formatCapUsd(cap)}</span>
+            <span>
+              {formatRunDuration(run.startedAt, run.endedAt)} · cap {formatCapUsd(cap)}
+            </span>
           </div>
         </div>
-        <RunExecutionToolbar run={run} actions={actions} />
+        <Link
+          to={`/runs/${run.id}`}
+          className="text-xs text-muted-foreground hover:text-foreground hover:underline"
+        >
+          Open run page
+        </Link>
         {isDirty && (
           <p className="flex items-start gap-2 rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground">
             <Info className="mt-px size-3.5 shrink-0" />
-            You have unsaved changes. Continuing an unchanged branch preserves this run&apos;s
-            settings and outputs. Changed stages use your canvas edits.
+            You have unsaved changes. Test runs use them as they are.
           </p>
         )}
       </section>
 
-      <Section title="Dependency overview">
+      <Section title="Stages">
         <DagOverview
           graph={graph}
           run={run}
           presentation={presentation}
           selectedKey={selectedKey}
           onSelect={onSelectStage}
+          staleStageKeys={actions.staleStageKeys}
         />
+        <p className="mt-1 text-[11px] font-medium text-muted-foreground">
+          Selected stage{selectedKey ? '' : ' (click a stage above to change it)'}
+        </p>
         <div className="-mx-2 flex flex-col">
           {graph
             .filter((stage) => stage.key === (selectedKey ?? graph[0]?.key))
@@ -300,16 +284,12 @@ export function RunTab({
                     <History />
                   </Button>
                   {stage.disabled && <Badge variant="outline">Disabled</Badge>}
-                  {execution?.availableActions?.blockedReason && (
-                    <p className="w-full pl-4 text-xs text-destructive">
-                      {execution.availableActions.blockedReason}
-                    </p>
-                  )}
                   <div className="w-full pl-4">
                     <StageExecutionControls
                       available={execution?.availableActions}
                       busy={run.availableActions?.busy ?? true}
                       pending={actions.runStage.isPending}
+                      allowRecheck={actions.validationStageKeys.has(stage.key)}
                       compact
                       onAction={(request) =>
                         actions.runStage.mutate({ stageKey: stage.key, ...request })

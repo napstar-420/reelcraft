@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { FlaskConical, Play } from 'lucide-react';
 import { cn } from 'cn';
 import { useMutation } from '@tanstack/react-query';
@@ -69,6 +69,13 @@ export function RunLaunchDialog({
   prepareVersion,
   onLaunched,
   disabled = false,
+  title = 'Run blueprint',
+  trigger,
+  open: controlledOpen,
+  onOpenChange,
+  initialValues = {},
+  initialBudgetCapUsd,
+  versionPicker,
 }: {
   channelId: string;
   inputs: InputDef[];
@@ -81,15 +88,31 @@ export function RunLaunchDialog({
    * active run instead of navigating to `/runs/:id` (the default, used by
    * every other launch site). */
   onLaunched?: (runId: string) => void;
+  title?: string;
+  /** The button that opens the dialog; null for none (open it with `open`). */
+  trigger?: ReactNode;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  /** A previous run's values (`launchValuesFromRun`), filled in when the dialog opens. */
+  initialValues?: LaunchValues;
+  initialBudgetCapUsd?: number;
+  /** Rendered first in the dialog body: the production run's version dropdown. */
+  versionPicker?: ReactNode;
 }) {
   const navigate = useNavigate();
-  const [open, setOpen] = useState(false);
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
+  const open = controlledOpen ?? uncontrolledOpen;
+  const setOpen = (next: boolean) => {
+    setUncontrolledOpen(next);
+    onOpenChange?.(next);
+  };
+  const startBudget = initialBudgetCapUsd ?? defaultBudgetCapUsd;
   // A dry run uses the same inputs and uploads, but every model is forced to
   // the free fake provider.
   const [dryRun, setDryRun] = useState(false);
-  const [budgetCapUsd, setBudgetCapUsd] = useState(defaultBudgetCapUsd);
+  const [budgetCapUsd, setBudgetCapUsd] = useState(startBudget);
   const [untilStageKey, setUntilStageKey] = useState('');
-  const [values, setValues] = useState<LaunchValues>({});
+  const [values, setValues] = useState<LaunchValues>(initialValues);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [recoverable, setRecoverable] = useState<RecoverableLaunch | null>(null);
 
@@ -164,7 +187,7 @@ export function RunLaunchDialog({
   function chooseMode(nextDryRun: boolean) {
     if (nextDryRun === dryRun) return;
     setDryRun(nextDryRun);
-    setBudgetCapUsd(nextDryRun ? DRY_RUN_BUDGET_CAP_USD : defaultBudgetCapUsd);
+    setBudgetCapUsd(nextDryRun ? DRY_RUN_BUDGET_CAP_USD : startBudget);
   }
 
   return (
@@ -176,22 +199,27 @@ export function RunLaunchDialog({
         if (!next) {
           setDryRun(false);
           setUntilStageKey('');
-          setBudgetCapUsd(defaultBudgetCapUsd);
+          setBudgetCapUsd(startBudget);
+          setValues(initialValues);
           setErrors({});
           setRecoverable(null);
           launch.reset();
         }
       }}
     >
-      <DialogTrigger asChild>
-        <Button type="button" disabled={!channelId || disabled}>
-          <Play />
-          Run
-        </Button>
-      </DialogTrigger>
+      {trigger !== null && (
+        <DialogTrigger asChild>
+          {trigger ?? (
+            <Button type="button" disabled={!channelId || disabled}>
+              <Play />
+              Run
+            </Button>
+          )}
+        </DialogTrigger>
+      )}
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
         <DialogHeader>
-          <DialogTitle>{dryRun ? 'Dry run' : 'Run blueprint'}</DialogTitle>
+          <DialogTitle>{dryRun ? `${title} (dry run)` : title}</DialogTitle>
           <DialogDescription>
             {dryRun
               ? 'A free test run: every stage uses the fake provider instead of its configured model, so nothing is charged. Human stages still pause for you.'
@@ -200,6 +228,7 @@ export function RunLaunchDialog({
         </DialogHeader>
 
         <div className="space-y-4">
+          {versionPicker}
           <div
             role="radiogroup"
             aria-label="Run mode"

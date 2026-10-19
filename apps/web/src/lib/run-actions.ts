@@ -4,7 +4,7 @@ import { definitionKey } from './stage-freshness';
 import { stageDependencies } from './stage-deps';
 
 type RunLike = Pick<RunDetailDto, 'state' | 'availableActions'> & {
-  stageExecutions: Array<Pick<RunDetailDto['stageExecutions'][number], 'state' | 'label' | 'failure'>>;
+  stageExecutions: Array<{ state: string; label: string; failure?: unknown }>;
 };
 
 /** The one main button a run's toolbar shows: start a fresh run, pause it, continue it,

@@ -1,15 +1,19 @@
 import type { BlueprintPresentation, RunDetailDto, StageDef } from '@reelcraft/shared';
 import { stageLayout } from '@/pages/canvas-layout.logic';
 import { stageDependencies } from '@/lib/stage-deps';
+import { stageStatusLabel } from '@/lib/run-actions';
 export function DagOverview({
   graph,
   run,
   presentation,
   selectedKey,
   onSelect,
+  staleStageKeys,
 }: {
   graph: StageDef[];
   run: RunDetailDto;
+  /** Passed stages the canvas edits made stale. */
+  staleStageKeys?: Set<string>;
   presentation?: BlueprintPresentation | undefined;
   selectedKey: string | null;
   onSelect: (key: string) => void;
@@ -45,6 +49,8 @@ export function DagOverview({
         {graph.map((stage) => {
           const p = positions.get(stage.key)!,
             execution = run.stageExecutions.find((e) => e.stageKey === stage.key);
+          const isStale = (key: string) =>
+            execution?.state === 'passed' && !!staleStageKeys?.has(key);
           return (
             <g
               key={stage.key}
@@ -61,7 +67,7 @@ export function DagOverview({
               className="cursor-pointer outline-none focus-visible:stroke-primary"
             >
               <title>
-                {stage.label}: {execution?.availableActions?.blockedReason ?? execution?.state}
+                {stage.label}: {stageStatusLabel(execution?.state, isStale(stage.key))}
               </title>
               {presentation?.branchNames[stage.key] && (
                 <text x={p.x} y={p.y - 7} fill="var(--primary)" fontSize="10">
@@ -82,11 +88,7 @@ export function DagOverview({
                 {stage.label.length > 20 ? stage.label.slice(0, 19) + '…' : stage.label}
               </text>
               <text x={p.x + 9} y={p.y + 39} fill="var(--muted-foreground)" fontSize="10">
-                {stage.disabled
-                  ? 'Disabled'
-                  : execution?.availableActions?.blockedReason
-                    ? 'Blocked'
-                    : (execution?.state ?? 'pending')}
+                {stage.disabled ? 'Disabled' : stageStatusLabel(execution?.state, isStale(stage.key))}
               </text>
             </g>
           );

@@ -35,7 +35,6 @@ export function CanvasToolbar({
   onSave,
   onDiscard,
   runButton,
-  runBlockedReason,
 }: {
   blueprintName: string | undefined;
   channelName: string | undefined;
@@ -54,7 +53,6 @@ export function CanvasToolbar({
   /** The `RunLaunchDialog`, already wired to the page. */
   runButton: React.ReactNode;
   /** Why Run is off, shown on hover; null when it is on. */
-  runBlockedReason: string | null;
 }) {
   const [exportOpen, setExportOpen] = useState(false);
   const readOnly = viewing !== null;
@@ -187,9 +185,7 @@ export function CanvasToolbar({
             </DropdownMenu>
           </div>
         )}
-        {!readOnly && (
-          <span title={runBlockedReason ?? 'Run the latest saved version'}>{runButton}</span>
-        )}
+        {!readOnly && runButton}
       </div>
       <ExportPackageDialog
         versionId={latestSaved?.id ?? null}

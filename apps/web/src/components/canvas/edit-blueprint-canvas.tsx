@@ -1,5 +1,5 @@
 import { connectStages, disconnectStages, explicitGraph } from '@/pages/dag-edit.logic';
-import { RunExecutionToolbar } from '@/components/runs/execution-controls';
+import { TestRunControls, withoutStageActions } from './test-run-controls';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -34,7 +34,6 @@ import {
   removeStage,
   withDependsOn,
 } from '@/pages/canvas-graph.logic';
-import { RunLaunchDialog } from '@/pages/RunLaunchDialog';
 import type {
   BlueprintPresentation,
   BlueprintDto,
@@ -298,24 +297,15 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
     disabled: viewing !== null,
   });
 
-  /** Canvas runs: the saved version when nothing changed, otherwise a draft
-   * snapshot — never a new version. Reuses the snapshot while the canvas
-   * content is unchanged. */
+  /** Test runs always run a draft snapshot of the canvas, saved or not, so they never
+   * count as production runs. Reuses the snapshot while the canvas content is unchanged. */
   async function prepareCanvasRunVersion() {
     if (!draft) throw new Error('Blueprint is still loading.');
     await assertRunnable(blueprintId, draft, true);
-    if (!isDirty && latestSaved) return latestSaved.id;
     if (runSnapshot?.contentKey === draftKey) return runSnapshot.id;
     const snapshot = await api.createDraftVersion(blueprintId, draft);
     setRunSnapshot({ id: snapshot.id, contentKey: draftKey });
     return snapshot.id;
-  }
-
-  /** Run executes exactly what was saved, so it is gated on no unsaved changes. */
-  async function prepareSavedVersion() {
-    if (!draft || isDirty || !latestSaved) throw new Error('Save to run your changes.');
-    await assertRunnable(blueprintId, draft);
-    return latestSaved.id;
   }
 
   function handleSaved(version: SavedVersion, saved: BlueprintDraft) {
@@ -644,12 +634,6 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
   }
 
   const orphanBase = orphan && versions.data?.find((v) => v.id === orphan.baseVersionId);
-  const runBlocked = isDirty || latestSaved === null;
-  const runBlockedReason = !runBlocked
-    ? null
-    : latestSaved
-      ? 'Save your changes to run this version. Stage runs in the Run tab use unsaved changes.'
-      : 'Save once to run this blueprint.';
   const problemCount = shownIssues.length;
 
   return (
@@ -672,21 +656,15 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
         }}
         onSave={(bump) => save.mutate(bump)}
         onDiscard={discardChanges}
-        runBlockedReason={runBlockedReason}
         runButton={
-          canvasRun.run ? (
-            <RunExecutionToolbar run={canvasRun.run} actions={runActions} />
-          ) : (
-            <RunLaunchDialog
-              key={draftKey}
-              channelId={channelId ?? ''}
-              inputs={draft.inputs}
-              stages={draft.graph}
-              defaultBudgetCapUsd={draft.budget.runCapUsd}
-              prepareVersion={prepareSavedVersion}
-              disabled={runBlocked}
-            />
-          )
+          <TestRunControls
+            channelId={channelId ?? ''}
+            draft={draft}
+            run={canvasRun.run}
+            actions={runActions}
+            prepareVersion={prepareCanvasRunVersion}
+            onLaunched={canvasRun.setActiveRunId}
+          />
         }
       />
 
@@ -790,13 +768,21 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
               canvasRun.run
                 ? {
                     ...canvasRun.run,
-                    stageExecutions: canvasRun.run.stageExecutions.map((e) =>
-                      e.state === 'passed' &&
-                      (runActions.staleStageKeys.has(e.stageKey) ||
-                        runActions.validationStageKeys.has(e.stageKey))
-                        ? { ...e, state: 'stale' as const }
-                        : e,
-                    ),
+                    stageExecutions: canvasRun.run.stageExecutions.map((e) => ({
+                      ...e,
+                      ...(e.state === 'passed' &&
+                        (runActions.staleStageKeys.has(e.stageKey) ||
+                          runActions.validationStageKeys.has(e.stageKey)) && {
+                          state: 'stale' as const,
+                        }),
+                      ...(runActions.newRunReason &&
+                        e.availableActions && {
+                          availableActions: withoutStageActions(
+                            e.availableActions,
+                            runActions.newRunReason,
+                          ),
+                        }),
+                    })),
                   }
                 : undefined
             }
@@ -892,10 +878,7 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
             run={
               <RunTab
                 presentation={shown.presentation}
-                channelId={channelId ?? ''}
-                inputs={draft.inputs}
                 graph={draft.graph}
-                budgetCapUsd={draft.budget.runCapUsd}
                 run={canvasRun.run}
                 recentRuns={canvasRun.recentRuns}
                 actions={runActions}
@@ -906,7 +889,6 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
                 }}
                 isDirty={isDirty}
                 onSwitchRun={canvasRun.setActiveRunId}
-                prepareRunnableVersion={prepareCanvasRunVersion}
               />
             }
             blueprint={

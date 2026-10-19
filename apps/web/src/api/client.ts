@@ -344,6 +344,7 @@ export const api = {
     state?: RunState | undefined;
     includeDryRuns?: boolean;
     includeDrafts?: boolean;
+    draftsOnly?: boolean;
     limit?: number;
     offset?: number;
   }) => {
@@ -353,6 +354,7 @@ export const api = {
     if (params?.state) qs.set('state', params.state);
     if (params?.includeDryRuns) qs.set('includeDryRuns', 'true');
     if (params?.includeDrafts) qs.set('includeDrafts', 'true');
+    if (params?.draftsOnly) qs.set('draftsOnly', 'true');
     if (params?.limit !== undefined) qs.set('limit', String(params.limit));
     if (params?.offset !== undefined) qs.set('offset', String(params.offset));
     const suffix = qs.toString();
