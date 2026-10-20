@@ -3,6 +3,7 @@ import type { ModelInfoDto, PartialModelPin } from '@reelcraft/shared';
 /** Pin params the editor renders with dedicated controls instead of the raw params list. */
 const RESERVED_PARAMS: Record<string, string[]> = {
   codex: ['reasoningEffort'],
+  claude: ['reasoningEffort'],
   chatgpt: ['reasoningEffort', 'webSearch'],
 };
 

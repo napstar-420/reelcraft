@@ -2,7 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CodexAppServerClient } from '../../dist/provider/codex/codex-app-server.client.js';
-import { CodexJobLauncher } from '../../dist/provider/codex/codex-job-launcher.js';
+import { CliJobLauncher } from '../../dist/provider/cli-job/cli-job-launcher.js';
 import { CodexProviderAdapter } from '../../dist/provider/codex/codex-provider.adapter.js';
 
 if (process.env.REELCRAFT_CODEX_BROWSER_ACCEPTANCE !== '1') {
@@ -15,7 +15,7 @@ const workspaceRoot = await mkdtemp(join(tmpdir(), 'reelcraft-codex-browser-'));
 const adapter = new CodexProviderAdapter(
   { workspaceRoot, codexProfile: process.env.CODEX_PROFILE ?? 'reelcraft' },
   new CodexAppServerClient(),
-  new CodexJobLauncher(),
+  new CliJobLauncher(),
 );
 let handle;
 try {

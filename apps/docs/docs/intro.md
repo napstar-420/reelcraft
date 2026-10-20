@@ -34,13 +34,14 @@ before paying for anything. To make real videos, connect one or more of these la
 | OpenRouter, fal, ElevenLabs, Deepgram | Paid AI services for text, images, video, voice and captions | [AI provider keys](./provider-keys.md) |
 | BrowserOS Neo                         | Using your ChatGPT plan in a browser on your computer        | [BrowserOS Neo](./browseros-neo.md)    |
 | Codex                                 | Using your ChatGPT plan through OpenAI's Codex               | [Connect Codex](./codex.md)            |
+| Claude                                | Using your Claude plan through Anthropic's Claude Code       | [Connect Claude](./claude-code.md)     |
 
 ## Steps
 
 1. [Install Docker Desktop](./install-docker.md)
 2. [Run Reelcraft](./run-reelcraft.md)
 3. [Add AI provider keys](./provider-keys.md), and if you use them, connect
-   [BrowserOS Neo](./browseros-neo.md) and [Codex](./codex.md)
+   [BrowserOS Neo](./browseros-neo.md), [Codex](./codex.md) and [Claude](./claude-code.md)
 
 Then learn how to make videos: start with [How Reelcraft works](./concepts/how-it-works.md), then build a
 [blueprint](./blueprints/blueprints.md) and [run it](./runs/starting-a-run.md).

@@ -713,24 +713,25 @@ function QcEditor({
       ) : null}
       {outputKind === 'media.video_list' ? (
         <p className="text-xs text-muted-foreground">
-          The judge watches every clip, in order, and can name the clips to make again. Use Codex
-          (it opens the files itself) or a model that accepts video input. Make sure the machine
-          running Codex has ffmpeg.
+          The judge watches every clip, in order, and can name the clips to make again. Use Codex or
+          Claude (they open the files themselves) or a model that accepts video input. Make sure the
+          machine running them has ffmpeg.
         </p>
       ) : null}
       {picking ? (
         <p className="text-xs text-muted-foreground">
           The judge looks at all the candidates together, picks the best one, and scores that image.
           The stage's output is that one image. If it scores below the threshold, every candidate is
-          made again. Use Codex (it opens the files itself) or a model that accepts image input, and
-          one that can take as many images as this stage makes.
+          made again. Use Codex or Claude (they open the files themselves) or a model that accepts
+          image input, and one that can take as many images as this stage makes.
         </p>
       ) : null}
       {outputKind === IMAGE_LIST_KIND ? (
         <p className="text-xs text-muted-foreground">
           The judge looks at all the images together and accepts or rejects the whole set. A
-          rejected set is made again in full. Use Codex (it opens the files itself) or a model that
-          accepts image input, and one that can take as many images as this stage makes.
+          rejected set is made again in full. Use Codex or Claude (they open the files themselves)
+          or a model that accepts image input, and one that can take as many images as this stage
+          makes.
         </p>
       ) : null}
 

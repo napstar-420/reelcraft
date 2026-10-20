@@ -17,8 +17,8 @@ Choose the stage's [output](../blueprints/outputs.md):
 
 ## Providers and models
 
-Any text model: **OpenRouter** (many vendors), **Codex** or **ChatGPT** (your ChatGPT plan), or **Fake
-(test)**. Choose one under **Model**, or set a **Text** [default](../channels/defaults.md). For a
+Any text model: **OpenRouter** (many vendors), **Codex** or **ChatGPT** (your ChatGPT plan),
+**Claude** (your Claude plan, see [Connect Claude](../claude-code.md)), or **Fake (test)**. Choose one under **Model**, or set a **Text** [default](../channels/defaults.md). For a
 `data` output, an OpenRouter model must support structured output; Reelcraft tells you if it
 doesn't.
 
@@ -39,7 +39,7 @@ None of its own. The model's **Effort**, **Web search** and **Params** are under
 ## Cost
 
 Paid by the amount of text, if the provider is OpenRouter. With Codex or ChatGPT, it uses your
-ChatGPT plan instead of an API bill. Fake is free.
+ChatGPT plan instead of an API bill, and with Claude, your Claude plan. Fake is free.
 
 ## Tips
 

@@ -73,7 +73,7 @@ credit, a model that's no longer available, or the service being down.
 
 A stage retries these automatically up to its **Retries**. After that, the stage fails.
 
-ChatGPT and Codex jobs that stall (a ChatGPT tab that sits idle, or a job still running long past its own
+ChatGPT, Codex and Claude jobs that stall (a ChatGPT tab that sits idle, or a job still running long past its own
 limit) are cancelled and started again by Reelcraft itself, without using up **Retries**. Only repeated stalls
 fail the stage.
 

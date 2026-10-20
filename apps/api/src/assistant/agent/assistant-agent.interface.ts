@@ -1,7 +1,7 @@
 import type { AssistantApplyMode } from '@reelcraft/shared';
 
 /** A tool as the model sees it. Defined once by Reelcraft; each adapter maps it to its provider
- * (Codex dynamic tools, Claude SDK MCP tools…). */
+ * (Codex dynamic tools, an MCP server for Claude). */
 export interface AssistantToolDef {
   name: string;
   description: string;
@@ -79,5 +79,5 @@ export interface AssistantAgent {
   close?(): void;
 }
 
-/** Nest token for the registered agents (Codex first, Claude later). */
+/** Nest token for the registered agents (Codex, Claude). */
 export const ASSISTANT_AGENTS = Symbol('ASSISTANT_AGENTS');

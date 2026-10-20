@@ -1,16 +1,16 @@
 ---
 title: Connect BrowserOS Neo
-description: Let Reelcraft use BrowserOS Neo on your computer for ChatGPT and Codex browser tasks.
+description: Let Reelcraft use BrowserOS Neo on your computer for ChatGPT, Codex and Claude browser tasks.
 ---
 
 [BrowserOS Neo](https://www.browseros.com) is a web browser that other apps can control through
 its **MCP server**. Reelcraft uses it to:
 
 - make text and images with **your ChatGPT plan**, in a ChatGPT tab you're signed in to;
-- give **Codex** a browser for browser tasks;
-- type the sign-in code for you when you [connect Codex](./codex.md).
+- give **Codex** and **Claude** a browser for browser tasks;
+- help you sign in when you [connect Codex](./codex.md) or [connect Claude](./claude-code.md).
 
-Neo is optional. Skip this page if you don't use ChatGPT or Codex with Reelcraft.
+Neo is optional. Skip this page if you don't use ChatGPT, Codex or Claude with Reelcraft.
 
 ## Before you start
 
@@ -48,6 +48,7 @@ container environment**: the Reelcraft image sets the default address through th
 Settings**, and the saved address is used instead. Click **Reset** to go back to the default.
 
 Saving the address also tells [Codex](./codex.md) where Neo is, so Codex browser tasks use it too.
+[Claude](./claude-code.md) browser tasks always use the saved address.
 
 ## Linux without Docker Desktop
 

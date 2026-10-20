@@ -195,7 +195,7 @@ export function RunLaunchDialog({
           <DialogDescription>
             {dryRun
               ? 'A free test run: every stage uses the fake provider instead of its configured model, so nothing is charged. Human stages still pause for you.'
-              : "This is a real run. It uses each stage's configured provider, including Codex, and may consume provider usage. Dry run continues to use the deterministic fake provider."}
+              : "This is a real run. It uses each stage's configured provider, including Codex and Claude, and may consume provider usage. Dry run continues to use the deterministic fake provider."}
           </DialogDescription>
         </DialogHeader>
 

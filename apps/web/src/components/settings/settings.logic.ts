@@ -1,6 +1,8 @@
 import type {
   BrowserOsSettingsDto,
+  ClaudeLoginDto,
   CodexLoginDto,
+  CodexLoginPhase,
   CodexStatusDto,
   ProviderKeyId,
   ProviderKeyStatusDto,
@@ -10,6 +12,8 @@ import type {
 export const SETTINGS_KEY = ['settings'] as const;
 export const CODEX_STATUS_KEY = ['codex-status'] as const;
 export const CODEX_LOGIN_KEY = ['codex-login'] as const;
+export const CLAUDE_STATUS_KEY = ['claude-status'] as const;
+export const CLAUDE_LOGIN_KEY = ['claude-login'] as const;
 
 /** What each provider is used for, and where to get a key. */
 export const PROVIDER_INFO: Record<ProviderKeyId, { use: string; keyUrl: string }> = {
@@ -68,7 +72,7 @@ export function isHttpUrl(value: string): boolean {
   }
 }
 
-export function loginActive(login: CodexLoginDto | null | undefined): boolean {
+export function loginActive(login: { phase: CodexLoginPhase } | null | undefined): boolean {
   return (
     login?.phase === 'starting' ||
     login?.phase === 'opening-neo' ||
@@ -100,6 +104,33 @@ export function loginStep(login: CodexLoginDto): string {
   }
 }
 
+/** The instruction to show while "Connect Claude" runs. */
+export function claudeLoginStep(login: ClaudeLoginDto): string {
+  switch (login.phase) {
+    case 'starting':
+      return 'Asking Claude for a sign-in link…';
+    case 'opening-neo':
+      return 'Opening the sign-in page in BrowserOS Neo…';
+    case 'waiting-for-approval':
+      if (login.neo === 'entered') return 'Finishing the sign-in…';
+      if (login.neo === 'pending') {
+        return 'In BrowserOS Neo, sign in to Claude and approve the request. Reelcraft picks up the code itself.';
+      }
+      return 'Open the link below in any browser, approve the request, then paste the code it shows.';
+    case 'connected':
+      return 'Claude is connected.';
+    case 'cancelled':
+      return 'Sign-in cancelled.';
+    case 'failed':
+      return login.error ?? 'Sign-in failed.';
+  }
+}
+
+/** Shows the link and a box for the code: while waiting, unless Reelcraft already sent it. */
+export function showClaudeManualCode(login: ClaudeLoginDto): boolean {
+  return login.phase === 'waiting-for-approval' && login.neo !== 'entered' && !!login.url;
+}
+
 /** Shows the link and code: always unless Neo entered the code itself. */
 export function showManualCode(login: CodexLoginDto): boolean {
   return login.phase === 'waiting-for-approval' && login.neo !== 'entered' && !!login.code;
@@ -111,11 +142,12 @@ const MODALITY_LABELS: Record<string, string> = {
   browser: 'Browser tasks',
 };
 
-/** One line per Codex capability: available, or why not. */
-export function codexCapabilities(
-  status: CodexStatusDto,
+/** One line per capability of a CLI provider: available, or why not. */
+export function capabilityLines(
+  status: Pick<CodexStatusDto, 'modalities' | 'unavailable'>,
+  modalities: string[],
 ): Array<{ label: string; ok: boolean; reason?: string }> {
-  return ['text', 'image', 'browser'].map((modality) => {
+  return modalities.map((modality) => {
     const ok = (status.modalities as string[]).includes(modality);
     const reason = status.unavailable[modality];
     return {

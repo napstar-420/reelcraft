@@ -77,7 +77,7 @@ export class FlowVideoCapability implements CapabilityImpl<FlowVideoConfig> {
   readonly kind = 'async' as const;
   readonly label = 'Generate Video with Flow';
   readonly description =
-    'Generate clips in Google Flow with Codex and BrowserOS Neo, switching accounts when one runs out of credits and waiting when they all do.';
+    'Generate clips in Google Flow with Codex or Claude and BrowserOS Neo, switching accounts when one runs out of credits and waiting when they all do.';
   readonly lockedSystemPrompt = FLOW_SYSTEM_PROMPT;
   readonly requiresTemplate = true;
   readonly configSchema: JsonSchema = {

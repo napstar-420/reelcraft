@@ -2,8 +2,8 @@
  * storage can be missing or blocked, so every access is guarded. */
 export interface AssistantPrefs {
   providerId?: string;
-  modelId?: string;
-  effort?: string;
+  modelId?: string | undefined;
+  effort?: string | undefined;
   autoApply?: boolean;
 }
 

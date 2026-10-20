@@ -1,12 +1,19 @@
 import { describe, expect, it } from 'vitest';
-import type { CodexLoginDto, CodexStatusDto, ProviderKeyStatusDto } from '@reelcraft/shared';
+import type {
+  ClaudeLoginDto,
+  CodexLoginDto,
+  CodexStatusDto,
+  ProviderKeyStatusDto,
+} from '@reelcraft/shared';
 import {
   browserOsSourceLabel,
-  codexCapabilities,
+  capabilityLines,
+  claudeLoginStep,
   isHttpUrl,
   keyBadge,
   loginActive,
   loginStep,
+  showClaudeManualCode,
   showManualCode,
 } from './settings.logic';
 
@@ -77,7 +84,7 @@ describe('settings logic', () => {
       modalities: ['text'],
       unavailable: { image: 'Codex extension "imagegen" is not installed and enabled' },
     } as unknown as CodexStatusDto;
-    expect(codexCapabilities(status)).toEqual([
+    expect(capabilityLines(status, ['text', 'image', 'browser'])).toEqual([
       { label: 'Text', ok: true },
       {
         label: 'Images',
@@ -85,6 +92,50 @@ describe('settings logic', () => {
         reason: 'Codex extension "imagegen" is not installed and enabled',
       },
       { label: 'Browser tasks', ok: false },
+    ]);
+  });
+});
+
+describe('Claude sign-in', () => {
+  const claude = (over: Partial<ClaudeLoginDto>): ClaudeLoginDto => ({
+    phase: 'waiting-for-approval',
+    url: 'https://claude.com/cai/oauth/authorize?state=s',
+    neo: 'pending',
+    neoMessage: null,
+    error: null,
+    startedAt: '2026-10-02T00:00:00Z',
+    expiresAt: '2026-10-02T00:10:00Z',
+    ...over,
+  });
+
+  it('asks for approval in Neo while Reelcraft watches for the code', () => {
+    expect(claudeLoginStep(claude({}))).toMatch(
+      /approve the request in|sign in to Claude and approve/,
+    );
+    expect(showClaudeManualCode(claude({}))).toBe(true);
+  });
+
+  it('falls back to pasting the code when Neo could not help', () => {
+    expect(claudeLoginStep(claude({ neo: 'failed' }))).toMatch(/paste the code/);
+    expect(showClaudeManualCode(claude({ neo: 'failed' }))).toBe(true);
+  });
+
+  it('hides the code box once Reelcraft sent the code', () => {
+    expect(showClaudeManualCode(claude({ neo: 'entered' }))).toBe(false);
+    expect(claudeLoginStep(claude({ phase: 'failed', error: 'Invalid code' }))).toBe(
+      'Invalid code',
+    );
+  });
+
+  it('lists only the capabilities Claude has', () => {
+    expect(
+      capabilityLines({ modalities: ['text'], unavailable: { browser: 'Neo is off' } }, [
+        'text',
+        'browser',
+      ]),
+    ).toEqual([
+      { label: 'Text', ok: true },
+      { label: 'Browser tasks', ok: false, reason: 'Neo is off' },
     ]);
   });
 });

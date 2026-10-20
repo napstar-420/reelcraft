@@ -16,6 +16,20 @@ export function browserOsHostHeaders(url: string): Record<string, string> {
   return { Host: port ? `127.0.0.1:${port}` : '127.0.0.1' };
 }
 
+/** Whether BrowserOS Neo answers at `url` (any status below 500). */
+export async function browserOsReachable(url: string, timeoutMs: number): Promise<boolean> {
+  try {
+    const response = await browserOsFetch(url, {
+      method: 'GET',
+      headers: browserOsHostHeaders(url),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    return response.status < 500;
+  } catch {
+    return false;
+  }
+}
+
 /** Node's fetch replaces Host with the URL host, even when requestInit sets it.
  * Use the native HTTP client for Docker's host address so Neo sees loopback. */
 export function browserOsFetch(input: string | URL, init?: RequestInit): Promise<Response> {

@@ -19,6 +19,7 @@ To make several candidates and keep only the best one, see [Pick the best of sev
 
 OpenRouter image models, **Codex** (needs its image extension, see [Connect Codex](../codex.md)),
 **ChatGPT** (through BrowserOS Neo, see [BrowserOS Neo](../browseros-neo.md)), or **Fake (test)**.
+Claude can't make images, so it isn't offered here.
 Choose one under **Model** or set an **Images** [default](../channels/defaults.md). If a provider
 can't make images right now, the model picker says why.
 

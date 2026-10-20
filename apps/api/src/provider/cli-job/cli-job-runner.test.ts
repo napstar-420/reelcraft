@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('node:child_process', () => ({ spawn: mocks.spawn }));
 vi.mock('node:fs/promises', () => ({ ...mocks, open: vi.fn() }));
 
-describe('Codex job runner failure reporting', () => {
+describe('CLI job runner with Codex', () => {
   const originalArgv = process.argv;
   const originalExitCode = process.exitCode;
 
@@ -24,7 +24,7 @@ describe('Codex job runner failure reporting', () => {
   beforeEach(() => {
     vi.resetModules();
     vi.resetAllMocks();
-    process.argv = [process.execPath, 'codex-job-runner.js', '/tmp/codex-job/runner-request.json'];
+    process.argv = [process.execPath, 'cli-job-runner.js', '/tmp/codex-job/runner-request.json'];
     mocks.readFile.mockResolvedValue(
       JSON.stringify({
         modelId: 'gpt-example',
@@ -63,7 +63,7 @@ describe('Codex job runner failure reporting', () => {
       });
     });
 
-    await import('./codex-job-runner');
+    await import('./cli-job-runner');
     let status: { reason: string } | undefined;
     await vi.waitFor(() => {
       const call = mocks.writeFile.mock.calls.find(
@@ -142,7 +142,7 @@ describe('Codex job runner failure reporting', () => {
         child.emit('close', 0, null);
       }),
     );
-    await import('./codex-job-runner');
+    await import('./cli-job-runner');
     await vi.waitFor(() =>
       expect(
         mocks.writeFile.mock.calls.some(
@@ -160,5 +160,69 @@ describe('Codex job runner failure reporting', () => {
         ),
       ).toBe(true),
     );
+  });
+
+  async function runClaude(stdout: string, code = 0) {
+    const manifest = JSON.parse(
+      await mocks.readFile('/tmp/codex-job/runner-request.json'),
+    ) as Record<string, unknown>;
+    mocks.readFile.mockResolvedValueOnce(
+      JSON.stringify({ ...manifest, cli: 'claude', modelId: 'sonnet', reasoningEffort: 'low' }),
+    );
+    const child = Object.assign(new EventEmitter(), {
+      stdout: new EventEmitter(),
+      stderr: new EventEmitter(),
+      stdin: { end: vi.fn() },
+      kill: vi.fn(),
+    });
+    mocks.spawn.mockReturnValue(child);
+    child.stdin.end.mockImplementation(() =>
+      setImmediate(() => {
+        child.stdout.emit('data', stdout);
+        child.emit('close', code, null);
+      }),
+    );
+    await import('./cli-job-runner');
+    let status: { state: string; reason?: string } | undefined;
+    await vi.waitFor(() => {
+      const call = mocks.writeFile.mock.calls.find(
+        ([path, value]) =>
+          String(path).includes('status.json') &&
+          ['succeeded', 'failed'].includes(JSON.parse(value).state),
+      );
+      expect(call).toBeDefined();
+      status = JSON.parse(call![1]);
+    });
+    return status!;
+  }
+
+  it('runs claude and writes the answer from its result event', async () => {
+    const result = { type: 'result', subtype: 'success', is_error: false, result: 'Hello' };
+    // the last line arrives without a trailing newline
+    const status = await runClaude(`{"type":"system","subtype":"init"}\n${JSON.stringify(result)}`);
+    expect(status.state).toBe('succeeded');
+    expect(mocks.spawn).toHaveBeenCalledWith(
+      'claude',
+      expect.arrayContaining(['-p', '--model', 'sonnet']),
+      expect.anything(),
+    );
+    expect(mocks.writeFile).toHaveBeenCalledWith('/tmp/codex-job/result.txt', 'Hello', {
+      mode: 0o600,
+    });
+  });
+
+  it('fails a claude run whose result is an error, even on exit 0', async () => {
+    const result = { type: 'result', subtype: 'success', is_error: true, result: 'Not logged in' };
+    expect(await runClaude(`${JSON.stringify(result)}\n`)).toMatchObject({
+      state: 'failed',
+      reason: 'Not logged in',
+    });
+  });
+
+  it('fails a claude run that ends without a result', async () => {
+    expect(await runClaude('')).toMatchObject({
+      state: 'failed',
+      reason: 'Claude finished without a result',
+    });
   });
 });

@@ -8,10 +8,10 @@ PGDATA="$DATA/postgres"
 
 # /data/qwen-tts holds the local Qwen3-TTS voices: the Python packages `uv` installs on request
 # and the downloaded models. It is left out of backups (docs: Back up and restore).
-mkdir -p "$DATA/postgres" "$DATA/minio" "$DATA/workspace" "$DATA/codex" "$DATA/qwen-tts" /run/postgresql
+mkdir -p "$DATA/postgres" "$DATA/minio" "$DATA/workspace" "$DATA/codex" "$DATA/claude" "$DATA/qwen-tts" /run/postgresql
 # Fresh Docker volumes are owned by root. Only recurse when ownership is
 # actually wrong, so large media folders are not walked on every boot.
-for dir in "$DATA/postgres" "$DATA/minio" "$DATA/workspace" "$DATA/codex" "$DATA/qwen-tts" /run/postgresql; do
+for dir in "$DATA/postgres" "$DATA/minio" "$DATA/workspace" "$DATA/codex" "$DATA/claude" "$DATA/qwen-tts" /run/postgresql; do
   if [ "$(stat -c %U "$dir")" != reelcraft ]; then chown -R reelcraft:reelcraft "$dir"; fi
 done
 chmod 700 "$PGDATA"

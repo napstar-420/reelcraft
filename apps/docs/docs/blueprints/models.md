@@ -35,15 +35,16 @@ If a provider has no available model for the stage, the box says why, for exampl
 
 ## Providers
 
-| Provider        | What it does in Reelcraft                                                                        |
-| --------------- | ------------------------------------------------------------------------------------------------ |
-| **OpenRouter**  | Text and image models from many vendors, paid by use with your OpenRouter key                    |
-| **fal**         | Video generation                                                                                 |
-| **ElevenLabs**  | Speech (voice-over), with its own voices and settings                                            |
-| **Deepgram**    | Speech (voice-over), and transcription with word timings for Analyze Media                       |
-| **Codex**       | Text, and image and browser steps, using your ChatGPT plan. See [Connect Codex](../codex.md)     |
-| **ChatGPT**     | Text and images through a ChatGPT tab in BrowserOS Neo. See [BrowserOS Neo](../browseros-neo.md) |
-| **Fake (test)** | Free placeholder results for every kind of work                                                  |
+| Provider        | What it does in Reelcraft                                                                           |
+| --------------- | --------------------------------------------------------------------------------------------------- |
+| **OpenRouter**  | Text and image models from many vendors, paid by use with your OpenRouter key                       |
+| **fal**         | Video generation                                                                                    |
+| **ElevenLabs**  | Speech (voice-over), with its own voices and settings                                               |
+| **Deepgram**    | Speech (voice-over), and transcription with word timings for Analyze Media                          |
+| **Codex**       | Text, and image and browser steps, using your ChatGPT plan. See [Connect Codex](../codex.md)        |
+| **Claude**      | Text and browser steps (no images), using your Claude plan. See [Connect Claude](../claude-code.md) |
+| **ChatGPT**     | Text and images through a ChatGPT tab in BrowserOS Neo. See [BrowserOS Neo](../browseros-neo.md)    |
+| **Fake (test)** | Free placeholder results for every kind of work                                                     |
 
 Which providers appear depends on what you've set up in **Settings**.
 
@@ -57,7 +58,7 @@ Which of these you see depends on the provider.
 
 - **Version**: pin a specific version or snapshot of the model, if the provider has them. Leave it
   empty to use the provider's current one.
-- **Effort** (Codex and ChatGPT): how hard the model thinks before answering. Higher is slower and
+- **Effort** (Codex, Claude and ChatGPT): how hard the model thinks before answering. Higher is slower and
   uses more of your plan. The choices depend on the model.
 - **Web search** (ChatGPT): let the model search the web for this stage's prompt.
 - **Params**: extra settings passed to the provider on every call, such as `max_tokens` or

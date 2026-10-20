@@ -19,14 +19,17 @@ import { EngineConfig } from '../config/engine-config';
 import { SETTING, SettingsService } from '../settings/settings.service';
 import { SettingsModule } from '../settings/settings.module';
 import { CodexAppServerClient } from './codex/codex-app-server.client';
-import { CodexJobLauncher } from './codex/codex-job-launcher';
+import { CliJobLauncher } from './cli-job/cli-job-launcher';
 import { CodexProviderAdapter } from './codex/codex-provider.adapter';
 import { CodexRuntimeReadiness } from './codex/codex-runtime-readiness';
-import { CodexInputMaterializer } from './codex/codex-input-materializer';
+import { CliInputMaterializer } from './cli-job/cli-input-materializer';
 import { NeoClient } from './chatgpt/neo-client';
 import { CodexLoginService } from './codex/codex-login.service';
 import { CodexNeoRegistrar } from './codex/codex-neo-registrar';
 import { ChatgptProviderAdapter } from './chatgpt/chatgpt-provider.adapter';
+import { ClaudeProviderAdapter } from './claude/claude-provider.adapter';
+import { ClaudeRuntimeReadiness } from './claude/claude-runtime-readiness';
+import { ClaudeLoginService } from './claude/claude-login.service';
 
 @Module({
   imports: [DbModule, StorageModule, SettingsModule],
@@ -53,9 +56,9 @@ import { ChatgptProviderAdapter } from './chatgpt/chatgpt-provider.adapter';
     },
     DeepgramInboxService,
     CodexAppServerClient,
-    CodexJobLauncher,
+    CliJobLauncher,
     CodexRuntimeReadiness,
-    CodexInputMaterializer,
+    CliInputMaterializer,
     NeoClient,
     ChatgptProviderAdapter,
     {
@@ -79,17 +82,46 @@ import { ChatgptProviderAdapter } from './chatgpt/chatgpt-provider.adapter';
       inject: [
         EngineConfig,
         CodexAppServerClient,
-        CodexJobLauncher,
+        CliJobLauncher,
         CodexRuntimeReadiness,
-        CodexInputMaterializer,
+        CliInputMaterializer,
       ],
       useFactory: (
         config: EngineConfig,
         models: CodexAppServerClient,
-        launcher: CodexJobLauncher,
+        launcher: CliJobLauncher,
         readiness: CodexRuntimeReadiness,
-        inputs: CodexInputMaterializer,
+        inputs: CliInputMaterializer,
       ) => new CodexProviderAdapter(config, models, launcher, readiness, inputs),
+    },
+    {
+      provide: ClaudeRuntimeReadiness,
+      inject: [EngineConfig, SettingsService],
+      useFactory: (config: EngineConfig, settings: SettingsService) =>
+        new ClaudeRuntimeReadiness(config, settings),
+    },
+    {
+      provide: ClaudeLoginService,
+      inject: [NeoClient, ClaudeRuntimeReadiness],
+      useFactory: (neo: NeoClient, readiness: ClaudeRuntimeReadiness) =>
+        new ClaudeLoginService(neo, readiness),
+    },
+    {
+      provide: ClaudeProviderAdapter,
+      inject: [
+        EngineConfig,
+        CliJobLauncher,
+        SettingsService,
+        ClaudeRuntimeReadiness,
+        CliInputMaterializer,
+      ],
+      useFactory: (
+        config: EngineConfig,
+        launcher: CliJobLauncher,
+        settings: SettingsService,
+        readiness: ClaudeRuntimeReadiness,
+        inputs: CliInputMaterializer,
+      ) => new ClaudeProviderAdapter(config, launcher, settings, readiness, inputs),
     },
   ],
   controllers: [DeepgramController, QwenTtsController, QwenSetupController],
@@ -109,6 +141,9 @@ import { ChatgptProviderAdapter } from './chatgpt/chatgpt-provider.adapter';
     DeepgramAdapter,
     QwenTtsAdapter,
     CodexProviderAdapter,
+    ClaudeProviderAdapter,
+    ClaudeRuntimeReadiness,
+    ClaudeLoginService,
     ChatgptProviderAdapter,
   ],
 })
@@ -122,10 +157,12 @@ export class ProviderModule implements OnModuleInit {
     private readonly deepgram: DeepgramAdapter,
     private readonly qwenTts: QwenTtsAdapter,
     private readonly codex: CodexProviderAdapter,
+    private readonly claude: ClaudeProviderAdapter,
     private readonly chatgpt: ChatgptProviderAdapter,
     private readonly settings: SettingsService,
     private readonly openrouterModels: ModelCacheService,
     private readonly codexReadiness: CodexRuntimeReadiness,
+    private readonly claudeReadiness: ClaudeRuntimeReadiness,
   ) {}
 
   onModuleInit(): void {
@@ -134,6 +171,7 @@ export class ProviderModule implements OnModuleInit {
       if (key === SETTING.browserOsUrl) {
         this.chatgpt.forgetReadiness();
         this.codexReadiness.reset();
+        this.claudeReadiness.reset();
       }
     });
     this.registry.register(this.fake);
@@ -143,6 +181,7 @@ export class ProviderModule implements OnModuleInit {
     this.registry.register(this.deepgram);
     this.registry.register(this.qwenTts);
     this.registry.register(this.codex);
+    this.registry.register(this.claude);
     this.registry.register(this.chatgpt);
   }
 }

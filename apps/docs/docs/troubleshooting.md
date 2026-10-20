@@ -65,6 +65,18 @@ Rendering video uses a lot of memory. Give Docker at least 4 GB (macOS and Linux
 - **Neo didn't enter the code**: the Codex card says why, under **BrowserOS Neo:**. Use the link
   and code shown instead. See [Without BrowserOS Neo](./codex.md#without-browseros-neo).
 
+## Claude sign-in doesn't finish
+
+- **"Claude did not show a sign-in link"**: the `claude` program didn't start its sign-in. Click
+  **Connect Claude** again; if it keeps happening, sign in from a terminal (see
+  [Connect Claude](./claude-code.md#signing-in-from-a-terminal)).
+- **"Claude sign-in is already in progress"**: another sign-in is still waiting, perhaps in another
+  tab. Click **Cancel** on it, or wait for it to finish.
+- **"Invalid code"**: the pasted code was incomplete. Copy the whole code from the page and paste it
+  again, or click **Connect Claude** to start over.
+- **Reelcraft didn't pick up the code from Neo**: copy the code from the Neo tab and paste it into the
+  box on the Claude card. See [Without BrowserOS Neo](./claude-code.md#without-browseros-neo).
+
 ## "Saved key can't be read"
 
 The key that unlocks saved provider keys (in `/data/secrets.env`) changed, usually because the

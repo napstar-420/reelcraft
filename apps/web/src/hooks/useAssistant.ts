@@ -120,17 +120,19 @@ export function useAssistant({
 
   // ---- provider, model, effort -----------------------------------------------------------
 
+  const [providerPick, setProviderPick] = useState(prefs.providerId);
   const [modelPick, setModelPick] = useState(prefs.modelId);
   const [effortPick, setEffortPick] = useState(prefs.effort);
 
+  // An open chat keeps the provider it started with; a new one uses the pick.
   const provider = useMemo(() => {
     const list = providers.data ?? [];
     return (
-      list.find((p) => p.id === (session?.providerId ?? prefs.providerId)) ??
+      list.find((p) => p.id === (session?.providerId ?? providerPick)) ??
       list.find((p) => !p.unavailableReason) ??
       list[0]
     );
-  }, [providers.data, prefs.providerId, session?.providerId]);
+  }, [providers.data, providerPick, session?.providerId]);
   const model =
     provider?.models.find((m) => m.modelId === modelPick) ??
     provider?.models.find((m) => m.isDefault) ??
@@ -140,6 +142,14 @@ export function useAssistant({
     model?.defaultReasoningEffort ??
     model?.supportedReasoningEfforts?.[0];
 
+  /** Switching provider starts a new chat: a chat can't change provider. */
+  const setProvider = (providerId: string) => {
+    setProviderPick(providerId);
+    setModelPick(undefined);
+    setEffortPick(undefined);
+    saveAssistantPrefs({ providerId, modelId: undefined, effort: undefined });
+    if (session && session.providerId !== providerId) setPickedSessionId(null);
+  };
   const setModel = (modelId: string) => {
     setModelPick(modelId);
     saveAssistantPrefs({ modelId });
@@ -351,6 +361,7 @@ export function useAssistant({
     items,
     loading: !!activeSessionId && detail.isLoading,
     // choices
+    setProvider,
     model,
     setModel,
     effort,

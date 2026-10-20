@@ -32,9 +32,11 @@ the release-please PR for 0.3.0 (Settings and the guide's in-app links) is #51.
 | `scripts/release/`                                            | Manifest build, signing and key generation (`pnpm test:release`)                            |
 | `.github/workflows/`                                          | `ci.yml`, `release.yml`, `runtime-version.yml`, `docs.yml`                                  |
 | `apps/api/src/update/`                                        | Relays the UI's update requests to the agent. No update logic lives here                    |
-| `apps/api/src/settings/`                                      | Encrypted settings store, `/settings` routes, `/codex` routes, provider key tester          |
+| `apps/api/src/settings/`                                      | Encrypted settings store, `/settings` routes, `/codex` and `/claude` routes, key tester     |
 | `apps/api/src/provider/key-provider.ts`                       | `KEY_PROVIDER` → `SettingsKeyProvider` (environment, then saved)                            |
 | `apps/api/src/provider/codex/`                                | `codex-login.service.ts`, `codex-device-page.ts` (Neo scripts), `codex-neo-registrar.ts`    |
+| `apps/api/src/provider/claude/`                               | `claude-login.service.ts`, `claude-login-page.ts` (sign-in addresses), the Claude adapter   |
+| `apps/api/src/provider/cli-job/`                              | The durable job adapter and runner shared by Codex and Claude                               |
 | `services/qwen-tts/`                                          | The local Qwen3-TTS service (Python). Its source is copied into the image; see below        |
 | `apps/api/src/provider/qwen/`                                 | The `qwen-tts` provider, and `qwen-runtime.service.ts`, which installs and runs the service |
 | `apps/web/src/pages/SettingsPage.tsx`, `components/settings/` | Settings UI. `settings.logic.ts` holds the tested pure helpers                              |
@@ -63,6 +65,10 @@ the release-please PR for 0.3.0 (Settings and the guide's in-app links) is #51.
   encrypts secrets and clears dependent caches (OpenRouter models, the Neo connection, Codex readiness).
 - **Connect Codex**: `codex login --device-auth` → parse link and code → Neo opens the page and types the code
   → the user approves in Neo → `codex mcp add` registers Neo. If Neo can't help, the page shows the link and code.
+- **Connect Claude** (ADR-0016): `claude auth login --claudeai` → parse the authorize link → Neo opens it → the
+  user signs in and approves → Reelcraft reads `code#state` from the callback page's address in Neo and types it
+  into the CLI. If Neo can't help, the page shows the link and a box to paste the code. The login lives in
+  `/data/claude` (`CLAUDE_CONFIG_DIR`). Claude jobs get Neo per job (`--mcp-config`), so nothing is registered.
 - **Local Qwen3-TTS** (ADR 0013): the image has `uv` and the service's source (`/opt/reelcraft/qwen-tts`, outside the
   app bundle) but no Python packages or models. When the user chooses **Set up**, the API (`QwenTtsRuntime`)
   runs `uv venv` and `uv pip install --torch-backend auto … -c constraints.txt` into `/data/qwen-tts` (`UV_*`
@@ -90,7 +96,7 @@ the release-please PR for 0.3.0 (Settings and the guide's in-app links) is #51.
 5. **The updater stays in the image**, never in the app bundle (a downloaded update must not be able to change how
    updates are verified). The API only relays.
 6. **Update the user guide (`apps/docs`)** when setup, Settings or update behaviour changes, with the UI's exact
-   labels, and keep the page slugs the app links to stable (`browseros-neo`, `codex`,
+   labels, and keep the page slugs the app links to stable (`browseros-neo`, `codex`, `claude-code`,
    `updating#update-to-a-new-image`).
 7. A new table that references channel, blueprint or run must go into `ChannelService.delete()`'s cascade
    (the existing rule in `CLAUDE.md`). `app_setting` has no such reference and isn't in it.
@@ -130,6 +136,11 @@ the release-please PR for 0.3.0 (Settings and the guide's in-app links) is #51.
   `--profile reelcraft` works without a profile entry; the
   device-auth output reads "Follow these steps to sign in with ChatGPT using device code authorization" and
   "Enter this one-time code", with the page at `https://auth.openai.com/codex/device`.
+- **Claude Code CLI facts** (verified with 2.1.286, the image's version): see [`claude-provider.md`](claude-provider.md).
+  `claude auth login` works without a TTY (link on stdout, code on stdin); `claude auth status --json` exits 1 when
+  signed out but still prints JSON; `--resume <id>` finds a session from any working directory.
+- **A file named `claude.md` is a `CLAUDE.md`** on macOS's case-insensitive file system, so Claude Code loads it
+  as instructions. That is why the user guide's page is `claude-code.md` (slug `claude-code`).
 - **`CODEX_BROWSER_OS_URL` is set by the image**, so a fresh install's Settings shows the Neo address as "From the
   container environment". That's expected, not a user override.
 - **A Linux host without Docker Desktop** needs `--add-host=host.docker.internal:host-gateway` to reach Neo.

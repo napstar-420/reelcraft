@@ -85,7 +85,7 @@ describe('QcRunner', () => {
       qcReference2: { sourceKey: 'castle.png' },
     });
   });
-  it.each(['chatgpt', 'codex'])(
+  it.each(['chatgpt', 'codex', 'claude'])(
     '%s uses a fresh structured judge call without fake temperature',
     async (provider) => {
       const submit = vi.fn().mockResolvedValue({ providerId: provider, externalId: 'judge' });

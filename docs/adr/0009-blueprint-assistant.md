@@ -1,7 +1,7 @@
 # ADR-0009: The blueprint assistant is a tool-calling agent in the canvas, Codex first
 
 **Date**: 2026-10-06
-**Status**: accepted
+**Status**: accepted (the Claude adapter is in ADR-0016: the CLI per turn, not the Agent SDK)
 **Deciders**: napstar-420, Claude
 
 ## Context

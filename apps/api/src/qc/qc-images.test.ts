@@ -16,8 +16,8 @@ const providers = (inputKinds: string[] | 'throw', maxRefs?: number) =>
 const judge = { provider: 'p', modelId: 'm' };
 
 describe('judgeImagesProblem', () => {
-  it('always accepts Codex, which opens the files itself', async () => {
-    expect(await judgeImagesProblem(providers([]), { provider: 'codex', modelId: 'x' }, 8)).toBe(
+  it.each(['codex', 'claude'])('always accepts %s, which opens the files itself', async (id) => {
+    expect(await judgeImagesProblem(providers([]), { provider: id, modelId: 'x' }, 8)).toBe(
       undefined,
     );
   });

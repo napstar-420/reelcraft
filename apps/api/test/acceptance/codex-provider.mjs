@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CodexAppServerClient } from '../../dist/provider/codex/codex-app-server.client.js';
-import { CodexJobLauncher } from '../../dist/provider/codex/codex-job-launcher.js';
+import { CliJobLauncher } from '../../dist/provider/cli-job/cli-job-launcher.js';
 import { CodexProviderAdapter } from '../../dist/provider/codex/codex-provider.adapter.js';
 
 if (process.env.REELCRAFT_CODEX_ACCEPTANCE !== '1') {
@@ -11,7 +11,7 @@ if (process.env.REELCRAFT_CODEX_ACCEPTANCE !== '1') {
 
 const workspaceRoot = await mkdtemp(join(tmpdir(), 'reelcraft-codex-acceptance-'));
 const client = new CodexAppServerClient();
-const adapter = new CodexProviderAdapter({ workspaceRoot }, client, new CodexJobLauncher());
+const adapter = new CodexProviderAdapter({ workspaceRoot }, client, new CliJobLauncher());
 let handle;
 const finish = async (job) => {
   const deadline = Date.now() + 120_000;

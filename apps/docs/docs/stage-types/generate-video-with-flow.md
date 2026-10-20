@@ -1,9 +1,9 @@
 ---
 title: Generate Video with Flow
-description: Make video clips in Google Flow with Codex and BrowserOS Neo, using your own Flow accounts.
+description: Make video clips in Google Flow with Codex or Claude and BrowserOS Neo, using your own Flow accounts.
 ---
 
-**Generate Video with Flow** has Codex drive [Google Flow](https://labs.google/fx/tools/flow) in
+**Generate Video with Flow** has Codex or Claude drive [Google Flow](https://labs.google/fx/tools/flow) in
 your signed-in browser and make the clips for you. Flow has no API, so the stage works the way
 [Automate Browser](./automate-browser.md) does: it uses the browser on your computer, with your
 logins.
@@ -24,8 +24,9 @@ list: bind it with **Previous stage** to a slot that takes many videos.
 
 ## Providers and models
 
-**Codex** with **BrowserOS Neo**, and nothing else. Set both up first: see
-[Connect Codex](../codex.md) and [BrowserOS Neo](../browseros-neo.md). If either isn't ready, the
+**Codex** or **Claude**, with **BrowserOS Neo**, and nothing else. Set them up first: see
+[Connect Codex](../codex.md) or [Connect Claude](../claude-code.md), and
+[BrowserOS Neo](../browseros-neo.md). If either isn't ready, the
 model picker says why.
 
 ## Template prompt (required)
@@ -101,7 +102,7 @@ pauses when that one runs out.
 ## Cost
 
 Reelcraft doesn't bill anything. The clips use your Flow credits, and the agent uses your ChatGPT
-plan through Codex.
+plan through Codex, or your Claude plan through Claude.
 
 ## Tips
 

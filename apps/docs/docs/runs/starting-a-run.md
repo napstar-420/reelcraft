@@ -39,7 +39,7 @@ The run page opens as soon as the run starts. See [Run page](./run-page.md).
 :::note A real run costs real money
 
 The dialog reminds you: **This is a real run. It uses each stage's configured provider, including
-Codex, and may consume provider usage.**
+Codex and Claude, and may consume provider usage.**
 
 :::
 

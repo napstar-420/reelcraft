@@ -212,7 +212,7 @@ const listModels: AssistantTool<z.infer<typeof ListModelsInput>> = {
               outputFormats: model.capabilities.speech.formats.map((format) => format.value),
             }),
             // Only OpenRouter needs native structured output for a data stage (the validator
-            // rejects it otherwise); Codex, ChatGPT and fake reply in JSON that Reelcraft parses
+            // rejects it otherwise); Codex, Claude, ChatGPT and fake reply in JSON that Reelcraft parses
             // and checks against the schema.
             dataOutput:
               providerId !== 'openrouter' ||
