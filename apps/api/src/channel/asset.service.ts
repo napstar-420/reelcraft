@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+import path from 'node:path';
 import { BadRequestException, ConflictException, Inject, Injectable, Logger } from '@nestjs/common';
 import { and, eq, isNull } from 'drizzle-orm';
 import { Probe, type AssetFileDto, type CreateAssetDto } from '@reelcraft/shared';
@@ -12,6 +13,7 @@ import { WorkspaceService } from '../storage/workspace.service';
 import { MediaProbeService } from '../artifact/media-probe.service';
 import { queueStorageOrphans } from '../artifact/storage-orphans';
 import { importSvg } from '../capability/vector/svg-import';
+import { checkModelFile, isModelExtension, modelProbe } from '../artifact/model-file';
 
 /**
  * §3.3 — reusable channel material with a lifetime longer than a run.
@@ -59,11 +61,28 @@ export class AssetService {
       });
     }
     const stat = await this.storage.stat(dto.objectKey);
-    const probe = dto.kind.startsWith('media.')
+    let probe = dto.kind.startsWith('media.')
       ? await this.workspaces.withWorkspace(dto.blobId, async (workspace) =>
           this.probes.probe(await workspace.pull(dto.objectKey)),
         )
       : undefined;
+
+    // A 3D model has nothing for ffprobe to read; its format is checked instead, so a file a scene
+    // can't load is refused at upload.
+    if (dto.kind === 'model') {
+      const ext = path.extname(dto.objectKey).slice(1).toLowerCase();
+      const problem = await this.workspaces.withWorkspace(dto.blobId, async (workspace) =>
+        checkModelFile(await workspace.pull(dto.objectKey), ext),
+      );
+      if (problem || !isModelExtension(ext)) {
+        await queueStorageOrphans(this.db, [dto.objectKey], 'upload_rejected');
+        throw new BadRequestException({
+          code: 'asset_model_invalid',
+          message: problem ?? 'Not a 3D model file.',
+        });
+      }
+      probe = modelProbe(ext);
+    }
 
     // A drawing is read now, so a file that can't be drawn is refused at upload, not in a run.
     let meta: unknown;

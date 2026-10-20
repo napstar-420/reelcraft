@@ -32,6 +32,7 @@ const ASSET_KINDS: { value: AssetKind; label: string; accept: string }[] = [
   { value: 'media.video', label: 'Video', accept: 'video/*' },
   { value: 'media.audio', label: 'Audio', accept: 'audio/*' },
   { value: 'vector', label: 'Drawing (SVG)', accept: 'image/svg+xml,.svg' },
+  { value: 'model', label: '3D model', accept: '.glb,.gltf,.fbx,.obj,.blend' },
 ];
 
 export function AssetCreateDialog({
