@@ -384,4 +384,35 @@ describe('every asset kind, generated in the run or picked from the library (e2e
       }),
     ).rejects.toMatchObject({ response: { code: 'asset_vector_invalid' } });
   });
+
+  it('keeps a 3D model as a library asset, and refuses a file that is not one', async () => {
+    const assets = testApp.app.get(AssetService);
+    const storage = testApp.app.get<StorageAdapter>(STORAGE_ADAPTER);
+    const channel = await testApp.app
+      .get(ChannelService)
+      .create('local', { name: `Models ${Date.now()}`, theme: {}, defaults: {} });
+    const upload = async (bytes: Buffer, name: string) => {
+      const target = await assets.requestUpload(channel.id, 'glb');
+      await storage.put(target.objectKey, bytes, { mime: 'model/gltf-binary' });
+      return assets.create(channel.id, {
+        name,
+        kind: 'model',
+        blobId: target.blobId,
+        objectKey: target.objectKey,
+        sha256: name,
+        tags: ['character'],
+      });
+    };
+    const header = Buffer.alloc(12);
+    header.write('glTF', 0, 'latin1');
+    header.writeUInt32LE(2, 4);
+    header.writeUInt32LE(12, 8);
+    const robot = await upload(header, 'robot');
+    expect(robot).toMatchObject({ kind: 'model', tags: ['character'] });
+    expect(robot.file.bytes).toBe(12);
+
+    await expect(upload(Buffer.from('PK\u0003\u0004zip'), 'not-a-model')).rejects.toMatchObject({
+      response: { code: 'asset_model_invalid' },
+    });
+  });
 });

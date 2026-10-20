@@ -7,6 +7,7 @@ const MODALITIES = new Set<Modality>([
   'audio',
   'media',
   'browser',
+  'code',
   'human',
   'publish',
 ]);

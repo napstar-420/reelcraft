@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { VectorAsset } from './vector-asset';
 
 /** What an asset is. Every kind can be made during a run or uploaded to the channel library. */
-export const CatalogKind = z.enum(['image', 'video', 'audio', 'vector', 'font']);
+export const CatalogKind = z.enum(['image', 'video', 'audio', 'vector', 'font', 'model']);
 export type CatalogKind = z.infer<typeof CatalogKind>;
 
 /**

@@ -61,12 +61,13 @@ instead of loading. The page runs in headless Chrome with only the local bundle 
 
 **Every text model can write it; agents also test their work.** `motion.generate` sends an ordinary text
 request with structured output, so OpenRouter, ChatGPT, Codex, Claude and the fake provider all work. A request
-can now carry a generic `workspace`: files for the job folder, the commands the agent may run, and
-instructions.
+also carries the job-folder parameters the agent CLIs already use for code jobs (the Blender scene stages,
+ADR-less in #180): `__workspace` (files for the folder), `__allowedCommands` (the only commands the agent may
+run) and `__workspaceInstructions` (how to use them). One mechanism, not two.
 
-- **Codex and Claude** (`CliJobProviderAdapter`) write the workspace into their job folder.
-- **Claude** gets `Read`, `Write`, `Edit`, `Glob` and `Bash`, with only the given commands allowed.
-- **Other providers** ignore it.
+- **Codex and Claude** (`CliJobProviderAdapter`) write the files into their job folder, and the prompt says
+  how to use them. Claude gets file tools and `Bash` limited to the allowed commands.
+- **Other providers** ignore them. OpenRouter no longer forwards any param starting with `__`.
 
 For a motion graphic the workspace holds:
 

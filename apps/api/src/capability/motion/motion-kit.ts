@@ -1,5 +1,4 @@
 import type { MotionSource } from '@reelcraft/shared';
-import type { ProviderWorkspace } from '../../provider/provider-adapter.interface';
 import { MOTION_GUIDE } from './motion-prompt';
 import { SAMPLE_MOTION_CODE } from './sample-motion';
 
@@ -26,7 +25,7 @@ if (issues.length) {
   console.log(describeMotionIssues(issues));
   process.exit(1);
 }
-const seconds = Number(process.argv[2]) || kit.durationSec || 5;
+const seconds = Number(process.argv[3]) || kit.durationSec || 5;
 mkdirSync('preview', { recursive: true });
 mkdirSync('tmp', { recursive: true });
 for (const name of kit.files) {
@@ -50,6 +49,14 @@ console.log('Motion.tsx renders (' + seconds + ' s). Look at these pictures of i
 for (const file of written) console.log('- ' + file);
 `;
 
+/** The working folder an agent writes and test-renders a motion graphic in, in the shape the agent
+ * CLI adapters take: `params.__workspace` (`files`), `params.__allowedCommands`, and instructions. */
+export interface MotionWorkspace {
+  files: Array<{ path: string; contents: string }>;
+  commands: string[];
+  instructions: string;
+}
+
 /** The working folder an agent writes and test-renders a motion graphic in. */
 export function motionWorkspace(p: {
   frame: Pick<MotionSource, 'width' | 'height' | 'fps' | 'background'>;
@@ -59,7 +66,7 @@ export function motionWorkspace(p: {
   checker: string;
   worker: string;
   browser?: string | undefined;
-}): ProviderWorkspace {
+}): MotionWorkspace {
   const kit = {
     frame: p.frame,
     ...(p.durationSec !== undefined && { durationSec: p.durationSec }),
@@ -75,19 +82,19 @@ export function motionWorkspace(p: {
 ## Working here
 
 - Motion.tsx holds a starting example. Replace it with the graphic you are asked for.
-- Run \`node check.mjs\` (or \`node check.mjs <seconds>\`) to check the rules and render pictures of the start, middle and end into stills/. Open them and look: is everything inside the frame, readable, and doing what was asked?
+- Run \`node check.mjs run\` (or \`node check.mjs run <seconds>\`) to check the rules and render pictures of the start, middle and end into stills/. Open them and look: is everything inside the frame, readable, and doing what was asked?
 - Fix and run the check again until it passes and looks right.${p.files.length ? `\n- The files the graphic can load (${p.files.join(', ')}) are grey placeholders here; the real ones are used in the final render.` : ''}
 - Then answer with the full contents of Motion.tsx as the code.
 `;
   return {
     files: [
-      { name: 'GUIDE.md', contents: guide },
-      { name: 'Motion.tsx', contents: SAMPLE_MOTION_CODE },
-      { name: 'check.mjs', contents: CHECK_SCRIPT },
-      { name: 'kit.json', contents: JSON.stringify(kit, null, 2) },
+      { path: 'GUIDE.md', contents: guide },
+      { path: 'Motion.tsx', contents: SAMPLE_MOTION_CODE },
+      { path: 'check.mjs', contents: CHECK_SCRIPT },
+      { path: 'kit.json', contents: JSON.stringify(kit, null, 2) },
     ],
     commands: ['node check.mjs'],
     instructions:
-      'Your working folder has GUIDE.md (read it first), Motion.tsx (a starting example) and check.mjs. Write the graphic in Motion.tsx, run `node check.mjs` to check it and render pictures of it, look at the pictures, and repeat until it passes and looks right. Then answer with the final contents of Motion.tsx as the code.',
+      'Your working folder has GUIDE.md (read it first), Motion.tsx (a starting example) and check.mjs. Write the graphic in Motion.tsx, run `node check.mjs run` to check it and render pictures of it, look at the pictures, and repeat until it passes and looks right. Then answer with the final contents of Motion.tsx as the code.',
   };
 }

@@ -1,4 +1,4 @@
-import { disabledAncestor, MotionSource } from '@reelcraft/shared';
+import { disabledAncestor } from '@reelcraft/shared';
 import { createHash } from 'node:crypto';
 import { canonicalJson } from '../json-schema/schema-hash';
 import { Inject, Injectable } from '@nestjs/common';
@@ -27,7 +27,7 @@ import { renderStagePrompt } from '../common/prompt-template';
 import { unwrapText } from '../common/unwrap-text';
 import { collectFileInputs, promptScopeWithRoles } from '../common/file-inputs';
 import { CapabilityRegistry } from '../capability/capability.registry';
-import type { ImageListOutput } from '../capability/capability.interface';
+import type { CapabilityImpl, ImageListOutput } from '../capability/capability.interface';
 import {
   BindingResolverService,
   type RefEnvelope,
@@ -54,10 +54,7 @@ import { storedCandidates } from '../artifact/clip-handle';
 import { HumanWaitService } from '../run/human-wait.service';
 import { TimelineCheckService } from '../check/timeline-check.service';
 import { TimelineHandleService } from '../artifact/timeline-handle.service';
-import {
-  TimelineResourceResolverService,
-  type ResolvedTimelineResource,
-} from '../artifact/timeline-resource-resolver.service';
+import { TimelineResourceResolverService } from '../artifact/timeline-resource-resolver.service';
 import { FileArtifactService } from '../artifact/file-artifact.service';
 import { ArtifactAttachmentService } from '../artifact/artifact-attachment.service';
 import { StageEventService, type StageEventLevel } from './stage-event.service';
@@ -609,24 +606,6 @@ export class StageRunnerService {
     return row.roleBindings as Record<string, RoleBinding>;
   }
 
-  /** The stored files a render stage copies into its job: a timeline's media, or the files a
-   * motion graphic loads. */
-  private async stageResources(
-    stage: StageDef,
-    runId: string,
-    slots: Record<string, unknown>,
-  ): Promise<Record<string, ResolvedTimelineResource> | undefined> {
-    if (stage.capability === 'timeline.render' && slots.timeline) {
-      return this.timelineResources.resolve(runId, slots.timeline);
-    }
-    if (stage.capability === 'motion.render' && slots.source) {
-      const source = MotionSource.safeParse(slots.source);
-      const handles = source.success ? (source.data.assets ?? []).map((a) => a.handle) : [];
-      return handles.length ? this.timelineResources.resolveHandles(runId, handles) : {};
-    }
-    return undefined;
-  }
-
   private async resolveBindings(
     stage: StageDef,
     runId: string,
@@ -696,6 +675,16 @@ export class StageRunnerService {
       );
     }
     return lines.join('\n');
+  }
+
+  /** The stored files a capability says it reads from its slots, resolved to storage keys. */
+  private async resolveResources(
+    capability: CapabilityImpl,
+    bindings: ResolvedBindings,
+    runId: string,
+  ) {
+    const handles = capability.resourceHandles?.(bindings.slots);
+    return handles?.length ? this.timelineResources.resolveHandles(runId, handles) : undefined;
   }
 
   private buildExecCtx(
@@ -782,7 +771,7 @@ export class StageRunnerService {
         ? { errorReply: true, attachments: collectFileInputs(bindings.context, stage.attach ?? []) }
         : undefined,
     );
-    const resources = await this.stageResources(stage, ctx.runId, bindings.slots);
+    const resources = await this.resolveResources(capability, bindings, ctx.runId);
     const unpreparedExecCtx = this.buildExecCtx(
       stage,
       ctx,
@@ -1176,7 +1165,7 @@ export class StageRunnerService {
   ): Promise<FetchAndFinalizeResult> {
     const capability = this.capabilities.get(stage.capability);
     const bindings = await this.resolveBindings(stage, ctx.runId, prevStageKey, ctx.itemIndex);
-    const resources = await this.stageResources(stage, ctx.runId, bindings.slots);
+    const resources = await this.resolveResources(capability, bindings, ctx.runId);
     const execCtx = this.buildExecCtx(stage, ctx, effective, bindings, undefined, resources);
     const fetchStartedAt = Date.now();
     const result = await capability.fetch(handle, execCtx);

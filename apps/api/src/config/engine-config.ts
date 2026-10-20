@@ -158,6 +158,18 @@ export class EngineConfig implements OnModuleInit {
     );
   }
 
+  get blenderPathFromEnv(): string | undefined {
+    return this.config.get('BLENDER_PATH', { infer: true });
+  }
+
+  /** Where a Blender Reelcraft downloads is kept. */
+  get blenderHome(): string {
+    return (
+      this.config.get('BLENDER_HOME', { infer: true }) ||
+      path.join(os.homedir(), '.reelcraft', 'blender')
+    );
+  }
+
   /** The service's source folder: set by the image, else `services/qwen-tts` in a repo checkout. */
   get qwenTtsSourceDir(): string | undefined {
     const set = this.config.get('QWEN_TTS_SOURCE_DIR', { infer: true });

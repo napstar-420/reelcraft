@@ -178,26 +178,32 @@ export class MotionGenerateCapability implements CapabilityImpl<MotionGenerateCo
       files,
       style: ctx.config.style,
     });
+    // Agents that work with files (Codex, Claude) can check and test-render the code before
+    // answering. Other providers ignore these.
+    const workspace = motionWorkspace({
+      frame: base,
+      durationSec,
+      props: base.props,
+      files,
+      checker: path.resolve(__dirname, '../motion/motion-code-check.js'),
+      worker: path.resolve(__dirname, '../../../../render-worker/dist/cli.js'),
+      browser: this.engine.remotionBrowserExecutable,
+    });
     return {
       modality: 'text',
       modelId: ctx.config.modelId,
-      params: ctx.config.params ?? {},
+      params: {
+        ...(ctx.config.params ?? {}),
+        __workspace: { files: workspace.files },
+        __allowedCommands: workspace.commands,
+        __workspaceInstructions: workspace.instructions,
+      },
       renderedPrompt: `${ctx.renderedPrompt ?? ''}\n\n${brief}`.trim(),
       system: MOTION_SYSTEM_PROMPT,
       output: {
         kind: 'data',
         schema: errorEnvelopeSchema(motionAnswerJsonSchema),
       },
-      // Agents that work with files can check and test-render the code before answering.
-      workspace: motionWorkspace({
-        frame: base,
-        durationSec,
-        props: base.props,
-        files,
-        checker: path.resolve(__dirname, '../motion/motion-code-check.js'),
-        worker: path.resolve(__dirname, '../../../../render-worker/dist/cli.js'),
-        browser: this.engine.remotionBrowserExecutable,
-      }),
     };
   }
 

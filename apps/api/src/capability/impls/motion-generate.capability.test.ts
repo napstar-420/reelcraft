@@ -93,16 +93,11 @@ describe('MotionGenerateCapability', () => {
     expect(req.renderedPrompt).toContain('Style: bold blue');
     expect(req.renderedPrompt).toContain('"values"');
     expect(req.output.kind).toBe('data');
-    expect(req.workspace.commands).toEqual(['node check.mjs']);
-    expect(req.workspace.files.map((f: { name: string }) => f.name)).toEqual([
-      'GUIDE.md',
-      'Motion.tsx',
-      'check.mjs',
-      'kit.json',
-    ]);
-    const kit = JSON.parse(
-      req.workspace.files.find((f: { name: string }) => f.name === 'kit.json').contents,
-    );
+    expect(req.params.__allowedCommands).toEqual(['node check.mjs']);
+    expect(req.params.__workspaceInstructions).toContain('node check.mjs run');
+    const files = req.params.__workspace.files as Array<{ path: string; contents: string }>;
+    expect(files.map((f) => f.path)).toEqual(['GUIDE.md', 'Motion.tsx', 'check.mjs', 'kit.json']);
+    const kit = JSON.parse(files.find((f) => f.path === 'kit.json')!.contents);
     expect(kit).toMatchObject({
       durationSec: 6,
       props: { values: [3] },

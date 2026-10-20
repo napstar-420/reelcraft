@@ -59,6 +59,26 @@ describe('reusableStageKeys', () => {
     expect(reusableStageKeys(baseParams())).toEqual({ keys: ['topics', 'selector'] });
   });
 
+  it('keeps an edited finished stage, and the ones after it, when the person chose to', () => {
+    const p = baseParams({
+      newGraph: [stage('topics'), stage('selector', { label: 'Selector v2' })],
+    });
+    expect(reusableStageKeys({ ...p, keepStageKeys: ['selector'] })).toEqual({
+      keys: ['topics', 'selector'],
+    });
+    // A kept stage still needs a finished source and reused dependencies.
+    expect(
+      reusableStageKeys({
+        ...p,
+        keepStageKeys: ['selector'],
+        sourceExecutions: [
+          { stageKey: 'topics', state: 'failed', needsItemWork: false },
+          { stageKey: 'selector', state: 'passed', needsItemWork: false },
+        ],
+      }),
+    ).toEqual({ keys: [], stop: { stageKey: 'topics', reason: 'failed' } });
+  });
+
   it('cuts the prefix where a middle stage was edited', () => {
     const p = baseParams({
       newGraph: [stage('topics'), stage('selector', { label: 'Selector v2' })],

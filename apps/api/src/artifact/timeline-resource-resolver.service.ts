@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { and, eq, inArray } from 'drizzle-orm';
-import { Timeline, isBuiltinAudioHandle } from '@reelcraft/shared';
+import { isBuiltinAudioHandle, timelineHandles } from '@reelcraft/shared';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
 import { artifact, blob, run } from '../db/schema';
 import { LIST_KINDS, listItemKind, parseArtifactHandle, storedListItems } from './clip-handle';
@@ -20,22 +20,16 @@ export class TimelineResourceResolverService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async resolve(runId: string, value: unknown): Promise<Record<string, ResolvedTimelineResource>> {
-    const timeline = Timeline.parse(value);
-    const handles = new Set<string>();
-    for (const track of timeline.tracks) {
-      for (const item of track.items) {
-        if (item.type === 'media') handles.add(item.handle);
-        if (item.type === 'captions') handles.add(item.timingHandle);
-      }
-    }
-    return this.resolveHandles(runId, handles);
+    return this.resolveHandles(runId, timelineHandles(value));
   }
 
-  /** Resolves artifact and asset handles to their stored files, whatever uses them. */
+  /** The stored file behind each handle (`artifact:…`, `artifact:…#n`, `asset:…`). Handles that
+   * can't be found are left out and logged; built-in sounds need nothing. */
   async resolveHandles(
     runId: string,
-    handles: Iterable<string>,
+    wanted: Iterable<string>,
   ): Promise<Record<string, ResolvedTimelineResource>> {
+    const handles = new Set(wanted);
     const [runRow] = await this.db
       .select({ assets: run.assetBindings })
       .from(run)
@@ -115,8 +109,8 @@ export class TimelineResourceResolverService {
       }
     }
     this.logger.debug(
-      { runId, resolved: Object.keys(result).length },
-      'timeline resources resolved',
+      { runId, handles: handles.size, resolved: Object.keys(result).length },
+      'resources resolved',
     );
     return result;
   }

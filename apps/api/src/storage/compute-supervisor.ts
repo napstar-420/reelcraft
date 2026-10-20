@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { openSync } from 'node:fs';
+import { openSync, readFileSync } from 'node:fs';
 import { rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
@@ -13,6 +13,10 @@ async function main() {
   const [jobDir, command, encodedArgs, maxWait] = process.argv.slice(2);
   if (!jobDir || !command || !encodedArgs || !maxWait) process.exit(2);
   const args = JSON.parse(encodedArgs) as string[];
+  // `spec.env`, when the job set one, is the command's whole environment.
+  const spec = JSON.parse(readFileSync(path.join(jobDir, 'spec.json'), 'utf8')) as {
+    env?: Record<string, string>;
+  };
   await writeStatus(jobDir, {
     done: false,
     phase: 'running',
@@ -22,6 +26,7 @@ async function main() {
   const child = spawn(command, args, {
     cwd: jobDir,
     detached: true,
+    ...(spec.env && { env: spec.env }),
     stdio: [
       'ignore',
       openSync(path.join(jobDir, 'stdout.log'), 'a'),

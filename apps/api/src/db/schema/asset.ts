@@ -10,6 +10,7 @@ export const assetKindEnum = pgEnum('asset_kind', [
   'font',
   'lut',
   'vector',
+  'model',
 ]);
 
 /** §3.3 — reusable channel material with a lifetime longer than a run. */

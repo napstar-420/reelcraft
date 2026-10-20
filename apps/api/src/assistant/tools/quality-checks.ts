@@ -10,6 +10,7 @@ const MODEL_STAGES = new Set([
   'audio.music',
   'browser.automate',
   'browser.flow_video',
+  'code.scene',
 ]);
 
 type Rule = 'schema' | 'system' | 'gate';
@@ -23,7 +24,8 @@ interface Violation {
 function violations(stage: StageDef): Violation[] {
   const base = `stages.${stage.key}`;
   const out: Violation[] = [];
-  if (stage.output.kind === 'data') {
+  // Write Scene's output is a scene, whose shape the stage itself defines and checks.
+  if (stage.output.kind === 'data' && stage.capability !== 'code.scene') {
     const properties = stage.output.schema.properties;
     if (!properties || Object.keys(properties).length === 0)
       out.push({

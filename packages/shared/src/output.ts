@@ -36,6 +36,7 @@ export const OutputDef = z.discriminatedUnion('kind', [
       'media.audio',
       'media.video_list',
       'media.image_list',
+      'media.model',
     ]),
     constraints: MediaConstraints.optional(),
   }),

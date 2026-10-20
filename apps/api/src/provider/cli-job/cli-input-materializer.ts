@@ -29,4 +29,15 @@ export class CliInputMaterializer {
     }
     return paths;
   }
+
+  /** Copies stored files to the given paths, read-only. */
+  async copy(files: Array<{ sourceKey: string; target: string }>): Promise<void> {
+    for (const file of files) {
+      await pipeline(
+        await this.storage.getStream(file.sourceKey),
+        createWriteStream(file.target, { mode: 0o400 }),
+      );
+      await chmod(file.target, 0o400);
+    }
+  }
 }

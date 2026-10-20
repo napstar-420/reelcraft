@@ -119,6 +119,9 @@ export interface CapabilityImpl<Cfg = Record<string, unknown>> {
   slots(cfg: Cfg): SlotDef[];
   allowedOutputs(cfg: Cfg): OutputKind[];
   validate?(cfg: Cfg, stage: StageDef, caps: ModelCapabilities): ValidationIssue[];
+  /** Stored files (by handle) the stage reads from its slots. The runner resolves each to its
+   * storage key and hands them over as `ctx.resources`. */
+  resourceHandles?(slots: Record<string, unknown>): string[];
 
   /** Derive the exact request context used for both cost estimation and
    * submission. The stage runner persists this context's prompt for audit. */

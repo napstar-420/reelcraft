@@ -1,6 +1,7 @@
 import { DagOverview } from './dag-overview';
 import { stageDependencies } from '@/lib/stage-deps';
 import { StageExecutionControls } from '@/components/runs/execution-controls';
+import { withoutStageActions } from './test-run-controls';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { Eye, History, Info, Play } from 'lucide-react';
@@ -286,7 +287,11 @@ export function RunTab({
                   {stage.disabled && <Badge variant="outline">Disabled</Badge>}
                   <div className="w-full pl-4">
                     <StageExecutionControls
-                      available={execution?.availableActions}
+                      available={
+                        execution?.availableActions && actions.newRunReason
+                          ? withoutStageActions(execution.availableActions, actions.newRunReason)
+                          : execution?.availableActions
+                      }
                       busy={run.availableActions?.busy ?? true}
                       pending={actions.runStage.isPending}
                       allowRecheck={actions.validationStageKeys.has(stage.key)}

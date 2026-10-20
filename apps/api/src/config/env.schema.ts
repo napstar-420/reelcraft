@@ -54,6 +54,14 @@ export const EnvSchema = z
     QWEN_TTS_HOME: z.string().optional(),
     /** The folder holding the service's source (`services/qwen-tts`); found in a checkout, set by the image. */
     QWEN_TTS_SOURCE_DIR: z.string().optional(),
+    /** The Blender executable to render scenes with. Unset means one saved in Settings, the copy
+     * Reelcraft downloaded, or one installed on this computer. */
+    BLENDER_PATH: z.preprocess(
+      (value) => (value === '' ? undefined : value),
+      z.string().optional(),
+    ),
+    /** Where a Blender Reelcraft downloads is kept. */
+    BLENDER_HOME: z.string().optional(),
     PUBLIC_API_BASE_URL: z.string().url().optional(),
     DEEPGRAM_CALLBACK_SECRET: z.string().min(32).optional(),
 

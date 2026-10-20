@@ -46,6 +46,13 @@ describe('canvas-run.logic', () => {
     expect(dto).toMatchObject({ rerunStageKeys: ['script'], untilStageKey: 'script' });
   });
 
+  it('buildRunAllDto passes the stages to keep as they are', () => {
+    expect(buildRunAllDto(source, 'version-2', ['a', 'b'])).toMatchObject({
+      keepStageKeys: ['a', 'b'],
+    });
+    expect(buildRunAllDto(source, 'version-2')).not.toHaveProperty('keepStageKeys');
+  });
+
   it('buildRunAllDto seeds with no stop point and no forced rerun', () => {
     const dto = buildRunAllDto(source, 'version-2');
     expect(dto.rerunStageKeys).toEqual([]);

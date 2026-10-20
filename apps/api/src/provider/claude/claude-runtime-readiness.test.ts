@@ -52,12 +52,12 @@ describe('ClaudeRuntimeReadiness', () => {
   it('offers text when signed in, and browser only when Neo answers', async () => {
     const check = readiness(signedIn);
     expect(await check.inspect(true)).toEqual({
-      modalities: ['text'],
+      modalities: ['text', 'code'],
       unavailable: { browser: expect.stringMatching(/BrowserOS Neo/) },
     });
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('', { status: 200 })));
     try {
-      expect((await check.inspect(true)).modalities).toEqual(['text', 'browser']);
+      expect((await check.inspect(true)).modalities).toEqual(['text', 'code', 'browser']);
     } finally {
       vi.unstubAllGlobals();
     }

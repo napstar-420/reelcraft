@@ -1,7 +1,6 @@
 import type { CreateBlueprintVersionDto, RunDetailDto, StageDef } from '@reelcraft/shared';
 import { runningNow } from '@/pages/runs-page.logic';
 import { definitionKey } from './stage-freshness';
-import { stageDependencies } from './stage-deps';
 
 type RunLike = Pick<RunDetailDto, 'state' | 'availableActions'> & {
   stageExecutions: Array<{ state: string; label: string; failure?: unknown }>;
@@ -11,20 +10,16 @@ type RunLike = Pick<RunDetailDto, 'state' | 'availableActions'> & {
  * or nothing while it settles or waits on a person (their review button shows instead). */
 export type PrimaryRunAction = 'start' | 'pause' | 'continue' | 'none';
 
-/** `newRunReason`: the canvas edits a test run can't take (`requiresNewRun`); a run that
- * would otherwise continue offers a fresh run instead. */
-export function primaryRunAction(
-  run: RunLike | undefined,
-  newRunReason: string | null = null,
-): PrimaryRunAction {
+/** An open run that can still go on always offers Continue. When the canvas edits can't be applied
+ * inside it (`requiresNewRun`), Continue starts a new run that keeps its finished stages. */
+export function primaryRunAction(run: RunLike | undefined): PrimaryRunAction {
   if (!run) return 'start';
   const available = run.availableActions;
   if (available?.pause) return 'pause';
   if (available?.busy || run.state === 'CREATED') return 'none';
   if (run.state === 'PAUSED_APPROVAL' || run.state === 'PAUSED_INPUT') return 'none';
   const unfinished = run.stageExecutions.some((e) => e.state !== 'passed' && e.state !== 'skipped');
-  if (available?.resume || (run.state === 'IDLE' && unfinished))
-    return newRunReason ? 'start' : 'continue';
+  if (available?.resume || (run.state === 'IDLE' && unfinished)) return 'continue';
   return 'start';
 }
 
@@ -67,8 +62,9 @@ export function runHeadline(run: RunLike): string | null {
   return null;
 }
 
-/** Why a run can't take these edits and needs a fresh run, or null when it can.
- * Mirrors the server's "Start a new run" blocks in `run-stage-plan.service.ts`. */
+/** Why a run can't take these edits and needs a fresh run, or null when it can. Mirrors the
+ * server's "Start a new run" blocks in `run-stage-plan.service.ts`. Reconnected stages are not
+ * one: they take their new wiring when they run again. */
 export function requiresNewRun(
   source: CreateBlueprintVersionDto,
   draft: CreateBlueprintVersionDto,
@@ -82,14 +78,5 @@ export function requiresNewRun(
     )
   )
     return 'Blueprint inputs, roles or defaults changed since this run started.';
-  const oldDeps = stageDependencies(source.graph);
-  const newDeps = stageDependencies(draft.graph);
-  if (
-    definitionKey(keys(source.graph)) !== definitionKey(keys(draft.graph)) ||
-    source.graph.some(
-      (s) => definitionKey(oldDeps.get(s.key)) !== definitionKey(newDeps.get(s.key)),
-    )
-  )
-    return 'Stages were reordered or reconnected since this run started.';
   return null;
 }

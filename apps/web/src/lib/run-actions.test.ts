@@ -33,7 +33,7 @@ describe('primaryRunAction', () => {
     expect(primaryRunAction(run('PAUSING', [], actions({ busy: true })))).toBe('none');
     expect(primaryRunAction(run('PAUSED_APPROVAL', []))).toBe('none');
   });
-  it('continues a failed, paused, stopped or partly run run unless the edits need a new run', () => {
+  it('continues a failed, paused, stopped or partly run run', () => {
     const failed = run(
       'FAILED',
       [{ state: 'passed' }, { state: 'failed' }],
@@ -43,7 +43,8 @@ describe('primaryRunAction', () => {
     expect(primaryRunAction(run('IDLE', [{ state: 'passed' }, { state: 'pending' }]))).toBe(
       'continue',
     );
-    expect(primaryRunAction(failed, 'Stages were reordered')).toBe('start');
+    // Edits the run can't take don't hide Continue: it starts a new run that keeps finished stages.
+    expect(primaryRunAction(failed)).toBe('continue');
   });
 });
 
@@ -86,7 +87,7 @@ describe('requiresNewRun', () => {
     defaults: {},
     budget: { runCapUsd: 1 },
   };
-  it('allows prompt edits but not added stages, rewiring or input changes', () => {
+  it('allows prompt edits and rewiring but not added stages or input changes', () => {
     const edited = {
       ...source,
       graph: source.graph.map((s) => (s.key === 'b' ? { ...s, label: 'Renamed' } : s)),
@@ -100,6 +101,9 @@ describe('requiresNewRun', () => {
         ...source,
         graph: source.graph.map((s) => (s.key === 'b' ? { ...s, dependsOn: [] } : s)),
       }),
-    ).toContain('reconnected');
+    ).toBeNull();
+    expect(
+      requiresNewRun(source, { ...source, inputs: [{ ...stage, key: 'x' } as never] }),
+    ).toContain('inputs, roles or defaults');
   });
 });

@@ -1,4 +1,5 @@
 import {
+  Box,
   Clapperboard,
   FileOutput,
   FileText,
@@ -35,6 +36,8 @@ const CAPABILITY_STYLES: Record<string, CapabilityStyle> = {
   'human.input': { icon: UserRound, chip: 'bg-amber-500', ink: DARK },
   'human.timeline_edit': { icon: UserRound, chip: 'bg-amber-500', ink: DARK },
   'browser.automate': { icon: Globe, chip: 'bg-slate-500', ink: WHITE },
+  'code.scene': { icon: Box, chip: 'bg-teal-500', ink: DARK },
+  'scene.render': { icon: Box, chip: 'bg-teal-500', ink: DARK },
   'subtitles.export': { icon: FileOutput, chip: 'bg-violet-500', ink: WHITE },
   'publish.stub': { icon: FileOutput, chip: 'bg-violet-500', ink: WHITE },
   'motion.generate': { icon: WandSparkles, chip: 'bg-indigo-500', ink: WHITE },

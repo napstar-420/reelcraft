@@ -1056,6 +1056,72 @@ describe('seeded runs — run a stage without re-running upstream (e2e)', () => 
     expect(refetchedRun1?.spentUsd).toBe(run1Row?.spentUsd); // untouched by run2
   });
 
+  it('keeps an edited finished stage as it is when asked to, and re-runs it otherwise', async () => {
+    const runs = testApp.app.get(RunService);
+    const blueprints = testApp.app.get(BlueprintService);
+    const channel = await makeChannel('Seed Keep');
+    const blueprintId = await blueprints.ensureBlueprint(channel.id, 'Seed Keep Blueprint');
+    const base = {
+      inputs: [],
+      roles: [],
+      defaults: {},
+      budget: { runCapUsd: 10 },
+    };
+    const v1 = await blueprints.createVersion(blueprintId, {
+      ...base,
+      graph: [topicsStage(), coverStage()],
+    });
+    const run1 = await runs.create({
+      channelId: channel.id,
+      blueprintVersionId: v1.id,
+      inputs: {},
+      roleBindings: {},
+      rerunStageKeys: [],
+      budgetCapUsd: 10,
+    });
+    const first = await driveRun(run1.id, run1.stageExecutions);
+    expect(first.result).toEqual({ state: 'COMPLETED' });
+
+    // Edit `topics` (its prompt-side definition) and append a stage.
+    const v2 = await blueprints.createVersion(blueprintId, {
+      ...base,
+      graph: [
+        { ...topicsStage(), label: 'Topics (edited)', retryLimit: 1 },
+        coverStage(),
+        scriptStage(),
+      ],
+    });
+    const create = (keepStageKeys?: string[]) =>
+      runs.create({
+        channelId: channel.id,
+        blueprintVersionId: v2.id,
+        seedFromRunId: run1.id,
+        inputs: {},
+        roleBindings: {},
+        rerunStageKeys: [],
+        ...(keepStageKeys && { keepStageKeys }),
+        budgetCapUsd: 10,
+      });
+
+    const regenerated = await create();
+    expect(regenerated.stageExecutions.find((e) => e.stageKey === 'topics')?.state).toBe('pending');
+    expect(regenerated.stageExecutions.find((e) => e.stageKey === 'cover')?.state).toBe('pending');
+
+    const kept = await create(['topics']);
+    const states = Object.fromEntries(kept.stageExecutions.map((e) => [e.stageKey, e.state]));
+    expect(states).toEqual({ topics: 'passed', cover: 'passed', script: 'pending' });
+    const events = await testDb.db.select().from(stageEvent).where(eq(stageEvent.runId, kept.id));
+    const topicsExec = kept.stageExecutions.find((e) => e.stageKey === 'topics')!;
+    expect(events.filter((e) => e.type === 'stage.kept').map((e) => e.stageExecutionId)).toEqual([
+      topicsExec.id,
+    ]);
+
+    // Only `script` runs: the kept stages are never invoked and cost nothing.
+    const second = await driveRun(kept.id, kept.stageExecutions, ['script']);
+    expect(second.error).toBeUndefined();
+    expect(second.result).toEqual({ state: 'COMPLETED' });
+  });
+
   it('untilStageKey creates the tail as skipped and completes without executing anything', async () => {
     const runs = testApp.app.get(RunService);
     const blueprints = testApp.app.get(BlueprintService);

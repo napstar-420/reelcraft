@@ -288,6 +288,13 @@
       "when": 1792241651172,
       "tag": "0040_canvas_presentation",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1792481462615,
+      "tag": "0041_scene_model_kinds",
+      "breakpoints": true
     }
   ]
 }

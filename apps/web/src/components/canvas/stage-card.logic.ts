@@ -55,6 +55,7 @@ const OUTPUT_LABELS: Record<OutputDef['kind'], string> = {
   'media.audio': 'audio',
   'media.video_list': 'videos',
   'media.image_list': 'images',
+  'media.model': '3D model',
   'file.subtitles': 'subtitles',
   timeline: 'timeline',
 };
@@ -134,7 +135,8 @@ export function capabilityGroup(key: string): CapabilityGroup {
     key === 'image.generate' ||
     key === 'video.generate' ||
     key === 'audio.speech' ||
-    key === 'motion.generate'
+    key === 'motion.generate' ||
+    key === 'code.scene'
   ) {
     return 'Generate';
   }
@@ -143,6 +145,7 @@ export function capabilityGroup(key: string): CapabilityGroup {
     key === 'video.concat' ||
     key === 'timeline.render' ||
     key === 'motion.render' ||
+    key === 'scene.render' ||
     key === 'subtitles.export'
   ) {
     return 'Assemble';

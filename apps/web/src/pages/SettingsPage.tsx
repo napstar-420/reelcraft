@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { api } from '@/api/client';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AboutCard } from '@/components/settings/about-card';
+import { BlenderCard } from '@/components/settings/blender-card';
 import { BrowserOsCard } from '@/components/settings/browser-os-card';
 import { ClaudeCard } from '@/components/settings/claude-card';
 import { CodexCard } from '@/components/settings/codex-card';
@@ -37,6 +38,7 @@ export function SettingsPage() {
           <BrowserOsCard key={settings.data.browserOs.url} settings={settings.data} />
         </>
       )}
+      <BlenderCard />
       <CodexCard />
       <ClaudeCard />
       <NotificationsCard />

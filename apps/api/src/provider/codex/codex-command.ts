@@ -64,6 +64,8 @@ const RESERVED_CONFIG_KEYS = new Set([
   'progressKey',
   '__inspectFiles',
   '__referenceFiles',
+  '__allowedCommands',
+  '__workspaceInstructions',
 ]);
 
 export function toTomlValue(value: unknown): string {

@@ -103,6 +103,12 @@ export class MotionRenderCapability extends LocalComputeCapability<MotionRenderC
     return ['media.video'];
   }
 
+  /** The files the graphic loads, so the stage runner finds them in storage. */
+  resourceHandles(slots: Record<string, unknown>): string[] {
+    const source = MotionSource.safeParse(slots.source);
+    return source.success ? (source.data.assets ?? []).map((asset) => asset.handle) : [];
+  }
+
   validate(_config: MotionRenderConfig, stage: StageDef): ValidationIssue[] {
     return stage.output.kind === 'media.video'
       ? []

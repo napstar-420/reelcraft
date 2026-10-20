@@ -16,9 +16,10 @@ function speechTextOf(slots: unknown): string | undefined {
   return typeof text === 'string' ? text : undefined;
 }
 
-/** A motion graphic stage asks for a component with a working folder to test-render it in. */
+/** A motion graphic stage asks for a component, with a working folder to test-render it in. */
 function isMotionRequest(req: ProviderRequest): boolean {
-  return req.workspace?.commands.includes('node check.mjs') ?? false;
+  const commands = req.params.__allowedCommands;
+  return Array.isArray(commands) && commands.includes('node check.mjs');
 }
 
 /** What the fake answers a motion graphic stage with: a small graphic that follows the rules. */
@@ -82,10 +83,33 @@ interface FakeJobPayload {
  * `fetch()`'s hardcoded settled cost. Lets a test drive a real reservation
  * to a deterministic cap-hit and a real multi-cycle poll/backoff loop.
  */
+/** The scene the fake code model writes: a ball bouncing, built from primitives. */
+const FAKE_SCENE = `import math
+import bpy
+
+
+def build(rc):
+    bpy.ops.mesh.primitive_plane_add(size=20)
+    bpy.ops.mesh.primitive_uv_sphere_add(radius=0.5)
+    ball = bpy.context.object
+    ball.data.materials.append(bpy.data.materials.new("ball"))
+    ball.data.materials[0].diffuse_color = (0.9, 0.2, 0.2, 1)
+    for frame in range(1, rc.frames + 1, 3):
+        ball.location.z = 0.5 + abs(math.sin((frame - 1) / rc.fps * 4)) * 2
+        ball.keyframe_insert("location", frame=frame)
+    sun = bpy.data.objects.new("sun", bpy.data.lights.new("sun", "SUN"))
+    rc.scene.collection.objects.link(sun)
+    camera = bpy.data.objects.new("camera", bpy.data.cameras.new("camera"))
+    camera.location = (0, -10, 2)
+    camera.rotation_euler = (math.radians(85), 0, 0)
+    rc.scene.collection.objects.link(camera)
+    rc.scene.camera = camera
+`;
+
 @Injectable()
 export class FakeProviderAdapter implements ProviderAdapter {
   readonly id = 'fake';
-  readonly modalities = ['text', 'image', 'video', 'audio', 'media'] as const;
+  readonly modalities = ['text', 'image', 'video', 'audio', 'media', 'code'] as const;
   private readonly logger = new Logger(FakeProviderAdapter.name);
 
   /** idempotency key -> job, so a transport retry submitting twice is
@@ -180,6 +204,12 @@ export class FakeProviderAdapter implements ProviderAdapter {
           supportsIdempotency: true,
           sound: { kind: 'music', minSec: 3, maxSec: 600, usdPerSecond: 0 },
         },
+      },
+      {
+        modelId: 'fake-code-1',
+        label: 'Fake Code 1 (writes a fixed scene)',
+        modalities: ['code'],
+        capabilities: { supportsSeed: true, supportsIdempotency: true },
       },
       {
         modelId: 'fake-audio-1',
@@ -335,6 +365,23 @@ export class FakeProviderAdapter implements ProviderAdapter {
         costUsd: job.costUsd ?? 0,
         repro: { level: 'exact', seed: '42', providerVersion: job.modelId },
         rawResponse: { fake: true, fixture: 'png' },
+      };
+    }
+    if (job.modelId.startsWith('fake-code-')) {
+      // A code job's answer: its result, and the file it wrote (a scene that needs no assets).
+      return {
+        output: { durationSec: 2, summary: 'A red ball bounces on a grey floor.' },
+        attachments: [
+          {
+            role: 'download',
+            mime: 'text/x-python',
+            filename: 'scene.py',
+            base64: Buffer.from(FAKE_SCENE).toString('base64'),
+          },
+        ],
+        costUsd: job.costUsd ?? 0,
+        repro: { level: 'exact', seed: '42', providerVersion: job.modelId },
+        rawResponse: { fake: true, fixture: 'scene.py' },
       };
     }
     if (/^fake-(audio|sfx|music)-/.test(job.modelId)) {

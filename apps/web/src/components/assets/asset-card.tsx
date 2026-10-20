@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Trash2, Image, Video, Music, Type, Palette, Shapes } from 'lucide-react';
+import { Trash2, Image, Video, Music, Type, Palette, Shapes, Box } from 'lucide-react';
 import type { AssetDto, AssetKind } from '@reelcraft/shared';
 import { api } from '@/api/client';
 import { Button } from '@/components/ui/button';
@@ -15,6 +15,7 @@ const KIND_ICONS: Record<AssetKind, typeof Image> = {
   font: Type,
   lut: Palette,
   vector: Shapes,
+  model: Box,
 };
 
 function formatBytes(bytes: number): string {

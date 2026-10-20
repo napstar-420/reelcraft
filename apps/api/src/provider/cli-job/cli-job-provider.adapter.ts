@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, realpath, rename, stat, symlink, writeFile } from 'node:fs/promises';
-import { basename, join, relative, resolve } from 'node:path';
+import { basename, dirname, join, relative, resolve } from 'node:path';
 import { Logger } from '@nestjs/common';
 import type { JobHandle, JobStatus, JsonSchema, Modality } from '@reelcraft/shared';
 import type {
@@ -9,7 +9,6 @@ import type {
   ProviderAdapter,
   ProviderRequest,
   ProviderResult,
-  ProviderWorkspace,
 } from '../provider-adapter.interface';
 import { ProviderContinuationUnavailableError } from '../provider-adapter.interface';
 import type { EngineConfig } from '../../config/engine-config';
@@ -59,6 +58,20 @@ export interface CliRuntimeReadiness {
 }
 
 const TEXT_RESULT_LIMIT = 4 * 1024 * 1024;
+/** Files the job itself keeps in its folder; a code job's workspace may not replace them. */
+const JOB_FILES = new Set([
+  'manifest.json',
+  'runner-request.json',
+  'status.json',
+  'process.json',
+  'thread.json',
+  'schema.json',
+  'result.json',
+  'result.txt',
+  'events.log',
+  'stderr.log',
+  'events-summary.json',
+]);
 const MAX_BROWSER_INPUTS = 20;
 const MAX_BROWSER_ATTACHMENTS = 200;
 
@@ -192,11 +205,14 @@ export abstract class CliJobProviderAdapter implements ProviderAdapter {
   }
 
   private async submitJob(
-    req: ProviderRequest,
+    request: ProviderRequest,
     idempotencyKey: string,
     retained: boolean,
     threadId?: string,
   ): Promise<JobHandle> {
+    // The files a code job starts with are written into its folder, not recorded with its params.
+    const { __workspace: workspace, ...params } = request.params;
+    const req = { ...request, params };
     const modality = req.modality ?? 'text';
     if (!this.modalities.includes(modality)) {
       throw new Error(`${this.label} does not support modality "${modality}"`);
@@ -242,17 +258,16 @@ export abstract class CliJobProviderAdapter implements ProviderAdapter {
     const resultPath = join(jobDir, modality === 'text' ? 'result.txt' : 'result.json');
     const outputDir = join(jobDir, 'outputs');
     await mkdir(outputDir, { mode: 0o700 });
-    // A text job may come with a working folder: files to work with and commands it may run.
-    const workspace = modality === 'text' ? req.workspace : undefined;
-    if (workspace) await writeWorkspace(jobDir, workspace);
     const referenceFiles =
-      (modality === 'image' || modality === 'browser' || inspectFiles) && this.inputMaterializer
-        ? await this.inputMaterializer.materialize(
-            jobDir,
-            req.params.slots,
-            modality === 'image' ? undefined : MAX_BROWSER_INPUTS,
-          )
-        : [];
+      modality === 'code' || (modality === 'text' && workspace !== undefined)
+        ? await this.prepareWorkspace(jobDir, workspace)
+        : (modality === 'image' || modality === 'browser' || inspectFiles) && this.inputMaterializer
+          ? await this.inputMaterializer.materialize(
+              jobDir,
+              req.params.slots,
+              modality === 'image' ? undefined : MAX_BROWSER_INPUTS,
+            )
+          : [];
     const timeoutMs = positiveInt(req.params.timeoutMs) ?? this.jobTimeoutMs;
     const browserMaxSteps = positiveInt(req.params.maxSteps) ?? this.browserMaxSteps;
     const progressDir =
@@ -295,7 +310,6 @@ export abstract class CliJobProviderAdapter implements ProviderAdapter {
       params: req.params,
       prompt: buildJobPrompt({
         ...req,
-        workspace,
         modality,
         params: {
           ...req.params,
@@ -307,7 +321,6 @@ export abstract class CliJobProviderAdapter implements ProviderAdapter {
       }),
       ...(retained && { retained: true }),
       ...(threadId && { threadId }),
-      ...(workspace && { workspaceCommands: workspace.commands }),
     });
     await atomicJson(join(jobDir, 'status.json'), {
       state: 'queued',
@@ -444,7 +457,7 @@ export abstract class CliJobProviderAdapter implements ProviderAdapter {
         rawResponse: await this.sanitizedMetadata(jobDir, status),
       };
     }
-    if (modality === 'browser') {
+    if (modality === 'browser' || modality === 'code') {
       const manifest = this.parseToolManifest(text);
       if ((manifest.attachments?.length ?? 0) > MAX_BROWSER_ATTACHMENTS) {
         throw new Error(
@@ -461,7 +474,11 @@ export abstract class CliJobProviderAdapter implements ProviderAdapter {
         output: manifest.output,
         attachments,
         costUsd: 0,
-        repro: { level: 'approximate', providerVersion: `${providerVersion}-browseros-neo` },
+        repro: {
+          level: 'approximate',
+          providerVersion:
+            modality === 'browser' ? `${providerVersion}-browseros-neo` : providerVersion,
+        },
         rawResponse: await this.sanitizedMetadata(jobDir, status),
       };
     }
@@ -503,6 +520,52 @@ export abstract class CliJobProviderAdapter implements ProviderAdapter {
       billed: false,
       ...(!confirmed && { reason: `${this.label} process termination was not confirmed` }),
     };
+  }
+
+  /**
+   * Sets up a code job's folder from `params.__workspace`: `files` written with the given text
+   * (`executable` ones runnable), and `inputs` copied from storage. Paths are relative to the job's
+   * folder and may not leave it, go under `outputs/`, or replace the job's own files. Returns the
+   * input paths, to list in the prompt.
+   */
+  private async prepareWorkspace(jobDir: string, value: unknown): Promise<string[]> {
+    const spec = (value ?? {}) as {
+      files?: Array<{ path?: unknown; contents?: unknown; executable?: unknown }>;
+      inputs?: Array<{ path?: unknown; sourceKey?: unknown }>;
+    };
+    const place = async (path: unknown): Promise<string> => {
+      if (typeof path !== 'string') throw new Error(`${this.label} workspace path is missing`);
+      const target = resolve(jobDir, path);
+      const within = relative(jobDir, target);
+      if (
+        !within ||
+        within.startsWith('..') ||
+        resolve(jobDir, within) !== target ||
+        within.split(/[\\/]/)[0] === 'outputs' ||
+        JOB_FILES.has(within)
+      ) {
+        throw new Error(`${this.label} workspace path "${path}" is not allowed`);
+      }
+      await mkdir(dirname(target), { recursive: true, mode: 0o700 });
+      return target;
+    };
+    for (const file of spec.files ?? []) {
+      if (typeof file.contents !== 'string')
+        throw new Error(`${this.label} workspace file is empty`);
+      await writeFile(await place(file.path), file.contents, {
+        mode: file.executable === true ? 0o700 : 0o600,
+      });
+    }
+    const inputs: Array<{ sourceKey: string; target: string }> = [];
+    for (const input of spec.inputs ?? []) {
+      if (typeof input.sourceKey !== 'string') throw new Error(`${this.label} input has no file`);
+      inputs.push({ sourceKey: input.sourceKey, target: await place(input.path) });
+    }
+    if (inputs.length && !this.inputMaterializer) {
+      throw new Error(`${this.label} cannot copy input files here`);
+    }
+    await this.inputMaterializer?.copy(inputs);
+    return inputs.map((input) => relative(jobDir, input.target));
   }
 
   /** A directory that outlives this job, shared by every attempt of the same
@@ -567,7 +630,7 @@ export abstract class CliJobProviderAdapter implements ProviderAdapter {
         required: ['version', 'output'],
       };
     }
-    if (req.modality === 'browser') {
+    if (req.modality === 'browser' || req.modality === 'code') {
       return {
         type: 'object',
         properties: {
@@ -708,28 +771,3 @@ export abstract class CliJobProviderAdapter implements ProviderAdapter {
     );
   }
 }
-
-/** Writes a job's working folder. Only plain names, so nothing lands outside the job. */
-async function writeWorkspace(jobDir: string, workspace: ProviderWorkspace): Promise<void> {
-  for (const file of workspace.files) {
-    if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,79}$/.test(file.name) || RESERVED_JOB_FILES.has(file.name)) {
-      throw new Error(`Unsafe workspace file name "${file.name}"`);
-    }
-    await writeFile(join(jobDir, file.name), file.contents, { mode: 0o600, flag: 'wx' });
-  }
-}
-
-/** Files the job itself keeps in its folder; a workspace can't replace them. */
-const RESERVED_JOB_FILES = new Set([
-  'manifest.json',
-  'runner-request.json',
-  'status.json',
-  'process.json',
-  'thread.json',
-  'schema.json',
-  'result.txt',
-  'result.json',
-  'events.log',
-  'stderr.log',
-  'events-summary.json',
-]);

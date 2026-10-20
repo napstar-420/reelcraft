@@ -245,6 +245,7 @@ export class RunService {
         newRoles,
         sourceExecutions,
         rerunStageKeys: dto.rerunStageKeys,
+        keepStageKeys: dto.keepStageKeys ?? [],
       };
       const { keys: requiredKeys, stop } = reusableStageKeys({
         ...reuseParams,
@@ -364,6 +365,18 @@ export class RunService {
           type: 'stage.rerun_reason',
           message: describeSeedStop(seedStop),
           data: { sourceRunId: dto.seedFromRunId, reason: seedStop.reason },
+          createdAt: new Date().toISOString(),
+        });
+      }
+      for (const key of seed?.stageKeys.filter((k) => dto.keepStageKeys?.includes(k)) ?? []) {
+        await tx.insert(stageEvent).values({
+          id: ulid(),
+          runId,
+          stageExecutionId: newExecutionIdByKey.get(key)!,
+          level: 'info',
+          type: 'stage.kept',
+          message: 'Existing result kept; the stage may have changed since it ran',
+          data: { sourceRunId: dto.seedFromRunId },
           createdAt: new Date().toISOString(),
         });
       }

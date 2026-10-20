@@ -11,6 +11,7 @@ import { STORAGE_ADAPTER, type StorageAdapter } from '../storage/storage.adapter
 import { WorkspaceService } from '../storage/workspace.service';
 import { ulid } from '../common/ulid';
 import { MediaProbeService } from './media-probe.service';
+import { checkModelFile, isModelExtension, MODEL_MIME, modelProbe } from './model-file';
 
 const extensionFor = (mime: string, fallback: string | undefined) => {
   if (fallback?.includes('.')) return fallback.split('.').pop()!;
@@ -30,6 +31,7 @@ const extensionFor = (mime: string, fallback: string | undefined) => {
         'video/mp4': 'mp4',
         'video/webm': 'webm',
         'video/quicktime': 'mov',
+        ...Object.fromEntries(Object.entries(MODEL_MIME).map(([ext, type]) => [type, ext])),
       } as Record<string, string>
     )[mime] ?? 'bin'
   );
@@ -75,8 +77,7 @@ export class MediaArtifactService {
         throw new Error('Media result has neither localPath, base64 nor sourceUrl');
       }
       const bytes = await readFile(file);
-      const probe = await this.probes.probe(file);
-      this.validateKind(input.source.kind, probe);
+      const probe = await this.probeFor(input.source.kind, file, mime, input.source.filename);
       const key = objectKey.media(
         input.ownerId,
         input.channelId,
@@ -122,12 +123,32 @@ export class MediaArtifactService {
     });
   }
 
+  /** ffprobe's report on a picture, clip or sound; for a 3D model, a check of its format instead. */
+  private async probeFor(
+    kind: MediaSource['kind'],
+    file: string,
+    mime: string,
+    filename: string | undefined,
+  ): Promise<Probe> {
+    if (kind === 'media.model') {
+      const ext = extensionFor(mime, filename).toLowerCase();
+      const problem = await checkModelFile(file, ext);
+      if (problem || !isModelExtension(ext)) throw new Error(problem ?? 'Not a 3D model file.');
+      return modelProbe(ext);
+    }
+    const probe = await this.probes.probe(file);
+    this.validateKind(kind, probe);
+    return probe;
+  }
+
   private defaultMime(kind: MediaSource['kind']) {
     return kind === 'media.image'
       ? 'image/png'
       : kind === 'media.audio'
         ? 'audio/mpeg'
-        : 'video/mp4';
+        : kind === 'media.model'
+          ? MODEL_MIME.glb
+          : 'video/mp4';
   }
   private validateKind(kind: MediaSource['kind'], probe: Probe) {
     const needs = kind === 'media.image' ? 'video' : kind === 'media.audio' ? 'audio' : 'video';

@@ -57,9 +57,13 @@ function requestedImages(params: Record<string, unknown>): number {
   return typeof count === 'number' && Number.isInteger(count) && count > 1 ? count : 1;
 }
 
+/** What a stage set on the model that goes on to OpenRouter. Keys starting `__` are Reelcraft's own
+ * (for agent jobs, such as a working folder) and never leave. */
 function forwardedParams(params: Record<string, unknown>): Record<string, unknown> {
   return Object.fromEntries(
-    Object.entries(params).filter(([key]) => !OWNED_REQUEST_FIELDS.has(key)),
+    Object.entries(params).filter(
+      ([key]) => !OWNED_REQUEST_FIELDS.has(key) && !key.startsWith('__'),
+    ),
   );
 }
 

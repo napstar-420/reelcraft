@@ -42,14 +42,25 @@ describe('buildClaudeArgs', () => {
     expect(flag(args, '--allowedTools')).toBe('Read,Glob,Bash(ffmpeg *),Bash(ffprobe *)');
   });
 
-  it('lets a job with a working folder edit its files and run only its own commands', () => {
-    const args = buildClaudeArgs({ ...base, workspaceCommands: ['node check.mjs'] });
-    expect(flag(args, '--tools')).toBe('Read,Write,Edit,Glob,Bash');
-    expect(flag(args, '--allowedTools')).toBe(
-      'Read,Write,Edit,Glob,Bash(node check.mjs),Bash(node check.mjs *)',
-    );
-    expect(args).toContain('--strict-mcp-config');
+  it('lets a code job edit its files and run only the commands it names', () => {
+    const args = buildClaudeArgs({
+      ...base,
+      modality: 'code',
+      params: { __allowedCommands: ['node preview.mjs'] },
+    });
+    expect(flag(args, '--tools')).toBe('Read,Write,Edit,Glob,Grep,Bash');
+    expect(flag(args, '--allowedTools')).toBe('Read,Write,Edit,Glob,Grep,Bash(node preview.mjs *)');
     expect(args).not.toContain('--mcp-config');
+    const noCommands = buildClaudeArgs({ ...base, modality: 'code' });
+    expect(flag(noCommands, '--tools')).toBe('Read,Write,Edit,Glob,Grep');
+  });
+
+  it('gives a text job that comes with a working folder the same file tools and commands', () => {
+    const args = buildClaudeArgs({ ...base, params: { __allowedCommands: ['node check.mjs'] } });
+    expect(flag(args, '--tools')).toBe('Read,Write,Edit,Glob,Grep,Bash');
+    expect(flag(args, '--allowedTools')).toBe('Read,Write,Edit,Glob,Grep,Bash(node check.mjs *)');
+    expect(args).not.toContain('--mcp-config');
+    expect(flag(buildClaudeArgs(base), '--tools')).toBe('');
   });
 
   it('gives a browser job file tools and only the Neo server it was handed', () => {

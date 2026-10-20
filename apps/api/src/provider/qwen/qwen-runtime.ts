@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import type { QwenTtsBackend } from '@reelcraft/shared';
+import { inheritedEnv } from '../../common/child-env';
 
 /**
  * Pure helpers for `QwenTtsRuntime`: where things are on each OS, the commands it runs, and what the
@@ -98,45 +99,9 @@ export function installArgs(opts: {
   ];
 }
 
-/**
- * What the child processes may inherit. An allowlist, never `process.env`: that holds the database
- * password and provider keys, which Python (and everything it installs) has no business reading.
- */
-const INHERITED = new Set([
-  'PATH',
-  'HOME',
-  'USERPROFILE',
-  'SYSTEMROOT',
-  'SYSTEMDRIVE',
-  'COMSPEC',
-  'PATHEXT',
-  'TEMP',
-  'TMP',
-  'TMPDIR',
-  'LOCALAPPDATA',
-  'APPDATA',
-  'PROGRAMDATA',
-  'LANG',
-  'LC_ALL',
-  'SSL_CERT_FILE',
-  'SSL_CERT_DIR',
-  'HTTPS_PROXY',
-  'HTTP_PROXY',
-  'NO_PROXY',
-]);
-
-function inherited(base: NodeJS.ProcessEnv): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const [key, value] of Object.entries(base)) {
-    const name = key.toUpperCase();
-    if (value !== undefined && (INHERITED.has(name) || name.startsWith('UV_'))) out[key] = value;
-  }
-  return out;
-}
-
 /** The environment `uv` runs with. */
 export function installEnv(base: NodeJS.ProcessEnv): Record<string, string> {
-  return { ...inherited(base), NO_COLOR: '1' };
+  return { ...inheritedEnv(base, (name) => name.startsWith('UV_')), NO_COLOR: '1' };
 }
 
 /** The environment the service runs with. */
@@ -147,7 +112,7 @@ export function serviceEnv(opts: {
   port: string;
 }): Record<string, string> {
   return {
-    ...inherited(opts.base),
+    ...inheritedEnv(opts.base, (name) => name.startsWith('UV_')),
     PYTHONPATH: path.join(opts.sourceDir, 'src'),
     PYTHONUNBUFFERED: '1',
     QWEN_TTS_MODELS_DIR: path.join(opts.home, 'models'),

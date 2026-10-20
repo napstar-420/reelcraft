@@ -23,8 +23,6 @@ export interface CliRunnerManifest {
   threadId?: string;
   /** Codex: the `--profile` to run with. */
   profile?: string;
-  /** Commands a job with a working folder may run there (for example `node check.mjs`). */
-  workspaceCommands?: string[];
   /** Claude: the MCP servers a browser job may use (`--mcp-config`). */
   mcpServers?: Record<string, unknown>;
 }

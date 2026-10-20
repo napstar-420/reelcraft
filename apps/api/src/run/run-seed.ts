@@ -53,6 +53,10 @@ export interface ReusableStageKeysParams {
   sourceExecutions: SourceExecutionSummary[];
   /** Force these keys and stages that depend on them to re-run. */
   rerunStageKeys: string[];
+  /** Finished stages kept as they are even though their definition, settings or
+   * assets changed (the person chose to continue after them). They still have to
+   * be passed, in place, and have every dependency reused. */
+  keepStageKeys?: string[];
   /** Limits this pass to selected stages; callers can assess the requested
    * path separately from already-finished sibling branches. */
   relevant?: Set<string>;
@@ -113,6 +117,7 @@ export function reusableStageKeys(p: ReusableStageKeysParams): {
   const sourceByKey = new Map(p.sourceExecutions.map((e) => [e.stageKey, e]));
   const sourceIndexByKey = new Map(p.sourceGraph.map((stage, index) => [stage.key, index]));
   const rerunSet = new Set(p.rerunStageKeys);
+  const keepSet = new Set(p.keepStageKeys ?? []);
   const deps = stageDependencies(p.newGraph);
   const keys: string[] = [];
   const reusable = new Set<string>();
@@ -151,7 +156,8 @@ export function reusableStageKeys(p: ReusableStageKeysParams): {
       }
       return true;
     });
-    if (!sameReadSources) {
+    const kept = keepSet.has(newStage.key);
+    if (!sameReadSources && !kept) {
       stopAt('definition_changed');
       continue;
     }
@@ -163,7 +169,10 @@ export function reusableStageKeys(p: ReusableStageKeysParams): {
       stopAt('not_run');
       continue;
     }
-    if (canonicalJson(comparableStage(sourceStage)) !== canonicalJson(comparableStage(newStage))) {
+    if (
+      !kept &&
+      canonicalJson(comparableStage(sourceStage)) !== canonicalJson(comparableStage(newStage))
+    ) {
       stopAt('definition_changed');
       continue;
     }
@@ -172,7 +181,10 @@ export function reusableStageKeys(p: ReusableStageKeysParams): {
       p.sourceResolvedConfig[newStage.key] ?? {},
       p.sourceOverrides[newStage.key] ?? {},
     );
-    if (canonicalJson(sourceLayer) !== canonicalJson(p.newResolvedConfig[newStage.key] ?? {})) {
+    if (
+      !kept &&
+      canonicalJson(sourceLayer) !== canonicalJson(p.newResolvedConfig[newStage.key] ?? {})
+    ) {
       stopAt('config_changed');
       continue;
     }
@@ -187,7 +199,7 @@ export function reusableStageKeys(p: ReusableStageKeysParams): {
         canonicalJson(libraryView(p.sourceAssetBindings, ref.kinds)) ===
         canonicalJson(libraryView(p.newAssetBindings, ref.kinds)),
     );
-    if (!bindingsMatch || !libraryMatch) {
+    if ((!bindingsMatch || !libraryMatch) && !kept) {
       stopAt('assets_changed');
       continue;
     }
