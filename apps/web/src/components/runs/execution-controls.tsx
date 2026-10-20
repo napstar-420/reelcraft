@@ -194,7 +194,9 @@ export function RunExecutionToolbar({
         </DropdownMenu>
       )}
       {primary === 'start' && newRunReason && run && (
-        <span className="text-xs text-muted-foreground">{newRunReason}</span>
+        <span className="max-w-56 truncate text-xs text-muted-foreground" title={newRunReason}>
+          {newRunReason}
+        </span>
       )}
     </div>
   );
