@@ -66,6 +66,7 @@ RUN apt-get update \
       libnss3 libdbus-1-3 libatk1.0-0t64 libatk-bridge2.0-0t64 libgbm1 libasound2t64 \
       libxrandr2 libxkbcommon0 libxfixes3 libxcomposite1 libxdamage1 \
       libpango-1.0-0 libcairo2 libcups2t64 fonts-liberation \
+      libxi6 libxxf86vm1 libxrender1 libgl1 libegl1 libsm6 \
  && echo 'create_main_cluster = false' > /etc/postgresql-common/createcluster.conf \
  && apt-get install -y --no-install-recommends postgresql-16 \
  && rm -rf /var/lib/apt/lists/*
@@ -104,6 +105,7 @@ COPY --from=build /src/apps/api/drizzle ${REELCRAFT_APP_DIR}/apps/api/drizzle
 COPY --from=build /src/apps/api/node_modules ${REELCRAFT_APP_DIR}/apps/api/node_modules
 COPY --from=build /src/apps/render-worker/package.json ${REELCRAFT_APP_DIR}/apps/render-worker/
 COPY --from=build /src/apps/render-worker/dist ${REELCRAFT_APP_DIR}/apps/render-worker/dist
+COPY --from=build /src/apps/render-worker/blender ${REELCRAFT_APP_DIR}/apps/render-worker/blender
 COPY --from=build /src/apps/render-worker/node_modules ${REELCRAFT_APP_DIR}/apps/render-worker/node_modules
 COPY --from=build /src/apps/web/dist ${REELCRAFT_APP_DIR}/apps/web/dist
 
@@ -134,6 +136,7 @@ COPY docker/app/RUNTIME_VERSION docker/app/release-signing.pub /opt/reelcraft/
 
 ENV PATH=/usr/lib/postgresql/16/bin:${PATH} \
     NODE_ENV=production \
+    NVIDIA_DRIVER_CAPABILITIES=all \
     REELCRAFT_VERSION=${REELCRAFT_VERSION} \
     REELCRAFT_IMAGE_VERSION=${REELCRAFT_VERSION} \
     API_PORT=8080 \

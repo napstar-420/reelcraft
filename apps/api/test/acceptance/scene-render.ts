@@ -213,7 +213,9 @@ async function main() {
     `3D shot rendered: ${video.codec_name} ${video.width}x${video.height}, ${video.nb_frames} frames in ${first.ms} ms`,
   );
   const frameTimes = async () =>
-    Promise.all((await readdir(framesDir)).map(async (f) => (await stat(path.join(framesDir, f))).mtimeMs));
+    Promise.all(
+      (await readdir(framesDir)).map(async (f) => (await stat(path.join(framesDir, f))).mtimeMs),
+    );
   const before = await frameTimes();
   const again = await run(shotSpec, path.join(root, 'shot-2'), { 'hero.glb': character.output });
   const after = await frameTimes();
@@ -224,7 +226,18 @@ async function main() {
 
   // 3. A transparent 2D cut-out.
   const star = path.join(root, 'star.png');
-  await exec('ffmpeg', ['-y', '-v', 'error', '-f', 'lavfi', '-i', 'testsrc2=s=256x256', '-frames:v', '1', star]);
+  await exec('ffmpeg', [
+    '-y',
+    '-v',
+    'error',
+    '-f',
+    'lavfi',
+    '-i',
+    'testsrc2=s=256x256',
+    '-frames:v',
+    '1',
+    star,
+  ]);
   const cutout = await run(
     sceneRenderSpec({
       ...base,
