@@ -94,6 +94,10 @@ export const CreateRunDto = z.object({
   // `reusableStageKeys`) to re-run even if they'd otherwise be reusable —
   // e.g. the user edited stage 3's prompt.
   rerunStageKeys: z.array(z.string()).default([]),
+  // With `seedFromRunId`: finished stages whose results are kept even though their
+  // definition (or settings) changed since the source run. The person chose to continue
+  // after them instead of regenerating them.
+  keepStageKeys: z.array(z.string()).optional(),
   // Initial scope through this stage; unrelated stages remain pending and the run ends Idle.
   untilStageKey: z.string().optional(),
   // With `seedFromRunId`: refuse (409 `upstream_rerun`, nothing created) if any

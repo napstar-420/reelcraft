@@ -149,7 +149,7 @@ export function RunExecutionToolbar({
   startOver?: ReactNode;
   newRunReason?: string | null;
 }) {
-  const primary = primaryRunAction(run, newRunReason);
+  const primary = primaryRunAction(run);
   const pending = actions.runStage.isPending || actions.confirmExecution.isPending;
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -168,7 +168,7 @@ export function RunExecutionToolbar({
         <Button
           size="sm"
           disabled={actions.resume.isPending || pending}
-          onClick={() => actions.resume.mutate()}
+          onClick={() => actions.requestContinue()}
         >
           Continue
         </Button>
@@ -193,9 +193,12 @@ export function RunExecutionToolbar({
           </DropdownMenuContent>
         </DropdownMenu>
       )}
-      {primary === 'start' && newRunReason && run && (
-        <span className="max-w-56 truncate text-xs text-muted-foreground" title={newRunReason}>
-          {newRunReason}
+      {primary === 'continue' && newRunReason && (
+        <span
+          className="max-w-56 truncate text-xs text-muted-foreground"
+          title={`${newRunReason} Continue starts a new run that keeps your finished stages.`}
+        >
+          Starts a new run, keeping finished stages
         </span>
       )}
     </div>
@@ -266,6 +269,34 @@ export function ExecutionPlanDialog({ actions }: { actions: RunExecutionActions 
                 Run
               </AlertDialogAction>
             )}
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog open={actions.continueChoice} onOpenChange={actions.setContinueChoice}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Some finished stages are out of date</AlertDialogTitle>
+            <AlertDialogDescription>
+              {names(actions.outdatedPassedKeys)} changed since they ran. Regenerate them, or keep
+              what they made and carry on after them?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Regenerating can cost money again. Keeping starts a new run that copies these results as
+            they are; later stages may have been made from the older version.
+          </p>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={actions.resume.isPending}>Cancel</AlertDialogCancel>
+            <Button
+              variant="outline"
+              disabled={actions.resume.isPending}
+              onClick={() => actions.resume.mutate(false)}
+            >
+              Regenerate stale stages
+            </Button>
+            <Button disabled={actions.resume.isPending} onClick={() => actions.resume.mutate(true)}>
+              Keep results and continue
+            </Button>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

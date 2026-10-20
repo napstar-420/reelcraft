@@ -474,6 +474,38 @@ describe('unified resumable execution', () => {
     expect((await list(true)).items.map((r) => r.id)).toEqual([test.id]);
     expect((await list(false)).items.map((r) => r.id)).toEqual([created.id]);
   });
+  it('applies a reconnected downstream stage on Continue, and blocks a stage-only run that would not apply it', async () => {
+    const { created, version } = await fixture([stage('a'), stage('b', ['a']), stage('c', ['b'])]);
+    await database.db.update(run).set({ state: 'IDLE' }).where(eq(run.id, created.id));
+    await execute(created.id);
+    await drive(created.id, ['a', 'b', 'c']);
+    const rewired = await app.app.get(BlueprintService).createVersion(
+      version.blueprintId,
+      {
+        graph: [stage('a'), stage('b', ['a']), stage('c', ['a'])],
+        inputs: [],
+        roles: [],
+        defaults: {},
+        budget: { runCapUsd: 100 },
+      },
+      { draft: true },
+    );
+    const request = {
+      blueprintVersionId: rewired.id,
+      mode: 'rebuild' as const,
+      scope: 'descendants' as const,
+    };
+    const all = await plans.preview(created.id, { ...request, action: 'rerun' });
+    expect(all.blockedReason).toBeNull();
+    expect(all.runStageKeys).toContain('c');
+    const only = await plans.preview(created.id, {
+      ...request,
+      scope: 'stage',
+      stageKey: 'a',
+      action: 'rerun',
+    });
+    expect(only.blockedReason).toContain('c was rewired');
+  });
   it('fences retired attempt admission and publication and binds concurrency changes to plan revisions', async () => {
     const { created } = await fixture([stage('a')]);
     await database.db.update(run).set({ state: 'RUNNING' }).where(eq(run.id, created.id));

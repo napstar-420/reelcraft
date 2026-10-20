@@ -108,12 +108,18 @@ export function describeSeedStop(stop: SeedStop, stageLabel: string): string {
   }
 }
 
-/** "Run all" — reuse everything reusable, run every stage after that. */
-export function buildRunAllDto(source: CanvasRunSource, blueprintVersionId: string): CreateRunDto {
+/** "Run all" — reuse everything reusable, run every stage after that.
+ * `keepStageKeys`: out-of-date finished stages whose results are kept as they are. */
+export function buildRunAllDto(
+  source: CanvasRunSource,
+  blueprintVersionId: string,
+  keepStageKeys: string[] = [],
+): CreateRunDto {
   return {
     ...fromSource(source, blueprintVersionId),
     inputs: {},
     seedFromRunId: source.id,
     rerunStageKeys: [],
+    ...(keepStageKeys.length > 0 && { keepStageKeys }),
   };
 }
