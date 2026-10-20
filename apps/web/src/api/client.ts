@@ -1,4 +1,7 @@
 import type {
+  MotionCheckResultDto,
+  MotionPreviewDto,
+  MotionSource,
   ListNotificationsResultDto,
   PushSubscriptionDto,
   VapidKeyDto,
@@ -478,6 +481,57 @@ export const api = {
           ...(note !== undefined ? { note } : {}),
           ...(itemIndex !== undefined ? { itemIndex } : {}),
         } satisfies ApprovalActionDto),
+      },
+    ),
+  checkMotionCode: (runId: string, stageKey: string, code: string) =>
+    request<MotionCheckResultDto>(
+      `/runs/${runId}/stages/${encodeURIComponent(stageKey)}/motion/check`,
+      { method: 'POST', body: JSON.stringify({ code }) },
+    ),
+  startMotionPreview: (runId: string, stageKey: string, source: MotionSource) =>
+    request<{ preview: MotionPreviewDto }>(
+      `/runs/${runId}/stages/${encodeURIComponent(stageKey)}/motion/preview`,
+      { method: 'POST', body: JSON.stringify({ source }) },
+    ),
+  getMotionPreview: (runId: string, stageKey: string, previewId: string) =>
+    request<{ preview: MotionPreviewDto }>(
+      `/runs/${runId}/stages/${encodeURIComponent(stageKey)}/motion/preview/${encodeURIComponent(previewId)}`,
+    ),
+  /** Replaces a stage's output with an edited value: first without a token, to see what runs again,
+   * then with the token it gave. */
+  previewArtifactEdit: (
+    runId: string,
+    stageKey: string,
+    value: unknown,
+    sourceArtifactId?: string,
+  ) =>
+    request<{
+      previewToken: string;
+      expiresAt: string;
+      sourceArtifactId: string;
+      affectedStageKeys: string[];
+      spentUsd: number;
+      estimatedRerunUsd: number;
+    }>(`/runs/${runId}/stages/${encodeURIComponent(stageKey)}/artifact`, {
+      method: 'POST',
+      body: JSON.stringify({ value, ...(sourceArtifactId ? { sourceArtifactId } : {}) }),
+    }),
+  confirmArtifactEdit: (
+    runId: string,
+    stageKey: string,
+    value: unknown,
+    previewToken: string,
+    sourceArtifactId?: string,
+  ) =>
+    request<{ accepted: true; revision: number }>(
+      `/runs/${runId}/stages/${encodeURIComponent(stageKey)}/artifact`,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          value,
+          previewToken,
+          ...(sourceArtifactId ? { sourceArtifactId } : {}),
+        }),
       },
     ),
   getTimelineEditor: (runId: string, stageKey: string) =>

@@ -32,6 +32,8 @@ import {
   SaveTimelineDraftDto,
   SubmitTimelineDraftDto,
   ListRunsQueryDto,
+  MotionCheckDto,
+  StartMotionPreviewDto,
 } from '@reelcraft/shared';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { RunStagePlanService } from './run-stage-plan.service';
@@ -44,6 +46,7 @@ import { RunCancellationService } from './run-cancellation.service';
 import { ArtifactEditService } from './artifact-edit.service';
 import { TimelineEditorService } from './timeline-editor.service';
 import { TimelinePreviewService } from './timeline-preview.service';
+import { MotionEditorService } from './motion-editor.service';
 
 @Controller('runs')
 export class RunController {
@@ -58,6 +61,7 @@ export class RunController {
     private readonly artifactEdits: ArtifactEditService,
     private readonly timelineEditor: TimelineEditorService,
     private readonly timelinePreview: TimelinePreviewService,
+    private readonly motionEditor: MotionEditorService,
   ) {}
 
   @Post()
@@ -333,6 +337,33 @@ export class RunController {
     @Body(new ZodValidationPipe(SubmitTimelineDraftDto)) dto: SubmitTimelineDraftDto,
   ) {
     return this.timelineEditor.submit(id, key, dto.draftRevision);
+  }
+
+  @Post(':id/stages/:key/motion/check')
+  checkMotionCode(
+    @Param('id') id: string,
+    @Param('key') key: string,
+    @Body(new ZodValidationPipe(MotionCheckDto)) dto: MotionCheckDto,
+  ) {
+    return this.motionEditor.check(id, key, dto.code);
+  }
+
+  @Post(':id/stages/:key/motion/preview')
+  async startMotionPreview(
+    @Param('id') id: string,
+    @Param('key') key: string,
+    @Body(new ZodValidationPipe(StartMotionPreviewDto)) dto: StartMotionPreviewDto,
+  ) {
+    return { preview: await this.motionEditor.startPreview(id, key, dto.source) };
+  }
+
+  @Get(':id/stages/:key/motion/preview/:previewId')
+  async motionPreview(
+    @Param('id') id: string,
+    @Param('key') key: string,
+    @Param('previewId') previewId: string,
+  ) {
+    return { preview: await this.motionEditor.preview(id, key, previewId) };
   }
 
   @Post(':id/cancel')
