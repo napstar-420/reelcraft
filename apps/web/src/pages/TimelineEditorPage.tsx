@@ -38,6 +38,7 @@ import {
   type Selection,
 } from './timeline-editor/edit-ops';
 import { issuesFrom, problemsByItem, type CheckIssue } from './timeline-editor/check-issues';
+import { graphicLabel } from './timeline-editor/placement';
 import { editorReducer, initialEditorState } from './timeline-editor/editor-state';
 import { isTypingTarget, shortcutFor, type ShortcutAction } from './timeline-editor/shortcuts';
 import {
@@ -436,7 +437,9 @@ export function TimelineEditorPage() {
       ? (selectedResource?.label ?? selectedItem.handle)
       : selectedItem?.type === 'text'
         ? selectedItem.text
-        : 'Captions';
+        : selectedItem?.type === 'graphic'
+          ? graphicLabel(selectedItem)
+          : 'Captions';
 
   return (
     <main className="dark flex h-screen flex-col overflow-hidden bg-background text-foreground">
