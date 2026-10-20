@@ -11,6 +11,7 @@ import { api } from '@/api/client';
 import { definitionKey, stageFreshness } from '@/lib/stage-freshness';
 import { describeRunActionError } from '@/lib/describe-run-action-error';
 import { requiresNewRun } from '@/lib/run-actions';
+import { buildRunAllDto } from '@/pages/canvas-run.logic';
 
 type Action = NonNullable<StageRunPlanRequestDto['action']>;
 export function useRunExecutionActions({
@@ -147,10 +148,17 @@ export function useRunExecutionActions({
     onSuccess: refresh,
     onError: fail,
   });
-  /** Continue: keep passed stages and run everything unfinished (plus anything the
-   * canvas edits made stale) to the end of the blueprint. */
+  /** Continue: keep passed stages and run everything unfinished (plus anything the canvas
+   * edits made stale) to the end. When the edits can't be applied inside this run (stages
+   * added or removed, inputs changed), a new run reuses every finished stage still valid. */
   const resume = useMutation({
-    mutationFn: () => plan('run', undefined, 'descendants'),
+    mutationFn: async () => {
+      if (!run || !newRunReason) return plan('run', undefined, 'descendants');
+      const blueprintVersionId = await prepareRunnableVersion!();
+      const created = await api.createRun(buildRunAllDto(run, blueprintVersionId));
+      await api.startRun(created.id);
+      onSwitchRun?.(created.id);
+    },
     onSuccess: refresh,
     onError: fail,
   });

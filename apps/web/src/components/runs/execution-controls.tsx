@@ -149,7 +149,7 @@ export function RunExecutionToolbar({
   startOver?: ReactNode;
   newRunReason?: string | null;
 }) {
-  const primary = primaryRunAction(run, newRunReason);
+  const primary = primaryRunAction(run);
   const pending = actions.runStage.isPending || actions.confirmExecution.isPending;
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -193,9 +193,12 @@ export function RunExecutionToolbar({
           </DropdownMenuContent>
         </DropdownMenu>
       )}
-      {primary === 'start' && newRunReason && run && (
-        <span className="max-w-56 truncate text-xs text-muted-foreground" title={newRunReason}>
-          {newRunReason}
+      {primary === 'continue' && newRunReason && (
+        <span
+          className="max-w-56 truncate text-xs text-muted-foreground"
+          title={`${newRunReason} Continue starts a new run that keeps your finished stages.`}
+        >
+          Starts a new run, keeping finished stages
         </span>
       )}
     </div>

@@ -10,20 +10,16 @@ type RunLike = Pick<RunDetailDto, 'state' | 'availableActions'> & {
  * or nothing while it settles or waits on a person (their review button shows instead). */
 export type PrimaryRunAction = 'start' | 'pause' | 'continue' | 'none';
 
-/** `newRunReason`: the canvas edits a test run can't take (`requiresNewRun`); a run that
- * would otherwise continue offers a fresh run instead. */
-export function primaryRunAction(
-  run: RunLike | undefined,
-  newRunReason: string | null = null,
-): PrimaryRunAction {
+/** An open run that can still go on always offers Continue. When the canvas edits can't be applied
+ * inside it (`requiresNewRun`), Continue starts a new run that keeps its finished stages. */
+export function primaryRunAction(run: RunLike | undefined): PrimaryRunAction {
   if (!run) return 'start';
   const available = run.availableActions;
   if (available?.pause) return 'pause';
   if (available?.busy || run.state === 'CREATED') return 'none';
   if (run.state === 'PAUSED_APPROVAL' || run.state === 'PAUSED_INPUT') return 'none';
   const unfinished = run.stageExecutions.some((e) => e.state !== 'passed' && e.state !== 'skipped');
-  if (available?.resume || (run.state === 'IDLE' && unfinished))
-    return newRunReason ? 'start' : 'continue';
+  if (available?.resume || (run.state === 'IDLE' && unfinished)) return 'continue';
   return 'start';
 }
 
