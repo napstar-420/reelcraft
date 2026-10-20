@@ -86,7 +86,7 @@ describe('requiresNewRun', () => {
     defaults: {},
     budget: { runCapUsd: 1 },
   };
-  it('allows prompt edits but not added stages, rewiring or input changes', () => {
+  it('allows prompt edits and rewiring but not added stages or input changes', () => {
     const edited = {
       ...source,
       graph: source.graph.map((s) => (s.key === 'b' ? { ...s, label: 'Renamed' } : s)),
@@ -100,6 +100,9 @@ describe('requiresNewRun', () => {
         ...source,
         graph: source.graph.map((s) => (s.key === 'b' ? { ...s, dependsOn: [] } : s)),
       }),
-    ).toContain('reconnected');
+    ).toBeNull();
+    expect(
+      requiresNewRun(source, { ...source, inputs: [{ ...stage, key: 'x' } as never] }),
+    ).toContain('inputs, roles or defaults');
   });
 });

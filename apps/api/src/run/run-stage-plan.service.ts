@@ -285,16 +285,14 @@ export class RunStagePlanService {
           ? { ...stage, disabled: draft.graph.find((s) => s.key === stage.key)?.disabled ?? false }
           : stage,
       );
-    if (
-      request.mode === 'rebuild' &&
-      (definitionKey(before.graph.map((s) => s.key)) !==
-        definitionKey(draft.graph.map((s) => s.key)) ||
-        before.graph.some(
-          (s) => definitionKey(oldDeps.get(s.key)) !== definitionKey(newDeps.get(s.key)),
-        ))
-    )
-      blockedReason =
-        'The graph was reordered or rewired. Start a new run to apply changed dependencies.';
+    // Continue (no stage chosen) gives a reconnected stage its new wiring when it runs again,
+    // so only one that wouldn't run is a problem. A single-stage request never rewires.
+    const rewired = before.graph.filter(
+      (s) => definitionKey(oldDeps.get(s.key)) !== definitionKey(newDeps.get(s.key)),
+    );
+    const notApplied = request.stageKey ? rewired[0] : rewired.find((s) => !execute.has(s.key));
+    if (request.mode === 'rebuild' && notApplied)
+      blockedReason = `${notApplied.label || notApplied.key} was rewired. Use Continue to apply it, or start a new test run.`;
     if (
       request.itemIndex !== undefined &&
       request.mode === 'rebuild' &&

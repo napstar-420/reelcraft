@@ -1,7 +1,6 @@
 import type { CreateBlueprintVersionDto, RunDetailDto, StageDef } from '@reelcraft/shared';
 import { runningNow } from '@/pages/runs-page.logic';
 import { definitionKey } from './stage-freshness';
-import { stageDependencies } from './stage-deps';
 
 type RunLike = Pick<RunDetailDto, 'state' | 'availableActions'> & {
   stageExecutions: Array<{ state: string; label: string; failure?: unknown }>;
@@ -67,8 +66,9 @@ export function runHeadline(run: RunLike): string | null {
   return null;
 }
 
-/** Why a run can't take these edits and needs a fresh run, or null when it can.
- * Mirrors the server's "Start a new run" blocks in `run-stage-plan.service.ts`. */
+/** Why a run can't take these edits and needs a fresh run, or null when it can. Mirrors the
+ * server's "Start a new run" blocks in `run-stage-plan.service.ts`. Reconnected stages are not
+ * one: they take their new wiring when they run again. */
 export function requiresNewRun(
   source: CreateBlueprintVersionDto,
   draft: CreateBlueprintVersionDto,
@@ -82,14 +82,5 @@ export function requiresNewRun(
     )
   )
     return 'Blueprint inputs, roles or defaults changed since this run started.';
-  const oldDeps = stageDependencies(source.graph);
-  const newDeps = stageDependencies(draft.graph);
-  if (
-    definitionKey(keys(source.graph)) !== definitionKey(keys(draft.graph)) ||
-    source.graph.some(
-      (s) => definitionKey(oldDeps.get(s.key)) !== definitionKey(newDeps.get(s.key)),
-    )
-  )
-    return 'Stages were reordered or reconnected since this run started.';
   return null;
 }
