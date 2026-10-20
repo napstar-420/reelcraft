@@ -256,6 +256,7 @@ export function timelineVersionFor(timeline: {
   world?: unknown;
   camera?: unknown;
   theme?: unknown;
+  fonts?: unknown;
   tracks?: ReadonlyArray<{
     items: ReadonlyArray<{ type: string; reveal?: unknown; x?: unknown }>;
   }>;
@@ -265,7 +266,7 @@ export function timelineVersionFor(timeline: {
       (item) => item.type === 'graphic' || item.reveal !== undefined || item.x !== undefined,
     ),
   );
-  return timeline.world || timeline.camera || timeline.theme || newer ? 2 : 1;
+  return timeline.world || timeline.camera || timeline.theme || timeline.fonts || newer ? 2 : 1;
 }
 
 /** A big canvas the camera moves over, in its own units. Items with `space: 'world'` live on it. */
@@ -344,6 +345,13 @@ export const ITEM_TRACKS = {
   graphic: ['overlay'],
 } as const satisfies Record<TimelineItem['type'], ReadonlyArray<Track['type']>>;
 
+/** A font file a timeline loads, by the family name its words use. */
+export const TimelineFont = z.object({
+  family: z.string().min(1).max(80),
+  handle: z.string().min(1),
+});
+export type TimelineFont = z.infer<typeof TimelineFont>;
+
 export const Timeline = z
   .object({
     /** 1 until a timeline uses something added later (a world, camera or theme), then 2. Older
@@ -359,6 +367,8 @@ export const Timeline = z
     world: TimelineWorld.optional(),
     camera: TimelineCamera.optional(),
     theme: TimelineTheme.optional(),
+    /** Fonts from the library the words use: each family, and the file it loads from. */
+    fonts: z.array(TimelineFont).max(20).optional(),
   })
   .superRefine((timeline, ctx) => {
     if (timeline.camera && !timeline.world) {
@@ -468,7 +478,7 @@ export type Timeline = z.infer<typeof Timeline>;
 
 export const TimelineResource = z.object({
   handle: z.string(),
-  kind: z.enum(['media.image', 'media.video', 'media.audio']),
+  kind: z.enum(['media.image', 'media.video', 'media.audio', 'font']),
   url: z.string(),
   /** What to show the person instead of the handle: the clip's name, or where it came from. */
   label: z.string().optional(),
@@ -523,10 +533,11 @@ export const TimelineStyle = z.object({
 });
 export type TimelineStyle = z.infer<typeof TimelineStyle>;
 
-/** Every file a timeline names: its media items and the word timings its captions follow. */
+/** Every file a timeline names: its media items, the word timings its captions follow, and the
+ * fonts it loads. */
 export function timelineHandles(value: unknown): string[] {
   const timeline = Timeline.parse(value);
-  const handles = new Set<string>();
+  const handles = new Set<string>((timeline.fonts ?? []).map((font) => font.handle));
   for (const track of timeline.tracks) {
     for (const item of track.items) {
       if (item.type === 'media') handles.add(item.handle);

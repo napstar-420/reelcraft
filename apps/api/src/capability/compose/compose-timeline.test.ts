@@ -42,6 +42,50 @@ const items = (timeline: ReturnType<typeof composeTimeline>['timeline'], id: str
   timeline.tracks.find((track) => track.id === id)!.items;
 
 describe('composeTimeline', () => {
+  it('loads a font asset named by id, under its family, and leaves other font names alone', () => {
+    const { timeline } = composeTimeline(
+      base({
+        assets: catalog({ id: 'brand', kind: 'font', handle: 'asset:f1', family: 'Brand Sans' }),
+        plan: plan(
+          [
+            {
+              kind: 'text',
+              text: 'Hello',
+              x: 0.1,
+              y: 0.1,
+              w: 0.5,
+              h: 0.2,
+              atSec: 0,
+              durationSec: 2,
+              font: 'brand',
+            },
+            {
+              kind: 'text',
+              text: 'There',
+              x: 0.1,
+              y: 0.5,
+              w: 0.5,
+              h: 0.2,
+              atSec: 0,
+              durationSec: 2,
+              font: 'Georgia',
+            },
+          ],
+          { theme: { fontBody: 'brand' } },
+        ),
+      }),
+    );
+    const words = timeline.tracks.flatMap((t) => t.items).filter((i) => i.type === 'graphic');
+    expect(
+      words.map((i) =>
+        i.type === 'graphic' && i.content.kind === 'text' ? i.content.font : undefined,
+      ),
+    ).toEqual(['Brand Sans', 'Georgia']);
+    expect(timeline.fonts).toEqual([{ family: 'Brand Sans', handle: 'asset:f1' }]);
+    expect(timeline.theme?.fontBody).toBe('Brand Sans');
+    expect(timeline.version).toBe(2);
+  });
+
   it('places an image in a box, in pixels, with the colour behind it', () => {
     const { timeline } = composeTimeline(
       base({

@@ -10,7 +10,7 @@ set of drawings. Open a channel and select the **Assets** tab.
 
 1. Select **New asset**.
 2. Enter a **Name**. Names must be unique within the channel.
-3. Choose the **Kind**: **Image**, **Video**, **Audio** or **Drawing (SVG)**. The file picker then only
+3. Choose the **Kind**: **Image**, **Video**, **Audio**, **Drawing (SVG)**, **3D model** or **Font**. The file picker then only
    offers files of that kind.
 4. Optionally add **Tags**, separated by commas, such as `intro, brand`.
 5. Under **File**, drop a file onto the box, or select it to choose one.
@@ -26,6 +26,14 @@ reason. Reelcraft reads paths, rectangles, circles, ellipses, lines and polygons
 transforms of the groups they sit in, and draws them on screen line by line. Text, embedded images, gradients,
 filters and masks can't be drawn (convert text to outlines first), and files with scripts are refused. A
 drawing is limited to 60 shapes and 512 KB; merge shapes into fewer paths if it has more.
+
+### Fonts
+
+A **Font** is a `.ttf`, `.otf`, `.woff` or `.woff2` file, up to 20 MB. Reelcraft checks it when you upload it, so a
+file that isn't a font is refused with **Not a font file**. For a TrueType or OpenType file it reads the font's
+family name (such as _Brand Sans_); a WOFF file is named after the asset. Words use the font when a plan names the
+asset by its name (see [Compose Timeline](../stage-types/compose-timeline.md#the-plan)), and the font travels with
+the timeline into the render and the editor's preview. Only use fonts whose licence lets you embed them in videos.
 
 ## Find an asset
 

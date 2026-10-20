@@ -367,6 +367,18 @@ export function composeTimeline(input: ComposeInput): ComposeResult {
     stripUndefined(input.theme),
     stripUndefined(plan.theme),
   ) as TimelineTheme;
+  // A font named by a font asset's id loads from that file, under its family name; any other name
+  // is a family the renderer already has (the theme's hand and body fonts, or a system font).
+  const fonts = new Map<string, string>();
+  const fontFamily = (name: string): string => {
+    const asset = input.assets.get('font', name);
+    if (!asset?.handle) return name;
+    const family = asset.family ?? asset.label ?? name;
+    fonts.set(family, asset.handle);
+    return family;
+  };
+  theme.fontHand = fontFamily(theme.fontHand);
+  theme.fontBody = fontFamily(theme.fontBody);
   const hand = input.hand ?? 'none';
   const timeSpan = (entry: Resolved) => round(Math.max(MIN_SEC, entry.endSec! - entry.startSec));
   const keyframesOf = (layer: PlanLayer) =>
@@ -519,7 +531,7 @@ export function composeTimeline(input: ComposeInput): ComposeResult {
         text: fit.text,
         size: fit.size,
         ...(layer.color && { color: layer.color }),
-        ...(layer.font && { font: layer.font }),
+        ...(layer.font && { font: fontFamily(layer.font) }),
         ...(layer.weight !== undefined && { weight: layer.weight }),
         align: layer.align ?? 'left',
       };
@@ -578,6 +590,9 @@ export function composeTimeline(input: ComposeInput): ComposeResult {
     ...(world && { world }),
     ...(camera && { camera }),
     ...(usesGraphics || plan.theme || input.theme ? { theme } : {}),
+    ...(fonts.size > 0 && {
+      fonts: [...fonts].map(([family, handle]) => ({ family, handle })),
+    }),
     tracks: outTracks,
   });
   if (!parsed.success) {

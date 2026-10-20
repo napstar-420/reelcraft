@@ -15,7 +15,7 @@ import {
 import type { CalculateMetadataFunction } from 'remotion';
 import type { TextStyleTokens, Timeline, TimelineItem, TimingMap } from '@reelcraft/shared';
 import { activeCaption, captionPagesFor } from './captions';
-import { useGraphicFonts } from './graphic/fonts';
+import { useGraphicFonts, useTimelineFonts } from './graphic/fonts';
 import { GraphicItem, placedStyle } from './graphic/GraphicItem';
 import {
   DEFAULT_THEME,
@@ -65,7 +65,8 @@ export {
  * never depends on what the URL looks like (signed URLs end in a query string). */
 export type CompositionResource = {
   src: string;
-  kind: 'media.image' | 'media.video' | 'media.audio';
+  /** A font is loaded by the family a timeline's `fonts` gives it, never placed. */
+  kind: 'media.image' | 'media.video' | 'media.audio' | 'font';
 };
 
 export type TimelineCompositionProps = {
@@ -484,6 +485,13 @@ export const TimelineComposition = ({
     track.items.some((item) => item.type === 'graphic'),
   );
   useGraphicFonts(drawn);
+  // Fonts from the library load from their files, under the family the words name.
+  useTimelineFonts(
+    (timeline.fonts ?? []).flatMap((font) => {
+      const resource = resources[font.handle];
+      return resource ? [{ family: font.family, url: resolveSrc(resource.src) }] : [];
+    }),
+  );
   // Items on the big canvas are drawn together under the camera, beneath every track.
   const worldEntries: GraphicEntry[] = timeline.tracks
     .flatMap((track) =>

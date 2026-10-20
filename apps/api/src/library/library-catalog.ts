@@ -10,7 +10,8 @@ export interface LibraryBinding {
   kind: string;
   name?: string | undefined;
   tags?: string[] | undefined;
-  /** What was read from an uploaded SVG: `{ viewBox, strokes }`. */
+  /** What was read from the file at upload (`asset.meta`): an SVG's `{ viewBox, strokes }`, a
+   * font's `{ family, format }`. */
   vector?: unknown;
   /** Set when the asset was picked up by a `{from:'library'}` ref at run start. */
   inLibrary?: boolean | undefined;
@@ -22,6 +23,7 @@ export const ASSET_KIND_FOR_LIBRARY: Record<LibraryKind, string> = {
   audio: 'media.audio',
   vector: 'vector',
   model: 'model',
+  font: 'font',
 };
 
 const slug = (name: string): string => {
@@ -85,12 +87,17 @@ export function libraryCatalog(input: {
         });
         continue;
       }
+      const family =
+        kind === 'font'
+          ? ((binding.vector as { family?: unknown } | undefined)?.family ?? name)
+          : undefined;
       assets.push({
         id: name,
         kind,
         label: name,
         ...(binding.tags?.length && { tags: binding.tags }),
         handle: `asset:${assetId}`,
+        ...(typeof family === 'string' && { family }),
         ...(duration !== undefined && duration > 0 && { durationSec: duration }),
         source: 'library',
       });

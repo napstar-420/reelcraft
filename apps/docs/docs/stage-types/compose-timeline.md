@@ -66,7 +66,8 @@ length. The video lasts as long as its longest sound plus a short rest, unless t
 Pictures and clips can pop, fade, slide or stay.
 
 **Look.** `color`, `size` (letter height, as a fraction of the shorter side; it shrinks to fit the box), `font`
-(`hand`, `body` or any font family), `weight`, `align`.
+(`hand`, `body`, the name of a **Font** asset from the library, or any font family), `weight`, `align`. A font
+asset loads from its file under its family name, and the theme's `fontHand` and `fontBody` can name one too.
 
 **Sounds.** `volume`, `fadeInSec`, `fadeOutSec`, `trimInSec`, and `loop`, which repeats a sound to fill its time
 (music under a whole video). Give each kind of sound its own `track`, and use the plan's `ducks` to make one

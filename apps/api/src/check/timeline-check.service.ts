@@ -65,6 +65,7 @@ export class TimelineCheckService {
         if (item.type === 'captions') handles.add(item.timingHandle);
       }
     }
+    for (const font of timeline.fonts ?? []) handles.add(font.handle);
     const [runRow] = await this.db
       .select({ assets: run.assetBindings })
       .from(run)

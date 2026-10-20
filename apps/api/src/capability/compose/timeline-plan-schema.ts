@@ -93,7 +93,10 @@ const layer: JsonSchema = {
       0.005,
       2,
     ),
-    font: str('"hand" or "body" (the theme\'s fonts), or a font family name.', 80),
+    font: str(
+      '"hand" or "body" (the theme\'s fonts), the id of a font asset from the catalogue, or a font family name.',
+      80,
+    ),
     weight: { type: 'integer', minimum: 100, maximum: 900, description: 'Font weight.' },
     align: { type: 'string', enum: ['left', 'center', 'right'], description: 'Text alignment.' },
     fit: {

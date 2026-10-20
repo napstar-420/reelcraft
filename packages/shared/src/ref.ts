@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
-export type LibraryKind = 'image' | 'video' | 'audio' | 'vector' | 'model';
-export const LIBRARY_KINDS = ['image', 'video', 'audio', 'vector', 'model'] as const;
+export type LibraryKind = 'image' | 'video' | 'audio' | 'vector' | 'model' | 'font';
+export const LIBRARY_KINDS = ['image', 'video', 'audio', 'vector', 'model', 'font'] as const;
 
 /**
  * Refs points to values / blobs, and are not data themselves, they describe where to look

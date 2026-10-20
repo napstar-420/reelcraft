@@ -223,6 +223,13 @@ export class TimelineEditorService {
   }
 
   private validateTimelineReferences(timeline: Timeline, allowedHandles: Set<string>) {
+    for (const font of timeline.fonts ?? []) {
+      if (!allowedHandles.has(font.handle)) {
+        throw new ConflictException(
+          `Timeline font "${font.family}" is not available to this stage`,
+        );
+      }
+    }
     for (const track of timeline.tracks) {
       for (const item of track.items) {
         const handle =
@@ -329,6 +336,7 @@ export class TimelineEditorService {
           if (item.type === 'captions') allowedHandles.add(item.timingHandle);
         }
       }
+      for (const font of sourceTimeline.fonts ?? []) allowedHandles.add(font.handle);
       await this.addTimelineResources(context, sourceTimeline, resources);
       await this.addTimelineTimingMaps(context, sourceTimeline, timingMaps);
     }
@@ -373,12 +381,32 @@ export class TimelineEditorService {
     timeline: Timeline,
     resources: TimelineResource[],
   ) {
-    const handles = new Set(
-      timeline.tracks.flatMap((track) =>
+    const handles = new Set([
+      ...timeline.tracks.flatMap((track) =>
         track.items.flatMap((item) => (item.type === 'media' ? [item.handle] : [])),
       ),
-    );
+      ...(timeline.fonts ?? []).map((font) => font.handle),
+    ]);
     for (const handle of handles) {
+      // A library file a composed timeline uses: a picture, clip, sound or font.
+      if (handle.startsWith('asset:')) {
+        const binding = (
+          context.run.assetBindings as Record<
+            string,
+            { blobId: string; kind: string; name?: string }
+          >
+        )[handle.slice('asset:'.length)];
+        if (!binding || !PREVIEW_ASSET_KINDS.has(binding.kind)) continue;
+        const access = await this.blobs.readUrl(context.ownerId, binding.blobId);
+        if (access?.status !== 'live') continue;
+        resources.push({
+          handle,
+          kind: binding.kind as TimelineResource['kind'],
+          url: mediaUrl(binding.blobId),
+          ...(binding.name && { label: binding.name }),
+        });
+        continue;
+      }
       const parsed = parseArtifactHandle(handle);
       if (!parsed) continue;
       if (parsed.clipPosition !== undefined) {
@@ -636,3 +664,6 @@ function artifactLabel(
 function dedupeResources(resources: TimelineResource[]) {
   return [...new Map(resources.map((resource) => [resource.handle, resource])).values()];
 }
+
+/** The library files the editor's preview can load. */
+const PREVIEW_ASSET_KINDS = new Set(['media.image', 'media.video', 'media.audio', 'font']);

@@ -138,7 +138,10 @@ the left, a **circle** growing from the middle, or a **marker** swipe with a sof
 
 ### Version
 
-A timeline that uses a world, camera, theme, graphic, placed media or reveal is saved as **version 2**. An
+A timeline can list **fonts**: each a family name and the library font file it loads from. Words name the
+family, and the file is loaded before the first frame, in the editor's preview and in the render.
+
+A timeline that uses a world, camera, theme, fonts, graphic, placed media or reveal is saved as **version 2**. An
 older release refuses to open it, instead of quietly dropping them. Timelines that use none of these stay
 version 1. Timelines saved when graphics were called _sketch_ items still open.
 
