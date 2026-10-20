@@ -66,7 +66,9 @@ describe('parseProbe', () => {
   });
 
   it('keeps the version when listing GPUs failed', () => {
-    expect(parseProbe('REELCRAFT_PROBE {"version":"5.2","devices":[],"error":"no driver"}')).toEqual({
+    expect(
+      parseProbe('REELCRAFT_PROBE {"version":"5.2","devices":[],"error":"no driver"}'),
+    ).toEqual({
       version: '5.2',
       devices: [],
       error: 'no driver',
@@ -88,6 +90,11 @@ describe('blenderEnv', () => {
       DATABASE_URL: 'postgres://secret',
       OPENROUTER_API_KEY: 'sk-secret',
     });
-    expect(env).toEqual({ PATH: '/bin', NVIDIA_VISIBLE_DEVICES: 'all', CUDA_VISIBLE_DEVICES: '0' });
+    expect(env).toEqual({
+      PATH: '/bin',
+      NVIDIA_VISIBLE_DEVICES: 'all',
+      CUDA_VISIBLE_DEVICES: '0',
+      PYTHONDONTWRITEBYTECODE: '1',
+    });
   });
 });

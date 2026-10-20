@@ -626,8 +626,7 @@ export const api = {
       body: JSON.stringify({ path }),
     }),
   installBlender: () => request<BlenderSetupDto>('/blender/setup/install', { method: 'POST' }),
-  cancelBlenderInstall: () =>
-    request<BlenderSetupDto>('/blender/setup/cancel', { method: 'POST' }),
+  cancelBlenderInstall: () => request<BlenderSetupDto>('/blender/setup/cancel', { method: 'POST' }),
   checkBlenderAgain: () => request<BlenderSetupDto>('/blender/setup/check', { method: 'POST' }),
   getPackagePreview: (versionId: string) =>
     request<PackageExportPreviewDto>(`/blueprint-versions/${versionId}/package/preview`),

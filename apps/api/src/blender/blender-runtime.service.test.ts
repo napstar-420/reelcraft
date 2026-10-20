@@ -48,9 +48,10 @@ describe('BlenderRuntime.resolve', () => {
       path: '/e/blender',
       source: 'env',
     });
-    expect(
-      await runtime({ existing: [download, '/usr/bin/blender'] }).runtime.resolve(),
-    ).toEqual({ path: download, source: 'managed' });
+    expect(await runtime({ existing: [download, '/usr/bin/blender'] }).runtime.resolve()).toEqual({
+      path: download,
+      source: 'managed',
+    });
     expect(await runtime({ existing: ['/usr/bin/blender'] }).runtime.resolve()).toEqual({
       path: '/usr/bin/blender',
       source: 'found',

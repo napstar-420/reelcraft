@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { Injectable } from '@nestjs/common';
-import { Timeline, isBuiltinAudioHandle } from '@reelcraft/shared';
+import { Timeline, isBuiltinAudioHandle, timelineHandles } from '@reelcraft/shared';
 import { timingMapOf } from '../../artifact/timing-map';
 import type {
   ComputeSpec,
@@ -282,6 +282,9 @@ export class TimelineRenderCapability extends LocalComputeCapability<RenderConfi
   }
   slots(): SlotDef[] {
     return [{ name: 'timeline', accepts: ['timeline'], required: true, cardinality: 'one' }];
+  }
+  resourceHandles(slots: Record<string, unknown>): string[] {
+    return slots.timeline ? timelineHandles(slots.timeline) : [];
   }
   allowedOutputs(): OutputKind[] {
     return ['media.video'];

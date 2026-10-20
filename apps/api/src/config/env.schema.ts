@@ -56,7 +56,10 @@ export const EnvSchema = z
     QWEN_TTS_SOURCE_DIR: z.string().optional(),
     /** The Blender executable to render scenes with. Unset means one saved in Settings, the copy
      * Reelcraft downloaded, or one installed on this computer. */
-    BLENDER_PATH: z.preprocess((value) => (value === '' ? undefined : value), z.string().optional()),
+    BLENDER_PATH: z.preprocess(
+      (value) => (value === '' ? undefined : value),
+      z.string().optional(),
+    ),
     /** Where a Blender Reelcraft downloads is kept. */
     BLENDER_HOME: z.string().optional(),
     PUBLIC_API_BASE_URL: z.string().url().optional(),

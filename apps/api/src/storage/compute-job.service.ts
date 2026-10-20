@@ -12,7 +12,12 @@ export interface ComputeHandle {
   jobId: string;
   pid: number;
   startedAt: string;
+  /** The job's own time limit, so a poll can say how long it may still run. */
+  maxWaitSec?: number;
 }
+
+/** How much of a failed command's error output is kept as the reason it failed. */
+const ERROR_TAIL_CHARS = 1_200;
 
 type PersistedStatus =
   | { done: false; phase: 'running'; pid: number; updatedAt: string }
@@ -104,6 +109,7 @@ export class ComputeJobService {
         jobId,
         pid: child.pid ?? 0,
         startedAt: new Date().toISOString(),
+        maxWaitSec: spec.maxWaitSec,
       };
       await writeFile(handleFile, JSON.stringify(handle), { flag: 'wx' }).catch(
         (error: unknown) => {
@@ -124,15 +130,26 @@ export class ComputeJobService {
         { jobId: handle.jobId, exitCode: status.exitCode, reason: status.reason },
         'compute job failed',
       );
+      const reason = status.reason ?? `compute command exited ${status.exitCode ?? 'unknown'}`;
+      const said = await this.errorTail(handle.jobId);
       return {
         done: true,
         outcome: 'failed',
-        reason: status.reason ?? `compute command exited ${status.exitCode ?? 'unknown'}`,
+        reason: said ? `${reason}: ${said}` : reason,
         retryable: true,
         failureClass: 'infrastructure',
       };
     }
-    if (this.isAlive(handle.pid)) return { done: false, phase: 'running' };
+    if (this.isAlive(handle.pid)) {
+      // A long render may run past the orchestrator's default wait, up to its own limit.
+      return handle.maxWaitSec
+        ? {
+            done: false,
+            phase: 'running',
+            deadlineMs: Date.parse(handle.startedAt) + handle.maxWaitSec * 1000,
+          }
+        : { done: false, phase: 'running' };
+    }
     this.logger.warn(
       { jobId: handle.jobId, pid: handle.pid },
       'compute supervisor exited without terminal status',
@@ -193,6 +210,15 @@ export class ComputeJobService {
     }
     if (removed) this.logger.log({ removed }, 'compute job dirs reaped');
     return removed;
+  }
+
+  /** The end of what the command wrote to stderr, so a failure says why. */
+  private async errorTail(jobId: string): Promise<string | undefined> {
+    const text = await readFile(path.join(this.jobDir(jobId), 'stderr.log'), 'utf8').catch(
+      () => '',
+    );
+    const tail = text.trim().slice(-ERROR_TAIL_CHARS).trim();
+    return tail || undefined;
   }
 
   private async readStatus(jobId: string): Promise<PersistedStatus | undefined> {

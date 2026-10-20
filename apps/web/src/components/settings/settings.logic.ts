@@ -81,7 +81,9 @@ export function blenderSourceLabel(source: BlenderSource | null): string {
 }
 
 /** What Blender renders on: its GPUs, or the CPU, and why when it is likely Docker on a Mac. */
-export function blenderRendersWith(setup: Pick<BlenderSetupDto, 'devices' | 'inContainer'>): string {
+export function blenderRendersWith(
+  setup: Pick<BlenderSetupDto, 'devices' | 'inContainer'>,
+): string {
   if (setup.devices.length) {
     const names = [...new Set(setup.devices.map((device) => `${device.name} (${device.backend})`))];
     return `Renders on ${names.join(', ')}`;

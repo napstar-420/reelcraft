@@ -140,9 +140,19 @@ const GPU_VARIABLES = /^(NVIDIA_|CUDA_|HIP_|ROCR_|GPU_DEVICE_ORDINAL$|ONEAPI_|ZE
 /** What Blender runs with: the allowlisted environment and the variables that choose GPUs. It
  * runs model-written Python, so it never sees the database password or provider keys. */
 export function blenderEnv(base: NodeJS.ProcessEnv): Record<string, string> {
-  return inheritedEnv(base, (name) => GPU_VARIABLES.test(name));
+  // No `__pycache__` next to the scripts: the app folder may be read-only, and it is replaced on update.
+  return {
+    ...inheritedEnv(base, (name) => GPU_VARIABLES.test(name)),
+    PYTHONDONTWRITEBYTECODE: '1',
+  };
 }
 
 /** The arguments every Blender Reelcraft starts uses: no window, no user preferences or add-ons,
  * and no scripts embedded in `.blend` files. */
-export const BASE_ARGS = ['-b', '--factory-startup', '--disable-autoexec', '--python-exit-code', '1'];
+export const BASE_ARGS = [
+  '-b',
+  '--factory-startup',
+  '--disable-autoexec',
+  '--python-exit-code',
+  '1',
+];

@@ -131,5 +131,8 @@ export const ComputeSpec = z.object({
   files: z.array(z.object({ asFilename: z.string(), contents: z.string() })).optional(),
   outputFilename: z.string(),
   maxWaitSec: z.number(),
+  /** The whole environment the command runs with. Left out, it inherits the API's. Set it for a
+   * command that runs code a model wrote, so it never sees the API's secrets. */
+  env: z.record(z.string(), z.string()).optional(),
 });
 export type ComputeSpec = z.infer<typeof ComputeSpec>;
