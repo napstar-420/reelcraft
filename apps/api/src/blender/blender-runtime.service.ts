@@ -7,10 +7,10 @@ import path from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { promisify } from 'node:util';
-import { ConflictException, Injectable, Logger } from '@nestjs/common';
+import { ConflictException, Logger } from '@nestjs/common';
 import type { BlenderDevice, BlenderSetupDto, BlenderSource } from '@reelcraft/shared';
-import { EngineConfig } from '../config/engine-config';
-import { SETTING, SettingsService } from '../settings/settings.service';
+import type { EngineConfig } from '../config/engine-config';
+import { SETTING, type SettingsService } from '../settings/settings.service';
 import {
   BASE_ARGS,
   BLENDER_VERSION,
@@ -65,7 +65,6 @@ type Install = BlenderSetupDto['install'];
  * downloaded, then one already installed on this computer. A saved or environment path that
  * doesn't work is reported, never silently skipped. Nothing is downloaded unless the user asks.
  */
-@Injectable()
 export class BlenderRuntime {
   private readonly logger = new Logger(BlenderRuntime.name);
   private readonly d: Required<BlenderRuntimeDeps>;
