@@ -30,6 +30,18 @@ export interface ProviderRequest {
   renderedPrompt?: string | undefined;
   system?: string | undefined;
   output?: OutputDef | undefined;
+  /** A working folder for agent providers (Codex, Claude): files put in their job folder, the
+   * commands they may run there, and how to use them, such as the kit a motion graphic is written
+   * and test-rendered in. Providers that can't work with files ignore it. */
+  workspace?: ProviderWorkspace | undefined;
+}
+
+export interface ProviderWorkspace {
+  /** Plain file names (no folders), written into the job folder before the agent starts. */
+  files: Array<{ name: string; contents: string }>;
+  /** Commands the agent may run in the folder, exactly as typed (for example `node check.mjs`). */
+  commands: string[];
+  instructions: string;
 }
 
 /** What the editor narrows a text-to-speech voice list by. */

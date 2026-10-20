@@ -319,6 +319,8 @@ function toNumberOrUndefined(raw: string): number | undefined {
 /** Same mapping as the API's `modalityForCapability`: the capability id's
  * first part names its kind of work. */
 function modalityOf(capability: string): Modality {
+  // Keep in step with MODALITY_OF in the API's modality-for-capability.ts.
+  if (capability === 'motion.generate') return 'text';
   return capability.split('.')[0] as Modality;
 }
 

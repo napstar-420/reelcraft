@@ -25,6 +25,8 @@ import { FlowVideoCapability } from './impls/flow-video.capability';
 import { TimelineComposeCapability } from './impls/timeline-compose.capability';
 import { SvgPrepareCapability } from './impls/svg-prepare.capability';
 import { SvgPreviewCapability } from './impls/svg-preview.capability';
+import { MotionRenderCapability } from './impls/motion-render.capability';
+import { MotionGenerateCapability } from './impls/motion-generate.capability';
 import { BuiltinDrawings } from './vector/builtin-drawings';
 
 /**
@@ -56,6 +58,8 @@ import { BuiltinDrawings } from './vector/builtin-drawings';
     TimelineComposeCapability,
     SvgPrepareCapability,
     SvgPreviewCapability,
+    MotionRenderCapability,
+    MotionGenerateCapability,
     BuiltinDrawings,
   ],
   controllers: [CapabilityController],

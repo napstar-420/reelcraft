@@ -29,6 +29,20 @@ function toolsFor(manifest: CliRunnerManifest): { tools: string[]; allowed: stri
     const tools = ['Read', 'Write', 'Edit', 'Glob', 'Grep', 'Bash'];
     return { tools, allowed: [...tools, `mcp__${CLAUDE_NEO_SERVER}`] };
   }
+  // A job with a working folder edits its files and runs only the commands it was given.
+  if (manifest.modality === 'text' && manifest.workspaceCommands?.length) {
+    const tools = ['Read', 'Write', 'Edit', 'Glob', 'Bash'];
+    return {
+      tools,
+      allowed: [
+        'Read',
+        'Write',
+        'Edit',
+        'Glob',
+        ...manifest.workspaceCommands.flatMap((c) => [`Bash(${c})`, `Bash(${c} *)`]),
+      ],
+    };
+  }
   if (manifest.params.__inspectFiles === true) {
     return {
       tools: ['Read', 'Glob', 'Bash'],

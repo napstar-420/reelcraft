@@ -2,6 +2,7 @@ import type { CreateBlueprintVersionDto } from '@reelcraft/shared';
 import {
   recipeBrollMontage,
   recipeComposedVideo,
+  recipeMotionGraphics,
   recipeIllustratedStory,
   recipeParallelStory,
   recipeVoiceoverReel,
@@ -55,6 +56,8 @@ export const GUIDE: Record<string, GuideSection> = {
 - \`timeline.compose\`: places pictures, clips, sounds, drawings, words and captions on a timeline from a plan of layers (slot \`plan\`: data in the TimelinePlan shape; \`assets\`: any media, catalogues or drawing sets; \`timing\`: word timings; config \`inputs\` names more asset slots, such as voice or music, and a file is called by its slot's name in the plan). A layer says what it is (image, video, audio, drawing, text, shape, captions), the asset by id, where (x, y, w, h as fractions of the frame; a world can be bigger than a frame, with a camera) and when (seconds, words from the narration, or after another layer). It makes no creative choices: a plan with an unknown asset id or a missing field fails with every problem listed. \`timeline\` output for \`timeline.render\`; free.
 - \`svg.prepare\`: checks drawings a model made as SVG path data and gathers the usable ones into a set for \`timeline.compose\`'s \`assets\` slot (slot \`drawings\`: the answers of a \`text.generate\` stage that drew them; optional \`needs\`: the list of drawings asked for, with a built-in \`fallbackId\` that takes the place of one that can't be used); \`data\` output; free.
 - \`svg.preview\`: one picture (\`media.image\`) of a set of drawings with their ids, rendered locally; free. For a person or an image-judging QC to look at the drawings.
+- \`motion.generate\`: a model writes a motion graphic as Remotion code (an animated title, chart, counter, diagram, lower third, transition: anything the prompt asks for) from \`instructions.template\` (required); \`data\` output in the MotionSource shape (use \`motionSourceJsonSchema\`, as in the recipe). Optional slots: \`data\` (an object the component is given as props, such as chart numbers), \`assets\` (images it may load), \`canvas\` (a timeline to take the size from). Config: \`durationSec\` (1 to 60, unset lets the model choose), \`width\`/\`height\`/\`fps\` (default the canvas, else 1920x1080 at 30), \`background\` (\`transparent\`, the default, to lay it over video; \`opaque\` to fill the frame), \`style\`. Any text model can write it; Codex and Claude also check and test-render their own code first. Always add the \`motion_code\` builtin check with \`checkMaxAttempts\` so code that breaks the rules goes back to the model. It owns its system prompt. Iterate it to make one graphic per item of a plan.
+- \`motion.render\`: renders a motion graphic (slot \`source\`: \`motion.generate\`'s output) into a clip (\`media.video\`): a transparent WebM for a transparent graphic, else MP4; free, local. Bind the clips to \`timeline.compose\` like any video (iterated clips under one named input are \`<input>-1\`, \`<input>-2\`, ...).
 - \`human.input\`: pauses the run for a person to type or paste text or data.
 - \`human.timeline_edit\`: pauses for a person to edit a timeline in the timeline editor.
 - \`browser.automate\`: Codex or Claude uses a signed-in browser to do a task; \`data\` output, or files it downloads (\`media.audio\`, \`media.image\`, \`media.video\`, or an image or video list; needs an instructions template saying what to find; the licence it reads is recorded in the stage log). Uses the user's accounts: only if they ask for it.
@@ -309,6 +312,11 @@ ${JSON.stringify(
 )}
 \`\`\`
 
+**6. A narrated video of motion graphics (animated titles, charts, counters, diagrams).** Script → voice-over (writes \`timing\`) and, beside it, a plan of graphics with the words each goes with → \`motion.generate\` iterating over the plan (check \`motion_code\`, \`checkMaxAttempts\`) → \`motion.render\` iterating the same way (per-item approval) → a layout stage placing the clips at their cue words → \`timeline.compose\` → render. For graphics over other footage (lower thirds, callouts), keep \`background\` transparent and give the layer a box. Data from an earlier stage reaches the component through the \`data\` slot as props.
+\`\`\`json
+${JSON.stringify(recipeMotionGraphics(), null, 2)}
+\`\`\`
+
 When a request mixes shapes (a story with a few real clips, a voice-over plus music), combine the stages; keep each rule from the quality topic. Always bind run inputs for what changes per run (topic, tone, a photo) and put constants in the prompts.`,
   },
 
@@ -401,7 +409,7 @@ ${renderTroubleshooting()}`,
 - **Blueprint** tab: name, description, tags, inputs (run inputs), the Character role, defaults and budget. Presentation stores shared positions and branch names by stable stage key, retained through drafts, versions, duplication and package round trips; preserve it in proposals.
 - **Save** creates a version (its menu can start a new major); **Versions** lists them; the toolbar badge **Runnable** with a warning count comes from the validator. **Run** opens the run dialog (**Live run** or **Dry run**, budget cap, inputs, **Run up to** to stop after a stage). A **Dry run** uses the free fake provider.
 - **Assistant** tab: **Auto-apply** (proposals go straight to the canvas, with **Undo**), **Apply** (manual mode), **Start new chat**, the model and effort pickers.
-- Stage types by label: Generate Text, Generate Image, Generate Video, Generate Video with Flow, Generate Speech, Generate Sound Effect, Generate Music, Analyze Media, Concatenate Video, Render Timeline, Export Subtitles, Human Input, Human Timeline Edit, Automate Browser, Compose Timeline, Prepare Drawings, Preview Drawings, Publish (Stub). \`list_capabilities\` has the exact labels.
+- Stage types by label: Generate Text, Generate Image, Generate Video, Generate Video with Flow, Generate Speech, Generate Sound Effect, Generate Music, Analyze Media, Concatenate Video, Render Timeline, Export Subtitles, Human Input, Human Timeline Edit, Automate Browser, Compose Timeline, Prepare Drawings, Preview Drawings, Generate Motion Graphic, Render Motion Graphic, Publish (Stub). \`list_capabilities\` has the exact labels.
 - **Approve** / **Reject** (with a note) are the user's actions on a paused run; you cannot do them.`,
   },
 

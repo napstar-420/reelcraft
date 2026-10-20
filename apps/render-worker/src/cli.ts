@@ -3,6 +3,7 @@ import path from 'node:path';
 import { bundle } from '@remotion/bundler';
 import { renderMedia, renderStill, selectComposition } from '@remotion/renderer';
 import { Timeline } from '@reelcraft/shared';
+import { renderMotion } from './motion';
 
 type RenderJob = {
   /** `still` renders the first frame as a PNG, for a picture of a timeline instead of a video. */
@@ -11,6 +12,7 @@ type RenderJob = {
 };
 
 async function main() {
+  if (process.argv[2] === 'motion') return motionMain(process.argv.slice(3));
   const [timelinePath, resourcesPath, quality, output, browserExecutable] = process.argv.slice(2);
   if (!timelinePath || !resourcesPath || !quality || !output) {
     throw new Error(
@@ -64,6 +66,24 @@ async function main() {
     crf: job.quality === 'draft' ? 28 : 18,
     ...(job.browserExecutable ? { browserExecutable: job.browserExecutable } : {}),
   });
+}
+
+/** `motion <source.json> <output> [browser] [--stills]`. The files the code loads sit next to
+ * the source. */
+async function motionMain(args: string[]) {
+  const stills = args.includes('--stills');
+  const [sourcePath, output, browserExecutable] = args.filter((a) => a !== '--stills');
+  if (!sourcePath || !output) {
+    throw new Error('Usage: render-worker motion <source.json> <output> [browser] [--stills]');
+  }
+  const written = await renderMotion({
+    sourcePath,
+    assetsDir: path.dirname(path.resolve(sourcePath)),
+    output,
+    stills,
+    ...(browserExecutable ? { browserExecutable } : {}),
+  });
+  console.log(JSON.stringify({ written }));
 }
 
 void main().catch((error: unknown) => {

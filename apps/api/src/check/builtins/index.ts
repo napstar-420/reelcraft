@@ -9,6 +9,7 @@ import { arrayLength } from './array-length';
 import { mediaFormat } from './media-format';
 import { nonEmpty } from './non-empty';
 import { drawing } from './drawing';
+import { motionCode } from './motion-code';
 
 /**
  * §9.1 — the closed builtin-check registry. A plain module-level constant,
@@ -32,4 +33,5 @@ export const BUILTIN_CHECKS: Record<string, BuiltinCheck> = {
   [mediaFormat.key]: mediaFormat,
   [nonEmpty.key]: nonEmpty,
   [drawing.key]: drawing,
+  [motionCode.key]: motionCode,
 };

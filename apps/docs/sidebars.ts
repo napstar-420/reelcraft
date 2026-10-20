@@ -66,6 +66,8 @@ const sidebars: SidebarsConfig = {
         'stage-types/compose-timeline',
         'stage-types/prepare-drawings',
         'stage-types/preview-drawings',
+        'stage-types/generate-motion-graphic',
+        'stage-types/render-motion-graphic',
         'stage-types/export-subtitles',
         'stage-types/human-input',
         'stage-types/human-timeline-edit',

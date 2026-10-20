@@ -35,6 +35,10 @@ After a successful sign-in, and whenever the Neo address is saved in Settings,
 entry the user configured is left alone. `codex exec --profile reelcraft` works without a matching
 profile in `config.toml` (verified with codex-cli 0.159.3; the image now ships 0.160.0), so no profile is created.
 
+A text job whose request carries a `workspace` (for now only Generate Motion Graphic) gets its files written
+into the job folder before Codex starts, and the prompt says how to use them (write `Motion.tsx`, run
+`node check.mjs`, look at the stills). See ADR-0017.
+
 ## The blueprint assistant on Codex
 
 The blueprint assistant (ADR-0009) doesn't use `codex exec`. It keeps one `codex app-server --stdio`

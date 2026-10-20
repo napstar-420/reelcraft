@@ -28,6 +28,14 @@ export class TimelineResourceResolverService {
         if (item.type === 'captions') handles.add(item.timingHandle);
       }
     }
+    return this.resolveHandles(runId, handles);
+  }
+
+  /** Resolves artifact and asset handles to their stored files, whatever uses them. */
+  async resolveHandles(
+    runId: string,
+    handles: Iterable<string>,
+  ): Promise<Record<string, ResolvedTimelineResource>> {
     const [runRow] = await this.db
       .select({ assets: run.assetBindings })
       .from(run)
@@ -107,7 +115,7 @@ export class TimelineResourceResolverService {
       }
     }
     this.logger.debug(
-      { runId, handles: handles.size, resolved: Object.keys(result).length },
+      { runId, resolved: Object.keys(result).length },
       'timeline resources resolved',
     );
     return result;

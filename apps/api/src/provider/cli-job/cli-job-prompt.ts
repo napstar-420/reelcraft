@@ -12,6 +12,7 @@ export function buildJobPrompt(input: {
   system?: string | undefined;
   renderedPrompt?: string | undefined;
   output?: OutputDef | undefined;
+  workspace?: { instructions: string } | undefined;
 }): string {
   const imageCount = requestedImageCount(input.params);
   const modalityInstruction =
@@ -49,6 +50,9 @@ export function buildJobPrompt(input: {
     input.modality === 'text' && Array.isArray(input.params?.__referenceFiles)
       ? `Files to inspect, in order: ${input.params.__referenceFiles.join(', ')}. Open and examine them yourself with the local tools you have (for example ffmpeg to extract frames and audio); do not guess from the file names.`
       : undefined;
+  // A job with a working folder works there before it answers.
+  const workspaceContext =
+    input.modality === 'text' && input.workspace ? input.workspace.instructions : undefined;
   const outputInstruction =
     input.output?.kind === 'data'
       ? 'Return only JSON matching the supplied output schema. Do not wrap it in Markdown.'
@@ -67,6 +71,7 @@ export function buildJobPrompt(input: {
     ...(browserContext ? [browserContext] : []),
     ...(imageContext ? [imageContext] : []),
     ...(inspectContext ? [inspectContext] : []),
+    ...(workspaceContext ? [workspaceContext] : []),
     outputInstruction,
     '</output_requirements>',
   ].join('\n');

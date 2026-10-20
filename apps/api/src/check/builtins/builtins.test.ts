@@ -14,6 +14,7 @@ const EXPECTED_KEYS = [
   'media_format',
   'non_empty',
   'drawing',
+  'motion_code',
 ];
 
 function textArtifact(text: string): CheckArtifact {
@@ -49,6 +50,7 @@ describe('paramsSchema stays in sync with params (drift guard)', () => {
     media_format: { container: 'mp4', codec: 'h264' },
     non_empty: { path: 'title' },
     drawing: { path: 'drawings' },
+    motion_code: { path: 'code' },
   };
 
   it.each(Object.entries(BUILTIN_CHECKS))(
@@ -246,5 +248,30 @@ describe('drawing', () => {
   it('fails on something that is not a drawing, without throwing', () => {
     expect(check.run({}, { kind: 'text', data: 'a mug' }).pass).toBe(false);
     expect(check.run({}, { kind: 'data', data: undefined }).pass).toBe(false);
+  });
+});
+
+describe('motion_code', () => {
+  const check = BUILTIN_CHECKS.motion_code!;
+  it('passes code that can be rendered, given as an object or a string', () => {
+    const code = "import React from 'react';\nexport default function M() { return <div />; }";
+    expect(check.run({}, { kind: 'data', data: { code } }).pass).toBe(true);
+    expect(check.run({ path: 'code' }, { kind: 'data', data: { code } }).pass).toBe(true);
+  });
+  it('lists every problem', () => {
+    const result = check.run(
+      {},
+      {
+        kind: 'data',
+        data: { code: "import fs from 'fs';\nexport const M = () => Math.random() + String(fs);" },
+      },
+    );
+    expect(result.pass).toBe(false);
+    expect(result.message).toContain('fs');
+    expect(result.message).toContain('default export');
+    expect(result.message).toContain('random(seed)');
+  });
+  it('fails when there is no code', () => {
+    expect(check.run({}, { kind: 'data', data: { other: 1 } }).pass).toBe(false);
   });
 });

@@ -133,12 +133,18 @@ export function capabilityGroup(key: string): CapabilityGroup {
     key === 'text.generate' ||
     key === 'image.generate' ||
     key === 'video.generate' ||
-    key === 'audio.speech'
+    key === 'audio.speech' ||
+    key === 'motion.generate'
   ) {
     return 'Generate';
   }
   if (key === 'media.analyze') return 'Analyze';
-  if (key === 'video.concat' || key === 'timeline.render' || key === 'subtitles.export') {
+  if (
+    key === 'video.concat' ||
+    key === 'timeline.render' ||
+    key === 'motion.render' ||
+    key === 'subtitles.export'
+  ) {
     return 'Assemble';
   }
   if (key.startsWith('human.')) return 'Human';

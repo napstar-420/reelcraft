@@ -4,6 +4,7 @@ import {
   isInlineString,
   isOpenByDefault,
   jsonKind,
+  motionGraphicOf,
   summarizeValue,
 } from './data-view.logic';
 
@@ -41,5 +42,24 @@ describe('data view logic', () => {
     expect(isOpenByDefault(0)).toBe(true);
     expect(isOpenByDefault(1)).toBe(true);
     expect(isOpenByDefault(2)).toBe(false);
+  });
+});
+
+describe('motionGraphicOf', () => {
+  it('reads a motion graphic and ignores other data', () => {
+    expect(
+      motionGraphicOf({
+        code: 'x',
+        width: 1920,
+        height: 1080,
+        fps: 30,
+        durationSec: 4,
+        background: 'transparent',
+        notes: 'A title.',
+      }),
+    ).toEqual({ code: 'x', summary: '1920×1080 · 30 fps · 4 s · transparent — A title.' });
+    expect(motionGraphicOf({ code: 'x' })).toBeNull();
+    expect(motionGraphicOf([1])).toBeNull();
+    expect(motionGraphicOf(null)).toBeNull();
   });
 });

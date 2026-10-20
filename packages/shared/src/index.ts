@@ -18,5 +18,6 @@ export * from './vector-asset';
 export * from './builtin-audio';
 export * from './asset-catalog';
 export * from './timeline-plan';
+export * from './motion-source';
 export * from './dto/index';
 export * from './stage-freshness';

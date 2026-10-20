@@ -9,6 +9,7 @@ import { qualityIssues } from './tools/quality-checks';
 import {
   recipeBrollMontage,
   recipeComposedVideo,
+  recipeMotionGraphics,
   recipeIllustratedStory,
   recipeParallelStory,
   recipeVoiceoverReel,
@@ -188,6 +189,7 @@ describe('assistant guide examples', () => {
     ['recipe: parallel story', recipeParallelStory],
     ['recipe: composed video, drawings made in the run', () => recipeComposedVideo('generated')],
     ['recipe: composed video, only uploaded assets', () => recipeComposedVideo('library')],
+    ['recipe: motion graphics', recipeMotionGraphics],
   ])('example "%s" has no validation errors', (_name, make) => {
     const draft = make();
     const issues = validator.validate({
@@ -208,7 +210,9 @@ describe('assistant guide examples', () => {
         ],
       ]),
     });
-    expect(issues.filter((i) => i.severity === 'error')).toEqual([]);
+    expect(
+      issues.filter((i) => i.severity === 'error').map((i) => `${i.path}: ${i.message}`),
+    ).toEqual([]);
     // The assistant copies the examples, so they must meet its own quality bar too.
     expect(qualityIssues(draft)).toEqual([]);
   });

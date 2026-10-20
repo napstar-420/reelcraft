@@ -9,6 +9,7 @@ import type {
   ProviderAdapter,
   ProviderRequest,
   ProviderResult,
+  ProviderWorkspace,
 } from '../provider-adapter.interface';
 import { ProviderContinuationUnavailableError } from '../provider-adapter.interface';
 import type { EngineConfig } from '../../config/engine-config';
@@ -241,6 +242,9 @@ export abstract class CliJobProviderAdapter implements ProviderAdapter {
     const resultPath = join(jobDir, modality === 'text' ? 'result.txt' : 'result.json');
     const outputDir = join(jobDir, 'outputs');
     await mkdir(outputDir, { mode: 0o700 });
+    // A text job may come with a working folder: files to work with and commands it may run.
+    const workspace = modality === 'text' ? req.workspace : undefined;
+    if (workspace) await writeWorkspace(jobDir, workspace);
     const referenceFiles =
       (modality === 'image' || modality === 'browser' || inspectFiles) && this.inputMaterializer
         ? await this.inputMaterializer.materialize(
@@ -291,6 +295,7 @@ export abstract class CliJobProviderAdapter implements ProviderAdapter {
       params: req.params,
       prompt: buildJobPrompt({
         ...req,
+        workspace,
         modality,
         params: {
           ...req.params,
@@ -302,6 +307,7 @@ export abstract class CliJobProviderAdapter implements ProviderAdapter {
       }),
       ...(retained && { retained: true }),
       ...(threadId && { threadId }),
+      ...(workspace && { workspaceCommands: workspace.commands }),
     });
     await atomicJson(join(jobDir, 'status.json'), {
       state: 'queued',
@@ -702,3 +708,28 @@ export abstract class CliJobProviderAdapter implements ProviderAdapter {
     );
   }
 }
+
+/** Writes a job's working folder. Only plain names, so nothing lands outside the job. */
+async function writeWorkspace(jobDir: string, workspace: ProviderWorkspace): Promise<void> {
+  for (const file of workspace.files) {
+    if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{0,79}$/.test(file.name) || RESERVED_JOB_FILES.has(file.name)) {
+      throw new Error(`Unsafe workspace file name "${file.name}"`);
+    }
+    await writeFile(join(jobDir, file.name), file.contents, { mode: 0o600, flag: 'wx' });
+  }
+}
+
+/** Files the job itself keeps in its folder; a workspace can't replace them. */
+const RESERVED_JOB_FILES = new Set([
+  'manifest.json',
+  'runner-request.json',
+  'status.json',
+  'process.json',
+  'thread.json',
+  'schema.json',
+  'result.txt',
+  'result.json',
+  'events.log',
+  'stderr.log',
+  'events-summary.json',
+]);

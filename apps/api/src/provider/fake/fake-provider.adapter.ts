@@ -8,11 +8,26 @@ import type {
   ProviderResult,
 } from '../provider-adapter.interface';
 import { fakeTimingFor } from './fake-timing';
+import { SAMPLE_MOTION_CODE } from '../../capability/motion/sample-motion';
 
 /** The text bound to an audio request's `text` slot. */
 function speechTextOf(slots: unknown): string | undefined {
   const text = (slots as { text?: unknown } | undefined)?.text;
   return typeof text === 'string' ? text : undefined;
+}
+
+/** A motion graphic stage asks for a component with a working folder to test-render it in. */
+function isMotionRequest(req: ProviderRequest): boolean {
+  return req.workspace?.commands.includes('node check.mjs') ?? false;
+}
+
+/** What the fake answers a motion graphic stage with: a small graphic that follows the rules. */
+function fakeMotionAnswer() {
+  return {
+    status: 'ok',
+    message: '',
+    result: { code: SAMPLE_MOTION_CODE, durationSec: 3, notes: 'A title, a line and bars.' },
+  };
 }
 
 interface FakeJobPayload {
@@ -206,7 +221,7 @@ export class FakeProviderAdapter implements ProviderAdapter {
       prompt: req.renderedPrompt,
       failureMode: parsed?.mode,
       failuresRemaining: parsed?.count,
-      output: req.params.fakeOutput,
+      output: req.params.fakeOutput ?? (isMotionRequest(req) ? fakeMotionAnswer() : undefined),
       costUsd: req.params.fakeCostUsd as number | undefined,
       speechText: speechTextOf(req.params.slots),
       imageCount: req.params.count as number | undefined,

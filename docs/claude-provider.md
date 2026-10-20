@@ -23,6 +23,10 @@ runner (`cli-job-runner.ts`) that survives API restarts, and output files confin
 - the final `result` event is the answer: `structured_output` when a schema was sent, else `result`. An
   `is_error` result fails the job with its message, even on exit 0.
 
+A text job whose request carries a `workspace` (for now only Generate Motion Graphic) gets its files written
+into the job folder, `Read`, `Write`, `Edit`, `Glob` and `Bash` as tools, and only the workspace's own commands
+allowed for `Bash` (`Bash(node check.mjs)`, `Bash(node check.mjs *)`). See ADR-0017.
+
 Models are the CLI's aliases (`sonnet`, `opus`, `fable`, `haiku`), so the list needs no upkeep; efforts are
 `low`, `medium`, `high`, `xhigh`, `max`. Which models run depends on the user's plan. Estimates and
 settlements are `$0`.

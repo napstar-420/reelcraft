@@ -25,6 +25,8 @@ import { BrowserAutomateCapability } from '../../capability/impls/browser-automa
 import { FlowVideoCapability } from '../../capability/impls/flow-video.capability';
 import { SvgPrepareCapability } from '../../capability/impls/svg-prepare.capability';
 import { TimelineComposeCapability } from '../../capability/impls/timeline-compose.capability';
+import { MotionGenerateCapability } from '../../capability/impls/motion-generate.capability';
+import { MotionRenderCapability } from '../../capability/impls/motion-render.capability';
 import { BuiltinDrawings } from '../../capability/vector/builtin-drawings';
 
 /** The real capability instances, built without Nest (only their static metadata is used by
@@ -51,6 +53,8 @@ export function realCapabilities(): Array<{ key: string; impl: CapabilityImpl }>
     new AudioMusicCapability(providers),
     new SvgPrepareCapability(new BuiltinDrawings()),
     new TimelineComposeCapability(),
+    new MotionGenerateCapability(providers, stub),
+    new MotionRenderCapability(stub, stub),
   ];
   return instances.map((impl) => ({
     key: Reflect.getMetadata(CAPABILITY_KEY_METADATA, (impl as object).constructor) as string,

@@ -34,7 +34,8 @@ against your plan's own limits and are recorded as $0. See [Connect Codex](../co
 
 - [Concatenate Video](../stage-types/concatenate-video.md), [Render Timeline](../stage-types/render-timeline.md),
   [Compose Timeline](../stage-types/compose-timeline.md), [Prepare Drawings](../stage-types/prepare-drawings.md),
-  [Preview Drawings](../stage-types/preview-drawings.md) and [Export Subtitles](../stage-types/export-subtitles.md): they run on your computer. They use its
+  [Preview Drawings](../stage-types/preview-drawings.md), [Render Motion Graphic](../stage-types/render-motion-graphic.md)
+  and [Export Subtitles](../stage-types/export-subtitles.md): they run on your computer. They use its
   processor and time, not money.
 - [Analyze Media](../stage-types/analyze-media.md) with **Probe**.
 - [Generate Speech](../stage-types/generate-speech.md) with **Qwen3-TTS (local)**: it runs on your

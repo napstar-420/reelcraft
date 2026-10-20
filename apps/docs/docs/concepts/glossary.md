@@ -59,6 +59,9 @@ See [Characters](../channels/characters.md).
 **Memory**: values stages save during a run, for later stages to read. See
 [Connecting stages](../blueprints/connecting-stages.md#memory).
 
+**Motion graphic**: an animation, such as a title, chart or diagram, that a model writes as Remotion code and
+Reelcraft renders into a clip. See [Generate Motion Graphic](../stage-types/generate-motion-graphic.md).
+
 **Model**: the AI behind a stage, picked from a provider. See [Models](../blueprints/models.md).
 
 **Output**: what a stage makes. See [Outputs](../blueprints/outputs.md).

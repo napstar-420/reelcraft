@@ -526,6 +526,36 @@ describe('CodexProviderAdapter', () => {
     });
   });
 
+  describe('text jobs with a working folder', () => {
+    const request = (files: Array<{ name: string; contents: string }>) => ({
+      modality: 'text' as const,
+      modelId: 'gpt-example',
+      params: { reasoningEffort: 'low' },
+      renderedPrompt: 'Make a title.',
+      workspace: { files, commands: ['node check.mjs'], instructions: 'Run node check.mjs first.' },
+    });
+
+    it('writes the files into the job folder and tells the agent how to use them', async () => {
+      const { adapter, launcher } = await fixture();
+      await adapter.submit(request([{ name: 'check.mjs', contents: 'console.log(1)' }]), 'ws');
+      const jobDir = (launcher.launch.mock.calls[0]?.[0] as { jobDir: string }).jobDir;
+      expect(await readFile(join(jobDir, 'check.mjs'), 'utf8')).toBe('console.log(1)');
+      const runner = JSON.parse(await readFile(join(jobDir, 'runner-request.json'), 'utf8'));
+      expect(runner.workspaceCommands).toEqual(['node check.mjs']);
+      expect(runner.prompt).toContain('Run node check.mjs first.');
+    });
+
+    it('refuses file names that would leave the folder or replace the job files', async () => {
+      const { adapter } = await fixture();
+      await expect(adapter.submit(request([{ name: '../x', contents: '' }]), 'a')).rejects.toThrow(
+        /Unsafe/,
+      );
+      await expect(
+        adapter.submit(request([{ name: 'status.json', contents: '' }]), 'b'),
+      ).rejects.toThrow(/Unsafe/);
+    });
+  });
+
   describe('browser jobs with a progress directory', () => {
     const request = (extra: Record<string, unknown> = {}) => ({
       modality: 'browser' as const,

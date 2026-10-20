@@ -45,6 +45,11 @@ enough to see; colours must be theme colours or hex colours; line weights `thin`
 everything wrong at once, by stroke, so that the retry that follows can fix it. Put it on the stage that
 draws, with a **path** of `drawings` if the answer holds a list. See [Prepare Drawings](../stage-types/prepare-drawings.md).
 
+**`motion_code`** checks a motion graphic's code: it parses, imports only Remotion's packages and React, has a
+default export, and uses no network, storage, clock, timers, random numbers or CSS animations. It lists every
+problem at once. Put it on a [Generate Motion Graphic](../stage-types/generate-motion-graphic.md) stage, with
+**Check attempts** of 2 or 3, so the model fixes what's wrong.
+
 ## Messages
 
 A failing check says why, prefixed with its name. For example:
