@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { MOTION_LIMITS, MotionAssetRef } from './motion-source';
 
 const finiteNonNegative = z.number().finite().nonnegative();
 const finitePositive = z.number().finite().positive();
@@ -228,6 +229,29 @@ export const TimelineItem = z.discriminatedUnion('type', [
     keyframes: z.array(GraphicKeyframe).max(50).optional(),
     cue: GraphicCue.optional(),
   }),
+  z.object({
+    /** A motion graphic drawn by the final render from its own Remotion code (see MotionSource),
+     * instead of a rendered clip. The code reads its own size and length from useVideoConfig(). */
+    type: z.literal('motion'),
+    id: z.string().min(1).max(80).optional(),
+    startSec: finiteNonNegative,
+    durationSec: finitePositive,
+    /** The graphic's own size; it is scaled into its box. */
+    width: z.number().int().min(16).max(MOTION_LIMITS.maxSide),
+    height: z.number().int().min(16).max(MOTION_LIMITS.maxSide),
+    code: z.string().min(1).max(MOTION_LIMITS.codeBytes),
+    props: z.record(z.unknown()).optional(),
+    /** Files the code loads with `staticFile(name)`. */
+    files: z.array(MotionAssetRef).max(MOTION_LIMITS.maxAssets).optional(),
+    notes: z.string().max(1000).optional(),
+    /** Where on the screen, in the frame's pixels: all four of x, y, w, h or none (fills the frame). */
+    x: z.number().finite().optional(),
+    y: z.number().finite().optional(),
+    w: finitePositive.optional(),
+    h: finitePositive.optional(),
+    rotate: z.number().finite().optional(),
+    z: z.number().finite().optional(),
+  }),
 ]);
 export type TimelineItem = z.infer<typeof TimelineItem>;
 
@@ -263,7 +287,11 @@ export function timelineVersionFor(timeline: {
 }): 1 | 2 {
   const newer = timeline.tracks?.some((track) =>
     track.items.some(
-      (item) => item.type === 'graphic' || item.reveal !== undefined || item.x !== undefined,
+      (item) =>
+        item.type === 'graphic' ||
+        item.type === 'motion' ||
+        item.reveal !== undefined ||
+        item.x !== undefined,
     ),
   );
   return timeline.world || timeline.camera || timeline.theme || timeline.fonts || newer ? 2 : 1;
@@ -343,6 +371,7 @@ export const ITEM_TRACKS = {
   text: ['overlay'],
   captions: ['captions'],
   graphic: ['overlay'],
+  motion: ['overlay'],
 } as const satisfies Record<TimelineItem['type'], ReadonlyArray<Track['type']>>;
 
 /** A font file a timeline loads, by the family name its words use. */
@@ -403,6 +432,16 @@ export const Timeline = z
             path: ['tracks', trackIndex, 'items', itemIndex],
             message: `${item.type} item is not valid on a ${track.type} track`,
           });
+        }
+        if (item.type === 'motion') {
+          const box = [item.x, item.y, item.w, item.h].filter((v) => v !== undefined).length;
+          if (box > 0 && box < 4) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              path: ['tracks', trackIndex, 'items', itemIndex],
+              message: 'a motion graphic in a box needs all of x, y, w and h',
+            });
+          }
         }
         if (item.type === 'media') {
           const box = [item.x, item.y, item.w, item.h].filter((v) => v !== undefined).length;
@@ -538,6 +577,11 @@ export type TimelineStyle = z.infer<typeof TimelineStyle>;
 export function timelineHandles(value: unknown): string[] {
   const timeline = Timeline.parse(value);
   const handles = new Set<string>((timeline.fonts ?? []).map((font) => font.handle));
+  for (const track of timeline.tracks) {
+    for (const item of track.items) {
+      if (item.type === 'motion') for (const file of item.files ?? []) handles.add(file.handle);
+    }
+  }
   for (const track of timeline.tracks) {
     for (const item of track.items) {
       if (item.type === 'media') handles.add(item.handle);

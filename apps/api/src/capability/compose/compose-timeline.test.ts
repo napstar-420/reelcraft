@@ -42,6 +42,46 @@ const items = (timeline: ReturnType<typeof composeTimeline>['timeline'], id: str
   timeline.tracks.find((track) => track.id === id)!.items;
 
 describe('composeTimeline', () => {
+  it('embeds a motion graphic from its code, in its box, for its own length', () => {
+    const motion = {
+      version: 1 as const,
+      code: 'export default () => null;',
+      width: 1280,
+      height: 720,
+      fps: 30,
+      durationSec: 3,
+      background: 'transparent' as const,
+      props: { title: 'Hi' },
+      assets: [{ name: 'logo.png', handle: 'artifact:logo' }],
+      notes: 'A title.',
+    };
+    const { timeline } = composeTimeline(
+      base({
+        assets: catalog({ id: 'title', kind: 'motion', motion }),
+        plan: plan([{ kind: 'motion', asset: 'title', x: 0.5, y: 0, w: 0.5, h: 0.5, atSec: 1 }]),
+      }),
+    );
+    const item = timeline.tracks.flatMap((t) => t.items).find((i) => i.type === 'motion');
+    expect(item).toMatchObject({
+      type: 'motion',
+      startSec: 1,
+      durationSec: 3,
+      width: 1280,
+      height: 720,
+      code: motion.code,
+      props: { title: 'Hi' },
+      files: motion.assets,
+      x: 960,
+      y: 0,
+      w: 960,
+      h: 540,
+    });
+    expect(timeline.version).toBe(2);
+    expect(() =>
+      composeTimeline(base({ plan: plan([{ kind: 'motion', asset: 'title', atSec: 0 }]) })),
+    ).toThrow(/no motion asset "title"/);
+  });
+
   it('loads a font asset named by id, under its family, and leaves other font names alone', () => {
     const { timeline } = composeTimeline(
       base({

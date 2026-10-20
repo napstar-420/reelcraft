@@ -13,6 +13,7 @@ import { DRIZZLE, type Db } from '../db/drizzle.provider';
 import { artifact, blob, run } from '../db/schema';
 import type { CheckResult } from './check.types';
 import { layoutAdvice } from './timeline-layout';
+import { checkMotionCode } from '../capability/motion/motion-code-check';
 
 @Injectable()
 export class TimelineCheckService {
@@ -66,6 +67,11 @@ export class TimelineCheckService {
       }
     }
     for (const font of timeline.fonts ?? []) handles.add(font.handle);
+    for (const track of timeline.tracks) {
+      for (const item of track.items) {
+        if (item.type === 'motion') for (const file of item.files ?? []) handles.add(file.handle);
+      }
+    }
     const [runRow] = await this.db
       .select({ assets: run.assetBindings })
       .from(run)
@@ -233,6 +239,25 @@ export class TimelineCheckService {
             `canvas ratio ${actual.toFixed(4)} does not match ${input.aspectRatio}`,
           )
         : passed('timeline.canvas_match'),
+    );
+    // A motion graphic's code is drawn by the final render, so it has to follow the motion rules.
+    const motionProblems: string[] = [];
+    const motionTargets: Target[] = [];
+    for (const track of timeline.tracks) {
+      for (const [itemIndex, item] of track.items.entries()) {
+        if (item.type !== 'motion') continue;
+        const issues = checkMotionCode(item.code);
+        if (!issues.length) continue;
+        motionProblems.push(
+          `${track.id} item ${itemIndex}: ${issues.map((issue) => issue.message).join(' ')}`,
+        );
+        motionTargets.push({ trackId: track.id, itemIndex });
+      }
+    }
+    results.push(
+      motionProblems.length
+        ? failed('timeline.motion_code', motionProblems.join('; '), motionTargets)
+        : passed('timeline.motion_code'),
     );
     results.push(...layoutAdvice(timeline));
     const failures = results.filter((r) => !r.pass);

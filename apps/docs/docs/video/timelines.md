@@ -136,12 +136,21 @@ the whole world is shown. Captions are always on the screen.
 A **media** item that is an image can have a **reveal**, so it looks as if it is being drawn in: **wipe** from
 the left, a **circle** growing from the middle, or a **marker** swipe with a soft edge.
 
+### Motion graphics
+
+A **motion graphic** item carries a graphic's own code (from
+[Generate Motion Graphic](../stage-types/generate-motion-graphic.md)), its size, the data it is given and the
+files it loads. The final render draws it from its code, on an overlay track, in its box on the screen or over
+the whole frame. The editor's preview can't run the code, so it shows a placeholder card with the graphic's
+description; **Draft render** shows the real thing. The code is checked like any motion graphic
+(`timeline.motion_code`).
+
 ### Version
 
 A timeline can list **fonts**: each a family name and the library font file it loads from. Words name the
 family, and the file is loaded before the first frame, in the editor's preview and in the render.
 
-A timeline that uses a world, camera, theme, fonts, graphic, placed media or reveal is saved as **version 2**. An
+A timeline that uses a world, camera, theme, fonts, graphic, motion graphic, placed media or reveal is saved as **version 2**. An
 older release refuses to open it, instead of quietly dropping them. Timelines that use none of these stay
 version 1. Timelines saved when graphics were called _sketch_ items still open.
 

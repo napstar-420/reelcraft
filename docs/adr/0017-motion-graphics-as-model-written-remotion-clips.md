@@ -89,4 +89,20 @@ For a motion graphic the workspace holds:
 - The workspace has been run by hand, the way an agent would. A real Codex or Claude job using it has not
   been run yet. Inside Codex's sandbox, Chrome and the temp folder may need adjusting; `check.mjs` already
   points `TMPDIR` at the job folder.
-- Not done here: code embedded in the timeline, a live code editor with a preview, and font upload.
+- Not done here: code embedded in the timeline, a live code editor with a preview, and font upload. (All
+  three followed; see the addendum.)
+
+## Addendum: embedded motion (2026-10-21)
+
+A motion graphic can now also go into the timeline as code: a `motion` item (overlay tracks, version 2) with the
+graphic's code, size, props and files, and an optional box on the screen. When a timeline has motion items, the
+render worker writes each item's code to its own file and bundles a generated entry that registers the timeline
+composition with those components (`timelineRootWith`), under the same import allowlist. Each item is drawn
+inside `<Sequence width height durationInFrames>`, so `useVideoConfig()` in the code reports the graphic's own
+size and length, and scaled into its box. Its files are copied in under the names the code loads; two graphics
+loading different files under one name are refused. `timeline.motion_code` checks the code with the other
+timeline checks. Compose Timeline places one with a `motion` layer. The browser preview can't bundle code, so
+it shows a placeholder; draft and final renders draw it. Timelines without motion items bundle as before.
+
+Clips stay the right choice when a graphic should be checked, approved or reused on its own; embedding saves
+a render per graphic and draws at the video's own resolution.

@@ -16,6 +16,7 @@ import { RunService } from '../../src/run/run.service';
 import { StageRunnerService } from '../../src/orchestration/stage-runner.service';
 import { ComputeJobService } from '../../src/storage/compute-job.service';
 import { MotionEditorService } from '../../src/run/motion-editor.service';
+import { TimelineCheckService } from '../../src/check/timeline-check.service';
 import { ArtifactEditService } from '../../src/run/artifact-edit.service';
 import { timelinePlanJsonSchema } from '../../src/capability/compose/timeline-plan-schema';
 import { artifact, run as runTable } from '../../src/db/schema';
@@ -269,6 +270,59 @@ describe('motion graphics: written by a model, rendered, placed on a timeline (e
     expect(saved.userAuthored).toBe(true);
     expect(MotionSource.parse(saved.data)).toMatchObject({ durationSec: 2 });
     expect(MotionSource.parse(saved.data).code).toContain("title = 'Edited'");
+  });
+
+  it('embeds a written graphic straight into a composed timeline, with no clip', async () => {
+    const outcomes = await execute([
+      motionStage(),
+      {
+        ...base,
+        key: 'plan',
+        label: 'Plan',
+        capability: 'text.generate',
+        output: { kind: 'data', schema: timelinePlanJsonSchema() },
+        model: {
+          provider: 'fake',
+          modelId: 'fake-text-1',
+          params: {
+            fakeOutput: {
+              version: 1,
+              background: '#203040',
+              layers: [{ kind: 'motion', asset: 'graphic', x: 0, y: 0, w: 0.5, h: 0.5, atSec: 0 }],
+            },
+          },
+        },
+      },
+      {
+        ...base,
+        key: 'compose',
+        label: 'Compose',
+        capability: 'timeline.compose',
+        config: { inputs: ['graphic'] },
+        slots: {
+          plan: { from: 'prev' },
+          graphic: { from: 'stage', stageKey: 'motion' },
+        },
+        output: { kind: 'timeline' },
+      },
+    ]);
+    expect(outcomes.compose!.outcome).toBe('success');
+    const timeline = Timeline.parse((await readData(outcomes.compose!.artifactId!)).data);
+    const item = timeline.tracks.flatMap((t) => t.items).find((i) => i.type === 'motion');
+    expect(item).toMatchObject({
+      type: 'motion',
+      width: 1280,
+      height: 720,
+      durationSec: 3,
+      props: { title: 'Hello' },
+      x: 0,
+      y: 0,
+      w: 960,
+      h: 540,
+    });
+    expect(item?.type === 'motion' && item.code).toContain('useCurrentFrame');
+    const checks = await testApp.app.get(TimelineCheckService).run({ runId: lastRunId, timeline });
+    expect(checks.find((c) => c.name === 'timeline.motion_code')).toMatchObject({ pass: true });
   });
 
   it('sends back code that breaks the rules, naming every problem', async () => {

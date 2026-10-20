@@ -439,7 +439,9 @@ export function TimelineEditorPage() {
         ? selectedItem.text
         : selectedItem?.type === 'graphic'
           ? graphicLabel(selectedItem)
-          : 'Captions';
+          : selectedItem?.type === 'motion'
+            ? (selectedItem.id ?? 'Motion graphic')
+            : 'Captions';
 
   return (
     <main className="dark flex h-screen flex-col overflow-hidden bg-background text-foreground">

@@ -23,7 +23,7 @@ const layer: JsonSchema = {
       type: 'string',
       enum: [...PlanLayerKind.options],
       description:
-        'image, video, audio and drawing use an asset by id. text needs text. shape needs shape. captions show the voice-over words.',
+        'image, video, audio, drawing and motion use an asset by id. text needs text. shape needs shape. captions show the voice-over words.',
     },
     track: str(
       'The row it sits on, such as "voice", "music", "sfx", "background" or "drawings". Layers on one track must share a type. Leave out to use the kind\'s own row.',

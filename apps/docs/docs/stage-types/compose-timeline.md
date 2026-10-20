@@ -47,6 +47,7 @@ A plan is a list of **layers**. Every layer has a **kind**:
 | `video`    | A clip                                             | `asset`            |
 | `audio`    | A sound: voice-over, music or an effect            | `asset`            |
 | `drawing`  | A drawing (SVG lines) drawn on                     | `asset`, and a box |
+| `motion`   | A motion graphic, drawn from its code              | `asset`            |
 | `text`     | Words                                              | `text`, and a box  |
 | `shape`    | An arrow, circle, underline, box, highlight, check | `shape`, and a box |
 | `captions` | The voice-over's words, timed to the speech        | word timings       |
@@ -55,6 +56,11 @@ A plan is a list of **layers**. Every layer has a **kind**:
 from 10% to 40% of the way across. A picture or clip with no box fills the frame. Layers can be bigger than
 one frame in a **world**, a canvas several frames wide or high, where a **camera** moves from place to place.
 The world grows to hold every layer, or you set its size.
+
+A `motion` layer's asset is a [Generate Motion Graphic](./generate-motion-graphic.md) output bound to Compose
+Timeline (in `assets`, where it is called `motion-1`, `motion-2`…, or under its own input name). Its code goes into
+the timeline and the final render draws it, in the layer's box or over the whole frame, for its own length
+unless the layer sets one. No Render Motion Graphic stage is needed.
 
 **When.** `atSec` is a time. `atCue` is words copied exactly from the narration, so the layer appears as they
 are spoken; `offsetSec` moves it a little earlier or later. `afterLayer` starts it when another layer ends.

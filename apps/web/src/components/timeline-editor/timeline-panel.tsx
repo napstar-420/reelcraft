@@ -21,6 +21,7 @@ import {
   ZoomOut,
   ListX,
   Shapes,
+  WandSparkles,
 } from 'lucide-react';
 import type { PlayerRef } from '@remotion/player';
 import type { Timeline, TimelineItem, TimelineResource } from '@reelcraft/shared';
@@ -154,13 +155,15 @@ function ClipBlock({
       ? Type
       : item.type === 'graphic'
         ? Shapes
-        : item.type === 'captions'
-          ? Captions
-          : resource?.kind === 'media.audio'
-            ? Music
-            : resource?.kind === 'media.video'
-              ? Film
-              : ImageIcon;
+        : item.type === 'motion'
+          ? WandSparkles
+          : item.type === 'captions'
+            ? Captions
+            : resource?.kind === 'media.audio'
+              ? Music
+              : resource?.kind === 'media.video'
+                ? Film
+                : ImageIcon;
   const showThumb = resource && resource.kind === 'media.image';
   return (
     <div
@@ -406,7 +409,9 @@ export function TimelinePanel({
         ? item.text
         : item.type === 'graphic'
           ? graphicLabel(item)
-          : 'Captions';
+          : item.type === 'motion'
+            ? (item.id ?? 'Motion graphic')
+            : 'Captions';
 
   const secAtClientX = (clientX: number) => {
     const grid = gridRef.current;

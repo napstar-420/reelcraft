@@ -146,3 +146,33 @@ describe('TimelineCheckService media handles', () => {
     });
   });
 });
+
+describe('TimelineCheckService motion graphics', () => {
+  const withMotion = (code: string) => ({
+    version: 2,
+    canvas: { width: 1920, height: 1080, fps: 30 },
+    tracks: [
+      {
+        id: 'overlay',
+        type: 'overlay',
+        items: [{ type: 'motion', startSec: 0, durationSec: 2, width: 640, height: 360, code }],
+      },
+    ],
+  });
+
+  it('passes code that follows the motion rules, and fails code that breaks them', async () => {
+    const good = await serviceWith([{ assets: {} }]).run({
+      runId: 'r1',
+      timeline: withMotion("import React from 'react';\nexport default () => <div />;"),
+    });
+    expect(good.find((r) => r.name === 'timeline.motion_code')?.pass).toBe(true);
+    const bad = await serviceWith([{ assets: {} }]).run({
+      runId: 'r1',
+      timeline: withMotion("export default () => { fetch('/x'); return null; };"),
+    });
+    expect(bad.find((r) => r.name === 'timeline.motion_code')).toMatchObject({
+      pass: false,
+      targets: [{ trackId: 'overlay', itemIndex: 0 }],
+    });
+  });
+});

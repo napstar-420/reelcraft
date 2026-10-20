@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildCatalog } from './catalog';
+import { buildCatalog, GENERAL_ASSET_SLOT } from './catalog';
 
 const vector = {
   id: 'mug',
@@ -87,5 +87,21 @@ describe('buildCatalog', () => {
     );
     expect(problems.join(' ')).toContain('two vector assets are called "mug"');
     expect(problems.join(' ')).toContain('not an asset');
+  });
+
+  it('lists a motion graphic by its slot, or motion-n in the general slot', () => {
+    const motion = {
+      version: 1,
+      code: 'export default () => null;',
+      width: 640,
+      height: 360,
+      fps: 30,
+      durationSec: 2,
+      background: 'opaque',
+    };
+    const named = buildCatalog([{ slot: 'title', value: motion }]);
+    expect(named.assets.get('motion', 'title')?.motion?.code).toBe(motion.code);
+    const general = buildCatalog([{ slot: GENERAL_ASSET_SLOT, value: [motion, motion] }]);
+    expect(general.assets.ofKind('motion').map((a) => a.id)).toEqual(['motion-1', 'motion-2']);
   });
 });

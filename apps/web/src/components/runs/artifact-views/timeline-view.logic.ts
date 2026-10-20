@@ -27,6 +27,7 @@ export function itemLabel(item: TimelineItem): string {
         ? item.content.shape
         : 'drawing';
   }
+  if (item.type === 'motion') return item.notes ?? item.id ?? 'motion graphic';
   return `captions · ${item.timingHandle}`;
 }
 

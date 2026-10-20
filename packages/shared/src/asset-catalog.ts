@@ -1,8 +1,9 @@
 import { z } from 'zod';
 import { VectorAsset } from './vector-asset';
+import { MotionSource } from './motion-source';
 
 /** What an asset is. Every kind can be made during a run or uploaded to the channel library. */
-export const CatalogKind = z.enum(['image', 'video', 'audio', 'vector', 'font', 'model']);
+export const CatalogKind = z.enum(['image', 'video', 'audio', 'vector', 'font', 'model', 'motion']);
 export type CatalogKind = z.infer<typeof CatalogKind>;
 
 /**
@@ -22,6 +23,8 @@ export const CatalogAsset = z.object({
   durationSec: z.number().nonnegative().optional(),
   /** A vector asset is the drawing itself. */
   vector: VectorAsset.optional(),
+  /** A motion graphic asset is the graphic itself: its code and what it needs. */
+  motion: MotionSource.optional(),
   /** A font's family name, which words name to use it. */
   family: z.string().min(1).max(80).optional(),
   source: z.enum(['generated', 'library', 'builtin']).optional(),

@@ -6,7 +6,7 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { bundle } from '@remotion/bundler';
+import { bundle, type WebpackOverrideFn } from '@remotion/bundler';
 import { renderMedia, renderStill, selectComposition } from '@remotion/renderer';
 import { MOTION_IMPORTS, MotionSource } from '@reelcraft/shared';
 
@@ -25,6 +25,35 @@ const COMPOSITION_ID = 'Motion';
 
 function allowed(request: string): boolean {
   return MOTION_IMPORTS.some((p) => request === p || request.startsWith(`${p}/`));
+}
+
+/**
+ * A bundle whose entry sits outside any package (a temp folder), so packages resolve from the render
+ * worker's own, and in which the model-written files may import only the allowed packages.
+ */
+export function motionWebpackOverride(motionFiles: ReadonlySet<string>): WebpackOverrideFn {
+  const modulesDir = path.resolve(__dirname, '..', 'node_modules');
+  return (config) => ({
+    ...config,
+    resolve: { ...config.resolve, modules: [modulesDir, 'node_modules'] },
+    plugins: [
+      ...(config.plugins ?? []),
+      {
+        apply(compiler) {
+          compiler.hooks.normalModuleFactory.tap('motion-imports', (factory) => {
+            factory.hooks.beforeResolve.tap('motion-imports', (data) => {
+              if (!motionFiles.has(data.contextInfo.issuer)) return;
+              if (!allowed(data.request)) {
+                throw new Error(
+                  `The motion graphic imports "${data.request}", which is not allowed.`,
+                );
+              }
+            });
+          });
+        },
+      },
+    ],
+  });
 }
 
 function rootSource(source: MotionSource): string {
@@ -50,33 +79,11 @@ export async function renderMotion(job: MotionJob): Promise<string[]> {
     const motionFile = path.join(workDir, 'Motion.tsx');
     await writeFile(motionFile, source.code);
     await writeFile(path.join(workDir, 'root.tsx'), rootSource(source));
-    // The entry sits outside any package, so packages resolve from the render worker's own.
-    const modulesDir = path.resolve(__dirname, '..', 'node_modules');
     const serveUrl = await bundle({
       entryPoint: path.join(workDir, 'root.tsx'),
       publicDir: job.assetsDir,
       enableCaching: false,
-      webpackOverride: (config) => ({
-        ...config,
-        resolve: { ...config.resolve, modules: [modulesDir, 'node_modules'] },
-        plugins: [
-          ...(config.plugins ?? []),
-          {
-            apply(compiler) {
-              compiler.hooks.normalModuleFactory.tap('motion-imports', (factory) => {
-                factory.hooks.beforeResolve.tap('motion-imports', (data) => {
-                  if (data.contextInfo.issuer !== motionFile) return;
-                  if (!allowed(data.request)) {
-                    throw new Error(
-                      `The motion graphic imports "${data.request}", which is not allowed.`,
-                    );
-                  }
-                });
-              });
-            },
-          },
-        ],
-      }),
+      webpackOverride: motionWebpackOverride(new Set([motionFile])),
     });
     const inputProps = source.props ?? {};
     const browser = job.browserExecutable ? { browserExecutable: job.browserExecutable } : {};

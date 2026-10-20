@@ -1,11 +1,11 @@
 ---
 title: Timeline checks
-description: The seven automatic checks every timeline goes through, the layout tips, and how to fix each one.
+description: The eight automatic checks every timeline goes through, the layout tips, and how to fix each one.
 ---
 
 Whenever a stage makes a timeline, or you submit one from the [editor](./timeline-editor.md), Reelcraft
-runs seven checks on it. They catch mistakes before the video is rendered, which saves time and money. All
-seven are shown for every timeline, so you can see which pass.
+runs eight checks on it. They catch mistakes before the video is rendered, which saves time and money. All
+eight are shown for every timeline, so you can see which pass.
 
 | Check                      | Fails when                                                                                         |
 | -------------------------- | -------------------------------------------------------------------------------------------------- |
@@ -82,6 +82,12 @@ stage's settings.
 
 The audio and video end more than a quarter of a second apart. Trim or extend one to match the other, or
 raise **toleranceSec** on the stage. It only applies when the timeline has both video and audio.
+
+### timeline.motion_code
+
+A motion graphic in the timeline uses something its code may not: another package, the network, the clock,
+random numbers or CSS animations. The message lists each problem. Fix the code with **Edit code** on the
+Generate Motion Graphic stage, or run that stage again.
 
 ### timeline.canvas_match
 

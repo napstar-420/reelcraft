@@ -1,4 +1,4 @@
-import { AssetCatalog, VectorAssetSet } from '@reelcraft/shared';
+import { AssetCatalog, MotionSource, VectorAssetSet } from '@reelcraft/shared';
 import type { CatalogAsset, CatalogKind } from '@reelcraft/shared';
 
 /** The assets a plan can name. An id only has to be unique among assets of its kind: a drawing and
@@ -100,6 +100,20 @@ export function buildCatalog(inputs: ReadonlyArray<{ slot: string; value: unknow
           source: vector.source === 'builtin' ? 'builtin' : 'generated',
         });
       }
+      return;
+    }
+    // A motion graphic (Generate Motion Graphic's output) is placed from its code.
+    const motion = MotionSource.safeParse(record);
+    if (motion.success) {
+      const key = slot === GENERAL_ASSET_SLOT ? 'motion' : slot;
+      counts[key] = (counts[key] ?? 0) + 1;
+      add({
+        id: slot === GENERAL_ASSET_SLOT || held > 1 ? `${key}-${counts[key]}` : slot,
+        kind: 'motion',
+        motion: motion.data,
+        ...(motion.data.notes && { label: motion.data.notes.slice(0, 200) }),
+        source: 'generated',
+      });
       return;
     }
     const kind = typeof record.kind === 'string' ? KIND_OF_MEDIA[record.kind] : undefined;

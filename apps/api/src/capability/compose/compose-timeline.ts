@@ -70,11 +70,12 @@ const MIN_SEC = 0.1;
 
 const round = (value: number) => Math.round(value * 100) / 100;
 
-const ASSET_KIND_FOR: Record<'image' | 'video' | 'audio' | 'drawing', CatalogKind> = {
+const ASSET_KIND_FOR: Record<'image' | 'video' | 'audio' | 'drawing' | 'motion', CatalogKind> = {
   image: 'image',
   video: 'video',
   audio: 'audio',
   drawing: 'vector',
+  motion: 'motion',
 };
 
 const TRACK_TYPE_FOR = (layer: PlanLayer): TrackType =>
@@ -139,7 +140,8 @@ export function composeTimeline(input: ComposeInput): ComposeResult {
       layer.kind === 'image' ||
       layer.kind === 'video' ||
       layer.kind === 'audio' ||
-      layer.kind === 'drawing'
+      layer.kind === 'drawing' ||
+      layer.kind === 'motion'
     ) {
       need(layer.asset, 'needs an asset');
       if (layer.asset) {
@@ -160,7 +162,9 @@ export function composeTimeline(input: ComposeInput): ComposeResult {
           );
         } else {
           entry.asset = asset;
-          if (asset.kind !== 'vector' && !asset.handle) {
+          if (asset.kind === 'motion') {
+            if (!asset.motion) issues.push(`layer "${name}": "${layer.asset}" has no code`);
+          } else if (asset.kind !== 'vector' && !asset.handle) {
             issues.push(`layer "${name}": asset "${layer.asset}" has no file`);
           }
           if (asset.kind === 'vector' && !asset.vector) {
@@ -499,6 +503,34 @@ export function composeTimeline(input: ComposeInput): ComposeResult {
         }),
       });
       if (layer.space === 'screen') warnOutside(layer, name, warnings);
+      continue;
+    }
+
+    if (layer.kind === 'motion') {
+      const motion = entry.asset!.motion!;
+      // Drawn by the final render from its code, on the screen: in its box, or over the whole frame.
+      track.items.push({
+        type: 'motion',
+        id: name,
+        startSec: entry.startSec,
+        durationSec: round(
+          layer.durationSec === undefined ? Math.min(motion.durationSec, span) : span,
+        ),
+        width: motion.width,
+        height: motion.height,
+        code: motion.code,
+        ...(motion.props && { props: motion.props }),
+        ...(motion.assets?.length && { files: motion.assets }),
+        ...(motion.notes && { notes: motion.notes }),
+        ...(boxed(layer) && {
+          x: round(layer.x! * W),
+          y: round(layer.y! * H),
+          w: round(layer.w! * W),
+          h: round(layer.h! * H),
+          ...(layer.rotate !== undefined && { rotate: layer.rotate }),
+          ...(layer.z !== undefined && { z: layer.z }),
+        }),
+      });
       continue;
     }
 

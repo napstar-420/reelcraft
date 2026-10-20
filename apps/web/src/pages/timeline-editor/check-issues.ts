@@ -19,6 +19,7 @@ const TITLES: Record<string, string> = {
   'timeline.canvas_match': 'Wrong canvas shape',
   'timeline.styles_exist': 'Unknown style',
   'timeline.schema': 'The timeline is not valid',
+  'timeline.motion_code': 'Motion graphic code breaks a rule',
   'timeline.on_screen': 'Off the frame',
   'timeline.text_overlap': 'Words on top of words',
   'timeline.min_on_screen': 'Too quick to see',
