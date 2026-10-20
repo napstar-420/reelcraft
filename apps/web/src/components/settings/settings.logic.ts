@@ -1,4 +1,6 @@
 import type {
+  BlenderSetupDto,
+  BlenderSource,
   BrowserOsSettingsDto,
   ClaudeLoginDto,
   CodexLoginDto,
@@ -61,6 +63,32 @@ export function qwenTtsSourceLabel(settings: QwenTtsSettingsDto): string {
     default:
       return 'Not set, so Reelcraft runs the service itself';
   }
+}
+
+export function blenderSourceLabel(source: BlenderSource | null): string {
+  switch (source) {
+    case 'saved':
+      return 'Chosen in Settings';
+    case 'env':
+      return 'From the environment (BLENDER_PATH)';
+    case 'managed':
+      return 'Downloaded by Reelcraft';
+    case 'found':
+      return 'Installed on this computer';
+    default:
+      return 'Not found';
+  }
+}
+
+/** What Blender renders on: its GPUs, or the CPU, and why when it is likely Docker on a Mac. */
+export function blenderRendersWith(setup: Pick<BlenderSetupDto, 'devices' | 'inContainer'>): string {
+  if (setup.devices.length) {
+    const names = [...new Set(setup.devices.map((device) => `${device.name} (${device.backend})`))];
+    return `Renders on ${names.join(', ')}`;
+  }
+  return setup.inContainer
+    ? 'Renders on the CPU: no GPU is visible in this container. On Linux or Windows with an NVIDIA card, start it with --gpus all; Docker on a Mac cannot use the GPU.'
+    : 'Renders on the CPU: no GPU Blender can use was found.';
 }
 
 export function isHttpUrl(value: string): boolean {

@@ -15,6 +15,7 @@ import type {
   StartAssistantTurnDto,
   UpdateAssistantSessionDto,
   BrowserOsSettingsDto,
+  BlenderSetupDto,
   QwenTtsBackend,
   QwenTtsSettingsDto,
   QwenTtsSetupDto,
@@ -618,6 +619,16 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(url ? { url } : {}),
     }),
+  blenderSetup: () => request<BlenderSetupDto>('/blender/setup'),
+  saveBlenderPath: (path: string | null) =>
+    request<BlenderSetupDto>('/blender/setup/path', {
+      method: 'PUT',
+      body: JSON.stringify({ path }),
+    }),
+  installBlender: () => request<BlenderSetupDto>('/blender/setup/install', { method: 'POST' }),
+  cancelBlenderInstall: () =>
+    request<BlenderSetupDto>('/blender/setup/cancel', { method: 'POST' }),
+  checkBlenderAgain: () => request<BlenderSetupDto>('/blender/setup/check', { method: 'POST' }),
   getPackagePreview: (versionId: string) =>
     request<PackageExportPreviewDto>(`/blueprint-versions/${versionId}/package/preview`),
   exportPackage: (versionId: string, dto: ExportPackageDto) =>

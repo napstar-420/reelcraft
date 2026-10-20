@@ -11,6 +11,8 @@ export const SETTING = {
   providerKey: (providerId: string) => `providerKey.${providerId}`,
   browserOsUrl: 'browserOs.url',
   qwenTtsUrl: 'qwenTts.url',
+  /** The Blender executable chosen in Settings. */
+  blenderPath: 'blender.path',
   /** The Neo address Reelcraft registered with Codex, so it only ever
    * replaces its own entry. */
   codexNeoMcpUrl: 'codex.neoMcpUrl',

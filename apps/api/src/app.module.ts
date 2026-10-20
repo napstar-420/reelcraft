@@ -14,6 +14,7 @@ import { SettingsPageModule } from './settings/settings-page.module';
 import { AssistantModule } from './assistant/assistant.module';
 import { LiveModule } from './live/live.module';
 import { NotificationModule } from './notification/notification.module';
+import { BlenderModule } from './blender/blender.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { NotificationModule } from './notification/notification.module';
     SystemModule,
     UpdateModule,
     SettingsPageModule,
+    BlenderModule,
     PackageModule,
     AssistantModule,
     LiveModule,
