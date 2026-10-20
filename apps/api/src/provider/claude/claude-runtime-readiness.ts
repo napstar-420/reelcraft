@@ -84,13 +84,15 @@ export class ClaudeRuntimeReadiness implements CliRuntimeReadiness {
     if (!auth.installed) {
       const reason = 'The Claude Code CLI is not installed';
       unavailable.text = reason;
+      unavailable.code = reason;
       unavailable.browser = reason;
     } else if (!auth.connected) {
       const reason = 'Claude is not signed in; connect it in Settings → Claude';
       unavailable.text = reason;
+      unavailable.code = reason;
       unavailable.browser = reason;
     } else {
-      modalities.push('text');
+      modalities.push('text', 'code');
       const url = await this.settings.browserOsUrl().catch(() => undefined);
       if (url && (await browserOsReachable(url, this.config.codexReadinessTimeoutMs))) {
         modalities.push('browser');

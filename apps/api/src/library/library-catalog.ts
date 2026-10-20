@@ -21,6 +21,7 @@ export const ASSET_KIND_FOR_LIBRARY: Record<LibraryKind, string> = {
   video: 'media.video',
   audio: 'media.audio',
   vector: 'vector',
+  model: 'model',
 };
 
 const slug = (name: string): string => {

@@ -309,7 +309,8 @@ export class TimelineEditorService {
         }
         const timing = timingMapOf(row.data);
         if (timing) timingMaps[handle] = timing;
-        if (!row.blobId || !row.kind?.startsWith('media.')) continue;
+        // A 3D model is rendered by a scene, never placed on a timeline.
+        if (!row.blobId || !row.kind?.startsWith('media.') || row.kind === 'media.model') continue;
         const access = await this.blobs.readUrl(context.ownerId, row.blobId);
         if (access?.status !== 'live') continue;
         resources.push({
@@ -422,7 +423,9 @@ export class TimelineEditorService {
           and(eq(artifact.id, id), eq(artifact.runId, context.run.id), eq(artifact.stale, false)),
         )
         .limit(1);
-      if (!row || !row.artifact.kind.startsWith('media.')) continue;
+      if (!row || !row.artifact.kind.startsWith('media.') || row.artifact.kind === 'media.model') {
+        continue;
+      }
       const access = await this.blobs.readUrl(context.ownerId, row.blob.id);
       if (access?.status === 'live') {
         resources.push({

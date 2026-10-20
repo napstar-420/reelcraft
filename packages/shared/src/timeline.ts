@@ -522,3 +522,16 @@ export const TimelineStyle = z.object({
   tokens: TextStyleTokens.optional(),
 });
 export type TimelineStyle = z.infer<typeof TimelineStyle>;
+
+/** Every file a timeline names: its media items and the word timings its captions follow. */
+export function timelineHandles(value: unknown): string[] {
+  const timeline = Timeline.parse(value);
+  const handles = new Set<string>();
+  for (const track of timeline.tracks) {
+    for (const item of track.items) {
+      if (item.type === 'media') handles.add(item.handle);
+      if (item.type === 'captions') handles.add(item.timingHandle);
+    }
+  }
+  return [...handles];
+}

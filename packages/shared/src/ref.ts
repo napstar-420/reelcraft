@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
-export type LibraryKind = 'image' | 'video' | 'audio' | 'vector';
-export const LIBRARY_KINDS = ['image', 'video', 'audio', 'vector'] as const;
+export type LibraryKind = 'image' | 'video' | 'audio' | 'vector' | 'model';
+export const LIBRARY_KINDS = ['image', 'video', 'audio', 'vector', 'model'] as const;
 
 /**
  * Refs points to values / blobs, and are not data themselves, they describe where to look
@@ -64,7 +64,7 @@ export const Ref: z.ZodType<Ref> = z
     z.object({ from: z.literal('asset'), assetId: z.string() }),
     z.object({
       from: z.literal('library'),
-      kinds: z.array(z.enum(LIBRARY_KINDS)).min(1).max(4).optional(),
+      kinds: z.array(z.enum(LIBRARY_KINDS)).min(1).max(5).optional(),
       tags: z.array(z.string().min(1).max(60)).max(10).optional(),
       builtin: z.boolean().optional(),
     }),

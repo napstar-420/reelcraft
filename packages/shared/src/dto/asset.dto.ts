@@ -10,6 +10,8 @@ export const AssetKind = z.enum([
   'font',
   'lut',
   'vector',
+  /** A 3D model (`.glb`, `.gltf`, `.fbx`, `.obj`, `.blend`) a scene can load. */
+  'model',
 ]);
 export type AssetKind = z.infer<typeof AssetKind>;
 

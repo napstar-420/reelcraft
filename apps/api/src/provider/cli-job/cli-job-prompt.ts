@@ -21,7 +21,9 @@ export function buildJobPrompt(input: {
         : 'Use the installed image-generation extension. Write exactly one final image under outputs/ and return the supplied result manifest with its relative path, MIME type, and filename.'
       : input.modality === 'browser'
         ? 'Use BrowserOS Neo exclusively. Call its name_session operation first with the supplied session name, work only in tabs created for this task, close or detach only those tabs when finished, and return the supplied manifest containing the structured result plus any screenshot or download evidence written under outputs/. Do not fall back to another browser tool.'
-        : undefined;
+        : input.modality === 'code'
+          ? 'Work only in your current folder. Read what you are given under inputs/, write the files you make under outputs/, and run only the commands named in the instructions. Then return the supplied manifest: the structured result as "output", every file under outputs/ that is part of your answer as an attachment with role "download", and any picture you made to check your work as an attachment with role "evidence".'
+          : undefined;
   const browserContext =
     input.modality === 'browser'
       ? [
@@ -39,6 +41,12 @@ export function buildJobPrompt(input: {
               ]
             : []),
         ].join('\n')
+      : undefined;
+  const codeContext =
+    input.modality === 'code' && Array.isArray(input.params?.__referenceFiles)
+      ? input.params.__referenceFiles.length
+        ? `Input files: ${input.params.__referenceFiles.join(', ')}`
+        : 'There are no input files.'
       : undefined;
   const imageContext =
     input.modality === 'image' && Array.isArray(input.params?.__referenceFiles)
@@ -66,6 +74,7 @@ export function buildJobPrompt(input: {
     ...(modalityInstruction ? [modalityInstruction] : []),
     ...(browserContext ? [browserContext] : []),
     ...(imageContext ? [imageContext] : []),
+    ...(codeContext ? [codeContext] : []),
     ...(inspectContext ? [inspectContext] : []),
     outputInstruction,
     '</output_requirements>',

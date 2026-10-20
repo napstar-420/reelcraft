@@ -6,6 +6,7 @@ import type {
   ProviderKeyStatusDto,
 } from '@reelcraft/shared';
 import {
+  blenderRendersWith,
   browserOsSourceLabel,
   capabilityLines,
   claudeLoginStep,
@@ -137,5 +138,23 @@ describe('Claude sign-in', () => {
       { label: 'Text', ok: true },
       { label: 'Browser tasks', ok: false, reason: 'Neo is off' },
     ]);
+  });
+});
+
+describe('blenderRendersWith', () => {
+  it('names each GPU once with its backend', () => {
+    expect(
+      blenderRendersWith({
+        inContainer: false,
+        devices: [
+          { backend: 'OPTIX', name: 'RTX 4090' },
+          { backend: 'OPTIX', name: 'RTX 4090' },
+        ],
+      }),
+    ).toBe('Renders on RTX 4090 (OPTIX)');
+  });
+
+  it('explains the CPU in a container', () => {
+    expect(blenderRendersWith({ inContainer: true, devices: [] })).toMatch(/--gpus all/);
   });
 });

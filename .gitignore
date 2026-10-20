@@ -20,3 +20,6 @@ graphify-out/
 
 # Personal Claude Code settings (e.g. turning ECC hooks on)
 .claude/settings.local.json
+
+# Python bytecode (Blender scripts, services)
+__pycache__/

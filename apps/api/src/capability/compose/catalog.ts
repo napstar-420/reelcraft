@@ -42,6 +42,7 @@ const KIND_OF_MEDIA: Record<string, CatalogKind> = {
   'media.image': 'image',
   'media.video': 'video',
   'media.audio': 'audio',
+  'media.model': 'model',
 };
 
 const durationOf = (manifest: Record<string, unknown>): number | undefined => {

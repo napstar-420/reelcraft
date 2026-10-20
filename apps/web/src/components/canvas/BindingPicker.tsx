@@ -317,9 +317,10 @@ export function BindingPicker({
               ['video', 'Videos'],
               ['audio', 'Sounds'],
               ['vector', 'Drawings'],
+              ['model', '3D models'],
             ] as const
           ).map(([kind, label]) => {
-            const all = ['image', 'video', 'audio', 'vector'] as const;
+            const all = ['image', 'video', 'audio', 'vector', 'model'] as const;
             const chosen = value.kinds ?? all;
             return (
               <Label key={kind} className="font-normal">

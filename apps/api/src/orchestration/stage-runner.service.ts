@@ -27,7 +27,7 @@ import { renderStagePrompt } from '../common/prompt-template';
 import { unwrapText } from '../common/unwrap-text';
 import { collectFileInputs, promptScopeWithRoles } from '../common/file-inputs';
 import { CapabilityRegistry } from '../capability/capability.registry';
-import type { ImageListOutput } from '../capability/capability.interface';
+import type { CapabilityImpl, ImageListOutput } from '../capability/capability.interface';
 import {
   BindingResolverService,
   type RefEnvelope,
@@ -677,6 +677,16 @@ export class StageRunnerService {
     return lines.join('\n');
   }
 
+  /** The stored files a capability says it reads from its slots, resolved to storage keys. */
+  private async resolveResources(
+    capability: CapabilityImpl,
+    bindings: ResolvedBindings,
+    runId: string,
+  ) {
+    const handles = capability.resourceHandles?.(bindings.slots);
+    return handles?.length ? this.timelineResources.resolveHandles(runId, handles) : undefined;
+  }
+
   private buildExecCtx(
     stage: StageDef,
     ctx: StageAttemptContext,
@@ -761,10 +771,7 @@ export class StageRunnerService {
         ? { errorReply: true, attachments: collectFileInputs(bindings.context, stage.attach ?? []) }
         : undefined,
     );
-    const resources =
-      stage.capability === 'timeline.render' && bindings.slots.timeline
-        ? await this.timelineResources.resolve(ctx.runId, bindings.slots.timeline)
-        : undefined;
+    const resources = await this.resolveResources(capability, bindings, ctx.runId);
     const unpreparedExecCtx = this.buildExecCtx(
       stage,
       ctx,
@@ -1158,10 +1165,7 @@ export class StageRunnerService {
   ): Promise<FetchAndFinalizeResult> {
     const capability = this.capabilities.get(stage.capability);
     const bindings = await this.resolveBindings(stage, ctx.runId, prevStageKey, ctx.itemIndex);
-    const resources =
-      stage.capability === 'timeline.render' && bindings.slots.timeline
-        ? await this.timelineResources.resolve(ctx.runId, bindings.slots.timeline)
-        : undefined;
+    const resources = await this.resolveResources(capability, bindings, ctx.runId);
     const execCtx = this.buildExecCtx(stage, ctx, effective, bindings, undefined, resources);
     const fetchStartedAt = Date.now();
     const result = await capability.fetch(handle, execCtx);

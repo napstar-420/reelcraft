@@ -8,6 +8,7 @@ export const ASSET_KIND_LABELS: Record<AssetKind, string> = {
   font: 'Font',
   lut: 'LUT',
   vector: 'Drawing (SVG)',
+  model: '3D model',
 };
 
 const PROVIDER_NAMES: Record<string, string> = {

@@ -102,7 +102,7 @@ describe('CodexProviderAdapter', () => {
         modelId: 'gpt-example',
         supportedReasoningEfforts: ['low', 'high'],
         defaultReasoningEffort: 'low',
-        modalities: ['text', 'image', 'browser'],
+        modalities: ['text', 'image', 'browser', 'code'],
         capabilities: expect.objectContaining({ supportsStructuredOutput: true }),
       }),
     ]);

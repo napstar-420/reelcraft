@@ -28,9 +28,9 @@ async function fixture(neoUrl = 'http://127.0.0.1:9010/mcp') {
 }
 
 describe('ClaudeProviderAdapter', () => {
-  it('offers text and browser, never image generation', async () => {
+  it('offers text, browser and code, never image generation', async () => {
     const { adapter, launcher } = await fixture();
-    expect(adapter.modalities).toEqual(['text', 'browser']);
+    expect(adapter.modalities).toEqual(['text', 'browser', 'code']);
     await expect(
       adapter.submit(
         { modality: 'image', modelId: 'sonnet', params: { reasoningEffort: 'medium' } },
@@ -39,6 +39,56 @@ describe('ClaudeProviderAdapter', () => {
     ).rejects.toThrow('Claude does not support modality "image"');
     expect(launcher.launch).not.toHaveBeenCalled();
   });
+
+  it('sets up the folder of a code job from its workspace, keeping it out of the job params', async () => {
+    const { adapter, runnerRequest, launcher } = await fixture();
+    await adapter.submit(
+      {
+        modality: 'code',
+        modelId: 'sonnet',
+        params: {
+          reasoningEffort: 'medium',
+          __allowedCommands: ['node preview.mjs'],
+          __workspace: {
+            files: [
+              { path: 'GUIDE.md', contents: '# guide' },
+              { path: 'tools/run.mjs', contents: 'run', executable: true },
+            ],
+          },
+        },
+        output: { kind: 'data', schema: { type: 'object', properties: {} } },
+      },
+      'code',
+    );
+    const { jobDir } = launcher.launch.mock.calls.at(-1)![0];
+    expect(await readFile(join(jobDir, 'GUIDE.md'), 'utf8')).toBe('# guide');
+    expect(await readFile(join(jobDir, 'tools/run.mjs'), 'utf8')).toBe('run');
+    const request = await runnerRequest();
+    expect(request.params.__workspace).toBeUndefined();
+    expect(request.params.__allowedCommands).toEqual(['node preview.mjs']);
+    expect(request.prompt).toContain('There are no input files.');
+    expect(request.prompt).toContain('role "download"');
+  });
+
+  it.each(['../escape.txt', 'outputs/scene.py', 'status.json', '/etc/passwd'])(
+    'refuses a code workspace file at %s',
+    async (path) => {
+      const { adapter } = await fixture();
+      await expect(
+        adapter.submit(
+          {
+            modality: 'code',
+            modelId: 'sonnet',
+            params: {
+              reasoningEffort: 'medium',
+              __workspace: { files: [{ path, contents: 'x' }] },
+            },
+          },
+          `bad-${path}`,
+        ),
+      ).rejects.toThrow(/is not allowed/);
+    },
+  );
 
   it('lists the model aliases with their efforts and structured output', async () => {
     const { adapter } = await fixture();

@@ -20,7 +20,7 @@ export type Probe = z.infer<typeof Probe>;
 /** A provider result never carries media bytes through the orchestration
  * payload. The runner streams this source into durable object storage. */
 export const MediaSource = z.object({
-  kind: z.enum(['media.image', 'media.video', 'media.audio']),
+  kind: z.enum(['media.image', 'media.video', 'media.audio', 'media.model']),
   sourceUrl: z.string().url().optional(),
   base64: z.string().optional(),
   mime: z.string().optional(),

@@ -28,7 +28,7 @@ describe('CodexRuntimeReadiness', () => {
     );
     vi.spyOn(internals, 'browserOsReachable').mockResolvedValue(true);
     await expect(readiness.inspect(true)).resolves.toEqual({
-      modalities: ['text', 'image', 'browser'],
+      modalities: ['text', 'code', 'image', 'browser'],
       unavailable: {},
     });
   });
@@ -57,7 +57,7 @@ describe('CodexRuntimeReadiness', () => {
     vi.spyOn(internals, 'codex').mockResolvedValue('');
     vi.spyOn(internals, 'browserOsReachable').mockResolvedValue(false);
     const status = await readiness.inspect(true);
-    expect(status.modalities).toEqual(['text']);
+    expect(status.modalities).toEqual(['text', 'code']);
     expect(status.unavailable.image).toMatch(/imagegen/);
     expect(status.unavailable.browser).toMatch(/BrowserOS Neo/);
   });

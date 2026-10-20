@@ -16,7 +16,7 @@ import { CLAUDE_MODELS, CLAUDE_NEO_SERVER } from './claude-command';
  * generation, so it never offers the `image` modality. */
 export class ClaudeProviderAdapter extends CliJobProviderAdapter {
   readonly id = 'claude';
-  readonly modalities: Modality[] = ['text', 'browser'];
+  readonly modalities: Modality[] = ['text', 'browser', 'code'];
   protected readonly label = 'Claude';
   protected readonly cli = 'claude';
 

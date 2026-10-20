@@ -17,6 +17,7 @@
     "acceptance:layered-render": "pnpm --filter @reelcraft/render-worker build && tsx test/acceptance/layered-render.ts",
     "acceptance:phase6-render": "pnpm --filter @reelcraft/render-worker build && tsx test/acceptance/phase6-render.ts",
     "acceptance:phase7-broll": "bash test/acceptance/run-phase7-broll.sh",
+    "acceptance:scene-render": "tsx test/acceptance/scene-render.ts",
     "acceptance:codex": "pnpm build && node test/acceptance/codex-provider.mjs",
     "acceptance:codex-image": "pnpm build && node test/acceptance/codex-image.mjs",
     "acceptance:codex-browser": "pnpm build && node test/acceptance/codex-browseros.mjs",
