@@ -29,6 +29,17 @@ function toolsFor(manifest: CliRunnerManifest): { tools: string[]; allowed: stri
     const tools = ['Read', 'Write', 'Edit', 'Glob', 'Grep', 'Bash'];
     return { tools, allowed: [...tools, `mcp__${CLAUDE_NEO_SERVER}`] };
   }
+  if (manifest.modality === 'code') {
+    // An agent that writes code in its folder, and runs only the commands the job names.
+    const commands = Array.isArray(manifest.params.__allowedCommands)
+      ? manifest.params.__allowedCommands.filter((c): c is string => typeof c === 'string')
+      : [];
+    const files = ['Read', 'Write', 'Edit', 'Glob', 'Grep'];
+    return {
+      tools: [...files, ...(commands.length ? ['Bash'] : [])],
+      allowed: [...files, ...commands.map((command) => `Bash(${command} *)`)],
+    };
+  }
   if (manifest.params.__inspectFiles === true) {
     return {
       tools: ['Read', 'Glob', 'Bash'],

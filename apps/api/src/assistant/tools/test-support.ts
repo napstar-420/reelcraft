@@ -27,6 +27,7 @@ import { SvgPrepareCapability } from '../../capability/impls/svg-prepare.capabil
 import { TimelineComposeCapability } from '../../capability/impls/timeline-compose.capability';
 import { BuiltinDrawings } from '../../capability/vector/builtin-drawings';
 import { SceneRenderCapability } from '../../capability/impls/scene-render.capability';
+import { SceneWriteCapability } from '../../capability/impls/scene-write.capability';
 
 /** The real capability instances, built without Nest (only their static metadata is used by
  * tests: key, config schema, slots, allowed outputs), for tests that need the live registry. */
@@ -53,6 +54,7 @@ export function realCapabilities(): Array<{ key: string; impl: CapabilityImpl }>
     new SvgPrepareCapability(new BuiltinDrawings()),
     new TimelineComposeCapability(),
     new SceneRenderCapability(stub, stub, stub),
+    new SceneWriteCapability(providers, stub),
   ];
   return instances.map((impl) => ({
     key: Reflect.getMetadata(CAPABILITY_KEY_METADATA, (impl as object).constructor) as string,

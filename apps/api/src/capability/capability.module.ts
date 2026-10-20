@@ -28,6 +28,7 @@ import { SvgPreviewCapability } from './impls/svg-preview.capability';
 import { BuiltinDrawings } from './vector/builtin-drawings';
 import { BlenderModule } from '../blender/blender.module';
 import { SceneRenderCapability } from './impls/scene-render.capability';
+import { SceneWriteCapability } from './impls/scene-write.capability';
 
 /**
  * §1.3 — may inject ProviderModule and StorageModule. Must NOT be able to
@@ -59,6 +60,7 @@ import { SceneRenderCapability } from './impls/scene-render.capability';
     SvgPrepareCapability,
     SvgPreviewCapability,
     SceneRenderCapability,
+    SceneWriteCapability,
     BuiltinDrawings,
   ],
   controllers: [CapabilityController],

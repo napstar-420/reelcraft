@@ -14,7 +14,7 @@ import { strictJsonSchema } from './codex-command';
  * browser (BrowserOS Neo through Codex's MCP config). */
 export class CodexProviderAdapter extends CliJobProviderAdapter {
   readonly id = 'codex';
-  readonly modalities: Modality[] = ['text', 'image', 'browser'];
+  readonly modalities: Modality[] = ['text', 'image', 'browser', 'code'];
   protected readonly label = 'Codex';
   protected readonly cli = 'codex';
   private readonly profile: string;

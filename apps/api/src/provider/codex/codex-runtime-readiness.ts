@@ -31,7 +31,8 @@ export class CodexRuntimeReadiness {
 
   async inspect(force = false): Promise<CodexRuntimeStatus> {
     if (!force && this.cached && this.cached.expiresAt > Date.now()) return this.cached.status;
-    const modalities: Modality[] = ['text'];
+    // Writing and running code in the job's folder needs nothing beyond the CLI itself.
+    const modalities: Modality[] = ['text', 'code'];
     const unavailable: CodexRuntimeStatus['unavailable'] = {};
     const [plugins, mcp, features] = await Promise.all([
       this.codex(['plugin', 'list']).catch((error: unknown) => {

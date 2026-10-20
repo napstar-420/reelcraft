@@ -19,6 +19,7 @@ and length are already set, and adds everything itself: objects, materials, ligh
 
 import importlib.util
 import json
+import math
 import os
 import random
 import subprocess
@@ -97,6 +98,38 @@ class Context:
                 collection.objects.link(obj)
         return [obj for obj in added if obj.parent is None]
 
+    def image_plane(self, name, height=1.0):
+        """A flat card showing the picture `name`, unlit and with its transparency, standing upright
+        in the picture plane (x right, z up, facing -y). `height` is in scene units; the width
+        follows the picture's shape. The building block of cut-out 2D animation."""
+        image = bpy.data.images.load(self.asset(name))
+        width_px, height_px = image.size
+        aspect = width_px / height_px if height_px else 1.0
+        bpy.ops.mesh.primitive_plane_add(size=1)
+        card = bpy.context.object
+        card.name = name
+        card.rotation_euler = (math.pi / 2, 0, 0)
+        card.scale = (height * aspect, height, 1)
+        bpy.ops.object.transform_apply(rotation=True, scale=True)
+        material = bpy.data.materials.new(name)
+        nodes = material.node_tree.nodes
+        links = material.node_tree.links
+        nodes.clear()
+        texture = nodes.new("ShaderNodeTexImage")
+        texture.image = image
+        texture.interpolation = "Closest" if max(width_px, height_px) <= 64 else "Linear"
+        emission = nodes.new("ShaderNodeEmission")
+        clear = nodes.new("ShaderNodeBsdfTransparent")
+        mix = nodes.new("ShaderNodeMixShader")
+        out = nodes.new("ShaderNodeOutputMaterial")
+        links.new(texture.outputs["Color"], emission.inputs["Color"])
+        links.new(texture.outputs["Alpha"], mix.inputs["Fac"])
+        links.new(clear.outputs["BSDF"], mix.inputs[1])
+        links.new(emission.outputs["Emission"], mix.inputs[2])
+        links.new(mix.outputs["Shader"], out.inputs["Surface"])
+        card.data.materials.append(material)
+        return card
+
 
 def load_script(path):
     spec = importlib.util.spec_from_file_location("scene", path)
@@ -119,6 +152,9 @@ def set_up(job):
     scene.frame_start = 1
     scene.frame_end = max(1, round(job["durationSec"] * job["fps"]))
     scene.render.film_transparent = bool(job.get("transparent"))
+    # Colours come out as written (flat, cartoon, brand colours); a script wanting a filmic look
+    # sets "AgX" itself.
+    scene.view_settings.view_transform = "Standard"
     choose_engine(scene, job.get("renderEngine", "auto"), gpu=use_best_gpu())
     return scene
 
