@@ -28,11 +28,24 @@ export function useRunExecutionActions({
   const client = useQueryClient();
   const [executionPlan, setExecutionPlan] = useState<StageRunPlanDto | null>(null);
   const [confirmCancel, setConfirmCancel] = useState(false);
+  const [continueChoice, setContinueChoice] = useState(false);
   const draftKey = definitionKey(draft);
   useEffect(() => setExecutionPlan(null), [run?.id, run?.revision, draftKey]);
   const freshness = run?.definition && draft ? stageFreshness(run.definition, draft) : undefined;
   /** Canvas edits this run can't take (stages added, removed or rewired): start a new run. */
   const newRunReason = run?.definition && draft ? requiresNewRun(run.definition, draft) : null;
+  /** Finished stages the canvas edits made out of date (changed, downstream of a change, or with
+   * edited checks). Continue asks whether to regenerate them or carry on after them. */
+  const outdatedPassedKeys = run
+    ? run.stageExecutions
+        .filter(
+          (e) =>
+            e.state === 'passed' &&
+            (freshness?.staleStageKeys.includes(e.stageKey) ||
+              freshness?.validationStageKeys.includes(e.stageKey)),
+        )
+        .map((e) => e.stageKey)
+    : [];
   const stageLabel = (key: string) =>
     (draft?.graph ?? run?.definition?.graph)?.find((s) => s.key === key)?.label ?? key;
   const refresh = async () => {
@@ -148,20 +161,30 @@ export function useRunExecutionActions({
     onSuccess: refresh,
     onError: fail,
   });
-  /** Continue: keep passed stages and run everything unfinished (plus anything the canvas
-   * edits made stale) to the end. When the edits can't be applied inside this run (stages
-   * added or removed, inputs changed), a new run reuses every finished stage still valid. */
+  /** Continue: keep passed stages and run everything unfinished to the end. Out-of-date finished
+   * stages are regenerated, or with `keepOutdated` kept as they are and carried on after, in a new
+   * run. The same new-run route handles edits this run can't take (stages added or removed). */
   const resume = useMutation({
-    mutationFn: async () => {
-      if (!run || !newRunReason) return plan('run', undefined, 'descendants');
+    mutationFn: async (keepOutdated: boolean = false) => {
+      if (!run || (!newRunReason && !keepOutdated)) return plan('run', undefined, 'descendants');
       const blueprintVersionId = await prepareRunnableVersion!();
-      const created = await api.createRun(buildRunAllDto(run, blueprintVersionId));
+      const created = await api.createRun(
+        buildRunAllDto(run, blueprintVersionId, keepOutdated ? outdatedPassedKeys : []),
+      );
       await api.startRun(created.id);
       onSwitchRun?.(created.id);
     },
-    onSuccess: refresh,
+    onSuccess: () => {
+      setContinueChoice(false);
+      return refresh();
+    },
     onError: fail,
   });
+  /** The Continue button: ask first when finished stages are out of date. */
+  const requestContinue = () =>
+    outdatedPassedKeys.length > 0 && prepareRunnableVersion
+      ? setContinueChoice(true)
+      : resume.mutate(false);
   const concurrency = useMutation({
     mutationFn: (concurrentBranches: number) =>
       api.updateExecutionSettings(run!.id, { concurrentBranches }),
@@ -177,6 +200,10 @@ export function useRunExecutionActions({
     cancel,
     pause,
     resume,
+    requestContinue,
+    continueChoice,
+    setContinueChoice,
+    outdatedPassedKeys,
     concurrency,
     confirmCancel,
     setConfirmCancel,

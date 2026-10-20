@@ -34,6 +34,16 @@ can't take those changes. **Continue** then starts a new test run that keeps eve
 still valid and runs the rest, so you don't redo work. A note beside the button says so. Reconnecting
 stages is fine: **Continue** gives them their new connections when they run again.
 
+## When finished stages are out of date
+
+If you edit a stage that already finished, it and the stages after it are marked **Stale**. Pressing
+**Continue** then asks:
+
+- **Regenerate stale stages:** runs them again, which can cost money again.
+- **Keep results and continue:** starts a new test run that copies those results as they are and carries
+  on after them. Nothing is regenerated. Stages after the edited one were made from its older result, so
+  use this when you're sure that doesn't matter. The log of each kept stage says its result was kept.
+
 ## Stage buttons
 
 Select a stage on the canvas or in the **Run** tab to see its buttons:
