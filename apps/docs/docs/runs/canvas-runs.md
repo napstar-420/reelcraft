@@ -30,8 +30,9 @@ The **⋯** menu next to it holds:
 - **Concurrent branches**: how many stages may run at once (default **2**).
 
 If you added or removed stages, or changed the blueprint's inputs, roles or defaults, the open test run
-can't take those changes. The main button becomes **Start test run**, and a short line beside it says
-why. Reconnecting stages is fine: **Continue** gives them their new connections when they run again.
+can't take those changes. **Continue** then starts a new test run that keeps every finished stage that is
+still valid and runs the rest, so you don't redo work. A note beside the button says so. Reconnecting
+stages is fine: **Continue** gives them their new connections when they run again.
 
 ## Stage buttons
 
