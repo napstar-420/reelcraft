@@ -102,12 +102,11 @@ export function executionEligibility(
   }
   const run: RunAvailableActions = {
     busy,
-    runBlueprint: inactive && !graph.some((s) => disabledAncestor(graph, s.key)),
-    rerunBlueprint: inactive && !graph.some((s) => disabledAncestor(graph, s.key)),
     pause: state === 'RUNNING',
     resume:
       !busy &&
       ['PAUSED_MANUAL', 'CANCELLED', 'FAILED', 'PAUSED_BUDGET', 'PAUSED_QUOTA'].includes(state),
+    // Stop ends live, paused or never-started work; a failed run has nothing left to stop.
     cancel: [
       'RUNNING',
       'PAUSING',
@@ -118,7 +117,6 @@ export function executionEligibility(
       'PAUSED_INPUT',
       'PAUSED_BUDGET',
       'PAUSED_QUOTA',
-      'FAILED',
     ].includes(state),
     changeConcurrency: !busy,
   };

@@ -4,11 +4,16 @@ description: Run a saved blueprint version, fill in its inputs and set a spendin
 ---
 
 A **run** is one go at making a video: Reelcraft carries out the blueprint's dependency graph, with the
-inputs and budget you give it. You can start as many runs as you like from the same blueprint.
+inputs and budget you give it. There are two kinds:
+
+- **Production runs** run a saved version, exactly as it was saved. You start them from the
+  blueprints page, as described here.
+- **Test runs** run what's on the canvas while you build, saved or not. See
+  [Test runs on the canvas](./canvas-runs.md).
 
 ## Before you start
 
-- The blueprint's latest version must be **saved** and show **Runnable**. See
+- The blueprint must have at least one **saved** version that shows **Runnable**. See
   [Versions](../blueprints/versions.md).
 - The models and keys it uses must be set up. See [Models](../blueprints/models.md) and
   [AI provider keys](../provider-keys.md).
@@ -17,9 +22,10 @@ inputs and budget you give it. You can start as many runs as you like from the s
 
 ## Start a run
 
-1. Open the blueprint's canvas and select **Run** in the top bar. (If **Run** is off, hover over it: it
-   says **Save your changes to run this version**. Save first.)
-2. In the dialog, titled **Run blueprint**, keep **Live run** selected and set the **Budget cap (USD)**. It starts as the blueprint's
+1. Open the channel's **Blueprints** tab and select **Run** on the blueprint's card. (**Run** is off
+   until the blueprint has been saved once.)
+2. In the dialog, choose the **Saved version** to run. The latest is selected. Keep **Live run**
+   selected and set the **Budget cap (USD)**. It starts as the version's
    [run cap](../blueprints/settings.md#budget). The run never spends more than this unless you raise
    it. See [Budget and costs](./budget-and-costs.md).
 3. Fill in the blueprint's inputs. A **\*** marks a required one:
@@ -32,7 +38,7 @@ inputs and budget you give it. You can start as many runs as you like from the s
 Reelcraft checks your entries first, and shows what to fix under each box, for example **Topic is
 required.** or **Script must contain valid JSON.**
 
-![The Run blueprint dialog](/img/usage/run-dialog.png)
+![The run dialog](/img/usage/run-dialog.png)
 
 The run page opens as soon as the run starts. See [Run page](./run-page.md).
 
@@ -64,6 +70,6 @@ If the run can't start at all, the reason appears under **Run could not start**.
 
 ## Other ways to start a run
 
-- **Re-run blueprint** on an existing run regenerates all required work after confirmation, preserving
-  its history. **Run blueprint** preserves current completed work. See [Continue and re-run work](./retries.md).
-- The [**Run** tab](./canvas-runs.md) on the canvas uses the same controls and execution rules as the run page.
+- **Run again** on a production run's page opens the same dialog with that run's version, inputs and
+  budget filled in. Files are picked again.
+- **Start test run** on the canvas runs the canvas as it is. See [Test runs on the canvas](./canvas-runs.md).

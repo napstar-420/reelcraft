@@ -10,6 +10,7 @@ import type {
 import { api } from '@/api/client';
 import { definitionKey, stageFreshness } from '@/lib/stage-freshness';
 import { describeRunActionError } from '@/lib/describe-run-action-error';
+import { requiresNewRun } from '@/lib/run-actions';
 
 type Action = NonNullable<StageRunPlanRequestDto['action']>;
 export function useRunExecutionActions({
@@ -24,11 +25,13 @@ export function useRunExecutionActions({
   onSwitchRun?: (id: string) => void;
 }) {
   const client = useQueryClient();
-  const [executionPlans, setExecutionPlans] = useState<StageRunPlanDto[] | null>(null);
+  const [executionPlan, setExecutionPlan] = useState<StageRunPlanDto | null>(null);
   const [confirmCancel, setConfirmCancel] = useState(false);
   const draftKey = definitionKey(draft);
-  useEffect(() => setExecutionPlans(null), [run?.id, run?.revision, draftKey]);
+  useEffect(() => setExecutionPlan(null), [run?.id, run?.revision, draftKey]);
   const freshness = run?.definition && draft ? stageFreshness(run.definition, draft) : undefined;
+  /** Canvas edits this run can't take (stages added, removed or rewired): start a new run. */
+  const newRunReason = run?.definition && draft ? requiresNewRun(run.definition, draft) : null;
   const stageLabel = (key: string) =>
     (draft?.graph ?? run?.definition?.graph)?.find((s) => s.key === key)?.label ?? key;
   const refresh = async () => {
@@ -37,11 +40,14 @@ export function useRunExecutionActions({
   };
   const fail = (error: unknown) =>
     toast.error(describeRunActionError(error, 'Could not execute this action.'));
+  /** One request per button. Test runs send the canvas snapshot (so edits apply);
+   * production runs send their own version, which changes nothing. */
   async function plan(
     action: Action,
     stageKey?: string,
     scope: StageRunPlanRequestDto['scope'] = 'stage',
     itemIndex?: number,
+    recheck = false,
   ) {
     if (!run) throw new Error('Select a run first.');
     const blueprintVersionId = prepareRunnableVersion
@@ -50,48 +56,36 @@ export function useRunExecutionActions({
     const request: StageRunPlanRequestDto = {
       blueprintVersionId,
       action,
-      mode: action === 'continue' ? 'reuse' : 'rebuild',
+      mode: recheck ? 'validate' : 'rebuild',
       scope,
       ...(stageKey && { stageKey }),
       ...(itemIndex !== undefined && { itemIndex }),
     };
-    const changed =
-      blueprintVersionId !== run.blueprintVersionId &&
-      !!freshness &&
-      (freshness.staleStageKeys.length > 0 || freshness.validationStageKeys.length > 0);
-    const requests =
-      changed && stageKey
-        ? [
-            { ...request, mode: 'reuse' as const },
-            { ...request, mode: 'rebuild' as const },
-            { ...request, mode: 'rebuild' as const, scope: 'through' as const },
-            { ...request, mode: 'rebuild' as const, scope: 'descendants' as const },
-            ...(freshness.validationStageKeys.includes(stageKey)
-              ? [{ ...request, mode: 'validate' as const }]
-              : []),
-          ]
-        : [request];
-    const plans = await Promise.all(requests.map((r) => api.previewStageRun(run.id, r)));
-    const first = plans[0]!;
-    if (!first.blockedReason && !first.runStageKeys.length) {
-      toast.info('This run has no unfinished work.');
+    const preview = await api.previewStageRun(run.id, request);
+    if (!preview.blockedReason && !preview.runStageKeys.length) {
+      toast.info('Nothing left to run.');
       return;
     }
+    const passed = new Set(
+      run.stageExecutions.filter((e) => e.state === 'passed').map((e) => e.stageKey),
+    );
+    // Confirm only when the action throws away finished work or needs a decision.
     if (
-      !changed &&
-      action !== 'rerun' &&
-      !first.blockedReason &&
-      !first.invalidatedStageKeys.length &&
-      !first.availabilityChangedStageKeys?.length &&
-      !first.uncertainAttemptIds?.length
-    ) {
+      preview.blockedReason ||
+      preview.invalidatedStageKeys.length ||
+      preview.availabilityChangedStageKeys?.length ||
+      preview.uncertainAttemptIds?.length ||
+      preview.runStageKeys.some((key) => passed.has(key))
+    )
+      setExecutionPlan(preview);
+    else {
       const result = await api.confirmStageRun(run.id, {
-        ...first.request,
-        previewToken: first.previewToken,
+        ...preview.request,
+        previewToken: preview.previewToken,
       });
       onSwitchRun?.(result.runId);
       await refresh();
-    } else setExecutionPlans(plans);
+    }
   }
   const confirmExecution = useMutation({
     mutationFn: async (plan: StageRunPlanDto) => {
@@ -99,7 +93,7 @@ export function useRunExecutionActions({
       return api.confirmStageRun(run.id, { ...plan.request, previewToken: plan.previewToken });
     },
     onSuccess: async (result) => {
-      setExecutionPlans(null);
+      setExecutionPlan(null);
       onSwitchRun?.(result.runId);
       await refresh();
     },
@@ -108,34 +102,36 @@ export function useRunExecutionActions({
   const acceptUncertainRestart = useMutation({
     mutationFn: async (plan: StageRunPlanDto) =>
       api.previewStageRun(run!.id, { ...plan.request, allowUncertainRestart: true }),
-    onSuccess: (plan) => setExecutionPlans([plan]),
+    onSuccess: (plan) => setExecutionPlan(plan),
     onError: fail,
   });
+  /** The stage buttons: this stage only (`stage`), up to it (`through`), or from it to the
+   * end (`descendants`, which regenerates what follows). `recheck` re-checks the stored
+   * output without generating it again. */
   const runStage = useMutation({
     mutationFn: ({
       stageKey,
       action,
-      scope,
+      scope = 'stage',
       itemIndex,
+      recheck,
     }: {
       stageKey: string;
       action?: Action;
       scope?: StageRunPlanRequestDto['scope'];
       itemIndex?: number;
-      anyway?: boolean;
+      recheck?: boolean;
     }) => {
       const available = run?.stageExecutions.find((e) => e.stageKey === stageKey)?.availableActions;
+      const fallback: Action = available?.continue ? 'continue' : available?.run ? 'run' : 'rerun';
       return plan(
-        action ?? (available?.continue ? 'continue' : available?.run ? 'run' : 'rerun'),
+        scope === 'descendants' || recheck ? 'rerun' : (action ?? fallback),
         stageKey,
         scope,
         itemIndex,
+        recheck,
       );
     },
-    onError: fail,
-  });
-  const runAll = useMutation({
-    mutationFn: (action: Action = 'run') => plan(action, undefined, 'descendants'),
     onError: fail,
   });
   const cancel = useMutation({
@@ -151,11 +147,10 @@ export function useRunExecutionActions({
     onSuccess: refresh,
     onError: fail,
   });
+  /** Continue: keep passed stages and run everything unfinished (plus anything the
+   * canvas edits made stale) to the end of the blueprint. */
   const resume = useMutation({
-    mutationFn: async () => {
-      if (run?.state === 'CANCELLED') await plan('continue', undefined, 'descendants');
-      else await api.resumeRun(run!.id);
-    },
+    mutationFn: () => plan('run', undefined, 'descendants'),
     onSuccess: refresh,
     onError: fail,
   });
@@ -167,9 +162,8 @@ export function useRunExecutionActions({
   });
   return {
     runStage,
-    runAll,
-    executionPlans,
-    setExecutionPlans,
+    executionPlan,
+    setExecutionPlan,
     confirmExecution,
     acceptUncertainRestart,
     cancel,
@@ -179,6 +173,7 @@ export function useRunExecutionActions({
     confirmCancel,
     setConfirmCancel,
     stageLabel,
+    newRunReason,
     staleStageKeys: new Set(freshness?.staleStageKeys ?? []),
     validationStageKeys: new Set(freshness?.validationStageKeys ?? []),
   };

@@ -1159,6 +1159,7 @@ export class RunService {
       availableActions: eligibility.run,
       blueprintId: version?.blueprintId,
       definition: version ? CreateBlueprintVersionDto.parse(version) : undefined,
+      draft: version?.draft,
       budgetBlock,
       resumeAt,
       finalVideo: final
@@ -1508,7 +1509,11 @@ export class RunService {
   async list(query: ListRunsQueryDto) {
     const conditions = [
       query.includeDryRuns ? undefined : eq(run.dryRun, false),
-      query.includeDrafts ? undefined : eq(blueprintVersion.draft, false),
+      query.draftsOnly
+        ? eq(blueprintVersion.draft, true)
+        : query.includeDrafts
+          ? undefined
+          : eq(blueprintVersion.draft, false),
       query.channelId ? eq(run.channelId, query.channelId) : undefined,
       query.state ? eq(run.state, query.state) : undefined,
       query.blueprintId ? eq(blueprintVersion.blueprintId, query.blueprintId) : undefined,

@@ -1,52 +1,50 @@
 ---
-title: Pause, resume and cancel
-description: Stop admitting work, preserve progress, and continue the same run later.
+title: Pause, stop and continue
+description: Pause or stop a run without losing progress, and continue it later.
 ---
 
-The canvas toolbar, canvas **Run** tab and run page use the same controls and run records.
-Moving between them preserves the selected run and its progress.
+Test runs on the canvas and production runs on the run page use the same buttons: one main button
+for the run's state (**Pause** or **Continue**) and **Stop run** in the **⋯** menu.
 
-## Pause and resume
+## Pause
 
-**Pause** changes Running to **Pausing**. Active attempts, including their checks and quality control,
-finish; no new stages, iteration items or generation retries start. Once active work drains, the run
-becomes **Paused Manual**. **Resume** continues the same execution scope using the pinned snapshot.
-It does not expand a stage-only action into the whole blueprint.
+**Pause** changes Running to **Pausing**. Work already under way, including its checks and quality
+control, finishes; no new stages, items or retries start. Then the run becomes **Paused Manual** and
+the main button reads **Continue**.
 
-Stage execution controls are hidden while Running, Pausing or Cancelling. The server also rejects
-new execution actions during those transitions. Output previews and attempt history remain available.
+Stage buttons are hidden while a run is Running, Pausing or Stopping. Outputs and attempts stay
+visible.
 
-## Cancel and continue
+## Stop
 
-**Cancel run** stops execution and preserves finished outputs, spending and saved approval/input
-candidates. The run enters **Cancelling** while provider requests and reservations are reconciled,
-then becomes **Cancelled**. Cancellation is resumable; it does not erase progress.
+**Stop run** ends the run and keeps finished outputs, spending and any saved approval or input
+request. The run shows **Cancelling** while provider requests are wound down, then **Cancelled**.
+Stopping doesn't erase progress: you can **Continue** later. A failed run has nothing left to stop, so
+**Stop run** isn't offered there.
 
-Use **Continue run** to continue the saved execution scope, or **Continue stage** to continue only the
-selected interrupted stage. Use **Run blueprint** to expand to all unfinished blueprint work. For an iterating stage with **6/14 completed**, Continue preserves those
-six artifacts and submits the other eight items. Passed items need not be consecutive.
+## Continue
 
-Older cancelled runs may contain interrupted items still labelled running. Continuing recovers those
-items in the same run without replacing completed outputs. Finished cancelled attempts do not block
-the execution controls; uncertain provider submissions still require the billing warning below.
+**Continue** keeps every passed stage and item and runs everything unfinished, failed or stale, to the
+end of the blueprint. On the canvas it also applies your current edits. For an iterating stage with
+**6/14 completed**, the six finished items are kept and only the other eight run, even when the finished
+ones aren't consecutive.
 
-Provider cancellation is best effort. If cancellation cannot be confirmed, restarting an unfinished
-request may cause additional charges. Review that warning, acknowledge the risk, and confirm the new
-execution plan before restarting. Late results and delayed cancellation events from an earlier
-execution generation cannot replace resumed work.
+Provider cancellation is best effort. If Reelcraft couldn't confirm that an earlier request was
+cancelled, restarting it may be charged again. You're asked to acknowledge this before continuing.
+Late results from the earlier attempt can't replace the new work.
 
-A saved approval or input request remains available when continuation parks on it again. Answer that
-request instead of regenerating its candidate.
+A saved approval or input request is still there when the run reaches it again. Answer it instead of
+generating a new candidate.
 
 ## Other pauses
 
-- **Paused Budget**: raise the run or stage cap, then resume. See [Budget and costs](./budget-and-costs.md).
-- **Paused Quota**: a scheduled wakeup resumes after provider quota resets. Manual resume replaces
-  that scheduled recovery; a delayed old wakeup cannot start a second execution.
-- **Paused Approval / Paused Input**: independent runnable branches finish before the run parks.
-  Descendants of a waiting stage stay blocked until you answer.
-- **Failed**: independent branches continue until runnable work settles. Resume retries unfinished
-  work within the saved scope; **Re-run stage** explicitly regenerates a selected stage.
+- **Paused Budget**: raise the run or stage cap, then **Continue**. See [Budget and costs](./budget-and-costs.md).
+- **Paused Quota**: the run continues by itself once provider quota resets, or select **Continue** to
+  try now.
+- **Paused Approval / Paused Input**: independent branches finish first. Stages after the waiting one
+  stay blocked until you answer.
+- **Failed**: independent branches finish first. **Continue** retries the failed stage and runs the
+  rest.
 
-**Idle** means the selected scope finished while other required blueprint work remains. Use
-**Run blueprint** to expand to all unfinished work. **Completed** means all required work finished.
+**Idle** means a stage-only action finished while other stages are still unfinished: **Continue**
+runs them. **Completed** means everything finished; start a new run to go again.

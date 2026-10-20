@@ -21,6 +21,22 @@ export class LaunchRunError extends Error {
   }
 }
 
+/** A previous run's text and data inputs as dialog values, to start the next run with
+ * them filled in. Files can't be prefilled; they are picked again. */
+export function launchValuesFromRun(
+  inputDefs: InputDef[],
+  inputs: Record<string, unknown>,
+): LaunchValues {
+  const values: LaunchValues = {};
+  for (const def of inputDefs) {
+    const value = inputs[def.key];
+    if (value === undefined) continue;
+    if (def.accepts.kind === 'text' && typeof value === 'string') values[def.key] = value;
+    if (def.accepts.kind === 'data') values[def.key] = JSON.stringify(value, null, 2);
+  }
+  return values;
+}
+
 export function validateLaunchValues(
   inputDefs: InputDef[],
   values: LaunchValues,

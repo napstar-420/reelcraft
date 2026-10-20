@@ -25,17 +25,17 @@ const ready: StageAvailableActions = {
 describe.each(['run page', 'canvas Run tab', 'canvas card'])('%s action matrix', (surface) => {
   const compact = surface !== 'run page';
   it.each([
-    { label: 'Continue stage', action: 'continue' },
-    { label: 'Re-run stage', action: 'rerun' },
-  ] as const)('sends the same stage-only %s request', ({ label, action }) => {
+    { label: 'Run this stage only', request: { scope: 'stage' } },
+    { label: 'Run up to this stage', request: { scope: 'through' } },
+    { label: 'Run from this stage to the end', request: { scope: 'descendants' } },
+  ] as const)('sends the $label request', ({ label, request }) => {
     const requests: unknown[] = [];
     const tree = StageExecutionControls({
       available: ready,
       busy: false,
       pending: false,
       compact,
-      onAction: (request: StageActionRequest) =>
-        requests.push({ stageKey: 'motion', scope: 'stage', ...request }),
+      onAction: (sent: StageActionRequest) => requests.push(sent),
     });
     const control = elements(tree).find(
       (element) =>
@@ -44,7 +44,22 @@ describe.each(['run page', 'canvas Run tab', 'canvas card'])('%s action matrix',
     expect(control).toBeDefined();
     const invoke = (control!.props.onClick ?? control!.props.onSelect) as () => void;
     invoke();
-    expect(requests).toEqual([{ stageKey: 'motion', scope: 'stage', action }]);
+    expect(requests).toEqual([request]);
+  });
+  it('offers Re-check output only when allowed', () => {
+    const labels = (allowRecheck: boolean) =>
+      elements(
+        StageExecutionControls({
+          available: ready,
+          busy: false,
+          pending: false,
+          compact,
+          allowRecheck,
+          onAction: () => {},
+        }),
+      ).map((element) => element.props.children);
+    expect(labels(true)).toContain('Re-check output');
+    expect(labels(false)).not.toContain('Re-check output');
   });
   it('shows separate item progress and hides execution buttons while busy', () => {
     const html = renderToStaticMarkup(
@@ -68,6 +83,7 @@ describe.each(['run page', 'canvas Run tab', 'canvas card'])('%s action matrix',
           ...ready,
           continue: false,
           rerun: false,
+          runThrough: false,
           blockedReason: 'Waiting for Scene Breakdown.',
         }}
         busy={false}

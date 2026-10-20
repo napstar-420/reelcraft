@@ -58,14 +58,14 @@ See [Validation messages](../reference/validation-messages.md) for the common on
 You can still save a blueprint that isn't runnable, for example to keep work in progress, but you
 can't run that version.
 
-## Running needs a saved version
+## Test runs and production runs
 
-**Run** in the top bar always runs the latest saved version, all of it, as a live run or a dry run. It's
-off while you have unsaved changes: hover over it and it says **Save your changes to run this version**.
+You don't need to save to try a change. **Start test run** on the canvas runs the canvas as it is,
+saved or not, as a temporary copy that doesn't appear in your versions. See
+[Test runs on the canvas](../runs/canvas-runs.md).
 
-To try your unsaved changes before saving, use the **Run** tab or a stage card's play button instead. It runs a
-temporary copy of the canvas as it is, which doesn't appear in your versions. See
-[Canvas runs](../runs/canvas-runs.md).
+Production runs always run a saved version. Start one with **Run** on the blueprint's card in the
+channel's **Blueprints** tab, and pick the version. See [Starting a run](../runs/starting-a-run.md).
 
 ## Look at an older version
 

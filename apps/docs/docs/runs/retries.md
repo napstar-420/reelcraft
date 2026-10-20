@@ -3,45 +3,44 @@ title: Continue and re-run work
 description: Preserve passed items, regenerate a stage or item, or explicitly rebuild a blueprint.
 ---
 
-The canvas and run page share these actions, eligibility rules and confirmations.
+Test runs on the canvas and production runs on the run page share these actions. Production runs
+always use their saved version; test runs use what's on the canvas.
 
-| Action                  | What executes                                                             | What is preserved or invalidated                                                               |
-| ----------------------- | ------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| **Run stage**           | Only the selected eligible stage                                          | Prerequisites must already be ready; they never launch automatically                           |
-| **Continue stage**      | Unfinished items or interrupted work in that stage                        | Passed items and saved candidates are preserved                                                |
-| **Re-run stage**        | The selected stage and all its items                                      | Completed items are regenerated; affected descendants become stale without executing           |
-| **Re-run item**         | One item                                                                  | Other items remain; observed item consumers, including sequential item consumers, become stale |
-| **Run blueprint**       | All unfinished, failed or stale required work                             | Current completed work stays passed                                                            |
-| **Re-run blueprint**    | Every required stage and item                                             | Explicit full regeneration, with cost/rebuild confirmation; history remains                    |
-| **Run through stage**   | Selected stage and required unfinished prerequisites                      | Explicitly expands the scope upstream                                                          |
-| **Rebuild descendants** | Selected work, affected descendants and required unfinished prerequisites | Explicitly expands downstream; independent current branches remain                             |
+| Action                             | What runs                                                          | What is kept                                              |
+| ---------------------------------- | ------------------------------------------------------------------ | --------------------------------------------------------- |
+| **Continue**                       | Everything unfinished, failed or stale, to the end                 | Every passed stage and item                               |
+| **Run this stage only**            | Just the selected stage                                            | The outputs before it are used as they are, even if stale |
+| **Run up to this stage**           | Unfinished or stale stages before it, then the stage itself        | Everything after it is left alone                         |
+| **Run from this stage to the end** | The stage and every stage after it, plus unfinished ones before it | Independent branches stay as they are                     |
+| **Re-run item**                    | One item of an iterating stage                                     | Other items stay; stages that used the item become stale  |
+| **Re-check output** (test runs)    | The checks and quality criteria on the stored output               | Nothing is generated again                                |
 
-**Run through stage** and **Rebuild descendants** are in the stage's **More execution actions** menu.
-They are separate from ordinary **Run stage**.
+**Run up to this stage**, **Run from this stage to the end** and **Re-check output** are in the stage's
+**⋯** menu.
 
 ## Partial iteration
 
-For **6/14 completed**, choose **Continue stage** to submit eight unfinished items in the same run.
+For **6/14 completed**, choose **Run this stage only** (or **Continue**) to submit the eight unfinished
+items in the same run.
 Continue uses persisted item states, including non-consecutive successes. Item values and dependency
 identity must still match the pinned snapshot; equal item counts alone do not establish compatibility.
 If they differ, explicitly rebuild rather than silently mixing outputs.
 
-**Re-run stage** warns that all completed items will regenerate. To replace only one output, open
+**Run from this stage to the end** regenerates all items of the stage. To replace only one output, open
 **View output**, find the item and select **Re-run item**. Its confirmation lists affected consumers.
 
 Progress counts and attempt counts are separate: six completed items can have more than six attempts.
 Earlier artifacts, attempts and spending remain in history after any rerun.
 
-## Confirming a rebuild
+## Confirming
 
-The execution plan lists exactly which stages execute, which completed outputs stay, which consumers
-become stale and historical costs. New work may cost more; unrun stages are unpriced. Confirmations
-are bound to the selected action, items, snapshot, concurrency setting and run revision. A changed run,
-duplicate confirmation or concurrent resume requires a fresh plan.
+You're asked to confirm only when an action replaces work that already passed, or when a provider
+request may have been charged already. The confirmation lists the stages that run, any stages that
+become stale without running, and what they cost last time. New work may cost more. If the run changed
+while the confirmation was open, you're asked again.
 
-Definition changes retain explicit **Use existing outputs** and rebuild choices. Continue ordinarily
-uses the pinned snapshot. **Check existing output** can apply check/QC-only edits to a stored
-non-iterating output without generating it again. QC may cost money.
+**Re-check output** applies check or quality-criteria edits to a stored, non-iterating output without
+generating it again. Quality checks may cost money.
 
 ## Automatic retries
 

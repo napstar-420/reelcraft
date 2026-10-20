@@ -1,14 +1,18 @@
+import type { ReactNode } from 'react';
 import type {
   RunDetailDto,
   StageAvailableActions,
   StageRunPlanRequestDto,
 } from '@reelcraft/shared';
+import { MoreHorizontal } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
@@ -22,104 +26,80 @@ import {
   AlertDialogAction,
 } from '@/components/ui/alert-dialog';
 import type { RunExecutionActions } from '@/hooks/useRunExecutionActions';
+import { primaryRunAction } from '@/lib/run-actions';
 
 export type StageActionRequest = {
-  action: NonNullable<StageRunPlanRequestDto['action']>;
+  action?: NonNullable<StageRunPlanRequestDto['action']>;
   scope?: StageRunPlanRequestDto['scope'];
   itemIndex?: number;
+  recheck?: boolean;
 };
+
+/** A stage's run buttons: Run this stage only, plus Run up to this stage, Run from this
+ * stage to the end and (test runs, checks-only edits) Re-check output. */
 export function StageExecutionControls({
   available,
   busy,
   pending,
   onAction,
   compact = false,
+  allowRecheck = false,
 }: {
   available: StageAvailableActions | undefined;
   busy: boolean;
   pending: boolean;
   onAction: (request: StageActionRequest) => void;
   compact?: boolean;
+  allowRecheck?: boolean;
 }) {
   if (!available) return null;
-  if (busy)
-    return available.totalItems !== null ? (
+  const progress =
+    available.totalItems !== null ? (
       <span className="text-xs text-muted-foreground tabular-nums">
         {available.completedItems}/{available.totalItems} completed
       </span>
     ) : null;
+  if (busy) return progress;
+  const size = compact ? 'xs' : 'sm';
+  const runOnly = available.run || available.continue || available.rerun;
+  const scoped = available.runThrough ?? true;
   return (
     <div className="flex flex-wrap items-center gap-1">
-      {available.totalItems !== null && (
-        <span className="text-xs text-muted-foreground tabular-nums">
-          {available.completedItems}/{available.totalItems} completed
-        </span>
-      )}
-      {available.run && (
+      {progress}
+      {runOnly && (
         <Button
-          size={compact ? 'xs' : 'sm'}
+          size={size}
           variant="outline"
           disabled={pending}
-          onClick={() => onAction({ action: 'run' })}
+          onClick={() => onAction({ scope: 'stage' })}
         >
-          Run stage
-        </Button>
-      )}
-      {available.continue && (
-        <Button
-          size={compact ? 'xs' : 'sm'}
-          variant="outline"
-          disabled={pending}
-          onClick={() => onAction({ action: 'continue' })}
-        >
-          Continue stage
-        </Button>
-      )}
-      {available.rerun && (!compact || !available.continue) && (
-        <Button
-          size={compact ? 'xs' : 'sm'}
-          variant="outline"
-          disabled={pending}
-          onClick={() => onAction({ action: 'rerun' })}
-        >
-          Re-run stage
+          Run this stage only
         </Button>
       )}
       {available.blockedReason && (
         <span className="text-xs text-muted-foreground">{available.blockedReason}</span>
       )}
-      {(available.runThrough ||
-        available.rebuildDescendants ||
-        available.run ||
-        available.continue ||
-        available.rerun) && (
+      {(scoped || (allowRecheck && available.rerun)) && (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button
-              size={compact ? 'xs' : 'sm'}
-              variant="ghost"
-              aria-label="More execution actions"
-              disabled={pending}
-            >
-              …
+            <Button size={size} variant="ghost" aria-label="More stage actions" disabled={pending}>
+              <MoreHorizontal />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent>
-            {compact && available.rerun && available.continue && (
-              <DropdownMenuItem onSelect={() => onAction({ action: 'rerun' })}>
-                Re-run stage
+            {scoped && (
+              <DropdownMenuItem onSelect={() => onAction({ scope: 'through' })}>
+                Run up to this stage
               </DropdownMenuItem>
             )}
-            {(available.runThrough ?? true) && (
-              <DropdownMenuItem onSelect={() => onAction({ action: 'run', scope: 'through' })}>
-                Run through stage
+            {scoped && (
+              <DropdownMenuItem onSelect={() => onAction({ scope: 'descendants' })}>
+                Run from this stage to the end
               </DropdownMenuItem>
             )}
-            {(available.rebuildDescendants ?? true) && (
-              <DropdownMenuItem
-                onSelect={() => onAction({ action: 'rerun', scope: 'descendants' })}
-              >
-                Rebuild descendants
+            {allowRecheck && available.rerun && (
+              <DropdownMenuItem onSelect={() => onAction({ scope: 'stage', recheck: true })}>
+                Re-check output
               </DropdownMenuItem>
             )}
           </DropdownMenuContent>
@@ -128,35 +108,53 @@ export function StageExecutionControls({
     </div>
   );
 }
+
+function ConcurrencyInput({ run, actions }: { run: RunDetailDto; actions: RunExecutionActions }) {
+  return (
+    <label className="flex items-center justify-between gap-3 px-2 py-1.5 text-sm">
+      Concurrent branches
+      <Input
+        aria-label="Concurrent branches"
+        type="number"
+        min={1}
+        step={1}
+        className="h-7 w-16"
+        defaultValue={run.concurrentBranches ?? 2}
+        key={`${run.id}-${run.concurrentBranches}`}
+        disabled={!run.availableActions?.changeConcurrency || actions.concurrency.isPending}
+        onKeyDown={(event) => event.stopPropagation()}
+        onBlur={(event) => {
+          const value = event.currentTarget.valueAsNumber;
+          if (Number.isSafeInteger(value) && value > 0 && value !== run.concurrentBranches)
+            actions.concurrency.mutate(value);
+        }}
+      />
+    </label>
+  );
+}
+
+/** A run's buttons: one main action for its state (Start / Pause / Continue) and a ⋯ menu
+ * with Stop, `menuItems` and Concurrent branches. `start` renders the start button
+ * (Start test run on the canvas, Run again on the Run page); `startOver` its menu twin. */
 export function RunExecutionToolbar({
   run,
   actions,
+  start,
+  startOver,
+  newRunReason = null,
 }: {
-  run: RunDetailDto;
+  run: RunDetailDto | undefined;
   actions: RunExecutionActions;
+  start: ReactNode;
+  startOver?: ReactNode;
+  newRunReason?: string | null;
 }) {
-  const available = run.availableActions;
-  if (!available) return null;
-  const pending =
-    actions.runAll.isPending || actions.confirmExecution.isPending || actions.runStage.isPending;
+  const primary = primaryRunAction(run, newRunReason);
+  const pending = actions.runStage.isPending || actions.confirmExecution.isPending;
   return (
     <div className="flex flex-wrap items-center gap-2">
-      {available.runBlueprint && (
-        <Button size="sm" disabled={pending} onClick={() => actions.runAll.mutate('run')}>
-          Run blueprint
-        </Button>
-      )}
-      {available.rerunBlueprint && (
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={pending}
-          onClick={() => actions.runAll.mutate('rerun')}
-        >
-          Re-run blueprint
-        </Button>
-      )}
-      {available.pause && (
+      {primary === 'start' && start}
+      {primary === 'pause' && (
         <Button
           size="sm"
           variant="outline"
@@ -166,165 +164,118 @@ export function RunExecutionToolbar({
           Pause
         </Button>
       )}
-      {available.resume && (
+      {primary === 'continue' && (
         <Button
           size="sm"
-          variant="outline"
-          disabled={actions.resume.isPending}
+          disabled={actions.resume.isPending || pending}
           onClick={() => actions.resume.mutate()}
         >
-          {run.state === 'CANCELLED' ? 'Continue run' : 'Resume'}
+          Continue
         </Button>
       )}
-      {available.cancel && (
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={actions.cancel.isPending}
-          onClick={() => actions.setConfirmCancel(true)}
-        >
-          Cancel run
-        </Button>
+      {run && (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button size="sm" variant="ghost" aria-label="More run actions">
+              <MoreHorizontal />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-60">
+            {run.availableActions?.cancel && (
+              <DropdownMenuItem onSelect={() => actions.setConfirmCancel(true)}>
+                Stop run
+              </DropdownMenuItem>
+            )}
+            {primary !== 'start' && startOver}
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel className="sr-only">Settings</DropdownMenuLabel>
+            <ConcurrencyInput run={run} actions={actions} />
+          </DropdownMenuContent>
+        </DropdownMenu>
       )}
-      <label className="flex items-center gap-2 text-xs text-muted-foreground">
-        Concurrent branches
-        <Input
-          aria-label="Concurrent branches"
-          type="number"
-          min={1}
-          step={1}
-          className="h-8 w-20"
-          defaultValue={run.concurrentBranches ?? 2}
-          key={`${run.id}-${run.concurrentBranches}`}
-          disabled={!available.changeConcurrency || actions.concurrency.isPending}
-          onBlur={(event) => {
-            const value = event.currentTarget.valueAsNumber;
-            if (Number.isSafeInteger(value) && value > 0 && value !== run.concurrentBranches)
-              actions.concurrency.mutate(value);
-          }}
-        />
-      </label>
+      {primary === 'start' && newRunReason && run && (
+        <span className="max-w-56 truncate text-xs text-muted-foreground" title={newRunReason}>
+          {newRunReason}
+        </span>
+      )}
     </div>
   );
 }
+
+/** Confirms an action that replaces finished work or needs a decision; one plan, one button. */
 export function ExecutionPlanDialog({ actions }: { actions: RunExecutionActions }) {
+  const plan = actions.executionPlan;
+  const names = (keys: string[]) => keys.map(actions.stageLabel).join(', ');
   return (
     <>
       <AlertDialog
-        open={actions.executionPlans !== null}
+        open={plan !== null}
         onOpenChange={(open) => {
-          if (!open && !actions.confirmExecution.isPending) actions.setExecutionPlans(null);
+          if (!open && !actions.confirmExecution.isPending) actions.setExecutionPlan(null);
         }}
       >
-        <AlertDialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+        <AlertDialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
           <AlertDialogHeader>
-            <AlertDialogTitle>Review execution plan</AlertDialogTitle>
+            <AlertDialogTitle>
+              {plan?.blockedReason ? 'This can’t run yet' : 'Replace finished work?'}
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              History and spending are preserved. Re-run regenerates completed work. Costs below are
-              estimates from prior attempts.
+              {plan?.blockedReason ?? 'Earlier outputs and spending stay in the run’s history.'}
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <div className="flex flex-col gap-3">
-            {actions.executionPlans?.map((plan) => (
-              <div
-                key={`${plan.request.mode}-${plan.request.scope}`}
-                className="rounded-lg border p-3 text-sm"
-              >
-                <h3 className="font-medium">
-                  {plan.request.itemIndex !== undefined
-                    ? `Re-run item ${plan.request.itemIndex + 1} of ${actions.stageLabel(plan.request.stageKey!)}`
-                    : plan.request.mode === 'validate'
-                      ? 'Check existing output'
-                      : plan.request.mode === 'reuse'
-                        ? 'Use existing outputs'
-                        : plan.request.scope === 'through'
-                          ? 'Run through stage'
-                          : plan.request.scope === 'descendants'
-                            ? plan.request.stageKey
-                              ? 'Rebuild descendants'
-                              : plan.request.action === 'rerun'
-                                ? 'Re-run blueprint'
-                                : 'Run blueprint'
-                            : 'Apply definition and run selected stage'}
-                </h3>
-                <p className="mt-2">
-                  Will run: {plan.runStageKeys.map(actions.stageLabel).join(', ') || 'Nothing'}
-                </p>
-                {!!plan.retainedItemCount && (
-                  <p>Preserve {plan.retainedItemCount} completed items.</p>
-                )}
-                {plan.request.action === 'rerun' && (
-                  <p>
-                    {plan.request.itemIndex !== undefined
-                      ? 'Only the selected item will be regenerated.'
-                      : 'Completed items in this selection will be regenerated.'}
-                  </p>
-                )}
-                {!!plan.availabilityChangedStageKeys?.length && (
-                  <p className="text-sm">
-                    Enable/disable changes:{' '}
-                    {plan.availabilityChangedStageKeys.map(actions.stageLabel).join(', ')}. Disabled
-                    outputs cannot be consumed.
-                  </p>
-                )}
-                {!!plan.staleStageKeys.length && (
-                  <p>
-                    Outdated definitions: {plan.staleStageKeys.map(actions.stageLabel).join(', ')}
-                  </p>
-                )}
-                {!!plan.invalidatedStageKeys.length && (
-                  <p>
-                    Mark stale without running:{' '}
-                    {plan.invalidatedStageKeys.map(actions.stageLabel).join(', ')}
-                  </p>
-                )}
-                <p className="mt-2">
-                  Previous cost: ${plan.estimatedRerunUsd.toFixed(2)}; unfinished work may cost
-                  more.
-                </p>
-                {plan.blockedReason && (
-                  <p className="mt-2 text-destructive">{plan.blockedReason}</p>
-                )}
-                {!!plan.uncertainAttemptIds?.length && !plan.request.allowUncertainRestart && (
-                  <Button
-                    className="mt-2"
-                    size="sm"
-                    variant="outline"
-                    disabled={actions.acceptUncertainRestart.isPending}
-                    onClick={() => actions.acceptUncertainRestart.mutate(plan)}
-                  >
-                    I understand possible additional charges; review restart
-                  </Button>
-                )}
-                <Button
-                  className="mt-3"
-                  size="sm"
-                  disabled={
-                    !!plan.blockedReason ||
-                    actions.confirmExecution.isPending ||
-                    !plan.runStageKeys.length
-                  }
-                  onClick={() => actions.confirmExecution.mutate(plan)}
-                >
-                  Confirm this plan
-                </Button>
-              </div>
-            ))}
-          </div>
+          {plan && !plan.blockedReason && (
+            <div className="flex flex-col gap-2 text-sm">
+              <p>
+                Runs {plan.runStageKeys.length}{' '}
+                {plan.runStageKeys.length === 1 ? 'stage' : 'stages'}: {names(plan.runStageKeys)}
+              </p>
+              {!!plan.invalidatedStageKeys.length && (
+                <p>Marks stale without running: {names(plan.invalidatedStageKeys)}</p>
+              )}
+              {!!plan.availabilityChangedStageKeys?.length && (
+                <p>Enabled or disabled: {names(plan.availabilityChangedStageKeys)}</p>
+              )}
+              {!!plan.retainedItemCount && <p>Keeps {plan.retainedItemCount} finished items.</p>}
+              <p className="text-muted-foreground">
+                Last time these cost ${plan.estimatedRerunUsd.toFixed(2)}.
+              </p>
+            </div>
+          )}
+          {plan && !!plan.uncertainAttemptIds?.length && !plan.request.allowUncertainRestart && (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={actions.acceptUncertainRestart.isPending}
+              onClick={() => actions.acceptUncertainRestart.mutate(plan)}
+            >
+              I understand there may be extra charges
+            </Button>
+          )}
           <AlertDialogFooter>
             <AlertDialogCancel disabled={actions.confirmExecution.isPending}>
-              Cancel
+              {plan?.blockedReason ? 'Close' : 'Cancel'}
             </AlertDialogCancel>
+            {plan && !plan.blockedReason && (
+              <AlertDialogAction
+                disabled={actions.confirmExecution.isPending || !plan.runStageKeys.length}
+                onClick={(event) => {
+                  event.preventDefault();
+                  actions.confirmExecution.mutate(plan);
+                }}
+              >
+                Run
+              </AlertDialogAction>
+            )}
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
       <AlertDialog open={actions.confirmCancel} onOpenChange={actions.setConfirmCancel}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Cancel this run?</AlertDialogTitle>
+            <AlertDialogTitle>Stop this run?</AlertDialogTitle>
             <AlertDialogDescription>
-              Stop execution and preserve completed outputs. You can continue this run later.
-              Provider requests already submitted may still incur charges.
+              Finished outputs are kept and you can continue later. Requests already sent to a
+              provider may still be charged.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -333,7 +284,7 @@ export function ExecutionPlanDialog({ actions }: { actions: RunExecutionActions 
               disabled={actions.cancel.isPending}
               onClick={() => actions.cancel.mutate()}
             >
-              Cancel run
+              Stop run
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

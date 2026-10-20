@@ -69,7 +69,7 @@ credit, a model that's no longer available, or the service being down.
 
 - Check the key in **Settings**. See [AI provider keys](../provider-keys.md).
 - Check you have credit with the provider.
-- Try again later, then **Resume** the run.
+- Try again later, then **Continue** the run.
 
 A stage retries these automatically up to its **Retries**. After that, the stage fails.
 
@@ -89,10 +89,11 @@ Running into a budget limit pauses the run, it doesn't fail it. See
 ## After a failure
 
 1. Fix the cause: the prompt, the check, the key, the budget.
-2. If you changed the blueprint, remember a run uses the version it started with. To use your changes,
-   save a new version and review the explicit reuse/rebuild plan from the [canvas](./canvas-runs.md).
-3. If you only fixed something outside the blueprint, such as a key or your credit, select **Resume**, or
-   **Continue stage** to execute unfinished work while keeping passed items. Choose **Re-run stage**
+2. If you changed the blueprint on the canvas, **Continue** the test run there: it applies your edits.
+   A production run always uses its saved version; save a new version and start a new run with it.
+   See [Test runs on the canvas](./canvas-runs.md).
+3. If you only fixed something outside the blueprint, such as a key or your credit, select **Continue**, or
+   **Run this stage only** to run just that stage while keeping passed items. Choose **Run from this stage to the end**
    only when you want to regenerate completed items too. See [Retries](./retries.md).
 
 Still stuck? See [Troubleshooting](../troubleshooting.md).

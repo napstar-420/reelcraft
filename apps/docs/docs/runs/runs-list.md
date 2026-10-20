@@ -42,8 +42,8 @@ Select a row to open its [run page](./run-page.md).
 On the right of a row, buttons appear when they apply to that run:
 
 - **Pause run** for a running run;
-- **Resume run** for a paused or failed run where that's possible;
-- **Cancel run**, with a confirmation.
+- **Continue run** for a paused or failed run where that's possible;
+- **Stop run**, with a confirmation, for a run that is running or paused.
 
 See [Pause, resume and cancel](./pause-resume-cancel.md).
 

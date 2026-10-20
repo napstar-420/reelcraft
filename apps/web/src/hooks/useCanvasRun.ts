@@ -4,10 +4,10 @@ import { useQuery } from '@tanstack/react-query';
 import { api } from '../api/client';
 import { useRun } from './useRun';
 
-/** Backs the blueprint canvas's run dock: tracks which run is "active" for
+/** Backs the blueprint canvas's run dock: tracks which test run is "active" for
  * this blueprint (most recent by default, or whichever one was just
  * started/switched to) and layers `useRun`'s live-updating detail fetch on
- * top of it. */
+ * top of it. Production runs (saved versions) never show here. */
 export function useCanvasRun(blueprintId: string | undefined) {
   const [searchParams, setSearchParams] = useSearchParams();
   const activeRunId = searchParams.get('run') || undefined;
@@ -25,9 +25,8 @@ export function useCanvasRun(blueprintId: string | undefined) {
   );
 
   const latestRuns = useQuery({
-    queryKey: ['runs', { blueprintId, limit: 20 }],
-    queryFn: () =>
-      api.listRuns({ blueprintId, includeDryRuns: true, includeDrafts: true, limit: 20 }),
+    queryKey: ['runs', { blueprintId, draftsOnly: true, limit: 20 }],
+    queryFn: () => api.listRuns({ blueprintId, includeDryRuns: true, draftsOnly: true, limit: 20 }),
     enabled: Boolean(blueprintId),
   });
 

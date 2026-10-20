@@ -83,7 +83,7 @@ together.
 
 ## Running to a stage
 
-**Run stage** executes only the selected eligible stage. **Run through stage** explicitly includes required unfinished prerequisites. Stages outside the selected scope remain Pending. A reused earlier run doesn't re-run a branch you didn't ask for.
+**Run this stage only** runs just the selected stage. **Run up to this stage** also runs unfinished stages before it. Stages outside the selected scope remain Pending. A reused earlier run doesn't re-run a branch you didn't ask for.
 
 ## Changing **Runs after** later
 
