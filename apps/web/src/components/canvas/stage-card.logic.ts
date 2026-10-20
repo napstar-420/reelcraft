@@ -55,6 +55,7 @@ const OUTPUT_LABELS: Record<OutputDef['kind'], string> = {
   'media.audio': 'audio',
   'media.video_list': 'videos',
   'media.image_list': 'images',
+  'media.model': '3D model',
   'file.subtitles': 'subtitles',
   timeline: 'timeline',
 };

@@ -11,6 +11,8 @@ export const Modality = z.enum([
   'audio',
   'media',
   'browser',
+  /** An agent that writes and runs code in a workspace (e.g. a Blender scene). */
+  'code',
   'compute',
   'human',
   'publish',
@@ -27,6 +29,8 @@ export const ArtifactKind = z.enum([
   'media.video_list',
   /** An ordered list of images from one Generate Image run (`config.count` > 1). */
   'media.image_list',
+  /** A 3D model file (`.glb`, `.fbx`, `.obj`, `.blend`): rendered by a scene, never placed on a timeline. */
+  'media.model',
   'file.subtitles',
   'timeline',
 ]);
