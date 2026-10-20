@@ -1,6 +1,6 @@
 ---
 title: Timeline checks
-description: The seven automatic checks every timeline goes through, and how to fix each one.
+description: The seven automatic checks every timeline goes through, the layout tips, and how to fix each one.
 ---
 
 Whenever a stage makes a timeline, or you submit one from the [editor](./timeline-editor.md), Reelcraft
@@ -19,11 +19,28 @@ seven are shown for every timeline, so you can see which pass.
 
 If the schema check fails, only it is reported, since the others can't be worked out.
 
+## Layout tips
+
+Five more checks look at how the picture reads. They are **tips**: they never fail a stage or block a submit,
+because a layout is a judgement call. They only look at things placed in a box (drawings, words and clips
+placed by [Compose Timeline](../stage-types/compose-timeline.md)).
+
+| Tip                      | Shows when                                                                              |
+| ------------------------ | --------------------------------------------------------------------------------------- |
+| `timeline.on_screen`     | More than a tenth of a placed item is outside the frame (or the world, for world items) |
+| `timeline.text_overlap`  | Two pieces of words cover each other for more than 0.2 seconds                          |
+| `timeline.min_on_screen` | A placed item shows for less than a second                                              |
+| `timeline.text_size`     | Words are smaller than 2.5% of the frame's short side, as seen on screen                |
+| `timeline.safe_area`     | Words come within 4% of the edge of the frame                                           |
+
+Words placed in the world are measured as the camera shows them. If the layout came from a model, add the tip's
+rule to the layout prompt; in the editor, move or resize the item.
+
 ## In the editor
 
 The [timeline editor](./timeline-editor.md) runs these checks on your draft as you work, a moment after
 each change, and nothing is saved or spent. The top of the page says **No problems** or, for example,
-**2 problems**. Select it for a list in plain words, and **Show** to jump to the clip. The clips a problem is
+**2 problems**, or **1 tip** when only tips are left. Select it for a list in plain words, and **Show** to jump to the clip. The clips a problem is
 about are outlined in red with an alert badge:
 
 - a missing file: the clip that uses it;

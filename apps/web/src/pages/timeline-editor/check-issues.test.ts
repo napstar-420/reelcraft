@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { issuesFrom, itemKey, problemsByItem } from './check-issues';
+import { issuesFrom, issuesLabel, itemKey, problemsByItem } from './check-issues';
 
 const results = [
   { name: 'timeline.styles_exist', pass: true },
@@ -48,5 +48,38 @@ describe('problemsByItem', () => {
       { name: 'b', title: 'B', detail: '', targets: [{ trackId: 't', itemIndex: 3 }] },
     ]);
     expect(map.get(itemKey('t', 3))).toEqual(['A', 'B']);
+  });
+});
+
+describe('advice', () => {
+  const withAdvice = [
+    {
+      name: 'timeline.coverage',
+      pass: false,
+      message: 'gap',
+      targets: [{ trackId: 'video', itemIndex: 0 }],
+    },
+    {
+      name: 'timeline.text_size',
+      pass: true,
+      warning: true,
+      message: '"Tiny" is 14px tall',
+      targets: [{ trackId: 'overlay', itemIndex: 2 }],
+    },
+    { name: 'timeline.on_screen', pass: true },
+  ];
+
+  it('lists advice after the problems, and never marks a clip with it', () => {
+    const issues = issuesFrom(withAdvice);
+    expect(issues.map((i) => [i.title, i.advice ?? false])).toEqual([
+      ['Gap in the video', false],
+      ['Words too small', true],
+    ]);
+    expect([...problemsByItem(issues).keys()]).toEqual([itemKey('video', 0)]);
+  });
+
+  it('counts problems and tips apart', () => {
+    expect(issuesLabel(issuesFrom(withAdvice))).toBe('1 problem · 1 tip');
+    expect(issuesLabel(issuesFrom(withAdvice.slice(1)))).toBe('1 tip');
   });
 });

@@ -43,6 +43,8 @@ export const TimelineCheckResultDto = z.object({
   targets: z
     .array(z.object({ trackId: z.string(), itemIndex: z.number().int().nonnegative() }))
     .optional(),
+  /** Advice: the check passed, but the message says what could read better. */
+  warning: z.boolean().optional(),
 });
 export type TimelineCheckResultDto = z.infer<typeof TimelineCheckResultDto>;
 
