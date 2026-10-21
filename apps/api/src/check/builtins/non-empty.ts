@@ -32,6 +32,8 @@ export const nonEmpty: BuiltinCheck<z.infer<typeof Params>> = {
     if (!params.path && artifact.kind.startsWith('media.') && !isEmpty(artifact.probe)) {
       return { pass: true };
     }
+    // A file output (subtitles) keeps its content in the stored file; the check sees no data.
+    if (!params.path && artifact.kind.startsWith('file.')) return { pass: true };
     const value = checkValue(artifact, params.path);
     return isEmpty(value)
       ? { pass: false, message: `non_empty: value at "${params.path ?? '$'}" is empty` }
