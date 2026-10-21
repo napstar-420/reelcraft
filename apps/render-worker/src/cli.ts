@@ -3,6 +3,7 @@ import path from 'node:path';
 import { bundle } from '@remotion/bundler';
 import { renderMedia, renderStill, selectComposition } from '@remotion/renderer';
 import { Timeline } from '@reelcraft/shared';
+import { cutoutPicture } from './cutout';
 import { renderMotion } from './motion';
 import { timelineEntry } from './timeline-entry';
 
@@ -14,6 +15,7 @@ type RenderJob = {
 
 async function main() {
   if (process.argv[2] === 'motion') return motionMain(process.argv.slice(3));
+  if (process.argv[2] === 'cutout') return cutoutMain(process.argv.slice(3));
   const [timelinePath, resourcesPath, quality, output, browserExecutable] = process.argv.slice(2);
   if (!timelinePath || !resourcesPath || !quality || !output) {
     throw new Error(
@@ -75,6 +77,26 @@ async function main() {
     crf: job.quality === 'draft' ? 28 : 18,
     ...(job.browserExecutable ? { browserExecutable: job.browserExecutable } : {}),
   });
+}
+
+/** `cutout <input> <output.png> [tolerance] [feather]`: the picture with its plain background
+ * made see-through. */
+async function cutoutMain(args: string[]) {
+  const [input, output, tolerance, feather] = args;
+  if (!input || !output) {
+    throw new Error('Usage: render-worker cutout <input> <output.png> [tolerance] [feather]');
+  }
+  const number = (value: string | undefined, fallback: number, max: number) => {
+    const parsed = value === undefined ? Number.NaN : Number(value);
+    return Number.isFinite(parsed) ? Math.min(max, Math.max(0, parsed)) : fallback;
+  };
+  const removed = await cutoutPicture({
+    input,
+    output,
+    tolerance: number(tolerance, 0.12, 1),
+    feather: number(feather, 1, 4),
+  });
+  console.log(`cut out: ${Math.round(removed * 100)}% of the picture was background`);
 }
 
 /** `motion <source.json> <output> [browser] [--stills]`. The files the code loads sit next to

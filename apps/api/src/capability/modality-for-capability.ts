@@ -16,6 +16,8 @@ const MODALITIES = new Set<Modality>([
 const MODALITY_OF: Record<string, Modality> = {
   // A text model writes the code; the key is about what it makes.
   'motion.generate': 'text',
+  // Runs locally, with no model.
+  'image.cutout': 'compute',
 };
 
 export function modalityForCapability(capability: string): Modality {

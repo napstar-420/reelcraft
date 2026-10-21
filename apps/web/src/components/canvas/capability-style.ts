@@ -6,6 +6,7 @@ import {
   Globe,
   Image as ImageIcon,
   Music,
+  Scissors,
   Sparkles,
   UserRound,
   WandSparkles,
@@ -28,6 +29,7 @@ const DARK = 'text-slate-900';
 const CAPABILITY_STYLES: Record<string, CapabilityStyle> = {
   'text.generate': { icon: FileText, chip: 'bg-emerald-500', ink: WHITE },
   'image.generate': { icon: ImageIcon, chip: 'bg-pink-500', ink: WHITE },
+  'image.cutout': { icon: Scissors, chip: 'bg-pink-500', ink: WHITE },
   'video.generate': { icon: Clapperboard, chip: 'bg-orange-500', ink: WHITE },
   'video.concat': { icon: Clapperboard, chip: 'bg-orange-500', ink: WHITE },
   'timeline.render': { icon: Clapperboard, chip: 'bg-orange-500', ink: WHITE },

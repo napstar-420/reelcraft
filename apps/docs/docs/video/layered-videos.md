@@ -16,6 +16,7 @@ your channel's library** and picked from there:
 | Kind                  | Made during a run by                                                                                                                        | Or uploaded as    |
 | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- |
 | Pictures              | [Generate Image](../stage-types/generate-image.md)                                                                                          | **Image**         |
+| Cut-out characters    | [Generate Image](../stage-types/generate-image.md) on a plain colour, then [Cut Out Background](../stage-types/cut-out-background.md)       | **Image**         |
 | Clips                 | [Generate Video](../stage-types/generate-video.md), [Flow](../stage-types/generate-video-with-flow.md)                                      | **Video**         |
 | Voice-over            | [Generate Speech](../stage-types/generate-speech.md)                                                                                        | **Audio**         |
 | Background music      | [Generate Music](../stage-types/generate-music.md)                                                                                          | **Audio**         |
