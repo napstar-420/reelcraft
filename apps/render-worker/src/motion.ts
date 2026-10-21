@@ -56,14 +56,29 @@ export function motionWebpackOverride(motionFiles: ReadonlySet<string>): Webpack
   });
 }
 
-function rootSource(source: MotionSource): string {
+export function rootSource(source: MotionSource): string {
   const frames = Math.max(1, Math.round(source.durationSec * source.fps));
+  const fonts = (source.fonts ?? []).map((font) => ({ family: font.family, name: font.name }));
+  // With fonts, the graphic waits for them before its first frame, so its words never show in a
+  // fallback font. The fonts load from the files copied in next to it.
+  const component = fonts.length ? 'WithFonts' : 'Motion';
   return [
     "import React from 'react';",
-    "import { Composition, registerRoot } from 'remotion';",
+    "import { Composition, registerRoot, staticFile } from 'remotion';",
     "import Motion from './Motion';",
+    ...(fonts.length
+      ? [
+          "import { useTimelineFonts } from '@reelcraft/timeline-composition/src/graphic/fonts';",
+          `const FONTS = ${JSON.stringify(fonts)}.map((font) => ({ family: font.family, url: staticFile(font.name) }));`,
+          'const WithFonts = (props: Record<string, unknown>) => {',
+          '  useTimelineFonts(FONTS);',
+          '  const Component = Motion as React.ComponentType<Record<string, unknown>>;',
+          '  return <Component {...props} />;',
+          '};',
+        ]
+      : []),
     'registerRoot(() => (',
-    `  <Composition id="${COMPOSITION_ID}" component={Motion as React.ComponentType<Record<string, unknown>>}`,
+    `  <Composition id="${COMPOSITION_ID}" component={${component} as React.ComponentType<Record<string, unknown>>}`,
     `    width={${source.width}} height={${source.height}} fps={${source.fps}} durationInFrames={${frames}}`,
     `    defaultProps={${JSON.stringify(source.props ?? {})}} />`,
     '));',

@@ -106,3 +106,12 @@ it shows a placeholder; draft and final renders draw it. Timelines without motio
 
 Clips stay the right choice when a graphic should be checked, approved or reused on its own; embedding saves
 a render per graphic and draws at the video's own resolution.
+
+## Addendum: fonts (2026-10-21)
+
+A motion graphic can use library fonts. A `MotionSource` carries `fonts` (family, file name, handle): Generate
+Motion Graphic takes them from its `assets` input and tells the model the family names. The code only names a
+family; nothing about loading fonts goes into the code or the rules. Render Motion Graphic copies each font in
+with its file's own extension, and the generated root waits for the fonts (the timeline composition's
+`useTimelineFonts`) before the first frame. Embedded, Compose Timeline adds the graphic's fonts to the timeline's
+`fonts`, which the composition already loads.

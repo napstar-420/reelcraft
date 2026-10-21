@@ -147,6 +147,7 @@ describe('composeTimeline', () => {
       background: 'transparent' as const,
       props: { title: 'Hi' },
       assets: [{ name: 'logo.png', handle: 'artifact:logo' }],
+      fonts: [{ name: 'font-brand', handle: 'asset:brand', family: 'Brand Sans' }],
       notes: 'A title.',
     };
     const { timeline } = composeTimeline(
@@ -171,6 +172,8 @@ describe('composeTimeline', () => {
       h: 540,
     });
     expect(timeline.version).toBe(2);
+    // Its fonts load with the timeline's, so the final render draws its words in them.
+    expect(timeline.fonts).toEqual([{ family: 'Brand Sans', handle: 'asset:brand' }]);
     expect(() =>
       composeTimeline(base({ plan: plan([{ kind: 'motion', asset: 'title', atSec: 0 }]) })),
     ).toThrow(/no motion asset "title"/);

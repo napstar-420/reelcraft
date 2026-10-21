@@ -31,6 +31,8 @@ export function motionBrief(p: {
   durationSec?: number | undefined;
   props?: Record<string, unknown> | undefined;
   files: string[];
+  /** Font families the code can name; they are loaded before the first frame. */
+  fonts?: string[] | undefined;
   style?: string | undefined;
 }): string {
   const lines = [
@@ -51,5 +53,10 @@ export function motionBrief(p: {
       ? `Files you can load with staticFile(): ${p.files.join(', ')}`
       : 'There are no files to load.',
   );
+  if (p.fonts?.length) {
+    lines.push(
+      `Fonts you can use by name (set fontFamily to it; they are loaded before the first frame, so do not load them yourself): ${p.fonts.map((family) => `'${family}'`).join(', ')}`,
+    );
+  }
   return `<motion_graphic>\n${lines.join('\n')}\n</motion_graphic>`;
 }

@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { Injectable } from '@nestjs/common';
-import { MotionSource } from '@reelcraft/shared';
+import { MotionSource, motionFiles } from '@reelcraft/shared';
 import type {
   ComputeSpec,
   JobHandle,
@@ -48,9 +48,22 @@ export function motionRenderSpec(p: {
     if (sourceKey) inputs.push({ sourceKey, asFilename: asset.name });
     else missing.push(asset.name);
   }
+  // A font is copied in with its file's own extension, so the browser can tell what it is.
+  const fonts = (p.source.fonts ?? []).flatMap((font) => {
+    const sourceKey = p.resources[font.handle]?.sourceKey;
+    if (!sourceKey) {
+      missing.push(`${font.name} (the font ${font.family})`);
+      return [];
+    }
+    const ext = path.extname(sourceKey).toLowerCase();
+    const name = ext && !font.name.toLowerCase().endsWith(ext) ? `${font.name}${ext}` : font.name;
+    inputs.push({ sourceKey, asFilename: name });
+    return [{ ...font, name }];
+  });
   if (missing.length) {
     throw new Error(`motion.render cannot find the file(s) ${missing.join(', ')}`);
   }
+  const source = fonts.length ? { ...p.source, fonts } : p.source;
   const worker = path.resolve(__dirname, '../../../../render-worker/dist/cli.js');
   return {
     command: process.execPath,
@@ -63,7 +76,7 @@ export function motionRenderSpec(p: {
       ...(p.stills ? ['--stills'] : []),
     ],
     inputs,
-    files: [{ asFilename: SOURCE_FILE, contents: JSON.stringify(p.source) }],
+    files: [{ asFilename: SOURCE_FILE, contents: JSON.stringify(source) }],
     outputFilename: motionOutputFile(p.source).filename,
     maxWaitSec: p.maxWaitSec,
   };
@@ -106,7 +119,7 @@ export class MotionRenderCapability extends LocalComputeCapability<MotionRenderC
   /** The files the graphic loads, so the stage runner finds them in storage. */
   resourceHandles(slots: Record<string, unknown>): string[] {
     const source = MotionSource.safeParse(slots.source);
-    return source.success ? (source.data.assets ?? []).map((asset) => asset.handle) : [];
+    return source.success ? motionFiles(source.data).map((file) => file.handle) : [];
   }
 
   validate(_config: MotionRenderConfig, stage: StageDef): ValidationIssue[] {

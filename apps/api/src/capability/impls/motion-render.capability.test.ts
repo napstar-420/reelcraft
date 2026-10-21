@@ -57,6 +57,31 @@ describe('motionRenderSpec', () => {
     });
   });
 
+  it('copies fonts in with their own extension, and names them so in the source', () => {
+    const spec = motionRenderSpec({
+      source: { ...source, fonts: [{ name: 'font-gochi', handle: 'asset:f1', family: 'Gochi' }] },
+      resources: {
+        'artifact:a1': { sourceKey: 'media/x.png' },
+        'asset:f1': { sourceKey: 'assets/gochi.WOFF2' },
+      },
+      maxWaitSec: 60,
+    });
+    expect(spec.inputs).toContainEqual({
+      sourceKey: 'assets/gochi.WOFF2',
+      asFilename: 'font-gochi.woff2',
+    });
+    expect(JSON.parse(spec.files![0]!.contents).fonts).toEqual([
+      { name: 'font-gochi.woff2', handle: 'asset:f1', family: 'Gochi' },
+    ]);
+    expect(() =>
+      motionRenderSpec({
+        source: { ...source, assets: [], fonts: [{ name: 'f', handle: 'asset:x', family: 'X' }] },
+        resources: {},
+        maxWaitSec: 60,
+      }),
+    ).toThrow(/the font X/);
+  });
+
   it('renders an opaque graphic to MP4 and can render stills', () => {
     const spec = motionRenderSpec({
       source: { ...source, background: 'opaque', assets: [] },
