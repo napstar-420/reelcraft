@@ -84,7 +84,15 @@ function itemKindLabel(item: TimelineItem, resource: TimelineResource | undefine
   if (item.type === 'graphic') {
     return item.content.kind === 'text'
       ? { Icon: Type, name: 'Words' }
-      : { Icon: Shapes, name: item.content.kind === 'shape' ? 'Shape' : 'Drawing' };
+      : {
+          Icon: Shapes,
+          name:
+            item.content.kind === 'shape'
+              ? 'Shape'
+              : item.content.kind === 'connector'
+                ? 'Arrow'
+                : 'Drawing',
+        };
   }
   if (resource?.kind === 'media.audio') return { Icon: Music, name: 'Audio' };
   if (resource?.kind === 'media.video') return { Icon: Film, name: 'Video' };

@@ -132,6 +132,8 @@ the ones [Compose Timeline](../stage-types/compose-timeline.md) places and rende
   the timeline's library fonts, or **Other…** to type a family), **Weight** and **Line up**. Words in coloured
   parts also list the **Parts**, each with its own colour; changing the **Words** puts them back in one colour;
 - **Drawing**: **Colour every line**, to give a drawing one colour; **Shape**: which **Shape**, and its **Colour**;
+  **Arrow** (an arrow between two items): its **Bend**, **Heads** and **Colour**. Move either end and the
+  arrow follows;
 - **Box**: **X**, **Y**, **Width** and **Height** in pixels of the frame (or the world), **Turn (°)** and
   **Layer** (higher is on top). With a world, **Placed**: **On the screen** stays put, **In the world** moves
   with the camera;

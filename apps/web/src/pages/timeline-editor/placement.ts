@@ -28,6 +28,7 @@ export function isPlaced(item: TimelineItem): item is PlacedItem {
 export function graphicLabel(item: GraphicItem): string {
   if (item.content.kind === 'text') return item.content.text;
   if (item.content.kind === 'shape') return item.id ?? `${item.content.shape} shape`;
+  if (item.content.kind === 'connector') return `Arrow: ${item.content.from} → ${item.content.to}`;
   return item.id ?? 'Drawing';
 }
 
@@ -114,4 +115,14 @@ export function setRunColor(content: TextContent, index: number, color: string):
   const value = color.trim().slice(0, 40);
   if (value) run.color = value;
   else delete run.color;
+}
+
+/** How much an arrow bends, kept between -1 and 1; straight drops the setting. */
+export function setCurve(
+  arrow: Extract<GraphicItem['content'], { kind: 'connector' }>,
+  value: number,
+): void {
+  const curve = Math.round(Math.min(1, Math.max(-1, finite(value, 0))) * 100) / 100;
+  if (curve) arrow.curve = curve;
+  else delete arrow.curve;
 }

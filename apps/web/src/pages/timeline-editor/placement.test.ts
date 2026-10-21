@@ -9,6 +9,7 @@ import {
   recolorDrawing,
   setAnim,
   setBox,
+  setCurve,
   setRunColor,
   setWords,
 } from './placement';
@@ -129,5 +130,15 @@ describe('placement', () => {
     expect(item.anim).toEqual({ type: 'type', caret: true });
     setAnim(item, { type: 'fade' });
     expect(item.anim).toEqual({ type: 'fade' });
+  });
+
+  it('names an arrow by its ends, and keeps its bend between -1 and 1', () => {
+    const arrow = words({ content: { kind: 'connector', from: 'app', to: 'search' } });
+    expect(graphicLabel(arrow)).toBe('Arrow: app → search');
+    const content = { kind: 'connector' as const, from: 'a', to: 'b' };
+    setCurve(content, 3);
+    expect(content).toEqual({ kind: 'connector', from: 'a', to: 'b', curve: 1 });
+    setCurve(content, 0);
+    expect(content).toEqual({ kind: 'connector', from: 'a', to: 'b' });
   });
 });

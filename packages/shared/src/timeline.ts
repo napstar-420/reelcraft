@@ -127,6 +127,19 @@ export const GraphicContent = z.discriminatedUnion('kind', [
     shape: GraphicShape,
     color: z.string().min(1).max(40).optional(),
   }),
+  z.object({
+    /** An arrow from one item to another, by their ids. It is drawn between where the two are, so
+     * it stays joined when either moves. The item's own box is only where it roughly is. */
+    kind: z.literal('connector'),
+    from: z.string().min(1).max(80),
+    to: z.string().min(1).max(80),
+    /** How much it bends: 0 is straight; positive bends clockwise, negative the other way. */
+    curve: z.number().min(-1).max(1).optional(),
+    /** Where the arrowheads go; left out, at the `to` end. */
+    head: z.enum(['end', 'both', 'none']).optional(),
+    color: z.string().min(1).max(40).optional(),
+    weight: z.enum(['thin', 'normal', 'bold']).optional(),
+  }),
 ]);
 export type GraphicContent = z.infer<typeof GraphicContent>;
 
@@ -171,6 +184,8 @@ export type GraphicCue = z.infer<typeof GraphicCue>;
 export const TimelineItem = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('media'),
+    /** A name other items can point at, such as an arrow's end. */
+    id: z.string().min(1).max(80).optional(),
     handle: z.string(),
     startSec: finiteNonNegative,
     durationSec: finitePositive.optional(),

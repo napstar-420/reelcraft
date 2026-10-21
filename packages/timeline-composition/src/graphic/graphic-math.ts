@@ -516,6 +516,89 @@ export function shapeStrokes(shape: GraphicShape, w: number, h: number): Graphic
   }
 }
 
+/* ---------------------------------------------------------------- connectors */
+
+export type EndBox = { x: number; y: number; w: number; h: number };
+
+/** Where a line from a box's centre towards `toward` leaves the box. */
+function boxEdge(box: EndBox, toward: { x: number; y: number }): { x: number; y: number } {
+  const cx = box.x + box.w / 2;
+  const cy = box.y + box.h / 2;
+  const dx = toward.x - cx;
+  const dy = toward.y - cy;
+  if (dx === 0 && dy === 0) return { x: cx, y: cy };
+  const scale = Math.min(
+    dx === 0 ? Number.POSITIVE_INFINITY : box.w / 2 / Math.abs(dx),
+    dy === 0 ? Number.POSITIVE_INFINITY : box.h / 2 / Math.abs(dy),
+  );
+  return { x: cx + dx * Math.min(scale, 1), y: cy + dy * Math.min(scale, 1) };
+}
+
+/**
+ * The lines of an arrow from one box to another: from the edge of the first, towards the second's
+ * centre, to its edge, a small gap short of each. `curve` bends it (positive clockwise, as a share of
+ * its length); `head` puts arrowheads at the end, both ends or neither. Units are the boxes' own.
+ * Boxes that overlap give no lines.
+ */
+export function connectorStrokes(
+  from: EndBox,
+  to: EndBox,
+  options: {
+    curve?: number | undefined;
+    head?: 'end' | 'both' | 'none' | undefined;
+    headSize: number;
+  },
+): GraphicStroke[] {
+  const centre = (box: EndBox) => ({ x: box.x + box.w / 2, y: box.y + box.h / 2 });
+  let start = boxEdge(from, centre(to));
+  let end = boxEdge(to, centre(from));
+  const length = Math.hypot(end.x - start.x, end.y - start.y);
+  const centres = Math.hypot(centre(to).x - centre(from).x, centre(to).y - centre(from).y);
+  // The edges cross when the boxes overlap: there is nothing between them to draw.
+  const along =
+    (centre(to).x - centre(from).x) * (end.x - start.x) +
+    (centre(to).y - centre(from).y) * (end.y - start.y);
+  if (length < 1 || along <= 0 || centres <= 0) return [];
+  const ux = (end.x - start.x) / length;
+  const uy = (end.y - start.y) / length;
+  const gap = Math.min(length * 0.1, options.headSize * 0.5);
+  start = { x: start.x + ux * gap, y: start.y + uy * gap };
+  end = { x: end.x - ux * gap, y: end.y - uy * gap };
+  const span = length - gap * 2;
+  // A clockwise bend (on a screen, where y points down) pushes the middle to the right of travel.
+  const bend = (options.curve ?? 0) * span * 0.5;
+  const control = {
+    x: (start.x + end.x) / 2 - uy * bend,
+    y: (start.y + end.y) / 2 + ux * bend,
+  };
+  const f = (value: number) => round(value);
+  const strokes: GraphicStroke[] = [
+    {
+      d: bend
+        ? `M ${f(start.x)} ${f(start.y)} Q ${f(control.x)} ${f(control.y)} ${f(end.x)} ${f(end.y)}`
+        : `M ${f(start.x)} ${f(start.y)} L ${f(end.x)} ${f(end.y)}`,
+    },
+  ];
+  const size = Math.min(options.headSize, span * 0.4);
+  const arrowhead = (tip: { x: number; y: number }, back: { x: number; y: number }) => {
+    const bx = tip.x - back.x;
+    const by = tip.y - back.y;
+    const norm = Math.hypot(bx, by) || 1;
+    const dx = bx / norm;
+    const dy = by / norm;
+    const baseX = tip.x - dx * size;
+    const baseY = tip.y - dy * size;
+    const wing = size * 0.6;
+    return {
+      d: `M ${f(baseX - dy * wing)} ${f(baseY + dx * wing)} L ${f(tip.x)} ${f(tip.y)} L ${f(baseX + dy * wing)} ${f(baseY - dx * wing)}`,
+    };
+  };
+  const head = options.head ?? 'end';
+  if (head !== 'none') strokes.push(arrowhead(end, bend ? control : start));
+  if (head === 'both') strokes.push(arrowhead(start, bend ? control : end));
+  return strokes;
+}
+
 /* ---------------------------------------------------------------- picture reveals */
 
 /** The CSS that uncovers a picture `progress` (0 to 1) of the way, for `media` items that should

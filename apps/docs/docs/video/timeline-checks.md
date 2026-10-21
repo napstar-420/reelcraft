@@ -89,6 +89,12 @@ A motion graphic in the timeline uses something its code may not: another packag
 random numbers or CSS animations. The message lists each problem. Fix the code with **Edit code** on the
 Generate Motion Graphic stage, or run that stage again.
 
+### timeline.connectors
+
+An arrow that joins two items can't reach one of its ends: the item it names isn't in the timeline (or has no
+box), or it is on the screen while the arrow is in the world, or the other way round. Such an arrow draws
+nothing. Delete the arrow, or put back the item it pointed at.
+
 ### timeline.canvas_match
 
 The canvas shape, such as 1920 × 1080, doesn't match the aspect ratio set in your

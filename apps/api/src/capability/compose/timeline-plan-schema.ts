@@ -48,6 +48,22 @@ const layer: JsonSchema = {
       },
     },
     shape: { type: 'string', enum: [...GraphicShape.options], description: 'Shape layers.' },
+    fromLayer: str(
+      'An arrow shape that joins two layers: the id of the layer it starts at. Give toLayer too, and no box: it is drawn between them and stays joined.',
+      60,
+    ),
+    toLayer: str('The id of the layer a joining arrow points to.', 60),
+    curve: num(
+      'How much a joining arrow bends: 0 straight, up to 1 clockwise, down to -1 the other way.',
+      -1,
+      1,
+    ),
+    head: {
+      type: 'string',
+      enum: ['end', 'both', 'none'],
+      description:
+        "A joining arrow's heads: at the end (default), both ends, or none for a plain line.",
+    },
     atSec: num('When it appears, in seconds.', 0),
     atCue: str('Words from the narration, copied exactly, that bring it in.'),
     afterLayer: str('Start when this layer ends (it needs a durationSec or a sound).', 60),
@@ -227,4 +243,5 @@ export const TIMELINE_PLAN_GUIDE = `A plan is a list of layers. Each layer is on
 - When: atSec is a time; atCue is words copied exactly from the narration, so the layer appears as they are spoken; afterLayer follows another layer.
 - Use an asset only by its id from the asset list. If none fits, say what is needed instead of inventing an id.
 - Sounds are layers too: voice-over, background music and effects each go on their own track; put music under the voice with ducks.
+- To point from one thing to another, give an arrow shape fromLayer and toLayer (the layers' ids) instead of a box.
 - Keep text short. To colour or bold one word in a line, give runs instead of text. Leave room: boxes that overlap on purpose are fine, by accident are not.`;

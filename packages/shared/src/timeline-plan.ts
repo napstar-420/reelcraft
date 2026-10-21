@@ -60,6 +60,14 @@ export const PlanLayer = z.object({
    * `text`: one line with a word picked out. */
   runs: z.array(TextRun).min(1).max(20).optional(),
   shape: GraphicShape.optional(),
+  /** An arrow shape that joins two layers, by their ids: it runs from one to the other and needs
+   * no box of its own. */
+  fromLayer: z.string().min(1).max(60).optional(),
+  toLayer: z.string().min(1).max(60).optional(),
+  /** How much a joining arrow bends: 0 straight, positive clockwise, negative the other way. */
+  curve: z.number().min(-1).max(1).optional(),
+  /** A joining arrow's heads: at the end (default), both ends, or none (a plain line). */
+  head: z.enum(['end', 'both', 'none']).optional(),
 
   /* When it appears: a time, a phrase said in the narration, or after another layer ends. */
   atSec: finiteNonNegative.optional(),

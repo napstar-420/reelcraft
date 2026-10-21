@@ -41,16 +41,16 @@ called `image-1`, `audio-1`, and so on. An uploaded file keeps its name from the
 
 A plan is a list of **layers**. Every layer has a **kind**:
 
-| Kind       | What it is                                         | It needs                    |
-| ---------- | -------------------------------------------------- | --------------------------- |
-| `image`    | A picture                                          | `asset`                     |
-| `video`    | A clip                                             | `asset`                     |
-| `audio`    | A sound: voice-over, music or an effect            | `asset`                     |
-| `drawing`  | A drawing (SVG lines) drawn on                     | `asset`, and a box          |
-| `motion`   | A motion graphic, drawn from its code              | `asset`                     |
-| `text`     | Words                                              | `text` or `runs`, and a box |
-| `shape`    | An arrow, circle, underline, box, highlight, check | `shape`, and a box          |
-| `captions` | The voice-over's words, timed to the speech        | word timings                |
+| Kind       | What it is                                         | It needs                                      |
+| ---------- | -------------------------------------------------- | --------------------------------------------- |
+| `image`    | A picture                                          | `asset`                                       |
+| `video`    | A clip                                             | `asset`                                       |
+| `audio`    | A sound: voice-over, music or an effect            | `asset`                                       |
+| `drawing`  | A drawing (SVG lines) drawn on                     | `asset`, and a box                            |
+| `motion`   | A motion graphic, drawn from its code              | `asset`                                       |
+| `text`     | Words                                              | `text` or `runs`, and a box                   |
+| `shape`    | An arrow, circle, underline, box, highlight, check | `shape`, and a box (or an arrow's two layers) |
+| `captions` | The voice-over's words, timed to the speech        | word timings                                  |
 
 **Where.** `x`, `y` is the top left and `w`, `h` the size, as fractions of the frame: `x: 0.1, w: 0.3` is a box
 from 10% to 40% of the way across. A picture or clip with no box fills the frame. Layers can be bigger than
@@ -75,6 +75,13 @@ Pictures and clips can pop, fade, slide or stay.
 **Look.** `color`, `size` (letter height, as a fraction of the shorter side; it shrinks to fit the box), `font`
 (`hand`, `body`, the name of a **Font** asset from the library, or any font family), `weight`, `align`. A font
 asset loads from its file under its family name, and the theme's `fontHand` and `fontBody` can name one too.
+
+**Arrows between things.** An `arrow` shape with `fromLayer` and `toLayer` (two layers' ids) joins them
+instead of sitting in a box of its own: it runs from the edge of one to the edge of the other and stays joined
+if either moves in the [timeline editor](../video/timeline-editor.md). `curve` bends it (0 straight, up to 1
+clockwise, down to -1 the other way) and `head` puts arrowheads at the `end` (the default), `both` ends or
+`none`. Both layers need a box, and both must be on the screen or both in the world. Arrows draw on like any
+line, with the pen if there is one.
 
 **Words in more than one colour.** Instead of `text`, a text layer can give `runs`: the same words in parts,
 each with its own `color`, `font` or `weight`, such as
