@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.12.0](https://github.com/napstar-420/reelcraft/compare/v0.11.0...v0.12.0) (2026-10-21)
+
+
+### Features
+
+* 2D and 3D animated scenes with Blender (Write Scene and Render Scene) ([#180](https://github.com/napstar-420/reelcraft/issues/180)) ([7693a01](https://github.com/napstar-420/reelcraft/commit/7693a01368dfc1f7d7a103867121c1dea0ca5646))
+* add Claude (Claude Code CLI) as a provider and assistant ([#175](https://github.com/napstar-420/reelcraft/issues/175)) ([7f6e43a](https://github.com/napstar-420/reelcraft/commit/7f6e43ae74791a89f3ec089adf194b97d906068a))
+* edit a motion graphic's code on the run, with a rendered preview ([#185](https://github.com/napstar-420/reelcraft/issues/185)) ([82da059](https://github.com/napstar-420/reelcraft/commit/82da05999953daac1bd22093abc9d61ef3cfd500))
+* embed motion graphics in the timeline, drawn from their code ([#186](https://github.com/napstar-420/reelcraft/issues/186)) ([b2c2778](https://github.com/napstar-420/reelcraft/commit/b2c2778301cf7766d28c57f5396ccf29e9146089))
+* fonts as library assets ([#183](https://github.com/napstar-420/reelcraft/issues/183)) ([2653221](https://github.com/napstar-420/reelcraft/commit/265322158339449197736adabf0f5a6167889acb))
+* Generate Motion Graphic and Render Motion Graphic stages ([#181](https://github.com/napstar-420/reelcraft/issues/181)) ([d7f1f7e](https://github.com/napstar-420/reelcraft/commit/d7f1f7e8cec3a9f9baa2f3d9005b044db76e11f5))
+* layout tips for timelines (off the frame, overlapping words, too quick, too small, at the edge) ([#182](https://github.com/napstar-420/reelcraft/issues/182)) ([b964f88](https://github.com/napstar-420/reelcraft/commit/b964f888394e85848a289f90d8bd691906829940))
+* separate test runs from production runs and simplify run controls ([#178](https://github.com/napstar-420/reelcraft/issues/178)) ([74c4195](https://github.com/napstar-420/reelcraft/commit/74c4195319ff009cbc2006b94b64281c93d3a2e2))
+* **web:** edit graphics and placed clips in the timeline editor ([#184](https://github.com/napstar-420/reelcraft/issues/184)) ([aaa2135](https://github.com/napstar-420/reelcraft/commit/aaa2135593e9d176212ce6862ad752b8485e372f))
+
+
+### Bug Fixes
+
+* **api:** let Continue apply reconnected stages that will run again ([#179](https://github.com/napstar-420/reelcraft/issues/179)) ([d3b6421](https://github.com/napstar-420/reelcraft/commit/d3b64219f3a2dc2c0b0ef903684a90250ccb4612))
+* **api:** stop large tool results from being spilled out of the Claude assistant's reach ([#188](https://github.com/napstar-420/reelcraft/issues/188)) ([34a0340](https://github.com/napstar-420/reelcraft/commit/34a0340dc1f62b786ccba37ccd1633a32d047b8a))
+
 ## [0.11.0](https://github.com/napstar-420/reelcraft/compare/v0.10.0...v0.11.0) (2026-10-17)
 
 
