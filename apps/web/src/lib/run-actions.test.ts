@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { CreateBlueprintVersionDto, RunDetailDto } from '@reelcraft/shared';
-import { primaryRunAction, requiresNewRun, runHeadline, stageStatusLabel } from './run-actions';
+import {
+  displayStageState,
+  primaryRunAction,
+  requiresNewRun,
+  runHeadline,
+  stageStatusLabel,
+} from './run-actions';
 
 const actions = (over: Partial<NonNullable<RunDetailDto['availableActions']>> = {}) => ({
   busy: false,
@@ -12,7 +18,7 @@ const actions = (over: Partial<NonNullable<RunDetailDto['availableActions']>> = 
 });
 const run = (
   state: RunDetailDto['state'],
-  stages: Array<{ state: string; label?: string; failure?: unknown }>,
+  stages: Array<{ state: string; label?: string; failure?: unknown; waiting?: string | null }>,
   available = actions(),
 ) => ({
   state,
@@ -64,6 +70,35 @@ describe('stageStatusLabel and runHeadline', () => {
       runHeadline(run('FAILED', [{ state: 'failed', failure: { reason: 'Model refused' } }])),
     ).toBe('Failed at S1: Model refused');
     expect(runHeadline(run('COMPLETED', [{ state: 'passed' }]))).toBeNull();
+  });
+});
+
+describe('displayStageState', () => {
+  const idle = { availableActions: actions({ busy: false }) };
+  const busy = { availableActions: actions({ busy: true }) };
+  it('shows a stage left running by a stopped run as waiting or stopped', () => {
+    // An iterating stage whose items wait for review stays `running` in the database.
+    expect(displayStageState({ state: 'running', waiting: 'approval' }, idle)).toBe(
+      'awaiting_approval',
+    );
+    expect(displayStageState({ state: 'running', waiting: 'input' }, idle)).toBe('awaiting_input');
+    expect(displayStageState({ state: 'running', waiting: null }, idle)).toBe('cancelled');
+    // A stage cut off by the run stopping reads Paused: Continue picks it up.
+    expect(stageStatusLabel('cancelled')).toBe('Paused');
+  });
+  it('leaves the stored state alone while the run is active, or for any other state', () => {
+    expect(displayStageState({ state: 'running', waiting: 'approval' }, busy)).toBe('running');
+    expect(displayStageState({ state: 'failed', waiting: null }, idle)).toBe('failed');
+  });
+  it('says other stages are waiting when a failed run also holds reviews', () => {
+    expect(
+      runHeadline(
+        run('FAILED', [
+          { state: 'failed', label: 'Captions', failure: { reason: 'check_failed' } },
+          { state: 'running', label: 'Images', waiting: 'approval' },
+        ]),
+      ),
+    ).toBe('Failed at Captions: check_failed (1 other stage is waiting for you)');
   });
 });
 

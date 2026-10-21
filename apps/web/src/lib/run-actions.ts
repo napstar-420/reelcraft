@@ -1,9 +1,19 @@
-import type { CreateBlueprintVersionDto, RunDetailDto, StageDef } from '@reelcraft/shared';
+import type {
+  CreateBlueprintVersionDto,
+  RunDetailDto,
+  StageDef,
+  StageExecutionState,
+} from '@reelcraft/shared';
 import { runningNow } from '@/pages/runs-page.logic';
 import { definitionKey } from './stage-freshness';
 
 type RunLike = Pick<RunDetailDto, 'state' | 'availableActions'> & {
-  stageExecutions: Array<{ state: string; label: string; failure?: unknown }>;
+  stageExecutions: Array<{
+    state: string;
+    label: string;
+    failure?: unknown;
+    waiting?: string | null | undefined;
+  }>;
 };
 
 /** The one main button a run's toolbar shows: start a fresh run, pause it, continue it,
@@ -32,8 +42,21 @@ const STAGE_STATUS: Record<string, string> = {
   failed: 'Failed',
   stale: 'Stale',
   skipped: 'Skipped',
-  cancelled: 'Stopped',
+  cancelled: 'Paused',
 };
+
+/** The state to show for a stage. Stored states lag in two cases once the run stops:
+ * an iterating stage whose items wait for review stays `running` (only the items wait),
+ * and a stage cut off by the run ending stays `running` with nothing left in flight. */
+export function displayStageState(
+  execution: { state: StageExecutionState; waiting?: string | null | undefined },
+  run: { availableActions?: { busy: boolean } | undefined },
+): StageExecutionState {
+  if (execution.state !== 'running' || run.availableActions?.busy !== false) return execution.state;
+  if (execution.waiting === 'approval') return 'awaiting_approval';
+  if (execution.waiting) return 'awaiting_input';
+  return 'cancelled';
+}
 
 /** A stage's status in words. `stale`: it passed, but its definition changed since. */
 export function stageStatusLabel(state: string | undefined, stale = false): string {
@@ -57,7 +80,11 @@ export function runHeadline(run: RunLike): string | null {
   const failed = run.stageExecutions.find((e) => e.state === 'failed');
   if (run.state === 'FAILED' && failed) {
     const reason = failureReason(failed.failure);
-    return `Failed at ${failed.label}${reason ? `: ${reason}` : ''}`;
+    const waiting = run.stageExecutions.filter((e) => e.waiting).length;
+    const alsoWaiting = waiting
+      ? ` (${waiting} other ${waiting === 1 ? 'stage is' : 'stages are'} waiting for you)`
+      : '';
+    return `Failed at ${failed.label}${reason ? `: ${reason}` : ''}${alsoWaiting}`;
   }
   return null;
 }

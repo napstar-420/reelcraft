@@ -33,7 +33,7 @@ import { formatRunDuration } from '@/pages/runs-page.logic';
 import { isApprovalStillOpen } from '@/pages/approval-review.logic';
 import { runStateTone, stageExecutionStateTone, toneDotClassName } from '@/lib/status';
 import { formatCapUsd } from '@/lib/format-cap';
-import { runHeadline } from '@/lib/run-actions';
+import { displayStageState, runHeadline } from '@/lib/run-actions';
 
 /** One reused-stage badge per row, driven by the `stage.reused` event
  * `run-seed.ts`'s `copyReusedStages` writes — fetched lazily per run since
@@ -225,7 +225,7 @@ export function RunTab({
                 workspaceStale || validationOutdated
                   ? 'warning'
                   : execution
-                    ? stageExecutionStateTone(execution.state)
+                    ? stageExecutionStateTone(displayStageState(execution, run))
                     : 'neutral';
               return (
                 <div
