@@ -146,6 +146,7 @@ export function capabilityGroup(key: string): CapabilityGroup {
     key === 'video.concat' ||
     key === 'timeline.render' ||
     key === 'motion.render' ||
+    key === 'image.cutout' ||
     key === 'scene.render' ||
     key === 'subtitles.export'
   ) {
