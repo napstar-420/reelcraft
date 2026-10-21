@@ -1,11 +1,11 @@
 ---
 title: Timeline checks
-description: The eight automatic checks every timeline goes through, the layout tips, and how to fix each one.
+description: The nine automatic checks every timeline goes through, the layout tips, and how to fix each one.
 ---
 
 Whenever a stage makes a timeline, or you submit one from the [editor](./timeline-editor.md), Reelcraft
-runs eight checks on it. They catch mistakes before the video is rendered, which saves time and money. All
-eight are shown for every timeline, so you can see which pass.
+runs nine checks on it. They catch mistakes before the video is rendered, which saves time and money. All
+nine are shown for every timeline, so you can see which pass.
 
 | Check                      | Fails when                                                                                         |
 | -------------------------- | -------------------------------------------------------------------------------------------------- |
@@ -16,6 +16,8 @@ eight are shown for every timeline, so you can see which pass.
 | `timeline.coverage`        | The main video track has gaps with nothing in them                                                 |
 | `timeline.av_alignment`    | The audio and the video end at noticeably different times                                          |
 | `timeline.canvas_match`    | The timeline's shape doesn't match the aspect ratio you asked for                                  |
+| `timeline.motion_code`     | A motion graphic's code uses something it may not, such as another package or the network          |
+| `timeline.connectors`      | An arrow that joins two items can't reach one of them                                              |
 
 If the schema check fails, only it is reported, since the others can't be worked out.
 
