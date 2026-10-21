@@ -65,7 +65,7 @@ The stage owns its system prompt, which teaches the model these rules:
 - The graphic is one file that imports only Remotion's own packages and React.
 - Everything moves with the frame number. CSS animations, timers and the clock are not allowed.
 - Every render must look the same. For randomness the code uses Remotion's seeded `random()`.
-- The graphic has no network. It can only load the images it was given.
+- The graphic has no network. It can only load the images it was given, and use the fonts it was given by name.
 - Raw HTML, scripts and frames are not allowed.
 
 Add the `motion_code` [built-in check](../reference/built-in-checks.md) and set **Check attempts** to 2 or 3.
