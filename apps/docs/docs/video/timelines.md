@@ -107,6 +107,7 @@ How it appears is its **animation**:
 | ------------- | ----------------------------------------------------------------------------------- |
 | **Draw**      | Lines are drawn on one after another; a filled shape fills in once its line is done |
 | **Handwrite** | Words are written out from left to right                                            |
+| **Type**      | Words appear letter by letter at a steady pace, with an optional cursor             |
 | **Pop**       | Grows a little past full size, then settles                                         |
 | **Fade**      | Fades in                                                                            |
 | **Slide**     | Slides in from the left, right, top or bottom                                       |

@@ -67,7 +67,8 @@ are spoken; `offsetSec` moves it a little earlier or later. `afterLayer` starts 
 `durationSec` is how long it stays; left out, a visual stays to the end of the video, and a sound plays its own
 length. The video lasts as long as its longest sound plus a short rest, unless the plan gives `durationSec`.
 
-**How it appears.** `anim` is `draw` (lines drawn on), `handwrite` (words written out), `pop`, `fade`, `slide`,
+**How it appears.** `anim` is `draw` (lines drawn on), `handwrite` (words written out), `type` (words appear
+letter by letter; `caret: true` adds a cursor), `pop`, `fade`, `slide`,
 `highlight` or `none`, with an optional `hand` (a pen that follows the line), `animSec` and `keyframes`.
 Pictures and clips can pop, fade, slide or stay.
 

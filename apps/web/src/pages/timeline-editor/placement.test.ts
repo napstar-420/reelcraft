@@ -122,4 +122,12 @@ describe('placement', () => {
     setWords(content, 'WHAT NOW');
     expect(content).toEqual({ kind: 'text', text: 'WHAT NOW', size: 40 });
   });
+
+  it('keeps a cursor only on words that are typed', () => {
+    const item = words();
+    setAnim(item, { type: 'type', caret: true });
+    expect(item.anim).toEqual({ type: 'type', caret: true });
+    setAnim(item, { type: 'fade' });
+    expect(item.anim).toEqual({ type: 'fade' });
+  });
 });

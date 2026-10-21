@@ -73,9 +73,10 @@ const layer: JsonSchema = {
       type: 'string',
       enum: [...PlanAnimType.options],
       description:
-        'How it arrives. draw: lines are drawn on. handwrite: words are written out. pop: grows in. fade. slide (from left/right/top/bottom). highlight: a marker swipe behind it. none: there from the start. Pictures and clips can pop, fade, slide or none.',
+        'How it arrives. draw: lines are drawn on. handwrite: words are written out. type: words appear letter by letter, as if typed (add caret for a cursor). pop: grows in. fade. slide (from left/right/top/bottom). highlight: a marker swipe behind it. none: there from the start. Pictures and clips can pop, fade, slide or none.',
     },
     animSec: num('How long the arrival takes, in seconds.', 0.1),
+    caret: { type: 'boolean', description: 'For type: a text cursor while the words are typed.' },
     from: { type: 'string', enum: ['left', 'right', 'top', 'bottom'], description: 'For slide.' },
     hand: {
       type: 'string',
@@ -226,4 +227,5 @@ export const TIMELINE_PLAN_GUIDE = `A plan is a list of layers. Each layer is on
 - When: atSec is a time; atCue is words copied exactly from the narration, so the layer appears as they are spoken; afterLayer follows another layer.
 - Use an asset only by its id from the asset list. If none fits, say what is needed instead of inventing an id.
 - Sounds are layers too: voice-over, background music and effects each go on their own track; put music under the voice with ducks.
+- How things arrive is anim: lines draw on, words are written out (handwrite) or typed letter by letter (type, with caret for a cursor), anything can pop, fade or slide in.
 - Keep text short. To colour or bold one word in a line, give runs instead of text. Leave room: boxes that overlap on purpose are fine, by accident are not.`;

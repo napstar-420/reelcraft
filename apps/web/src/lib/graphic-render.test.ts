@@ -17,6 +17,7 @@ import {
   seededRandom,
   shapeStrokes,
   strokeWidthFor,
+  typedParts,
   visibleLengths,
   wholeWorldView,
 } from '@reelcraft/timeline-composition/src/graphic/graphic-math';
@@ -303,5 +304,43 @@ describe('picture reveals', () => {
     }
     expect(revealLook('wipe_lr', 0)).toEqual({ clipPath: 'inset(0 100% 0 0)' });
     expect(revealLook('marker', 0).maskImage).toContain('transparent 0%');
+  });
+});
+
+describe('typing', () => {
+  const words: GraphicContent = { kind: 'text', text: 'run: web\nsearch', size: 40 };
+
+  it('types at a steady pace, line breaks free, and shows everything at the end', () => {
+    const anim = { type: 'type' as const };
+    expect(animState(anim, words, box, 10, 0).typed).toBe(0);
+    // 14 letters at 18 a second.
+    const half = animState(anim, words, box, 10, 14 / 18 / 2);
+    expect(half.typed).toBe(7);
+    expect(half.typing).toBe(true);
+    const end = animState(anim, words, box, 10, 5);
+    expect(end.typed).toBe(14);
+    expect(end.typing).toBe(false);
+  });
+
+  it('fades in anything but words', () => {
+    const shape: GraphicContent = { kind: 'shape', shape: 'box' };
+    const state = animState({ type: 'type', durationSec: 1 }, shape, box, 10, 0.5);
+    expect(state.opacity).toBeGreaterThan(0);
+    expect(state.opacity).toBeLessThan(1);
+    expect(state.typed).toBe(Number.POSITIVE_INFINITY);
+  });
+
+  it('cuts the parts at the typed letter, keeping their looks and the rest unseen', () => {
+    const parts = [{ text: 'WHAT\n' }, { text: 'REALLY', color: 'red' }];
+    expect(typedParts(parts, 6)).toEqual([
+      { text: 'WHAT\n', typed: true },
+      { text: 'RE', color: 'red', typed: true },
+      { text: 'ALLY', color: 'red', typed: false },
+    ]);
+    expect(typedParts(parts, 0)).toEqual([
+      { text: 'WHAT\n', typed: false },
+      { text: 'REALLY', color: 'red', typed: false },
+    ]);
+    expect(typedParts(parts, 99).every((part) => part.typed)).toBe(true);
   });
 });

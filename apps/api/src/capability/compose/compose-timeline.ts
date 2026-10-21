@@ -663,6 +663,7 @@ function animOf(layer: PlanLayer, hand: 'none' | 'marker' | 'pencil', drawn: boo
     ...(layer.animSec !== undefined && { durationSec: layer.animSec }),
     ...(layer.from && { from: layer.from }),
     ...(pen && pen !== 'none' && { hand: pen }),
+    ...(type === 'type' && layer.caret && { caret: true }),
   };
 }
 
