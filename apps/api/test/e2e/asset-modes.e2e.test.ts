@@ -13,6 +13,7 @@ import { vectorAssetSetJsonSchema } from '../../src/capability/vector/drawing-pr
 import { timelinePlanJsonSchema } from '../../src/capability/compose/timeline-plan-schema';
 import { artifact, run as runTable } from '../../src/db/schema';
 import { buildTestApp, type TestApp } from '../support/build-app';
+import { sfnt } from '../../src/channel/font-test-support';
 import { createTestDb, type TestDb } from '../support/test-db';
 
 const AUDIO_PROBE: Probe = {
@@ -359,6 +360,88 @@ describe('every asset kind, generated in the run or picked from the library (e2e
 
     // Told to use only what was uploaded, the same plan is refused: the whoosh isn't in the library.
     expect(outcomes.only_uploaded!.outcome).not.toBe('success');
+  });
+
+  it('library: words use an uploaded font, by its id, under the family read from the file', async () => {
+    const assets = testApp.app.get(AssetService);
+    const storage = testApp.app.get<StorageAdapter>(STORAGE_ADAPTER);
+    const PLAN = {
+      version: 1,
+      layers: [
+        {
+          kind: 'text',
+          text: 'On brand',
+          x: 0.1,
+          y: 0.1,
+          w: 0.6,
+          h: 0.2,
+          atSec: 0,
+          durationSec: 2,
+          font: 'brand',
+        },
+      ],
+    };
+    const ctx = await runGraph(testApp, testDb, [
+      planStage(PLAN),
+      {
+        ...base,
+        key: 'compose',
+        label: 'Compose',
+        capability: 'timeline.compose',
+        slots: {
+          plan: { from: 'stage', stageKey: 'plan' },
+          assets: { from: 'library', kinds: ['font'] },
+        },
+        output: { kind: 'timeline' },
+      },
+    ]);
+    const upload = await assets.requestUpload(ctx.channel.id, 'ttf');
+    await storage.put(upload.objectKey, sfnt([{ platform: 3, id: 1, text: 'Brand Sans' }]), {
+      mime: 'font/ttf',
+    });
+    const font = await assets.create(ctx.channel.id, {
+      name: 'brand',
+      kind: 'font',
+      blobId: upload.blobId,
+      objectKey: upload.objectKey,
+      sha256: 'f',
+      tags: [],
+    });
+    expect(font.kind).toBe('font');
+
+    const { runId, outcomes } = await execute(ctx);
+    expect(outcomes.compose!.outcome).toBe('success');
+    const timeline = await readTimeline(outcomes.compose!.artifactId!);
+    expect(timeline.fonts).toEqual([{ family: 'Brand Sans', handle: `asset:${font.id}` }]);
+    expect(timeline.tracks.flatMap((t) => t.items)[0]).toMatchObject({
+      type: 'graphic',
+      content: { kind: 'text', font: 'Brand Sans' },
+    });
+    // The checks find the font file the run snapshotted.
+    const checks = await testApp.app.get(TimelineCheckService).run({ runId, timeline });
+    expect(checks.find((c) => c.name === 'timeline.handles_resolve')).toMatchObject({ pass: true });
+  });
+
+  it('refuses a file that is not a font when it is uploaded as one', async () => {
+    const assets = testApp.app.get(AssetService);
+    const storage = testApp.app.get<StorageAdapter>(STORAGE_ADAPTER);
+    const channel = await testApp.app
+      .get(ChannelService)
+      .create('local', { name: `Bad font ${Date.now()}`, theme: {}, defaults: {} });
+    const upload = await assets.requestUpload(channel.id, 'ttf');
+    await storage.put(upload.objectKey, Buffer.from('<html>not a font</html>'), {
+      mime: 'font/ttf',
+    });
+    await expect(
+      assets.create(channel.id, {
+        name: 'Fake',
+        kind: 'font',
+        blobId: upload.blobId,
+        objectKey: upload.objectKey,
+        sha256: 'g',
+        tags: [],
+      }),
+    ).rejects.toMatchObject({ response: { code: 'asset_font_invalid' } });
   });
 
   it('refuses an SVG that cannot be drawn when it is uploaded', async () => {

@@ -165,6 +165,11 @@ export function TimelineEditorPage() {
   const fps = timeline?.canvas.fps ?? 30;
   const durationSec = timeline ? timelineDurationSec(timeline, timingMaps) : 0;
   const durationFrames = Math.max(1, Math.ceil(durationSec * fps));
+  // Fonts load with the timeline; only pictures, clips and sounds can be placed on it.
+  const placeableResources = useMemo(
+    () => resources.filter((resource) => resource.kind !== 'font'),
+    [resources],
+  );
   const resourceByHandle = useMemo(
     () => new Map(resources.map((resource) => [resource.handle, resource])),
     [resources],
@@ -496,7 +501,7 @@ export function TimelineEditorPage() {
 
       <div className="grid min-h-0 flex-1 grid-cols-[272px_minmax(0,1fr)_304px]">
         <MediaPanel
-          resources={resources}
+          resources={placeableResources}
           timeline={timeline}
           aspect={`${timeline.canvas.width}/${timeline.canvas.height}`}
           readOnly={readOnly}

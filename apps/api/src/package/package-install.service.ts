@@ -1,3 +1,4 @@
+import { readFontFile } from '../channel/font-file';
 import { importSvg } from '../capability/vector/svg-import';
 import { extname } from 'node:path';
 import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
@@ -279,10 +280,13 @@ export class PackageInstallService {
           // A drawing is read again here, as it is when uploaded, so the library can list it.
           const drawn =
             a.kind === 'vector' ? importSvg(Buffer.from(a.blob.bytes).toString('utf8')) : undefined;
+          // A font's family is read again too, so words can name it.
+          const font = a.kind === 'font' ? readFontFile(Buffer.from(a.blob.bytes)) : undefined;
           await tx.insert(asset).values({
             ...(drawn?.ok && {
               meta: { viewBox: drawn.viewBox, strokes: drawn.strokes },
             }),
+            ...(font?.ok && { meta: { family: font.family ?? a.name, format: font.format } }),
             id: a.id,
             ownerId,
             channelId: dto.channelId,

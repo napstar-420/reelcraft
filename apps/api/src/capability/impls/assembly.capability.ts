@@ -215,11 +215,17 @@ export function timelineRenderSpec(p: {
   for (const [handle, resource] of Object.entries(p.resources)) {
     const timing = timingMapOf(resource.data);
     if (timing) timingMaps[handle] = timing;
-    if (!resource.kind.startsWith('media.')) continue;
+    if (!resource.kind.startsWith('media.') && resource.kind !== 'font') continue;
     if (!resource.sourceKey) continue;
     const sourceExtension = path.extname(resource.sourceKey).replace(/^\./, '');
     const fallbackExtension =
-      resource.kind === 'media.image' ? 'png' : resource.kind === 'media.audio' ? 'm4a' : 'mp4';
+      resource.kind === 'media.image'
+        ? 'png'
+        : resource.kind === 'media.audio'
+          ? 'm4a'
+          : resource.kind === 'font'
+            ? 'ttf'
+            : 'mp4';
     const extension = /^[a-zA-Z0-9]{1,8}$/.test(sourceExtension)
       ? sourceExtension
       : fallbackExtension;
@@ -236,6 +242,12 @@ export function timelineRenderSpec(p: {
     );
   if (missing.length)
     throw new Error(`timeline.render cannot resolve ${missing.length} media item(s)`);
+  const missingFonts = (p.timeline.fonts ?? []).filter((font) => !resourceFiles[font.handle]);
+  if (missingFonts.length) {
+    throw new Error(
+      `timeline.render cannot find the font(s) ${missingFonts.map((font) => font.family).join(', ')}`,
+    );
+  }
   const worker = path.resolve(__dirname, '../../../../render-worker/dist/cli.js');
   return {
     command: process.execPath,

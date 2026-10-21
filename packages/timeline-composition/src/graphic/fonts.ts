@@ -31,3 +31,39 @@ export function useGraphicFonts(enabled: boolean): void {
     void loadGraphicFonts().then(() => continueRender(handle));
   }, [handle]);
 }
+
+const loaded = new Map<string, Promise<void>>();
+
+/** Loads the timeline's own fonts (from the library) once each, by family and file. */
+export function loadTimelineFonts(
+  fonts: ReadonlyArray<{ family: string; url: string }>,
+): Promise<void> {
+  return Promise.all(
+    fonts.map((font) => {
+      const key = `${font.family}\u0000${font.url}`;
+      let promise = loaded.get(key);
+      if (!promise) {
+        promise = loadFont({ family: font.family, url: font.url }).then(
+          () => undefined,
+          // A font that fails to load leaves its words in the fallback font.
+          () => undefined,
+        );
+        loaded.set(key, promise);
+      }
+      return promise;
+    }),
+  ).then(() => undefined);
+}
+
+/** Holds a frame back until the timeline's own fonts are in. */
+export function useTimelineFonts(fonts: ReadonlyArray<{ family: string; url: string }>): void {
+  const key = fonts.map((font) => `${font.family}\u0000${font.url}`).join('\n');
+  const [handle] = React.useState(() =>
+    fonts.length ? delayRender('Loading the timeline fonts') : null,
+  );
+  React.useEffect(() => {
+    if (handle === null) return;
+    void loadTimelineFonts(fonts).then(() => continueRender(handle));
+    // Keyed by the fonts' families and files, not the array, which is new on every render.
+  }, [handle, key]);
+}

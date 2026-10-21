@@ -12,6 +12,7 @@ import { EngineConfig } from '../config/engine-config';
 import { WorkspaceService } from '../storage/workspace.service';
 import { MediaProbeService } from '../artifact/media-probe.service';
 import { queueStorageOrphans } from '../artifact/storage-orphans';
+import { FONT_EXTENSIONS, readFontFile } from './font-file';
 import { importSvg } from '../capability/vector/svg-import';
 import { checkModelFile, isModelExtension, modelProbe } from '../artifact/model-file';
 
@@ -86,6 +87,22 @@ export class AssetService {
 
     // A drawing is read now, so a file that can't be drawn is refused at upload, not in a run.
     let meta: unknown;
+    // A font is checked and its family read now, so words can name it and a broken file never
+    // reaches a render.
+    if (dto.kind === 'font') {
+      const ext = path.extname(dto.objectKey).slice(1).toLowerCase();
+      const read = await this.workspaces.withWorkspace(dto.blobId, async (workspace) =>
+        readFontFile(await readFile(await workspace.pull(dto.objectKey))),
+      );
+      if (!read.ok || !FONT_EXTENSIONS.has(ext)) {
+        await queueStorageOrphans(this.db, [dto.objectKey], 'upload_rejected');
+        throw new BadRequestException({
+          code: 'asset_font_invalid',
+          message: read.ok ? 'Upload a .ttf, .otf, .woff or .woff2 file.' : read.message,
+        });
+      }
+      meta = { family: read.family ?? dto.name, format: read.format };
+    }
     if (dto.kind === 'vector') {
       const source = await this.workspaces.withWorkspace(dto.blobId, async (workspace) =>
         readFile(await workspace.pull(dto.objectKey), 'utf8'),

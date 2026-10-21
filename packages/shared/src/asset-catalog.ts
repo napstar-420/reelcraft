@@ -22,6 +22,8 @@ export const CatalogAsset = z.object({
   durationSec: z.number().nonnegative().optional(),
   /** A vector asset is the drawing itself. */
   vector: VectorAsset.optional(),
+  /** A font's family name, which words name to use it. */
+  family: z.string().min(1).max(80).optional(),
   source: z.enum(['generated', 'library', 'builtin']).optional(),
 });
 export type CatalogAsset = z.infer<typeof CatalogAsset>;
@@ -38,6 +40,9 @@ export function describeCatalog(catalog: AssetCatalog): string {
       const bits = [
         `${asset.id} (${asset.kind})`,
         asset.label,
+        asset.family !== undefined && asset.family !== asset.label
+          ? `family ${asset.family}`
+          : undefined,
         asset.durationSec !== undefined ? `${Math.round(asset.durationSec * 10) / 10}s` : undefined,
         asset.tags?.length ? `tags: ${asset.tags.join(', ')}` : undefined,
       ].filter(Boolean);

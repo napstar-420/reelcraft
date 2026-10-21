@@ -13,6 +13,7 @@ const KIND_LABEL: Record<TimelineResource['kind'], string> = {
   'media.image': 'Images',
   'media.video': 'Video',
   'media.audio': 'Audio',
+  font: 'Fonts',
 };
 
 /** How many times each file is on the timeline, so you can tell what is already used. */
@@ -114,7 +115,12 @@ export function MediaPanel({
     [resources],
   );
   const shown = filter === 'all' ? resources : resources.filter((r) => r.kind === filter);
-  const Icon = { 'media.image': ImageIcon, 'media.video': Film, 'media.audio': Music } as const;
+  const Icon = {
+    'media.image': ImageIcon,
+    'media.video': Film,
+    'media.audio': Music,
+    font: Type,
+  } as const;
 
   return (
     <aside className="flex min-h-0 flex-col border-r bg-card/40">

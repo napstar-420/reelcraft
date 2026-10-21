@@ -114,4 +114,39 @@ describe('libraryCatalog', () => {
       JSON.stringify(libraryCatalog({ kinds: ['audio'], bindings })),
     );
   });
+
+  it('lists uploaded fonts with their family, and nothing built in', () => {
+    const catalog = libraryCatalog({
+      kinds: ['font'],
+      bindings: {
+        f1: {
+          blobId: 'b9',
+          kind: 'font',
+          name: 'brand',
+          inLibrary: true,
+          vector: { family: 'Brand Sans', format: 'ttf' },
+        },
+        f2: { blobId: 'b10', kind: 'font', name: 'Plain Serif', inLibrary: true },
+      },
+    });
+    expect(catalog.assets).toEqual([
+      {
+        id: 'brand',
+        kind: 'font',
+        label: 'brand',
+        handle: 'asset:f1',
+        family: 'Brand Sans',
+        source: 'library',
+      },
+      {
+        id: 'Plain Serif',
+        kind: 'font',
+        label: 'Plain Serif',
+        handle: 'asset:f2',
+        family: 'Plain Serif',
+        source: 'library',
+      },
+    ]);
+    expect(builtinCatalog('font')).toEqual([]);
+  });
 });
