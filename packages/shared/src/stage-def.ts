@@ -19,6 +19,8 @@ export type EnabledWhen = z.infer<typeof EnabledWhen>;
 export const StageDef = z.object({
   key: z.string(),
   label: z.string(),
+  /** Optional name of the phase this stage belongs to on the run page (e.g. "Voice"). Purely cosmetic: it never makes a stage stale. */
+  group: z.string().optional(),
   capability: z.string(),
   instructions: z.object({ system: z.string().optional(), template: z.string() }).optional(),
   config: z.record(z.string(), z.unknown()),

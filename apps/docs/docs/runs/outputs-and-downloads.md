@@ -8,15 +8,17 @@ run is going or long after.
 
 ## View an output
 
-Select **Output** on a canvas card, **View output** in its Run tab, or the output control on the run page.
-The shared stage details workspace opens beside the canvas, or as an expandable panel on the run page.
+Select **Output** on a canvas card or **View output** in its Run tab, and the stage details workspace
+opens beside the canvas. On the run page, select a stage in the pipeline to open its details panel; see
+[Run page](./run-page.md#stage-details).
 
 - **Output** shows the accepted artifact, linked to its producing attempt. Iteration items appear in a
   searchable, numerically ordered navigator, including unfinished items. Progress is separate from attempts.
 - **Attempts** shows candidates, duration, cost, check results, QC/review feedback, and expandable raw logs.
   Rejected and historical candidates are identified separately from the current accepted output.
-- **Inputs & dependencies** shows recorded inputs, source artifact/memory versions, and the rendered prompt.
-  Source artifacts open on demand. Missing historical fields say **Not recorded**.
+- **Inputs & dependencies** (on the canvas) shows recorded inputs, source artifact/memory versions, and the
+  rendered prompt. On the run page the same details are under an attempt, in **What this attempt received**.
+  Missing historical fields say **Not recorded**.
 - **Memory** groups keys by producer and item. Search and filters narrow large collections; version history
   expands without replacing current values.
 

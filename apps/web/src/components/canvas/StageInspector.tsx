@@ -1280,6 +1280,17 @@ export function StageInspector({
               />
             </div>
             <div className="flex flex-col gap-1.5">
+              <InfoLabel info="Optional phase name (e.g. Voice, Visuals). The run page groups stages with the same phase into one box. Purely cosmetic — doesn't affect execution.">
+                Phase
+              </InfoLabel>
+              <Input
+                type="text"
+                value={stage.group ?? ''}
+                placeholder="None"
+                onChange={(e) => onChange({ ...stage, group: e.target.value || undefined })}
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
               <InfoLabel info="The type of work this stage performs (e.g. Generate Text, Generate Image). Determines what Slots it accepts, what Config schema applies, and what output kinds are allowed.">
                 Capability
               </InfoLabel>

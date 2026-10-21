@@ -15,6 +15,7 @@ function generationDefinition(stage: StageDef) {
   return {
     ...stage,
     label: undefined,
+    group: undefined,
     disabled: undefined,
     qc: undefined,
     checks: undefined,

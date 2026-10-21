@@ -29,6 +29,9 @@ export function stageJsonSchema(n: NarrowedEnums): JsonObject {
   const properties: Record<string, JsonObject> = {
     key: str('Unique stage id, e.g. "script". Never reuse a key.'),
     label: str('Name shown on the canvas.'),
+    group: str(
+      'Optional phase name, e.g. "Voice". The run page boxes stages with the same phase together.',
+    ),
     capability: str('Stage type. Look it up with get_capability first.', {
       enum: n.capabilityKeys,
     }),

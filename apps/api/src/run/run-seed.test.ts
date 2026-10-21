@@ -59,6 +59,11 @@ describe('reusableStageKeys', () => {
     expect(reusableStageKeys(baseParams())).toEqual({ keys: ['topics', 'selector'] });
   });
 
+  it('does not count a changed phase name as an edit', () => {
+    const p = baseParams({ newGraph: [stage('topics'), stage('selector', { group: 'Pick' })] });
+    expect(reusableStageKeys(p)).toEqual({ keys: ['topics', 'selector'] });
+  });
+
   it('keeps an edited finished stage, and the ones after it, when the person chose to', () => {
     const p = baseParams({
       newGraph: [stage('topics'), stage('selector', { label: 'Selector v2' })],
