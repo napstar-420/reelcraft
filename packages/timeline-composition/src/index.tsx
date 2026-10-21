@@ -16,6 +16,8 @@ import type { CalculateMetadataFunction } from 'remotion';
 import type { TextStyleTokens, Timeline, TimelineItem, TimingMap } from '@reelcraft/shared';
 import { activeCaption, captionPagesFor } from './captions';
 import { useGraphicFonts, useTimelineFonts } from './graphic/fonts';
+import { MotionComponents, MotionItem, motionKey } from './motion-item';
+export { MotionComponents, motionKey } from './motion-item';
 import { GraphicItem, placedStyle } from './graphic/GraphicItem';
 import {
   DEFAULT_THEME,
@@ -551,6 +553,13 @@ export const TimelineComposition = ({
                 ) : null
               ) : item.type === 'text' ? (
                 <TextItem item={item} tokens={tokensFor(item.styleId)} />
+              ) : item.type === 'motion' ? (
+                <MotionItem
+                  item={item}
+                  motionId={motionKey(track.id, index)}
+                  frame={timeline.canvas}
+                  durationInFrames={durationInFrames}
+                />
               ) : (resources[item.handle] ?? bundledResource(item.handle)) ? (
                 <MediaItem
                   item={item}
@@ -597,6 +606,30 @@ const calculateMetadata: CalculateMetadataFunction<TimelineCompositionProps> = (
     timelineDurationSec(props.timeline, props.timingMaps) * props.timeline.canvas.fps,
   ),
 });
+
+/** The timeline composition, with the components of a timeline's motion items (see
+ * `MotionComponents`); the final render's generated entry builds one of these. */
+export const timelineRootWith = (
+  components: Record<string, React.ComponentType<Record<string, unknown>>>,
+) => {
+  const WithMotion = (props: TimelineCompositionProps) => (
+    <MotionComponents.Provider value={components}>
+      <TimelineComposition {...props} />
+    </MotionComponents.Provider>
+  );
+  return () => (
+    <Composition
+      id="Timeline"
+      component={WithMotion}
+      width={1920}
+      height={1080}
+      fps={30}
+      durationInFrames={1}
+      defaultProps={{ timeline: fallbackTimeline, resources: {}, timingMaps: {}, styles: {} }}
+      calculateMetadata={calculateMetadata}
+    />
+  );
+};
 
 export const TimelineRoot = () => (
   <Composition

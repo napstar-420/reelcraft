@@ -191,6 +191,77 @@ async function main() {
     if (isGreen(rgb[i]!, rgb[i + 1]!, rgb[i + 2]!)) green += 1;
   assert(green > 1000, `the graphic does not show over the red (${green} green pixels)`);
 
+  // Embedded in the timeline: the final render draws the graphic from its code, in its box (the
+  // top-left quarter), at its own size scaled down; outside the box the red stays.
+  const embeddedDir = await mkdtemp(path.join(tmpdir(), 'reelcraft-embedded-'));
+  const motionItem = (code: string) => ({
+    type: 'motion',
+    startSec: 0,
+    durationSec: 2,
+    width: WIDTH,
+    height: HEIGHT,
+    code,
+    props: { title: 'Accept', values: [2, 4, 3], color: GREEN },
+    x: 0,
+    y: 0,
+    w: WIDTH / 2,
+    h: HEIGHT / 2,
+  });
+  const renderEmbedded = async (name: string, code: string) => {
+    await writeFile(
+      path.join(embeddedDir, `${name}.json`),
+      JSON.stringify({
+        version: 2,
+        canvas: { width: WIDTH, height: HEIGHT, fps: 30, background: '#ff0000' },
+        tracks: [{ id: 'overlay', type: 'overlay', items: [motionItem(code)] }],
+      }),
+    );
+    await writeFile(
+      path.join(embeddedDir, 'resources.json'),
+      JSON.stringify({ media: {}, timing: {} }),
+    );
+    const output = path.join(embeddedDir, `${name}.mp4`);
+    await exec(
+      process.execPath,
+      [
+        worker,
+        path.join(embeddedDir, `${name}.json`),
+        path.join(embeddedDir, 'resources.json'),
+        'draft',
+        output,
+        ...browser,
+      ],
+      { timeout: 600_000 },
+    );
+    return output;
+  };
+  const embedded = await frame(await renderEmbedded('embedded', SAMPLE_MOTION_CODE), 1, 'rgb24');
+  let inBox = 0;
+  let outOfBox = 0;
+  for (let y = 0; y < HEIGHT; y += 1) {
+    for (let x = 0; x < WIDTH; x += 1) {
+      const i = (y * WIDTH + x) * 3;
+      if (!isGreen(embedded[i]!, embedded[i + 1]!, embedded[i + 2]!)) continue;
+      if (x < WIDTH / 2 && y < HEIGHT / 2) inBox += 1;
+      else outOfBox += 1;
+    }
+  }
+  assert(inBox > 300, `the embedded graphic does not draw in its box (${inBox} green pixels)`);
+  assert(outOfBox === 0, `the embedded graphic draws outside its box (${outOfBox} green pixels)`);
+  const corner = (WIDTH * (HEIGHT - 10) + (WIDTH - 10)) * 3;
+  assert(
+    isRed(embedded[corner]!, embedded[corner + 1]!, embedded[corner + 2]!),
+    'the timeline under the embedded graphic is not red',
+  );
+  const blockedEmbedded = await renderEmbedded(
+    'blocked',
+    "import fs from 'node:fs';\nexport default () => <div>{String(fs)}</div>;",
+  ).then(
+    () => false,
+    (error: { stderr?: string }) => /not allowed/.test(error.stderr ?? ''),
+  );
+  assert(blockedEmbedded, 'an embedded graphic with a forbidden import was bundled');
+
   // A forbidden import does not build, even if it got past the check.
   const blocked = await renderMotion(
     dir,

@@ -1,5 +1,5 @@
 import type { RefObject } from 'react';
-import { Captions, Film, ImageIcon, Layers, Music, Type, Shapes } from 'lucide-react';
+import { Captions, Film, ImageIcon, Layers, Music, Type, Shapes, WandSparkles } from 'lucide-react';
 import type { PlayerRef } from '@remotion/player';
 import type {
   Timeline,
@@ -80,6 +80,7 @@ function ProjectSummary({ timeline, durationSec }: { timeline: Timeline; duratio
 function itemKindLabel(item: TimelineItem, resource: TimelineResource | undefined) {
   if (item.type === 'text') return { Icon: Type, name: 'Title' };
   if (item.type === 'captions') return { Icon: Captions, name: 'Captions' };
+  if (item.type === 'motion') return { Icon: WandSparkles, name: 'Motion graphic' };
   if (item.type === 'graphic') {
     return item.content.kind === 'text'
       ? { Icon: Type, name: 'Words' }

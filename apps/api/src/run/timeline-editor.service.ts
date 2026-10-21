@@ -232,6 +232,15 @@ export class TimelineEditorService {
     }
     for (const track of timeline.tracks) {
       for (const item of track.items) {
+        if (item.type === 'motion') {
+          for (const file of item.files ?? []) {
+            if (!allowedHandles.has(file.handle)) {
+              throw new ConflictException(
+                `Motion graphic file "${file.name}" is not available to this stage`,
+              );
+            }
+          }
+        }
         const handle =
           item.type === 'captions'
             ? item.timingHandle
@@ -337,6 +346,13 @@ export class TimelineEditorService {
         }
       }
       for (const font of sourceTimeline.fonts ?? []) allowedHandles.add(font.handle);
+      for (const track of sourceTimeline.tracks) {
+        for (const item of track.items) {
+          if (item.type === 'motion') {
+            for (const file of item.files ?? []) allowedHandles.add(file.handle);
+          }
+        }
+      }
       await this.addTimelineResources(context, sourceTimeline, resources);
       await this.addTimelineTimingMaps(context, sourceTimeline, timingMaps);
     }

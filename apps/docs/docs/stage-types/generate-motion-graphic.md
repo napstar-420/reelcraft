@@ -64,6 +64,14 @@ Add the `motion_code` [built-in check](../reference/built-in-checks.md) and set 
 Code that breaks a rule then goes back to the model with every problem listed, so it can fix them all at once.
 Render Motion Graphic checks the code again before it renders, so code that breaks the rules is never run.
 
+## Two ways into a video
+
+- **As a clip.** [Render Motion Graphic](./render-motion-graphic.md) renders it to a video, transparent or not,
+  that Compose Timeline places like any clip. The clip can be checked, approved and reused on its own.
+- **Embedded.** Bind the output straight to [Compose Timeline](./compose-timeline.md) and place it with a
+  `motion` layer. The code goes into the timeline and the final render draws it, at the video's own resolution,
+  with no clip in between. The editor's preview shows a placeholder for it.
+
 ## Edit the code
 
 When a graphic is nearly right, change it yourself instead of running the stage again. Open the stage's

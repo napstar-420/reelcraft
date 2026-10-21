@@ -242,6 +242,27 @@ export function timelineRenderSpec(p: {
     );
   if (missing.length)
     throw new Error(`timeline.render cannot resolve ${missing.length} media item(s)`);
+  // The files a motion graphic loads go in under the names its code uses (`staticFile(name)`).
+  const motionFiles = new Map<string, string>();
+  for (const item of p.timeline.tracks.flatMap((track) => track.items)) {
+    if (item.type !== 'motion') continue;
+    for (const file of item.files ?? []) {
+      const sourceKey = p.resources[file.handle]?.sourceKey;
+      if (!sourceKey) {
+        throw new Error(`timeline.render cannot find the motion graphic's file ${file.name}`);
+      }
+      const taken = motionFiles.get(file.name);
+      if (taken && taken !== sourceKey) {
+        throw new Error(
+          `timeline.render: two motion graphics load different files named ${file.name}; rename one`,
+        );
+      }
+      if (!taken) {
+        motionFiles.set(file.name, sourceKey);
+        inputs.push({ sourceKey, asFilename: file.name });
+      }
+    }
+  }
   const missingFonts = (p.timeline.fonts ?? []).filter((font) => !resourceFiles[font.handle]);
   if (missingFonts.length) {
     throw new Error(

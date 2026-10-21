@@ -11,6 +11,8 @@ export const PlanLayerKind = z.enum([
   'video',
   'audio',
   'drawing',
+  /** A motion graphic (Generate Motion Graphic's output), drawn from its code by the final render. */
+  'motion',
   'text',
   'shape',
   'captions',

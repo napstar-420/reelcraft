@@ -4,6 +4,7 @@ import { bundle } from '@remotion/bundler';
 import { renderMedia, renderStill, selectComposition } from '@remotion/renderer';
 import { Timeline } from '@reelcraft/shared';
 import { renderMotion } from './motion';
+import { timelineEntry } from './timeline-entry';
 
 type RenderJob = {
   /** `still` renders the first frame as a PNG, for a picture of a timeline instead of a video. */
@@ -40,8 +41,13 @@ async function main() {
     timingMaps: renderData.timing,
     styles: renderData.styles ?? {},
   };
-  const entry = path.resolve(__dirname, 'root.js');
-  const serveUrl = await bundle({ entryPoint: entry, publicDir: resourceDir });
+  // A timeline with motion graphics bundles their code with it.
+  const entry = await timelineEntry(timeline);
+  const serveUrl = await bundle({
+    entryPoint: entry.entryPoint,
+    publicDir: resourceDir,
+    ...(entry.webpackOverride && { webpackOverride: entry.webpackOverride, enableCaching: false }),
+  }).finally(() => entry.cleanup());
   const composition = await selectComposition({
     serveUrl,
     id: 'Timeline',
