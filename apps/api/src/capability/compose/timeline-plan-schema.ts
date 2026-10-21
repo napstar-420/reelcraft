@@ -227,4 +227,5 @@ export const TIMELINE_PLAN_GUIDE = `A plan is a list of layers. Each layer is on
 - When: atSec is a time; atCue is words copied exactly from the narration, so the layer appears as they are spoken; afterLayer follows another layer.
 - Use an asset only by its id from the asset list. If none fits, say what is needed instead of inventing an id.
 - Sounds are layers too: voice-over, background music and effects each go on their own track; put music under the voice with ducks.
+- How things arrive is anim: lines draw on, words are written out (handwrite) or typed letter by letter (type, with caret for a cursor), anything can pop, fade or slide in.
 - Keep text short. To colour or bold one word in a line, give runs instead of text. Leave room: boxes that overlap on purpose are fine, by accident are not.`;
