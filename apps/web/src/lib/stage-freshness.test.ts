@@ -44,4 +44,26 @@ describe('workspace freshness', () => {
     };
     expect(stageFreshness(source, draft).staleStageKeys).toEqual(['voice', 'join']);
   });
+
+  it('does not mark a stage stale when only its phase name changes', () => {
+    const stage = {
+      key: 'a',
+      label: 'A',
+      capability: 'text.generate',
+      config: {},
+      slots: {},
+      context: {},
+      output: { kind: 'text' as const },
+      checks: [],
+    };
+    const source: CreateBlueprintVersionDto = {
+      graph: [stage],
+      inputs: [],
+      roles: [],
+      defaults: {},
+      budget: { runCapUsd: 1 },
+    };
+    const draft = { ...source, graph: [{ ...stage, group: 'Voice' }] };
+    expect(stageFreshness(source, draft).staleStageKeys).toEqual([]);
+  });
 });

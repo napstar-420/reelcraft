@@ -63,6 +63,37 @@ const wordsSchema: JsonSchema = {
   required: ['transcript', 'durationSec', 'words'],
 };
 
+/** The run page boxes stages together by phase; recipes name the phase of each stage they ship. */
+const PHASE_OF: Record<string, string> = {
+  story: 'Script',
+  script: 'Script',
+  shots: 'Script',
+  voice: 'Voice',
+  words: 'Voice',
+  narration: 'Voice',
+  images: 'Visuals',
+  clips: 'Visuals',
+  needs: 'Visuals',
+  draw: 'Visuals',
+  prepare: 'Visuals',
+  motion: 'Visuals',
+  plan: 'Edit',
+  layout: 'Edit',
+  compose: 'Edit',
+  cut: 'Edit',
+  render: 'Render',
+};
+
+function grouped(dto: CreateBlueprintVersionDto): CreateBlueprintVersionDto {
+  return {
+    ...dto,
+    graph: dto.graph.map((stage) => {
+      const group = PHASE_OF[stage.key];
+      return group ? { ...stage, group } : stage;
+    }),
+  };
+}
+
 /** Voice-over, word timings and an assembled, captioned video: the tail most recipes share. */
 function voiceToVideo(textSource: { from: 'memory'; key: string }, imageKey?: string): StageDef[] {
   return [
@@ -144,7 +175,7 @@ function voiceToVideo(textSource: { from: 'memory'; key: string }, imageKey?: st
 
 /** A short vertical video: a script, a voice-over, word timings, captions on a plain background. */
 export function recipeVoiceoverReel(): CreateBlueprintVersionDto {
-  return {
+  return grouped({
     graph: [
       {
         key: 'script',
@@ -184,7 +215,7 @@ export function recipeVoiceoverReel(): CreateBlueprintVersionDto {
     roles: [],
     defaults: {},
     budget: { runCapUsd: 3 },
-  };
+  });
 }
 
 const sceneSchema: JsonSchema = {
@@ -225,7 +256,7 @@ const sceneSchema: JsonSchema = {
  * channel Character in every picture.
  */
 export function recipeIllustratedStory(withCharacter = false): CreateBlueprintVersionDto {
-  return {
+  return grouped({
     graph: [
       {
         key: 'story',
@@ -326,7 +357,7 @@ export function recipeIllustratedStory(withCharacter = false): CreateBlueprintVe
       : [],
     defaults: {},
     budget: { runCapUsd: 8 },
-  };
+  });
 }
 
 /**
@@ -366,7 +397,7 @@ const shotsSchema: JsonSchema = {
 
 /** A montage of generated clips cut together (no voice-over): plan shots, one video stage per shot. */
 export function recipeBrollMontage(): CreateBlueprintVersionDto {
-  return {
+  return grouped({
     graph: [
       {
         key: 'shots',
@@ -416,7 +447,7 @@ export function recipeBrollMontage(): CreateBlueprintVersionDto {
     roles: [],
     defaults: {},
     budget: { runCapUsd: 12 },
-  };
+  });
 }
 
 const needsSchema: JsonSchema = {
@@ -463,7 +494,7 @@ export function recipeComposedVideo(mode: 'generated' | 'library'): CreateBluepr
   const libraryRef: Ref = generated
     ? { from: 'library', kinds: ['audio'] }
     : { from: 'library', builtin: false };
-  return {
+  return grouped({
     graph: [
       {
         key: 'script',
@@ -639,7 +670,7 @@ export function recipeComposedVideo(mode: 'generated' | 'library'): CreateBluepr
     roles: [],
     defaults: {},
     budget: { runCapUsd: 4 },
-  };
+  });
 }
 
 const graphicsSchema: JsonSchema = {
@@ -683,7 +714,7 @@ const graphicsSchema: JsonSchema = {
  * Any text model can write them; Codex and Claude also test-render their own work first.
  */
 export function recipeMotionGraphics(): CreateBlueprintVersionDto {
-  return {
+  return grouped({
     graph: [
       {
         key: 'script',
@@ -819,5 +850,5 @@ export function recipeMotionGraphics(): CreateBlueprintVersionDto {
     roles: [],
     defaults: {},
     budget: { runCapUsd: 4 },
-  };
+  });
 }

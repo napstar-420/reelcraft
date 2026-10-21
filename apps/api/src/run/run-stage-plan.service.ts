@@ -136,6 +136,7 @@ export class RunStagePlanService {
     const contract = (stage: StageDef) => ({
       ...stage,
       label: undefined,
+      group: undefined,
       disabled: undefined,
       instructions: undefined,
       qc: undefined,
