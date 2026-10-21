@@ -1,5 +1,6 @@
 import type { RunDetailDto, StageExecutionDto } from '@reelcraft/shared';
 import { displayStageState } from '@/lib/run-actions';
+import type { StatusTone } from '@/lib/status';
 import { stageDependencies } from '@/lib/stage-deps';
 
 /** What the run page shows for a stage or a phase. `next` is not stored: it is derived. */
@@ -160,4 +161,31 @@ export function buildRunView(run: RunInput): RunView {
     failed: stages.filter((s) => s.state === 'failed'),
     waiting: stages.filter((s) => s.state === 'waiting'),
   };
+}
+
+export const VIEW_LABEL: Record<ViewState | PhaseState, string> = {
+  done: 'Done',
+  running: 'Running',
+  waiting: 'Waiting for you',
+  failed: 'Failed',
+  next: 'Up next',
+  pending: 'Not started',
+  skipped: 'Skipped',
+  partial: 'In progress',
+};
+
+export function viewTone(state: ViewState | PhaseState): StatusTone {
+  switch (state) {
+    case 'done':
+      return 'success';
+    case 'running':
+    case 'partial':
+      return 'running';
+    case 'waiting':
+      return 'warning';
+    case 'failed':
+      return 'error';
+    default:
+      return 'neutral';
+  }
 }

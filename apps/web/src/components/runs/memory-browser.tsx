@@ -8,11 +8,15 @@ export function MemoryBrowser({
   runId,
   stageKey,
   onOpenStage,
+  labelOf,
 }: {
   runId: string;
   stageKey?: string | undefined;
   onOpenStage?: ((key: string) => void) | undefined;
+  /** A stage's name for its key; the key itself when unset. */
+  labelOf?: ((key: string) => string) | undefined;
 }) {
+  const nameOf = (key: string) => labelOf?.(key) ?? key;
   const [search, setSearch] = useState('');
   const [producer, setProducer] = useState('');
   const [kind, setKind] = useState('');
@@ -56,7 +60,9 @@ export function MemoryBrowser({
         >
           <option value="">All stages</option>
           {[...new Set(all.map((e) => e.writtenBy))].map((key) => (
-            <option key={key}>{key}</option>
+            <option key={key} value={key}>
+              {nameOf(key)}
+            </option>
           ))}
         </select>
         <select
@@ -74,7 +80,7 @@ export function MemoryBrowser({
       {stages.map((key) => (
         <details key={key} open className="border-b pb-3">
           <summary className="cursor-pointer py-2 text-sm font-medium">
-            {key}{' '}
+            {nameOf(key)}{' '}
             <span className="text-muted-foreground">
               · {entries.filter((e) => e.writtenBy === key).length} values
             </span>

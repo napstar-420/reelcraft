@@ -1,16 +1,11 @@
 import { useRunExecutionActions } from '@/hooks/useRunExecutionActions';
-import {
-  RunExecutionToolbar,
-  StageExecutionControls,
-  ExecutionPlanDialog,
-} from '@/components/runs/execution-controls';
-import { useEffect, useState } from 'react';
+import { RunExecutionToolbar, ExecutionPlanDialog } from '@/components/runs/execution-controls';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 
-import { Eye, FileText, History, Play, Wallet } from 'lucide-react';
+import { Brain, Play, Wallet } from 'lucide-react';
 
 import { useRun } from '../hooks/useRun';
-import { formatRunDuration } from './runs-page.logic';
 
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Progress } from '@/components/ui/progress';
@@ -18,18 +13,20 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 
-import { runStateTone, stageExecutionStateTone } from '@/lib/status';
-import { displayStageState, runHeadline, stageStatusLabel } from '@/lib/run-actions';
-import { canAnswerWaits, isRunActionAllowed } from '@/lib/run-action-policy';
+import { runStateTone } from '@/lib/status';
+import { runHeadline } from '@/lib/run-actions';
+import { isRunActionAllowed } from '@/lib/run-action-policy';
 
 import { ApprovalReviewSheet } from '@/components/runs/approval-review-sheet';
 import { RaiseBudgetDialog } from '@/components/runs/raise-budget-dialog';
 
 import { SubmitFormInputDialog } from '@/components/runs/submit-form-input-dialog';
-import { StageAttemptsSheet } from '@/components/runs/stage-attempts-sheet';
-import { StageOutputSheet } from '@/components/runs/stage-output-sheet';
-import { RunMemoryCard } from '@/components/runs/run-memory-card';
 import { ProductionRunDialog } from '@/components/runs/production-run-dialog';
+import { RunAttention, RunNowNext, StageProgress } from '@/components/runs/run-overview';
+import { RunGraph } from '@/components/runs/run-graph';
+import { RunMemorySheet } from '@/components/runs/run-memory-sheet';
+import { StageDrawer } from '@/components/runs/stage-drawer';
+import { buildRunView } from '@/components/runs/run-phases.logic';
 import { isApprovalStillOpen } from './approval-review.logic';
 import { deepLinkTarget } from './run-deep-link.logic';
 import { quotaPauseMessage } from '@/lib/quota-pause';
@@ -41,8 +38,8 @@ export function RunPage() {
   const { data: run, isLoading, isFetching } = useRun(runId);
   const [reviewStageKey, setReviewStageKey] = useState<string | null>(null);
   const [formInputStageKey, setFormInputStageKey] = useState<string | null>(null);
-  const [attemptsStageKey, setAttemptsStageKey] = useState<string | null>(null);
-  const [outputStageKey, setOutputStageKey] = useState<string | null>(null);
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const [memoryOpen, setMemoryOpen] = useState(false);
   const [raiseBudgetOpen, setRaiseBudgetOpen] = useState(false);
 
   useEffect(() => {
@@ -67,8 +64,9 @@ export function RunPage() {
   }, [run, isFetching, searchParams, setSearchParams]);
 
   const actions = useRunExecutionActions({ run });
+  const view = useMemo(() => (run ? buildRunView(run) : null), [run]);
 
-  if (isLoading || !run) {
+  if (isLoading || !run || !view) {
     return (
       <section className="flex flex-col gap-6">
         <Skeleton className="h-8 w-64" />
@@ -87,8 +85,6 @@ export function RunPage() {
   const spentPct = budgetCapUsd > 0 ? Math.min(100, (spentUsd / budgetCapUsd) * 100) : 0;
 
   const canRaiseBudget = isRunActionAllowed('raise_budget', run.state);
-  const isStageRunning = (stageKey: string | null) =>
-    run.stageExecutions.some((se) => se.stageKey === stageKey && se.state === 'running');
 
   return (
     <section className="flex flex-col gap-6">
@@ -117,22 +113,6 @@ export function RunPage() {
         open={formInputStageKey !== null}
         onOpenChange={(open) => !open && setFormInputStageKey(null)}
       />
-      <StageAttemptsSheet
-        actions={run.availableActions?.busy ? undefined : actions}
-        runId={run.id}
-        stageKey={attemptsStageKey}
-        open={attemptsStageKey !== null}
-        onOpenChange={(open) => !open && setAttemptsStageKey(null)}
-      />
-      <StageOutputSheet
-        actions={run.availableActions?.busy ? undefined : actions}
-        runId={run.id}
-        stageKey={outputStageKey}
-        stageRunning={isStageRunning(outputStageKey)}
-        open={outputStageKey !== null}
-        onOpenChange={(open) => !open && setOutputStageKey(null)}
-      />
-
       <div className="flex flex-col gap-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-3">
@@ -153,6 +133,9 @@ export function RunPage() {
             ) : null}
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <Button size="sm" variant="outline" onClick={() => setMemoryOpen(true)}>
+              <Brain /> Memory
+            </Button>
             {run.blueprintId && (
               <Button size="sm" variant="ghost" asChild>
                 <Link
@@ -183,6 +166,8 @@ export function RunPage() {
             />
           </div>
         </div>
+
+        <StageProgress view={view} />
 
         <div className="flex flex-col gap-1.5">
           <div className="flex max-w-md items-center gap-2">
@@ -215,6 +200,14 @@ export function RunPage() {
         </div>
       </div>
 
+      <RunAttention
+        run={run}
+        view={view}
+        onOpenStage={setSelectedKey}
+        onReview={setReviewStageKey}
+        onProvideInput={setFormInputStageKey}
+      />
+
       {run.finalVideo ? (
         <div className="flex flex-col gap-3">
           <h2 className="text-lg font-semibold tracking-tight">Final video</h2>
@@ -229,81 +222,32 @@ export function RunPage() {
         </div>
       ) : null}
 
-      <div className="flex flex-col gap-3">
-        <h2 className="text-lg font-semibold tracking-tight">Stages</h2>
-        <div className="flex flex-col gap-3">
-          {run.stageExecutions.map((se) => (
-            <Card key={se.id} className="flex-row items-center justify-between gap-4 px-4">
-              <div className="flex flex-wrap items-center gap-3">
-                <span className="flex flex-col">
-                  <span className="font-medium">{se.label}</span>
-                  {se.label !== se.stageKey ? (
-                    <span className="font-mono text-xs text-muted-foreground">{se.stageKey}</span>
-                  ) : null}
-                </span>
-                <StatusBadge
-                  tone={stageExecutionStateTone(displayStageState(se, run))}
-                  label={stageStatusLabel(displayStageState(se, run))}
-                />
-                <span className="text-sm text-muted-foreground">
-                  {se.attemptCount} attempt{se.attemptCount === 1 ? '' : 's'}
-                </span>
-                {se.startedAt && (se.endedAt || displayStageState(se, run) === 'running') && (
-                  <span className="text-sm text-muted-foreground tabular-nums">
-                    {formatRunDuration(se.startedAt, se.endedAt)}
-                  </span>
-                )}
-              </div>
-              <div className="flex items-center gap-2">
-                {isApprovalStillOpen(se.stageKey, run) ? (
-                  <Button size="sm" onClick={() => setReviewStageKey(se.stageKey)}>
-                    <Eye /> Review output
-                  </Button>
-                ) : null}
-                {se.interaction === 'form' &&
-                canAnswerWaits(run.state) &&
-                se.waiting === 'input' ? (
-                  <Button size="sm" onClick={() => setFormInputStageKey(se.stageKey)}>
-                    Provide input
-                  </Button>
-                ) : null}
-                {se.interaction === 'timeline_editor' && se.state === 'awaiting_input' ? (
-                  <Button size="sm" asChild>
-                    <Link to={`/runs/${run.id}/stages/${se.stageKey}/edit`}>Open editor</Link>
-                  </Button>
-                ) : null}
-                <StageExecutionControls
-                  available={se.availableActions}
-                  busy={run.availableActions?.busy ?? true}
-                  pending={actions.runStage.isPending}
-                  onAction={(request) =>
-                    actions.runStage.mutate({ stageKey: se.stageKey, ...request })
-                  }
-                />
-                {se.outputArtifactId !== null || (se.isIterating && se.state !== 'pending') ? (
-                  <Button size="sm" variant="ghost" onClick={() => setOutputStageKey(se.stageKey)}>
-                    <FileText /> View output
-                  </Button>
-                ) : null}
-                {se.attemptCount > 0 ? (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => setAttemptsStageKey(se.stageKey)}
-                  >
-                    <History /> Attempts
-                  </Button>
-                ) : null}
-              </div>
-            </Card>
-          ))}
-        </div>
-      </div>
+      <RunNowNext run={run} view={view} onOpenStage={setSelectedKey} />
 
       <div className="flex flex-col gap-3">
-        <h2 className="text-lg font-semibold tracking-tight">Memory</h2>
-        <RunMemoryCard run={run} onOpenStage={setOutputStageKey} />
+        <h2 className="text-lg font-semibold tracking-tight">Pipeline</h2>
+        <Card className="px-4">
+          <RunGraph view={view} selectedKey={selectedKey} onOpenStage={setSelectedKey} />
+        </Card>
       </div>
+
+      <StageDrawer
+        run={run}
+        view={view}
+        stageKey={selectedKey}
+        actions={actions}
+        onClose={() => setSelectedKey(null)}
+        onOpenStage={setSelectedKey}
+        onReview={setReviewStageKey}
+        onProvideInput={setFormInputStageKey}
+      />
+      <RunMemorySheet
+        runId={run.id}
+        open={memoryOpen}
+        onOpenChange={setMemoryOpen}
+        onOpenStage={setSelectedKey}
+        labelOf={(key) => view.stages.find((s) => s.key === key)?.label ?? key}
+      />
     </section>
   );
 }
