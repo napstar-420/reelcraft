@@ -17,6 +17,15 @@ describe('RunActionPolicy', () => {
     expect(policy.isAllowed('CANCELLED', 'cancel')).toBe(false);
   });
 
+  it('accepts answers to waits left open on a stopped run, never on an active one', () => {
+    for (const action of ['approve', 'reject', 'retry_qc', 'submit_input'] as const) {
+      expect(policy.isAllowed('FAILED', action)).toBe(true);
+      expect(policy.isAllowed('PAUSED_MANUAL', action)).toBe(true);
+      expect(policy.isAllowed('RUNNING', action)).toBe(false);
+      expect(policy.isAllowed('CANCELLING', action)).toBe(false);
+    }
+  });
+
   it('throws a structured conflict for a disallowed action', () => {
     try {
       policy.assertAllowed('COMPLETED', 'patch_overrides');

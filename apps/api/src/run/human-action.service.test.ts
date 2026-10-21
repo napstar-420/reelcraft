@@ -8,6 +8,8 @@ describe('HumanActionService', () => {
     const mutation = {
       withLockedRunMaybeWake: vi.fn(async (_id, _action, _states, callback, _event, wake) => {
         const value = await callback(tx, {
+          id: 'run-1',
+          state: 'PAUSED_APPROVAL',
           cursorStageKey: 'review',
           revision: 2,
           blueprintVersionId: 'v1',
@@ -28,7 +30,7 @@ describe('HumanActionService', () => {
     expect(mutation.withLockedRunMaybeWake).toHaveBeenCalledWith(
       'run-1',
       'approve',
-      ['PAUSED_APPROVAL', 'PAUSED_INPUT'],
+      expect.arrayContaining(['PAUSED_APPROVAL', 'PAUSED_INPUT', 'FAILED']),
       expect.any(Function),
       'run/resumed',
       expect.any(Function),
@@ -47,7 +49,11 @@ describe('HumanActionService', () => {
     const tx = { update: vi.fn().mockReturnValue({ set: setState }) };
     const mutation = {
       withLockedRunMaybeWake: vi.fn(async (_id, _action, _states, callback, _event, wake) => {
-        const value = await callback(tx, { cursorStageKey: 'review' });
+        const value = await callback(tx, {
+          id: 'run-1',
+          state: 'PAUSED_APPROVAL',
+          cursorStageKey: 'review',
+        });
         return { value, wakeupId: wake(value) ? 'wake-approval' : undefined, revision: 3 };
       }),
     };
@@ -65,5 +71,35 @@ describe('HumanActionService', () => {
     expect(dispatch).not.toHaveBeenCalled();
     // Parked in the state of the wait still open, so the next answer is accepted.
     expect(setState).toHaveBeenCalledWith({ state: 'PAUSED_INPUT' });
+  });
+
+  it('records an answer on a failed run without waking it or changing its state', async () => {
+    const setState = vi.fn().mockReturnValue({ where: vi.fn() });
+    const tx = { update: vi.fn().mockReturnValue({ set: setState }) };
+    const mutation = {
+      withLockedRunMaybeWake: vi.fn(async (_id, _action, _states, callback, _event, wake) => {
+        const value = await callback(tx, { id: 'run-1', state: 'FAILED', cursorStageKey: 'x' });
+        return { value, wakeupId: wake(value) ? 'wake-approval' : undefined, revision: 3 };
+      }),
+    };
+    const dispatch = vi.fn().mockResolvedValue(true);
+    const pausedStateFor = vi.fn().mockResolvedValue(undefined);
+    const approveInTransaction = vi.fn().mockResolvedValue(undefined);
+    const service = Object.assign(Object.create(HumanActionService.prototype) as object, {
+      mutation,
+      logger: new Logger(HumanActionService.name),
+      waits: { pausedStateFor },
+      dispatcher: { dispatch },
+      approveInTransaction,
+    }) as unknown as HumanActionService;
+
+    await expect(service.approve('run-1', 'images', 12)).resolves.toMatchObject({
+      accepted: true,
+    });
+    expect(approveInTransaction).toHaveBeenCalled();
+    // Stays FAILED: no wakeup, no paused state written. Continue picks the answer up.
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(setState).not.toHaveBeenCalled();
+    expect(pausedStateFor).not.toHaveBeenCalled();
   });
 });

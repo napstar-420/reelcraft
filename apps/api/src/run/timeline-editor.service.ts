@@ -1,4 +1,5 @@
 import { ConflictException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { RUN_ACTION_ALLOWED_STATES } from './run-action-policy';
 import { and, desc, eq, inArray, isNull } from 'drizzle-orm';
 import {
   Probe,
@@ -63,7 +64,10 @@ type SourceRow = {
 
 /** Run states in which a person can answer a wait: which one it is depends on
  * which kind of wait is open, and a run can hold several at once. */
-const HUMAN_WAIT_STATES = ['PAUSED_APPROVAL', 'PAUSED_INPUT'] as const;
+/** Run states in which the open edit can still be answered: parked on it, or stopped
+ * for another reason with the wait still open (same as submitting any input). */
+const canAnswer = (state: string) =>
+  (RUN_ACTION_ALLOWED_STATES.submit_input as readonly string[]).includes(state);
 
 @Injectable()
 export class TimelineEditorService {
@@ -108,9 +112,7 @@ export class TimelineEditorService {
       timingMaps: authorized.timingMaps,
       styles: this.styles.list(),
       checkResults: latestAttempt?.checkResults ?? [],
-      readOnly:
-        context.wait.resolvedAt !== null ||
-        !HUMAN_WAIT_STATES.includes(context.run.state as (typeof HUMAN_WAIT_STATES)[number]),
+      readOnly: context.wait.resolvedAt !== null || !canAnswer(context.run.state),
     };
   }
 
@@ -214,10 +216,7 @@ export class TimelineEditorService {
   }
 
   private requireEditable(context: Context) {
-    if (
-      context.wait.resolvedAt ||
-      !HUMAN_WAIT_STATES.includes(context.run.state as (typeof HUMAN_WAIT_STATES)[number])
-    ) {
+    if (context.wait.resolvedAt || !canAnswer(context.run.state)) {
       throw new ConflictException('The timeline editor is no longer active');
     }
   }
