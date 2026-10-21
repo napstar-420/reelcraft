@@ -24,7 +24,9 @@ your channel's library** and picked from there:
 | Motion graphics       | [Generate Motion Graphic](../stage-types/generate-motion-graphic.md), then [Render Motion Graphic](../stage-types/render-motion-graphic.md) | **Video**         |
 | Any file from the web | [Automate Browser](../stage-types/automate-browser.md) downloads it                                                                         | -                 |
 
-Words, shapes, captions and the camera need no asset: they are part of the plan.
+Words, shapes, captions and the camera need no asset: they are part of the plan. Words can be in several
+colours (one word picked out of a line), written out by hand or typed letter by letter, and an arrow can join any
+two things on the screen and stay joined if either moves. See [Compose Timeline](../stage-types/compose-timeline.md#the-plan).
 
 ## The stages
 
