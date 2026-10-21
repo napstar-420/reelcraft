@@ -96,10 +96,10 @@ function DrawerBody({
     <>
       <SheetHeader className="gap-2 pr-12">
         <p className="text-xs text-muted-foreground">
-          Stage {stage.index}
-          {phaseName && phaseName !== stage.label ? ` · ${phaseName}` : ''}
+          Stage {stage.number}
+          {phaseName && phaseName !== stage.name ? ` · ${phaseName}` : ''}
         </p>
-        <SheetTitle className="text-lg">{stage.label}</SheetTitle>
+        <SheetTitle className="text-lg">{stage.name}</SheetTitle>
         <SheetDescription asChild>
           <div className="flex flex-wrap items-center gap-2">
             <StatusBadge tone={viewTone(stage.state)} label={VIEW_LABEL[stage.state]} />

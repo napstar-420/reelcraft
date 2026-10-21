@@ -4,14 +4,19 @@ import type { StatusTone } from '@/lib/status';
 import { stageDependencies } from '@/lib/stage-deps';
 
 /** What the run page shows for a stage or a phase. `next` is not stored: it is derived. */
-export type ViewState = 'done' | 'running' | 'waiting' | 'failed' | 'next' | 'pending' | 'skipped';
-export type PhaseState = Exclude<ViewState, 'skipped'> | 'partial';
+export type ViewState =
+  'done' | 'running' | 'waiting' | 'failed' | 'paused' | 'next' | 'pending' | 'skipped';
+export type PhaseState = Exclude<ViewState, 'skipped' | 'paused'> | 'partial';
 
 export type StageView = {
   key: string;
   label: string;
   /** 1-based position in the blueprint. */
   index: number;
+  /** The number to show: the one the label starts with ("11 · Captions"), else the position. */
+  number: string;
+  /** The label without that leading number. */
+  name: string;
   state: ViewState;
   deps: string[];
   phaseId: string;
@@ -36,6 +41,8 @@ export type RunView = {
   stages: StageView[];
   phases: Phase[];
   running: StageView[];
+  /** Stopped part-way: they carry on first when the run continues. */
+  paused: StageView[];
   next: StageView[];
   recent: StageView[];
   failed: StageView[];
@@ -59,9 +66,21 @@ function viewState(execution: StageExecutionDto, run: RunInput): ViewState {
       return 'waiting';
     case 'failed':
       return 'failed';
+    case 'cancelled':
+      return 'paused';
     default:
       return 'pending';
   }
+}
+
+const LEADING_NUMBER = /^\s*(\d+)\s*[·.:)\-–—]\s*/;
+
+/** Blueprints often number their labels ("11 · Phrase captions"). Show that number once. */
+function numbered(label: string, index: number): { number: string; name: string } {
+  const match = LEADING_NUMBER.exec(label);
+  return match && label.length > match[0].length
+    ? { number: match[1]!, name: label.slice(match[0].length) }
+    : { number: String(index), name: label };
 }
 
 const SETTLED: ViewState[] = ['done', 'skipped'];
@@ -70,7 +89,7 @@ function phaseState(stages: StageView[]): PhaseState {
   const has = (state: ViewState) => stages.some((s) => s.state === state);
   for (const state of ['failed', 'waiting', 'running'] as const) if (has(state)) return state;
   if (stages.every((s) => SETTLED.includes(s.state))) return 'done';
-  if (has('done')) return 'partial';
+  if (has('done') || has('paused')) return 'partial';
   return has('next') ? 'next' : 'pending';
 }
 
@@ -108,12 +127,26 @@ export function buildRunView(run: RunInput): RunView {
     key: execution.stageKey,
     label: execution.label,
     index: i + 1,
+    ...numbered(execution.label, i + 1),
     state: viewState(execution, run),
     deps: deps.get(execution.stageKey) ?? [],
     phaseId: groupOf.get(execution.stageKey) ?? execution.stageKey,
     execution,
   }));
   const byKey = new Map(stages.map((s) => [s.key, s]));
+  // A stage with no phase joins the one before it when they form a plain chain (it waits only for
+  // that stage, and nothing else waits for that stage), so a blueprint without phases still
+  // collapses into a few boxes instead of one per stage.
+  const dependents = new Map<string, number>();
+  for (const stage of stages)
+    for (const dep of stage.deps) dependents.set(dep, (dependents.get(dep) ?? 0) + 1);
+  const named = new Set(stages.filter((s) => groupOf.get(s.key)).map((s) => s.key));
+  for (const stage of stages) {
+    if (named.has(stage.key) || stage.deps.length !== 1) continue;
+    const dep = byKey.get(stage.deps[0]!);
+    if (!dep || named.has(dep.key) || dependents.get(dep.key) !== 1) continue;
+    stage.phaseId = dep.phaseId;
+  }
   // Up next: not started, and everything it waits for is finished or running (so it starts the
   // moment that ends). Judged on the stored states, so one next stage doesn't make the one after it next.
   const stored = new Map(stages.map((s) => [s.key, s.state]));
@@ -138,7 +171,11 @@ export function buildRunView(run: RunInput): RunView {
     const counted = members.filter((s) => s.state !== 'skipped');
     return {
       id,
-      name: members.length === 1 && id === members[0]!.key ? members[0]!.label : id,
+      name: named.has(members[0]!.key)
+        ? id
+        : members.length === 1
+          ? members[0]!.name
+          : `${members[0]!.name} +${members.length - 1} more`,
       stages: members,
       state: phaseState(members),
       done: counted.filter((s) => s.state === 'done').length,
@@ -153,6 +190,7 @@ export function buildRunView(run: RunInput): RunView {
     stages,
     phases,
     running: stages.filter((s) => s.state === 'running'),
+    paused: stages.filter((s) => s.state === 'paused'),
     next: stages.filter((s) => s.state === 'next'),
     recent: stages
       .filter((s) => s.state === 'done' && s.execution.endedAt)
@@ -168,6 +206,7 @@ export const VIEW_LABEL: Record<ViewState | PhaseState, string> = {
   running: 'Running',
   waiting: 'Waiting for you',
   failed: 'Failed',
+  paused: 'Paused',
   next: 'Up next',
   pending: 'Not started',
   skipped: 'Skipped',

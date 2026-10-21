@@ -53,7 +53,7 @@ export function StageProgress({ view }: { view: RunView }) {
 function StageChip({ stage, onOpen }: { stage: StageView; onOpen: (key: string) => void }) {
   return (
     <Button size="sm" variant="outline" onClick={() => onOpen(stage.key)}>
-      {stage.index} · {stage.label}
+      {stage.number} · {stage.name}
     </Button>
   );
 }
@@ -92,7 +92,7 @@ export function RunAttention({
         <div key={s.key} className="flex flex-wrap items-center gap-2">
           <StatusBadge tone="warning" label="Waiting for you" />
           <span className="text-sm">
-            {s.index} · {s.label}
+            {s.number} · {s.name}
           </span>
           <StageAnswerButtons
             run={run}
@@ -104,6 +104,11 @@ export function RunAttention({
       ))}
     </Card>
   );
+}
+
+function pausedDetail(stage: StageView): string {
+  const { completedItems, totalItems } = stage.execution.availableActions ?? {};
+  return totalItems ? `Paused · ${completedItems ?? 0}/${totalItems} items` : 'Paused';
 }
 
 function StageRow({
@@ -131,7 +136,7 @@ function StageRow({
         )}
       />
       <span className="min-w-0 flex-1 truncate">
-        {stage.index} · {stage.label}
+        {stage.number} · {stage.name}
       </span>
       {detail ? <span className="text-xs text-muted-foreground">{detail}</span> : null}
     </button>
@@ -198,8 +203,13 @@ export function RunNowNext({
               : 'Nothing queued.'
         }
       >
-        {view.next.slice(0, 4).map((s) => (
-          <StageRow key={s.key} stage={s} onOpen={onOpenStage} />
+        {[...view.paused, ...view.next].slice(0, 4).map((s) => (
+          <StageRow
+            key={s.key}
+            stage={s}
+            detail={s.state === 'paused' ? pausedDetail(s) : undefined}
+            onOpen={onOpenStage}
+          />
         ))}
       </Panel>
       <Panel title="Finished recently" empty="Nothing finished yet.">

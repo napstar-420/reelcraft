@@ -135,4 +135,44 @@ describe('buildRunView', () => {
     expect(v.failed.map((s) => s.key)).toEqual(['b']);
     expect(v.waiting.map((s) => s.key)).toEqual(['d']);
   });
+
+  it('shows a label number once and numbers an unnumbered label by position', () => {
+    const graph = [
+      def('a', { label: '11 · Phrase captions', dependsOn: [] }),
+      def('b', { dependsOn: ['a'] }),
+    ];
+    const { stages } = view(graph, {}, true, { a: { label: '11 · Phrase captions' } });
+    expect(stages.map((s) => [s.number, s.name])).toEqual([
+      ['11', 'Phrase captions'],
+      ['2', 'B'],
+    ]);
+  });
+
+  it('calls a stage cut off by a stopped run paused, lists it, and does not queue what waits for it', () => {
+    const { paused, next, stages } = view(chain, { a: 'passed', b: 'cancelled' }, false);
+    expect(paused.map((s) => s.key)).toEqual(['b']);
+    expect(stages.find((s) => s.key === 'c')!.state).toBe('pending');
+    expect(next.map((s) => s.key)).toEqual(['d']);
+  });
+
+  it('merges ungrouped stages that form a plain chain, and leaves branches apart', () => {
+    const graph = [
+      def('a', { dependsOn: [] }),
+      def('b', { dependsOn: ['a'] }),
+      def('c', { dependsOn: ['b'] }),
+      def('d', { dependsOn: ['c'] }),
+      def('e', { dependsOn: ['c'] }),
+    ];
+    const { phases } = view(graph, {});
+    expect(phases.map((p) => [p.name, p.stages.map((s) => s.key)])).toEqual([
+      ['A +2 more', ['a', 'b', 'c']],
+      ['D', ['d']],
+      ['E', ['e']],
+    ]);
+  });
+
+  it('never merges a stage that has a phase of its own', () => {
+    const { phases } = view(chain, {});
+    expect(phases.map((p) => p.id)).toEqual(['One', 'Two', 'd']);
+  });
 });

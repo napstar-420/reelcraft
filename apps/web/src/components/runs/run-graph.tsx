@@ -14,6 +14,7 @@ const SQUARE: Record<ViewState, string> = {
   running: 'bg-blue-500 animate-pulse',
   waiting: 'bg-amber-500',
   failed: 'bg-destructive',
+  paused: 'border-2 border-blue-400/70',
   next: 'border-2 border-violet-400',
   pending: 'bg-muted-foreground/30',
   skipped: 'bg-muted-foreground/15',
@@ -43,18 +44,20 @@ function phaseNote(phase: Phase): { text: string; state: ViewState | null } {
         state,
         text:
           state === 'failed'
-            ? `Failed at ${stage.index}`
+            ? `Failed at ${stage.number}`
             : state === 'waiting'
-              ? `${stage.index} waits for you`
-              : `Running ${stage.index}`,
+              ? `${stage.number} waits for you`
+              : `Running ${stage.number}`,
       };
   }
+  const paused = phase.stages.find((s) => s.state === 'paused');
+  if (paused) return { state: null, text: `Paused at ${paused.number}` };
   return { state: null, text: phase.state === 'next' ? 'Up next' : '' };
 }
 
 type Edge = { d: string; tone: 'live' | 'done' | 'idle' };
 
-/** The run as a few phase boxes joined left to right, with one square per stage inside each. */
+/** The run as a few phase boxes joined top to bottom, with one square per stage inside each. */
 export function RunGraph({
   view,
   selectedKey,
@@ -87,13 +90,13 @@ export function RunGraph({
           const a = boxes.current.get(dep)?.getBoundingClientRect();
           const b = boxes.current.get(phase.id)?.getBoundingClientRect();
           if (!a || !b) continue;
-          const x1 = a.right - base.left;
-          const y1 = a.top - base.top + a.height / 2;
-          const x2 = b.left - base.left;
-          const y2 = b.top - base.top + b.height / 2;
-          const mid = (x1 + x2) / 2;
+          const x1 = a.left - base.left + a.width / 2;
+          const y1 = a.bottom - base.top;
+          const x2 = b.left - base.left + b.width / 2;
+          const y2 = b.top - base.top;
+          const mid = (y1 + y2) / 2;
           next.push({
-            d: `M${x1},${y1} C${mid},${y1} ${mid},${y2} ${x2},${y2}`,
+            d: `M${x1},${y1} C${x1},${mid} ${x2},${mid} ${x2},${y2}`,
             tone:
               phase.state === 'running'
                 ? 'live'
@@ -112,7 +115,7 @@ export function RunGraph({
     return () => observer.disconnect();
   }, [view, open]);
 
-  const columnCount = Math.max(0, ...view.phases.map((p) => p.column)) + 1;
+  const layerCount = Math.max(0, ...view.phases.map((p) => p.column)) + 1;
   const toggle = (phase: Phase) => {
     if (phase.stages.length === 1) return onOpenStage(phase.stages[0]!.key);
     setOpen((prev) => {
@@ -123,40 +126,32 @@ export function RunGraph({
   };
 
   return (
-    <div className="overflow-x-auto">
-      <div
-        ref={root}
-        className="relative grid min-w-max gap-x-12 gap-y-4 p-1"
-        style={{ gridTemplateColumns: `repeat(${columnCount}, minmax(190px, 1fr))` }}
-      >
-        <svg
-          className="pointer-events-none absolute inset-0 size-full overflow-visible"
-          aria-hidden
-        >
-          {edges.map((edge, i) => (
-            <path
-              key={i}
-              d={edge.d}
-              fill="none"
-              strokeWidth={2}
-              className={cn(
-                edge.tone === 'live'
-                  ? 'stroke-blue-500'
-                  : edge.tone === 'done'
-                    ? 'stroke-emerald-500/40'
-                    : 'stroke-border',
-              )}
-              strokeDasharray={edge.tone === 'live' ? '5 5' : undefined}
-            />
-          ))}
-        </svg>
-        {Array.from({ length: columnCount }, (_, column) => (
-          <div key={column} className="relative z-10 flex flex-col justify-center gap-4">
-            {view.phases
-              .filter((p) => p.column === column)
-              .map((phase) => (
+    <div ref={root} className="relative flex flex-col gap-12 p-1">
+      <svg className="pointer-events-none absolute inset-0 size-full overflow-visible" aria-hidden>
+        {edges.map((edge, i) => (
+          <path
+            key={i}
+            d={edge.d}
+            fill="none"
+            strokeWidth={2}
+            className={cn(
+              edge.tone === 'live'
+                ? 'stroke-blue-500'
+                : edge.tone === 'done'
+                  ? 'stroke-emerald-500/40'
+                  : 'stroke-border',
+            )}
+            strokeDasharray={edge.tone === 'live' ? '5 5' : undefined}
+          />
+        ))}
+      </svg>
+      {Array.from({ length: layerCount }, (_, layer) => (
+        <div key={layer} className="relative z-10 flex justify-center gap-4">
+          {view.phases
+            .filter((p) => p.column === layer)
+            .map((phase) => (
+              <div key={phase.id} className="min-w-0 max-w-sm flex-1">
                 <PhaseBox
-                  key={phase.id}
                   phase={phase}
                   expanded={open.has(phase.id)}
                   selectedKey={selectedKey}
@@ -164,10 +159,10 @@ export function RunGraph({
                   onToggle={() => toggle(phase)}
                   onOpenStage={onOpenStage}
                 />
-              ))}
-          </div>
-        ))}
-      </div>
+              </div>
+            ))}
+        </div>
+      ))}
     </div>
   );
 }
@@ -214,7 +209,7 @@ function PhaseBox({
             {phase.stages.map((s) => (
               <i
                 key={s.key}
-                title={`${s.index} · ${s.label}`}
+                title={`${s.number} · ${s.name}`}
                 className={cn('size-3 rounded-[4px]', SQUARE[s.state])}
               />
             ))}
@@ -261,8 +256,8 @@ function StageLine({
       )}
     >
       <i className={cn('size-2.5 shrink-0 rounded-[3px]', SQUARE[stage.state])} aria-hidden />
-      <span className="w-5 text-xs text-muted-foreground tabular-nums">{stage.index}</span>
-      <span className="min-w-0 flex-1 truncate">{stage.label}</span>
+      <span className="w-5 text-xs text-muted-foreground tabular-nums">{stage.number}</span>
+      <span className="min-w-0 flex-1 truncate">{stage.name}</span>
       <span className="sr-only">{VIEW_LABEL[stage.state]}</span>
     </button>
   );
