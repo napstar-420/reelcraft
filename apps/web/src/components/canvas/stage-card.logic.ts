@@ -9,6 +9,7 @@ import type {
   StageExecutionState,
 } from '@reelcraft/shared';
 import { stageExecutionStateTone, type StatusTone } from '../../lib/status';
+import { displayStageState } from '../../lib/run-actions';
 import { describeSeedStop } from '../../pages/canvas-run.logic';
 import { formatRunDuration } from '../../pages/runs-page.logic';
 import { canAnswerWaits } from '../../lib/run-action-policy';
@@ -189,6 +190,7 @@ export function nodeRunStatus(
   run: Pick<RunDetailDto, 'id' | 'state' | 'availableActions'> | undefined,
 ): NodeRunStatus | undefined {
   if (!execution) return undefined;
+  const shown = run ? displayStageState(execution, run) : execution.state;
   const parts: string[] = [];
   const cost = Number(execution.costUsd);
   if (cost > 0) parts.push(`$${cost.toFixed(2)}`);
@@ -198,9 +200,9 @@ export function nodeRunStatus(
   return {
     availableActions: execution.availableActions,
     executionBusy: run?.availableActions?.busy ?? true,
-    state: execution.state,
-    tone: stageExecutionStateTone(execution.state),
-    label: NODE_STATE_LABELS[execution.state],
+    state: shown,
+    tone: stageExecutionStateTone(shown),
+    label: NODE_STATE_LABELS[shown],
     meta: parts.join(' · '),
     // `waiting` also covers an item-mode approval, which leaves the stage `running`.
     reviewable: run !== undefined && canAnswerWaits(run.state) && execution.waiting === 'approval',

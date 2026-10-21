@@ -1,7 +1,7 @@
 import type { BlueprintPresentation, RunDetailDto, StageDef } from '@reelcraft/shared';
 import { stageLayout } from '@/pages/canvas-layout.logic';
 import { stageDependencies } from '@/lib/stage-deps';
-import { stageStatusLabel } from '@/lib/run-actions';
+import { displayStageState, stageStatusLabel } from '@/lib/run-actions';
 export function DagOverview({
   graph,
   run,
@@ -56,7 +56,7 @@ export function DagOverview({
               key={stage.key}
               role="button"
               tabIndex={0}
-              aria-label={`Inspect ${stage.label}, ${stage.disabled ? 'Disabled' : stageStatusLabel(execution?.state, isStale(stage.key))}`}
+              aria-label={`Inspect ${stage.label}, ${stage.disabled ? 'Disabled' : stageStatusLabel(execution && displayStageState(execution, run), isStale(stage.key))}`}
               onClick={() => onSelect(stage.key)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
@@ -67,7 +67,11 @@ export function DagOverview({
               className="cursor-pointer outline-none focus-visible:stroke-primary"
             >
               <title>
-                {stage.label}: {stageStatusLabel(execution?.state, isStale(stage.key))}
+                {stage.label}:{' '}
+                {stageStatusLabel(
+                  execution && displayStageState(execution, run),
+                  isStale(stage.key),
+                )}
               </title>
               {presentation?.branchNames[stage.key] && (
                 <text x={p.x} y={p.y - 7} fill="var(--primary)" fontSize="10">
@@ -90,7 +94,10 @@ export function DagOverview({
               <text x={p.x + 9} y={p.y + 39} fill="var(--muted-foreground)" fontSize="10">
                 {stage.disabled
                   ? 'Disabled'
-                  : stageStatusLabel(execution?.state, isStale(stage.key))}
+                  : stageStatusLabel(
+                      execution && displayStageState(execution, run),
+                      isStale(stage.key),
+                    )}
               </text>
             </g>
           );

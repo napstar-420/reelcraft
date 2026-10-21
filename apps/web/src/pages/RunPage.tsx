@@ -10,7 +10,7 @@ import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { Eye, FileText, History, Play, Wallet } from 'lucide-react';
 
 import { useRun } from '../hooks/useRun';
-import { formatRunDuration, runningNow } from './runs-page.logic';
+import { formatRunDuration } from './runs-page.logic';
 
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Progress } from '@/components/ui/progress';
@@ -19,6 +19,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 
 import { runStateTone, stageExecutionStateTone } from '@/lib/status';
+import { displayStageState, runHeadline, stageStatusLabel } from '@/lib/run-actions';
 import { canAnswerWaits, isRunActionAllowed } from '@/lib/run-action-policy';
 
 import { ApprovalReviewSheet } from '@/components/runs/approval-review-sheet';
@@ -139,9 +140,15 @@ export function RunPage() {
               Run {run.id}
             </h1>
             <StatusBadge tone={runStateTone(run.state)} label={run.state} />
-            {runningNow(run).length > 0 ? (
-              <span className="text-sm text-muted-foreground">
-                Running now: {runningNow(run).join(', ')}
+            {runHeadline(run) ? (
+              <span
+                className={
+                  run.state === 'FAILED'
+                    ? 'text-sm text-destructive'
+                    : 'text-sm text-muted-foreground'
+                }
+              >
+                {runHeadline(run)}
               </span>
             ) : null}
           </div>
@@ -234,11 +241,14 @@ export function RunPage() {
                     <span className="font-mono text-xs text-muted-foreground">{se.stageKey}</span>
                   ) : null}
                 </span>
-                <StatusBadge tone={stageExecutionStateTone(se.state)} label={se.state} />
+                <StatusBadge
+                  tone={stageExecutionStateTone(displayStageState(se, run))}
+                  label={stageStatusLabel(displayStageState(se, run))}
+                />
                 <span className="text-sm text-muted-foreground">
                   {se.attemptCount} attempt{se.attemptCount === 1 ? '' : 's'}
                 </span>
-                {se.startedAt && (
+                {se.startedAt && (se.endedAt || displayStageState(se, run) === 'running') && (
                   <span className="text-sm text-muted-foreground tabular-nums">
                     {formatRunDuration(se.startedAt, se.endedAt)}
                   </span>
