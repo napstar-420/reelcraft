@@ -246,6 +246,7 @@ export function RunPage() {
         open={memoryOpen}
         onOpenChange={setMemoryOpen}
         onOpenStage={setSelectedKey}
+        stageOrder={view.stages.map((s) => s.key)}
         labelOf={(key) => view.stages.find((s) => s.key === key)?.label ?? key}
       />
     </section>

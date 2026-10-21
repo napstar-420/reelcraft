@@ -14,12 +14,14 @@ export function RunMemorySheet({
   onOpenChange,
   onOpenStage,
   labelOf,
+  stageOrder,
 }: {
   runId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onOpenStage: (key: string) => void;
   labelOf: (key: string) => string;
+  stageOrder: string[];
 }) {
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -34,6 +36,7 @@ export function RunMemorySheet({
           <MemoryBrowser
             runId={runId}
             labelOf={labelOf}
+            stageOrder={stageOrder}
             onOpenStage={(key) => {
               onOpenChange(false);
               onOpenStage(key);

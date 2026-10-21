@@ -9,13 +9,17 @@ export function MemoryBrowser({
   stageKey,
   onOpenStage,
   labelOf,
+  stageOrder,
 }: {
   runId: string;
   stageKey?: string | undefined;
   onOpenStage?: ((key: string) => void) | undefined;
   /** A stage's name for its key; the key itself when unset. */
   labelOf?: ((key: string) => string) | undefined;
+  /** Stage keys in blueprint order, for the default sort. */
+  stageOrder?: string[] | undefined;
 }) {
+  const [sort, setSort] = useState<'stage' | 'newest' | 'oldest' | 'name'>('stage');
   const nameOf = (key: string) => labelOf?.(key) ?? key;
   const [search, setSearch] = useState('');
   const [producer, setProducer] = useState('');
@@ -41,7 +45,24 @@ export function MemoryBrowser({
         .toLowerCase()
         .includes(search.toLowerCase()),
   );
-  const stages = [...new Set(entries.map((e) => e.writtenBy))];
+  const when = (key: string, pick: (a: number, b: number) => number) =>
+    entries
+      .filter((e) => e.writtenBy === key)
+      .map((e) => Date.parse(e.createdAt))
+      .reduce(pick);
+  const position = (key: string) => {
+    const i = stageOrder?.indexOf(key) ?? -1;
+    return i < 0 ? Number.MAX_SAFE_INTEGER : i;
+  };
+  const stages = [...new Set(entries.map((e) => e.writtenBy))].sort((a, b) =>
+    sort === 'newest'
+      ? when(b, Math.max) - when(a, Math.max)
+      : sort === 'oldest'
+        ? when(a, Math.min) - when(b, Math.min)
+        : sort === 'name'
+          ? nameOf(a).localeCompare(nameOf(b))
+          : position(a) - position(b) || a.localeCompare(b),
+  );
   return (
     <div className="space-y-3">
       <input
@@ -64,6 +85,17 @@ export function MemoryBrowser({
               {nameOf(key)}
             </option>
           ))}
+        </select>
+        <select
+          aria-label="Sort memory"
+          value={sort}
+          onChange={(e) => setSort(e.target.value as typeof sort)}
+          className="min-w-0 rounded border bg-background p-1 text-xs"
+        >
+          <option value="stage">Stage order</option>
+          <option value="newest">Newest first</option>
+          <option value="oldest">Oldest first</option>
+          <option value="name">Name A–Z</option>
         </select>
         <select
           aria-label="Memory kind"
