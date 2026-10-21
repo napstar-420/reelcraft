@@ -135,9 +135,9 @@ the ones [Compose Timeline](../stage-types/compose-timeline.md) places and rende
 - **Box**: **X**, **Y**, **Width** and **Height** in pixels of the frame (or the world), **Turn (°)** and
   **Layer** (higher is on top). With a world, **Placed**: **On the screen** stays put, **In the world** moves
   with the camera;
-- **Arrival**: **How it arrives** (**Draw on**, **Write out**, **Pop**, **Fade**, **Slide**, **Highlight** or
-  **Appear**; pictures and clips can pop, fade, slide or appear), how long it **Takes**, where a slide comes
-  **From**, and the **Pen** that follows lines being drawn;
+- **Arrival**: **How it arrives** (**Draw on**, **Write out**, **Type**, **Pop**, **Fade**, **Slide**,
+  **Highlight** or **Appear**; pictures and clips can pop, fade, slide or appear), how long it **Takes**, where
+  a slide comes **From**, the **Pen** that follows lines being drawn, and for typed words a **Cursor**;
 - **Remove moves**: drops the small moves an item makes after it arrives.
 
 **Delete item** removes it. See [Timelines](./timelines.md) for what each setting does.

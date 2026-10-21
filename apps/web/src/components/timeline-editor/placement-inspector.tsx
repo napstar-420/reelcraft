@@ -24,6 +24,7 @@ type MediaItem = Extract<TimelineItem, { type: 'media' }>;
 const ANIM_LABELS: Record<string, string> = {
   draw: 'Draw on',
   handwrite: 'Write out',
+  type: 'Type',
   pop: 'Pop',
   fade: 'Fade',
   slide: 'Slide',
@@ -206,6 +207,20 @@ export function PlacementInspector({
             disabled={readOnly}
             onChange={(hand) =>
               updatePlaced((placed) => setAnim(placed, { hand: hand as typeof anim.hand }))
+            }
+          />
+        ) : null}
+        {anim.type === 'type' ? (
+          <Choice
+            label="Cursor"
+            value={anim.caret ? 'shown' : 'none'}
+            options={[
+              { value: 'none', label: 'No cursor' },
+              { value: 'shown', label: 'Cursor' },
+            ]}
+            disabled={readOnly}
+            onChange={(value) =>
+              updatePlaced((placed) => setAnim(placed, { caret: value === 'shown' }))
             }
           />
         ) : null}

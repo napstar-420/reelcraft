@@ -1,6 +1,6 @@
 import React from 'react';
 import { useCurrentFrame, useVideoConfig } from 'remotion';
-import type { GraphicStroke, TimelineItem, TimelineTheme } from '@reelcraft/shared';
+import type { GraphicStroke, TextRun, TimelineItem, TimelineTheme } from '@reelcraft/shared';
 import {
   animState,
   clamp01,
@@ -11,8 +11,24 @@ import {
   roughenPath,
   shapeStrokes,
   strokeWidthFor,
+  typedParts,
   visibleLengths,
 } from './graphic-math';
+
+/** A thin text cursor in the words' colour. It takes no room, so the words never move. */
+const Caret = () => (
+  <span
+    style={{
+      display: 'inline-block',
+      width: '0.06em',
+      height: '0.85em',
+      marginLeft: '0.04em',
+      marginRight: '-0.1em',
+      verticalAlign: '-0.08em',
+      background: 'currentColor',
+    }}
+  />
+);
 
 /** Where a placed item sits and how it looks at this moment: its box, turned and moved by its
  * animation and keyframes. Used by drawn items and by media placed on the frame. */
@@ -138,6 +154,16 @@ export const GraphicItem = ({
     const font = fontName(family, theme);
     const color = resolveColor(item.content.color, theme);
     const marker = item.anim.type === 'highlight';
+    const words: TextRun[] = item.content.runs ?? [{ text: item.content.text }];
+    const parts = Number.isFinite(state.typed)
+      ? typedParts(words, state.typed)
+      : words.map((part) => ({ ...part, typed: true }));
+    // The cursor sits after the last typed letters, steady while typing and blinking after.
+    const caretAfter = parts.reduce((last, part, index) => (part.typed ? index : last), -1);
+    const showCaret =
+      item.anim.type === 'type' &&
+      item.anim.caret === true &&
+      (state.typing || Math.floor(localSec * 1.6) % 2 === 0);
     return (
       <div style={style}>
         {marker ? (
@@ -176,20 +202,22 @@ export const GraphicItem = ({
             whiteSpace: 'pre-wrap',
           }}
         >
-          {item.content.runs
-            ? item.content.runs.map((run, index) => (
-                <span
-                  key={index}
-                  style={{
-                    ...(run.color && { color: resolveColor(run.color, theme) }),
-                    ...(run.weight !== undefined && { fontWeight: run.weight }),
-                    ...(run.font && { fontFamily: `"${fontName(run.font, theme)}", sans-serif` }),
-                  }}
-                >
-                  {run.text}
-                </span>
-              ))
-            : item.content.text}
+          {parts.map((part, index) => (
+            <React.Fragment key={index}>
+              <span
+                style={{
+                  ...(part.color && { color: resolveColor(part.color, theme) }),
+                  ...(part.weight !== undefined && { fontWeight: part.weight }),
+                  ...(part.font && { fontFamily: `"${fontName(part.font, theme)}", sans-serif` }),
+                  ...(!part.typed && { visibility: 'hidden' }),
+                }}
+              >
+                {part.text}
+              </span>
+              {showCaret && index === caretAfter ? <Caret /> : null}
+            </React.Fragment>
+          ))}
+          {showCaret && caretAfter === -1 ? <Caret /> : null}
         </div>
         {state.drawing && item.anim.hand && item.anim.hand !== 'none' ? (
           <svg

@@ -131,7 +131,8 @@ export const GraphicContent = z.discriminatedUnion('kind', [
 export type GraphicContent = z.infer<typeof GraphicContent>;
 
 export const GraphicAnim = z.object({
-  type: z.enum(['draw', 'handwrite', 'pop', 'fade', 'slide', 'highlight', 'none']),
+  /** `type` shows words letter by letter, as if typed. */
+  type: z.enum(['draw', 'handwrite', 'type', 'pop', 'fade', 'slide', 'highlight', 'none']),
   /** How long the animation takes; left out, each kind has its own pace. */
   durationSec: finitePositive.optional(),
   ease: Ease.optional(),
@@ -139,6 +140,8 @@ export const GraphicAnim = z.object({
   from: z.enum(['left', 'right', 'top', 'bottom']).optional(),
   /** A pen or marker that follows the line while it is drawn. */
   hand: z.enum(['none', 'marker', 'pencil']).optional(),
+  /** A text cursor while words are typed, blinking after. */
+  caret: z.boolean().optional(),
 });
 export type GraphicAnim = z.infer<typeof GraphicAnim>;
 

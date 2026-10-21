@@ -72,6 +72,21 @@ describe('composeTimeline', () => {
     });
   });
 
+  it('types words in with a cursor, and drops the cursor from any other arrival', () => {
+    const layer = { kind: 'text', text: 'run: web search', x: 0.1, y: 0.1, w: 0.5, h: 0.2 };
+    const { timeline } = composeTimeline(
+      base({
+        plan: plan([
+          { ...layer, anim: 'type', caret: true },
+          { ...layer, anim: 'fade', caret: true },
+        ]),
+      }),
+    );
+    const [typed, faded] = items(timeline, 'overlay') as Graphic[];
+    expect(typed!.anim).toEqual({ type: 'type', caret: true });
+    expect(faded!.anim).toEqual({ type: 'fade' });
+  });
+
   it('refuses a text layer with both text and runs', () => {
     const both = plan([
       { kind: 'text', text: 'A', runs: [{ text: 'A' }], x: 0, y: 0, w: 0.5, h: 0.2 },

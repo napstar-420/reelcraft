@@ -242,16 +242,49 @@ export function animDurationSec(
       ? 0.9
       : anim.type === 'handwrite'
         ? Math.max(0.6, chars * 0.06)
-        : anim.type === 'pop'
-          ? 0.4
-          : anim.type === 'highlight'
-            ? 0.5
-            : anim.type === 'slide'
+        : anim.type === 'type'
+          ? Math.max(0.4, typedLength(content) / TYPED_PER_SEC)
+          : anim.type === 'pop'
+            ? 0.4
+            : anim.type === 'highlight'
               ? 0.5
-              : anim.type === 'fade'
-                ? 0.4
-                : 0;
+              : anim.type === 'slide'
+                ? 0.5
+                : anim.type === 'fade'
+                  ? 0.4
+                  : 0;
   return Math.min(anim.durationSec ?? natural, itemDurationSec);
+}
+
+/** How fast words are typed when the animation doesn't say how long it takes. */
+export const TYPED_PER_SEC = 18;
+
+/** How many letters (and spaces) typing takes; line breaks come free. */
+export function typedLength(content: GraphicContent): number {
+  return content.kind === 'text' ? content.text.replace(/\n/g, '').length : 0;
+}
+
+/**
+ * The words split at the `shown` typed letter: what is typed so far and what is still to come,
+ * part by part, so each keeps its look. The rest is still laid out (unseen) so the typed words
+ * don't move as more arrive. Line breaks don't count as letters.
+ */
+export function typedParts<T extends { text: string }>(
+  parts: readonly T[],
+  shown: number,
+): Array<T & { typed: boolean }> {
+  const out: Array<T & { typed: boolean }> = [];
+  let left = Math.max(0, Math.floor(shown));
+  for (const part of parts) {
+    let cut = 0;
+    while (cut < part.text.length && (left > 0 || part.text[cut] === '\n')) {
+      if (part.text[cut] !== '\n') left -= 1;
+      cut += 1;
+    }
+    if (cut > 0) out.push({ ...part, text: part.text.slice(0, cut), typed: true });
+    if (cut < part.text.length) out.push({ ...part, text: part.text.slice(cut), typed: false });
+  }
+  return out;
 }
 
 /** A pop: 0 to a bit over full size, then settling to full size. */
@@ -275,6 +308,10 @@ export type AnimState = {
   fill: number;
   /** Whether the pen is moving now. */
   drawing: boolean;
+  /** How many letters have been typed (`type`); everything else shows them all. */
+  typed: number;
+  /** Whether letters are being typed now. */
+  typing: boolean;
 };
 
 const DONE: AnimState = {
@@ -286,6 +323,8 @@ const DONE: AnimState = {
   draw: 1,
   fill: 1,
   drawing: false,
+  typed: Number.POSITIVE_INFINITY,
+  typing: false,
 };
 
 /** What an item looks like `localSec` seconds after it appears. */
@@ -309,6 +348,11 @@ export function animState(
         : { ...DONE, draw: p, fill: p >= 1 ? 1 : clamp01((p - 0.8) / 0.2), drawing: active };
     case 'handwrite':
       return { ...DONE, reveal: p, drawing: active };
+    case 'type':
+      // Typing keeps a steady pace, whatever the ease; anything but words fades in.
+      return content.kind === 'text'
+        ? { ...DONE, typed: Math.floor(t * typedLength(content) + 1e-9), typing: active }
+        : { ...DONE, opacity: p };
     case 'highlight':
       return { ...DONE, reveal: p, drawing: false };
     case 'pop':

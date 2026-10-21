@@ -22,6 +22,7 @@ export type PlanLayerKind = z.infer<typeof PlanLayerKind>;
 export const PlanAnimType = z.enum([
   'draw',
   'handwrite',
+  'type',
   'pop',
   'fade',
   'slide',
@@ -85,6 +86,8 @@ export const PlanLayer = z.object({
   animSec: finitePositive.optional(),
   from: z.enum(['left', 'right', 'top', 'bottom']).optional(),
   hand: z.enum(['none', 'marker', 'pencil']).optional(),
+  /** A text cursor while the words are typed (anim `type`). */
+  caret: z.boolean().optional(),
   keyframes: z.array(PlanKeyframe).max(20).optional(),
 
   /* Look of words, shapes and drawings. */

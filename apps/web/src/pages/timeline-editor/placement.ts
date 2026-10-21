@@ -10,6 +10,7 @@ type Anim = NonNullable<GraphicItem['anim']>;
 export const GRAPHIC_ANIMS = [
   'draw',
   'handwrite',
+  'type',
   'pop',
   'fade',
   'slide',
@@ -58,7 +59,7 @@ export function fillFrame(media: MediaItem): void {
 }
 
 /** Changes how an item arrives. A media item only takes the kinds media allows; a direction only
- * stays with a slide, and a pen only with lines that are drawn. */
+ * stays with a slide, a pen only with lines that are drawn, and a cursor only with typing. */
 export function setAnim(item: PlacedItem, patch: Partial<Anim>): void {
   const current: Anim = item.anim ?? { type: 'none' };
   const next: Anim = { ...current, ...patch };
@@ -68,6 +69,7 @@ export function setAnim(item: PlacedItem, patch: Partial<Anim>): void {
   else next.from ??= 'left';
   if (item.type === 'media' || (next.type !== 'draw' && next.type !== 'handwrite'))
     delete next.hand;
+  if (item.type === 'media' || next.type !== 'type' || !next.caret) delete next.caret;
   if (next.durationSec !== undefined && !(next.durationSec > 0)) delete next.durationSec;
   if (item.type === 'media' && next.type === 'none' && next.durationSec === undefined) {
     delete item.anim;

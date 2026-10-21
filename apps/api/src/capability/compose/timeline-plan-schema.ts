@@ -73,9 +73,10 @@ const layer: JsonSchema = {
       type: 'string',
       enum: [...PlanAnimType.options],
       description:
-        'How it arrives. draw: lines are drawn on. handwrite: words are written out. pop: grows in. fade. slide (from left/right/top/bottom). highlight: a marker swipe behind it. none: there from the start. Pictures and clips can pop, fade, slide or none.',
+        'How it arrives. draw: lines are drawn on. handwrite: words are written out. type: words appear letter by letter, as if typed (add caret for a cursor). pop: grows in. fade. slide (from left/right/top/bottom). highlight: a marker swipe behind it. none: there from the start. Pictures and clips can pop, fade, slide or none.',
     },
     animSec: num('How long the arrival takes, in seconds.', 0.1),
+    caret: { type: 'boolean', description: 'For type: a text cursor while the words are typed.' },
     from: { type: 'string', enum: ['left', 'right', 'top', 'bottom'], description: 'For slide.' },
     hand: {
       type: 'string',
