@@ -87,6 +87,14 @@ export function buildAssistantClaudeArgs(input: {
   ];
 }
 
+/** Claude Code spills an MCP result over 25,000 tokens to a file and points the
+ * model at it. The assistant has no file tools, so it would never see it: a
+ * large blueprint (get_blueprint) came back unreadable. Raise the cap; an
+ * explicit setting in the environment still wins. */
+export function assistantClaudeEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  return { MAX_MCP_OUTPUT_TOKENS: '150000', ...base };
+}
+
 type StreamEvent = {
   type?: string;
   index?: number;
@@ -133,7 +141,11 @@ export class ClaudeAssistantAgent implements AssistantAgent {
     this.spawnClaude =
       deps.spawn ??
       ((args, options) =>
-        nodeSpawn('claude', args, { cwd: options.cwd, stdio: ['pipe', 'pipe', 'pipe'] }));
+        nodeSpawn('claude', args, {
+          cwd: options.cwd,
+          env: assistantClaudeEnv(),
+          stdio: ['pipe', 'pipe', 'pipe'],
+        }));
     this.tools = deps.tools ?? new AssistantToolServer();
   }
 
