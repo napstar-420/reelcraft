@@ -33,7 +33,9 @@ A **Font** is a `.ttf`, `.otf`, `.woff` or `.woff2` file, up to 20 MB. Reelcraft
 file that isn't a font is refused with **Not a font file**. For a TrueType or OpenType file it reads the font's
 family name (such as _Brand Sans_); a WOFF file is named after the asset. Words use the font when a plan names the
 asset by its name (see [Compose Timeline](../stage-types/compose-timeline.md#the-plan)), and the font travels with
-the timeline into the render and the editor's preview. Only use fonts whose licence lets you embed them in videos.
+the timeline into the render and the editor's preview. Motion graphics can use them too: bind them to
+[Generate Motion Graphic](../stage-types/generate-motion-graphic.md#using-your-fonts)'s `assets`. Only use fonts
+whose licence lets you embed them in videos.
 
 ## Find an asset
 
@@ -82,9 +84,9 @@ Select the bin on the asset's card and confirm.
   you pick another asset.
 - The file is removed from storage in the background. By default that happens about 30 days later.
 
-:::note Fonts and LUTs
+:::note LUTs
 
-The Assets tab mentions fonts and LUTs, and older channels may still list some. You can't upload new
-ones, because no stage uses them yet.
+The Assets tab mentions LUTs, and older channels may still list some. You can't upload new ones, because no
+stage uses them yet.
 
 :::
