@@ -8,6 +8,7 @@ import {
   Music,
   Sparkles,
   UserRound,
+  WandSparkles,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -39,6 +40,8 @@ const CAPABILITY_STYLES: Record<string, CapabilityStyle> = {
   'scene.render': { icon: Box, chip: 'bg-teal-500', ink: DARK },
   'subtitles.export': { icon: FileOutput, chip: 'bg-violet-500', ink: WHITE },
   'publish.stub': { icon: FileOutput, chip: 'bg-violet-500', ink: WHITE },
+  'motion.generate': { icon: WandSparkles, chip: 'bg-indigo-500', ink: WHITE },
+  'motion.render': { icon: Clapperboard, chip: 'bg-orange-500', ink: WHITE },
 };
 
 const DEFAULT_STYLE: CapabilityStyle = {

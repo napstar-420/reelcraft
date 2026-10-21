@@ -259,7 +259,7 @@ export abstract class CliJobProviderAdapter implements ProviderAdapter {
     const outputDir = join(jobDir, 'outputs');
     await mkdir(outputDir, { mode: 0o700 });
     const referenceFiles =
-      modality === 'code'
+      modality === 'code' || (modality === 'text' && workspace !== undefined)
         ? await this.prepareWorkspace(jobDir, workspace)
         : (modality === 'image' || modality === 'browser' || inspectFiles) && this.inputMaterializer
           ? await this.inputMaterializer.materialize(

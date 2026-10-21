@@ -135,6 +135,7 @@ export function capabilityGroup(key: string): CapabilityGroup {
     key === 'image.generate' ||
     key === 'video.generate' ||
     key === 'audio.speech' ||
+    key === 'motion.generate' ||
     key === 'code.scene'
   ) {
     return 'Generate';
@@ -143,6 +144,7 @@ export function capabilityGroup(key: string): CapabilityGroup {
   if (
     key === 'video.concat' ||
     key === 'timeline.render' ||
+    key === 'motion.render' ||
     key === 'scene.render' ||
     key === 'subtitles.export'
   ) {

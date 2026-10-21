@@ -1593,9 +1593,12 @@ export class StageRunnerService {
         );
       }
       // Video is audio-bearing by default. A stage must explicitly request
-      // `forbidden` or `optional` to accept a silent provider result.
+      // `forbidden` or `optional` to accept a silent provider result. A rendered
+      // motion graphic never has sound, so it may be silent unless asked otherwise.
       if (stage.output.kind === 'media.video' && persistedMedia) {
-        const audioPolicy = stage.output.constraints?.audio ?? 'required';
+        const audioPolicy =
+          stage.output.constraints?.audio ??
+          (stage.capability === 'motion.render' ? 'optional' : 'required');
         const hasAudio = persistedMedia.probe.streams.some((stream) => stream.type === 'audio');
         if (
           (audioPolicy === 'required' && !hasAudio) ||

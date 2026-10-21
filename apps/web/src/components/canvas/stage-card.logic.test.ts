@@ -111,6 +111,8 @@ describe('capabilityGroup', () => {
     expect(capabilityGroup('timeline.render')).toBe('Assemble');
     expect(capabilityGroup('human.input')).toBe('Human');
     expect(capabilityGroup('publish.stub')).toBe('Automate');
+    expect(capabilityGroup('motion.generate')).toBe('Generate');
+    expect(capabilityGroup('motion.render')).toBe('Assemble');
   });
 
   it('keeps unknown capabilities visible under Other', () => {

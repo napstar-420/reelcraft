@@ -74,6 +74,9 @@ importers:
       drizzle-orm:
         specifier: ^0.38.2
         version: 0.38.4(@opentelemetry/api@1.9.1)(@types/pg@8.15.6)(@types/react@18.3.31)(postgres@3.4.9)(react@18.3.1)
+      esbuild:
+        specifier: 0.28.1
+        version: 0.28.1
       express:
         specifier: ^4.21.2
         version: 4.22.1
@@ -125,7 +128,7 @@ importers:
         version: 0.1.9(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(express@4.22.1)(hono@4.13.8)(typescript@5.9.3)(zod@3.25.76)
       '@nestjs/cli':
         specifier: ^10.4.9
-        version: 10.4.9(@swc/core@1.16.2)(esbuild@0.19.12)(lightningcss@1.32.0)
+        version: 10.4.9(@swc/core@1.16.2)(esbuild@0.28.1)(lightningcss@1.32.0)
       '@nestjs/testing':
         specifier: ^10.4.15
         version: 10.4.22(@nestjs/common@10.4.22(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@10.4.22)(@nestjs/platform-express@10.4.22)
@@ -155,7 +158,7 @@ importers:
         version: 5.9.3
       unplugin-swc:
         specifier: ^1.5.1
-        version: 1.6.0(@rspack/core@1.7.11)(@swc/core@1.16.2)(esbuild@0.19.12)(rollup@4.63.3)(vite@5.4.21(@types/node@22.20.3)(lightningcss@1.32.0)(terser@5.51.2))(webpack@5.97.1(@swc/core@1.16.2)(esbuild@0.19.12)(lightningcss@1.32.0))
+        version: 1.6.0(@rspack/core@1.7.11)(@swc/core@1.16.2)(esbuild@0.28.1)(rollup@4.63.3)(vite@6.4.3(@types/node@22.20.3)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.51.2)(tsx@4.23.13)(yaml@2.9.1))(webpack@5.97.1(@swc/core@1.16.2)(esbuild@0.28.1)(lightningcss@1.32.0))
       vitest:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@22.20.3)(lightningcss@1.32.0)(terser@5.51.2)
@@ -168,12 +171,33 @@ importers:
       '@reelcraft/timeline-composition':
         specifier: workspace:*
         version: link:../../packages/timeline-composition
+      '@remotion/animation-utils':
+        specifier: 4.0.526
+        version: 4.0.526(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@remotion/bundler':
         specifier: 4.0.526
         version: 4.0.526(postcss@8.5.28)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@remotion/noise':
+        specifier: 4.0.526
+        version: 4.0.526(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@remotion/paths':
+        specifier: 4.0.526
+        version: 4.0.526
       '@remotion/renderer':
         specifier: 4.0.526
         version: 4.0.526(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@remotion/shapes':
+        specifier: 4.0.526
+        version: 4.0.526(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@remotion/transitions':
+        specifier: 4.0.526
+        version: 4.0.526(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      react:
+        specifier: 18.3.1
+        version: 18.3.1
+      react-dom:
+        specifier: 18.3.1
+        version: 18.3.1(react@18.3.1)
       remotion:
         specifier: 4.0.526
         version: 4.0.526(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
@@ -3015,6 +3039,12 @@ packages:
   '@radix-ui/rect@1.1.3':
     resolution: {integrity: sha512-JtyZR+mqgBibTo8xea3B6ZRmzZiM/YeVBtUkas6zMuXjAlfIFIW2FgqeM9eLyvEaYX66vr6DJMK+4U6LV0KhNw==}
 
+  '@remotion/animation-utils@4.0.526':
+    resolution: {integrity: sha512-JAMIl4cQnII8CPl1yVrS5bYMEf2SKCNWWBYM0l6vQqMb8Iu2uEgdxevGBj30BCiLOFJWaRd/Y8tZ8CCoDGagjw==}
+    peerDependencies:
+      react: '>=16.8.0'
+      react-dom: '>=16.8.0'
+
   '@remotion/bundler@4.0.526':
     resolution: {integrity: sha512-20EhkvisJX+KmxOc+DI1M5mmt3eP+MLAmeBSmval7VdlpHb2lPYbmUFDgteI0hv7IsmG2/mh7bAaDrR8+WPBMw==}
     peerDependencies:
@@ -3086,6 +3116,9 @@ packages:
       react: '>=16.8.0'
       react-dom: '>=16.8.0'
 
+  '@remotion/noise@4.0.526':
+    resolution: {integrity: sha512-Z4JNq1qaNjGc45si9IjKUqPFey15hlitewjHSc7fvEXiTuCJllRqhjHLlTe5N1NZScml3tUGuB2DdA33jOaFCg==}
+
   '@remotion/paths@4.0.526':
     resolution: {integrity: sha512-Ka2jfYiP5pbJfGFFg1XR8lY+UsCyBawfPN+ZglLQwA89THOITOpQP0+0znUn72HFYuxcFBnFenHiYyCe3NuNow==}
 
@@ -3097,6 +3130,12 @@ packages:
 
   '@remotion/renderer@4.0.526':
     resolution: {integrity: sha512-gvhHhzxi9SGkTHL3XlOgH4k8MOe+GlhyO6NTs2ye4+lbqPrhON0uD1I/qXvh0eiwwuYEQ6qi7B9FbY4RbB6e4w==}
+    peerDependencies:
+      react: '>=16.8.0'
+      react-dom: '>=16.8.0'
+
+  '@remotion/shapes@4.0.526':
+    resolution: {integrity: sha512-JrHASXAKAB05rewe22m7YGfVwHax6vzVSU4raqzSZPQWQHWALA8+RatHfHvXYVAr0h9ohTIwlIPi7iPOcNP4jg==}
     peerDependencies:
       react: '>=16.8.0'
       react-dom: '>=16.8.0'
@@ -3128,6 +3167,12 @@ packages:
 
   '@remotion/timeline-utils@4.0.526':
     resolution: {integrity: sha512-7IlRqCjWjKHF60732cwMuDgCEE8JxzX8BBm20gQ13gnOFox27s7CWwg1rMHJ3AFrFqjsEhS5ocQOruC/m/YiQA==}
+
+  '@remotion/transitions@4.0.526':
+    resolution: {integrity: sha512-e4dIbtPP94tEF3P/c8MK2oiNwHhXHbP3KdDK2fgf4ajZ4Ysoy2t4l0FzTvoczyzTvL//YaMzf+nkumb7RanvsA==}
+    peerDependencies:
+      react: '>=16.8.0'
+      react-dom: '>=16.8.0'
 
   '@remotion/web-renderer@4.0.526':
     resolution: {integrity: sha512-7bpE6S0TOcbGph1NO0xDEbS266f06/PBuX53o9OPqS8VBAaKPy6H9pTzO6t23MSBTP2+qzHURYdvn1pRkgAJOQ==}
@@ -6940,6 +6985,9 @@ packages:
     resolution: {integrity: sha512-bzyZ1e88w9O1iNJbKnOlvYTrWPDl46O1bG0D3XInv+9tkPrxrN8jUUTiFlDkkmKWgn1M6CfIA13SuGqOa9Korw==}
     engines: {node: '>=14'}
 
+  simplex-noise@4.0.1:
+    resolution: {integrity: sha512-zl/+bdSqW7HJOQ0oDbxrNYaF4F5ik0i7M6YOYmEoIJNtg16NpvWaTTM1Y7oV/7T0jFljawLgYPS81Uu2rsfo1A==}
+
   sisteransi@1.0.5:
     resolution: {integrity: sha512-bLGGlR1QxBcynn2d5YmDX4MGjlZvy2MRBDRNHLJ8VI6l6+9FUiyTFNJ0IveOSP0bcXgVDPRcfGqA0pjaqUpfVg==}
 
@@ -8974,7 +9022,7 @@ snapshots:
       '@tybys/wasm-util': 0.10.4
     optional: true
 
-  '@nestjs/cli@10.4.9(@swc/core@1.16.2)(esbuild@0.19.12)(lightningcss@1.32.0)':
+  '@nestjs/cli@10.4.9(@swc/core@1.16.2)(esbuild@0.28.1)(lightningcss@1.32.0)':
     dependencies:
       '@angular-devkit/core': 17.3.11(chokidar@3.6.0)
       '@angular-devkit/schematics': 17.3.11(chokidar@3.6.0)
@@ -8984,7 +9032,7 @@ snapshots:
       chokidar: 3.6.0
       cli-table3: 0.6.5
       commander: 4.1.1
-      fork-ts-checker-webpack-plugin: 9.0.2(typescript@5.7.2)(webpack@5.97.1(@swc/core@1.16.2)(esbuild@0.19.12)(lightningcss@1.32.0))
+      fork-ts-checker-webpack-plugin: 9.0.2(typescript@5.7.2)(webpack@5.97.1(@swc/core@1.16.2)(esbuild@0.28.1)(lightningcss@1.32.0))
       glob: 10.4.5
       inquirer: 8.2.6
       node-emoji: 1.11.0
@@ -8993,7 +9041,7 @@ snapshots:
       tsconfig-paths: 4.2.0
       tsconfig-paths-webpack-plugin: 4.2.0
       typescript: 5.7.2
-      webpack: 5.97.1(@swc/core@1.16.2)(esbuild@0.19.12)(lightningcss@1.32.0)
+      webpack: 5.97.1(@swc/core@1.16.2)(esbuild@0.28.1)(lightningcss@1.32.0)
       webpack-node-externals: 3.0.0
     optionalDependencies:
       '@swc/core': 1.16.2
@@ -10585,6 +10633,12 @@ snapshots:
 
   '@radix-ui/rect@1.1.3': {}
 
+  '@remotion/animation-utils@4.0.526(react-dom@18.3.1(react@18.3.1))(react@18.3.1)':
+    dependencies:
+      react: 18.3.1
+      react-dom: 18.3.1(react@18.3.1)
+      remotion: 4.0.526(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+
   '@remotion/bundler@4.0.526(postcss@8.5.28)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)':
     dependencies:
       '@remotion/media-parser': 4.0.526
@@ -10677,6 +10731,14 @@ snapshots:
       remotion: 4.0.526(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       zod: 4.5.4
 
+  '@remotion/noise@4.0.526(react-dom@18.3.1(react@18.3.1))(react@18.3.1)':
+    dependencies:
+      remotion: 4.0.526(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      simplex-noise: 4.0.1
+    transitivePeerDependencies:
+      - react
+      - react-dom
+
   '@remotion/paths@4.0.526': {}
 
   '@remotion/player@4.0.526(react-dom@18.3.1(react@18.3.1))(react@18.3.1)':
@@ -10706,6 +10768,13 @@ snapshots:
     transitivePeerDependencies:
       - bufferutil
       - utf-8-validate
+
+  '@remotion/shapes@4.0.526(react-dom@18.3.1(react@18.3.1))(react@18.3.1)':
+    dependencies:
+      '@remotion/paths': 4.0.526
+      react: 18.3.1
+      react-dom: 18.3.1(react@18.3.1)
+      remotion: 4.0.526(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
 
   '@remotion/streaming@4.0.526': {}
 
@@ -10768,6 +10837,14 @@ snapshots:
     transitivePeerDependencies:
       - react
       - react-dom
+
+  '@remotion/transitions@4.0.526(react-dom@18.3.1(react@18.3.1))(react@18.3.1)':
+    dependencies:
+      '@remotion/paths': 4.0.526
+      '@remotion/shapes': 4.0.526(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      react: 18.3.1
+      react-dom: 18.3.1(react@18.3.1)
+      remotion: 4.0.526(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
 
   '@remotion/web-renderer@4.0.526(react-dom@18.3.1(react@18.3.1))(react@18.3.1)':
     dependencies:
@@ -12998,7 +13075,7 @@ snapshots:
       cross-spawn: 7.0.6
       signal-exit: 4.1.0
 
-  fork-ts-checker-webpack-plugin@9.0.2(typescript@5.7.2)(webpack@5.97.1(@swc/core@1.16.2)(esbuild@0.19.12)(lightningcss@1.32.0)):
+  fork-ts-checker-webpack-plugin@9.0.2(typescript@5.7.2)(webpack@5.97.1(@swc/core@1.16.2)(esbuild@0.28.1)(lightningcss@1.32.0)):
     dependencies:
       '@babel/code-frame': 7.29.7
       chalk: 4.1.2
@@ -13013,7 +13090,7 @@ snapshots:
       semver: 7.8.5
       tapable: 2.3.3
       typescript: 5.7.2
-      webpack: 5.97.1(@swc/core@1.16.2)(esbuild@0.19.12)(lightningcss@1.32.0)
+      webpack: 5.97.1(@swc/core@1.16.2)(esbuild@0.28.1)(lightningcss@1.32.0)
 
   formdata-polyfill@4.0.10:
     dependencies:
@@ -15111,6 +15188,8 @@ snapshots:
 
   signal-exit@4.1.0: {}
 
+  simplex-noise@4.0.1: {}
+
   sisteransi@1.0.5: {}
 
   smart-buffer@4.2.0: {}
@@ -15343,16 +15422,16 @@ snapshots:
 
   temporal-spec@0.2.4: {}
 
-  terser-webpack-plugin@5.6.1(@swc/core@1.16.2)(esbuild@0.19.12)(lightningcss@1.32.0)(webpack@5.97.1(@swc/core@1.16.2)(esbuild@0.19.12)(lightningcss@1.32.0)):
+  terser-webpack-plugin@5.6.1(@swc/core@1.16.2)(esbuild@0.28.1)(lightningcss@1.32.0)(webpack@5.97.1(@swc/core@1.16.2)(esbuild@0.28.1)(lightningcss@1.32.0)):
     dependencies:
       '@jridgewell/trace-mapping': 0.3.31
       jest-worker: 27.5.1
       schema-utils: 4.5.0
       terser: 5.51.2
-      webpack: 5.97.1(@swc/core@1.16.2)(esbuild@0.19.12)(lightningcss@1.32.0)
+      webpack: 5.97.1(@swc/core@1.16.2)(esbuild@0.28.1)(lightningcss@1.32.0)
     optionalDependencies:
       '@swc/core': 1.16.2
-      esbuild: 0.19.12
+      esbuild: 0.28.1
       lightningcss: 1.32.0
 
   terser-webpack-plugin@5.6.1(esbuild@0.28.1)(postcss@8.5.28)(webpack@5.105.0(postcss@8.5.28)):
@@ -15590,12 +15669,12 @@ snapshots:
 
   unpipe@1.0.0: {}
 
-  unplugin-swc@1.6.0(@rspack/core@1.7.11)(@swc/core@1.16.2)(esbuild@0.19.12)(rollup@4.63.3)(vite@5.4.21(@types/node@22.20.3)(lightningcss@1.32.0)(terser@5.51.2))(webpack@5.97.1(@swc/core@1.16.2)(esbuild@0.19.12)(lightningcss@1.32.0)):
+  unplugin-swc@1.6.0(@rspack/core@1.7.11)(@swc/core@1.16.2)(esbuild@0.28.1)(rollup@4.63.3)(vite@6.4.3(@types/node@22.20.3)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.51.2)(tsx@4.23.13)(yaml@2.9.1))(webpack@5.97.1(@swc/core@1.16.2)(esbuild@0.28.1)(lightningcss@1.32.0)):
     dependencies:
       '@rollup/pluginutils': 5.4.0(rollup@4.63.3)
       '@swc/core': 1.16.2
       load-tsconfig: 0.2.5
-      unplugin: 3.3.0(@rspack/core@1.7.11)(esbuild@0.19.12)(rollup@4.63.3)(vite@5.4.21(@types/node@22.20.3)(lightningcss@1.32.0)(terser@5.51.2))(webpack@5.97.1(@swc/core@1.16.2)(esbuild@0.19.12)(lightningcss@1.32.0))
+      unplugin: 3.3.0(@rspack/core@1.7.11)(esbuild@0.28.1)(rollup@4.63.3)(vite@6.4.3(@types/node@22.20.3)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.51.2)(tsx@4.23.13)(yaml@2.9.1))(webpack@5.97.1(@swc/core@1.16.2)(esbuild@0.28.1)(lightningcss@1.32.0))
     transitivePeerDependencies:
       - '@farmfe/core'
       - '@rspack/core'
@@ -15607,17 +15686,17 @@ snapshots:
       - vite
       - webpack
 
-  unplugin@3.3.0(@rspack/core@1.7.11)(esbuild@0.19.12)(rollup@4.63.3)(vite@5.4.21(@types/node@22.20.3)(lightningcss@1.32.0)(terser@5.51.2))(webpack@5.97.1(@swc/core@1.16.2)(esbuild@0.19.12)(lightningcss@1.32.0)):
+  unplugin@3.3.0(@rspack/core@1.7.11)(esbuild@0.28.1)(rollup@4.63.3)(vite@6.4.3(@types/node@22.20.3)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.51.2)(tsx@4.23.13)(yaml@2.9.1))(webpack@5.97.1(@swc/core@1.16.2)(esbuild@0.28.1)(lightningcss@1.32.0)):
     dependencies:
       '@jridgewell/remapping': 2.3.5
       picomatch: 4.0.7
       webpack-virtual-modules: 0.6.2
     optionalDependencies:
       '@rspack/core': 1.7.11
-      esbuild: 0.19.12
+      esbuild: 0.28.1
       rollup: 4.63.3
-      vite: 5.4.21(@types/node@22.20.3)(lightningcss@1.32.0)(terser@5.51.2)
-      webpack: 5.97.1(@swc/core@1.16.2)(esbuild@0.19.12)(lightningcss@1.32.0)
+      vite: 6.4.3(@types/node@22.20.3)(jiti@2.7.0)(lightningcss@1.32.0)(terser@5.51.2)(tsx@4.23.13)(yaml@2.9.1)
+      webpack: 5.97.1(@swc/core@1.16.2)(esbuild@0.28.1)(lightningcss@1.32.0)
 
   update-browserslist-db@1.3.3(browserslist@4.29.0):
     dependencies:
@@ -15816,7 +15895,7 @@ snapshots:
       - postcss
       - uglify-js
 
-  webpack@5.97.1(@swc/core@1.16.2)(esbuild@0.19.12)(lightningcss@1.32.0):
+  webpack@5.97.1(@swc/core@1.16.2)(esbuild@0.28.1)(lightningcss@1.32.0):
     dependencies:
       '@types/eslint-scope': 3.7.7
       '@types/estree': 1.0.9
@@ -15838,7 +15917,7 @@ snapshots:
       neo-async: 2.6.2
       schema-utils: 3.3.0
       tapable: 2.3.3
-      terser-webpack-plugin: 5.6.1(@swc/core@1.16.2)(esbuild@0.19.12)(lightningcss@1.32.0)(webpack@5.97.1(@swc/core@1.16.2)(esbuild@0.19.12)(lightningcss@1.32.0))
+      terser-webpack-plugin: 5.6.1(@swc/core@1.16.2)(esbuild@0.28.1)(lightningcss@1.32.0)(webpack@5.97.1(@swc/core@1.16.2)(esbuild@0.28.1)(lightningcss@1.32.0))
       watchpack: 2.5.2
       webpack-sources: 3.5.1
     transitivePeerDependencies:

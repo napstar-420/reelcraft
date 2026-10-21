@@ -25,6 +25,8 @@ import { BrowserAutomateCapability } from '../../capability/impls/browser-automa
 import { FlowVideoCapability } from '../../capability/impls/flow-video.capability';
 import { SvgPrepareCapability } from '../../capability/impls/svg-prepare.capability';
 import { TimelineComposeCapability } from '../../capability/impls/timeline-compose.capability';
+import { MotionGenerateCapability } from '../../capability/impls/motion-generate.capability';
+import { MotionRenderCapability } from '../../capability/impls/motion-render.capability';
 import { BuiltinDrawings } from '../../capability/vector/builtin-drawings';
 import { SceneRenderCapability } from '../../capability/impls/scene-render.capability';
 import { SceneWriteCapability } from '../../capability/impls/scene-write.capability';
@@ -53,6 +55,8 @@ export function realCapabilities(): Array<{ key: string; impl: CapabilityImpl }>
     new AudioMusicCapability(providers),
     new SvgPrepareCapability(new BuiltinDrawings()),
     new TimelineComposeCapability(),
+    new MotionGenerateCapability(providers, stub),
+    new MotionRenderCapability(stub, stub),
     new SceneRenderCapability(stub, stub, stub),
     new SceneWriteCapability(providers, stub),
   ];

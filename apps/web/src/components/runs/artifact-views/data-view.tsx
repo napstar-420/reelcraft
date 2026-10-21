@@ -8,6 +8,7 @@ import {
   isInlineString,
   isOpenByDefault,
   jsonKind,
+  motionGraphicOf,
   summarizeValue,
 } from './data-view.logic';
 
@@ -160,11 +161,13 @@ export function DataView({ data }: { data: unknown }) {
     version: 0,
   });
   const setAll = (override: boolean) => setTree((t) => ({ override, version: t.version + 1 }));
+  const motion = motionGraphicOf(data);
 
   return (
-    <Tabs defaultValue="tree" className="gap-0">
+    <Tabs defaultValue={motion ? 'code' : 'tree'} className="gap-0">
       <div className="flex items-center gap-1 border-b px-2 py-1">
         <TabsList variant="line">
+          {motion && <TabsTrigger value="code">Code</TabsTrigger>}
           <TabsTrigger value="tree">Tree</TabsTrigger>
           <TabsTrigger value="raw">Raw JSON</TabsTrigger>
         </TabsList>
@@ -196,6 +199,14 @@ export function DataView({ data }: { data: unknown }) {
           <CopyButton text={json} />
         </div>
       </div>
+      {motion && (
+        <TabsContent value="code">
+          <p className="border-b px-4 py-2 text-xs text-muted-foreground">{motion.summary}</p>
+          <pre className="max-h-[50vh] overflow-auto p-4 font-mono text-xs whitespace-pre">
+            {motion.code}
+          </pre>
+        </TabsContent>
+      )}
       <TabsContent value="tree" className="max-h-[50vh] overflow-auto p-4 wrap-anywhere">
         {isContainer ? (
           <Children key={tree.version} value={data} depth={0} path="" override={tree.override} />

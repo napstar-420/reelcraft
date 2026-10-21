@@ -29,11 +29,12 @@ function toolsFor(manifest: CliRunnerManifest): { tools: string[]; allowed: stri
     const tools = ['Read', 'Write', 'Edit', 'Glob', 'Grep', 'Bash'];
     return { tools, allowed: [...tools, `mcp__${CLAUDE_NEO_SERVER}`] };
   }
-  if (manifest.modality === 'code') {
-    // An agent that writes code in its folder, and runs only the commands the job names.
-    const commands = Array.isArray(manifest.params.__allowedCommands)
-      ? manifest.params.__allowedCommands.filter((c): c is string => typeof c === 'string')
-      : [];
+  const commands = Array.isArray(manifest.params.__allowedCommands)
+    ? manifest.params.__allowedCommands.filter((c): c is string => typeof c === 'string')
+    : [];
+  // An agent that writes code in its folder, and runs only the commands the job names. A text
+  // job (which answers with the code) gets the same when it comes with a working folder.
+  if (manifest.modality === 'code' || (manifest.modality === 'text' && commands.length > 0)) {
     const files = ['Read', 'Write', 'Edit', 'Glob', 'Grep'];
     return {
       tools: [...files, ...(commands.length ? ['Bash'] : [])],

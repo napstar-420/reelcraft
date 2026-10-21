@@ -55,6 +55,14 @@ describe('buildClaudeArgs', () => {
     expect(flag(noCommands, '--tools')).toBe('Read,Write,Edit,Glob,Grep');
   });
 
+  it('gives a text job that comes with a working folder the same file tools and commands', () => {
+    const args = buildClaudeArgs({ ...base, params: { __allowedCommands: ['node check.mjs'] } });
+    expect(flag(args, '--tools')).toBe('Read,Write,Edit,Glob,Grep,Bash');
+    expect(flag(args, '--allowedTools')).toBe('Read,Write,Edit,Glob,Grep,Bash(node check.mjs *)');
+    expect(args).not.toContain('--mcp-config');
+    expect(flag(buildClaudeArgs(base), '--tools')).toBe('');
+  });
+
   it('gives a browser job file tools and only the Neo server it was handed', () => {
     const mcpServers = { 'browseros-neo': { type: 'http', url: 'http://127.0.0.1:9010/mcp' } };
     const args = buildClaudeArgs({ ...base, modality: 'browser', mcpServers });

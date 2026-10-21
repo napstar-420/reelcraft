@@ -10,6 +10,15 @@ settings**. See [Versions](../blueprints/versions.md#runnable-or-not).
 - An **error** makes the blueprint **Not runnable yet**. Fix it before you can run.
 - A **warning** is advice. The blueprint still runs.
 
+## Motion graphics
+
+- **Generate Motion Graphic produces data (the code and its settings)**: set the output to **Data**, with the
+  motion graphic schema. See [Generate Motion Graphic](../stage-types/generate-motion-graphic.md).
+- **Add the motion_code check so code that breaks the rules is sent back to the model to fix** (warning): add
+  the `motion_code` [built-in check](./built-in-checks.md) and set **Check attempts** to 2 or 3.
+- **Render Motion Graphic produces a video**: set the output to **Video**. See
+  [Render Motion Graphic](../stage-types/render-motion-graphic.md).
+
 ## Sound effects and music
 
 - **describe the sound you want in the stage instructions** / **describe the music you want in the stage

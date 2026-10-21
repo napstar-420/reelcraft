@@ -5,6 +5,7 @@ import type {
   Ref,
   StageDef,
 } from '@reelcraft/shared';
+import { motionSourceJsonSchema } from '@reelcraft/shared';
 import {
   TIMELINE_PLAN_GUIDE,
   timelinePlanJsonSchema,
@@ -631,6 +632,186 @@ export function recipeComposedVideo(mode: 'generated' | 'library'): CreateBluepr
         context: {},
         output: { kind: 'media.video' },
         checks: [{ type: 'builtin', key: 'duration_range', params: { min: 20, max: 120 } }],
+        approval: { mode: 'stage' },
+      },
+    ],
+    inputs: [topicInput],
+    roles: [],
+    defaults: {},
+    budget: { runCapUsd: 4 },
+  };
+}
+
+const graphicsSchema: JsonSchema = {
+  type: 'object',
+  properties: {
+    graphics: {
+      type: 'array',
+      minItems: 2,
+      maxItems: 8,
+      description: 'The motion graphics the video needs, in the order they appear.',
+      items: {
+        type: 'object',
+        properties: {
+          brief: {
+            type: 'string',
+            description:
+              'What the graphic shows and how it moves, with every word and number on it, such as "a bar chart of sales: 2022 12k, 2023 18k, 2024 31k, bars grow left to right, the last one highlighted"',
+          },
+          cue: {
+            type: 'string',
+            description: 'The words of the script it goes with, copied exactly',
+          },
+          durationSec: {
+            type: 'number',
+            minimum: 2,
+            maximum: 12,
+            description: 'How long it shows',
+          },
+        },
+        required: ['brief', 'cue', 'durationSec'],
+      },
+    },
+  },
+  required: ['graphics'],
+};
+
+/**
+ * A narrated video whose pictures are motion graphics a model writes as Remotion code: animated
+ * titles, charts, diagrams, counters and lower thirds. Each graphic is written, checked and
+ * rendered to a transparent clip, then placed on the timeline with the voice-over like any video.
+ * Any text model can write them; Codex and Claude also test-render their own work first.
+ */
+export function recipeMotionGraphics(): CreateBlueprintVersionDto {
+  return {
+    graph: [
+      {
+        key: 'script',
+        label: 'Write the script',
+        capability: 'text.generate',
+        instructions: {
+          system:
+            'You write voice-over scripts for short data-driven explainer videos. Spoken English, short sentences, a hook in the first line, concrete numbers and comparisons that can be shown as charts and titles, a clear ending. No stage directions, no emojis, no headings.',
+          template: 'Write a 45-second voice-over script about {{ topic }}.',
+        },
+        config: {},
+        slots: {},
+        context: { topic: { from: 'input', inputKey: 'topic' } },
+        output: { kind: 'text' },
+        writes: { script: '$' },
+        checks: [{ type: 'builtin', key: 'word_count', params: { min: 80, max: 140 } }],
+      },
+      {
+        key: 'voice',
+        label: 'Voice-over',
+        capability: 'audio.speech',
+        config: {},
+        slots: { text: { from: 'memory', key: 'script' } },
+        context: {},
+        output: { kind: 'media.audio' },
+        writes: { timing: 'timing' },
+        checks: [{ type: 'builtin', key: 'wpm', params: { min: 110, max: 175 } }],
+      },
+      {
+        key: 'plan',
+        label: 'Plan the graphics',
+        capability: 'text.generate',
+        dependsOn: ['script'],
+        instructions: {
+          system:
+            'You are a motion designer. For a voice-over you plan the motion graphics shown with it: one per key idea or number, each a single clear animated title, chart, counter, diagram or list. Every word and number on screen goes in the brief.',
+          template: 'Plan the motion graphics for this script:\n{{ script }}',
+        },
+        config: {},
+        slots: {},
+        context: { script: { from: 'memory', key: 'script' } },
+        output: { kind: 'data', schema: graphicsSchema },
+        writes: { graphics: 'graphics' },
+        checks: [
+          { type: 'builtin', key: 'array_length', params: { path: 'graphics', min: 2, max: 8 } },
+        ],
+      },
+      {
+        key: 'motion',
+        label: 'Write the graphics',
+        capability: 'motion.generate',
+        instructions: { template: '{{ brief }}' },
+        config: {
+          background: 'opaque',
+          style: 'Clean, bold, dark navy background, white text, one bright accent colour',
+        },
+        slots: {},
+        context: { brief: { from: 'item', path: 'brief' } },
+        output: { kind: 'data', schema: motionSourceJsonSchema },
+        iterate: {
+          over: { from: 'memory', key: 'graphics' },
+          itemAlias: 'graphic',
+          itemRetryLimit: 1,
+        },
+        checks: [{ type: 'builtin', key: 'motion_code', params: {} }],
+        checkMaxAttempts: 3,
+      },
+      {
+        key: 'clips',
+        label: 'Render the graphics',
+        capability: 'motion.render',
+        config: {},
+        slots: { source: { from: 'prev', alignWith: 'item' } },
+        context: {},
+        output: { kind: 'media.video' },
+        iterate: {
+          over: { from: 'memory', key: 'graphics' },
+          itemAlias: 'graphic',
+          itemRetryLimit: 1,
+        },
+        writes: { clips: '$' },
+        checks: [{ type: 'builtin', key: 'duration_range', params: { min: 1, max: 60 } }],
+        approval: { mode: 'item' },
+      },
+      {
+        key: 'layout',
+        label: 'Plan the layout',
+        capability: 'text.generate',
+        instructions: {
+          system: `You are a video editor. You place motion graphics on a timeline under a voice-over so each appears as its words are spoken. ${TIMELINE_PLAN_GUIDE}`,
+          template:
+            'Plan the video. The voice-over is the audio asset "voice". The motion graphics are the video assets graphics-1, graphics-2 and so on, in the order of this list; show each full frame starting at its cue words (atCue), for its duration:\n{{ graphics }}\nScript:\n{{ script }}',
+        },
+        config: {},
+        slots: {},
+        context: {
+          graphics: { from: 'memory', key: 'graphics' },
+          script: { from: 'memory', key: 'script' },
+        },
+        output: { kind: 'data', schema: timelinePlanJsonSchema() },
+        checks: [
+          { type: 'builtin', key: 'array_length', params: { path: 'layers', min: 3, max: 100 } },
+        ],
+      },
+      {
+        key: 'compose',
+        label: 'Compose the timeline',
+        capability: 'timeline.compose',
+        config: { inputs: ['voice', 'graphics'] },
+        slots: {
+          plan: { from: 'prev' },
+          voice: { from: 'stage', stageKey: 'voice' },
+          graphics: { from: 'memory', key: 'clips' },
+          timing: { from: 'memory', key: 'timing' },
+        },
+        context: {},
+        output: { kind: 'timeline' },
+        checks: [],
+      },
+      {
+        key: 'render',
+        label: 'Render the video',
+        capability: 'timeline.render',
+        config: {},
+        slots: { timeline: { from: 'prev' } },
+        context: {},
+        output: { kind: 'media.video' },
+        checks: [{ type: 'builtin', key: 'duration_range', params: { min: 20, max: 90 } }],
         approval: { mode: 'stage' },
       },
     ],

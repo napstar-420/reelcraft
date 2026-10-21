@@ -41,3 +41,28 @@ export function childPath(parent: string, key: string | number): string {
 export function isOpenByDefault(depth: number): boolean {
   return depth < 2;
 }
+
+/** A motion graphic (Generate Motion Graphic's output): its code, and a line saying what it is. */
+export function motionGraphicOf(value: unknown): { code: string; summary: string } | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const v = value as Record<string, unknown>;
+  if (
+    typeof v.code !== 'string' ||
+    typeof v.width !== 'number' ||
+    typeof v.height !== 'number' ||
+    typeof v.durationSec !== 'number'
+  )
+    return null;
+  const parts = [
+    `${v.width}×${v.height}`,
+    typeof v.fps === 'number' ? `${v.fps} fps` : undefined,
+    `${v.durationSec} s`,
+    v.background === 'transparent'
+      ? 'transparent'
+      : v.background === 'opaque'
+        ? 'opaque'
+        : undefined,
+  ].filter(Boolean);
+  const notes = typeof v.notes === 'string' && v.notes ? ` — ${v.notes}` : '';
+  return { code: v.code, summary: `${parts.join(' · ')}${notes}` };
+}
