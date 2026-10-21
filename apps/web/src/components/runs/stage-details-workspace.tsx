@@ -12,6 +12,8 @@ import {
 } from '@/components/ui/sheet';
 import { StageExecutionControls } from './execution-controls';
 import { ArtifactPreview } from './artifact-preview';
+import { MotionCodeEditor } from './motion-code-editor';
+import { motionSourceOf } from './motion-code-editor.logic';
 import { DataView } from './artifact-views/data-view';
 import { ProvenanceLinks } from './artifact-origin';
 import { MemoryBrowser } from './memory-browser';
@@ -270,7 +272,19 @@ export function StageDetailsWorkspace({
                   )}
               </div>
               {artifact ? (
-                <ArtifactPreview artifact={artifact} />
+                <>
+                  <ArtifactPreview artifact={artifact} />
+                  {stageKey && artifact.kind === 'data' && motionSourceOf(artifact.data) ? (
+                    <div className="mt-3">
+                      <MotionCodeEditor
+                        runId={runId}
+                        stageKey={stageKey}
+                        artifactId={artifact.id}
+                        source={motionSourceOf(artifact.data)!}
+                      />
+                    </div>
+                  ) : null}
+                </>
               ) : (
                 <p className="rounded border p-6 text-sm text-muted-foreground">
                   {stageRunning

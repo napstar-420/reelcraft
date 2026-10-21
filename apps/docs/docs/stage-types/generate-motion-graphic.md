@@ -64,6 +64,22 @@ Add the `motion_code` [built-in check](../reference/built-in-checks.md) and set 
 Code that breaks a rule then goes back to the model with every problem listed, so it can fix them all at once.
 Render Motion Graphic checks the code again before it renders, so code that breaks the rules is never run.
 
+## Edit the code
+
+When a graphic is nearly right, change it yourself instead of running the stage again. Open the stage's
+details on the run, and under the output select **Edit code**:
+
+1. Change the code, and the **Length (s)** if you like. The rules are checked as you type, and every problem
+   is listed with its line. **Follows the rules** means it can be rendered.
+2. Select **Render preview** for pictures of the start, middle and end, rendered with the graphic's own files.
+   A checkerboard shows through where a transparent graphic draws nothing.
+3. Select **Save**. Reelcraft lists the later stages that will run again with your version, such as
+   [Render Motion Graphic](./render-motion-graphic.md) and Compose Timeline, and what that may cost. Select
+   **Save and run again** to keep it.
+
+Your version becomes the stage's output, marked as edited by you; the model's version is kept in the stage's
+attempts. You can edit a run's output when it is paused, failed or finished.
+
 ## Cost
 
 The model is paid by your usual provider, or by your ChatGPT or Claude plan. Rendering the code is free.

@@ -2,7 +2,7 @@ import { mkdtemp, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import {
   MotionSource,
   Timeline,
@@ -15,6 +15,8 @@ import { ChannelService } from '../../src/channel/channel.service';
 import { RunService } from '../../src/run/run.service';
 import { StageRunnerService } from '../../src/orchestration/stage-runner.service';
 import { ComputeJobService } from '../../src/storage/compute-job.service';
+import { MotionEditorService } from '../../src/run/motion-editor.service';
+import { ArtifactEditService } from '../../src/run/artifact-edit.service';
 import { timelinePlanJsonSchema } from '../../src/capability/compose/timeline-plan-schema';
 import { artifact, run as runTable } from '../../src/db/schema';
 import { buildTestApp, type TestApp } from '../support/build-app';
@@ -76,6 +78,7 @@ describe('motion graphics: written by a model, rendered, placed on a timeline (e
     }
   });
 
+  let lastRunId = '';
   async function execute(graph: StageDef[]) {
     const channels = testApp.app.get(ChannelService);
     const blueprints = testApp.app.get(BlueprintService);
@@ -107,6 +110,7 @@ describe('motion graphics: written by a model, rendered, placed on a timeline (e
       rerunStageKeys: [],
       budgetCapUsd: 10,
     });
+    lastRunId = created.id;
     await runs.start(created.id).catch(() => undefined);
     await testDb.db.update(runTable).set({ state: 'RUNNING' }).where(eq(runTable.id, created.id));
     const outcomes: Record<string, { outcome: string; artifactId?: string; message?: string }> = {};
@@ -216,6 +220,55 @@ describe('motion graphics: written by a model, rendered, placed on a timeline (e
     const timeline = Timeline.parse((await readData(outcomes.compose!.artifactId!)).data);
     const placed = timeline.tracks.flatMap((t) => t.items).find((i) => i.type === 'media');
     expect(placed).toMatchObject({ handle: `artifact:${clip.id}`, x: 192, y: 108, w: 960, h: 540 });
+  });
+
+  it('lets a person check, edit and save the code, and runs the clip again', async () => {
+    const outcomes = await execute([
+      motionStage(),
+      {
+        ...base,
+        key: 'clip',
+        label: 'Render the graphic',
+        capability: 'motion.render',
+        slots: { source: { from: 'prev' } },
+        output: { kind: 'media.video' },
+      },
+    ]);
+    expect(outcomes.clip!.outcome).toBe('success');
+    const runId = lastRunId;
+    await testDb.db.update(runTable).set({ state: 'COMPLETED' }).where(eq(runTable.id, runId));
+
+    const editor = testApp.app.get(MotionEditorService);
+    expect(
+      (await editor.check(runId, 'motion', 'export default () => Date.now();')).issues,
+    ).toHaveLength(1);
+    await expect(editor.check(runId, 'clip', 'x')).rejects.toThrow(/not a motion graphic stage/);
+
+    const original = MotionSource.parse((await readData(outcomes.motion!.artifactId!)).data);
+    const edited = {
+      ...original,
+      code: original.code.replace("title = 'Motion'", "title = 'Edited'"),
+      durationSec: 2,
+    };
+    expect((await editor.check(runId, 'motion', edited.code)).issues).toEqual([]);
+
+    const edits = testApp.app.get(ArtifactEditService);
+    const preview = (await edits.edit(runId, 'motion', { value: edited })) as {
+      previewToken: string;
+      affectedStageKeys: string[];
+    };
+    expect(preview.affectedStageKeys).toContain('clip');
+    await edits.edit(runId, 'motion', { value: edited, previewToken: preview.previewToken });
+
+    const rows = await testDb.db
+      .select()
+      .from(artifact)
+      .where(and(eq(artifact.runId, runId), eq(artifact.producerStageKey, 'motion')));
+    expect(rows.find((row) => row.id === outcomes.motion!.artifactId)!.stale).toBe(true);
+    const saved = rows.find((row) => !row.stale)!;
+    expect(saved.userAuthored).toBe(true);
+    expect(MotionSource.parse(saved.data)).toMatchObject({ durationSec: 2 });
+    expect(MotionSource.parse(saved.data).code).toContain("title = 'Edited'");
   });
 
   it('sends back code that breaks the rules, naming every problem', async () => {
