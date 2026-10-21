@@ -7,7 +7,11 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import { describe, expect, it, vi } from 'vitest';
 import { AssistantTurnError, type AgentEvent } from './assistant-agent.interface';
 import { AssistantToolServer } from './assistant-tool-server';
-import { buildAssistantClaudeArgs, ClaudeAssistantAgent } from './claude-assistant.agent';
+import {
+  assistantClaudeEnv,
+  buildAssistantClaudeArgs,
+  ClaudeAssistantAgent,
+} from './claude-assistant.agent';
 
 class FakeChild extends EventEmitter {
   stdout = new EventEmitter();
@@ -105,6 +109,21 @@ describe('buildAssistantClaudeArgs', () => {
         },
       },
     });
+  });
+});
+
+describe('assistantClaudeEnv', () => {
+  it('lifts the MCP result cap so a large blueprint is not spilled to a file', () => {
+    expect(assistantClaudeEnv({ PATH: '/bin' })).toEqual({
+      MAX_MCP_OUTPUT_TOKENS: '150000',
+      PATH: '/bin',
+    });
+  });
+
+  it('keeps a cap the operator set', () => {
+    expect(assistantClaudeEnv({ MAX_MCP_OUTPUT_TOKENS: '50000' }).MAX_MCP_OUTPUT_TOKENS).toBe(
+      '50000',
+    );
   });
 });
 
