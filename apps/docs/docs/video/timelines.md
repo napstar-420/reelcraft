@@ -97,7 +97,8 @@ from a plan, so you normally don't write them by hand. A graphic draws one of th
 - **Lines**: any shape, as lines drawn in order. A drawing is a list of strokes on a grid you choose; it can
   come from an SVG file or a [drawing a model made](../stage-types/prepare-drawings.md).
 - **Words**: text in any font family, weight and alignment, or in the theme's two fonts (**hand** and
-  **body**).
+  **body**). The words can be in parts, each with its own colour, font or weight, to pick out a word in a
+  line.
 - **A shape**: an **arrow**, **circle**, **underline**, **box**, **highlight** (a marker swipe) or **check**.
 
 How it appears is its **animation**:

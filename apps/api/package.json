@@ -15,6 +15,7 @@
     "smoke": "tsx test/smoke.ts",
     "acceptance:phase4-restart": "tsc -b tsconfig.build.json --force && tsx test/acceptance/phase4-restart.ts",
     "acceptance:layered-render": "pnpm --filter @reelcraft/render-worker build && tsx test/acceptance/layered-render.ts",
+    "acceptance:graphic-text-render": "pnpm --filter @reelcraft/render-worker build && tsx test/acceptance/graphic-text-render.ts",
     "acceptance:font-render": "pnpm --filter @reelcraft/render-worker build && tsx test/acceptance/font-render.ts",
     "acceptance:motion-render": "pnpm --filter @reelcraft/render-worker build && tsx test/acceptance/motion-render.ts",
     "acceptance:phase6-render": "pnpm --filter @reelcraft/render-worker build && tsx test/acceptance/phase6-render.ts",

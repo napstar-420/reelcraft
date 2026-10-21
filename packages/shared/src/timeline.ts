@@ -85,6 +85,22 @@ export type GraphicStroke = z.infer<typeof GraphicStroke>;
 export const GraphicShape = z.enum(['arrow', 'circle', 'underline', 'box', 'highlight', 'check']);
 export type GraphicShape = z.infer<typeof GraphicShape>;
 
+/** Part of a line of words with its own look: a word in another colour, or bolder. Left out,
+ * each look is the whole text's. */
+export const TextRun = z.object({
+  text: z.string().min(1).max(300),
+  color: z.string().min(1).max(40).optional(),
+  font: z.string().min(1).max(80).optional(),
+  weight: z.number().int().min(100).max(900).optional(),
+});
+export type TextRun = z.infer<typeof TextRun>;
+
+/** Whether runs spell the same words as the text, whatever the spaces and line breaks. */
+export function runsMatchText(runs: readonly { text: string }[], text: string): boolean {
+  const squash = (value: string) => value.replace(/\s+/g, '');
+  return squash(runs.map((run) => run.text).join('')) === squash(text);
+}
+
 /** What a graphic item draws. */
 export const GraphicContent = z.discriminatedUnion('kind', [
   z.object({
@@ -103,6 +119,8 @@ export const GraphicContent = z.discriminatedUnion('kind', [
     weight: z.number().int().min(100).max(900).optional(),
     /** Which side the words line up on; left out, the left. */
     align: z.enum(['left', 'center', 'right']).optional(),
+    /** The same words in parts, each with its own look. Joined, they spell `text`. */
+    runs: z.array(TextRun).min(1).max(20).optional(),
   }),
   z.object({
     kind: z.literal('shape'),
@@ -431,6 +449,18 @@ export const Timeline = z
             code: z.ZodIssueCode.custom,
             path: ['tracks', trackIndex, 'items', itemIndex],
             message: `${item.type} item is not valid on a ${track.type} track`,
+          });
+        }
+        if (
+          item.type === 'graphic' &&
+          item.content.kind === 'text' &&
+          item.content.runs &&
+          !runsMatchText(item.content.runs, item.content.text)
+        ) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['tracks', trackIndex, 'items', itemIndex, 'content', 'runs'],
+            message: 'the runs do not spell the same words as the text',
           });
         }
         if (item.type === 'motion') {

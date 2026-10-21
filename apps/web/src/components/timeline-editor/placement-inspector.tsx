@@ -12,6 +12,8 @@ import {
   recolorDrawing,
   setAnim,
   setBox,
+  setRunColor,
+  setWords,
   type PlacedItem,
 } from '@/pages/timeline-editor/placement';
 import { Choice, Field, NumberField } from './inspector-fields';
@@ -266,7 +268,11 @@ function GraphicFields({
     return (
       <fieldset className="space-y-3">
         <legend className="mb-2 text-xs font-semibold text-muted-foreground">Words</legend>
-        <Field id="graphic-text" label="Words">
+        <Field
+          id="graphic-text"
+          label="Words"
+          {...(content.runs && { hint: 'Changing the words puts them back in one colour.' })}
+        >
           <Input
             id="graphic-text"
             value={content.text}
@@ -274,10 +280,28 @@ function GraphicFields({
             disabled={readOnly}
             onChange={(event) => {
               const text = event.target.value;
-              if (text) setText((draft) => (draft.text = text));
+              if (text) setText((draft) => setWords(draft, text));
             }}
           />
         </Field>
+        {content.runs ? (
+          <div className="space-y-2">
+            <p className="text-xs font-medium text-muted-foreground">Parts</p>
+            {content.runs.map((run, index) => (
+              <Field key={index} id={`graphic-run-${index}`} label={run.text.trim() || '(space)'}>
+                <Input
+                  id={`graphic-run-${index}`}
+                  value={run.color ?? ''}
+                  placeholder={content.color ?? 'ink'}
+                  disabled={readOnly}
+                  onChange={(event) =>
+                    setText((draft) => setRunColor(draft, index, event.target.value))
+                  }
+                />
+              </Field>
+            ))}
+          </div>
+        ) : null}
         <div className="grid grid-cols-2 gap-3">
           <NumberField
             id="graphic-size"

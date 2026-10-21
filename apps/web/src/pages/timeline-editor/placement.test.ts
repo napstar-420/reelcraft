@@ -9,6 +9,8 @@ import {
   recolorDrawing,
   setAnim,
   setBox,
+  setRunColor,
+  setWords,
 } from './placement';
 
 type Media = Extract<TimelineItem, { type: 'media' }>;
@@ -104,5 +106,20 @@ describe('placement', () => {
       fonts: [{ family: 'Brand Sans', handle: 'asset:f' }],
     } as unknown as Timeline;
     expect(fontChoices(timeline).map((c) => c.value)).toEqual(['hand', 'body', 'Brand Sans']);
+  });
+
+  it('colours one part of the words, and puts them back in one colour when they change', () => {
+    const content = {
+      kind: 'text' as const,
+      text: 'WHAT REALLY',
+      size: 40,
+      runs: [{ text: 'WHAT ' }, { text: 'REALLY', color: 'accent2' }],
+    };
+    setRunColor(content, 0, ' #ff0000 ');
+    setRunColor(content, 1, '');
+    setRunColor(content, 5, 'red');
+    expect(content.runs).toEqual([{ text: 'WHAT ', color: '#ff0000' }, { text: 'REALLY' }]);
+    setWords(content, 'WHAT NOW');
+    expect(content).toEqual({ kind: 'text', text: 'WHAT NOW', size: 40 });
   });
 });

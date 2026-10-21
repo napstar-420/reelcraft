@@ -51,3 +51,31 @@ export function fitText(
   }
   return { ...result!, overflow: true };
 }
+
+/**
+ * Puts the line breaks and spaces of `wrapped` (the runs' words as `fitText` laid them out) back
+ * into the runs, so each part keeps its own look. A space between two parts goes with the part
+ * that had it; a part left with nothing is dropped.
+ */
+export function splitRuns<T extends { text: string }>(wrapped: string, runs: readonly T[]): T[] {
+  const isSpace = (char: string) => /\s/.test(char);
+  // The run each letter of the words belongs to, in order.
+  const owner = runs.flatMap((run, index) =>
+    [...run.text].filter((char) => !isSpace(char)).map(() => index),
+  );
+  const texts = runs.map(() => '');
+  let letter = 0;
+  for (const char of wrapped) {
+    if (!isSpace(char)) {
+      texts[owner[letter] ?? runs.length - 1] += char;
+      letter += 1;
+      continue;
+    }
+    const before = owner[letter - 1] ?? 0;
+    const after = owner[letter] ?? before;
+    const nextStartsWithSpace = after !== before && isSpace(runs[after]!.text[0] ?? '');
+    const prevEndsWithSpace = isSpace(runs[before]!.text.at(-1) ?? '');
+    texts[nextStartsWithSpace && !prevEndsWithSpace ? after : before] += char;
+  }
+  return runs.flatMap((run, index) => (texts[index] ? [{ ...run, text: texts[index]! }] : []));
+}

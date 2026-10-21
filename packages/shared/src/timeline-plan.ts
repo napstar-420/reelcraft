@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { Ease, GraphicShape } from './timeline';
+import { Ease, GraphicShape, TextRun } from './timeline';
 
 const finiteNonNegative = z.number().finite().nonnegative();
 const finitePositive = z.number().finite().positive();
@@ -55,6 +55,9 @@ export const PlanLayer = z.object({
   asset: z.string().min(1).max(100).optional(),
   /** The words of a text layer. */
   text: z.string().min(1).max(400).optional(),
+  /** The words of a text layer in parts, each with its own colour, font or weight, instead of
+   * `text`: one line with a word picked out. */
+  runs: z.array(TextRun).min(1).max(20).optional(),
   shape: GraphicShape.optional(),
 
   /* When it appears: a time, a phrase said in the narration, or after another layer ends. */
