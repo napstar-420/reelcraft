@@ -36,6 +36,10 @@ export function placedStyle(
   };
 }
 
+/** A font as CSS names it: the theme's hand or body font, or a family by name. */
+export const fontName = (family: string, theme: TimelineTheme): string =>
+  family === 'body' ? theme.fontBody : family === 'hand' ? theme.fontHand : family;
+
 export type GraphicTimelineItem = Extract<TimelineItem, { type: 'graphic' }>;
 
 /** The lines a graphic item draws, and the grid they are drawn on. */
@@ -131,7 +135,7 @@ export const GraphicItem = ({
 
   if (item.content.kind === 'text') {
     const family = item.content.font ?? 'hand';
-    const font = family === 'body' ? theme.fontBody : family === 'hand' ? theme.fontHand : family;
+    const font = fontName(family, theme);
     const color = resolveColor(item.content.color, theme);
     const marker = item.anim.type === 'highlight';
     return (
@@ -172,7 +176,20 @@ export const GraphicItem = ({
             whiteSpace: 'pre-wrap',
           }}
         >
-          {item.content.text}
+          {item.content.runs
+            ? item.content.runs.map((run, index) => (
+                <span
+                  key={index}
+                  style={{
+                    ...(run.color && { color: resolveColor(run.color, theme) }),
+                    ...(run.weight !== undefined && { fontWeight: run.weight }),
+                    ...(run.font && { fontFamily: `"${fontName(run.font, theme)}", sans-serif` }),
+                  }}
+                >
+                  {run.text}
+                </span>
+              ))
+            : item.content.text}
         </div>
         {state.drawing && item.anim.hand && item.anim.hand !== 'none' ? (
           <svg

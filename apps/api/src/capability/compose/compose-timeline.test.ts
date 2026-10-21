@@ -42,6 +42,43 @@ const items = (timeline: ReturnType<typeof composeTimeline>['timeline'], id: str
   timeline.tracks.find((track) => track.id === id)!.items;
 
 describe('composeTimeline', () => {
+  it('keeps the coloured parts of a line of words through wrapping', () => {
+    const { timeline } = composeTimeline(
+      base({
+        plan: plan([
+          {
+            kind: 'text',
+            runs: [
+              { text: 'WHAT ' },
+              { text: 'REALLY', color: 'accent2', weight: 900 },
+              { text: ' HAPPENS' },
+            ],
+            x: 0.1,
+            y: 0.1,
+            w: 0.15,
+            h: 0.5,
+            size: 0.08,
+          },
+        ]),
+      }),
+    );
+    const content = (items(timeline, 'overlay')[0] as Graphic).content;
+    if (content.kind !== 'text') throw new Error('expected words');
+    expect(content.text).toContain('\n');
+    expect(content.runs?.map((run) => run.text).join('')).toBe(content.text);
+    expect(content.runs?.find((run) => run.color === 'accent2')).toMatchObject({
+      text: 'REALLY',
+      weight: 900,
+    });
+  });
+
+  it('refuses a text layer with both text and runs', () => {
+    const both = plan([
+      { kind: 'text', text: 'A', runs: [{ text: 'A' }], x: 0, y: 0, w: 0.5, h: 0.2 },
+    ]);
+    expect(() => composeTimeline(base({ plan: both }))).toThrow(/both text and runs/);
+  });
+
   it('embeds a motion graphic from its code, in its box, for its own length', () => {
     const motion = {
       version: 1 as const,

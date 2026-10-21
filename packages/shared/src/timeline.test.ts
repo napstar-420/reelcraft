@@ -279,6 +279,22 @@ describe('Timeline', () => {
       }
     });
 
+    it('accepts words in coloured runs that spell the text, and refuses runs that do not', () => {
+      const runs = [
+        { text: 'WHAT ' },
+        { text: 'REALLY', color: 'accent2', weight: 900 },
+        { text: ' HAPPENS' },
+      ];
+      const content = (text: string) => ({ kind: 'text', text, size: 60, runs });
+      expect(
+        Timeline.safeParse(onOverlay(graphic({ content: content('WHAT REALLY\nHAPPENS') })))
+          .success,
+      ).toBe(true);
+      const wrong = Timeline.safeParse(onOverlay(graphic({ content: content('WHAT HAPPENS') })));
+      expect(wrong.success).toBe(false);
+      expect(JSON.stringify(wrong)).toContain('the runs do not spell the same words as the text');
+    });
+
     it('does not accept a drawn item on a video track', () => {
       const result = Timeline.safeParse(onOverlay(graphic(), 'video'));
       expect(result.success).toBe(false);

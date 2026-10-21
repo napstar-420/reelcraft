@@ -41,16 +41,16 @@ called `image-1`, `audio-1`, and so on. An uploaded file keeps its name from the
 
 A plan is a list of **layers**. Every layer has a **kind**:
 
-| Kind       | What it is                                         | It needs           |
-| ---------- | -------------------------------------------------- | ------------------ |
-| `image`    | A picture                                          | `asset`            |
-| `video`    | A clip                                             | `asset`            |
-| `audio`    | A sound: voice-over, music or an effect            | `asset`            |
-| `drawing`  | A drawing (SVG lines) drawn on                     | `asset`, and a box |
-| `motion`   | A motion graphic, drawn from its code              | `asset`            |
-| `text`     | Words                                              | `text`, and a box  |
-| `shape`    | An arrow, circle, underline, box, highlight, check | `shape`, and a box |
-| `captions` | The voice-over's words, timed to the speech        | word timings       |
+| Kind       | What it is                                         | It needs                    |
+| ---------- | -------------------------------------------------- | --------------------------- |
+| `image`    | A picture                                          | `asset`                     |
+| `video`    | A clip                                             | `asset`                     |
+| `audio`    | A sound: voice-over, music or an effect            | `asset`                     |
+| `drawing`  | A drawing (SVG lines) drawn on                     | `asset`, and a box          |
+| `motion`   | A motion graphic, drawn from its code              | `asset`                     |
+| `text`     | Words                                              | `text` or `runs`, and a box |
+| `shape`    | An arrow, circle, underline, box, highlight, check | `shape`, and a box          |
+| `captions` | The voice-over's words, timed to the speech        | word timings                |
 
 **Where.** `x`, `y` is the top left and `w`, `h` the size, as fractions of the frame: `x: 0.1, w: 0.3` is a box
 from 10% to 40% of the way across. A picture or clip with no box fills the frame. Layers can be bigger than
@@ -74,6 +74,11 @@ Pictures and clips can pop, fade, slide or stay.
 **Look.** `color`, `size` (letter height, as a fraction of the shorter side; it shrinks to fit the box), `font`
 (`hand`, `body`, the name of a **Font** asset from the library, or any font family), `weight`, `align`. A font
 asset loads from its file under its family name, and the theme's `fontHand` and `fontBody` can name one too.
+
+**Words in more than one colour.** Instead of `text`, a text layer can give `runs`: the same words in parts,
+each with its own `color`, `font` or `weight`, such as
+`[{"text": "WHAT "}, {"text": "REALLY", "color": "accent2"}, {"text": " HAPPENS"}]`. The parts stay one line
+of words: they wrap and shrink to fit the box together, and appear together. Put the spaces inside the parts.
 
 **Sounds.** `volume`, `fadeInSec`, `fadeOutSec`, `trimInSec`, and `loop`, which repeats a sound to fill its time
 (music under a whole video). Give each kind of sound its own `track`, and use the plan's `ducks` to make one
@@ -109,7 +114,7 @@ can fix them together. For example:
 - `no drawing asset "lightbulbs". Available: lightbulb, lightbulb-on`: the plan used an id that doesn't exist.
   Plans can use only the assets they are given, so a plan that must use only uploaded assets can't invent one.
 - `asset "voice" is audio, not usable as image`.
-- `needs x, y, w and h (fractions of the frame)`, `needs text`.
+- `needs x, y, w and h (fractions of the frame)`, `needs text`, `has both text and runs; use one`.
 - `layers follow each other in a circle`, or `follows "x", which has no known length`.
 - `track "x" is a audio track` when one track is used for two kinds of thing.
 

@@ -95,3 +95,21 @@ export function fontChoices(timeline: Timeline): Array<{ value: string; label: s
     ...(timeline.fonts ?? []).map((font) => ({ value: font.family, label: font.family })),
   ];
 }
+
+type TextContent = Extract<GraphicItem['content'], { kind: 'text' }>;
+
+/** New words for a text graphic. Parts in their own colours can't follow an edit, so the words
+ * become one part again. */
+export function setWords(content: TextContent, text: string): void {
+  content.text = text;
+  delete content.runs;
+}
+
+/** The colour of one coloured part; empty puts it back to the words' own colour. */
+export function setRunColor(content: TextContent, index: number, color: string): void {
+  const run = content.runs?.[index];
+  if (!run) return;
+  const value = color.trim().slice(0, 40);
+  if (value) run.color = value;
+  else delete run.color;
+}

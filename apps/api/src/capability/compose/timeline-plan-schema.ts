@@ -31,6 +31,22 @@ const layer: JsonSchema = {
     ),
     asset: str('The id of the asset to use (image, video, audio or drawing layers).', 100),
     text: str('The words (text layers).', 400),
+    runs: {
+      type: 'array',
+      maxItems: 20,
+      description:
+        'Instead of text: the words in parts, to colour or bold some of them, such as [{"text":"WHAT "},{"text":"REALLY","color":"accent2"},{"text":" HAPPENS"}]. Put the spaces inside the parts.',
+      items: {
+        type: 'object',
+        required: ['text'],
+        properties: {
+          text: str('These words, with their spaces.', 300),
+          color: str("Their colour; left out, the layer's.", 40),
+          font: str("Their font; left out, the layer's.", 80),
+          weight: { type: 'integer', minimum: 100, maximum: 900, description: 'Their weight.' },
+        },
+      },
+    },
     shape: { type: 'string', enum: [...GraphicShape.options], description: 'Shape layers.' },
     atSec: num('When it appears, in seconds.', 0),
     atCue: str('Words from the narration, copied exactly, that bring it in.'),
@@ -210,4 +226,4 @@ export const TIMELINE_PLAN_GUIDE = `A plan is a list of layers. Each layer is on
 - When: atSec is a time; atCue is words copied exactly from the narration, so the layer appears as they are spoken; afterLayer follows another layer.
 - Use an asset only by its id from the asset list. If none fits, say what is needed instead of inventing an id.
 - Sounds are layers too: voice-over, background music and effects each go on their own track; put music under the voice with ducks.
-- Keep text short. Leave room: boxes that overlap on purpose are fine, by accident are not.`;
+- Keep text short. To colour or bold one word in a line, give runs instead of text. Leave room: boxes that overlap on purpose are fine, by accident are not.`;

@@ -129,7 +129,8 @@ on what it is.
 the ones [Compose Timeline](../stage-types/compose-timeline.md) places and rendered motion graphics):
 
 - **Words**: the **Words**, **Letter size (px)**, **Colour**, **Font** (the theme's **Hand** and **Body** fonts,
-  the timeline's library fonts, or **Other…** to type a family), **Weight** and **Line up**;
+  the timeline's library fonts, or **Other…** to type a family), **Weight** and **Line up**. Words in coloured
+  parts also list the **Parts**, each with its own colour; changing the **Words** puts them back in one colour;
 - **Drawing**: **Colour every line**, to give a drawing one colour; **Shape**: which **Shape**, and its **Colour**;
 - **Box**: **X**, **Y**, **Width** and **Height** in pixels of the frame (or the world), **Turn (°)** and
   **Layer** (higher is on top). With a world, **Placed**: **On the screen** stays put, **In the world** moves

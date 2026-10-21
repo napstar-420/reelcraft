@@ -11,7 +11,7 @@ import type {
 } from '@reelcraft/shared';
 import { findCue, spokenWords } from './cue-timing';
 import type { AssetIndex } from './catalog';
-import { fitText } from './text-fit';
+import { fitText, splitRuns } from './text-fit';
 
 type Track = Timeline['tracks'][number];
 type TrackType = Track['type'];
@@ -173,7 +173,10 @@ export function composeTimeline(input: ComposeInput): ComposeResult {
         }
       }
     }
-    if (layer.kind === 'text') need(layer.text, 'needs text');
+    if (layer.kind === 'text') {
+      need(layer.text || layer.runs, 'needs text');
+      need(!(layer.text && layer.runs), 'has both text and runs; use one');
+    }
     if (layer.kind === 'shape') need(layer.shape, 'needs a shape');
     if (layer.kind === 'drawing' || layer.kind === 'text' || layer.kind === 'shape') {
       need(boxed(layer), 'needs x, y, w and h (fractions of the frame)');
@@ -550,7 +553,8 @@ export function composeTimeline(input: ComposeInput): ComposeResult {
       content = { kind: 'shape', shape: layer.shape!, ...(layer.color && { color: layer.color }) };
     } else {
       const maxSize = layer.size ? layer.size * Math.min(W, H) : box.h * 0.9;
-      const fit = fitText(layer.text!, { w: box.w, h: box.h }, maxSize);
+      const words = layer.runs ? layer.runs.map((run) => run.text).join('') : layer.text!;
+      const fit = fitText(words, { w: box.w, h: box.h }, maxSize);
       if (fit.overflow) {
         warnings.push({
           code: 'text_overflow',
@@ -566,6 +570,12 @@ export function composeTimeline(input: ComposeInput): ComposeResult {
         ...(layer.font && { font: fontFamily(layer.font) }),
         ...(layer.weight !== undefined && { weight: layer.weight }),
         align: layer.align ?? 'left',
+        ...(layer.runs && {
+          runs: splitRuns(fit.text, layer.runs).map((run) => ({
+            ...run,
+            ...(run.font && { font: fontFamily(run.font) }),
+          })),
+        }),
       };
     }
     track.items.push({
