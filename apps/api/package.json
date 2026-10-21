@@ -28,7 +28,7 @@
     "acceptance:codex-assistant": "pnpm build && node test/acceptance/codex-assistant.mjs",
     "acceptance:claude": "pnpm build && node test/acceptance/claude-provider.mjs",
     "acceptance:claude-assistant": "pnpm build && node test/acceptance/claude-assistant.mjs",
-    "acceptance:large-blueprint": "node test/acceptance/large-blueprint.mjs"
+    "acceptance:large-blueprint": "pnpm build && node test/acceptance/large-blueprint.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.716.0",

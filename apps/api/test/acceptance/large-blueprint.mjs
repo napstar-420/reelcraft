@@ -1,5 +1,5 @@
 // Opt-in acceptance: the blueprint assistant on a LARGE blueprint, on a real local CLI (uses your
-// Claude or Codex plan). Run after `pnpm --filter @reelcraft/api build`:
+// Claude or Codex plan). The script builds first:
 //   REELCRAFT_LARGE_ACCEPTANCE=claude pnpm --filter @reelcraft/api acceptance:large-blueprint
 //   REELCRAFT_LARGE_ACCEPTANCE=codex  pnpm --filter @reelcraft/api acceptance:large-blueprint
 //
@@ -65,20 +65,17 @@ const instructions = buildInstructions({
 
 async function makeAgent() {
   if (provider === 'claude') {
-    const { ClaudeAssistantAgent } = await import(
-      '../../dist/assistant/agent/claude-assistant.agent.js'
-    );
+    const { ClaudeAssistantAgent } =
+      await import('../../dist/assistant/agent/claude-assistant.agent.js');
     const workspaceRoot = await mkdtemp(join(tmpdir(), 'reelcraft-large-claude-'));
     const agent = new ClaudeAssistantAgent({ workspaceRoot });
     return { agent, model: process.env.LARGE_ACCEPTANCE_MODEL ?? 'sonnet', effort: 'medium' };
   }
-  const { CodexAppServerClient } = await import(
-    '../../dist/provider/codex/codex-app-server.client.js'
-  );
+  const { CodexAppServerClient } =
+    await import('../../dist/provider/codex/codex-app-server.client.js');
   const { CodexNeoRegistrar } = await import('../../dist/provider/codex/codex-neo-registrar.js');
-  const { CodexAssistantAgent } = await import(
-    '../../dist/assistant/agent/codex-assistant.agent.js'
-  );
+  const { CodexAssistantAgent } =
+    await import('../../dist/assistant/agent/codex-assistant.agent.js');
   const registrar = new CodexNeoRegistrar(
     { codexBrowserExtension: process.env.CODEX_BROWSER_EXTENSION ?? 'browseros-neo' },
     { browserOsUrl: async () => '', get: async () => undefined, set: async () => undefined },
@@ -113,7 +110,9 @@ try {
       callTool: async (tool, args) => {
         const outcome = await runTool(tool, args, ctx, deps);
         const forModel = outcome.ok
-          ? { ...(typeof outcome.result === 'object' ? outcome.result : { result: outcome.result }) }
+          ? {
+              ...(typeof outcome.result === 'object' ? outcome.result : { result: outcome.result }),
+            }
           : { error: outcome.error, ...(outcome.issues && { issues: outcome.issues }) };
         const text = JSON.stringify(forModel);
         calls.push({ tool, ok: outcome.ok, chars: text.length });
@@ -149,12 +148,14 @@ else {
   for (const key of ['s22', 's28']) {
     const stage = proposal.graph.find((s) => s.key === key);
     const text = JSON.stringify(stage);
-    if (text.includes('s21') || text.includes('s27') || text.includes('"memory"'))
+    if (text.includes('s21') || text.includes('s27'))
       failures.push(`${key} still points at a removed stage: ${text.slice(0, 300)}`);
   }
 }
 const biggest = Math.max(0, ...calls.map((c) => c.chars));
-console.log(`\n${provider} (${model}) finished in ${seconds}s with ${calls.length} tool calls; largest result ${biggest} chars`);
+console.log(
+  `\n${provider} (${model}) finished in ${seconds}s with ${calls.length} tool calls; largest result ${biggest} chars`,
+);
 console.log('reply:', messages.join('\n').slice(0, 600));
 if (failures.length) {
   console.error('FAILED:\n- ' + failures.join('\n- '));

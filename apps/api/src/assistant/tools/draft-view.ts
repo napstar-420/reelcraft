@@ -1,11 +1,13 @@
 import type { CreateBlueprintVersionDto, StageDef } from '@reelcraft/shared';
 
-/** A draft whose stages serialise to more than this is shown as an outline. The model's CLI
- * clips or spills a large tool result (Claude Code writes it to a file the assistant can't
- * open; Codex cuts it), so the assistant must never depend on receiving a whole big draft. */
+/** A draft whose stages serialise to more than this is shown as an outline. Claude Code writes an
+ * MCP result over 50,000 characters to a file the assistant can't open (see
+ * `assistant-tool-server.ts`), and even a result that fits makes the model read, and for
+ * `propose_draft` write back, every stage to change one. Outline plus `get_stages` and
+ * `edit_draft` keeps each call small and leaves the stages the user didn't mention untouched. */
 export const INLINE_DRAFT_CHARS = 20_000;
 
-/** The most `get_stages` returns in one call, for the same reason. */
+/** The most `get_stages` returns in one call: under Claude Code's 50,000-character limit. */
 export const STAGES_CALL_CHARS = 40_000;
 
 const size = (value: unknown): number => JSON.stringify(value)?.length ?? 0;
