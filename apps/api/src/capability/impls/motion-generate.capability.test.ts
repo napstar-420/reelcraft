@@ -79,6 +79,24 @@ describe('motionFrame', () => {
     expect(base.props).toEqual({ values: [1, 2] });
     expect(base.assets).toEqual([{ name: 'logo.png', handle: 'artifact:a' }]);
   });
+
+  it('passes library fonts by family, not as files to load', () => {
+    const { base } = motionFrame(
+      ctx(
+        {},
+        {
+          assets: {
+            assets: [
+              { id: 'gochi', kind: 'font', handle: 'asset:f1', family: 'Gochi Hand' },
+              { id: 'photo', kind: 'image', handle: 'asset:p1' },
+            ],
+          },
+        },
+      ),
+    );
+    expect(base.fonts).toEqual([{ name: 'font-gochi', handle: 'asset:f1', family: 'Gochi Hand' }]);
+    expect(base.assets).toEqual([{ name: 'photo.png', handle: 'asset:p1' }]);
+  });
 });
 
 describe('MotionGenerateCapability', () => {
@@ -105,6 +123,7 @@ describe('MotionGenerateCapability', () => {
       frame: { width: 1920 },
     });
     expect(kit.checker).toMatch(/motion-code-check\.js$/);
+    expect(req.renderedPrompt).not.toContain('Fonts you can use');
     expect(capability.modality).toBe('text');
   });
 
@@ -162,5 +181,24 @@ describe('MotionGenerateCapability', () => {
         { output: { kind: 'data' }, checks: [{ type: 'builtin', key: 'motion_code' }] } as never,
       ),
     ).toEqual([]);
+  });
+
+  it('tells the model which fonts it can name', async () => {
+    const { capability, adapter } = build();
+    await capability.submit(
+      ctx(
+        {},
+        {
+          assets: {
+            assets: [{ id: 'gochi', kind: 'font', handle: 'asset:f1', family: 'Gochi Hand' }],
+          },
+        },
+      ),
+    );
+    const [req] = adapter.submit.mock.calls[0]!;
+    expect(req.renderedPrompt).toContain('Fonts you can use by name');
+    expect(req.renderedPrompt).toContain("'Gochi Hand'");
+    const files = req.params.__workspace.files as Array<{ path: string; contents: string }>;
+    expect(files.find((f) => f.path === 'GUIDE.md')!.contents).toContain('fallback font');
   });
 });

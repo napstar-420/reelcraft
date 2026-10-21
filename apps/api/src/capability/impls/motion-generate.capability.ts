@@ -10,6 +10,7 @@ import {
   type JobStatus,
   type JsonSchema,
   type MotionAssetRef,
+  type MotionFontRef,
   type MotionSource,
   type OutputKind,
   type SlotDef,
@@ -50,12 +51,29 @@ export function motionFrame(ctx: Pick<ExecCtx<MotionGenerateConfig>, 'config' | 
   const frame = canvas.success ? canvas.data.canvas : DEFAULT_FRAME;
   const props = ctx.slots.data;
   const assets: MotionAssetRef[] = [];
+  const fonts: MotionFontRef[] = [];
+  const fileName = (id: string, ext: string) =>
+    `${
+      id
+        .replace(/[^A-Za-z0-9_.-]/g, '-')
+        .replace(/^[^A-Za-z0-9]+/, '')
+        .slice(0, 70) || 'file'
+    }${ext}`;
   if (ctx.slots.assets !== undefined) {
     const { assets: index } = buildCatalog([{ slot: 'assets', value: ctx.slots.assets }]);
     for (const asset of index.ofKind('image')) {
       if (!asset.handle) continue;
-      const name = `${asset.id.replace(/[^A-Za-z0-9_.-]/g, '-').slice(0, 70)}.png`;
-      assets.push({ name, handle: asset.handle });
+      assets.push({ name: fileName(asset.id, '.png'), handle: asset.handle });
+    }
+    // Fonts are not files for the code to load: it names their family, and they load first.
+    for (const asset of index.ofKind('font')) {
+      if (!asset.handle) continue;
+      // Named without an extension: Render Motion Graphic adds the file's own when it copies it in.
+      fonts.push({
+        name: fileName(`font-${asset.id}`, ''),
+        handle: asset.handle,
+        family: asset.family ?? asset.label ?? asset.id,
+      });
     }
   }
   return {
@@ -69,6 +87,7 @@ export function motionFrame(ctx: Pick<ExecCtx<MotionGenerateConfig>, 'config' | 
         ? { props: props as Record<string, unknown> }
         : {}),
       ...(assets.length ? { assets: assets.slice(0, MOTION_LIMITS.maxAssets) } : {}),
+      ...(fonts.length ? { fonts: fonts.slice(0, MOTION_LIMITS.maxFonts) } : {}),
     },
     ...(ctx.config.durationSec !== undefined && { durationSec: ctx.config.durationSec }),
   };
@@ -171,11 +190,13 @@ export class MotionGenerateCapability implements CapabilityImpl<MotionGenerateCo
   private request(ctx: ExecCtx<MotionGenerateConfig>): ProviderRequest {
     const { base, durationSec } = motionFrame(ctx);
     const files = (base.assets ?? []).map((a) => a.name);
+    const fonts = (base.fonts ?? []).map((font) => font.family);
     const brief = motionBrief({
       source: base,
       durationSec,
       props: base.props,
       files,
+      fonts,
       style: ctx.config.style,
     });
     // Agents that work with files (Codex, Claude) can check and test-render the code before
@@ -185,6 +206,7 @@ export class MotionGenerateCapability implements CapabilityImpl<MotionGenerateCo
       durationSec,
       props: base.props,
       files,
+      fonts,
       checker: path.resolve(__dirname, '../motion/motion-code-check.js'),
       worker: path.resolve(__dirname, '../../../../render-worker/dist/cli.js'),
       browser: this.engine.remotionBrowserExecutable,

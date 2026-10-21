@@ -63,6 +63,7 @@ export function motionWorkspace(p: {
   durationSec?: number | undefined;
   props?: Record<string, unknown> | undefined;
   files: string[];
+  fonts?: string[] | undefined;
   checker: string;
   worker: string;
   browser?: string | undefined;
@@ -83,7 +84,7 @@ export function motionWorkspace(p: {
 
 - Motion.tsx holds a starting example. Replace it with the graphic you are asked for.
 - Run \`node check.mjs run\` (or \`node check.mjs run <seconds>\`) to check the rules and render pictures of the start, middle and end into stills/. Open them and look: is everything inside the frame, readable, and doing what was asked?
-- Fix and run the check again until it passes and looks right.${p.files.length ? `\n- The files the graphic can load (${p.files.join(', ')}) are grey placeholders here; the real ones are used in the final render.` : ''}
+- Fix and run the check again until it passes and looks right.${p.files.length ? `\n- The files the graphic can load (${p.files.join(', ')}) are grey placeholders here; the real ones are used in the final render.` : ''}${p.fonts?.length ? `\n- The fonts (${p.fonts.join(', ')}) aren't here, so the pictures show a fallback font; leave room for the real one, and use the font by its name anyway.` : ''}
 - Then answer with the full contents of Motion.tsx as the code.
 `;
   return {

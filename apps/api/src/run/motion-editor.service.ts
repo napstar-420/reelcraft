@@ -3,6 +3,7 @@ import path from 'node:path';
 import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
 import {
+  motionFiles,
   StageDef,
   type MotionCheckResultDto,
   type MotionPreviewDto,
@@ -55,7 +56,7 @@ export class MotionEditorService {
     const id = `motion-preview-${ulid().toLowerCase()}`;
     const issues = checkMotionCode(source.code);
     if (issues.length) return { id, state: 'invalid', issues };
-    const handles = (source.assets ?? []).map((asset) => asset.handle);
+    const handles = motionFiles(source).map((file) => file.handle);
     const resolved = handles.length ? await this.resources.resolveHandles(runId, handles) : {};
     const spec = motionRenderSpec({
       source,

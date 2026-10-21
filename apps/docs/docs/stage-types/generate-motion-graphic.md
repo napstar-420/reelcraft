@@ -36,9 +36,17 @@ All inputs are optional:
 
 - **`data`**: an object the graphic is given, such as the numbers for a chart or the words for a title. Bind
   it to an earlier stage's data so the same graphic works for every run.
-- **`assets`**: images the graphic may show, such as a logo or a photo. They can come from the run or your
-  library.
+- **`assets`**: images the graphic may show, such as a logo or a photo, and **fonts** it may use. They can come
+  from the run or your library.
 - **`canvas`**: a timeline to take the size and frame rate from.
+
+### Using your fonts
+
+Bind library fonts to `assets` (for example a library binding with the **Font** kind) and the model is told
+their family names, such as `'Gochi Hand'`, to use as `fontFamily`. They load before the graphic's first frame,
+both when [Render Motion Graphic](./render-motion-graphic.md) renders it and when it is embedded in a timeline,
+where the timeline's fonts list picks them up. Up to 6 fonts. Codex and Claude test-render their work without
+the font files, so their own pictures show a fallback font; the real render uses yours.
 
 ## Settings
 

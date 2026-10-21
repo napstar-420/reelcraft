@@ -531,6 +531,8 @@ export function composeTimeline(input: ComposeInput): ComposeResult {
 
     if (layer.kind === 'motion') {
       const motion = entry.asset!.motion!;
+      // The graphic names its fonts by family; the timeline loads them for the whole video.
+      for (const font of motion.fonts ?? []) fonts.set(font.family, font.handle);
       // Drawn by the final render from its code, on the screen: in its box, or over the whole frame.
       track.items.push({
         type: 'motion',

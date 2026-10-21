@@ -18,6 +18,7 @@ export const MOTION_LIMITS = {
   maxSec: 60,
   maxSide: 3840,
   maxAssets: 20,
+  maxFonts: 6,
   propsBytes: 64 * 1024,
 } as const;
 
@@ -29,6 +30,20 @@ export const MotionAssetRef = z.object({
   handle: z.string().min(1),
 });
 export type MotionAssetRef = z.infer<typeof MotionAssetRef>;
+
+/** A font the code can use by its family name: loaded from its file before the first frame. */
+export const MotionFontRef = MotionAssetRef.extend({
+  family: z.string().min(1).max(80),
+});
+export type MotionFontRef = z.infer<typeof MotionFontRef>;
+
+/** Every file a motion graphic needs copied in next to it: what its code loads, and its fonts. */
+export function motionFiles(source: {
+  assets?: MotionAssetRef[] | undefined;
+  fonts?: MotionAssetRef[] | undefined;
+}): MotionAssetRef[] {
+  return [...(source.assets ?? []), ...(source.fonts ?? [])];
+}
 
 /**
  * A motion graphic: one Remotion component and what it needs to render. Size, frame rate and
@@ -47,6 +62,8 @@ export const MotionSource = z.object({
   /** Data the component is given, such as chart numbers or labels. */
   props: z.record(z.unknown()).optional(),
   assets: z.array(MotionAssetRef).max(MOTION_LIMITS.maxAssets).optional(),
+  /** Fonts from the library the code can name, such as `fontFamily: 'Gochi Hand'`. */
+  fonts: z.array(MotionFontRef).max(MOTION_LIMITS.maxFonts).optional(),
   /** What the graphic shows, in a sentence, from the model. */
   notes: z.string().max(1000).optional(),
 });
@@ -98,6 +115,19 @@ export const motionSourceJsonSchema: JsonSchema = {
         type: 'object',
         required: ['name', 'handle'],
         properties: { name: { type: 'string' }, handle: { type: 'string' } },
+      },
+    },
+    fonts: {
+      type: 'array',
+      maxItems: MOTION_LIMITS.maxFonts,
+      items: {
+        type: 'object',
+        required: ['name', 'handle', 'family'],
+        properties: {
+          name: { type: 'string' },
+          handle: { type: 'string' },
+          family: { type: 'string' },
+        },
       },
     },
     notes: { type: 'string' },
