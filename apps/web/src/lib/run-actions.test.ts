@@ -83,6 +83,8 @@ describe('displayStageState', () => {
     );
     expect(displayStageState({ state: 'running', waiting: 'input' }, idle)).toBe('awaiting_input');
     expect(displayStageState({ state: 'running', waiting: null }, idle)).toBe('cancelled');
+    // A stage cut off by the run stopping reads Paused: Continue picks it up.
+    expect(stageStatusLabel('cancelled')).toBe('Paused');
   });
   it('leaves the stored state alone while the run is active, or for any other state', () => {
     expect(displayStageState({ state: 'running', waiting: 'approval' }, busy)).toBe('running');

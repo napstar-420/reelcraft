@@ -179,7 +179,7 @@ const NODE_STATE_LABELS: Record<StageExecutionState, string> = {
   failed: 'Failed',
   stale: 'Stale',
   skipped: 'Skipped',
-  cancelled: 'Cancelled',
+  cancelled: 'Paused',
 };
 
 /** What a stage card shows in its run footer, from the active run's

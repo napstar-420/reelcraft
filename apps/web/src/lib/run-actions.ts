@@ -42,7 +42,7 @@ const STAGE_STATUS: Record<string, string> = {
   failed: 'Failed',
   stale: 'Stale',
   skipped: 'Skipped',
-  cancelled: 'Stopped',
+  cancelled: 'Paused',
 };
 
 /** The state to show for a stage. Stored states lag in two cases once the run stops:
