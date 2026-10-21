@@ -106,7 +106,7 @@ function DrawerBody({
             {execution.startedAt ? (
               <span className="text-xs tabular-nums">
                 {formatRunDuration(execution.startedAt, execution.endedAt)} · $
-                {execution.costUsd.toFixed(2)}
+                {Number(execution.costUsd).toFixed(2)}
               </span>
             ) : null}
           </div>
@@ -330,7 +330,7 @@ function AttemptsTab({
               {multiple && a.itemIndex !== null ? ` · item ${a.itemIndex + 1}` : ''}
             </b>
             <span className="ml-auto text-xs text-muted-foreground tabular-nums">
-              {new Date(a.createdAt).toLocaleTimeString()} · ${a.costUsd.toFixed(2)}
+              {new Date(a.createdAt).toLocaleTimeString()} · ${Number(a.costUsd).toFixed(2)}
             </span>
           </summary>
           <div className="mt-2 flex flex-col gap-2 border-t pt-2 text-muted-foreground">
