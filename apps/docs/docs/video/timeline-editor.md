@@ -122,6 +122,23 @@ on what it is.
   **Transition out** as this one, including **None**. A clip too short to fit both gets them shortened.
   Audio is left alone.
 
+- **Place in a box**: shows a picture or clip in a box on the frame instead of filling it (centred, half the
+  frame), so it can be moved, resized and animated like a graphic. **Fill the frame** puts it back.
+
+**Graphics and things placed in a box** (words, drawings and shapes, and pictures or clips in a box, such as
+the ones [Compose Timeline](../stage-types/compose-timeline.md) places and rendered motion graphics):
+
+- **Words**: the **Words**, **Letter size (px)**, **Colour**, **Font** (the theme's **Hand** and **Body** fonts,
+  the timeline's library fonts, or **Other…** to type a family), **Weight** and **Line up**;
+- **Drawing**: **Colour every line**, to give a drawing one colour; **Shape**: which **Shape**, and its **Colour**;
+- **Box**: **X**, **Y**, **Width** and **Height** in pixels of the frame (or the world), **Turn (°)** and
+  **Layer** (higher is on top). With a world, **Placed**: **On the screen** stays put, **In the world** moves
+  with the camera;
+- **Arrival**: **How it arrives** (**Draw on**, **Write out**, **Pop**, **Fade**, **Slide**, **Highlight** or
+  **Appear**; pictures and clips can pop, fade, slide or appear), how long it **Takes**, where a slide comes
+  **From**, and the **Pen** that follows lines being drawn;
+- **Remove moves**: drops the small moves an item makes after it arrives.
+
 **Delete item** removes it. See [Timelines](./timelines.md) for what each setting does.
 
 ### Captions

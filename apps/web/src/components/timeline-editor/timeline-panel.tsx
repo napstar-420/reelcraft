@@ -20,10 +20,12 @@ import {
   ZoomIn,
   ZoomOut,
   ListX,
+  Shapes,
 } from 'lucide-react';
 import type { PlayerRef } from '@remotion/player';
 import type { Timeline, TimelineItem, TimelineResource } from '@reelcraft/shared';
 import { cn } from 'cn';
+import { graphicLabel } from '@/pages/timeline-editor/placement';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -148,15 +150,17 @@ function ClipBlock({
 }) {
   const width = Math.max(6, timing.durationSec * pxPerSec);
   const Icon =
-    item.type === 'text'
+    item.type === 'text' || (item.type === 'graphic' && item.content.kind === 'text')
       ? Type
-      : item.type === 'captions'
-        ? Captions
-        : resource?.kind === 'media.audio'
-          ? Music
-          : resource?.kind === 'media.video'
-            ? Film
-            : ImageIcon;
+      : item.type === 'graphic'
+        ? Shapes
+        : item.type === 'captions'
+          ? Captions
+          : resource?.kind === 'media.audio'
+            ? Music
+            : resource?.kind === 'media.video'
+              ? Film
+              : ImageIcon;
   const showThumb = resource && resource.kind === 'media.image';
   return (
     <div
@@ -400,7 +404,9 @@ export function TimelinePanel({
       ? (resourceByHandle.get(item.handle)?.label ?? item.handle)
       : item.type === 'text'
         ? item.text
-        : 'Captions';
+        : item.type === 'graphic'
+          ? graphicLabel(item)
+          : 'Captions';
 
   const secAtClientX = (clientX: number) => {
     const grid = gridRef.current;
