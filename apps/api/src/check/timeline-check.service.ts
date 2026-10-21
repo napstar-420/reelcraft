@@ -12,6 +12,7 @@ import { StyleRegistry } from '../capability/style.registry';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
 import { artifact, blob, run } from '../db/schema';
 import type { CheckResult } from './check.types';
+import { layoutAdvice } from './timeline-layout';
 
 @Injectable()
 export class TimelineCheckService {
@@ -232,6 +233,7 @@ export class TimelineCheckService {
           )
         : passed('timeline.canvas_match'),
     );
+    results.push(...layoutAdvice(timeline));
     const failures = results.filter((r) => !r.pass);
     if (failures.length > 0) {
       this.logger.warn(

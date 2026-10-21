@@ -27,6 +27,9 @@ export interface CheckResult extends CheckOutcome {
   /** The timeline items a failure is about, so the editor can mark them. Only timeline checks set
    * this, and only when they can point at specific items. */
   targets?: Array<{ trackId: string; itemIndex: number }>;
+  /** Advice, not a failure: the result passes, and its message and targets say what could be
+   * better. Only the timeline layout checks set it. */
+  warning?: true;
 }
 
 export interface CheckRunInput {
