@@ -92,7 +92,7 @@ logo goes in a corner, a photo sits beside some words, or a clip plays in a smal
 
 A **graphic** item draws something on the screen with an animation. It works for any look: hand-drawn,
 clean and flat, or anywhere in between. [Compose Timeline](../stage-types/compose-timeline.md) places them
-from a plan, so you normally don't write them by hand. A graphic draws one of three things:
+from a plan, so you normally don't write them by hand. A graphic draws one of four things:
 
 - **Lines**: any shape, as lines drawn in order. A drawing is a list of strokes on a grid you choose; it can
   come from an SVG file or a [drawing a model made](../stage-types/prepare-drawings.md).
@@ -100,6 +100,10 @@ from a plan, so you normally don't write them by hand. A graphic draws one of th
   **body**). The words can be in parts, each with its own colour, font or weight, to pick out a word in a
   line.
 - **A shape**: an **arrow**, **circle**, **underline**, **box**, **highlight** (a marker swipe) or **check**.
+- **An arrow between two items**: it names the two items (graphics, motion graphics, or pictures and clips in
+  a box) and is drawn from one to the other, straight or bent, with heads at the end, both ends or neither. It
+  is drawn from where the two items are, so it stays joined when either moves; it ignores their small moves
+  after they appear.
 
 How it appears is its **animation**:
 

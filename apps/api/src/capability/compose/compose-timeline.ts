@@ -178,7 +178,26 @@ export function composeTimeline(input: ComposeInput): ComposeResult {
       need(!(layer.text && layer.runs), 'has both text and runs; use one');
     }
     if (layer.kind === 'shape') need(layer.shape, 'needs a shape');
-    if (layer.kind === 'drawing' || layer.kind === 'text' || layer.kind === 'shape') {
+    const joins = layer.fromLayer !== undefined || layer.toLayer !== undefined;
+    if (joins) {
+      need(layer.kind === 'shape' && layer.shape === 'arrow', 'only an arrow shape joins layers');
+      need(layer.fromLayer && layer.toLayer, 'a joining arrow needs both fromLayer and toLayer');
+      need(!boxed(layer), 'a joining arrow goes between its two layers; leave out x, y, w and h');
+      const ends = [layer.fromLayer, layer.toLayer].flatMap((end) => (end ? [end] : []));
+      for (const end of ends) {
+        const target = plan.layers[names.indexOf(end)];
+        if (!target) issues.push(`layer "${name}": "${end}" is not a layer`);
+        else if (!boxed(target) || target.kind === 'audio' || target.kind === 'captions')
+          issues.push(`layer "${name}": "${end}" has no box on the frame to point at`);
+        else if (target.fromLayer || target.toLayer)
+          issues.push(`layer "${name}": "${end}" is an arrow; join things, not arrows`);
+      }
+      const spaces = ends.map((end) => plan.layers[names.indexOf(end)]?.space ?? 'world');
+      need(
+        spaces.length < 2 || spaces[0] === spaces[1],
+        'the two layers it joins must both be on the screen or both in the world',
+      );
+    } else if (layer.kind === 'drawing' || layer.kind === 'text' || layer.kind === 'shape') {
       need(boxed(layer), 'needs x, y, w and h (fractions of the frame)');
     }
     if (
@@ -499,6 +518,7 @@ export function composeTimeline(input: ComposeInput): ComposeResult {
         ...(layer.fadeOutSec !== undefined && { fadeOutSec: layer.fadeOutSec }),
         ...(layer.reveal && { reveal: { type: layer.reveal } }),
         ...(boxed(layer) && {
+          id: name,
           ...boxPx(layer),
           ...place,
           ...(layer.anim && { anim: animOf(layer, hand, false) }),
@@ -533,6 +553,39 @@ export function composeTimeline(input: ComposeInput): ComposeResult {
           ...(layer.rotate !== undefined && { rotate: layer.rotate }),
           ...(layer.z !== undefined && { z: layer.z }),
         }),
+      });
+      continue;
+    }
+
+    // An arrow that joins two layers: drawn between them, in a box that roughly spans them.
+    if (layer.fromLayer && layer.toLayer) {
+      const a = boxPx(byName.get(layer.fromLayer)!.layer);
+      const b = boxPx(byName.get(layer.toLayer)!.layer);
+      const centre = (box: typeof a) => ({ x: box.x + box.w / 2, y: box.y + box.h / 2 });
+      const [ca, cb] = [centre(a), centre(b)];
+      const pad = 10;
+      track.items.push({
+        type: 'graphic',
+        id: name,
+        startSec: entry.startSec,
+        durationSec: span,
+        x: round(Math.min(ca.x, cb.x) - pad),
+        y: round(Math.min(ca.y, cb.y) - pad),
+        w: round(Math.abs(ca.x - cb.x) + pad * 2),
+        h: round(Math.abs(ca.y - cb.y) + pad * 2),
+        space: byName.get(layer.fromLayer)!.layer.space ?? 'world',
+        ...(layer.z !== undefined && { z: layer.z }),
+        content: {
+          kind: 'connector',
+          from: layer.fromLayer,
+          to: layer.toLayer,
+          ...(layer.curve !== undefined && { curve: layer.curve }),
+          ...(layer.head && { head: layer.head }),
+          ...(layer.color && { color: layer.color }),
+        },
+        anim: animOf(layer, hand, true),
+        ...(layer.keyframes && { keyframes: keyframesOf(layer) }),
+        ...cueOf(layer),
       });
       continue;
     }

@@ -4,6 +4,7 @@ import {
   animState,
   cameraAt,
   cameraTransform,
+  connectorStrokes,
   DEFAULT_THEME,
   ease,
   hashSeed,
@@ -342,5 +343,39 @@ describe('typing', () => {
       { text: 'REALLY', color: 'red', typed: false },
     ]);
     expect(typedParts(parts, 99).every((part) => part.typed)).toBe(true);
+  });
+});
+
+describe('arrows between two boxes', () => {
+  const left = { x: 0, y: 0, w: 100, h: 100 };
+  const right = { x: 300, y: 0, w: 100, h: 100 };
+  const numbers = (d: string) => d.match(/-?[\d.]+/g)!.map(Number);
+
+  it('runs from the facing edges, a small gap short of each, with a head at the end', () => {
+    const [line, head] = connectorStrokes(left, right, { headSize: 20 });
+    const [x1, y1, x2, y2] = numbers(line!.d);
+    expect(x1).toBeGreaterThan(100);
+    expect(x1).toBeLessThan(115);
+    expect(x2).toBeLessThan(300);
+    expect(x2).toBeGreaterThan(285);
+    expect(y1).toBe(50);
+    expect(y2).toBe(50);
+    expect(head).toBeDefined();
+    expect(numbers(head!.d)).toContain(x2);
+  });
+
+  it('bends clockwise for a positive curve, and puts heads where asked', () => {
+    const down = connectorStrokes(left, right, { curve: 0.5, head: 'both', headSize: 20 });
+    expect(down).toHaveLength(3);
+    expect(down[0]!.d).toContain('Q');
+    // Going right on a screen, clockwise is down: the control point is below the line.
+    expect(numbers(down[0]!.d)[3]).toBeGreaterThan(50);
+    const up = connectorStrokes(left, right, { curve: -0.5, head: 'none', headSize: 20 });
+    expect(up).toHaveLength(1);
+    expect(numbers(up[0]!.d)[3]).toBeLessThan(50);
+  });
+
+  it('draws nothing between boxes that overlap', () => {
+    expect(connectorStrokes(left, { x: 50, y: 50, w: 100, h: 100 }, { headSize: 20 })).toEqual([]);
   });
 });

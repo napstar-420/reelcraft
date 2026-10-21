@@ -4,6 +4,8 @@ import type { GraphicStroke, TextRun, TimelineItem, TimelineTheme } from '@reelc
 import {
   animState,
   clamp01,
+  connectorStrokes,
+  type EndBox,
   keyframeState,
   pathLength,
   penPoint,
@@ -58,12 +60,38 @@ export const fontName = (family: string, theme: TimelineTheme): string =>
 
 export type GraphicTimelineItem = Extract<TimelineItem, { type: 'graphic' }>;
 
-/** The lines a graphic item draws, and the grid they are drawn on. */
-export function graphicGeometry(item: GraphicTimelineItem): {
+/** Where each named item sits, for arrows that join two of them: its box and its space. */
+export type PlacedBoxMap = ReadonlyMap<string, EndBox & { space: 'world' | 'screen' }>;
+export const PlacedBoxes = React.createContext<PlacedBoxMap>(new Map());
+
+/** The lines a graphic item draws, and the grid they are drawn on. An arrow between two items
+ * is drawn on the item's own box, from where its two ends are now; without both, nothing. */
+export function graphicGeometry(
+  item: GraphicTimelineItem,
+  boxes: PlacedBoxMap = new Map(),
+  headSize = 18,
+): {
   viewBox: { width: number; height: number };
   strokes: GraphicStroke[];
 } | null {
   const { content } = item;
+  if (content.kind === 'connector') {
+    const space = item.space ?? 'world';
+    const from = boxes.get(content.from);
+    const to = boxes.get(content.to);
+    if (!from || !to || from.space !== space || to.space !== space) return null;
+    const local = (box: EndBox) => ({ ...box, x: box.x - item.x, y: box.y - item.y });
+    const strokes = connectorStrokes(local(from), local(to), {
+      curve: content.curve,
+      head: content.head,
+      headSize,
+    }).map((stroke) => ({
+      ...stroke,
+      ...(content.color && { color: content.color }),
+      ...(content.weight && { weight: content.weight }),
+    }));
+    return strokes.length ? { viewBox: { width: item.w, height: item.h }, strokes } : null;
+  }
   if (content.kind === 'paths') return { viewBox: content.viewBox, strokes: content.strokes };
   if (content.kind === 'shape') {
     const strokes = shapeStrokes(content.shape, item.w, item.h).map((stroke) =>
@@ -134,7 +162,8 @@ export const GraphicItem = ({
     localSec,
   );
   const kf = keyframeState(item.keyframes, localSec);
-  const geometry = graphicGeometry(item);
+  const boxes = React.useContext(PlacedBoxes);
+  const geometry = graphicGeometry(item, boxes, Math.max(14, theme.strokeWidth * 4.5));
   const seed = item.id ?? seedKey;
 
   // The lines are roughened once per item, not every frame.

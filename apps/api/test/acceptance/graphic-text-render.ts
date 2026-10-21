@@ -9,7 +9,7 @@ const exec = promisify(execFile);
 /**
  * Renders words drawn by graphic items through the real render worker and checks the pixels:
  * a line of words in coloured parts shows each part in its own colour, and typed words appear letter
- * by letter. Needs ffmpeg and Chrome. Set
+ * by letter, and an arrow between two items is drawn between where they are. Needs ffmpeg and Chrome. Set
  * REMOTION_BROWSER_EXECUTABLE to a Chrome or headless-shell binary if Remotion can't find one.
  */
 const WIDTH = 640;
@@ -75,6 +75,40 @@ const timeline = {
           anim: { type: 'type', durationSec: 2, caret: false },
           durationSec: 4,
         }),
+        // An arrow between two boxes (in the bottom-right corner area), drawn from where they are.
+        graphic({
+          id: 'left-end',
+          x: 380,
+          y: 300,
+          w: 40,
+          h: 40,
+          content: { kind: 'shape', shape: 'box', color: '#ff00ff' },
+        }),
+        graphic({
+          id: 'right-end',
+          x: 580,
+          y: 300,
+          w: 40,
+          h: 40,
+          content: { kind: 'shape', shape: 'box', color: '#ff00ff' },
+        }),
+        graphic({
+          id: 'joining',
+          // A stale box on purpose: the arrow follows its ends, not this.
+          x: 0,
+          y: 0,
+          w: 10,
+          h: 10,
+          content: { kind: 'connector', from: 'left-end', to: 'right-end', color: '#ff8800' },
+        }),
+        graphic({
+          id: 'dangling',
+          x: 0,
+          y: 0,
+          w: 10,
+          h: 10,
+          content: { kind: 'connector', from: 'left-end', to: 'nowhere', color: '#ff8800' },
+        }),
       ],
     },
   ],
@@ -121,6 +155,7 @@ function count(
 }
 const isBlue = ([r, g, b]: Rgb) => b > 150 && r < 100 && g < 100;
 const isRed = ([r, g, b]: Rgb) => r > 150 && g < 100 && b < 100;
+const isOrange = ([r, g, b]: Rgb) => r > 200 && g > 90 && g < 180 && b < 80;
 const isGreen = ([r, g, b]: Rgb) => g > 120 && r < 90 && b < 90;
 
 function assert(condition: boolean, message: string): asserts condition {
@@ -175,6 +210,12 @@ async function main() {
     columns(rgb) < columns(done) - 50,
     `half way, the typed letters reach as far as at the end (${columns(rgb)} vs ${columns(done)})`,
   );
+
+  // The arrow: orange between the two boxes, and nowhere else (the dangling one draws nothing).
+  const between = count(rgb, { x: 425, y: 300, w: 150, h: 40 }, isOrange);
+  const elsewhere = count(rgb, { x: 0, y: 0, w: WIDTH, h: 290 }, isOrange);
+  assert(between > 100, `no arrow between the two boxes (${between} orange pixels)`);
+  assert(elsewhere === 0, `orange where no arrow should be (${elsewhere} pixels)`);
 
   console.log(`graphic text render acceptance passed (${dir})`);
 }

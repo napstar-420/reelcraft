@@ -12,6 +12,7 @@ import {
   recolorDrawing,
   setAnim,
   setBox,
+  setCurve,
   setRunColor,
   setWords,
   type PlacedItem,
@@ -421,6 +422,66 @@ function GraphicFields({
                 const color = event.target.value.trim();
                 if (color) draft.content.color = color.slice(0, 40);
                 else delete draft.content.color;
+              })
+            }
+          />
+        </Field>
+      </fieldset>
+    );
+  }
+  if (content.kind === 'connector') {
+    const setArrow = (
+      mutate: (arrow: Extract<GraphicItem['content'], { kind: 'connector' }>) => void,
+    ) =>
+      update((draft) => {
+        if (draft.content.kind === 'connector') mutate(draft.content);
+      });
+    return (
+      <fieldset className="space-y-3">
+        <legend className="mb-2 text-xs font-semibold text-muted-foreground">Arrow</legend>
+        <p className="text-xs text-muted-foreground">
+          From <span className="font-medium text-foreground">{content.from}</span> to{' '}
+          <span className="font-medium text-foreground">{content.to}</span>. It stays joined when
+          either moves.
+        </p>
+        <div className="grid grid-cols-2 gap-3">
+          <NumberField
+            id="arrow-curve"
+            label="Bend"
+            value={content.curve ?? 0}
+            min={-1}
+            step={0.1}
+            disabled={readOnly}
+            onChange={(value) => setArrow((draft) => setCurve(draft, value))}
+          />
+          <Choice
+            label="Heads"
+            value={content.head ?? 'end'}
+            options={[
+              { value: 'end', label: 'At the end' },
+              { value: 'both', label: 'Both ends' },
+              { value: 'none', label: 'No heads' },
+            ]}
+            disabled={readOnly}
+            onChange={(head) =>
+              setArrow((draft) => {
+                if (head === 'end') delete draft.head;
+                else draft.head = head as 'both' | 'none';
+              })
+            }
+          />
+        </div>
+        <Field id="arrow-color" label="Colour">
+          <Input
+            id="arrow-color"
+            value={content.color ?? ''}
+            placeholder="ink"
+            disabled={readOnly}
+            onChange={(event) =>
+              setArrow((draft) => {
+                const color = event.target.value.trim();
+                if (color) draft.color = color.slice(0, 40);
+                else delete draft.color;
               })
             }
           />

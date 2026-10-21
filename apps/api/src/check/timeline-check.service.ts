@@ -12,6 +12,7 @@ import { StyleRegistry } from '../capability/style.registry';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
 import { artifact, blob, run } from '../db/schema';
 import type { CheckResult } from './check.types';
+import { connectorProblems } from './timeline-connectors';
 import { layoutAdvice } from './timeline-layout';
 import { checkMotionCode } from '../capability/motion/motion-code-check';
 
@@ -258,6 +259,16 @@ export class TimelineCheckService {
       motionProblems.length
         ? failed('timeline.motion_code', motionProblems.join('; '), motionTargets)
         : passed('timeline.motion_code'),
+    );
+    const connectors = connectorProblems(timeline);
+    results.push(
+      connectors.length
+        ? failed(
+            'timeline.connectors',
+            connectors.map((problem) => problem.message).join('; '),
+            connectors.map((problem) => problem.target),
+          )
+        : passed('timeline.connectors'),
     );
     results.push(...layoutAdvice(timeline));
     const failures = results.filter((r) => !r.pass);

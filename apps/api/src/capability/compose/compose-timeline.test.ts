@@ -87,6 +87,48 @@ describe('composeTimeline', () => {
     expect(faded!.anim).toEqual({ type: 'fade' });
   });
 
+  it('joins two layers with an arrow that follows them, and names placed pictures', () => {
+    const { timeline } = composeTimeline(
+      base({
+        plan: plan([
+          { id: 'app', kind: 'text', text: 'the app', x: 0.1, y: 0.1, w: 0.2, h: 0.1 },
+          { id: 'photo', kind: 'image', asset: 'photo', x: 0.6, y: 0.5, w: 0.2, h: 0.2 },
+          { kind: 'shape', shape: 'arrow', fromLayer: 'app', toLayer: 'photo', curve: 0.3 },
+        ]),
+      }),
+    );
+    const picture = items(timeline, 'overlay').find((item) => item.type === 'media') as Media;
+    expect(picture.id).toBe('photo');
+    const arrow = items(timeline, 'overlay').find(
+      (item) => item.type === 'graphic' && item.content.kind === 'connector',
+    ) as Graphic;
+    expect(arrow.content).toEqual({ kind: 'connector', from: 'app', to: 'photo', curve: 0.3 });
+    // Its box spans the two centres: (384, 162) to (1344, 648).
+    expect(arrow).toMatchObject({ x: 374, y: 152, w: 980, h: 506, space: 'world' });
+  });
+
+  it('refuses an arrow that joins what is not there, or has no box', () => {
+    const bad = (layers: unknown[]) => () => composeTimeline(base({ plan: plan(layers) }));
+    const words = { id: 'a', kind: 'text', text: 'A', x: 0, y: 0, w: 0.2, h: 0.1 };
+    expect(bad([words, { kind: 'shape', shape: 'arrow', fromLayer: 'a', toLayer: 'b' }])).toThrow(
+      /"b" is not a layer/,
+    );
+    expect(
+      bad([
+        words,
+        { id: 'music', kind: 'audio', asset: 'song' },
+        { kind: 'shape', shape: 'arrow', fromLayer: 'a', toLayer: 'music' },
+      ]),
+    ).toThrow(/"music" has no box/);
+    const elsewhere = bad([
+      words,
+      { id: 'b', kind: 'text', text: 'B', x: 0.5, y: 0, w: 0.2, h: 0.1, space: 'screen' },
+      { kind: 'shape', shape: 'circle', fromLayer: 'a', toLayer: 'b' },
+    ]);
+    expect(elsewhere).toThrow(/only an arrow shape joins layers/);
+    expect(elsewhere).toThrow(/both be on the screen or both in the world/);
+  });
+
   it('refuses a text layer with both text and runs', () => {
     const both = plan([
       { kind: 'text', text: 'A', runs: [{ text: 'A' }], x: 0, y: 0, w: 0.5, h: 0.2 },

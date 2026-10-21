@@ -18,7 +18,7 @@ import { activeCaption, captionPagesFor } from './captions';
 import { useGraphicFonts, useTimelineFonts } from './graphic/fonts';
 import { MotionComponents, MotionItem, motionKey } from './motion-item';
 export { MotionComponents, motionKey } from './motion-item';
-import { GraphicItem, placedStyle } from './graphic/GraphicItem';
+import { GraphicItem, PlacedBoxes, placedStyle, type PlacedBoxMap } from './graphic/GraphicItem';
 import {
   DEFAULT_THEME,
   animState,
@@ -494,6 +494,7 @@ export const TimelineComposition = ({
       return resource ? [{ family: font.family, url: resolveSrc(resource.src) }] : [];
     }),
   );
+  const boxes = React.useMemo(() => placedBoxes(timeline), [timeline]);
   // Items on the big canvas are drawn together under the camera, beneath every track.
   const worldEntries: GraphicEntry[] = timeline.tracks
     .flatMap((track) =>
@@ -505,92 +506,121 @@ export const TimelineComposition = ({
     .sort((a, b) => (a.entry.item.z ?? 0) - (b.entry.item.z ?? 0) || a.order - b.order)
     .map(({ entry }) => entry);
   return (
-    <AbsoluteFill
-      style={{
-        backgroundColor: timeline.canvas.background ?? (timeline.theme ? theme.paper : '#000'),
-        ...(timeline.theme ? paperStyle(timeline.theme) : {}),
-      }}
-    >
-      {worldEntries.length ? (
-        <WorldLayer
-          timeline={timeline}
-          entries={worldEntries}
-          resources={resources}
-          theme={theme}
-        />
-      ) : null}
-      {timeline.tracks.flatMap((track) =>
-        track.items.map((item, index) => {
-          if (isPlaced(item) && spaceOf(item) === 'world') return null;
-          const startSec = item.type === 'captions' ? (item.startSec ?? 0) : item.startSec;
-          const from = Math.round(startSec * fps);
-          const durationSec =
-            item.type === 'captions'
-              ? (timingMaps[item.timingHandle]?.durationSec ?? 1) - startSec
-              : (item.durationSec ?? 1);
-          const durationInFrames = Math.max(1, Math.ceil(durationSec * fps));
-          return (
-            <Sequence
-              key={`${track.id}-${index}`}
-              from={from}
-              durationInFrames={durationInFrames}
-              premountFor={fps}
-            >
-              {isPlaced(item) ? (
-                <PlacedView
-                  entry={{ trackId: track.id, index, item }}
-                  timeline={timeline}
-                  resources={resources}
-                  theme={theme}
-                />
-              ) : item.type === 'captions' ? (
-                timingMaps[item.timingHandle] ? (
-                  <CaptionsItem
-                    item={item}
-                    timing={timingMaps[item.timingHandle]!}
-                    tokens={tokensFor(item.styleId)}
+    <PlacedBoxes.Provider value={boxes}>
+      <AbsoluteFill
+        style={{
+          backgroundColor: timeline.canvas.background ?? (timeline.theme ? theme.paper : '#000'),
+          ...(timeline.theme ? paperStyle(timeline.theme) : {}),
+        }}
+      >
+        {worldEntries.length ? (
+          <WorldLayer
+            timeline={timeline}
+            entries={worldEntries}
+            resources={resources}
+            theme={theme}
+          />
+        ) : null}
+        {timeline.tracks.flatMap((track) =>
+          track.items.map((item, index) => {
+            if (isPlaced(item) && spaceOf(item) === 'world') return null;
+            const startSec = item.type === 'captions' ? (item.startSec ?? 0) : item.startSec;
+            const from = Math.round(startSec * fps);
+            const durationSec =
+              item.type === 'captions'
+                ? (timingMaps[item.timingHandle]?.durationSec ?? 1) - startSec
+                : (item.durationSec ?? 1);
+            const durationInFrames = Math.max(1, Math.ceil(durationSec * fps));
+            return (
+              <Sequence
+                key={`${track.id}-${index}`}
+                from={from}
+                durationInFrames={durationInFrames}
+                premountFor={fps}
+              >
+                {isPlaced(item) ? (
+                  <PlacedView
+                    entry={{ trackId: track.id, index, item }}
+                    timeline={timeline}
+                    resources={resources}
+                    theme={theme}
                   />
-                ) : null
-              ) : item.type === 'text' ? (
-                <TextItem item={item} tokens={tokensFor(item.styleId)} />
-              ) : item.type === 'motion' ? (
-                <MotionItem
-                  item={item}
-                  motionId={motionKey(track.id, index)}
-                  frame={timeline.canvas}
-                  durationInFrames={durationInFrames}
-                />
-              ) : (resources[item.handle] ?? bundledResource(item.handle)) ? (
-                <MediaItem
-                  item={item}
-                  resource={(resources[item.handle] ?? bundledResource(item.handle))!}
-                  trackType={track.type}
-                  clipIndex={index}
-                  duckIntervals={
-                    track.duckUnder
-                      ? (
-                          timeline.tracks.find((candidate) => candidate.id === track.duckUnder)
-                            ?.items ?? []
-                        )
-                          .filter(
-                            (candidate): candidate is Exclude<TimelineItem, { type: 'captions' }> =>
-                              candidate.type !== 'captions',
+                ) : item.type === 'captions' ? (
+                  timingMaps[item.timingHandle] ? (
+                    <CaptionsItem
+                      item={item}
+                      timing={timingMaps[item.timingHandle]!}
+                      tokens={tokensFor(item.styleId)}
+                    />
+                  ) : null
+                ) : item.type === 'text' ? (
+                  <TextItem item={item} tokens={tokensFor(item.styleId)} />
+                ) : item.type === 'motion' ? (
+                  <MotionItem
+                    item={item}
+                    motionId={motionKey(track.id, index)}
+                    frame={timeline.canvas}
+                    durationInFrames={durationInFrames}
+                  />
+                ) : (resources[item.handle] ?? bundledResource(item.handle)) ? (
+                  <MediaItem
+                    item={item}
+                    resource={(resources[item.handle] ?? bundledResource(item.handle))!}
+                    trackType={track.type}
+                    clipIndex={index}
+                    duckIntervals={
+                      track.duckUnder
+                        ? (
+                            timeline.tracks.find((candidate) => candidate.id === track.duckUnder)
+                              ?.items ?? []
                           )
-                          .map((candidate) => ({
-                            startSec: candidate.startSec,
-                            endSec: candidate.startSec + (candidate.durationSec ?? 1),
-                          }))
-                      : []
-                  }
-                />
-              ) : null}
-            </Sequence>
-          );
-        }),
-      )}
-    </AbsoluteFill>
+                            .filter(
+                              (
+                                candidate,
+                              ): candidate is Exclude<TimelineItem, { type: 'captions' }> =>
+                                candidate.type !== 'captions',
+                            )
+                            .map((candidate) => ({
+                              startSec: candidate.startSec,
+                              endSec: candidate.startSec + (candidate.durationSec ?? 1),
+                            }))
+                        : []
+                    }
+                  />
+                ) : null}
+              </Sequence>
+            );
+          }),
+        )}
+      </AbsoluteFill>
+    </PlacedBoxes.Provider>
   );
 };
+
+/** Every named item with a box, for arrows to join: where it is and which space it is in. Motion
+ * graphics sit on the screen. */
+function placedBoxes(timeline: Timeline): PlacedBoxMap {
+  const map = new Map<
+    string,
+    { x: number; y: number; w: number; h: number; space: 'world' | 'screen' }
+  >();
+  for (const track of timeline.tracks) {
+    for (const item of track.items) {
+      if (item.type === 'captions' || item.type === 'text' || !item.id) continue;
+      if (item.type === 'graphic' && item.content.kind === 'connector') continue;
+      if (
+        item.x === undefined ||
+        item.y === undefined ||
+        item.w === undefined ||
+        item.h === undefined
+      )
+        continue;
+      const space = item.type === 'motion' ? 'screen' : (item.space ?? 'world');
+      map.set(item.id, { x: item.x, y: item.y, w: item.w, h: item.h, space });
+    }
+  }
+  return map;
+}
 
 const fallbackTimeline: Timeline = {
   version: 1,

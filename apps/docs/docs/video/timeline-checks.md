@@ -1,11 +1,11 @@
 ---
 title: Timeline checks
-description: The eight automatic checks every timeline goes through, the layout tips, and how to fix each one.
+description: The nine automatic checks every timeline goes through, the layout tips, and how to fix each one.
 ---
 
 Whenever a stage makes a timeline, or you submit one from the [editor](./timeline-editor.md), Reelcraft
-runs eight checks on it. They catch mistakes before the video is rendered, which saves time and money. All
-eight are shown for every timeline, so you can see which pass.
+runs nine checks on it. They catch mistakes before the video is rendered, which saves time and money. All
+nine are shown for every timeline, so you can see which pass.
 
 | Check                      | Fails when                                                                                         |
 | -------------------------- | -------------------------------------------------------------------------------------------------- |
@@ -16,6 +16,8 @@ eight are shown for every timeline, so you can see which pass.
 | `timeline.coverage`        | The main video track has gaps with nothing in them                                                 |
 | `timeline.av_alignment`    | The audio and the video end at noticeably different times                                          |
 | `timeline.canvas_match`    | The timeline's shape doesn't match the aspect ratio you asked for                                  |
+| `timeline.motion_code`     | A motion graphic's code uses something it may not, such as another package or the network          |
+| `timeline.connectors`      | An arrow that joins two items can't reach one of them                                              |
 
 If the schema check fails, only it is reported, since the others can't be worked out.
 
@@ -88,6 +90,12 @@ raise **toleranceSec** on the stage. It only applies when the timeline has both 
 A motion graphic in the timeline uses something its code may not: another package, the network, the clock,
 random numbers or CSS animations. The message lists each problem. Fix the code with **Edit code** on the
 Generate Motion Graphic stage, or run that stage again.
+
+### timeline.connectors
+
+An arrow that joins two items can't reach one of its ends: the item it names isn't in the timeline (or has no
+box), or it is on the screen while the arrow is in the world, or the other way round. Such an arrow draws
+nothing. Delete the arrow, or put back the item it pointed at.
 
 ### timeline.canvas_match
 

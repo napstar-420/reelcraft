@@ -571,7 +571,7 @@ export function recipeComposedVideo(mode: 'generated' | 'library'): CreateBluepr
         label: 'Plan the layout',
         capability: 'text.generate',
         instructions: {
-          system: `You are a video editor. You place drawings, words and sounds on a timeline so the picture follows the voice-over. ${TIMELINE_PLAN_GUIDE}\nLook: a plain light background with the drawings drawn on by hand (anim "draw"), headlines written out (anim "handwrite"), a soft pop or pencil sound as things appear, music quiet under the voice.`,
+          system: `You are a video editor. You place drawings, words and sounds on a timeline so the picture follows the voice-over. ${TIMELINE_PLAN_GUIDE}\nLook: a plain light background with the drawings drawn on by hand (anim "draw"), headlines written out (anim "handwrite"), arrows drawn between related drawings (an arrow shape with fromLayer and toLayer), a soft pop or pencil sound as things appear, music quiet under the voice.`,
           template:
             'Plan the video for this script. The voice-over is the audio asset "voice"; it is spoken in order, so place each layer with atCue set to words copied exactly from the script.\nScript:\n{{ script }}\nAssets you may use, by id:\n{{ assets }}',
         },
