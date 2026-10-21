@@ -21,7 +21,7 @@ const SQUARE: Record<ViewState, string> = {
 };
 
 const BOX: Record<PhaseState, string> = {
-  done: '',
+  done: 'border-emerald-500/60',
   partial: '',
   running: 'border-blue-500 ring-2 ring-blue-500/25',
   waiting: 'border-amber-500/70',
@@ -251,7 +251,8 @@ function StageLine({
       type="button"
       onClick={() => onOpen(stage.key)}
       className={cn(
-        'flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-sm hover:bg-muted',
+        'flex w-full items-center gap-2 rounded border border-transparent px-1.5 py-1 text-left text-sm hover:bg-muted',
+        stage.state === 'done' && 'border-emerald-500/50',
         selected && 'bg-muted',
       )}
     >

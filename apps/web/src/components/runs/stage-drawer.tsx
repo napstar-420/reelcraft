@@ -103,7 +103,7 @@ function DrawerBody({
         <SheetDescription asChild>
           <div className="flex flex-wrap items-center gap-2">
             <StatusBadge tone={viewTone(stage.state)} label={VIEW_LABEL[stage.state]} />
-            {execution.startedAt ? (
+            {execution.startedAt && (execution.endedAt || stage.state === 'running') ? (
               <span className="text-xs tabular-nums">
                 {formatRunDuration(execution.startedAt, execution.endedAt)} · $
                 {Number(execution.costUsd).toFixed(2)}

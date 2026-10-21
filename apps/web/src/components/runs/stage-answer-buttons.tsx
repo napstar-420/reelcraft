@@ -17,8 +17,14 @@ export function StageAnswerButtons({
   onReview: (stageKey: string) => void;
   onProvideInput: (stageKey: string) => void;
 }) {
+  const waiting = stage.waiting !== null;
   return (
     <>
+      {waiting && !canAnswerWaits(run.state) ? (
+        <span className="text-sm text-muted-foreground">
+          Waiting for you. You can answer once the run is paused or stopped: pause it to answer now.
+        </span>
+      ) : null}
       {isApprovalStillOpen(stage.stageKey, run) ? (
         <Button size="sm" onClick={() => onReview(stage.stageKey)}>
           <Eye /> Review output
