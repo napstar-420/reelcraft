@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isRunActionAllowed, RUN_ACTION_ALLOWED_STATES } from './run-action-policy';
+import { canAnswerWaits, isRunActionAllowed, RUN_ACTION_ALLOWED_STATES } from './run-action-policy';
 
 /** Mirrors `apps/api/src/run/run-action-policy.ts`'s `RUN_ACTION_ALLOWED_STATES`
  * for the actions this UI cares about. This test is the drift detector: if
@@ -23,7 +23,16 @@ const API_ALLOWED_STATES = {
     'FAILED',
     'COMPLETED',
   ],
-  submit_input: ['PAUSED_APPROVAL', 'PAUSED_INPUT'],
+  submit_input: [
+    'PAUSED_APPROVAL',
+    'PAUSED_INPUT',
+    'FAILED',
+    'CANCELLED',
+    'IDLE',
+    'PAUSED_MANUAL',
+    'PAUSED_BUDGET',
+    'PAUSED_QUOTA',
+  ],
   resume: ['PAUSED_BUDGET', 'PAUSED_MANUAL', 'PAUSED_QUOTA', 'FAILED'],
   cancel: [
     'CREATED',
@@ -78,5 +87,12 @@ describe('isRunActionAllowed', () => {
     expect(isRunActionAllowed('submit_input', 'PAUSED_INPUT')).toBe(true);
     expect(isRunActionAllowed('submit_input', 'PAUSED_APPROVAL')).toBe(true);
     expect(isRunActionAllowed('submit_input', 'RUNNING')).toBe(false);
+  });
+  it('lets a person answer a wait left open on a stopped run, never on an active one', () => {
+    expect(canAnswerWaits('FAILED')).toBe(true);
+    expect(canAnswerWaits('PAUSED_MANUAL')).toBe(true);
+    expect(canAnswerWaits('RUNNING')).toBe(false);
+    expect(canAnswerWaits('PAUSING')).toBe(false);
+    expect(canAnswerWaits('COMPLETED')).toBe(false);
   });
 });

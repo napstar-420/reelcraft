@@ -26,7 +26,16 @@ export const RUN_ACTION_ALLOWED_STATES = {
     'FAILED',
     'COMPLETED',
   ],
-  submit_input: ['PAUSED_APPROVAL', 'PAUSED_INPUT'],
+  submit_input: [
+    'PAUSED_APPROVAL',
+    'PAUSED_INPUT',
+    'FAILED',
+    'CANCELLED',
+    'IDLE',
+    'PAUSED_MANUAL',
+    'PAUSED_BUDGET',
+    'PAUSED_QUOTA',
+  ],
   resume: ['PAUSED_BUDGET', 'PAUSED_MANUAL', 'PAUSED_QUOTA', 'FAILED'],
   cancel: [
     'CREATED',
@@ -42,10 +51,11 @@ export const RUN_ACTION_ALLOWED_STATES = {
 
 export type RunAction = keyof typeof RUN_ACTION_ALLOWED_STATES;
 
-/** A run waiting on people parks in one of these states, whichever kind of wait
- * is open; a person can answer any open wait in either. */
+/** Whether a person can answer an open wait (review, input) in this run state: the
+ * run is parked on people, or stopped for another reason with the wait still open.
+ * Approve, reject and retry QC share `submit_input`'s states on the server. */
 export function canAnswerWaits(state: string): boolean {
-  return state === 'PAUSED_APPROVAL' || state === 'PAUSED_INPUT';
+  return (RUN_ACTION_ALLOWED_STATES.submit_input as readonly string[]).includes(state);
 }
 
 export function isRunActionAllowed(action: RunAction, state: RunState): boolean {

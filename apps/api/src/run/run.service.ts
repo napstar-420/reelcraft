@@ -1279,7 +1279,9 @@ export class RunService {
       .where(eq(run.id, runId))
       .limit(1);
     if (!runRow) throw new NotFoundException(`Run ${runId} not found`);
-    if (runRow.state !== 'PAUSED_APPROVAL' && runRow.state !== 'PAUSED_INPUT') {
+    // Same states that accept the answer: parked on the review, or stopped for another
+    // reason with the review still open.
+    if (!(RUN_ACTION_ALLOWED_STATES.approve as readonly string[]).includes(runRow.state)) {
       throw new ConflictException(`Run ${runId} is not awaiting approval at ${stageKey}`);
     }
 

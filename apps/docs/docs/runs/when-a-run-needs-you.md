@@ -40,6 +40,14 @@ waiting stage has its own button. Answer them in any order: the run only carries
 answered. If you retry or edit a stage while others wait, the run starts again and pauses again straight away
 if something is still waiting.
 
+### Waiting stages on a run that stopped
+
+A run can stop for another reason while a stage is still waiting for you, for example when a different
+stage fails. The waiting stage shows **Waiting for review** (or **Waiting for input**) and keeps its
+**Review output** or **Provide input** button. You can answer it right away: your answer is saved and the
+run stays as it is (for example **Failed**). Nothing runs until you select **Continue**, which then picks
+up your answers along with everything else.
+
 ### When quality control could not run
 
 If the quality control judge couldn't be reached or didn't answer, the stage doesn't fail. The run pauses as

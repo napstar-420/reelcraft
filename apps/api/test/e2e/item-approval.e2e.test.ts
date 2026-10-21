@@ -13,6 +13,7 @@ import {
   humanWait,
   ledgerEntry,
   run,
+  runWakeup,
   stageAttempt,
   stageExecution,
   stageItem,
@@ -420,6 +421,49 @@ describe('phase 7 chunk 6 — item-mode approval (e2e)', () => {
     expect(await attemptsFor(item1.id)).toHaveLength(1);
     // Item 0 was not re-invoked by resuming.
     expect(await attemptsFor(item0.id)).toHaveLength(1);
+  });
+
+  it('approves an item left waiting on a failed run without waking it or clearing the failure', async () => {
+    const graph = [shotsStage(['ok0', 'ok1', 'ok2', 'ok3']), brollStage(0)];
+    const { created, runner, brollExecution, stage, effective, prevStageKey } =
+      await setUpBroll(graph);
+    const paused = await driveUntilPauseOrDone(
+      runner,
+      created.id,
+      brollExecution.id,
+      stage,
+      effective,
+      prevStageKey,
+      4,
+    );
+    expect(paused).toEqual({ outcome: 'approval_required', itemIndex: 0 });
+    // Another branch failed: the run ended FAILED with this item's review still open.
+    await testDb.db.update(run).set({ state: 'FAILED' }).where(eq(run.id, created.id));
+    const wakeupsBefore = await testDb.db
+      .select()
+      .from(runWakeup)
+      .where(eq(runWakeup.runId, created.id));
+
+    // The review panel can load the waiting output on the failed run.
+    await expect(
+      testApp.app.get(RunService).approvalCandidate(created.id, 'broll'),
+    ).resolves.toMatchObject({ stageKey: 'broll', itemIndex: 0 });
+    await testApp.app.get(HumanActionService).approve(created.id, 'broll', 0);
+
+    expect((await runner.itemState(brollExecution.id, 0)).state).toBe('passed');
+    const [after] = await testDb.db.select().from(run).where(eq(run.id, created.id));
+    expect(after?.state).toBe('FAILED');
+    expect(
+      await testDb.db.select().from(runWakeup).where(eq(runWakeup.runId, created.id)),
+    ).toHaveLength(wakeupsBefore.length);
+    expect(
+      await testDb.db
+        .select()
+        .from(humanWait)
+        .where(
+          and(eq(humanWait.stageExecutionId, brollExecution.id), isNull(humanWait.resolvedAt)),
+        ),
+    ).toHaveLength(0);
   });
 
   it('rejecting item 0 (default retry target) re-submits item 0 only, leaving item 1 untouched', async () => {

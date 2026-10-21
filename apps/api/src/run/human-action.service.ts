@@ -34,10 +34,25 @@ import { RunMutationService } from './run-mutation.service';
 import { RunWakeupDispatcher } from './run-wakeup-dispatcher.service';
 import { TimelineCheckService } from '../check/timeline-check.service';
 
-/** Run states in which a person can answer a wait. A run with several open
- * waits parks in the state of the first kind (approval before input), so any
- * wait can be answered in either. */
-const HUMAN_WAIT_STATES = ['PAUSED_APPROVAL', 'PAUSED_INPUT'] as const;
+/** Run states parked on a person. A run with several open waits parks in the
+ * state of the first kind (approval before input), so any wait can be answered
+ * in either. */
+const PARKED_ON_WAIT = ['PAUSED_APPROVAL', 'PAUSED_INPUT'] as const;
+
+/** Run states in which a person can answer a still-open wait: parked on it, or
+ * stopped for another reason (another stage failed, stopped or paused). On a
+ * stopped run the answer is only recorded; Continue picks it up. */
+const HUMAN_WAIT_STATES = [
+  ...PARKED_ON_WAIT,
+  'FAILED',
+  'CANCELLED',
+  'IDLE',
+  'PAUSED_MANUAL',
+  'PAUSED_BUDGET',
+  'PAUSED_QUOTA',
+] as const;
+
+const isParkedOnWait = (state: string) => (PARKED_ON_WAIT as readonly string[]).includes(state);
 
 @Injectable()
 export class HumanActionService {
@@ -66,10 +81,10 @@ export class HumanActionService {
       HUMAN_WAIT_STATES,
       async (tx, lockedRun) => {
         await this.approveInTransaction(tx, runId, stageKey, lockedRun, itemIndex);
-        return this.settleAnswer(tx, runId);
+        return this.settleAnswer(tx, lockedRun);
       },
       'run/resumed',
-      (value) => !value.othersWaiting,
+      (value) => value.wake,
     );
     this.logger.log(
       { runId, stageKey, itemIndex, wakeupId: result.wakeupId, revision: result.revision },
@@ -134,8 +149,9 @@ export class HumanActionService {
   }
 
   /** "Retry QC": the output was parked because quality control could not
-   * run. Releases the hold and resumes the run; the stage loop then judges
-   * the stored output again (no regeneration, no attempt spent). */
+   * run. Releases the hold and resumes the run (on a stopped run, the next
+   * Continue does); the stage loop then judges the stored output again (no
+   * regeneration, no attempt spent). */
   async retryQc(runId: string, stageKey: string, itemIndex?: number) {
     const result = await this.mutation.withLockedRunMaybeWake(
       runId,
@@ -162,19 +178,21 @@ export class HumanActionService {
           .update(stageAttempt)
           .set({ phase: 'settled' })
           .where(eq(stageAttempt.id, pending.id));
+        // On a stopped run nothing is in flight: the next Continue judges it again.
+        const next = isParkedOnWait(lockedRun.state) ? 'running' : 'pending';
         if (item) {
-          await tx.update(stageItem).set({ state: 'running' }).where(eq(stageItem.id, item.id));
+          await tx.update(stageItem).set({ state: next }).where(eq(stageItem.id, item.id));
         } else {
           await tx
             .update(stageExecution)
-            .set({ state: 'running' })
+            .set({ state: next })
             .where(eq(stageExecution.id, execution.id));
         }
         await this.waits.resolve(tx, execution.id, item?.id);
-        return this.settleAnswer(tx, runId);
+        return this.settleAnswer(tx, lockedRun);
       },
       'run/resumed',
-      (value) => !value.othersWaiting,
+      (value) => value.wake,
     );
     this.logger.log(
       { runId, stageKey, itemIndex, wakeupId: result.wakeupId, revision: result.revision },
@@ -422,10 +440,10 @@ export class HumanActionService {
           closure: preview.closure,
           targetStageKey,
         });
-        return this.settleAnswer(tx, runId);
+        return this.settleAnswer(tx, lockedRun);
       },
       'run/resumed',
-      (value) => !value.othersWaiting,
+      (value) => value.wake,
     );
     this.logger.log(
       {
@@ -523,10 +541,10 @@ export class HumanActionService {
           candidateData,
           evaluated,
         );
-        return this.settleAnswer(tx, runId);
+        return this.settleAnswer(tx, lockedRun);
       },
       'run/resumed',
-      (value) => !value.othersWaiting,
+      (value) => value.wake,
     );
     this.logger.log(
       { runId, stageKey, wakeupId: result.wakeupId, revision: result.revision },
@@ -793,14 +811,19 @@ export class HumanActionService {
     return row;
   }
 
-  /** After an answer: the run wakes only once no wait is left. While one
-   * remains it stays parked, in the state of the first kind still open, so the
-   * next answer is accepted in either paused state. */
-  private async settleAnswer(tx: Tx, runId: string): Promise<{ othersWaiting: boolean }> {
-    const state = await this.waits.pausedStateFor(tx, runId);
-    if (!state) return { othersWaiting: false };
-    await tx.update(run).set({ state }).where(eq(run.id, runId));
-    return { othersWaiting: true };
+  /** After an answer on a run parked on people: the run wakes only once no wait
+   * is left. While one remains it stays parked, in the state of the first kind
+   * still open, so the next answer is accepted in either paused state. A run
+   * stopped for another reason keeps its state and is not woken. */
+  private async settleAnswer(
+    tx: Tx,
+    lockedRun: typeof run.$inferSelect,
+  ): Promise<{ wake: boolean }> {
+    if (!isParkedOnWait(lockedRun.state)) return { wake: false };
+    const state = await this.waits.pausedStateFor(tx, lockedRun.id);
+    if (!state) return { wake: true };
+    await tx.update(run).set({ state }).where(eq(run.id, lockedRun.id));
+    return { wake: false };
   }
 
   private async nextAttemptNo(tx: Tx, executionId: string): Promise<number> {
