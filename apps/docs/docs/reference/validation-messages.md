@@ -19,6 +19,11 @@ settings**. See [Versions](../blueprints/versions.md#runnable-or-not).
 - **Render Motion Graphic produces a video**: set the output to **Video**. See
   [Render Motion Graphic](../stage-types/render-motion-graphic.md).
 
+## Pictures
+
+- **Cut Out Background produces an image**: set the output to **Image**. See
+  [Cut Out Background](../stage-types/cut-out-background.md).
+
 ## Sound effects and music
 
 - **describe the sound you want in the stage instructions** / **describe the music you want in the stage
