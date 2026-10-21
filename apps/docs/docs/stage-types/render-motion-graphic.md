@@ -22,6 +22,10 @@ to: `graphics-1`, `graphics-2` and so on.
 
 - **`source`** (required): the motion graphic, usually the output of Generate Motion Graphic.
 
+The images the graphic loads and the [fonts](./generate-motion-graphic.md#using-your-fonts) it uses come with it:
+they are copied in for the render, and the fonts are loaded before the first frame, so its words never show in
+another font. A file that no longer exists stops the stage with its name.
+
 ## Before it renders
 
 The code is checked again against the motion graphic rules. Code that breaks one is not run, and the stage

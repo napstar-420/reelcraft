@@ -123,6 +123,9 @@ can fix them together. For example:
   Plans can use only the assets they are given, so a plan that must use only uploaded assets can't invent one.
 - `asset "voice" is audio, not usable as image`.
 - `needs x, y, w and h (fractions of the frame)`, `needs text`, `has both text and runs; use one`.
+- `"b" is not a layer`, `"music" has no box on the frame to point at`, `only an arrow shape joins layers`,
+  `the two layers it joins must both be on the screen or both in the world`: a joining arrow's `fromLayer` and
+  `toLayer` must name layers with a box, in the same space.
 - `layers follow each other in a circle`, or `follows "x", which has no known length`.
 - `track "x" is a audio track` when one track is used for two kinds of thing.
 
