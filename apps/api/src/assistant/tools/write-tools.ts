@@ -1,11 +1,12 @@
 import { z } from 'zod';
-import { BlueprintMetadataChanges } from '@reelcraft/shared';
+import { BlueprintMetadataChanges, type CreateBlueprintVersionDto } from '@reelcraft/shared';
 import { ConflictException } from '@nestjs/common';
-import { baselineDraft } from './current-draft';
+import { baselineDraft, currentDraft } from './current-draft';
+import { applyDraftOps, DRAFT_FIELDS, DRAFT_OPS, DraftOp } from './draft-ops';
 import { qualityIssues } from './quality-checks';
 import { parseDraft } from './draft-checks';
-import { draftJsonSchema, obj, str } from './json-schemas';
-import type { AssistantTool, TurnContext, ToolOutcome } from './types';
+import { draftJsonSchema, freeObject, obj, stageJsonSchema, str } from './json-schemas';
+import type { AssistantTool, ToolDeps, TurnContext, ToolOutcome } from './types';
 
 const WAITING =
   "You asked the user a question. End your turn now: the answers arrive as the user's next message. Don't propose anything until then.";
@@ -23,7 +24,7 @@ const proposeDraft: AssistantTool<z.infer<typeof ProposeInput>> = {
   name: 'propose_draft',
   kind: 'write',
   description:
-    'Propose the COMPLETE new draft to the user. It is validated first: if it has any error you get the issues back and nothing is proposed, so fix them and call again. A valid draft is shown to the user (or applied to the canvas, in auto-apply mode). You can never save a version. summary: one or two plain sentences on what changed and why.',
+    'Propose the COMPLETE new draft to the user: for a new blueprint or a rewrite. To change an existing blueprint use edit_draft instead (always, when it is large). It is validated first: if it has any error you get the issues back and nothing is proposed, so fix them and call again. A valid draft is shown to the user (or applied to the canvas, in auto-apply mode). You can never save a version. summary: one or two plain sentences on what changed and why.',
   input: ProposeInput,
   jsonSchema: (n) =>
     obj(
@@ -39,31 +40,91 @@ const proposeDraft: AssistantTool<z.infer<typeof ProposeInput>> = {
     const parsed = parseDraft(input.draft);
     if (!parsed.ok)
       return { ok: false, error: 'The draft has the wrong shape.', issues: parsed.issues };
-    const validation = await deps.blueprints.validateOnly(ctx.blueprintId, parsed.draft);
-    const issues = [
-      ...validation.issues,
-      ...qualityIssues(parsed.draft, await baselineDraft(ctx, deps)),
-    ];
-    const errors = issues.filter((i) => i.severity === 'error');
-    if (errors.length) {
-      return {
-        ok: false,
-        error: `The draft has ${errors.length} error(s). Fix them and propose again.`,
-        issues,
-      };
-    }
-    ctx.lastProposal = parsed.draft;
-    const warnings = issues.filter((i) => i.severity === 'warning');
-    return {
-      ok: true,
-      result: { status: 'proposed', warnings },
-      item: {
-        type: 'proposal',
-        payload: { kind: 'draft', draft: parsed.draft, summary: input.summary, warnings },
-      },
-    };
+    return submitDraft(ctx, deps, parsed.draft, input.summary);
   },
 };
+
+const EditInput = z.object({
+  ops: z.array(DraftOp).min(1).max(60),
+  summary: z.string().min(1).max(500),
+});
+
+const editDraft: AssistantTool<z.infer<typeof EditInput>> = {
+  name: 'edit_draft',
+  kind: 'write',
+  description:
+    'Change the CURRENT draft (the canvas, or your last proposal in this turn) with a list of small edits instead of resending it: remove_stage, add_stage (after a stage, or at the end), replace_stage, update_stage (set or unset fields of one stage, e.g. set approval, unset qc) and set_draft_field (inputs, roles, defaults, budget, execution, presentation). The edits are applied together, then the result is validated and proposed exactly like propose_draft; if anything is wrong you get the issues back and nothing changes. Use this for any change to an existing blueprint, and always for a large one: you do not need to read or resend the stages you leave alone. Remember to fix what a removed stage leaves behind (stages that listed it in dependsOn or read its memory keys). summary: one or two plain sentences on what changed and why.',
+  input: EditInput,
+  jsonSchema: (n) =>
+    obj(
+      {
+        ops: {
+          type: 'array',
+          minItems: 1,
+          maxItems: 60,
+          description: 'Applied in order.',
+          items: obj(
+            {
+              op: str('The kind of edit.', { enum: [...DRAFT_OPS] }),
+              key: str('remove_stage, replace_stage, update_stage: the stage to change.'),
+              stage: stageJsonSchema(n),
+              after: str('add_stage: key of the stage to insert after; omit to add at the end.'),
+              set: freeObject('update_stage: stage field → new value (replaces the whole field).'),
+              unset: {
+                type: 'array',
+                items: { type: 'string' },
+                description: 'update_stage: stage fields to remove.',
+              },
+              field: str('set_draft_field: which draft field.', { enum: [...DRAFT_FIELDS] }),
+              value: {
+                description: 'set_draft_field: the new value; null clears presentation/execution.',
+              },
+            },
+            ['op'],
+          ),
+        },
+        summary: str('What changed, in plain language.', { minLength: 1, maxLength: 500 }),
+      },
+      ['ops', 'summary'],
+    ),
+  async handler(ctx, deps, input) {
+    const refusal = refuseAfterQuestion(ctx);
+    if (refusal) return refusal;
+    const { draft } = await currentDraft(ctx, deps);
+    const applied = applyDraftOps(draft, input.ops);
+    if (!applied.ok) return { ok: false, error: applied.error };
+    const parsed = parseDraft(applied.draft);
+    if (!parsed.ok)
+      return { ok: false, error: 'The edited draft has the wrong shape.', issues: parsed.issues };
+    return submitDraft(ctx, deps, parsed.draft, input.summary);
+  },
+};
+
+/** Validates a draft and proposes it: the shared end of `propose_draft` and `edit_draft`. */
+async function submitDraft(
+  ctx: TurnContext,
+  deps: ToolDeps,
+  draft: CreateBlueprintVersionDto,
+  summary: string,
+): Promise<ToolOutcome> {
+  const validation = await deps.blueprints.validateOnly(ctx.blueprintId, draft);
+  const issues = [...validation.issues, ...qualityIssues(draft, await baselineDraft(ctx, deps))];
+  const errors = issues.filter((i) => i.severity === 'error');
+  if (errors.length) {
+    return {
+      ok: false,
+      error: `The draft has ${errors.length} error(s). Fix them and propose again.`,
+      issues,
+    };
+  }
+  ctx.lastProposal = draft;
+  const warnings = issues.filter((i) => i.severity === 'warning');
+  return {
+    ok: true,
+    result: { status: 'proposed', stageCount: draft.graph.length, warnings },
+    item: { type: 'proposal', payload: { kind: 'draft', draft, summary, warnings } },
+  };
+}
 
 const MetadataInput = BlueprintMetadataChanges.extend({
   summary: z.string().min(1).max(500),
@@ -127,5 +188,6 @@ const updateMetadata: AssistantTool<z.infer<typeof MetadataInput>> = {
 
 export const WRITE_TOOLS: AssistantTool<never>[] = [
   proposeDraft,
+  editDraft,
   updateMetadata,
 ] as unknown as AssistantTool<never>[];
