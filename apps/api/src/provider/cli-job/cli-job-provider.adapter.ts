@@ -162,7 +162,8 @@ export abstract class CliJobProviderAdapter implements ProviderAdapter {
         supportsSeed: false,
         supportsIdempotency: true,
         supportsStructuredOutput: true,
-        inputKinds: [],
+        // A text stage can attach images: the agent opens the copies in its job folder (`__inspectFiles`).
+        inputKinds: ['media.image'],
         ...(modalities.includes('image') && {
           maxRefs: 5,
           image: { formats: ['png', 'jpeg', 'webp'], maxReferences: 5 },

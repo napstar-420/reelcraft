@@ -70,6 +70,20 @@ describe('TextGenerateCapability', () => {
     });
   });
 
+  it('asks Claude and Codex to open attached files themselves, but not other providers', async () => {
+    const shoe = { name: 'shoe', kind: 'media.image', sourceKey: 'assets/shoe.png' };
+    for (const [provider, inspects] of [
+      ['claude', true],
+      ['codex', true],
+      ['chatgpt', false],
+    ] as const) {
+      const { capability, ctx, submit } = setup({ kind: 'text' }, [shoe]);
+      ctx.config.provider = provider;
+      await capability.submit(ctx);
+      expect(submit.mock.calls[0]?.[0].params.__inspectFiles === true).toBe(inspects);
+    }
+  });
+
   it('leaves params untouched when no files are attached', async () => {
     const { capability, ctx, submit } = setup({ kind: 'text' });
     await capability.submit(ctx);
