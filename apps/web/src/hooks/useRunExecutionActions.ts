@@ -89,6 +89,7 @@ export function useRunExecutionActions({
       preview.invalidatedStageKeys.length ||
       preview.availabilityChangedStageKeys?.length ||
       preview.uncertainAttemptIds?.length ||
+      preview.outdated?.length ||
       preview.runStageKeys.some((key) => passed.has(key))
     )
       setExecutionPlan(preview);
@@ -111,6 +112,18 @@ export function useRunExecutionActions({
       onSwitchRun?.(result.runId);
       await refresh();
     },
+    onError: fail,
+  });
+  /** Continue with out-of-date outputs: redo them, or carry on from what they were. */
+  const chooseOutdated = useMutation({
+    mutationFn: async ({
+      plan,
+      choice,
+    }: {
+      plan: StageRunPlanDto;
+      choice: NonNullable<StageRunPlanDto['request']['outdatedOutputs']>;
+    }) => api.previewStageRun(run!.id, { ...plan.request, outdatedOutputs: choice }),
+    onSuccess: (plan) => setExecutionPlan(plan),
     onError: fail,
   });
   const acceptUncertainRestart = useMutation({
@@ -197,6 +210,7 @@ export function useRunExecutionActions({
     setExecutionPlan,
     confirmExecution,
     acceptUncertainRestart,
+    chooseOutdated,
     cancel,
     pause,
     resume,

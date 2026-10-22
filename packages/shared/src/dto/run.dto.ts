@@ -123,6 +123,8 @@ export const StageRunPlanRequestDto = z.object({
   action: z.enum(['run', 'continue', 'rerun']).optional(),
   itemIndex: z.number().int().nonnegative().optional(),
   allowUncertainRestart: z.boolean().optional(),
+  /** Continue only: redo outputs an earlier change made out of date (the default), or keep them. */
+  outdatedOutputs: z.enum(['regenerate', 'keep']).optional(),
   scope: z.enum(['stage', 'through', 'descendants']).default('stage'),
 });
 export type StageRunPlanRequestDto = z.infer<typeof StageRunPlanRequestDto>;
@@ -142,6 +144,11 @@ export const StageRunPlanDto = z.object({
   blockedReason: z.string().nullable(),
   uncertainAttemptIds: z.array(z.string()).optional(),
   retainedItemCount: z.number().optional(),
+  /** Outputs an earlier change made out of date, whichever way Continue treats them: items of a
+   * done stage (`itemIndexes`) or a whole stage (empty). */
+  outdated: z
+    .array(z.object({ stageKey: z.string(), itemIndexes: z.array(z.number()) }))
+    .optional(),
   availabilityChangedStageKeys: z.array(z.string()).optional(),
 });
 export type StageRunPlanDto = z.infer<typeof StageRunPlanDto>;
@@ -348,6 +355,14 @@ export const StageOutputDto = z.object({
       artifact: ArtifactViewDto,
     }),
   ),
+  /** Items (or the whole stage, `itemIndex: null`) whose output is out of date because an earlier
+   * stage changed, with the last output they had when it is still stored. */
+  staleItems: z.array(
+    z.object({
+      itemIndex: z.number().int().nonnegative().nullable(),
+      artifact: ArtifactViewDto.nullable(),
+    }),
+  ),
 });
 export type StageOutputDto = z.infer<typeof StageOutputDto>;
 
@@ -374,6 +389,12 @@ export const StageExecutionDto = z.object({
   availableActions: StageAvailableActions.optional(),
   isIterating: z.boolean(),
   itemCount: z.number().nullable(),
+  /** Items of an iterating stage whose output is out of date. */
+  staleItemCount: z.number().optional(),
+  /** The stage had an accepted output that an earlier change made out of date. */
+  outputStale: z.boolean().optional(),
+  /** A change upstream reset the stage, and its last attempt had failed: it still counts as failed. */
+  lastRunFailed: z.boolean().optional(),
   attemptCount: z.number(),
   outputArtifactId: z.string().nullable(),
   costUsd: z.number(),

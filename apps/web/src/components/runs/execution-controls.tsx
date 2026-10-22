@@ -1,3 +1,4 @@
+import { cn } from '@/lib/utils';
 import type { ReactNode } from 'react';
 import type {
   RunDetailDto,
@@ -232,6 +233,67 @@ export function ExecutionPlanDialog({ actions }: { actions: RunExecutionActions 
                 Runs {plan.runStageKeys.length}{' '}
                 {plan.runStageKeys.length === 1 ? 'stage' : 'stages'}: {names(plan.runStageKeys)}
               </p>
+              {!!plan.outdated?.length && (
+                <div className="flex flex-col gap-2 rounded-md border border-amber-500/50 p-3">
+                  <p className="text-amber-600 dark:text-amber-400">
+                    Out of date, because an earlier stage changed:{' '}
+                    {plan.outdated
+                      .map(
+                        (o) =>
+                          `${actions.stageLabel(o.stageKey)}${
+                            o.itemIndexes.length
+                              ? ` (items ${o.itemIndexes.map((i) => i + 1).join(', ')})`
+                              : ''
+                          }`,
+                      )
+                      .join('; ')}
+                  </p>
+                  <div
+                    className="flex flex-col gap-2"
+                    role="radiogroup"
+                    aria-label="Out-of-date outputs"
+                  >
+                    {(
+                      [
+                        [
+                          'regenerate',
+                          'Regenerate them',
+                          'Re-run only the out-of-date items, then continue.',
+                        ],
+                        [
+                          'keep',
+                          'Use the outdated outputs',
+                          'Keep them as they are and continue from them.',
+                        ],
+                      ] as const
+                    ).map(([choice, label, hint]) => {
+                      const selected = (plan.request.outdatedOutputs ?? 'regenerate') === choice;
+                      return (
+                        <label
+                          key={choice}
+                          className={cn(
+                            'flex cursor-pointer items-start gap-2 rounded-md border p-2',
+                            selected ? 'border-primary bg-primary/10' : 'border-border',
+                          )}
+                        >
+                          <input
+                            type="radio"
+                            name="outdated-outputs"
+                            className="mt-1 accent-primary"
+                            checked={selected}
+                            disabled={actions.chooseOutdated.isPending}
+                            onChange={() => actions.chooseOutdated.mutate({ plan, choice })}
+                          />
+                          <span className="flex flex-col">
+                            <span className="font-medium">{label}</span>
+                            <span className="text-xs text-muted-foreground">{hint}</span>
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
               {!!plan.invalidatedStageKeys.length && (
                 <p>Marks stale without running: {names(plan.invalidatedStageKeys)}</p>
               )}
