@@ -412,12 +412,15 @@ export class MediaAnalyzeCapability extends ProviderMediaCapability {
     return super.estimateCost(ctx);
   }
   async submit(ctx: ExecCtx<MediaConfig>): Promise<JobHandle> {
-    if (ctx.config.operation === 'probe')
+    if (ctx.config.operation === 'probe') {
+      const probe = (ctx.slots.source as { probe?: unknown } | undefined)?.probe;
+      if (probe == null) throw new Error('The source has no stored probe to report');
       return {
         providerId: 'media-local',
         externalId: ctx.idempotencyKey,
-        payload: { probe: (ctx.slots.source as { probe?: unknown } | undefined)?.probe },
+        payload: { probe },
       };
+    }
     return super.submit(ctx);
   }
   async poll(handle: JobHandle): Promise<JobStatus> {

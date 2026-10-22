@@ -953,6 +953,8 @@ function mediaManifest(
     ...(row.blobId && { blobId: row.blobId }),
     kind: row.kind,
     ...(sourceKey && { sourceKey }),
+    // The whole report, for a stage that reads it back (Analyze Media's probe).
+    ...(row.probe != null && { probe: row.probe }),
     ...(video?.width !== undefined && { width: video.width }),
     ...(video?.height !== undefined && { height: video.height }),
     ...(probe?.durationSec !== undefined && { durationSec: probe.durationSec }),
