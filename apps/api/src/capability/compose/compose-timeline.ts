@@ -70,6 +70,15 @@ const MIN_SEC = 0.1;
 
 const round = (value: number) => Math.round(value * 100) / 100;
 
+/** Rounds a length for the timeline without letting it pass the end of its source: a sound of
+ * 1.656 s rounds to 1.66 s, which the source-bounds check rejects as longer than the file. */
+const roundWithin = (value: number, sourceSec: number | undefined, trimInSec = 0) => {
+  const rounded = round(value);
+  if (!sourceSec) return rounded;
+  const limit = Math.round((sourceSec - trimInSec) * 1000) / 1000;
+  return rounded > limit && rounded - limit < 0.01 ? limit : rounded;
+};
+
 const ASSET_KIND_FOR: Record<'image' | 'video' | 'audio' | 'drawing' | 'motion', CatalogKind> = {
   image: 'image',
   video: 'video',
@@ -248,7 +257,9 @@ export function composeTimeline(input: ComposeInput): ComposeResult {
 
   const knownLength = (entry: Resolved): number | undefined =>
     entry.layer.durationSec ??
-    (entry.layer.kind === 'audio' && !entry.layer.loop ? entry.asset?.durationSec : undefined);
+    (entry.layer.kind === 'audio' && !entry.layer.loop && entry.asset?.durationSec !== undefined
+      ? Math.max(0, entry.asset.durationSec - (entry.layer.trimInSec ?? 0))
+      : undefined);
 
   const startOf = new Map<string, number>();
   const visiting = new Set<string>();
@@ -461,7 +472,7 @@ export function composeTimeline(input: ComposeInput): ComposeResult {
             type: 'media',
             handle: asset.handle!,
             startSec: round(at),
-            durationSec: round(Math.min(length, until - at)),
+            durationSec: roundWithin(Math.min(length, until - at), length),
             ...(volume !== undefined && { volume }),
             ...(layer.fadeInSec && count === 0 && { fadeInSec: layer.fadeInSec }),
             ...(last && layer.fadeOutSec && { fadeOutSec: layer.fadeOutSec }),
@@ -472,7 +483,9 @@ export function composeTimeline(input: ComposeInput): ComposeResult {
           type: 'media',
           handle: asset.handle!,
           startSec: entry.startSec,
-          ...(knownLength(entry) !== undefined && { durationSec: round(knownLength(entry)!) }),
+          ...(knownLength(entry) !== undefined && {
+            durationSec: roundWithin(knownLength(entry)!, asset.durationSec, layer.trimInSec),
+          }),
           ...(layer.trimInSec !== undefined && { trimInSec: layer.trimInSec }),
           ...(volume !== undefined && { volume }),
           ...(layer.fadeInSec !== undefined && { fadeInSec: layer.fadeInSec }),
@@ -510,7 +523,7 @@ export function composeTimeline(input: ComposeInput): ComposeResult {
         type: 'media',
         handle: asset.handle!,
         startSec: entry.startSec,
-        durationSec: round(duration),
+        durationSec: roundWithin(duration, asset.durationSec, layer.trimInSec),
         ...(layer.fit && { fit: layer.fit }),
         ...(layer.trimInSec !== undefined && { trimInSec: layer.trimInSec }),
         ...(layer.volume !== undefined && { volume: layer.volume }),

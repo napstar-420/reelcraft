@@ -29,6 +29,11 @@ const assets = catalog(
   { id: 'song', kind: 'audio', handle: 'asset:song', durationSec: 3 },
   { id: 'pop', kind: 'audio', handle: 'builtin:audio/pop', durationSec: 0.2 },
 );
+const oddLengths = catalog(
+  { id: 'whoosh', kind: 'audio', handle: 'asset:whoosh', durationSec: 1.656 },
+  { id: 'long', kind: 'audio', handle: 'asset:long', durationSec: 44.928 },
+  { id: 'clip2', kind: 'video', handle: 'artifact:clip2', durationSec: 4.003 },
+);
 const timing = fakeTimingFor('Every dollar leaves a trail. Cash over ten thousand is reported.');
 
 const plan = (layers: unknown[], extra: Record<string, unknown> = {}) =>
@@ -42,6 +47,26 @@ const items = (timeline: ReturnType<typeof composeTimeline>['timeline'], id: str
   timeline.tracks.find((track) => track.id === id)!.items;
 
 describe('composeTimeline', () => {
+  it('never lengthens a sound or clip past its source when rounding', () => {
+    const { timeline } = composeTimeline(
+      base({
+        assets: oddLengths,
+        plan: plan([
+          { kind: 'audio', asset: 'whoosh', track: 'sfx' },
+          { kind: 'audio', asset: 'long', track: 'sfx', atSec: 2 },
+          { kind: 'audio', asset: 'whoosh', track: 'trimmed', trimInSec: 0.5 },
+          { kind: 'audio', asset: 'whoosh', track: 'looped', loop: true, durationSec: 3 },
+          { kind: 'video', asset: 'clip2' },
+        ]),
+      }),
+    );
+    const lengths = (id: string) => items(timeline, id).map((i) => (i as Media).durationSec);
+    expect(lengths('sfx')).toEqual([1.656, 44.928]);
+    expect(lengths('trimmed')).toEqual([1.156]);
+    expect(lengths('looped')[0]).toBeLessThanOrEqual(1.656);
+    expect(lengths('video')[0]).toBeLessThanOrEqual(4.003);
+  });
+
   it('keeps the coloured parts of a line of words through wrapping', () => {
     const { timeline } = composeTimeline(
       base({
