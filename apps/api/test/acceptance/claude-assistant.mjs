@@ -212,6 +212,35 @@ try {
   if (!sawGreen) throw new Error(`The model did not see the picture: ${imageMessages.join(' ')}`);
   console.log('a tool picture reaches the model ok');
   await second.deleteSession(imageSession).catch(() => undefined);
+
+  // 5. a result far over Claude Code's 50,000-character spill limit arrives whole: the model has
+  // no file tools, so a spilled result (a 2 KB preview) would hide the code at the end.
+  const bigSession = await second.startSession({
+    instructions: 'You are a test assistant. Use only the provided tool.',
+    tools: [
+      {
+        name: 'get_report',
+        description: 'Returns a long report.',
+        inputSchema: { type: 'object', properties: {} },
+      },
+    ],
+  });
+  const bigMessages = [];
+  await second.runTurn({
+    ...turnOptions(second, bigSession, '', [], bigMessages),
+    text: 'Call get_report and reply with ONLY the closing code printed at the very end of the report.',
+    handlers: {
+      callTool: async () => ({
+        ok: true,
+        text: JSON.stringify({ report: 'filler line. '.repeat(11_500), closingCode: 'ZEBRA-7421' }),
+      }),
+      onEvent: (event) => event.type === 'message' && bigMessages.push(event.text),
+    },
+  });
+  if (!/ZEBRA-7421/.test(bigMessages.join(' ')))
+    throw new Error(`A large tool result did not reach the model whole: ${bigMessages.join(' ')}`);
+  console.log('a 150,000-character tool result reaches the model whole ok');
+  await second.deleteSession(bigSession).catch(() => undefined);
   await second.deleteSession(sessionId).catch(() => undefined);
   second.close();
   console.log('Claude assistant acceptance passed');

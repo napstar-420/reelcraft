@@ -19,6 +19,12 @@ export interface ToolEndpoint {
   release(): void;
 }
 
+/** Claude Code writes an MCP tool result over 50,000 characters to a file and hands the model a
+ * 2 KB preview, however high MAX_MCP_OUTPUT_TOKENS is set. The assistant has no file tools, so
+ * that result is lost to it. A tool can opt out with this `_meta` key (500,000 is Claude Code's
+ * ceiling); the tools are written to keep results small, this is the net under them. */
+const RESULT_SIZE_META = { 'anthropic/maxResultSizeChars': 500_000 };
+
 function bearer(req: IncomingMessage): string | undefined {
   const header = req.headers.authorization;
   return header?.startsWith('Bearer ') ? header.slice(7) : undefined;
@@ -94,6 +100,7 @@ export class AssistantToolServer {
         name: tool.name,
         description: tool.description,
         inputSchema: tool.inputSchema as { type: 'object' },
+        _meta: RESULT_SIZE_META,
       })),
     }));
     server.setRequestHandler(CallToolRequestSchema, async (request) => {

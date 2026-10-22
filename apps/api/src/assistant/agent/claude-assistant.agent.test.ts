@@ -7,11 +7,7 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import { describe, expect, it, vi } from 'vitest';
 import { AssistantTurnError, type AgentEvent } from './assistant-agent.interface';
 import { AssistantToolServer } from './assistant-tool-server';
-import {
-  assistantClaudeEnv,
-  buildAssistantClaudeArgs,
-  ClaudeAssistantAgent,
-} from './claude-assistant.agent';
+import { buildAssistantClaudeArgs, ClaudeAssistantAgent } from './claude-assistant.agent';
 
 class FakeChild extends EventEmitter {
   stdout = new EventEmitter();
@@ -109,21 +105,6 @@ describe('buildAssistantClaudeArgs', () => {
         },
       },
     });
-  });
-});
-
-describe('assistantClaudeEnv', () => {
-  it('lifts the MCP result cap so a large blueprint is not spilled to a file', () => {
-    expect(assistantClaudeEnv({ PATH: '/bin' })).toEqual({
-      MAX_MCP_OUTPUT_TOKENS: '150000',
-      PATH: '/bin',
-    });
-  });
-
-  it('keeps a cap the operator set', () => {
-    expect(assistantClaudeEnv({ MAX_MCP_OUTPUT_TOKENS: '50000' }).MAX_MCP_OUTPUT_TOKENS).toBe(
-      '50000',
-    );
   });
 });
 
@@ -253,6 +234,31 @@ describe('AssistantToolServer', () => {
       endpoint.release();
       await expect(connect(endpoint.token)).rejects.toThrow();
     } finally {
+      server.close();
+    }
+  });
+
+  it('lets a large tool result through whole: every tool opts out of Claude Code spilling it to a file', async () => {
+    const server = new AssistantToolServer();
+    const big = 'x'.repeat(400_000);
+    const endpoint = await server.register(
+      [{ name: 'get_blueprint', description: 'd', inputSchema: { type: 'object' } }],
+      async () => ({ ok: true, text: big }),
+    );
+    const client = new Client({ name: 'test', version: '1' });
+    await client.connect(
+      new StreamableHTTPClientTransport(new URL(endpoint.url), {
+        requestInit: { headers: { Authorization: `Bearer ${endpoint.token}` } },
+      }) as unknown as Parameters<Client['connect']>[0],
+    );
+    try {
+      const [tool] = (await client.listTools()).tools;
+      // Claude Code reads this key; without it a result over 50,000 characters becomes a 2 KB preview
+      expect(tool?._meta).toEqual({ 'anthropic/maxResultSizeChars': 500_000 });
+      const result = await client.callTool({ name: 'get_blueprint', arguments: {} });
+      expect(result.content).toEqual([{ type: 'text', text: big }]);
+    } finally {
+      await client.close();
       server.close();
     }
   });

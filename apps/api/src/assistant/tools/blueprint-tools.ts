@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { ConfigLayer, CreateBlueprintVersionDto } from '@reelcraft/shared';
 import { truncateForDisplay } from '../display';
 import { diffDrafts, isEmptyDiff } from './draft-diff';
+import { draftView, STAGES_CALL_CHARS } from './draft-view';
 import { currentDraft } from './current-draft';
 import { obj, str } from './json-schemas';
 import type { AssistantTool, ToolDeps, TurnContext } from './types';
@@ -41,7 +42,7 @@ const getVersion: AssistantTool<z.infer<typeof VersionInput>> = {
   name: 'get_version',
   kind: 'read',
   description:
-    'Read one SAVED version of this blueprint by its label (for example "1.2"; labels come from get_blueprint.versions): its complete stages, inputs, role, defaults and budget exactly as they were saved, whether it was runnable, how many real runs used it. Use it to answer questions about an older version or to bring something back (then propose a draft; you cannot restore or save).',
+    'Read one SAVED version of this blueprint by its label (for example "1.2"; labels come from get_blueprint.versions): its stages, inputs, role, defaults and budget exactly as they were saved (a large version comes as an outline: read its stages with get_stages and this version label), whether it was runnable, how many real runs used it. Use it to answer questions about an older version or to bring something back (then propose a draft; you cannot restore or save).',
   input: VersionInput,
   jsonSchema: () =>
     obj({ version: str('Version label such as "1.2"', { minLength: 1, maxLength: 20 }) }, [
@@ -59,10 +60,61 @@ const getVersion: AssistantTool<z.infer<typeof VersionInput>> = {
         runnable: found.runnable,
         createdAt: found.createdAt,
         runCount: found.runCount,
-        draft: toDraft(found),
+        ...draftView(toDraft(found)),
         savedValidation: found.validation,
       },
     };
+  },
+};
+
+const StagesInput = z.object({
+  keys: z.array(z.string().min(1)).min(1).max(40),
+  version: z.string().min(1).optional(),
+});
+
+const getStages: AssistantTool<z.infer<typeof StagesInput>> = {
+  name: 'get_stages',
+  kind: 'read',
+  description:
+    'Read stages IN FULL (prompts, config, slots, schemas, checks, everything) by key: from the CURRENT draft, or from a saved version when you pass its label. get_blueprint gives the stage keys and an outline; use this for the stages you need to look at or change. A call returns at most about 40,000 characters, so ask for a few stages at a time (the outline says how big each is).',
+  input: StagesInput,
+  jsonSchema: () =>
+    obj(
+      {
+        keys: {
+          type: 'array',
+          minItems: 1,
+          maxItems: 40,
+          items: str('Stage key', { minLength: 1 }),
+        },
+        version: str('A saved version label such as "1.2"; omit for the current draft.', {
+          minLength: 1,
+          maxLength: 20,
+        }),
+      },
+      ['keys'],
+    ),
+  async handler(ctx, deps, input) {
+    let draft: CreateBlueprintVersionDto;
+    if (input.version && input.version !== CURRENT) {
+      const { found, error } = await findVersion(ctx, deps, input.version);
+      if (!found) return { ok: false, error: error! };
+      draft = toDraft(found);
+    } else {
+      draft = (await currentDraft(ctx, deps)).draft;
+    }
+    const byKey = new Map(draft.graph.map((s) => [s.key, s]));
+    const keys = [...new Set(input.keys)];
+    const missing = keys.filter((k) => !byKey.has(k));
+    const stages = keys.flatMap((k) => byKey.get(k) ?? []);
+    const chars = JSON.stringify(stages).length;
+    if (stages.length > 1 && chars > STAGES_CALL_CHARS) {
+      return {
+        ok: false,
+        error: `Those ${stages.length} stages are ${chars} characters, more than one call returns (${STAGES_CALL_CHARS}). Ask for fewer at a time; the outline from get_blueprint gives each stage's size (chars).`,
+      };
+    }
+    return { ok: true, result: { stages, ...(missing.length && { missing }) } };
   },
 };
 
@@ -172,6 +224,7 @@ const getEffectiveConfig: AssistantTool<z.infer<typeof EffectiveInput>> = {
 
 export const BLUEPRINT_TOOLS: AssistantTool<never>[] = [
   getVersion,
+  getStages,
   diffTool,
   getEffectiveConfig,
 ] as unknown as AssistantTool<never>[];
