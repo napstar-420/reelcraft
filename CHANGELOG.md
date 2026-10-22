@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.13.0](https://github.com/napstar-420/reelcraft/compare/v0.12.0...v0.13.0) (2026-10-22)
+
+
+### Features
+
+* answer reviews and input left open on a stopped run ([#190](https://github.com/napstar-420/reelcraft/issues/190)) ([02714d7](https://github.com/napstar-420/reelcraft/commit/02714d77742f523b6beb2f8c7f1b2f9104c844ac))
+* arrows that join two items and follow them (connectors) ([#194](https://github.com/napstar-420/reelcraft/issues/194)) ([f43f418](https://github.com/napstar-420/reelcraft/commit/f43f4186c09cc4b55f9b704ddc086ed079925938))
+* Cut Out Background stage (image.cutout) ([#196](https://github.com/napstar-420/reelcraft/issues/196)) ([19509de](https://github.com/napstar-420/reelcraft/commit/19509de16c580485bfa5668061b599823e24166b))
+* motion graphics use library fonts ([#195](https://github.com/napstar-420/reelcraft/issues/195)) ([75e6488](https://github.com/napstar-420/reelcraft/commit/75e648842dd4be6e96c0576a9b38aa8e3f52baa2))
+* typed words (a type arrival with an optional cursor) ([#193](https://github.com/napstar-420/reelcraft/issues/193)) ([3f466c4](https://github.com/napstar-420/reelcraft/commit/3f466c44681a57794b03febe49717bc7fc5d6e94))
+* **web:** redesign the run page as a phase graph for monitoring production runs ([#197](https://github.com/napstar-420/reelcraft/issues/197)) ([3ebb49c](https://github.com/napstar-420/reelcraft/commit/3ebb49c661e34003c10057f38d49ff6d225fd5f0))
+* words in more than one colour (text runs) ([#192](https://github.com/napstar-420/reelcraft/issues/192)) ([3f7b512](https://github.com/napstar-420/reelcraft/commit/3f7b5121a2c17c2d1eb8dc7dadaa77d02730a195))
+
+
+### Bug Fixes
+
+* **api:** give a probe stage the stored probe of a media artifact it reads ([#205](https://github.com/napstar-420/reelcraft/issues/205)) ([81c8d13](https://github.com/napstar-420/reelcraft/commit/81c8d13e30110dd520c2ed4f0d63ed23aeedc279))
+* **api:** keep composed sound and clip lengths within their source ([#203](https://github.com/napstar-420/reelcraft/issues/203)) ([5121b93](https://github.com/napstar-420/reelcraft/commit/5121b93e3ca081e2e316cb9074e609ea0d50f4ab))
+* **api:** let a Codex or Claude judge open a single image it is asked to check ([#204](https://github.com/napstar-420/reelcraft/issues/204)) ([5a3b0bf](https://github.com/napstar-420/reelcraft/commit/5a3b0bf8d5a64d5970802fe1018e628670d31ff9))
+* **api:** let non_empty accept a stored file output ([#200](https://github.com/napstar-420/reelcraft/issues/200)) ([d668dff](https://github.com/napstar-420/reelcraft/commit/d668dff159ce8e2d4e99bf8e044441792e504cfe))
+* **api:** write a stored file output to run memory as a file reference ([#201](https://github.com/napstar-420/reelcraft/issues/201)) ([a5b0583](https://github.com/napstar-420/reelcraft/commit/a5b0583189b261da2ce6db12da7777d84f1f487f))
+* **run:** show out-of-date outputs and let Continue carry on or keep them ([#202](https://github.com/napstar-420/reelcraft/issues/202)) ([79db8d6](https://github.com/napstar-420/reelcraft/commit/79db8d6fbff4870b6c16a9ae23f538a569a08836))
+* **web:** show waiting or stopped instead of running for stages of a stopped run ([#189](https://github.com/napstar-420/reelcraft/issues/189)) ([dd6956e](https://github.com/napstar-420/reelcraft/commit/dd6956eb26da3d09bcbf53c53cec2704466d5e78))
+
 ## [0.12.0](https://github.com/napstar-420/reelcraft/compare/v0.11.0...v0.12.0) (2026-10-21)
 
 
