@@ -10,6 +10,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
+import { STALE_WARNING, itemEmptyText, itemMark } from './stage-drawer.logic';
 import { StageExecutionControls } from './execution-controls';
 import { ArtifactPreview } from './artifact-preview';
 import { MotionCodeEditor } from './motion-code-editor';
@@ -89,7 +90,11 @@ export function StageDetailsWorkspace({
     (stage?.state === 'failed' ? latestFailed?.itemIndex : undefined) ??
     keys[0] ??
     null;
+  const isStale = (k: number | null) => !!output.data?.staleItems.some((i) => i.itemIndex === k);
   const itemOutput = output.data?.items.find((i) => i.itemIndex === activeItem);
+  const oldOutput = itemOutput
+    ? undefined
+    : output.data?.staleItems.find((i) => i.itemIndex === activeItem)?.artifact;
   const itemAttempts = [...(attempts.data ?? [])]
     .filter((a) => a.itemIndex === activeItem)
     .sort((a, b) => b.attemptNo - a.attemptNo);
@@ -111,7 +116,8 @@ export function StageDetailsWorkspace({
     enabled: enabled && tab === 'Attempts',
   });
   const lines = stageLogLines(logs.data ?? [], activeAttempt?.id ?? null, showDebug);
-  const artifact = tab === 'Attempts' ? detail.data?.artifact : itemOutput?.artifact;
+  const artifact = tab === 'Attempts' ? detail.data?.artifact : (itemOutput?.artifact ?? oldOutput);
+  const showingOld = tab !== 'Attempts' && !itemOutput && !!oldOutput;
   const Description = embedded ? 'p' : SheetDescription;
   const contents = (
     <>
@@ -197,7 +203,7 @@ export function StageDetailsWorkspace({
                   className={`block w-full rounded p-2 text-left text-xs ${k === activeItem ? 'bg-primary/15 text-primary' : ''}`}
                 >
                   Item {(k ?? 0) + 1}{' '}
-                  {output.data?.items.some((i) => i.itemIndex === k) ? '✓' : '·'}
+                  {itemMark(!!output.data?.items.some((i) => i.itemIndex === k), isStale(k))}
                 </button>
               ))}
           </nav>
@@ -273,8 +279,16 @@ export function StageDetailsWorkspace({
               </div>
               {artifact ? (
                 <>
+                  {showingOld ? (
+                    <p role="status" className="mb-2 text-sm text-amber-600 dark:text-amber-400">
+                      {STALE_WARNING}
+                    </p>
+                  ) : null}
                   <ArtifactPreview artifact={artifact} />
-                  {stageKey && artifact.kind === 'data' && motionSourceOf(artifact.data) ? (
+                  {stageKey &&
+                  !showingOld &&
+                  artifact.kind === 'data' &&
+                  motionSourceOf(artifact.data) ? (
                     <div className="mt-3">
                       <MotionCodeEditor
                         runId={runId}
@@ -289,7 +303,9 @@ export function StageDetailsWorkspace({
                 <p className="rounded border p-6 text-sm text-muted-foreground">
                   {stageRunning
                     ? 'Waiting for output…'
-                    : 'No artifact recorded for this selection.'}
+                    : isStale(activeItem)
+                      ? itemEmptyText(activeItem!, true)
+                      : 'No artifact recorded for this selection.'}
                 </p>
               )}
               <div className="my-5 flex flex-wrap gap-3 border-y py-3 text-xs text-muted-foreground">

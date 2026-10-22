@@ -1,7 +1,9 @@
+import { cn } from '@/lib/utils';
 import type { ReactNode } from 'react';
 import type {
   RunDetailDto,
   StageAvailableActions,
+  StageRunPlanDto,
   StageRunPlanRequestDto,
 } from '@reelcraft/shared';
 import { MoreHorizontal } from 'lucide-react';
@@ -205,10 +207,18 @@ export function RunExecutionToolbar({
   );
 }
 
+/** What the confirmation is for: carrying on, redoing finished work, or running what was asked. */
+function planTitle(plan: StageRunPlanDto | null): string {
+  if (plan?.request.action === 'continue') return 'Continue the run?';
+  if (plan?.request.action === 'rerun') return 'Re-run finished work?';
+  return 'Run these stages?';
+}
+
 /** Confirms an action that replaces finished work or needs a decision; one plan, one button. */
 export function ExecutionPlanDialog({ actions }: { actions: RunExecutionActions }) {
   const plan = actions.executionPlan;
   const names = (keys: string[]) => keys.map(actions.stageLabel).join(', ');
+  const running = plan?.runStageKeys.filter((key) => !plan.skippedStageKeys?.includes(key)) ?? [];
   return (
     <>
       <AlertDialog
@@ -220,7 +230,7 @@ export function ExecutionPlanDialog({ actions }: { actions: RunExecutionActions 
         <AlertDialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {plan?.blockedReason ? 'This can’t run yet' : 'Replace finished work?'}
+              {plan?.blockedReason ? 'This can’t run yet' : planTitle(plan)}
             </AlertDialogTitle>
             <AlertDialogDescription>
               {plan?.blockedReason ?? 'Earlier outputs and spending stay in the run’s history.'}
@@ -228,10 +238,76 @@ export function ExecutionPlanDialog({ actions }: { actions: RunExecutionActions 
           </AlertDialogHeader>
           {plan && !plan.blockedReason && (
             <div className="flex flex-col gap-2 text-sm">
-              <p>
-                Runs {plan.runStageKeys.length}{' '}
-                {plan.runStageKeys.length === 1 ? 'stage' : 'stages'}: {names(plan.runStageKeys)}
-              </p>
+              {!!running.length && (
+                <p>
+                  Runs {running.length} {running.length === 1 ? 'stage' : 'stages'}:{' '}
+                  {names(running)}
+                </p>
+              )}
+              {!!plan.skippedStageKeys?.length && (
+                <p>Skips disabled stages: {names(plan.skippedStageKeys)}</p>
+              )}
+              {!!plan.outdated?.length && (
+                <div className="flex flex-col gap-2 rounded-md border border-amber-500/50 p-3">
+                  <p className="text-amber-600 dark:text-amber-400">
+                    Out of date, because an earlier stage changed:{' '}
+                    {plan.outdated
+                      .map(
+                        (o) =>
+                          `${actions.stageLabel(o.stageKey)}${
+                            o.itemIndexes.length
+                              ? ` (items ${o.itemIndexes.map((i) => i + 1).join(', ')})`
+                              : ''
+                          }`,
+                      )
+                      .join('; ')}
+                  </p>
+                  <div
+                    className="flex flex-col gap-2"
+                    role="radiogroup"
+                    aria-label="Out-of-date outputs"
+                  >
+                    {(
+                      [
+                        [
+                          'regenerate',
+                          'Regenerate them',
+                          'Re-run only the out-of-date items, then continue.',
+                        ],
+                        [
+                          'keep',
+                          'Use the outdated outputs',
+                          'Keep them as they are and continue from them.',
+                        ],
+                      ] as const
+                    ).map(([choice, label, hint]) => {
+                      const selected = (plan.request.outdatedOutputs ?? 'regenerate') === choice;
+                      return (
+                        <label
+                          key={choice}
+                          className={cn(
+                            'flex cursor-pointer items-start gap-2 rounded-md border p-2',
+                            selected ? 'border-primary bg-primary/10' : 'border-border',
+                          )}
+                        >
+                          <input
+                            type="radio"
+                            name="outdated-outputs"
+                            className="mt-1 accent-primary"
+                            checked={selected}
+                            disabled={actions.chooseOutdated.isPending}
+                            onChange={() => actions.chooseOutdated.mutate({ plan, choice })}
+                          />
+                          <span className="flex flex-col">
+                            <span className="font-medium">{label}</span>
+                            <span className="text-xs text-muted-foreground">{hint}</span>
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
               {!!plan.invalidatedStageKeys.length && (
                 <p>Marks stale without running: {names(plan.invalidatedStageKeys)}</p>
               )}

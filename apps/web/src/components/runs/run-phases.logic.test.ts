@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { StageDef, StageExecutionDto } from '@reelcraft/shared';
-import { buildRunView } from './run-phases.logic';
+import type { RunDetailDto, StageDef, StageExecutionDto } from '@reelcraft/shared';
+import { buildRunView, stageStatusLabel } from './run-phases.logic';
 
 const def = (key: string, extra: Partial<StageDef> = {}): StageDef => ({
   key,
@@ -35,8 +35,10 @@ function view(
   states: Record<string, StageExecutionDto['state']>,
   busy = true,
   extra: Record<string, Partial<StageExecutionDto>> = {},
+  executionScope: RunDetailDto['executionScope'] = null,
 ) {
   return buildRunView({
+    executionScope,
     availableActions: { busy } as never,
     definition: { graph, inputs: [], roles: [], defaults: {}, budget: { runCapUsd: 1 } },
     stageExecutions: graph.map((s) => exec(s.key, states[s.key] ?? 'pending', extra[s.key])),
@@ -86,6 +88,61 @@ describe('buildRunView', () => {
     expect(running.map((s) => s.key)).toEqual(['b']);
     // c waits for the running b, d only for the finished a. Nothing after c is next.
     expect(next.map((s) => s.key)).toEqual(['c', 'd']);
+  });
+
+  it('does not list a stage as up next when the run is limited to other stages', () => {
+    const states = { a: 'passed', b: 'passed' } as const;
+    const scoped: RunDetailDto['executionScope'] = { kind: 'selection', stageKeys: ['b'] };
+    expect(view(chain, states, false, {}, scoped).next).toEqual([]);
+    const both: RunDetailDto['executionScope'] = { kind: 'selection', stageKeys: ['c', 'd'] };
+    expect(view(chain, states, false, {}, both).next.map((s) => s.key)).toEqual(['c', 'd']);
+  });
+
+  it('does not flag a stage that was only invalidated, with no output of its own', () => {
+    const { stages } = view(chain, { a: 'passed', b: 'stale' });
+    expect(stages.find((s) => s.key === 'b')!.stale).toBe(false);
+  });
+
+  it('labels a reset stage by what it did, not as out of date', () => {
+    const label = (extra: Record<string, Partial<StageExecutionDto>>) => {
+      const { stages } = view(chain, { a: 'passed', b: 'pending', c: 'stale' }, false, extra);
+      return stageStatusLabel(stages.find((s) => s.key === 'c')!);
+    };
+    expect(label({ c: { attemptCount: 2 } })).toBe('Ran before: runs again');
+    expect(label({})).toBe('Not started');
+  });
+
+  it('shows a stage reset after it failed as failed, not out of date', () => {
+    const { stages, phases, failed } = view(
+      chain,
+      { a: 'passed', b: 'passed', c: 'stale' },
+      false,
+      {
+        c: { lastRunFailed: true, attemptCount: 2 },
+      },
+    );
+    const c = stages.find((s) => s.key === 'c')!;
+    expect([c.state, c.stale]).toEqual(['failed', false]);
+    expect(failed.map((s) => s.key)).toEqual(['c']);
+    expect(phases.find((p) => p.id === 'Two')!.state).toBe('failed');
+  });
+
+  it('flags a stage and its phase as stale when its output or some of its items are out of date', () => {
+    const { stages, phases } = view(chain, { a: 'passed', b: 'passed', c: 'passed' }, false, {
+      b: { staleItemCount: 2 },
+      c: { outputStale: true },
+    });
+    expect(stages.map((s) => [s.key, s.stale])).toEqual([
+      ['a', false],
+      ['b', true],
+      ['c', true],
+      ['d', false],
+    ]);
+    expect(phases.map((p) => [p.id, p.stale])).toEqual([
+      ['One', true],
+      ['Two', true],
+      ['d', false],
+    ]);
   });
 
   it('does not chain up-next stages and does not queue behind a failed one', () => {
@@ -174,5 +231,17 @@ describe('buildRunView', () => {
   it('never merges a stage that has a phase of its own', () => {
     const { phases } = view(chain, {});
     expect(phases.map((p) => p.id)).toEqual(['One', 'Two', 'd']);
+  });
+
+  it('does not count an out-of-date stage as done, and it waits for what it depends on', () => {
+    const { stages, phases } = view(chain, { a: 'passed', b: 'pending', c: 'stale' });
+    expect(stages.find((s) => s.key === 'c')!.state).toBe('stale');
+    expect(phases.find((p) => p.id === 'Two')).toMatchObject({ done: 0, total: 1 });
+    expect(phases.find((p) => p.id === 'Two')!.state).not.toBe('done');
+  });
+
+  it('queues an out-of-date stage whose dependencies are finished', () => {
+    const { next } = view(chain, { a: 'passed', b: 'passed', c: 'stale' });
+    expect(next.map((s) => s.key)).toContain('c');
   });
 });

@@ -29,7 +29,13 @@ import { MotionCodeEditor } from './motion-code-editor';
 import { motionSourceOf } from './motion-code-editor.logic';
 import { VIEW_LABEL, viewTone, type RunView, type StageView } from './run-phases.logic';
 import { StageAnswerButtons } from './stage-answer-buttons';
-import { failureReason, stageReads } from './stage-drawer.logic';
+import {
+  STALE_WARNING,
+  failureReason,
+  itemEmptyText,
+  itemMark,
+  stageReads,
+} from './stage-drawer.logic';
 
 type Tab = 'output' | 'attempts' | 'memory';
 
@@ -227,12 +233,14 @@ function OutputTab({
 }) {
   const [picked, setPicked] = useState<number | null>(null);
   const items = output?.items ?? [];
+  const staleItems = output?.staleItems ?? [];
   const iterating = stage.execution.isIterating;
   const itemKeys = iterating
     ? [
         ...new Set([
           ...Array.from({ length: stage.execution.itemCount ?? 0 }, (_, i) => i),
           ...items.flatMap((i) => (i.itemIndex === null ? [] : [i.itemIndex])),
+          ...staleItems.flatMap((i) => (i.itemIndex === null ? [] : [i.itemIndex])),
         ]),
       ].sort((a, b) => a - b)
     : [];
@@ -240,9 +248,10 @@ function OutputTab({
     ? (picked ?? itemKeys.find((k) => items.some((i) => i.itemIndex === k)) ?? itemKeys[0] ?? null)
     : null;
   const shown = items.find((i) => i.itemIndex === active) ?? (iterating ? undefined : items[0]);
+  const old = shown ? undefined : staleItems.find((i) => i.itemIndex === active);
 
   if (!output) return <p className="text-sm text-muted-foreground">Loading output…</p>;
-  if (!items.length)
+  if (!items.length && !staleItems.length)
     return (
       <p className="rounded-md border p-4 text-sm text-muted-foreground">
         {EMPTY_OUTPUT[stage.state] ?? 'No output yet.'}
@@ -262,7 +271,11 @@ function OutputTab({
                 aria-pressed={k === active}
                 onClick={() => setPicked(k)}
               >
-                {k + 1} {has ? '✓' : '·'}
+                {k + 1}{' '}
+                {itemMark(
+                  has,
+                  staleItems.some((i) => i.itemIndex === k),
+                )}
               </Button>
             );
           })}
@@ -279,19 +292,29 @@ function OutputTab({
               source={motionSourceOf(shown.artifact.data)!}
             />
           ) : null}
-          {rerunItem && active !== null ? (
-            <div>
-              <Button size="sm" variant="outline" onClick={() => rerunItem(active)}>
-                Re-run item {active + 1}
-              </Button>
-            </div>
-          ) : null}
+        </>
+      ) : old?.artifact ? (
+        <>
+          <p role="status" className="text-sm text-amber-600 dark:text-amber-400">
+            {STALE_WARNING}
+          </p>
+          <ArtifactPreview artifact={old.artifact} />
         </>
       ) : (
         <p className="rounded-md border p-4 text-sm text-muted-foreground">
-          Item {(active ?? 0) + 1} has no output yet.
+          {itemEmptyText(
+            active ?? 0,
+            staleItems.some((i) => i.itemIndex === active),
+          )}
         </p>
       )}
+      {rerunItem && active !== null && (shown || old) ? (
+        <div>
+          <Button size="sm" variant="outline" onClick={() => rerunItem(active)}>
+            Re-run item {active + 1}
+          </Button>
+        </div>
+      ) : null}
     </div>
   );
 }

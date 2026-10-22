@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { StageDef } from '@reelcraft/shared';
-import { executionEligibility } from './execution-eligibility';
+import { executionEligibility, scopeHasWork } from './execution-eligibility';
 const graph = ['source', 'motion', 'final'].map((key, i) =>
   StageDef.parse({
     key,
@@ -92,5 +92,22 @@ describe('disabled stage policy', () => {
   it('restores descendant eligibility when re-enabled', () => {
     const actions = executionEligibility(graph, rows, {}, 'IDLE');
     expect(actions.stages.motion?.continue).toBe(true);
+  });
+});
+
+describe('scopeHasWork', () => {
+  const none = new Set<string>();
+  it('is open while a stage in the scope has not passed', () => {
+    expect(scopeHasWork(['a', 'b'], new Set(['a']), none)).toBe(true);
+  });
+  it('is open when a passed stage in the scope holds stale items', () => {
+    expect(scopeHasWork(['a'], new Set(['a']), new Set(['a']))).toBe(true);
+  });
+  it('is done once every stage in the scope passed, so Continue moves on', () => {
+    expect(scopeHasWork(['a'], new Set(['a', 'b']), new Set(['b']))).toBe(false);
+  });
+  it('has no scope to be open without one', () => {
+    expect(scopeHasWork(undefined, none, none)).toBe(false);
+    expect(scopeHasWork(null, none, none)).toBe(false);
   });
 });

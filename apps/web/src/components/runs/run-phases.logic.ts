@@ -5,8 +5,17 @@ import { stageDependencies } from '@/lib/stage-deps';
 
 /** What the run page shows for a stage or a phase. `next` is not stored: it is derived. */
 export type ViewState =
-  'done' | 'running' | 'waiting' | 'failed' | 'paused' | 'next' | 'pending' | 'skipped';
-export type PhaseState = Exclude<ViewState, 'skipped' | 'paused'> | 'partial';
+  | 'done'
+  | 'running'
+  | 'waiting'
+  | 'failed'
+  | 'paused'
+  /** Passed once, but a change since made its output out of date: it runs again. */
+  | 'stale'
+  | 'next'
+  | 'pending'
+  | 'skipped';
+export type PhaseState = Exclude<ViewState, 'skipped' | 'paused' | 'stale'> | 'partial';
 
 export type StageView = {
   key: string;
@@ -18,6 +27,8 @@ export type StageView = {
   /** The label without that leading number. */
   name: string;
   state: ViewState;
+  /** Its output, or some of its items' outputs, are out of date. */
+  stale: boolean;
   deps: string[];
   phaseId: string;
   execution: StageExecutionDto;
@@ -28,6 +39,8 @@ export type Phase = {
   name: string;
   stages: StageView[];
   state: PhaseState;
+  /** A stage in it has out-of-date output. */
+  stale: boolean;
   /** Stages finished, and stages that count (skipped ones don't). */
   done: number;
   total: number;
@@ -49,14 +62,18 @@ export type RunView = {
   waiting: StageView[];
 };
 
-type RunInput = Pick<RunDetailDto, 'availableActions' | 'stageExecutions' | 'definition'>;
+type RunInput = Pick<
+  RunDetailDto,
+  'availableActions' | 'stageExecutions' | 'definition' | 'executionScope'
+>;
 
 function viewState(execution: StageExecutionDto, run: RunInput): ViewState {
   if (execution.disabled) return 'skipped';
   switch (displayStageState(execution, run)) {
     case 'passed':
-    case 'stale':
       return 'done';
+    case 'stale':
+      return execution.lastRunFailed ? 'failed' : 'stale';
     case 'skipped':
       return 'skipped';
     case 'running':
@@ -129,6 +146,7 @@ export function buildRunView(run: RunInput): RunView {
     index: i + 1,
     ...numbered(execution.label, i + 1),
     state: viewState(execution, run),
+    stale: !execution.disabled && (!!execution.outputStale || !!execution.staleItemCount),
     deps: deps.get(execution.stageKey) ?? [],
     phaseId: groupOf.get(execution.stageKey) ?? execution.stageKey,
     execution,
@@ -149,10 +167,14 @@ export function buildRunView(run: RunInput): RunView {
   }
   // Up next: not started, and everything it waits for is finished or running (so it starts the
   // moment that ends). Judged on the stored states, so one next stage doesn't make the one after it next.
+  // A run limited to some stages (a one-stage or one-item re-run) never starts the others.
+  const scope =
+    run.executionScope?.kind === 'selection' ? new Set(run.executionScope.stageKeys) : null;
   const stored = new Map(stages.map((s) => [s.key, s.state]));
   for (const stage of stages) {
     if (
-      stage.state === 'pending' &&
+      (stage.state === 'pending' || stage.state === 'stale') &&
+      (!scope || scope.has(stage.key)) &&
       stage.deps.every((d) => ['done', 'skipped', 'running'].includes(stored.get(d) ?? ''))
     )
       stage.state = 'next';
@@ -178,6 +200,7 @@ export function buildRunView(run: RunInput): RunView {
           : `${members[0]!.name} +${members.length - 1} more`,
       stages: members,
       state: phaseState(members),
+      stale: members.some((s) => s.stale),
       done: counted.filter((s) => s.state === 'done').length,
       total: counted.length,
       deps: phaseDeps,
@@ -201,12 +224,20 @@ export function buildRunView(run: RunInput): RunView {
   };
 }
 
+/** What to say under a stage. A stage reset by a change upstream with nothing accepted to show is
+ * not "out of date": it either ran before without an accepted result, or has not run at all. */
+export function stageStatusLabel(stage: StageView): string {
+  if (stage.state !== 'stale' || stage.stale) return VIEW_LABEL[stage.state];
+  return stage.execution.attemptCount > 0 ? 'Ran before: runs again' : VIEW_LABEL.pending;
+}
+
 export const VIEW_LABEL: Record<ViewState | PhaseState, string> = {
   done: 'Done',
   running: 'Running',
   waiting: 'Waiting for you',
   failed: 'Failed',
   paused: 'Paused',
+  stale: 'Out of date',
   next: 'Up next',
   pending: 'Not started',
   skipped: 'Skipped',

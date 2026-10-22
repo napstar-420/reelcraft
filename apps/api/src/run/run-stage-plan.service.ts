@@ -1,7 +1,8 @@
-import { executionEligibility } from './execution-eligibility';
+import { executionEligibility, scopeHasWork } from './execution-eligibility';
+import { ACCEPTED_OUTCOMES, loadOutputHistory } from './outdated-output';
 import { unresolvedCancellation } from './cancellation-risk';
 import { ConflictException, Inject, Injectable, Logger } from '@nestjs/common';
-import { and, desc, eq, inArray, isNotNull } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import {
   disabledAncestor,
   CreateBlueprintVersionDto,
@@ -16,7 +17,7 @@ import {
   type StageRunPlanDto,
   type ConfigLayer,
 } from '@reelcraft/shared';
-import { DRIZZLE, type Db } from '../db/drizzle.provider';
+import { DRIZZLE, type Db, type Tx } from '../db/drizzle.provider';
 import {
   blueprintVersion,
   run,
@@ -24,12 +25,15 @@ import {
   stageEvent,
   artifact,
   artifactAttachment,
+  blob,
   stageAttempt,
   stageItem,
 } from '../db/schema/index';
 import { mergeLayer } from '../run-config/layer-merge';
 import { toUsd } from '../common/money';
 import { ulid } from '../common/ulid';
+import { ArtifactService } from '../artifact/artifact.service';
+import { MemoryService } from '../artifact/memory.service';
 import { RunService } from './run.service';
 import { InvalidationService } from './invalidation.service';
 import { PreviewTokenService, previewPayloadDigest } from './preview-token.service';
@@ -53,6 +57,8 @@ export class RunStagePlanService {
     private readonly dispatcher: RunWakeupDispatcher,
     private readonly configs: ConfigResolverService,
     private readonly engine: EngineConfig,
+    private readonly artifacts: ArtifactService,
+    private readonly memory: MemoryService,
   ) {}
 
   private async build(runId: string, request: StageRunPlanRequestDto) {
@@ -173,6 +179,52 @@ export class RunStagePlanService {
       blockedReason = 'This stage has no checks or quality criteria to run.';
     const graphForScope = request.mode !== 'rebuild' ? before.graph : draft.graph;
     const deps = stageDependencies(graphForScope);
+    // Outputs an earlier change made out of date: items of a done stage (one item re-run upstream),
+    // or a whole stage that had an accepted output. Continue redoes them, or keeps them as they are.
+    const history = await loadOutputHistory(this.db, current.stageExecutions);
+    const staleItemRows = current.stageExecutions.length
+      ? await this.db
+          .select({ executionId: stageItem.stageExecutionId, index: stageItem.itemIndex })
+          .from(stageItem)
+          .where(
+            and(
+              inArray(
+                stageItem.stageExecutionId,
+                current.stageExecutions.map((e) => e.id),
+              ),
+              eq(stageItem.state, 'stale'),
+            ),
+          )
+      : [];
+    const outdated = current.stageExecutions.flatMap((e) => {
+      if (e.state === 'passed') {
+        const indexes = staleItemRows
+          .filter((r) => r.executionId === e.id && (e.itemCount === null || r.index < e.itemCount))
+          .map((r) => r.index)
+          .sort((a, b) => a - b);
+        return indexes.length ? [{ stageKey: e.stageKey, itemIndexes: indexes }] : [];
+      }
+      // A whole iterating stage has no single output to keep, so it always runs again.
+      return e.state === 'stale' &&
+        !e.isIterating &&
+        history.acceptedExecutions.has(e.id) &&
+        !history.failedExecutions.has(e.id)
+        ? [{ stageKey: e.stageKey, itemIndexes: [] }]
+        : [];
+    });
+    const keepOutdated =
+      request.action === 'continue' && !request.stageKey && request.outdatedOutputs === 'keep';
+    const keptOutdated = keepOutdated ? outdated : [];
+    // Kept outputs count as finished, so Continue neither runs them nor stops at them.
+    for (const entry of keptOutdated) passed.add(entry.stageKey);
+    const staleItemKeys = new Set(
+      keepOutdated ? [] : outdated.filter((o) => o.itemIndexes.length).map((o) => o.stageKey),
+    );
+    // Continue works inside the run's scope while that scope has unfinished work. Once it is
+    // all done (a one-stage or one-item re-run, say) it carries on with the rest of the run.
+    const scoped = current.executionScope?.stageKeys;
+    const scopeOpen = scopeHasWork(scoped, passed, staleItemKeys);
+    const widened = request.action === 'continue' && !request.stageKey && !!scoped && !scopeOpen;
     const keep = request.stageKey
       ? new Set([
           request.stageKey,
@@ -182,10 +234,11 @@ export class RunStagePlanService {
         ])
       : new Set(
           request.action === 'continue'
-            ? (current.executionScope?.stageKeys ??
-                current.stageExecutions
+            ? scoped && scopeOpen
+              ? scoped
+              : current.stageExecutions
                   .filter((e) => e.state !== 'skipped' || e.skipReason)
-                  .map((e) => e.stageKey))
+                  .map((e) => e.stageKey)
             : graphForScope.map((s) => s.key),
         );
     const roots = new Set<string>();
@@ -205,7 +258,8 @@ export class RunStagePlanService {
     const execute = new Set(
       [...affected].filter((key) => request.scope === 'descendants' || keep.has(key)),
     );
-    if (!regenerate) for (const key of keep) if (!passed.has(key)) execute.add(key);
+    if (!regenerate)
+      for (const key of keep) if (!passed.has(key) || staleItemKeys.has(key)) execute.add(key);
     // Through-stage and rebuild-descendants operations explicitly include prerequisites.
     if (
       (request.scope !== 'stage' || !request.action) &&
@@ -405,8 +459,10 @@ export class RunStagePlanService {
       request,
       uncertainAttemptIds,
       retainedItemCount,
+      outdated,
       availabilityChangedStageKeys,
       runStageKeys: graph.filter((s) => execute.has(s.key)).map((s) => s.key),
+      skippedStageKeys: graph.filter((s) => execute.has(s.key) && s.disabled).map((s) => s.key),
       reusedStageKeys: graph
         .filter(
           (s) =>
@@ -436,6 +492,8 @@ export class RunStagePlanService {
       requested,
       graph,
       execute,
+      widened,
+      keptOutdated,
       changedKeys,
       preview,
       plan,
@@ -444,6 +502,126 @@ export class RunStagePlanService {
       assetBindings,
       validationArtifactId,
     };
+  }
+
+  /** "Use outdated": each kept output is recorded again as the stage's (or item's) current one, so
+   * the run carries on from it and later stages read it, memory writes included. */
+  private async keepOutdated(
+    tx: Tx,
+    runId: string,
+    graph: StageDef[],
+    executions: Array<{ id: string; stageKey: string }>,
+    kept: Array<{ stageKey: string; itemIndexes: number[] }>,
+  ) {
+    for (const entry of kept) {
+      const stage = graph.find((s) => s.key === entry.stageKey)!;
+      const execution = executions.find((e) => e.stageKey === entry.stageKey)!;
+      if (!entry.itemIndexes.length) {
+        await this.reuseOutput(tx, runId, stage, execution.id);
+        await tx
+          .update(stageExecution)
+          .set({ state: 'passed', failure: null, endedAt: new Date().toISOString() })
+          .where(eq(stageExecution.id, execution.id));
+        continue;
+      }
+      for (const itemIndex of entry.itemIndexes) {
+        const [item] = await tx
+          .select({ id: stageItem.id })
+          .from(stageItem)
+          .where(
+            and(eq(stageItem.stageExecutionId, execution.id), eq(stageItem.itemIndex, itemIndex)),
+          );
+        await this.reuseOutput(tx, runId, stage, execution.id, item && { id: item.id, itemIndex });
+      }
+    }
+  }
+
+  private async reuseOutput(
+    tx: Tx,
+    runId: string,
+    stage: StageDef,
+    stageExecutionId: string,
+    item?: { id: string; itemIndex: number },
+  ) {
+    const slot = and(
+      eq(stageAttempt.stageExecutionId, stageExecutionId),
+      item ? eq(stageAttempt.stageItemId, item.id) : isNull(stageAttempt.stageItemId),
+    );
+    const [last] = await tx
+      .select({ artifactId: stageAttempt.artifactId })
+      .from(stageAttempt)
+      .where(
+        and(
+          slot,
+          inArray(stageAttempt.outcome, ACCEPTED_OUTCOMES),
+          isNotNull(stageAttempt.artifactId),
+        ),
+      )
+      .orderBy(desc(stageAttempt.createdAt))
+      .limit(1);
+    const [old] = last?.artifactId
+      ? await tx.select().from(artifact).where(eq(artifact.id, last.artifactId))
+      : [];
+    if (!old)
+      throw new ConflictException(`${stage.key} has no earlier output to keep. Review a new plan.`);
+    // The old artifact stays as it was; a copy becomes the current one, sharing its files.
+    const id = ulid();
+    await tx.insert(artifact).values({
+      ...old,
+      id,
+      stale: true,
+      generation: old.generation + 1,
+      costUsd: '0',
+      createdAt: new Date().toISOString(),
+    });
+    const attachments = await tx
+      .select()
+      .from(artifactAttachment)
+      .where(eq(artifactAttachment.artifactId, old.id));
+    if (attachments.length)
+      await tx
+        .insert(artifactAttachment)
+        .values(attachments.map((attachment) => ({ ...attachment, id: ulid(), artifactId: id })));
+    // Invalidation may have queued its file for collection; it is in use again.
+    if (old.blobId)
+      await tx
+        .update(blob)
+        .set({ gcEligible: false, gcEligibleAt: null })
+        .where(eq(blob.id, old.blobId));
+    const [latest] = await tx
+      .select({ max: sql<number>`coalesce(max(${stageAttempt.attemptNo}), 0)::int` })
+      .from(stageAttempt)
+      .where(slot);
+    await tx.insert(stageAttempt).values({
+      id: ulid(),
+      stageExecutionId,
+      stageItemId: item?.id ?? null,
+      attemptNo: (latest?.max ?? 0) + 1,
+      outcome: 'user_edit',
+      phase: 'settled',
+      actor: 'user',
+      artifactId: id,
+      resolvedInputs: { keptOutdated: { sourceArtifactId: old.id } },
+    });
+    await this.artifacts.finalize(
+      {
+        runId,
+        stageExecutionId,
+        producerStageKey: stage.key,
+        itemIndex: item?.itemIndex,
+        stageItemId: item?.id,
+        newArtifactId: id,
+        applyWrites: this.memory.buildWriteCallback(stage, {
+          runId,
+          stageKey: stage.key,
+          kind: old.kind,
+          data: old.data,
+          artifactId: id,
+          ...(item && { itemIndex: item.itemIndex }),
+        }),
+      },
+      tx,
+    );
   }
 
   async preview(runId: string, request: StageRunPlanRequestDto): Promise<StageRunPlanDto> {
@@ -592,6 +770,13 @@ export class RunStagePlanService {
           });
         }
 
+        await this.keepOutdated(
+          tx,
+          runId,
+          built.graph,
+          built.current.stageExecutions,
+          built.keptOutdated,
+        );
         for (const stage of built.graph.filter((s) => built.execute.has(s.key) && !s.iterate)) {
           const execution = built.current.stageExecutions.find((e) => e.stageKey === stage.key)!;
           if (execution.isIterating)
@@ -651,7 +836,8 @@ export class RunStagePlanService {
               kind:
                 request.stageKey ||
                 (request.action === 'continue' &&
-                  built.current.executionScope?.kind === 'selection')
+                  built.current.executionScope?.kind === 'selection' &&
+                  !built.widened)
                   ? 'selection'
                   : 'blueprint',
               stageKeys: [...built.execute],
