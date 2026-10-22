@@ -224,8 +224,8 @@ export class QcRunner {
 
 /** The judge's request params: the attached image or audio, or a clip list's
  * videos or an image list's images. A judge given clips must open the files
- * itself (`__inspectFiles`); so must Codex or Claude given images, while other judges
- * get the images attached. */
+ * itself (`__inspectFiles`); so must Codex or Claude given any file, while other judges
+ * get them attached. */
 function qcParams(
   params: Record<string, unknown>,
   envelope: QcEnvelope,
@@ -265,8 +265,8 @@ function qcParams(
   return envelope.media
     ? {
         ...params,
-        ...(SELF_INSPECTING_PROVIDERS.has(judgeProvider) &&
-          Object.keys(referenceSlots).length && { __inspectFiles: true }),
+        // Codex and Claude open the file themselves, with or without reference images.
+        ...(SELF_INSPECTING_PROVIDERS.has(judgeProvider) && { __inspectFiles: true }),
         slots: { qcArtifact: { sourceKey: envelope.media.sourceKey }, ...referenceSlots },
       }
     : params;
