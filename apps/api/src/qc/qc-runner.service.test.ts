@@ -586,4 +586,47 @@ describe('QcRunner', () => {
       slots: { qcImage1: { sourceKey: 'run/a/1.png' } },
     });
   });
+
+  it.each(['codex', 'claude'])('has a %s judge open a single image itself', async (provider) => {
+    const registry = new ProviderRegistry();
+    const submit = vi.fn(async (_req: ProviderRequest, _key: string) => ({
+      providerId: provider,
+      externalId: 'job-1',
+    }));
+    registry.register({
+      id: provider,
+      modalities: ['text'],
+      listModels: async () => [],
+      estimate: async () => ({ expectedUsd: 0, ceilingUsd: 0, basis: 'configured_ceiling' }),
+      submit,
+      poll: async () => ({ done: true, outcome: 'succeeded' }),
+      fetch: async () => ({
+        output: JSON.stringify({ score: 90, critique: 'fine' }),
+        costUsd: 0,
+        repro: { level: 'none' },
+        rawResponse: {},
+      }),
+      cancel: async () => ({ confirmed: true }),
+    } as ProviderAdapter);
+    const envelope = buildQcEnvelope({
+      criteria: 'Is this a lighthouse at sunset?',
+      artifactKind: 'media.image',
+      artifactData: undefined,
+      includeInputs: false,
+      media: { sourceKey: 'run/abc/blob-1.png', mime: 'image/png' },
+    });
+
+    await new QcRunner(registry).run({
+      envelope,
+      judge: { provider, modelId: 'example', params: {} },
+      threshold: 70,
+      idempotencyKey: `qc-media-${provider}`,
+    });
+
+    const [request] = submit.mock.calls[0]!;
+    expect(request.params).toMatchObject({
+      __inspectFiles: true,
+      slots: { qcArtifact: { sourceKey: 'run/abc/blob-1.png' } },
+    });
+  });
 });
