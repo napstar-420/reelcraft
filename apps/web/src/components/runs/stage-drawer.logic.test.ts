@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { StageDef } from '@reelcraft/shared';
-import { failureReason, stageReads } from './stage-drawer.logic';
+import { failureReason, itemEmptyText, itemMark, stageReads } from './stage-drawer.logic';
 
 const def = (key: string, extra: Partial<StageDef> = {}): StageDef => ({
   key,
@@ -52,5 +52,18 @@ describe('failureReason', () => {
     expect(failureReason({ reason: 'check_failed' })).toBe('check_failed');
     expect(failureReason(null)).toBeNull();
     expect(failureReason({})).toBeNull();
+  });
+});
+
+describe('itemMark and itemEmptyText', () => {
+  it('marks an item as having output, stale, or empty', () => {
+    expect(itemMark(true, false)).toBe('✓');
+    expect(itemMark(false, true)).toBe('⟳');
+    expect(itemMark(false, false)).toBe('·');
+  });
+
+  it('says why a stale item has no output, and keeps the plain message for a missing one', () => {
+    expect(itemEmptyText(12, true)).toContain('Item 13 is out of date');
+    expect(itemEmptyText(12, false)).toBe('Item 13 has no output yet.');
   });
 });

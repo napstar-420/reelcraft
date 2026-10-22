@@ -4,7 +4,7 @@ import { RunWakeupClaimService } from '../../src/run/run-wakeup-claim.service';
 import { HumanActionService } from '../../src/run/human-action.service';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { InngestTestEngine } from '@inngest/test';
-import { and, eq, desc } from 'drizzle-orm';
+import { and, eq, desc, inArray } from 'drizzle-orm';
 import { StageDef } from '@reelcraft/shared';
 import { ChannelService } from '../../src/channel/channel.service';
 import { BlueprintService } from '../../src/blueprint/blueprint.service';
@@ -778,5 +778,122 @@ describe('unified resumable execution', () => {
       release();
       intercepted.mockRestore();
     }
+  });
+
+  describe('continuing with out-of-date items', () => {
+    async function twoStaleItems() {
+      const values = Array.from({ length: 4 }, (_, i) => `shot ${i}`);
+      const motion = StageDef.parse({
+        ...stage('motion'),
+        dependsOn: ['source'],
+        iterate: {
+          over: { from: 'stage', stageKey: 'source' },
+          itemAlias: 'shot',
+          itemRetryLimit: 0,
+          maxItems: 20,
+          concurrency: 2,
+        },
+        slots: { shot: { from: 'item' } },
+      });
+      const source = StageDef.parse({
+        ...stage('source'),
+        output: { kind: 'data', schema: { type: 'array', items: { type: 'string' } } },
+        model: { provider: 'fake', modelId: 'fake-text-1', params: { fakeOutput: values } },
+      });
+      const { created } = await fixture([source, motion, stage('final', ['motion'])]);
+      await database.db.update(run).set({ state: 'RUNNING' }).where(eq(run.id, created.id));
+      const sourceExecution = created.stageExecutions.find((e) => e.stageKey === 'source')!;
+      const sourceResult = await new InngestTestEngine({
+        function: app.functions.find((f) => f.id() === 'stage.execute')!,
+        events: [
+          {
+            name: 'stage/execute.requested',
+            data: {
+              runId: created.id,
+              stageExecutionId: sourceExecution.id,
+              stageKey: 'source',
+              executionEpoch: 0,
+            },
+          },
+        ],
+      }).execute();
+      expect(sourceResult.error).toBeUndefined();
+      const execution = created.stageExecutions.find((e) => e.stageKey === 'motion')!;
+      const ctx = await runner.loadStageContext(created.id, 'motion');
+      const resolved = await runner.resolveIterateCount(
+        created.id,
+        execution.id,
+        ctx.stage,
+        ctx.effective,
+        ctx.prevStageKey,
+      );
+      if (!resolved.ok) throw new Error(resolved.reason);
+      await runner.ensureStageItems(execution.id, 4, resolved.fingerprints);
+      for (const index of [0, 1, 2, 3]) await item(created.id, execution.id, index);
+      // What re-running items 1 and 3 of an earlier stage does to this one: its items go stale.
+      const stale = [1, 3];
+      await database.db
+        .update(artifact)
+        .set({ stale: true })
+        .where(
+          and(
+            eq(artifact.runId, created.id),
+            eq(artifact.producerStageKey, 'motion'),
+            inArray(artifact.itemIndex, stale),
+          ),
+        );
+      await database.db
+        .update(stageItem)
+        .set({ state: 'stale', outputArtifactId: null })
+        .where(
+          and(eq(stageItem.stageExecutionId, execution.id), inArray(stageItem.itemIndex, stale)),
+        );
+      await database.db
+        .update(stageExecution)
+        .set({ state: 'passed' })
+        .where(eq(stageExecution.id, execution.id));
+      await database.db
+        .update(run)
+        .set({ state: 'IDLE', executionScope: { kind: 'selection', stageKeys: ['source'] } })
+        .where(eq(run.id, created.id));
+      return created;
+    }
+    const request = async (runId: string, outdatedOutputs?: 'regenerate' | 'keep') => ({
+      blueprintVersionId: (await runs.get(runId)).blueprintVersionId,
+      action: 'continue' as const,
+      mode: 'reuse' as const,
+      scope: 'stage' as const,
+      ...(outdatedOutputs && { outdatedOutputs }),
+    });
+
+    it('lists them and, by default, redoes only those items before the rest of the run', async () => {
+      const created = await twoStaleItems();
+      const plan = await plans.preview(created.id, await request(created.id));
+      expect(plan.blockedReason).toBeNull();
+      expect(plan.outdated).toEqual([{ stageKey: 'motion', itemIndexes: [1, 3] }]);
+      expect(plan.runStageKeys).toEqual(['motion', 'final']);
+    });
+
+    it('keeps them as the current outputs when asked to use the outdated ones', async () => {
+      const created = await twoStaleItems();
+      const req = await request(created.id, 'keep');
+      const plan = await plans.preview(created.id, req);
+      expect(plan.blockedReason).toBeNull();
+      expect(plan.runStageKeys).toEqual(['final']);
+      await plans.confirm(created.id, { ...req, previewToken: plan.previewToken });
+
+      const output = await runs.stageOutput(created.id, 'motion');
+      expect(output.items.map((i) => i.itemIndex)).toEqual([0, 1, 2, 3]);
+      expect(output.staleItems).toEqual([]);
+      const [motion] = (await runs.get(created.id)).stageExecutions.filter(
+        (e) => e.stageKey === 'motion',
+      );
+      expect(motion).toMatchObject({ state: 'passed', staleItemCount: 0 });
+      const kept = await database.db
+        .select({ outcome: stageAttempt.outcome })
+        .from(stageAttempt)
+        .where(eq(stageAttempt.stageExecutionId, motion!.id));
+      expect(kept.filter((a) => a.outcome === 'user_edit')).toHaveLength(2);
+    });
   });
 });

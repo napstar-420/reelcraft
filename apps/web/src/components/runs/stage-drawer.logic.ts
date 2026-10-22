@@ -33,3 +33,19 @@ export function failureReason(failure: unknown): string | null {
   const text = typeof message === 'string' && message ? message : reason;
   return typeof text === 'string' && text ? text : null;
 }
+
+/** The mark on an item's chip: has output, out of date, or nothing yet. */
+export function itemMark(hasOutput: boolean, stale: boolean): string {
+  return hasOutput ? '✓' : stale ? '⟳' : '·';
+}
+
+/** The warning shown above an out-of-date output. */
+export const STALE_WARNING =
+  'Out of date: an earlier stage changed after this was made. Re-run it to refresh.';
+
+/** What to say for an item that has no output to show. */
+export function itemEmptyText(itemIndex: number, stale: boolean): string {
+  return stale
+    ? `Item ${itemIndex + 1} is out of date: an earlier stage changed. Re-run it to refresh.`
+    : `Item ${itemIndex + 1} has no output yet.`;
+}
