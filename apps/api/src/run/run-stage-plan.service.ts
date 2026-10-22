@@ -462,6 +462,7 @@ export class RunStagePlanService {
       outdated,
       availabilityChangedStageKeys,
       runStageKeys: graph.filter((s) => execute.has(s.key)).map((s) => s.key),
+      skippedStageKeys: graph.filter((s) => execute.has(s.key) && s.disabled).map((s) => s.key),
       reusedStageKeys: graph
         .filter(
           (s) =>

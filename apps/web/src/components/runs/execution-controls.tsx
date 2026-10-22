@@ -210,6 +210,7 @@ export function RunExecutionToolbar({
 export function ExecutionPlanDialog({ actions }: { actions: RunExecutionActions }) {
   const plan = actions.executionPlan;
   const names = (keys: string[]) => keys.map(actions.stageLabel).join(', ');
+  const running = plan?.runStageKeys.filter((key) => !plan.skippedStageKeys?.includes(key)) ?? [];
   return (
     <>
       <AlertDialog
@@ -229,10 +230,15 @@ export function ExecutionPlanDialog({ actions }: { actions: RunExecutionActions 
           </AlertDialogHeader>
           {plan && !plan.blockedReason && (
             <div className="flex flex-col gap-2 text-sm">
-              <p>
-                Runs {plan.runStageKeys.length}{' '}
-                {plan.runStageKeys.length === 1 ? 'stage' : 'stages'}: {names(plan.runStageKeys)}
-              </p>
+              {!!running.length && (
+                <p>
+                  Runs {running.length} {running.length === 1 ? 'stage' : 'stages'}:{' '}
+                  {names(running)}
+                </p>
+              )}
+              {!!plan.skippedStageKeys?.length && (
+                <p>Skips disabled stages: {names(plan.skippedStageKeys)}</p>
+              )}
               {!!plan.outdated?.length && (
                 <div className="flex flex-col gap-2 rounded-md border border-amber-500/50 p-3">
                   <p className="text-amber-600 dark:text-amber-400">

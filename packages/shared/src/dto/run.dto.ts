@@ -136,6 +136,8 @@ export const StageRunPlanDto = z.object({
   request: StageRunPlanRequestDto,
   previewToken: z.string(),
   runStageKeys: z.array(z.string()),
+  /** Of `runStageKeys`, the stages that are disabled: they are marked skipped, not run. */
+  skippedStageKeys: z.array(z.string()).optional(),
   reusedStageKeys: z.array(z.string()),
   staleStageKeys: z.array(z.string()),
   invalidatedStageKeys: z.array(z.string()),
