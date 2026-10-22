@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import type {
   RunDetailDto,
   StageAvailableActions,
+  StageRunPlanDto,
   StageRunPlanRequestDto,
 } from '@reelcraft/shared';
 import { MoreHorizontal } from 'lucide-react';
@@ -206,6 +207,13 @@ export function RunExecutionToolbar({
   );
 }
 
+/** What the confirmation is for: carrying on, redoing finished work, or running what was asked. */
+function planTitle(plan: StageRunPlanDto | null): string {
+  if (plan?.request.action === 'continue') return 'Continue the run?';
+  if (plan?.request.action === 'rerun') return 'Re-run finished work?';
+  return 'Run these stages?';
+}
+
 /** Confirms an action that replaces finished work or needs a decision; one plan, one button. */
 export function ExecutionPlanDialog({ actions }: { actions: RunExecutionActions }) {
   const plan = actions.executionPlan;
@@ -222,7 +230,7 @@ export function ExecutionPlanDialog({ actions }: { actions: RunExecutionActions 
         <AlertDialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {plan?.blockedReason ? 'This can’t run yet' : 'Replace finished work?'}
+              {plan?.blockedReason ? 'This can’t run yet' : planTitle(plan)}
             </AlertDialogTitle>
             <AlertDialogDescription>
               {plan?.blockedReason ?? 'Earlier outputs and spending stay in the run’s history.'}
