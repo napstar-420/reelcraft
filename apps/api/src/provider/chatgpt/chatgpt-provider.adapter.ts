@@ -8,7 +8,11 @@ import type {
   ProviderRequest,
   ProviderResult,
 } from '../provider-adapter.interface';
-import { ProviderContinuationUnavailableError } from '../provider-adapter.interface';
+import {
+  ProviderContinuationUnavailableError,
+  ProviderRequestError,
+} from '../provider-adapter.interface';
+import { collectSourceKeys } from '../source-keys';
 import { STORAGE_ADAPTER, type StorageAdapter } from '../../storage/storage.adapter';
 import { loadReferenceFiles, type ReferenceFile } from '../reference-files';
 import { buildChatgptPrompt } from './chatgpt-prompt';
@@ -151,7 +155,13 @@ export class ChatgptProviderAdapter implements ProviderAdapter {
     ];
   }
 
-  async estimate(_req: ProviderRequest) {
+  /** Runs before the stage reserves budget or opens a chat, so too many files stop it there. */
+  async estimate(req: ProviderRequest) {
+    const attached = collectSourceKeys(req.params.slots).length;
+    if (attached > MAX_REFERENCES)
+      throw new ProviderRequestError(
+        `ChatGPT accepts at most ${MAX_REFERENCES} attached files; this stage attaches ${attached}`,
+      );
     return { expectedUsd: 0, ceilingUsd: 0, basis: 'configured_ceiling' as const };
   }
 

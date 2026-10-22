@@ -13,7 +13,7 @@ import {
 import { Capability } from '../capability.decorator';
 import type { CapabilityImpl, ExecCtx, ExecResult } from '../capability.interface';
 import type { ProviderRequest } from '../../provider/provider-adapter.interface';
-import { ProviderRegistry } from '../../provider/provider.registry';
+import { ProviderRegistry, SELF_INSPECTING_PROVIDERS } from '../../provider/provider.registry';
 
 /** Strict structured output can't emit the text-style error reply, so data
  * stages get this envelope instead (the `<error_reporting>` data variant).
@@ -107,7 +107,15 @@ export class TextGenerateCapability implements CapabilityImpl<TextGenerateConfig
     return {
       modality: 'text',
       modelId: ctx.config.modelId,
-      params: files.length > 0 ? { ...params, slots: { files } } : params,
+      params:
+        files.length > 0
+          ? {
+              ...params,
+              slots: { files },
+              // Claude and Codex can't be sent files; they open them in their job folder.
+              ...(SELF_INSPECTING_PROVIDERS.has(ctx.config.provider) && { __inspectFiles: true }),
+            }
+          : params,
       renderedPrompt: ctx.renderedPrompt,
       system: ctx.systemPrompt,
       output:

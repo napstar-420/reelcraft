@@ -221,6 +221,29 @@ describe('ChatGPT producer continuation', () => {
   });
 });
 
+describe('ChatgptProviderAdapter.estimate', () => {
+  const slots = (count: number) => ({
+    files: Array.from({ length: count }, (_, i) => ({
+      kind: 'media.image',
+      sourceKey: `img/${i}.png`,
+    })),
+  });
+
+  it('refuses more attached files than ChatGPT reads, naming how many the stage attaches', async () => {
+    const { adapter } = fixture([]);
+    await expect(adapter.estimate({ ...textReq, params: { slots: slots(16) } })).rejects.toThrow(
+      'ChatGPT accepts at most 5 attached files; this stage attaches 16',
+    );
+  });
+
+  it('accepts up to the limit', async () => {
+    const { adapter } = fixture([]);
+    await expect(
+      adapter.estimate({ ...textReq, params: { slots: slots(5) } }),
+    ).resolves.toBeDefined();
+  });
+});
+
 describe('ChatgptProviderAdapter.submit', () => {
   it('opens a temporary chat, sets effort, turns web search on, then pastes the prompt', async () => {
     const { adapter, scripts } = fixture([
