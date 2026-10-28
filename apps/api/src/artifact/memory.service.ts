@@ -138,10 +138,11 @@ export class MemoryService {
     return async (tx: Tx): Promise<void> => {
       if (!stage.writes) return;
       for (const [memKey, path] of Object.entries(stage.writes)) {
-        // A media artifact's payload lives in the blob, so `$` writes a reference to the file.
-        // Any other path reads a field of the artifact's own data (Generate Speech's `timing`),
-        // and writes that field as data.
-        const isMedia = source.kind.startsWith('media.') && path === '$';
+        // A media or file (subtitles) artifact's payload lives in the blob, so `$` writes a
+        // reference to the file. Any other path reads a field of the artifact's own data
+        // (Generate Speech's `timing`), and writes that field as data.
+        const inBlob = source.kind.startsWith('media.') || source.kind.startsWith('file.');
+        const isMedia = inBlob && path === '$';
         const value = isMedia ? undefined : path === '$' ? source.data : getPath(source.data, path);
         // A `writes` path that doesn't resolve is a blueprint authoring bug
         // (schema/path mismatch), not a legitimate "no value" — writing
@@ -167,7 +168,7 @@ export class MemoryService {
           version,
           writtenBy: stage.key,
           writtenItem: source.itemIndex,
-          kind: isMedia || !source.kind.startsWith('media.') ? source.kind : 'data',
+          kind: isMedia || !inBlob ? source.kind : 'data',
           ...(isMedia ? { artifactId: source.artifactId } : { data: value }),
         });
         this.logger.debug(

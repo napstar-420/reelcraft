@@ -122,3 +122,14 @@ export function executionEligibility(
   };
   return { run, stages };
 }
+
+/** Whether a run's execution scope still has unfinished work: a stage that has not passed, or one
+ * that passed but holds items made out of date. Continue stays inside the scope while it does;
+ * once the scope is done (a one-item re-run, say) Continue carries on with the rest of the run. */
+export function scopeHasWork(
+  scoped: readonly string[] | null | undefined,
+  passed: ReadonlySet<string>,
+  staleItemKeys: ReadonlySet<string>,
+): boolean {
+  return !!scoped?.some((key) => !passed.has(key) || staleItemKeys.has(key));
+}

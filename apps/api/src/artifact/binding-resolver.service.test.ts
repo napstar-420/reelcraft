@@ -125,6 +125,16 @@ describe('BindingResolverService — media manifests carry blobId', () => {
     });
   });
 
+  it('{from:"prev"} on a media artifact carries its stored probe, so a probe stage can report it', async () => {
+    const probe = { container: 'wav', durationSec: 1.656, streams: [{ type: 'audio' }] };
+    const row = { id: 'art-1', kind: 'media.audio', blobId: 'blob-1', probe, data: null };
+    const { value } = await serviceWith([row], [{ objectKey: 'k/audio.wav' }]).resolve(
+      { from: 'prev' },
+      ctx,
+    );
+    expect(value).toMatchObject({ probe, durationSec: 1.656, hasAudio: true });
+  });
+
   it('{from:"stage"} reads the named stage, not the previous one, and labels its manifest', async () => {
     const row = { id: 'art-9', kind: 'media.audio', blobId: 'blob-9', probe: null, data: null };
     const { value, provenance } = await serviceWith([row], [{ objectKey: 'k/music.wav' }]).resolve(

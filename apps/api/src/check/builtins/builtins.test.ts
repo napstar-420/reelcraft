@@ -96,6 +96,10 @@ describe('non_empty', () => {
     expect(check.run({}, textArtifact('hello')).pass).toBe(true);
   });
 
+  it('passes on a stored file output, whose content is not in the check data', () => {
+    expect(check.run({}, { kind: 'file.subtitles', data: undefined }).pass).toBe(true);
+  });
+
   it('passes on a stored media file, which keeps its content outside data', () => {
     const probe = { durationSec: 0, streams: [{ type: 'video' }] };
     expect(check.run({}, { kind: 'media.image', data: undefined, probe }).pass).toBe(true);

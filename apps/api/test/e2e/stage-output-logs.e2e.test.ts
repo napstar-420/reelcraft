@@ -1,12 +1,12 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { InngestTestEngine } from '@inngest/test';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import type { StageDef } from '@reelcraft/shared';
 import { ChannelService } from '../../src/channel/channel.service';
 import { BlueprintService } from '../../src/blueprint/blueprint.service';
 import { RunService } from '../../src/run/run.service';
 import type { StageExecuteEventData } from '../../src/orchestration/functions/stage-execute.fn';
-import { stageAttempt, stageExecution } from '../../src/db/schema/index';
+import { artifact, stageAttempt, stageExecution, stageItem } from '../../src/db/schema/index';
 import { buildTestApp, type TestApp } from '../support/build-app';
 import { createTestDb, type TestDb } from '../support/test-db';
 
@@ -160,5 +160,82 @@ describe('stage output and stage logs (e2e)', () => {
     const output = await runs.stageOutput(dryRun.id, 'draft');
     expect(output.items).toEqual([]);
     expect(await runs.listStageEvents(dryRun.id, 'draft')).toEqual([]);
+  });
+
+  it('does not call a stage out of date when it never produced an output', async () => {
+    const runs = testApp.app.get(RunService);
+    const channels = testApp.app.get(ChannelService);
+    const blueprints = testApp.app.get(BlueprintService);
+    const channel = await channels.create('local', {
+      name: `Output Stale Channel ${Date.now()}-${Math.random()}`,
+      theme: {},
+      defaults: {},
+    });
+    const blueprintId = await blueprints.ensureBlueprint(channel.id, 'Output Stale Blueprint');
+    const version = await blueprints.createVersion(blueprintId, {
+      graph: GRAPH,
+      inputs: [],
+      roles: [],
+      defaults: {},
+      budget: { runCapUsd: 10 },
+    });
+    const dryRun = await runs.startDryRun(blueprintId, version);
+    const [execution] = await testDb.db
+      .select()
+      .from(stageExecution)
+      .where(and(eq(stageExecution.runId, dryRun.id), eq(stageExecution.stageKey, 'draft')));
+    await testDb.db
+      .update(stageExecution)
+      .set({ state: 'stale', isIterating: true, itemCount: 2 })
+      .where(eq(stageExecution.id, execution!.id));
+    await testDb.db.insert(stageItem).values(
+      [0, 1, 5].map((itemIndex) => ({
+        id: `${execution!.id}-item-${itemIndex}`,
+        stageExecutionId: execution!.id,
+        itemIndex,
+        state: 'stale' as const,
+      })),
+    );
+    expect((await runs.stageOutput(dryRun.id, 'draft')).staleItems).toEqual([]);
+    const draft = (await runs.get(dryRun.id)).stageExecutions.find((e) => e.stageKey === 'draft');
+    expect(draft).toMatchObject({ staleItemCount: 0, outputStale: false });
+  });
+
+  it('keeps the last accepted output of a stale stage, marked out of date', async () => {
+    const runs = testApp.app.get(RunService);
+    const channels = testApp.app.get(ChannelService);
+    const blueprints = testApp.app.get(BlueprintService);
+    const channel = await channels.create('local', {
+      name: `Output Old Channel ${Date.now()}-${Math.random()}`,
+      theme: {},
+      defaults: {},
+    });
+    const blueprintId = await blueprints.ensureBlueprint(channel.id, 'Output Old Blueprint');
+    const version = await blueprints.createVersion(blueprintId, {
+      graph: GRAPH,
+      inputs: [],
+      roles: [],
+      defaults: {},
+      budget: { runCapUsd: 10 },
+    });
+    const dryRun = await runs.startDryRun(blueprintId, version);
+    const { error } = await runThroughRealPipeline(dryRun.id, dryRun.stageExecutions);
+    expect(error).toBeUndefined();
+    // What invalidation does to a stage downstream of a change.
+    await testDb.db
+      .update(artifact)
+      .set({ stale: true })
+      .where(and(eq(artifact.runId, dryRun.id), eq(artifact.producerStageKey, 'draft')));
+    await testDb.db
+      .update(stageExecution)
+      .set({ state: 'stale', outputArtifactId: null })
+      .where(and(eq(stageExecution.runId, dryRun.id), eq(stageExecution.stageKey, 'draft')));
+
+    const output = await runs.stageOutput(dryRun.id, 'draft');
+    expect(output.items).toEqual([]);
+    expect(output.staleItems).toHaveLength(1);
+    expect(output.staleItems[0]).toMatchObject({ itemIndex: null, artifact: { kind: 'text' } });
+    const draft = (await runs.get(dryRun.id)).stageExecutions.find((e) => e.stageKey === 'draft');
+    expect(draft?.outputStale).toBe(true);
   });
 });

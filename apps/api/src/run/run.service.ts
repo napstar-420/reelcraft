@@ -59,6 +59,7 @@ import { collectAssetIds, collectLibraryRefs, roleRefsOf } from '../blueprint/co
 import { ASSET_KIND_FOR_LIBRARY, type LibraryBinding } from '../library/library-catalog';
 import { RunInputService } from './run-input.service';
 import { RunMutationService } from './run-mutation.service';
+import { ACCEPTED_OUTCOMES, FAILED_OUTCOMES, loadOutputHistory } from './outdated-output';
 import { RunWakeupDispatcher } from './run-wakeup-dispatcher.service';
 import { PINNED_PROVIDERS, PROVIDER_LABELS, ProviderRegistry } from '../provider/provider.registry';
 import { modalityForCapability } from '../capability/modality-for-capability';
@@ -1102,6 +1103,7 @@ export class RunService {
     const itemRows = executions.length
       ? await this.db
           .select({
+            id: stageItem.id,
             stageExecutionId: stageItem.stageExecutionId,
             state: stageItem.state,
             itemIndex: stageItem.itemIndex,
@@ -1119,6 +1121,18 @@ export class RunService {
         (item) =>
           item.stageExecutionId === execution.id &&
           item.state === 'passed' &&
+          (execution.itemCount === null || item.itemIndex < execution.itemCount),
+      ).length;
+    const { acceptedExecutions, acceptedItems, failedExecutions } = await loadOutputHistory(
+      this.db,
+      executions,
+    );
+    const staleItemCount = (execution: typeof stageExecution.$inferSelect) =>
+      itemRows.filter(
+        (item) =>
+          item.stageExecutionId === execution.id &&
+          item.state === 'stale' &&
+          acceptedItems.has(item.id) &&
           (execution.itemCount === null || item.itemIndex < execution.itemCount),
       ).length;
     const activeAttempts = executions.length
@@ -1189,6 +1203,12 @@ export class RunService {
           const capability = definition?.capability ?? 'unknown';
           return {
             ...execution,
+            staleItemCount: staleItemCount(execution),
+            outputStale:
+              execution.state === 'stale' &&
+              acceptedExecutions.has(execution.id) &&
+              !failedExecutions.has(execution.id),
+            lastRunFailed: failedExecutions.has(execution.id),
             disabled: definition?.disabled ?? false,
             outputAvailable: !definition?.disabled && !disabledAncestor(graph, execution.stageKey),
             availableActions: eligibility.stages[execution.stageKey],
@@ -1427,6 +1447,77 @@ export class RunService {
         ),
       )
       .orderBy(asc(artifact.itemIndex));
+    // Out of date: what an iterating stage's stale items, or a stale stage as a whole, last had
+    // accepted. A stage or item that never had an accepted output has nothing out of date.
+    const [execution] = await this.db
+      .select({
+        id: stageExecution.id,
+        state: stageExecution.state,
+        itemCount: stageExecution.itemCount,
+      })
+      .from(stageExecution)
+      .where(and(eq(stageExecution.runId, runId), eq(stageExecution.stageKey, stageKey)))
+      .limit(1);
+    const lastAccepted = new Map<number | null, string>();
+    const staleItemIndexes = new Set<number | null>();
+    if (execution) {
+      const attempts = await this.db
+        .select({ itemIndex: stageItem.itemIndex, artifactId: stageAttempt.artifactId })
+        .from(stageAttempt)
+        .leftJoin(stageItem, eq(stageItem.id, stageAttempt.stageItemId))
+        .where(
+          and(
+            eq(stageAttempt.stageExecutionId, execution.id),
+            inArray(stageAttempt.outcome, ACCEPTED_OUTCOMES),
+            isNotNull(stageAttempt.artifactId),
+          ),
+        )
+        .orderBy(desc(stageAttempt.createdAt));
+      for (const attempt of attempts)
+        if (!lastAccepted.has(attempt.itemIndex))
+          lastAccepted.set(attempt.itemIndex, attempt.artifactId!);
+      const items = await this.db
+        .select({ itemIndex: stageItem.itemIndex })
+        .from(stageItem)
+        .where(and(eq(stageItem.stageExecutionId, execution.id), eq(stageItem.state, 'stale')));
+      // An item at or past the current itemCount is an orphan of an earlier, larger count.
+      for (const { itemIndex } of items)
+        if (execution.itemCount === null || itemIndex < execution.itemCount)
+          staleItemIndexes.add(itemIndex);
+      if (execution.state === 'stale' && !items.length) {
+        const [last] = await this.db
+          .select({ outcome: stageAttempt.outcome })
+          .from(stageAttempt)
+          .where(eq(stageAttempt.stageExecutionId, execution.id))
+          .orderBy(desc(stageAttempt.createdAt))
+          .limit(1);
+        // A stage whose last attempt failed is failed, not out of date.
+        if (!last || !FAILED_OUTCOMES.includes(last.outcome)) staleItemIndexes.add(null);
+      }
+    }
+    const staleIndexes = [...staleItemIndexes]
+      .filter((itemIndex) => lastAccepted.has(itemIndex))
+      .sort((x, y) => (x ?? -1) - (y ?? -1));
+    const oldArtifacts = staleIndexes.length
+      ? await this.db
+          .select()
+          .from(artifact)
+          .where(
+            inArray(
+              artifact.id,
+              staleIndexes.map((i) => lastAccepted.get(i)!),
+            ),
+          )
+      : [];
+    const staleItems = await Promise.all(
+      staleIndexes.map(async (itemIndex) => {
+        const old = oldArtifacts.find((row) => row.id === lastAccepted.get(itemIndex));
+        return {
+          itemIndex,
+          artifact: old ? await this.toArtifactView(runRow.ownerId, old) : null,
+        };
+      }),
+    );
     return {
       stageKey,
       items: await Promise.all(
@@ -1435,6 +1526,7 @@ export class RunService {
           artifact: await this.toArtifactView(runRow.ownerId, row),
         })),
       ),
+      staleItems,
     };
   }
 

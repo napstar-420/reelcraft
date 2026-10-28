@@ -19,6 +19,9 @@ Hover over the **ⓘ** next to any setting for a short explanation.
   changed. Runs, logs and other stages refer to the stage by its key.
 - **Label**: the name shown on the canvas and in runs. Change it to something meaningful, such as
   "Write script". It doesn't affect what the stage does.
+- **Phase**: optional. The run page groups stages that share a phase name, such as **Voice**, into
+  one box. Leave it empty and the stage gets a box of its own. It doesn't affect what the stage does,
+  and changing it never makes a stage stale.
 - **Capability**: the [stage type](../stage-types/index.md), such as **Generate Text** or
   **Render Timeline**. The type decides which slots, settings and outputs the stage has. Changing it
   on a stage you've already set up asks first (**Change this stage's capability?**), because it

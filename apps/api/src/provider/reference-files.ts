@@ -27,7 +27,9 @@ export async function loadReferenceFiles(
 ): Promise<ReferenceFile[]> {
   const keys = collectSourceKeys(slots);
   if (keys.length > limits.max) {
-    throw new ProviderRequestError(`${limits.label} accepts at most ${limits.max} attached files`);
+    throw new ProviderRequestError(
+      `${limits.label} accepts at most ${limits.max} attached files; this stage attaches ${keys.length}`,
+    );
   }
   return Promise.all(
     keys.map(async (key, index) => {

@@ -13,7 +13,7 @@ timelines are all artifacts.
 [Assets](../channels/assets.md).
 
 **Attempt**: one try by a stage. A stage can make several. See
-[Attempts](../runs/run-page.md#attempts).
+[Attempts](../runs/run-page.md#stage-details).
 
 **Binding**: the connection that tells a slot or context entry where its value comes from. See
 [Connecting stages](../blueprints/connecting-stages.md).
