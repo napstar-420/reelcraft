@@ -18,6 +18,8 @@ const exec = promisify(execFile);
  *    keeps the frames already made.
  * 3. A 2D cut-out shot (a picture on a plane, an orthographic camera) rendered with a transparent
  *    background to a WebM, to lay over other clips.
+ * 4. The same scenes rendered to a single picture: an opaque still of the 3D shot, and a still of
+ *    the cut-out that keeps its transparency.
  *
  * Needs Blender and ffmpeg. BLENDER_PATH picks the Blender (default: the macOS app); RENDER_ENGINE
  * (auto, eevee, cycles, workbench) the engine.
@@ -152,7 +154,7 @@ async function probe(file: string) {
     '-v',
     'error',
     '-show_entries',
-    'stream=codec_name,width,height,nb_frames:stream_tags=alpha_mode',
+    'stream=codec_name,pix_fmt,width,height,nb_frames:stream_tags=alpha_mode',
     '-of',
     'json',
     file,
@@ -161,6 +163,7 @@ async function probe(file: string) {
     JSON.parse(stdout) as {
       streams: Array<{
         codec_name: string;
+        pix_fmt: string;
         width: number;
         height: number;
         nb_frames?: string;
@@ -198,14 +201,15 @@ async function main() {
   // 2. A shot that loads it.
   const shot = source(SHOT, { assets: [{ name: 'hero', kind: 'model', handle: 'asset:hero' }] });
   const framesDir = path.join(root, 'frames-shot');
-  const shotSpec = sceneRenderSpec({
+  const shotSpecInput = {
     ...base,
     source: shot,
-    mode: 'video',
-    modelFormat: 'glb',
+    mode: 'video' as const,
+    modelFormat: 'glb' as const,
     resources: { 'asset:hero': { sourceKey: 'hero.glb' } },
     framesDir,
-  });
+  };
+  const shotSpec = sceneRenderSpec(shotSpecInput);
   const first = await run(shotSpec, path.join(root, 'shot-1'), { 'hero.glb': character.output });
   const video = await probe(first.output);
   check(
@@ -238,16 +242,18 @@ async function main() {
     '1',
     star,
   ]);
+  const cutoutSource = source(CUTOUT, {
+    transparent: true,
+    assets: [{ name: 'star', kind: 'image', handle: 'asset:star' }],
+  });
+  const cutoutResources = { 'asset:star': { sourceKey: 'star.png' } };
   const cutout = await run(
     sceneRenderSpec({
       ...base,
-      source: source(CUTOUT, {
-        transparent: true,
-        assets: [{ name: 'star', kind: 'image', handle: 'asset:star' }],
-      }),
+      source: cutoutSource,
       mode: 'video',
       modelFormat: 'glb',
-      resources: { 'asset:star': { sourceKey: 'star.png' } },
+      resources: cutoutResources,
       framesDir: path.join(root, 'frames-cutout'),
     }),
     path.join(root, 'cutout'),
@@ -257,6 +263,39 @@ async function main() {
   check(
     overlay.codec_name === 'vp9' && overlay.tags?.alpha_mode === '1',
     `2D cut-out rendered with transparency: ${overlay.codec_name}, alpha ${overlay.tags?.alpha_mode}, in ${cutout.ms} ms`,
+  );
+
+  // 4. Stills: one second into the 3D shot, and the cut-out with its transparency.
+  const still = await run(
+    sceneRenderSpec({ ...shotSpecInput, mode: 'image', frame: 1, framesDir: undefined }),
+    path.join(root, 'still'),
+    { 'hero.glb': character.output },
+  );
+  const picture = await probe(still.output);
+  check(
+    still.output.endsWith('scene.png') &&
+      picture.codec_name === 'png' &&
+      picture.width === 640 &&
+      picture.height === 360 &&
+      picture.pix_fmt === 'rgb24',
+    `3D still rendered: ${picture.codec_name} ${picture.pix_fmt} ${picture.width}x${picture.height} in ${still.ms} ms`,
+  );
+  const cutoutStill = await run(
+    sceneRenderSpec({
+      ...base,
+      source: cutoutSource,
+      mode: 'image',
+      modelFormat: 'glb',
+      resources: cutoutResources,
+      frame: 0,
+    }),
+    path.join(root, 'cutout-still'),
+    { 'star.png': star },
+  );
+  const alpha = await probe(cutoutStill.output);
+  check(
+    alpha.codec_name === 'png' && alpha.pix_fmt === 'rgba',
+    `2D still keeps transparency: ${alpha.codec_name} ${alpha.pix_fmt}`,
   );
   console.log(`\nAll scene renders passed. Files are in ${root}`);
 }

@@ -148,6 +148,10 @@ stage chose one, and sets samples and the GPU. Don't change render settings exce
 transform, Freestyle and film transparency (which follows `rc.transparent`). Keep scenes light:
 modest subdivision, a few lights, no heavy simulations. A frame should render in seconds.
 
+The same script can be rendered as a single picture instead of a clip: the stage picks the moment
+to show (in seconds, as with `rc.frame`). When you are asked for a still, make the scene short
+(`durationSec` of 1 is enough) and compose the whole picture at that moment.
+
 ## Sound
 
 Scenes are silent. Voice, music and sound effects belong on the video's timeline, which places the

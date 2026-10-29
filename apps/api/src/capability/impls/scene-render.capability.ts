@@ -32,10 +32,13 @@ type SceneRenderConfig = {
   quality?: SceneQuality;
   renderEngine?: RenderEngine;
   modelFormat?: ModelFormat;
+  frame?: number;
   maxWaitSec?: number;
 };
 
-type SceneHandle = ComputeHandle & { framesDir: string; mode: 'video' | 'model'; filename: string };
+type SceneMode = 'video' | 'model' | 'image';
+
+type SceneHandle = ComputeHandle & { framesDir?: string; mode: SceneMode; filename: string };
 
 /** Long scenes on a CPU take a while; the stage's `maxWaitSec` raises it. */
 const DEFAULT_MAX_WAIT_SEC = 4 * 60 * 60;
@@ -43,14 +46,25 @@ const DEFAULT_MAX_WAIT_SEC = 4 * 60 * 60;
 const MIME: Record<string, string> = {
   'scene.mp4': 'video/mp4',
   'scene.webm': 'video/webm',
+  'scene.png': 'image/png',
   'model.glb': 'model/gltf-binary',
   'model.blend': 'application/x-blender',
 };
 
+const KIND = {
+  video: 'media.video',
+  model: 'media.model',
+  image: 'media.image',
+} as const;
+
+const modeOf = (kind: OutputKind | undefined): SceneMode =>
+  kind === 'media.model' ? 'model' : kind === 'media.image' ? 'image' : 'video';
+
 /**
  * Renders a scene program (from Write Scene) with its engine, locally and for free: into a clip to
- * place on a timeline, or, with a 3D model output, into a model that other scenes load. Rendering
- * the same scene again gives the same frames; a retry keeps the frames an earlier attempt made.
+ * place on a timeline, into a still picture, or, with a 3D model output, into a model that other
+ * scenes load. Rendering the same scene again gives the same frames; a retry keeps the frames an
+ * earlier attempt made.
  */
 @Capability('scene.render')
 @Injectable()
@@ -58,7 +72,7 @@ export class SceneRenderCapability extends LocalComputeCapability<SceneRenderCon
   readonly modality = 'compute' as const;
   readonly label = 'Render Scene';
   readonly description =
-    'Render a scene a model wrote (2D or 3D, in Blender) into a video clip, or export it as a 3D model.';
+    'Render a scene a model wrote (2D or 3D, in Blender) into a video clip or a still image, or export it as a 3D model.';
   readonly noInstructions = true;
   readonly configSchema: JsonSchema = {
     type: 'object',
@@ -78,6 +92,11 @@ export class SceneRenderCapability extends LocalComputeCapability<SceneRenderCon
         type: 'string',
         enum: ['glb', 'blend'],
         description: 'File type for a 3D model output; default glb',
+      },
+      frame: {
+        type: 'number',
+        minimum: 0,
+        description: 'For an image output, the moment to render, in seconds; default 0',
       },
       maxWaitSec: {
         type: 'number',
@@ -100,16 +119,16 @@ export class SceneRenderCapability extends LocalComputeCapability<SceneRenderCon
   }
 
   allowedOutputs(): OutputKind[] {
-    return ['media.video', 'media.model'];
+    return ['media.video', 'media.model', 'media.image'];
   }
 
   validate(_config: SceneRenderConfig, stage: StageDef): ValidationIssue[] {
-    return stage.output.kind === 'media.video' || stage.output.kind === 'media.model'
+    return this.allowedOutputs().includes(stage.output.kind)
       ? []
       : [
           {
             path: 'output.kind',
-            message: 'Render Scene produces a video or a 3D model',
+            message: 'Render Scene produces a video, an image or a 3D model',
             severity: 'error',
           },
         ];
@@ -126,16 +145,19 @@ export class SceneRenderCapability extends LocalComputeCapability<SceneRenderCon
       throw new Error(`The scene input is not a scene: ${parsed.error.issues[0]?.message}`);
     }
     const source = parsed.data;
-    const mode = ctx.output?.kind === 'media.model' ? 'model' : 'video';
+    const mode = modeOf(ctx.output?.kind);
     const quality = ctx.config.quality ?? 'final';
     const renderEngine = ctx.config.renderEngine ?? 'auto';
     const modelFormat = ctx.config.modelFormat ?? 'glb';
     // Under `jobs/`, so a scene that never finishes is swept with the other old job folders.
-    const framesDir = path.join(
-      this.config.workspaceRoot,
-      'jobs',
-      `frames-${framesKey(source, quality, renderEngine)}`,
-    );
+    const framesDir =
+      mode === 'video'
+        ? path.join(
+            this.config.workspaceRoot,
+            'jobs',
+            `frames-${framesKey(source, quality, renderEngine)}`,
+          )
+        : undefined;
     const spec = sceneRenderSpec({
       source,
       mode,
@@ -144,14 +166,15 @@ export class SceneRenderCapability extends LocalComputeCapability<SceneRenderCon
       renderEngine,
       resources: ctx.resources ?? {},
       blender: await this.blender.binary(),
-      framesDir,
+      ...(framesDir && { framesDir }),
+      frame: ctx.config.frame ?? 0,
       maxWaitSec: ctx.config.maxWaitSec ?? DEFAULT_MAX_WAIT_SEC,
       env: blenderEnv(process.env),
     });
     const handle = await this.compute.spawn(ctx.idempotencyKey, spec);
     const payload: SceneHandle = {
       ...handle,
-      framesDir,
+      ...(framesDir && { framesDir }),
       mode,
       filename: outputFilename(mode, source, modelFormat),
     };
@@ -162,7 +185,7 @@ export class SceneRenderCapability extends LocalComputeCapability<SceneRenderCon
     const scene = handle.payload as SceneHandle;
     return {
       output: {
-        kind: scene.mode === 'model' ? 'media.model' : 'media.video',
+        kind: KIND[scene.mode],
         localPath: await this.compute.collect(scene),
         filename: scene.filename,
         mime: MIME[scene.filename] ?? 'application/octet-stream',
@@ -175,6 +198,7 @@ export class SceneRenderCapability extends LocalComputeCapability<SceneRenderCon
   async cleanup(handle: JobHandle): Promise<void> {
     await super.cleanup(handle);
     // The clip is stored; the frames it was made from are not needed again.
-    await rm((handle.payload as SceneHandle).framesDir, { recursive: true, force: true });
+    const { framesDir } = handle.payload as SceneHandle;
+    if (framesDir) await rm(framesDir, { recursive: true, force: true });
   }
 }
