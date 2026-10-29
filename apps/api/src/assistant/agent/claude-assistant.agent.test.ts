@@ -125,6 +125,92 @@ describe('ClaudeAssistantAgent', () => {
     expect(spawn.mock.calls[1]![0]).toEqual(expect.arrayContaining(['--resume', sessionId]));
   });
 
+  describe('when Claude rejects the stored history', () => {
+    const message = 'API Error: 400 due to tool use concurrency issues.';
+    // what Claude Code really prints: the error as a made-up assistant message, then the result
+    const synthetic = {
+      type: 'assistant',
+      error: 'invalid_request',
+      message: { id: 'x', model: '<synthetic>', content: [{ type: 'text', text: message }] },
+    };
+    const rejected = { type: 'result', is_error: true, result: message };
+
+    it('starts a new Claude conversation, tells it, and retries the turn once', async () => {
+      const { spawn, children, turn, sessionId, events } = await fixture();
+      const first = turn();
+      await vi.waitFor(() => expect(children).toHaveLength(1));
+      children[0]!.replay([init, success]);
+      await first;
+      events.length = 0;
+
+      const second = turn();
+      await vi.waitFor(() => expect(children).toHaveLength(2));
+      children[1]!.replay([init, synthetic, rejected], 1);
+      await vi.waitFor(() => expect(children).toHaveLength(3));
+      children[2]!.replay([init, success]);
+      await second;
+      // the error text is never shown as something the assistant said
+      expect(events).toEqual([{ type: 'usage', inputTokens: 15, outputTokens: 3 }]);
+
+      expect(spawn.mock.calls[1]![0]).toEqual(expect.arrayContaining(['--resume', sessionId]));
+      const retry = spawn.mock.calls[2]![0];
+      const freshId = retry[retry.indexOf('--session-id') + 1];
+      expect(freshId).toMatch(/^[0-9a-f-]{36}$/);
+      expect(freshId).not.toBe(sessionId);
+      expect(retry).not.toContain('--resume');
+      const sent = children[2]!.stdin.end.mock.calls[0]![0] as string;
+      expect(sent).toContain('earlier messages could not be loaded');
+      expect(sent).toContain('hello');
+
+      // later turns resume the new conversation, not the broken one
+      const third = turn();
+      await vi.waitFor(() => expect(children).toHaveLength(4));
+      children[3]!.replay([init, success]);
+      await third;
+      expect(spawn.mock.calls[3]![0]).toEqual(expect.arrayContaining(['--resume', freshId]));
+      expect(children[3]!.stdin.end).toHaveBeenCalledWith('hello');
+    });
+
+    it('does not start over once the user has seen output, and fails other errors as before', async () => {
+      const { children, turn } = await fixture();
+      const first = turn();
+      await vi.waitFor(() => expect(children).toHaveLength(1));
+      children[0]!.replay([init, success]);
+      await first;
+
+      const second = turn();
+      await vi.waitFor(() => expect(children).toHaveLength(2));
+      children[1]!.replay([
+        init,
+        { type: 'assistant', message: { id: 'm1', content: [{ type: 'text', text: 'Hi' }] } },
+        rejected,
+      ]);
+      await expect(second).rejects.toThrow(/tool use concurrency/);
+      expect(children).toHaveLength(2);
+
+      const third = turn();
+      await vi.waitFor(() => expect(children).toHaveLength(3));
+      children[2]!.replay([init, { type: 'result', is_error: true, result: 'Not logged in' }], 1);
+      await expect(third).rejects.toThrow('Not logged in');
+      expect(children).toHaveLength(3);
+    });
+
+    it('gives up after one fresh start', async () => {
+      const { children, turn } = await fixture();
+      const first = turn();
+      await vi.waitFor(() => expect(children).toHaveLength(1));
+      children[0]!.replay([init, success]);
+      await first;
+      const second = turn();
+      await vi.waitFor(() => expect(children).toHaveLength(2));
+      children[1]!.replay([init, rejected], 1);
+      await vi.waitFor(() => expect(children).toHaveLength(3));
+      children[2]!.replay([init, rejected], 1);
+      await expect(second).rejects.toThrow(/tool use concurrency/);
+      expect(children).toHaveLength(3);
+    });
+  });
+
   it('streams text and the finished message under one item, and reports usage', async () => {
     const { children, turn, events } = await fixture();
     const done = turn();
