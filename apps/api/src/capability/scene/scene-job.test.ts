@@ -82,6 +82,18 @@ describe('sceneRenderSpec', () => {
     expect(spec({ mode: 'model', modelFormat: 'blend' }).outputFilename).toBe('model.blend');
   });
 
+  it('renders a still to a PNG, with the moment to show and no frames folder', () => {
+    const job = spec({ mode: 'image', frame: 1.5, framesDir: undefined });
+    expect(job.outputFilename).toBe('scene.png');
+    const written = JSON.parse(job.files!.find((f) => f.asFilename === 'job.json')!.contents);
+    expect(written).toMatchObject({ mode: 'image', frame: 1.5 });
+    expect(written).not.toHaveProperty('framesDir');
+    // A transparent scene is still a PNG, which keeps its alpha.
+    expect(spec({ mode: 'image', source: { ...source, transparent: true } }).outputFilename).toBe(
+      'scene.png',
+    );
+  });
+
   it('names an asset that is gone', () => {
     expect(() => spec({ resources: {} })).toThrow('Scene asset "hero" (asset:01HERO)');
   });

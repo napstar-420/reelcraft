@@ -11,6 +11,7 @@ the folder) to write:
                  Frames already in `framesDir` are kept, so a retry carries on where it stopped.
 - mode "frames": render only `frames` (frame numbers) as PNGs into the folder `output`, as drafts.
                  This is how the model that wrote the script looks at its work.
+- mode "image":  render the one frame at `frame` (seconds) to the file `output`, as a PNG.
 - mode "model":  export the built scene to `output` (.glb or .blend).
 
 The script is a Python module with `build(rc)`. It starts from an empty scene whose size, frame rate
@@ -32,6 +33,11 @@ import bpy  # noqa: E402
 from reelcraft_gpu import use_best_gpu  # noqa: E402
 
 CONTRACT_VERSION = 1
+
+
+def frame_at(seconds, fps):
+    """The frame shown `seconds` into the video (frame 1 is the start)."""
+    return 1 + round(seconds * fps)
 
 
 class SceneError(Exception):
@@ -61,7 +67,7 @@ class Context:
 
     def frame(self, seconds):
         """The frame shown at `seconds` into the video."""
-        return 1 + round(seconds * self.fps)
+        return frame_at(seconds, self.fps)
 
     def asset(self, name):
         """The local path of the asset called `name`."""
@@ -249,6 +255,15 @@ def render_frames(job, scene):
         bpy.ops.render.render(write_still=True)
 
 
+def render_image(job, scene):
+    png_output(scene, job.get("transparent"))
+    number = min(max(1, frame_at(job.get("frame") or 0, job["fps"])), scene.frame_end)
+    scene.frame_set(number)
+    scene.render.filepath = job["output"]
+    scene.render.use_file_extension = False
+    bpy.ops.render.render(write_still=True)
+
+
 def export_model(job, scene):
     out = job["output"]
     if out.endswith(".blend"):
@@ -280,6 +295,8 @@ def main():
         render_video(job, scene)
     elif mode == "frames":
         render_frames(job, scene)
+    elif mode == "image":
+        render_image(job, scene)
     elif mode == "model":
         export_model(job, scene)
     else:

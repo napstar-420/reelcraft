@@ -4,7 +4,7 @@ import type { ComputeSpec, SceneAsset, SceneSource } from '@reelcraft/shared';
 import { BASE_ARGS } from '../../blender/blender-runtime';
 import { BLENDER_SCRIPTS_DIR } from '../../blender/blender-runtime.service';
 
-export type SceneMode = 'video' | 'model' | 'frames';
+export type SceneMode = 'video' | 'model' | 'frames' | 'image';
 export type SceneQuality = 'draft' | 'final';
 export type RenderEngine = 'auto' | 'eevee' | 'cycles' | 'workbench';
 export type ModelFormat = 'glb' | 'blend';
@@ -28,6 +28,8 @@ export interface SceneJob {
   framesDir?: string;
   /** Which frames to render (mode `frames`). */
   frames?: number[];
+  /** The moment to render, in seconds (mode `image`). */
+  frame?: number;
 }
 
 const RUN_SCENE = path.join(BLENDER_SCRIPTS_DIR, 'run_scene.py');
@@ -49,6 +51,7 @@ const seedOf = (script: string) => createHash('sha256').update(script).digest().
 export function outputFilename(mode: SceneMode, source: SceneSource, format: ModelFormat) {
   if (mode === 'model') return `model.${format}`;
   if (mode === 'frames') return 'frames';
+  if (mode === 'image') return 'scene.png';
   return source.transparent ? 'scene.webm' : 'scene.mp4';
 }
 
@@ -60,8 +63,9 @@ export function sceneJobFiles(p: {
   quality: SceneQuality;
   renderEngine: RenderEngine;
   resources: Record<string, { sourceKey?: string | undefined }>;
-  framesDir?: string;
+  framesDir?: string | undefined;
   frames?: number[];
+  frame?: number | undefined;
 }): { job: SceneJob; inputs: Array<{ sourceKey: string; asFilename: string }> } {
   const inputs: Array<{ sourceKey: string; asFilename: string }> = [];
   const assets: SceneJob['assets'] = {};
@@ -93,6 +97,7 @@ export function sceneJobFiles(p: {
       seed: seedOf(p.source.script),
       ...(p.framesDir && { framesDir: p.framesDir }),
       ...(p.frames && { frames: p.frames }),
+      ...(p.frame !== undefined && { frame: p.frame }),
     },
   };
 }
@@ -107,20 +112,23 @@ export const blenderArgs = (jobFile: string, output: string): string[] => [
   output,
 ];
 
-/** The local job that renders a scene to a clip, or exports it as a model, with Blender. */
+/** The local job that renders a scene to a clip or a still, or exports it as a model, with Blender. */
 export function sceneRenderSpec(p: {
   source: SceneSource;
-  mode: 'video' | 'model';
+  mode: 'video' | 'model' | 'image';
   modelFormat: ModelFormat;
   quality: SceneQuality;
   renderEngine: RenderEngine;
   resources: Record<string, { sourceKey?: string | undefined }>;
   blender: string;
-  framesDir: string;
+  /** Where a clip's frames are kept between attempts; a still has none. */
+  framesDir?: string | undefined;
+  /** The moment a still shows, in seconds. */
+  frame?: number | undefined;
   maxWaitSec: number;
   env: Record<string, string>;
 }): ComputeSpec {
-  const { job, inputs } = sceneJobFiles({ ...p, framesDir: p.framesDir });
+  const { job, inputs } = sceneJobFiles(p);
   return {
     command: p.blender,
     args: blenderArgs('{input:job.json}', '{output}'),
