@@ -32,10 +32,10 @@ export const GUIDE: Record<string, GuideSection> = {
 - A run starts a stage once every stage it depends on has finished. With no \`dependsOn\` a stage depends on the stage before it, so a blueprint is a chain and runs one stage at a time. Stages that do not depend on each other run in parallel (see \`dependsOn\` in the iterate topic). The items of an iterating stage run in order unless \`iterate.concurrency\` is set.
 - Each stage has a type (\`capability\`), \`slots\` (the inputs the type asks for), \`context\` (extra values for the prompt), an \`output\` and optional checks, quality control, approval, iterate, enabledWhen and disabled.
 - Stage \`key\`s must be unique. Pick short descriptive keys such as \`script\`, \`scenes\`, \`images\`, \`voice\`. Once saved, runs refer to a stage by its key, so don't rename keys of existing stages without a reason.
-- Always send the COMPLETE draft (every stage, inputs, roles, defaults, budget, execution and presentation when present). A draft is not a patch.
+- \`propose_draft\` and \`validate_draft\` take the COMPLETE draft (every stage, inputs, roles, defaults, budget, execution and presentation when present): a draft there is not a patch. \`edit_draft\` is the patch form: a list of edits to the current draft, which keeps everything it doesn't touch (use it for changes to an existing blueprint).
 - Top-level draft fields are graph, inputs, roles, defaults, budget, execution and presentation. Preserve execution and presentation from the current draft when proposing unrelated edits. Only the stage fields in the tool schema exist. Invented fields are rejected.
 - Saving a version is the user's job. You propose a draft; the user (or auto-apply) puts it on the canvas.
-- Keep the user's existing stages unless they ask to change them: start from the draft that \`get_blueprint\` returns.
+- Keep the user's existing stages unless they ask to change them: start from the draft that \`get_blueprint\` returns (an outline plus \`get_stages\` when it is large) and change it with \`edit_draft\`.
 - The usual end-to-end shape: plan scenes (\`text.generate\`, data) → write script (\`text.generate\`) → make visuals per scene (\`image.generate\`/\`video.generate\` with iterate) → voice-over (\`audio.speech\`) → word timings (\`media.analyze\`) → assemble (\`timeline.render\` or \`video.concat\`) → human approval. The last stage that makes a video is the run's final video, so end the graph with it.`,
   },
 
@@ -373,7 +373,7 @@ When a request mixes shapes (a story with a few real clips, a voice-over plus mu
   versions: {
     title: 'Versions, the draft and going back',
     body: `- The canvas holds a working **draft** that autosaves. It is not a version. Only the user's **Save** creates a saved version, numbered \`major.minor\` (1.0, then 1.1, 1.2…; the Save menu can start a new major, 2.0). Runs refer to the saved version they ran (a run of unsaved canvas edits uses a hidden "canvas draft" snapshot).
-- \`get_blueprint\` lists the saved versions (label, which is current, run counts) and says whether the draft differs from the latest save (\`draftDiffersFromLatest\`). \`get_version\` reads one in full. \`diff_drafts\` compares any two (\`current\` is the draft on the canvas now).
+- \`get_blueprint\` lists the saved versions (label, which is current, run counts) and says whether the draft differs from the latest save (\`draftDiffersFromLatest\`). \`get_version\` reads one (an outline plus \`get_stages\` with its label, when it is large). \`diff_drafts\` compares any two (\`current\` is the draft on the canvas now).
 - **Going back**: there is no restore button for you. Read the old version with \`get_version\`, propose a draft that brings back what the user wants (the whole version, or only some stages or settings, keeping the rest of the current draft), and tell them to Save to keep it. Say what you brought back and what you left alone.
 - "What changed since the last save / between 1.1 and 1.3?": \`diff_drafts\`, then explain in the user's terms (stage labels, settings), not field names.
 - Versions have no notes, changelog or author: do not invent them. The package and sharing features exist in the app, but you cannot export, import or sign anything.`,

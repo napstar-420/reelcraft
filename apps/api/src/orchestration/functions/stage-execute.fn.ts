@@ -1,4 +1,5 @@
 import type { Inngest } from 'inngest';
+import { approvalModeOf } from '@reelcraft/shared';
 import { ExecutionRetiredError } from '../stage-runner.service';
 import type { StageRunnerService } from '../stage-runner.service';
 import { runStageAttemptLoop } from './stage-attempt-loop';
@@ -194,9 +195,16 @@ export function buildStageExecuteFunction(
         }
 
         const finished = await step.run('finish-iterating-stage', () =>
-          runner.finishIteratingStage(data.stageExecutionId, data.executionEpoch),
+          runner.finishIteratingStage(
+            data.stageExecutionId,
+            data.executionEpoch,
+            Boolean(stage.approval) && approvalModeOf(stage) === 'stage',
+          ),
         );
-        return { outcome: 'passed' as const, artifactId: finished.artifactId };
+        return {
+          outcome: finished.awaitingApproval ? ('approval_required' as const) : ('passed' as const),
+          artifactId: finished.artifactId,
+        };
       }
 
       return runStageAttemptLoop({

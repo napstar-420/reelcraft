@@ -6,6 +6,7 @@ import { qualityIssues } from './quality-checks';
 import { parseDraft } from './draft-checks';
 import { baselineDraft, currentDraft } from './current-draft';
 import { sameDraft } from './draft-diff';
+import { draftView } from './draft-view';
 import { memoryFlow } from './memory-flow';
 import { draftJsonSchema, MODALITIES, obj, str } from './json-schemas';
 import type { AssistantTool } from './types';
@@ -17,7 +18,7 @@ const getBlueprint: AssistantTool = {
   name: 'get_blueprint',
   kind: 'read',
   description:
-    "Return the blueprint you are working on: name, description, tags, where it came from, its CURRENT draft (what is on the canvas right now, or your last proposal in this turn), the draft's validation issues, how its memory keys flow between stages, and its saved versions (label, which is current, runs, whether the draft differs from the latest save). Call this at the start of every turn and never rely on an earlier result. Use get_version to read an older version.",
+    "Return the blueprint you are working on: name, description, tags, where it came from, its CURRENT draft (what is on the canvas right now, or your last proposal in this turn), an outline of its stages, the draft's validation issues, how its memory keys flow between stages, and its saved versions (label, which is current, runs, whether the draft differs from the latest save). Call this at the start of every turn and never rely on an earlier result. A large draft is not returned whole: you get `draft: null`, the other draft fields and the stage outline, and read stages with get_stages. Use get_version to read an older version.",
   input: NoInput,
   jsonSchema: noInputSchema,
   async handler(ctx, deps) {
@@ -52,7 +53,7 @@ const getBlueprint: AssistantTool = {
         ...(blueprint.packageId ? { sharedAsPackageId: blueprint.packageId } : {}),
         ...(blueprint.packageBasedOn ? { importedFrom: blueprint.packageBasedOn } : {}),
         draftSource: source,
-        draft,
+        ...draftView(draft),
         validation,
         memoryFlow: memoryFlow(draft.graph),
         versions,

@@ -36,7 +36,22 @@ interface SessionState {
   tools: AssistantToolDef[];
   /** Claude has the conversation (its first turn got as far as starting). */
   started: boolean;
+  /** Claude's own id for the conversation, once the original one was abandoned (see `isBrokenHistory`). */
+  claudeId?: string;
 }
+
+/** Claude Code stores a chat as a transcript it replays on `--resume`. If that history is
+ * ever rejected by the API (an unpaired tool call), every later turn of the chat fails the
+ * same way, so the agent starts a fresh Claude conversation instead of leaving it stuck. */
+function isBrokenHistory(error: unknown): boolean {
+  return (
+    error instanceof AssistantTurnError &&
+    /tool use concurrency|tool_history_mismatch/i.test(error.message)
+  );
+}
+
+const RESTART_NOTE =
+  "<reelcraft_context>This chat's earlier messages could not be loaded, so you start without them. The blueprint on the canvas is the source of truth: call get_blueprint first. If the request depends on something said earlier, say so and ask the user briefly.</reelcraft_context>";
 
 /** The arguments for one assistant turn. Claude gets no built-in tools, no
  * settings, hooks, plugins, skills or CLAUDE.md, and no MCP server except
@@ -87,14 +102,6 @@ export function buildAssistantClaudeArgs(input: {
   ];
 }
 
-/** Claude Code spills an MCP result over 25,000 tokens to a file and points the
- * model at it. The assistant has no file tools, so it would never see it: a
- * large blueprint (get_blueprint) came back unreadable. Raise the cap; an
- * explicit setting in the environment still wins. */
-export function assistantClaudeEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
-  return { MAX_MCP_OUTPUT_TOKENS: '150000', ...base };
-}
-
 type StreamEvent = {
   type?: string;
   index?: number;
@@ -141,11 +148,7 @@ export class ClaudeAssistantAgent implements AssistantAgent {
     this.spawnClaude =
       deps.spawn ??
       ((args, options) =>
-        nodeSpawn('claude', args, {
-          cwd: options.cwd,
-          env: assistantClaudeEnv(),
-          stdio: ['pipe', 'pipe', 'pipe'],
-        }));
+        nodeSpawn('claude', args, { cwd: options.cwd, stdio: ['pipe', 'pipe', 'pipe'] }));
     this.tools = deps.tools ?? new AssistantToolServer();
   }
 
@@ -183,10 +186,40 @@ export class ClaudeAssistantAgent implements AssistantAgent {
     const state = await this.readState(sessionId);
     if (options.signal.aborted) throw new AssistantTurnError('interrupted', 'Stopped');
     this.active.add(sessionId);
-    const endpoint = await this.tools.register(state.tools, options.handlers.callTool);
+    // output or tool calls already seen by the user: too late to start over silently
+    let progressed = false;
+    const { handlers } = options;
+    const watched = {
+      ...options,
+      handlers: {
+        callTool: (tool: string, args: unknown) => {
+          progressed = true;
+          return handlers.callTool(tool, args);
+        },
+        onEvent: (event: Parameters<AssistantTurnHandlers['onEvent']>[0]) => {
+          if (event.type !== 'usage') progressed = true;
+          handlers.onEvent(event);
+        },
+      },
+    };
+    const endpoint = await this.tools.register(state.tools, watched.handlers.callTool);
     try {
       await mkdir(this.workDir, { recursive: true, mode: 0o700 });
-      await this.runProcess(sessionId, state, endpoint, options);
+      try {
+        await this.runProcess(sessionId, state, endpoint, watched, options.text);
+      } catch (error) {
+        if (!state.started || progressed || !isBrokenHistory(error)) throw error;
+        this.logger.warn({ err: error }, 'claude chat history was rejected: starting a new one');
+        const fresh: SessionState = { tools: state.tools, started: false, claudeId: randomUUID() };
+        await this.writeState(sessionId, fresh);
+        await this.runProcess(
+          sessionId,
+          fresh,
+          endpoint,
+          watched,
+          `${RESTART_NOTE}\n\n${options.text}`,
+        );
+      }
     } finally {
       endpoint.release();
       this.active.delete(sessionId);
@@ -207,10 +240,11 @@ export class ClaudeAssistantAgent implements AssistantAgent {
     state: SessionState,
     endpoint: ToolEndpoint,
     options: Parameters<AssistantAgent['runTurn']>[0],
+    text: string,
   ): Promise<void> {
     const child = this.spawnClaude(
       buildAssistantClaudeArgs({
-        sessionId,
+        sessionId: state.claudeId ?? sessionId,
         resume: state.started,
         model: options.model,
         effort: options.effort,
@@ -294,7 +328,11 @@ export class ClaudeAssistantAgent implements AssistantAgent {
         }
         if (event.type === 'assistant') {
           const message = event.message as
-            { id?: string; content?: Array<{ type?: string; text?: string }> } | undefined;
+            | { id?: string; model?: string; content?: Array<{ type?: string; text?: string }> }
+            | undefined;
+          // Claude Code reports an API error as a made-up assistant message ahead of the failed
+          // `result`: it is the error, not something the model said.
+          if (message?.model === '<synthetic>' || event.error) return;
           const id = message?.id ?? '';
           for (const block of message?.content ?? []) {
             if (block.type !== 'text' || typeof block.text !== 'string') continue;
@@ -368,7 +406,7 @@ export class ClaudeAssistantAgent implements AssistantAgent {
         void saving.then(() => settle(final));
       });
       child.stdin.on('error', () => undefined);
-      child.stdin.end(options.text);
+      child.stdin.end(text);
     });
   }
 

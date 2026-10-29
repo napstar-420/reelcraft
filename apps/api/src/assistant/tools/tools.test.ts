@@ -119,7 +119,7 @@ function makeDeps(overrides: Partial<ToolDeps> = {}): ToolDeps {
 const ctx = () => newTurnContext('bp1', null);
 
 describe('tool registry', () => {
-  it('has the 19 tools, each with a unique name and a kind', () => {
+  it('has the 21 tools, each with a unique name and a kind', () => {
     const names = ASSISTANT_TOOLS.map((t) => t.name);
     expect(new Set(names).size).toBe(names.length);
     expect(names.sort()).toEqual(
@@ -131,6 +131,8 @@ describe('tool registry', () => {
         'get_channel_resources',
         'get_effective_config',
         'get_version',
+        'get_stages',
+        'edit_draft',
         'list_runs',
         'get_run',
         'get_stage',
@@ -149,7 +151,7 @@ describe('tool registry', () => {
       ASSISTANT_TOOLS.filter((t) => t.kind === 'write')
         .map((t) => t.name)
         .sort(),
-    ).toEqual(['propose_draft', 'update_metadata']);
+    ).toEqual(['edit_draft', 'propose_draft', 'update_metadata']);
   });
 
   it('narrows enums to the live registries', () => {
@@ -205,6 +207,7 @@ describe('JSON Schemas stay in sync with the Zod inputs (drift guard)', () => {
     list_styles: {},
     get_channel_resources: {},
     get_version: { version: '1.1' },
+    get_stages: { keys: ['script'], version: '1.1' },
     diff_drafts: { from: '1.0', to: 'current' },
     get_effective_config: { stageKey: 'script' },
     list_runs: { limit: 5 },
@@ -214,6 +217,16 @@ describe('JSON Schemas stay in sync with the Zod inputs (drift guard)', () => {
     read_guide: { topic: 'limits' },
     validate_draft: { draft: exampleScript() },
     propose_draft: { draft: exampleScenesToImages(), summary: 'Plan then images' },
+    edit_draft: {
+      ops: [
+        { op: 'remove_stage', key: 'a' },
+        { op: 'add_stage', stage: exampleScript().graph[0], after: 'b' },
+        { op: 'replace_stage', key: 'b', stage: exampleScript().graph[0] },
+        { op: 'update_stage', key: 'c', set: { approval: { mode: 'stage' } }, unset: ['qc'] },
+        { op: 'set_draft_field', field: 'budget', value: { runCapUsd: 3 } },
+      ],
+      summary: 'Edit',
+    },
     update_metadata: { name: 'New name', description: null, tags: ['x'], summary: 'Rename' },
     ask_user: {
       questions: [

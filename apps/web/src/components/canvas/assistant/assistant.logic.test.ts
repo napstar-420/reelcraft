@@ -256,6 +256,15 @@ describe('describeToolCall', () => {
     expect(describeToolCall({ tool: 'list_models', args: {} }, 'running')).toBe(
       'Listed the models…',
     );
+    expect(describeToolCall({ tool: 'get_stages', args: { keys: ['a'] } }, 'completed')).toBe(
+      'Read stage a',
+    );
+    expect(describeToolCall({ tool: 'get_stages', args: { keys: ['a', 'b'] } }, 'completed')).toBe(
+      'Read some stages',
+    );
+    expect(describeToolCall({ tool: 'edit_draft', args: {} }, 'completed')).toBe(
+      'Proposed changes to the draft',
+    );
     expect(describeToolCall({ tool: 'mystery', args: {} }, 'completed')).toBe('mystery');
   });
 });

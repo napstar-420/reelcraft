@@ -7,11 +7,7 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import { describe, expect, it, vi } from 'vitest';
 import { AssistantTurnError, type AgentEvent } from './assistant-agent.interface';
 import { AssistantToolServer } from './assistant-tool-server';
-import {
-  assistantClaudeEnv,
-  buildAssistantClaudeArgs,
-  ClaudeAssistantAgent,
-} from './claude-assistant.agent';
+import { buildAssistantClaudeArgs, ClaudeAssistantAgent } from './claude-assistant.agent';
 
 class FakeChild extends EventEmitter {
   stdout = new EventEmitter();
@@ -112,21 +108,6 @@ describe('buildAssistantClaudeArgs', () => {
   });
 });
 
-describe('assistantClaudeEnv', () => {
-  it('lifts the MCP result cap so a large blueprint is not spilled to a file', () => {
-    expect(assistantClaudeEnv({ PATH: '/bin' })).toEqual({
-      MAX_MCP_OUTPUT_TOKENS: '150000',
-      PATH: '/bin',
-    });
-  });
-
-  it('keeps a cap the operator set', () => {
-    expect(assistantClaudeEnv({ MAX_MCP_OUTPUT_TOKENS: '50000' }).MAX_MCP_OUTPUT_TOKENS).toBe(
-      '50000',
-    );
-  });
-});
-
 describe('ClaudeAssistantAgent', () => {
   it('starts the conversation, then resumes it on later turns', async () => {
     const { spawn, children, turn, sessionId } = await fixture();
@@ -142,6 +123,92 @@ describe('ClaudeAssistantAgent', () => {
     children[1]!.replay([init, success]);
     await second;
     expect(spawn.mock.calls[1]![0]).toEqual(expect.arrayContaining(['--resume', sessionId]));
+  });
+
+  describe('when Claude rejects the stored history', () => {
+    const message = 'API Error: 400 due to tool use concurrency issues.';
+    // what Claude Code really prints: the error as a made-up assistant message, then the result
+    const synthetic = {
+      type: 'assistant',
+      error: 'invalid_request',
+      message: { id: 'x', model: '<synthetic>', content: [{ type: 'text', text: message }] },
+    };
+    const rejected = { type: 'result', is_error: true, result: message };
+
+    it('starts a new Claude conversation, tells it, and retries the turn once', async () => {
+      const { spawn, children, turn, sessionId, events } = await fixture();
+      const first = turn();
+      await vi.waitFor(() => expect(children).toHaveLength(1));
+      children[0]!.replay([init, success]);
+      await first;
+      events.length = 0;
+
+      const second = turn();
+      await vi.waitFor(() => expect(children).toHaveLength(2));
+      children[1]!.replay([init, synthetic, rejected], 1);
+      await vi.waitFor(() => expect(children).toHaveLength(3));
+      children[2]!.replay([init, success]);
+      await second;
+      // the error text is never shown as something the assistant said
+      expect(events).toEqual([{ type: 'usage', inputTokens: 15, outputTokens: 3 }]);
+
+      expect(spawn.mock.calls[1]![0]).toEqual(expect.arrayContaining(['--resume', sessionId]));
+      const retry = spawn.mock.calls[2]![0];
+      const freshId = retry[retry.indexOf('--session-id') + 1];
+      expect(freshId).toMatch(/^[0-9a-f-]{36}$/);
+      expect(freshId).not.toBe(sessionId);
+      expect(retry).not.toContain('--resume');
+      const sent = children[2]!.stdin.end.mock.calls[0]![0] as string;
+      expect(sent).toContain('earlier messages could not be loaded');
+      expect(sent).toContain('hello');
+
+      // later turns resume the new conversation, not the broken one
+      const third = turn();
+      await vi.waitFor(() => expect(children).toHaveLength(4));
+      children[3]!.replay([init, success]);
+      await third;
+      expect(spawn.mock.calls[3]![0]).toEqual(expect.arrayContaining(['--resume', freshId]));
+      expect(children[3]!.stdin.end).toHaveBeenCalledWith('hello');
+    });
+
+    it('does not start over once the user has seen output, and fails other errors as before', async () => {
+      const { children, turn } = await fixture();
+      const first = turn();
+      await vi.waitFor(() => expect(children).toHaveLength(1));
+      children[0]!.replay([init, success]);
+      await first;
+
+      const second = turn();
+      await vi.waitFor(() => expect(children).toHaveLength(2));
+      children[1]!.replay([
+        init,
+        { type: 'assistant', message: { id: 'm1', content: [{ type: 'text', text: 'Hi' }] } },
+        rejected,
+      ]);
+      await expect(second).rejects.toThrow(/tool use concurrency/);
+      expect(children).toHaveLength(2);
+
+      const third = turn();
+      await vi.waitFor(() => expect(children).toHaveLength(3));
+      children[2]!.replay([init, { type: 'result', is_error: true, result: 'Not logged in' }], 1);
+      await expect(third).rejects.toThrow('Not logged in');
+      expect(children).toHaveLength(3);
+    });
+
+    it('gives up after one fresh start', async () => {
+      const { children, turn } = await fixture();
+      const first = turn();
+      await vi.waitFor(() => expect(children).toHaveLength(1));
+      children[0]!.replay([init, success]);
+      await first;
+      const second = turn();
+      await vi.waitFor(() => expect(children).toHaveLength(2));
+      children[1]!.replay([init, rejected], 1);
+      await vi.waitFor(() => expect(children).toHaveLength(3));
+      children[2]!.replay([init, rejected], 1);
+      await expect(second).rejects.toThrow(/tool use concurrency/);
+      expect(children).toHaveLength(3);
+    });
   });
 
   it('streams text and the finished message under one item, and reports usage', async () => {
@@ -253,6 +320,31 @@ describe('AssistantToolServer', () => {
       endpoint.release();
       await expect(connect(endpoint.token)).rejects.toThrow();
     } finally {
+      server.close();
+    }
+  });
+
+  it('lets a large tool result through whole: every tool opts out of Claude Code spilling it to a file', async () => {
+    const server = new AssistantToolServer();
+    const big = 'x'.repeat(400_000);
+    const endpoint = await server.register(
+      [{ name: 'get_blueprint', description: 'd', inputSchema: { type: 'object' } }],
+      async () => ({ ok: true, text: big }),
+    );
+    const client = new Client({ name: 'test', version: '1' });
+    await client.connect(
+      new StreamableHTTPClientTransport(new URL(endpoint.url), {
+        requestInit: { headers: { Authorization: `Bearer ${endpoint.token}` } },
+      }) as unknown as Parameters<Client['connect']>[0],
+    );
+    try {
+      const [tool] = (await client.listTools()).tools;
+      // Claude Code reads this key; without it a result over 50,000 characters becomes a 2 KB preview
+      expect(tool?._meta).toEqual({ 'anthropic/maxResultSizeChars': 500_000 });
+      const result = await client.callTool({ name: 'get_blueprint', arguments: {} });
+      expect(result.content).toEqual([{ type: 'text', text: big }]);
+    } finally {
+      await client.close();
       server.close();
     }
   });

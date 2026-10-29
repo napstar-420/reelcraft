@@ -326,7 +326,20 @@ function ApprovalCandidate({
         </div>
       </dl>
 
-      <ArtifactPreview artifact={candidate.artifact} />
+      {candidate.items.length > 0 ? (
+        candidate.items.map((item) => (
+          <div key={item.itemIndex} className="flex flex-col gap-2">
+            <h3 className="text-sm font-medium">Item {item.itemIndex + 1}</h3>
+            <ArtifactPreview artifact={item.artifact} />
+          </div>
+        ))
+      ) : candidate.artifact ? (
+        <ArtifactPreview artifact={candidate.artifact} />
+      ) : (
+        <p className="text-sm text-muted-foreground">
+          This review has no output to show. Reject it to run the stage again.
+        </p>
+      )}
 
       {candidate.attempt.checkResults !== null || candidate.attempt.qcVerdict !== null ? (
         <details className="rounded-lg border p-3">

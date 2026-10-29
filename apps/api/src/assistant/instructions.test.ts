@@ -18,7 +18,7 @@ describe('assistant instructions', () => {
 
   it('only name tools that exist, and name every tool the flow depends on', () => {
     const mentioned = new Set(
-      text.match(/\b(?:get|list|read|validate|propose|update|ask)_[a-z_]+\b/g),
+      text.match(/\b(?:get|list|read|validate|propose|edit|update|ask)_[a-z_]+\b/g),
     );
     const real = new Set(ASSISTANT_TOOLS.map((t) => t.name));
     expect([...mentioned].filter((name) => !real.has(name))).toEqual([]);
@@ -26,6 +26,8 @@ describe('assistant instructions', () => {
       'get_blueprint',
       'validate_draft',
       'propose_draft',
+      'edit_draft',
+      'get_stages',
       'ask_user',
       'read_guide',
     ]) {

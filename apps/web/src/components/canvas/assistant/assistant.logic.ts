@@ -183,6 +183,10 @@ export function describeToolCall(call: ToolCallPayload, state: string | null): s
         return 'Read the blueprint';
       case 'get_version':
         return `Read version ${typeof args.version === 'string' ? args.version : ''}`.trim();
+      case 'get_stages':
+        return Array.isArray(args.keys) && args.keys.length === 1
+          ? `Read stage ${String(args.keys[0])}`
+          : 'Read some stages';
       case 'diff_drafts':
         return 'Compared two versions';
       case 'get_effective_config':
@@ -213,6 +217,8 @@ export function describeToolCall(call: ToolCallPayload, state: string | null): s
         return 'Checked a draft';
       case 'propose_draft':
         return 'Proposed a draft';
+      case 'edit_draft':
+        return 'Proposed changes to the draft';
       case 'update_metadata':
         return 'Proposed a new name, description or tags';
       case 'ask_user':
