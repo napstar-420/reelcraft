@@ -32,6 +32,10 @@ export const PROVIDER_INFO: Record<ProviderKeyId, { use: string; keyUrl: string 
     use: 'Voice-over, transcription and captions.',
     keyUrl: 'https://console.deepgram.com',
   },
+  voicestudio: {
+    use: 'Only needed when VoiceStudio was started with an API key (OMNIVOICE_API_KEY) and Reelcraft reaches it from Docker or another computer. Enter the same key here.',
+    keyUrl: 'https://github.com/debpalash/VoiceStudio/blob/main/docs/api-auth.md',
+  },
 };
 
 export type Tone = 'ok' | 'muted' | 'warn';

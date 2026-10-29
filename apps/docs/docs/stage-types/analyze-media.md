@@ -17,8 +17,9 @@ A `data` output. What's in it depends on the **Operation**:
 
 ## Providers and models
 
-For **Transcribe align**: **Deepgram** (Nova 3) or **Fake (test)**. It needs a Deepgram key. See
-[AI provider keys](../provider-keys.md). Choose the model under **Model** or set a **Media analysis**
+For **Transcribe align**: **VoiceStudio** (**VoiceStudio transcription**, free, on your computer; see
+[VoiceStudio](../voice-studio.md)), **Deepgram** (Nova 3, paid; it needs a Deepgram key, see
+[AI provider keys](../provider-keys.md)) or **Fake (test)**. Choose the model under **Model** or set a **Media analysis**
 [default](../channels/defaults.md). **Probe** doesn't use a model.
 
 ## Inputs
@@ -29,12 +30,12 @@ For **Transcribe align**: **Deepgram** (Nova 3) or **Fake (test)**. It needs a D
 ## Settings
 
 - **operation**, under **Config**: **Transcribe align** (speech to text with word timings, using
-  Deepgram, paid) or **Probe** (reads the length and streams locally, free). It starts as Transcribe
+  VoiceStudio, free, or Deepgram, paid) or **Probe** (reads the length and streams locally, free). It starts as Transcribe
   align.
 
 ## Cost
 
-Transcribing is billed by Deepgram **by the length of the audio**. Reelcraft estimates the cost from
+Transcribing with VoiceStudio costs nothing. Deepgram bills it **by the length of the audio**. Reelcraft estimates the cost from
 the file's length before it starts. Probe costs nothing.
 
 Reelcraft sends the audio to Deepgram itself, so **Transcribe align** works on a desktop install

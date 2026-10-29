@@ -53,6 +53,12 @@ export interface ProviderAttachment {
   filename: string;
 }
 
+/** Why a stage pinned to a model can't run as saved: an error blocks saving, a warning doesn't. */
+export interface ModelIssue {
+  message: string;
+  severity: 'error' | 'warning';
+}
+
 export interface ProviderResult {
   output: unknown;
   costUsd: number;
@@ -106,6 +112,9 @@ export interface ProviderAdapter {
   listVoices?(query: VoiceQuery): Promise<VoiceListDto>;
   /** Text-to-speech providers: why these params can't be used together, if they can't. */
   speechConflict?(modelId: string, params: Record<string, unknown>): string | undefined;
+  /** Providers backed by a service the user runs: whether `modelId` can run there now. Checked
+   * when a blueprint is saved, before the model is looked up in `listModels`. */
+  checkModel?(modelId: string): Promise<ModelIssue | undefined>;
   /** Text-to-speech providers with pronunciation dictionaries in the account. */
   listPronunciationDictionaries?(): Promise<PronunciationDictionaryListDto>;
 }

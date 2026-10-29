@@ -32,6 +32,7 @@ before paying for anything. To make real videos, connect one or more of these la
 | What                                  | Used for                                                     | Set up in                              |
 | ------------------------------------- | ------------------------------------------------------------ | -------------------------------------- |
 | OpenRouter, fal, ElevenLabs, Deepgram | Paid AI services for text, images, video, voice and captions | [AI provider keys](./provider-keys.md) |
+| VoiceStudio                           | Free voice-over, cloned voices and captions on your computer | [VoiceStudio](./voice-studio.md)       |
 | BrowserOS Neo                         | Using your ChatGPT plan in a browser on your computer        | [BrowserOS Neo](./browseros-neo.md)    |
 | Codex                                 | Using your ChatGPT plan through OpenAI's Codex               | [Connect Codex](./codex.md)            |
 | Claude                                | Using your Claude plan through Anthropic's Claude Code       | [Connect Claude](./claude-code.md)     |

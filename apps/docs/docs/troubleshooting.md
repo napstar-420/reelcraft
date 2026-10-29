@@ -103,6 +103,20 @@ its own every 6 hours.
 
 See [Generate Speech](./stage-types/generate-speech.md#if-it-fails).
 
+## VoiceStudio isn't reachable
+
+- Open VoiceStudio, wait until it has started, and select **Check again** in **Settings →
+  VoiceStudio**.
+- Reelcraft in Docker looks for it at `http://host.docker.internal:3900`. On Linux without Docker
+  Desktop, start the container with `--add-host=host.docker.internal:host-gateway`.
+- **"VoiceStudio refused the request"**: VoiceStudio was started with an API key. Enter the same key
+  under **API key (optional)** in **Settings → VoiceStudio**.
+- **"VoiceStudio has no installed engine"**: the stage uses an engine that isn't installed in
+  VoiceStudio. Install it in VoiceStudio's Model Catalogue, or choose another.
+
+A run that failed because VoiceStudio was closed can be retried once it is open. See
+[VoiceStudio](./voice-studio.md).
+
 ## Deepgram transcription doesn't work
 
 The stage's error ends with Deepgram's own reason. A key problem shows up there; click **Test** under

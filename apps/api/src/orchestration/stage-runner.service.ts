@@ -1675,7 +1675,7 @@ export class StageRunnerService {
             ? { sourceKey: persistedMedia.storageKey, mime: persistedMedia.mime ?? 'image/png' }
             : undefined;
         // "Include transcript" on an audio output: the judge listens to the
-        // file when its model accepts audio, otherwise Deepgram transcribes it.
+        // file when its model accepts audio, otherwise VoiceStudio or Deepgram transcribes it.
         let qcTranscript: string | undefined;
         if (
           stage.qc.media?.includeTranscript &&
@@ -1692,6 +1692,7 @@ export class StageRunnerService {
               const transcribed = await this.qcAudio.transcribe(
                 persistedMedia.storageKey,
                 audioMime,
+                audioMode.by,
               );
               qcTranscript = transcribed.transcript;
               await this.ledger.recordActual({

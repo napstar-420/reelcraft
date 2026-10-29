@@ -120,6 +120,10 @@ describe('assistant guide coverage', () => {
       '../blueprint/blueprint-validator.service.ts',
       '../blueprint/blueprint.service.ts',
       './tools/quality-checks.ts',
+      // Messages a provider or QC's audio check adds to validation.
+      '../provider/voicestudio/voicestudio.adapter.ts',
+      '../provider/voicestudio/voicestudio-client.ts',
+      '../qc/qc-audio.ts',
     ]
       .map((f) => readFileSync(path.join(__dirname, f), 'utf8'))
       .join('\n');

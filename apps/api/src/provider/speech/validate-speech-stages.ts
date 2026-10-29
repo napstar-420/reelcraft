@@ -28,6 +28,11 @@ export async function validateSpeechStages(
     if (!pin?.provider || !pin.modelId || pin.provider === 'fake') continue;
     const path = `stages.${stage.key}.model`;
     const adapter = providers.get(pin.provider);
+    const problem = await adapter.checkModel?.(pin.modelId);
+    if (problem) {
+      issues.push({ path: `${path}.modelId`, ...problem });
+      if (problem.severity === 'error') continue;
+    }
     const model = (await adapter.listModels()).find((m) => m.modelId === pin.modelId);
     if (!model) {
       if (pin.provider === 'deepgram') {
@@ -74,7 +79,7 @@ export async function validateSpeechStages(
     if (writesTiming) {
       const canTime = model.capabilities.speech.settings.some((s) => s.key === 'wordTimings');
       const message = !canTime
-        ? `${model.label} can't return word timings. Use ElevenLabs, or add an Analyze Media stage after this one.`
+        ? `${model.label} can't return word timings. Use ElevenLabs or VoiceStudio, or add an Analyze Media stage after this one.`
         : params.wordTimings !== true
           ? 'This stage writes the word timings, but Word timings is off in its model settings. Turn it on.'
           : undefined;

@@ -1,5 +1,6 @@
+import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Trash2, Image, Video, Music, Type, Palette, Shapes, Box } from 'lucide-react';
+import { Trash2, Image, Video, Music, Type, Palette, Shapes, Box, AudioLines } from 'lucide-react';
 import type { AssetDto, AssetKind } from '@reelcraft/shared';
 import { api } from '@/api/client';
 import { Button } from '@/components/ui/button';
@@ -7,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { ASSET_KIND_LABELS } from '@/lib/display-names';
 import { Card, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { PlaceholderArt } from '@/components/placeholder-art';
+import { CloneVoiceDialog } from '@/components/voicestudio/CloneVoiceDialog';
 
 const KIND_ICONS: Record<AssetKind, typeof Image> = {
   'media.image': Image,
@@ -43,6 +45,10 @@ export function AssetCard({ asset, channelId }: { asset: AssetDto; channelId: st
     mutationFn: () => api.deleteAsset(asset.id),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['assets', channelId] }),
   });
+
+  const [cloning, setCloning] = useState(false);
+  // A voice can be cloned from any recording of someone speaking, audio or video.
+  const hasVoice = asset.kind === 'media.audio' || asset.kind === 'media.video';
 
   const Icon = KIND_ICONS[asset.kind];
   // Images always report durationSec: 0 (ffprobe has no duration for a still
@@ -110,6 +116,15 @@ export function AssetCard({ asset, channelId }: { asset: AssetDto; channelId: st
               {tag}
             </Badge>
           ))}
+        </CardFooter>
+      )}
+      {hasVoice && (
+        <CardFooter className={asset.tags.length > 0 ? '' : 'mt-auto'}>
+          <Button type="button" variant="outline" size="sm" onClick={() => setCloning(true)}>
+            <AudioLines />
+            Make a VoiceStudio voice
+          </Button>
+          {cloning && <CloneVoiceDialog asset={asset} open={cloning} onOpenChange={setCloning} />}
         </CardFooter>
       )}
     </Card>

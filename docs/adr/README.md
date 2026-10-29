@@ -24,5 +24,6 @@ one, take the next number, and add a row here. Supersede an ADR instead of editi
 | [0015](0015-layered-videos-from-generic-blocks.md)              | Layered videos are built from generic blocks, not from a style                 | accepted                             | 2026-10-15 |
 | [0016](0016-claude-through-claude-code-cli.md)                  | Claude runs through the Claude Code CLI, signed in with the user's Claude plan | accepted                             | 2026-10-18 |
 | [0017](0017-motion-graphics-as-model-written-remotion-clips.md) | Motion graphics are model-written Remotion clips                               | accepted                             | 2026-10-20 |
+| [0018](0018-voicestudio-as-an-external-voice-service.md)        | VoiceStudio is an external voice service, reached by URL                       | accepted                             | 2026-10-29 |
 
 ADRs 0001–0007 were decided during the self-hosting work in October 2026 and recorded together on 2026-10-03, so the dates are when they were written down.

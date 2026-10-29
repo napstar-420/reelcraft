@@ -13,6 +13,28 @@ export interface TroubleshootingEntry {
 
 export const TROUBLESHOOTING: TroubleshootingEntry[] = [
   {
+    matches: [
+      "VoiceStudio isn't reachable",
+      'VoiceStudio is still starting',
+      'VoiceStudio refused',
+    ],
+    means:
+      'A stage uses VoiceStudio, the voice app the user runs themselves, and Reelcraft cannot use it right now: it is closed, still starting, at another address, or asks for an API key. It is only a warning: the blueprint can be saved, and a run stops at that stage until VoiceStudio answers.',
+    fix: 'Tell the user to start VoiceStudio, or to check its address and API key in Settings → VoiceStudio. Nothing in the blueprint needs to change.',
+  },
+  {
+    matches: ['VoiceStudio has no installed engine'],
+    means:
+      'The stage is pinned to a VoiceStudio speech engine that is not installed in VoiceStudio.',
+    fix: 'Pick one of the engines list_models returns for provider voicestudio, or ask the user to install that engine in VoiceStudio’s Model Catalogue.',
+  },
+  {
+    matches: ['so VoiceStudio transcribes it for the judge, but VoiceStudio'],
+    means:
+      'QC Include transcript needs VoiceStudio (or a Deepgram key) to transcribe the audio for a judge that cannot listen, and VoiceStudio is closed.',
+    fix: 'Ask the user to start VoiceStudio before running, or choose a judge model whose inputKinds include media.audio.',
+  },
+  {
     matches: ['Disabled ancestor:'],
     means:
       'An upstream stage is manually disabled, so descendants cannot run or consume its outputs.',

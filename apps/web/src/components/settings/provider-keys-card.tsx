@@ -23,18 +23,29 @@ export function ProviderKeysCard({ settings }: { settings: SettingsDto }) {
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-5">
-        {settings.keys.map((key, index) => (
-          <div key={key.id} className="flex flex-col gap-5">
-            {index > 0 ? <Separator /> : null}
-            <ProviderKeyRow status={key} />
-          </div>
-        ))}
+        {/* VoiceStudio's optional key lives on its own card. */}
+        {settings.keys
+          .filter((key) => key.id !== 'voicestudio')
+          .map((key, index) => (
+            <div key={key.id} className="flex flex-col gap-5">
+              {index > 0 ? <Separator /> : null}
+              <ProviderKeyRow status={key} />
+            </div>
+          ))}
       </CardContent>
     </Card>
   );
 }
 
-function ProviderKeyRow({ status }: { status: ProviderKeyStatusDto }) {
+export function ProviderKeyRow({
+  status,
+  label = status.label,
+  linkText = 'Get a key',
+}: {
+  status: ProviderKeyStatusDto;
+  label?: string;
+  linkText?: string;
+}) {
   const queryClient = useQueryClient();
   const [value, setValue] = useState('');
   const [test, setTest] = useState<ConnectionTestDto | null>(null);
@@ -75,7 +86,7 @@ function ProviderKeyRow({ status }: { status: ProviderKeyStatusDto }) {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <Label htmlFor={inputId} className="text-sm font-medium">
-            {status.label}
+            {label}
           </Label>
           <p className="text-xs text-muted-foreground">
             {info.use}{' '}
@@ -85,7 +96,7 @@ function ProviderKeyRow({ status }: { status: ProviderKeyStatusDto }) {
               rel="noreferrer"
               className="inline-flex items-center gap-0.5 underline underline-offset-2"
             >
-              Get a key <ExternalLink className="size-3" />
+              {linkText} <ExternalLink className="size-3" />
             </a>
           </p>
         </div>
