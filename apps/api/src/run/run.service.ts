@@ -1360,6 +1360,8 @@ export class RunService {
       itemIndex = item.itemIndex;
     } else if (execution.state !== 'awaiting_approval') {
       throw new ConflictException('The stage is no longer awaiting approval');
+    } else if (execution.isIterating) {
+      return this.wholeStageCandidate(runRow.ownerId, runId, stageKey, execution.id, wait.id);
     }
 
     const attemptWhere = wait.stageItemId
@@ -1423,6 +1425,65 @@ export class RunService {
         createdAt: attempt.createdAt,
       },
       artifact: await this.toArtifactView(runRow.ownerId, candidate),
+      items: [],
+    };
+  }
+
+  /** An iterating stage reviewed as a whole: every item's accepted output,
+   * judged together, with the newest item attempt as the attempt shown. */
+  private async wholeStageCandidate(
+    ownerId: string,
+    runId: string,
+    stageKey: string,
+    executionId: string,
+    waitId: string,
+  ) {
+    const [attempt] = await this.db
+      .select()
+      .from(stageAttempt)
+      .where(eq(stageAttempt.stageExecutionId, executionId))
+      .orderBy(desc(stageAttempt.createdAt))
+      .limit(1);
+    if (!attempt) throw new ConflictException('No pending approval candidate exists');
+    const outputs = await this.db
+      .select()
+      .from(artifact)
+      .where(
+        and(
+          eq(artifact.runId, runId),
+          eq(artifact.producerStageKey, stageKey),
+          eq(artifact.stale, false),
+        ),
+      )
+      .orderBy(asc(artifact.itemIndex));
+    const items = await Promise.all(
+      outputs.map(async (row) => ({
+        itemIndex: row.itemIndex ?? 0,
+        artifact: await this.toArtifactView(ownerId, row),
+      })),
+    );
+    const [stillOpen] = await this.db
+      .select({ id: humanWait.id })
+      .from(humanWait)
+      .where(and(eq(humanWait.id, waitId), isNull(humanWait.resolvedAt)))
+      .limit(1);
+    if (!stillOpen)
+      throw new ConflictException('The approval was resolved while loading its candidate');
+    return {
+      stageKey,
+      itemIndex: null,
+      pendingItemIndexes: [],
+      attempt: {
+        id: attempt.id,
+        attemptNo: attempt.attemptNo,
+        checkResults: null,
+        qcVerdict: null,
+        qcUnavailable: null,
+        costUsd: toUsd(attempt.costUsd),
+        createdAt: attempt.createdAt,
+      },
+      artifact: items.at(-1)?.artifact ?? null,
+      items,
     };
   }
 

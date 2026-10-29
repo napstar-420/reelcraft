@@ -591,4 +591,97 @@ describe('phase 7 chunk 6 — item-mode approval (e2e)', () => {
     const [runAfter] = await testDb.db.select().from(run).where(eq(run.id, created.id));
     expect(runAfter?.cursorStageKey).toBe('style');
   });
+  /** Every item of a stage reviewed as a whole passes on its own; the stage
+   * then waits once, for all of them. */
+  async function runAllItems(setup: Awaited<ReturnType<typeof setUpBroll>>, itemCount: number) {
+    const { created, runner, brollExecution, stage, effective, prevStageKey } = setup;
+    for (let i = 0; i < itemCount; i += 1) {
+      const item = await runner.itemState(brollExecution.id, i);
+      const result = await runOneItemAttempt(
+        runner,
+        created.id,
+        brollExecution.id,
+        stage,
+        effective,
+        prevStageKey,
+        i,
+        item.id,
+      );
+      expect(result.outcome).toBe('success');
+    }
+    const [owner] = await testDb.db.select().from(run).where(eq(run.id, created.id));
+    return runner.finishIteratingStage(brollExecution.id, owner!.executionEpoch, true);
+  }
+
+  it('stage-mode review of an iterating stage runs every item, then waits once and approves the whole stage', async () => {
+    const setup = await setUpBroll([
+      shotsStage(['ok0', 'ok1', 'ok2']),
+      brollStage(0, { approval: { mode: 'stage' } }),
+    ]);
+    const { created, brollExecution } = setup;
+
+    const finished = await runAllItems(setup, 3);
+    expect(finished.awaitingApproval).toBe(true);
+    const [waiting] = await testDb.db
+      .select()
+      .from(stageExecution)
+      .where(eq(stageExecution.id, brollExecution.id));
+    expect(waiting?.state).toBe('awaiting_approval');
+    const openWaits = await testDb.db
+      .select()
+      .from(humanWait)
+      .where(and(eq(humanWait.stageExecutionId, brollExecution.id), isNull(humanWait.resolvedAt)));
+    expect(openWaits).toHaveLength(1);
+    expect(openWaits[0]?.stageItemId).toBeNull();
+
+    await pauseRunForApproval(created.id, 'broll');
+    const candidate = await testApp.app.get(RunService).approvalCandidate(created.id, 'broll');
+    expect(candidate.items.map((item) => item.itemIndex)).toEqual([0, 1, 2]);
+
+    await testApp.app.get(HumanActionService).approve(created.id, 'broll');
+    const [approved] = await testDb.db
+      .select()
+      .from(stageExecution)
+      .where(eq(stageExecution.id, brollExecution.id));
+    expect(approved?.state).toBe('passed');
+    const stillOpen = await testDb.db
+      .select()
+      .from(humanWait)
+      .where(and(eq(humanWait.stageExecutionId, brollExecution.id), isNull(humanWait.resolvedAt)));
+    expect(stillOpen).toHaveLength(0);
+  });
+
+  it('rejecting a whole-stage review reruns every item with the note', async () => {
+    const setup = await setUpBroll([
+      shotsStage(['ok0', 'ok1']),
+      brollStage(0, { approval: { mode: 'stage' } }),
+    ]);
+    const { created, runner, brollExecution } = setup;
+    await runAllItems(setup, 2);
+
+    await pauseRunForApproval(created.id, 'broll');
+    const humanActions = testApp.app.get(HumanActionService);
+    const preview = await humanActions.reject(created.id, 'broll', 'tighter framing');
+    await humanActions.reject(
+      created.id,
+      'broll',
+      'tighter framing',
+      (preview as { previewToken: string }).previewToken,
+    );
+
+    for (const i of [0, 1]) {
+      expect((await runner.itemState(brollExecution.id, i)).state).not.toBe('passed');
+    }
+    const rejected = await testDb.db
+      .select()
+      .from(stageAttempt)
+      .where(
+        and(
+          eq(stageAttempt.stageExecutionId, brollExecution.id),
+          eq(stageAttempt.outcome, 'rejected'),
+        ),
+      );
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0]?.reviewNote).toBe('tighter framing');
+  });
 });

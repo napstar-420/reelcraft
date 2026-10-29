@@ -330,7 +330,12 @@ export const ApprovalCandidateDto = z.object({
     costUsd: z.number(),
     createdAt: z.string(),
   }),
-  artifact: ArtifactViewDto,
+  /** The output under review; null when a whole-stage review has none left. */
+  artifact: ArtifactViewDto.nullable(),
+  /** A stage that runs items but is reviewed as a whole: every item's output. */
+  items: z
+    .array(z.object({ itemIndex: z.number().int().nonnegative(), artifact: ArtifactViewDto }))
+    .default([]),
 });
 export type ApprovalCandidateDto = z.infer<typeof ApprovalCandidateDto>;
 

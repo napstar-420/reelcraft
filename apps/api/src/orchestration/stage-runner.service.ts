@@ -1829,7 +1829,9 @@ export class StageRunnerService {
         return { outcome: 'run_not_running' as const };
       }
 
-      if (stage.approval) {
+      // A stage reviewed as a whole lets each item pass; `finishIteratingStage`
+      // asks for the one review once every item has.
+      if (stage.approval && !(ctx.stageItemId && approvalModeOf(stage) === 'stage')) {
         await this.openApprovalGate(tx, stage, ctx, checkResults);
         return { outcome: 'approval_required' as const, artifactId };
       }
@@ -2135,7 +2137,7 @@ export class StageRunnerService {
       })
       .where(eq(stageAttempt.id, ctx.stageAttemptId));
 
-    if (approvalModeOf(stage) === 'stage') {
+    if (!ctx.stageItemId) {
       await tx
         .update(stageExecution)
         .set({ state: 'awaiting_approval' })
@@ -2147,18 +2149,13 @@ export class StageRunnerService {
       });
       return;
     }
-    // phase 7 chunk 6 — item-mode approval: the pause is scoped to this ONE
-    // item. `stage_execution` is deliberately left alone (still 'running') —
-    // the outer per-item loop only flips it to 'passed' once every item has,
-    // via `finishIteratingStage` (Locked Decision 5/6), so it must not read
+    // phase 7 chunk 6 — an item's output (item-mode approval, or a QC hold on
+    // any iterating stage): the pause is scoped to this ONE item.
+    // `stage_execution` is deliberately left alone (still 'running') — the
+    // outer per-item loop only flips it to 'passed' once every item has, via
+    // `finishIteratingStage` (Locked Decision 5/6), so it must not read
     // `awaiting_approval` while sibling items may still be pending or
-    // already passed. Item mode implies `stage.iterate`, whose attempts
-    // always carry a `stageItemId` — a defensive assertion, not a real branch.
-    if (!ctx.stageItemId) {
-      throw new Error(
-        'StageRunnerService: item-mode approval requires an item-scoped attempt (stageItemId missing)',
-      );
-    }
+    // already passed.
     await tx
       .update(stageItem)
       .set({ state: 'awaiting_approval' })
@@ -2687,7 +2684,8 @@ export class StageRunnerService {
   async finishIteratingStage(
     stageExecutionId: string,
     executionEpoch = 0,
-  ): Promise<{ artifactId: string }> {
+    awaitApproval = false,
+  ): Promise<{ artifactId: string; awaitingApproval: boolean }> {
     const [execution] = await this.db
       .select({
         itemCount: stageExecution.itemCount,
@@ -2720,23 +2718,35 @@ export class StageRunnerService {
         `StageRunnerService.finishIteratingStage: last item of ${stageExecutionId} has no outputArtifactId`,
       );
     }
-    await this.db
-      .update(stageExecution)
-      .set({
-        state: 'passed',
-        failure: null,
-        endedAt: new Date().toISOString(),
-        outputArtifactId: lastItem?.outputArtifactId ?? null,
-      })
-      .where(
-        and(
-          eq(stageExecution.id, stageExecutionId),
-          executionEpoch === undefined
-            ? undefined
-            : sql`exists (select 1 from ${run} where ${run.id} = ${execution.runId} and ${run.executionEpoch} = ${executionEpoch} and ${run.state} in ('RUNNING','PAUSING'))`,
-        ),
-      );
+    // A stage reviewed as a whole waits for one approval of all its items,
+    // which are already accepted one by one; Approve then marks it passed.
+    await this.db.transaction(async (tx) => {
+      const [updated] = await tx
+        .update(stageExecution)
+        .set({
+          state: awaitApproval ? 'awaiting_approval' : 'passed',
+          failure: null,
+          ...(!awaitApproval && { endedAt: new Date().toISOString() }),
+          outputArtifactId: lastItem?.outputArtifactId ?? null,
+        })
+        .where(
+          and(
+            eq(stageExecution.id, stageExecutionId),
+            executionEpoch === undefined
+              ? undefined
+              : sql`exists (select 1 from ${run} where ${run.id} = ${execution.runId} and ${run.executionEpoch} = ${executionEpoch} and ${run.state} in ('RUNNING','PAUSING'))`,
+          ),
+        )
+        .returning({ id: stageExecution.id });
+      if (updated && awaitApproval) {
+        await this.humanWaits.open(tx, {
+          runId: execution.runId,
+          stageExecutionId,
+          kind: 'approval',
+        });
+      }
+    });
     this.events.publishStageChanged(execution.runId, execution.stageKey);
-    return { artifactId: lastItem?.outputArtifactId ?? '' };
+    return { artifactId: lastItem?.outputArtifactId ?? '', awaitingApproval: awaitApproval };
   }
 }
