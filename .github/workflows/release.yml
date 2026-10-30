@@ -107,7 +107,12 @@ jobs:
             REELCRAFT_VERSION=${{ env.VERSION }}
             REELCRAFT_REVISION=${{ github.sha }}
             REELCRAFT_RUNTIME_VERSION=${{ steps.meta.outputs.runtime }}
-          cache-from: type=gha,scope=release-${{ matrix.arch }}
+          # CI's cache supplies the build stage and MinIO; the runtime stage
+          # still rebuilds for each release (its RUN steps see the version),
+          # so released images get current Ubuntu packages.
+          cache-from: |
+            type=gha,scope=release-${{ matrix.arch }}
+            type=gha,scope=image-${{ matrix.arch }}
           cache-to: type=gha,scope=release-${{ matrix.arch }},mode=max
 
       - name: Smoke test
@@ -125,7 +130,9 @@ jobs:
             REELCRAFT_REVISION=${{ github.sha }}
             REELCRAFT_RUNTIME_VERSION=${{ steps.meta.outputs.runtime }}
           outputs: type=image,"name=${{ steps.meta.outputs.names }}",push-by-digest=true,name-canonical=true,push=true
-          cache-from: type=gha,scope=release-${{ matrix.arch }}
+          cache-from: |
+            type=gha,scope=release-${{ matrix.arch }}
+            type=gha,scope=image-${{ matrix.arch }}
 
       - name: Export digest
         run: |

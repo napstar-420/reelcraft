@@ -1,12 +1,33 @@
 name: CI
 
+# Pull requests get one run per commit; main gets a run per push. (Running on
+# every branch push as well ran everything twice for each PR commit.)
 on:
   push:
+    branches: [main]
   pull_request:
+  workflow_dispatch:
+
+# A new commit on a PR cancels the run for the one before it. Runs on main
+# always finish.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
-  check:
+  # Lint, formatting, typechecks and the unit/release tests run in the
+  # pre-commit hook (.husky/pre-commit), not here. CI runs only what needs
+  # services: the E2E suite (Postgres) and the image (Docker).
+  #
+  # The E2E specs run one at a time against Postgres, so they are split across
+  # shards, each with its own database.
+  e2e:
+    name: e2e (${{ matrix.shard }}/2)
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     services:
       postgres:
         image: postgres:16-alpine
@@ -30,14 +51,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @reelcraft/shared build
-      - run: pnpm typecheck
-      - run: pnpm --filter @reelcraft/api typecheck
-      - run: pnpm lint
-      - run: pnpm format:check
-      - run: pnpm --filter @reelcraft/shared test
-      - run: pnpm --filter @reelcraft/api test
-      - run: pnpm test:release
-      - run: pnpm --filter @reelcraft/api test:e2e
+      - run: pnpm --filter @reelcraft/api run test:e2e --shard=${{ matrix.shard }}/2
         env:
           TEST_DATABASE_URL: postgres://reelcraft:reelcraft@localhost:5432/reelcraft
 
@@ -65,6 +79,9 @@ jobs:
       - uses: docker/setup-buildx-action@v3
       - id: runtime
         run: echo "version=$(cat docker/app/RUNTIME_VERSION)" >> "$GITHUB_OUTPUT"
+      # REELCRAFT_VERSION is the same for every CI build: the runtime stage's
+      # RUN steps (apt, s6, agent CLIs, Chrome) see it, so a per-commit value
+      # would rebuild them all every time. The commit is in the revision label.
       - uses: docker/build-push-action@v6
         with:
           context: .
@@ -72,7 +89,7 @@ jobs:
           load: true
           tags: reelcraft:ci
           build-args: |
-            REELCRAFT_VERSION=ci-${{ github.sha }}
+            REELCRAFT_VERSION=ci
             REELCRAFT_REVISION=${{ github.sha }}
             REELCRAFT_RUNTIME_VERSION=${{ steps.runtime.outputs.version }}
           cache-from: type=gha,scope=image-${{ matrix.arch }}

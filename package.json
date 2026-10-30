@@ -7,6 +7,7 @@
   },
   "packageManager": "pnpm@9.15.0",
   "scripts": {
+    "prepare": "husky || true",
     "dev": "pnpm --parallel --filter @reelcraft/api --filter @reelcraft/web dev",
     "build": "pnpm -r build",
     "typecheck": "tsc -b tsconfig.json",
@@ -23,11 +24,13 @@
     "tts": "uv run --directory services/qwen-tts --extra engine qwen-tts-service"
   },
   "devDependencies": {
-    "typescript-eslint": "^8.18.0",
     "eslint": "^9.17.0",
     "eslint-config-prettier": "^9.1.0",
     "eslint-plugin-import": "^2.31.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^15.5.2",
     "prettier": "^3.4.2",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.18.0"
   }
 }

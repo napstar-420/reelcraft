@@ -1,0 +1,9 @@
+# Every check that runs without services. CI doesn't run these, so this hook
+# is where they are enforced; CI keeps only the E2E (Postgres) and image tests.
+pnpm exec lint-staged
+pnpm --filter @reelcraft/shared build
+pnpm typecheck
+pnpm --filter @reelcraft/api typecheck
+pnpm --filter @reelcraft/shared test
+pnpm --filter @reelcraft/api test
+pnpm test:release

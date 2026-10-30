@@ -13,7 +13,7 @@
 ```bash
 pnpm dev                         # API :3000 and web :5173
 pnpm typecheck                   # root TS project references
-pnpm lint && pnpm format:check   # CI style checks
+pnpm lint && pnpm format:check   # style checks (pre-commit hook)
 pnpm test                        # shared + API unit suites
 pnpm test:e2e                    # API E2E suite; requires PostgreSQL
 pnpm test:release                # release manifest signing tests
@@ -69,7 +69,7 @@ Reelcraft is a generic video creator. Build small, reusable blocks that combine 
 
 - Place unit tests beside source as `*.test.ts`; place API E2E tests in `apps/api/test/e2e/*.e2e.test.ts`.
 - API unit tests use Vitest with SWC to preserve Nest decorator metadata. E2E tests require `TEST_DATABASE_URL`/Postgres.
-- CI runs shared build, root/API typechecks, lint, formatting, shared/API unit tests, then API E2E tests.
+- The pre-commit hook (`.husky/pre-commit`, installed by `pnpm install`) runs lint and Prettier on staged files, the shared build, root/API typechecks, shared/API unit tests and `pnpm test:release`; CI does not repeat them. CI runs only the API E2E tests (two shards against Postgres) and the image build, smoke and update tests. Don't skip the hook with `--no-verify`.
 - FFmpeg/ffprobe and Chrome/Chromium are required only for local media/render acceptance scripts, not normal CI.
 
 ## Git
