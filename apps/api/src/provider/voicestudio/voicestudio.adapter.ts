@@ -85,6 +85,8 @@ export class VoiceStudioAdapter implements ProviderAdapter {
   private lastEngines: VoiceStudioEngine[] = [];
   /** Everything it last listed, usable or not, to say why an engine can't be used. */
   private lastListed: VoiceStudioEngine[] = [];
+  /** The VoiceStudio address the cached lists came from. */
+  private listedAt: string | undefined;
 
   constructor(
     @Inject(VoiceStudioClient)
@@ -122,7 +124,17 @@ export class VoiceStudioAdapter implements ProviderAdapter {
       };
     }
     if (modelId === TRANSCRIBE_MODEL.modelId) return undefined;
-    const issue = engineIssue(modelId, (await this.engines()).listed);
+    const { listed, live } = await this.engines();
+    if (!live) {
+      // VoiceStudio answered but didn't list its engines: unknown, not missing.
+      return listed.some((engine) => engine.id === modelId)
+        ? undefined
+        : {
+            message: `VoiceStudio didn't list its engines just now, so Reelcraft couldn't check "${modelId}". If the run stops at this stage, check the engine in VoiceStudio.`,
+            severity: 'warning',
+          };
+    }
+    const issue = engineIssue(modelId, listed);
     return issue ? { message: issue, severity: 'error' } : undefined;
   }
 
@@ -398,6 +410,14 @@ export class VoiceStudioAdapter implements ProviderAdapter {
     listed: VoiceStudioEngine[];
     live: boolean;
   }> {
+    // What it last listed belongs to the address it came from: another address is another
+    // VoiceStudio, with its own engines.
+    const base = await this.client.baseUrl();
+    if (base !== this.listedAt) {
+      this.listedAt = base;
+      this.lastListed = [];
+      this.lastEngines = [];
+    }
     const answer = await this.lookup<{ backends?: VoiceStudioEngine[] }>('/engines/tts');
     if (answer?.backends) {
       this.lastListed = answer.backends;

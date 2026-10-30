@@ -234,6 +234,25 @@ describe('VoiceStudioAdapter', () => {
     expect(only!.unavailableModalities?.audio).toBe(DOWN.error);
   });
 
+  it('forgets the engines of a previous address', async () => {
+    const routes: Record<string, unknown> = { '/engines/tts': { backends: [OMNI] } };
+    const { client } = fakeClient(routes);
+    const vs = adapter(client);
+    await vs.listModels();
+    delete routes['/engines/tts'];
+    client.status.mockResolvedValue(DOWN);
+    client.baseUrl = async () => 'http://other:3900';
+    expect((await vs.listModels()).map((m) => m.modelId)).toEqual(['transcribe']);
+  });
+
+  it('only warns about an engine it could not check because the listing failed', async () => {
+    const { client } = fakeClient({});
+    expect(await adapter(client).checkModel('omnivoice')).toMatchObject({
+      severity: 'warning',
+      message: expect.stringMatching(/couldn't check "omnivoice"/),
+    });
+  });
+
   it('says why there is no engine to speak with when VoiceStudio is running', async () => {
     const reasonFor = async (backends: VoiceStudioEngine[]) =>
       (await adapter(fakeClient({ '/engines/tts': { backends } }).client).listModels())[0]!

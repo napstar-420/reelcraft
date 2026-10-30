@@ -35,6 +35,12 @@ export const TROUBLESHOOTING: TroubleshootingEntry[] = [
     fix: 'Ask the user to finish setting up the engine, or accept its licence, in VoiceStudio’s Model Catalogue; or pick another engine list_models returns for provider voicestudio.',
   },
   {
+    matches: ["didn't list its engines just now"],
+    means:
+      'VoiceStudio answered, but its list of engines did not come back, so the engine this stage uses could not be checked. It is only a warning.',
+    fix: 'Nothing in the blueprint needs to change. If the run stops at this stage, ask the user to check the engine in VoiceStudio, then retry the stage.',
+  },
+  {
     matches: ['so VoiceStudio transcribes it for the judge, but VoiceStudio'],
     means:
       'QC Include transcript needs VoiceStudio (or a Deepgram key) to transcribe the audio for a judge that cannot listen, and VoiceStudio is closed.',
