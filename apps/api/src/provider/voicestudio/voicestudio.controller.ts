@@ -30,7 +30,8 @@ export class VoiceStudioController {
     return this.client.status();
   }
 
-  /** Makes a VoiceStudio voice from an audio file in the channel library. */
+  /** Creates a VoiceStudio voice from a library audio or video file. Invalid assets and
+   * VoiceStudio 4xx responses become HTTP 400; other failures become HTTP 502. */
   @Post('voices')
   async clone(
     @Body(new ZodValidationPipe(CloneVoiceStudioVoiceDto)) dto: CloneVoiceStudioVoiceDto,

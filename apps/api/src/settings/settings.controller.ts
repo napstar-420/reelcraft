@@ -157,7 +157,8 @@ export class SettingsController {
     return this.settings.voiceStudio();
   }
 
-  /** Checks VoiceStudio answers at `url` (else the saved address) and accepts the saved API key. */
+  /** Checks VoiceStudio at `url` or the configured address. The resolved API key is used only
+   * when the checked address matches the configured address. */
   @Post('voice-studio/test')
   @HttpCode(200)
   async testVoiceStudio(

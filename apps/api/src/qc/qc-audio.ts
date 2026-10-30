@@ -26,6 +26,9 @@ export const QC_AUDIO_UNAVAILABLE =
 export const QC_AUDIO_VOICESTUDIO_DOWN =
   "This judge model can't listen to audio, so VoiceStudio transcribes it for the judge, but VoiceStudio isn't reachable. Start it before running.";
 
+/** Selects direct audio for a capable judge, otherwise VoiceStudio when it is up, then Deepgram
+ * when it has a key. Without either, a configured but down VoiceStudio yields a warning; an
+ * unused VoiceStudio yields an error. */
 export function chooseQcAudioMode(
   judgeHearsAudio: boolean,
   hasDeepgramKey: boolean,
@@ -66,6 +69,8 @@ export class QcAudioService {
     }
   }
 
+  /** Selects how to provide audio to the judge. Key and VoiceStudio status lookup errors
+   * propagate when the judge cannot accept audio directly. */
   async mode(judge: Pick<ModelPin, 'provider' | 'modelId'>): Promise<QcAudioMode> {
     if (await this.judgeHearsAudio(judge)) return { mode: 'attach' };
     const hasDeepgramKey = Boolean(await this.keys.get('deepgram'));
@@ -73,7 +78,8 @@ export class QcAudioService {
   }
 
   /** Transcribes with `by`. When VoiceStudio fails (it can close mid-run) and a Deepgram key is
-   * set, Deepgram does it instead; when both fail, both reasons are given. */
+   * set, Deepgram does it instead; when both fail, both reasons are given. Without a Deepgram
+   * key the VoiceStudio error propagates, as do key lookup errors. */
   async transcribe(
     objectKey: string,
     mime: string,
