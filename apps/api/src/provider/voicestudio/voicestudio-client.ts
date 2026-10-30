@@ -4,6 +4,9 @@ import { SettingsService } from '../../settings/settings.service';
 import { SettingsKeyProvider } from '../key-provider';
 
 const HEALTH_TIMEOUT_MS = 3_000;
+/** How long a status of the configured address is reused, so validating a blueprint with many
+ * VoiceStudio stages asks once rather than once per stage. */
+const STATUS_TTL_MS = 2_000;
 
 /** VoiceStudio answered, but not with success. `status` is its HTTP status. */
 export class VoiceStudioError extends Error {
@@ -114,7 +117,23 @@ export class VoiceStudioClient {
    * nothing; quick enough for the UI to ask often.
    */
   async status(url?: string): Promise<VoiceStudioStatusDto> {
-    const base = url ? voiceStudioBaseUrl(url) : await this.baseUrl();
+    // An address being tried out is always asked afresh; the configured one is reused briefly.
+    if (url) return this.check(voiceStudioBaseUrl(url));
+    const base = await this.baseUrl();
+    const cached = this.recent;
+    if (cached && cached.base === base && cached.until > Date.now()) return cached.status;
+    const status = this.check(base);
+    this.recent = { base, until: Date.now() + STATUS_TTL_MS, status };
+    status.catch(() => {
+      if (this.recent?.status === status) this.recent = undefined;
+    });
+    return status;
+  }
+
+  private recent:
+    { base: string; until: number; status: Promise<VoiceStudioStatusDto> } | undefined;
+
+  private async check(base: string): Promise<VoiceStudioStatusDto> {
     const down = (error: string): VoiceStudioStatusDto => ({
       url: base,
       reachable: false,

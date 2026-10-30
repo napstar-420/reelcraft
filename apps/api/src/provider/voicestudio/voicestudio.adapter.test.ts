@@ -496,6 +496,23 @@ describe('VoiceStudioClient', () => {
     expect(status.error).toMatch(/Save the address first/);
   });
 
+  it('asks the configured VoiceStudio once for checks close together', async () => {
+    const fetchMock = vi.fn(async (url: string) =>
+      url.endsWith('/health') ? response({ status: 'ok' }) : response({ voices: [] }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const vs = client();
+    await Promise.all([vs.status(), vs.status(), vs.status()]);
+    await vs.status();
+    const health = (fetchMock.mock.calls as unknown as Array<[string]>).filter(([url]) =>
+      url.endsWith('/health'),
+    );
+    expect(health).toHaveLength(1);
+    // An address being tried is never answered from the cache.
+    await vs.status('http://other:3900');
+    expect(fetchMock.mock.calls.some(([url]) => String(url).startsWith('http://other'))).toBe(true);
+  });
+
   it('tests an address before it is saved', async () => {
     const fetchMock = vi.fn(async () => response({ status: 'ok' }));
     vi.stubGlobal('fetch', fetchMock);
