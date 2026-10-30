@@ -113,8 +113,8 @@ are in [`CLAUDE.md`](CLAUDE.md).
   its release PR publishes the release.
 - If you change `docker/app/Dockerfile`, `docker/app/rootfs/` or the `@remotion/renderer` version, bump
   `docker/app/RUNTIME_VERSION`. CI checks this.
-- CI runs the shared build, typecheck, lint, format check, unit tests and API end-to-end tests. Run
-  `pnpm typecheck && pnpm lint && pnpm format:check && pnpm test` before you push.
+- `pnpm install` sets up a pre-commit hook that lints and formats the staged files, typechecks and runs
+  the unit tests. CI doesn't repeat these: it runs only the API end-to-end tests and the image tests.
 - Change the user guide in `apps/docs` whenever setup, Settings or update behaviour changes.
 
 ## Status
