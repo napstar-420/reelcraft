@@ -70,11 +70,15 @@ export class QcAudioService {
   }
 
   /** Selects how to provide audio to the judge. Key and VoiceStudio status lookup errors
-   * propagate when the judge cannot accept audio directly. */
-  async mode(judge: Pick<ModelPin, 'provider' | 'modelId'>): Promise<QcAudioMode> {
+   * propagate when the judge cannot accept audio directly. `recent` reuses a VoiceStudio status
+   * from the last two seconds, for validation; a run asks afresh. */
+  async mode(
+    judge: Pick<ModelPin, 'provider' | 'modelId'>,
+    { recent = false }: { recent?: boolean } = {},
+  ): Promise<QcAudioMode> {
     if (await this.judgeHearsAudio(judge)) return { mode: 'attach' };
     const hasDeepgramKey = Boolean(await this.keys.get('deepgram'));
-    return chooseQcAudioMode(false, hasDeepgramKey, await this.voiceStudioState());
+    return chooseQcAudioMode(false, hasDeepgramKey, await this.voiceStudioState(recent));
   }
 
   /** Transcribes with `by`. When VoiceStudio fails (it can close mid-run) and a Deepgram key is
@@ -100,8 +104,10 @@ export class QcAudioService {
     }
   }
 
-  private async voiceStudioState(): Promise<VoiceStudioState> {
-    const status = await this.voiceStudioClient.status();
+  private async voiceStudioState(recent: boolean): Promise<VoiceStudioState> {
+    const status = recent
+      ? await this.voiceStudioClient.recentStatus()
+      : await this.voiceStudioClient.status();
     if (status.reachable && !status.starting && !status.error) return 'up';
     return (await this.voiceStudioClient.configured()) ? 'down' : 'unused';
   }

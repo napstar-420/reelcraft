@@ -90,7 +90,10 @@ export class VoiceStudioAdapter implements ProviderAdapter {
 
   constructor(
     @Inject(VoiceStudioClient)
-    private readonly client: Pick<VoiceStudioClient, 'baseUrl' | 'request' | 'json' | 'status'>,
+    private readonly client: Pick<
+      VoiceStudioClient,
+      'baseUrl' | 'request' | 'json' | 'status' | 'recentStatus'
+    >,
     @Inject(STORAGE_ADAPTER) private readonly storage: Pick<StorageAdapter, 'getStream'>,
     @Inject(DRIZZLE) private readonly db: Db,
   ) {}
@@ -100,7 +103,7 @@ export class VoiceStudioAdapter implements ProviderAdapter {
    * Address and status lookup errors can propagate. */
   async listModels(): Promise<ModelInfo[]> {
     const { engines, listed, live } = await this.engines();
-    const reason = live ? undefined : ((await this.client.status()).error ?? undefined);
+    const reason = live ? undefined : ((await this.client.recentStatus()).error ?? undefined);
     if (!engines.length) {
       return [
         { ...TRANSCRIBE_MODEL, unavailableModalities: { audio: reason ?? noEngineReason(listed) } },
@@ -118,7 +121,7 @@ export class VoiceStudioAdapter implements ProviderAdapter {
   /** Returns a warning when availability cannot be checked, an error for an unusable listed
    * engine, or undefined when the model passes the available checks. */
   async checkModel(modelId: string): Promise<ModelIssue | undefined> {
-    const status = await this.client.status();
+    const status = await this.client.recentStatus();
     if (!status.reachable || status.starting || status.error) {
       return {
         message: `${status.error ?? unreachableMessage(status.url)} Until it is, a run stops at this stage.`,

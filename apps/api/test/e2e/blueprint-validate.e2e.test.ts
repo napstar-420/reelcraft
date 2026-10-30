@@ -123,7 +123,7 @@ describe('BlueprintService.validateOnly (e2e)', () => {
     const { blueprints, blueprintId } = await setup();
     // VoiceStudio closed and never set up, even when a developer has it running locally.
     const voiceStudio = testApp.app.get(VoiceStudioClient);
-    vi.spyOn(voiceStudio, 'status').mockResolvedValue({
+    vi.spyOn(voiceStudio, 'recentStatus').mockResolvedValue({
       url: 'http://127.0.0.1:3900',
       reachable: false,
       starting: false,

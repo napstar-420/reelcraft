@@ -112,23 +112,35 @@ export class VoiceStudioClient {
   }
 
   /**
-   * Checks `url` or the configured address. Configured-address results are cached for two seconds;
-   * a nonempty `url` is checked afresh. Network failures become an unreachable status, and a
-   * 401 from the voice endpoint becomes a status error. Other voice endpoint errors are ignored.
-   * Settings errors can propagate.
+   * Checks `url`, or the configured address, afresh. Network failures become an unreachable
+   * status, and a 401 from the voice endpoint becomes a status error. Other voice endpoint errors
+   * are ignored. Settings errors can propagate.
    */
   async status(url?: string): Promise<VoiceStudioStatusDto> {
-    // An address being tried out is always asked afresh; the configured one is reused briefly.
-    if (url) return this.check(voiceStudioBaseUrl(url));
+    return this.check(url ? voiceStudioBaseUrl(url) : await this.baseUrl());
+  }
+
+  /**
+   * The configured address's status, reused for two seconds after a check finishes, so validating
+   * a blueprint asks VoiceStudio once rather than once per stage. Only for validation: a run and
+   * the user's "Check again" use `status`, so a stale result never decides either.
+   */
+  async recentStatus(): Promise<VoiceStudioStatusDto> {
     const base = await this.baseUrl();
     const cached = this.recent;
     if (cached && cached.base === base && cached.until > Date.now()) return cached.status;
-    const status = this.check(base);
-    this.recent = { base, until: Date.now() + STATUS_TTL_MS, status };
-    status.catch(() => {
-      if (this.recent?.status === status) this.recent = undefined;
-    });
-    return status;
+    // Valid while the check runs; the two seconds start when it settles.
+    const entry = { base, until: Infinity, status: this.check(base) };
+    this.recent = entry;
+    entry.status.then(
+      () => {
+        if (this.recent === entry) entry.until = Date.now() + STATUS_TTL_MS;
+      },
+      () => {
+        if (this.recent === entry) this.recent = undefined;
+      },
+    );
+    return entry.status;
   }
 
   private recent:

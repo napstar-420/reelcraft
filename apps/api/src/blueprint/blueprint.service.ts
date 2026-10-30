@@ -502,7 +502,7 @@ export class BlueprintService {
     const issues: ValidationIssue[] = [];
     for (const stage of dto.graph) {
       if (!stage.qc?.media?.includeTranscript || stage.output.kind !== 'media.audio') continue;
-      const mode = await this.qcAudio.mode(stage.qc.model);
+      const mode = await this.qcAudio.mode(stage.qc.model, { recent: true });
       if (mode.mode === 'unavailable') {
         issues.push({
           path: `stages.${stage.key}.qc.media.includeTranscript`,

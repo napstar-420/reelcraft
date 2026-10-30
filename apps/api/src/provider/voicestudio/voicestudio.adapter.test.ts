@@ -74,6 +74,7 @@ function fakeClient(routes: Record<string, unknown>, status: VoiceStudioStatusDt
     client: {
       baseUrl: async () => 'http://vs:3900',
       status: vi.fn(async () => status),
+      recentStatus: vi.fn(async () => status),
       json: vi.fn(async (path: string) => answer(path)),
       request: vi.fn(async (path: string, init: { json?: unknown; body?: unknown }) => {
         calls.push({ path, json: init.json, body: init.body });
@@ -219,7 +220,7 @@ describe('VoiceStudioAdapter', () => {
     const vs = adapter(client);
     expect((await vs.listModels())[0]!.unavailableModalities).toBeUndefined();
     delete routes['/engines/tts'];
-    client.status.mockResolvedValue(DOWN);
+    client.recentStatus.mockResolvedValue(DOWN);
     const models = await vs.listModels();
     expect(models.map((m) => m.modelId)).toEqual(['omnivoice', 'transcribe']);
     // Still a speech model, so the stage keeps it; the reason says why it can't speak now.
@@ -240,7 +241,7 @@ describe('VoiceStudioAdapter', () => {
     const vs = adapter(client);
     await vs.listModels();
     delete routes['/engines/tts'];
-    client.status.mockResolvedValue(DOWN);
+    client.recentStatus.mockResolvedValue(DOWN);
     client.baseUrl = async () => 'http://other:3900';
     expect((await vs.listModels()).map((m) => m.modelId)).toEqual(['transcribe']);
   });
@@ -302,6 +303,13 @@ describe('VoiceStudioAdapter', () => {
       done: true,
       outcome: 'succeeded',
     });
+  });
+
+  it('decides a run on a fresh status, not one cached for validation', async () => {
+    const { client } = fakeClient({});
+    client.recentStatus.mockResolvedValue(DOWN);
+    expect(await adapter(client).poll()).toEqual({ done: true, outcome: 'succeeded' });
+    expect(client.recentStatus).not.toHaveBeenCalled();
   });
 
   it('speaks a long script in pieces and joins them', async () => {
@@ -496,21 +504,52 @@ describe('VoiceStudioClient', () => {
     expect(status.error).toMatch(/Save the address first/);
   });
 
-  it('asks the configured VoiceStudio once for checks close together', async () => {
+  it('reuses a recent status for validation, but always asks afresh for a run or a retry', async () => {
     const fetchMock = vi.fn(async (url: string) =>
       url.endsWith('/health') ? response({ status: 'ok' }) : response({ voices: [] }),
     );
     vi.stubGlobal('fetch', fetchMock);
     const vs = client();
-    await Promise.all([vs.status(), vs.status(), vs.status()]);
+    const healthChecks = () =>
+      (fetchMock.mock.calls as unknown as Array<[string]>).filter(([url]) =>
+        url.endsWith('/health'),
+      ).length;
+    await Promise.all([vs.recentStatus(), vs.recentStatus(), vs.recentStatus()]);
+    await vs.recentStatus();
+    expect(healthChecks()).toBe(1);
     await vs.status();
-    const health = (fetchMock.mock.calls as unknown as Array<[string]>).filter(([url]) =>
-      url.endsWith('/health'),
-    );
-    expect(health).toHaveLength(1);
+    expect(healthChecks()).toBe(2);
     // An address being tried is never answered from the cache.
     await vs.status('http://other:3900');
     expect(fetchMock.mock.calls.some(([url]) => String(url).startsWith('http://other'))).toBe(true);
+  });
+
+  it('keeps a recent status for two seconds from when its check finished', async () => {
+    vi.useFakeTimers();
+    try {
+      let answer: (value: Response) => void = () => {};
+      const fetchMock = vi.fn((url: string) =>
+        url.endsWith('/health')
+          ? new Promise<Response>((resolve) => (answer = resolve))
+          : Promise.resolve(response({ voices: [] })),
+      );
+      vi.stubGlobal('fetch', fetchMock);
+      const vs = client();
+      const first = vs.recentStatus();
+      // A slow check: still pending after longer than the two seconds.
+      await vi.advanceTimersByTimeAsync(2500);
+      void vs.recentStatus();
+      answer(response({ status: 'ok' }));
+      await first;
+      await vi.advanceTimersByTimeAsync(1500);
+      await vs.recentStatus();
+      const health = (fetchMock.mock.calls as unknown as Array<[string]>).filter(([url]) =>
+        url.endsWith('/health'),
+      );
+      expect(health).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('tests an address before it is saved', async () => {
