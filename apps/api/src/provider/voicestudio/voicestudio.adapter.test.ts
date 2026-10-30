@@ -234,6 +234,30 @@ describe('VoiceStudioAdapter', () => {
     expect(only!.unavailableModalities?.audio).toBe(DOWN.error);
   });
 
+  it('says why there is no engine to speak with when VoiceStudio is running', async () => {
+    const reasonFor = async (backends: VoiceStudioEngine[]) =>
+      (await adapter(fakeClient({ '/engines/tts': { backends } }).client).listModels())[0]!
+        .unavailableModalities?.audio;
+    expect(await reasonFor([])).toMatch(/no speech engine installed/);
+    expect(await reasonFor([{ ...OMNI, license_required: true, license_accepted: false }])).toMatch(
+      /need their licence accepted/,
+    );
+    expect(await reasonFor([{ ...OMNI, available: false }])).toMatch(/None of .* is ready/);
+  });
+
+  it('says why a pinned engine that is installed can not run', async () => {
+    const vs = (backends: VoiceStudioEngine[]) =>
+      adapter(fakeClient({ '/engines/tts': { backends } }).client);
+    expect(
+      await vs([{ ...OMNI, license_required: true, license_accepted: false }]).checkModel(
+        'omnivoice',
+      ),
+    ).toMatchObject({ severity: 'error', message: expect.stringMatching(/licence accepted/) });
+    expect(await vs([{ ...OMNI, available: false }]).checkModel('omnivoice')).toMatchObject({
+      message: expect.stringMatching(/isn't ready in VoiceStudio/),
+    });
+  });
+
   it('warns when VoiceStudio is closed, and rejects an engine it does not have', async () => {
     expect(await adapter(fakeClient({}, DOWN).client).checkModel('omnivoice')).toMatchObject({
       severity: 'warning',

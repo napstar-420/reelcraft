@@ -29,6 +29,12 @@ export const TROUBLESHOOTING: TroubleshootingEntry[] = [
     fix: 'Pick one of the engines list_models returns for provider voicestudio, or ask the user to install that engine in VoiceStudio’s Model Catalogue.',
   },
   {
+    matches: ["isn't ready in VoiceStudio", 'needs its licence accepted in VoiceStudio'],
+    means:
+      'The stage is pinned to a VoiceStudio engine that is installed but cannot run yet: its setup is unfinished on this computer, or its licence has not been accepted.',
+    fix: 'Ask the user to finish setting up the engine, or accept its licence, in VoiceStudio’s Model Catalogue; or pick another engine list_models returns for provider voicestudio.',
+  },
+  {
     matches: ['so VoiceStudio transcribes it for the judge, but VoiceStudio'],
     means:
       'QC Include transcript needs VoiceStudio (or a Deepgram key) to transcribe the audio for a judge that cannot listen, and VoiceStudio is closed.',

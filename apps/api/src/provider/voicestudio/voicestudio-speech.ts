@@ -51,6 +51,39 @@ export const usableEngines = (engines: VoiceStudioEngine[]): VoiceStudioEngine[]
     (engine) => engine.available === true && (!engine.license_required || engine.license_accepted),
   );
 
+const needsLicence = (engine: VoiceStudioEngine) =>
+  engine.license_required === true && !engine.license_accepted;
+
+const names = (engines: VoiceStudioEngine[]) =>
+  engines.map((engine) => engine.display_name || engine.id).join(', ');
+
+/** Why VoiceStudio offers no engine to speak with, from everything `/engines/tts` listed. */
+export function noEngineReason(listed: VoiceStudioEngine[]): string {
+  const installed = listed.filter((engine) => engine.available === true);
+  if (installed.length && installed.every(needsLicence)) {
+    return `VoiceStudio's speech engines (${names(installed)}) need their licence accepted in VoiceStudio's Model Catalogue before Reelcraft can use them.`;
+  }
+  if (listed.length) {
+    return `None of VoiceStudio's speech engines is ready on this computer. Install one, or finish setting one up, in VoiceStudio's Model Catalogue.`;
+  }
+  return 'VoiceStudio has no speech engine installed. Install one in VoiceStudio’s Model Catalogue.';
+}
+
+/** Why one engine a stage is pinned to can't be used, or undefined when it can. */
+export function engineIssue(engineId: string, listed: VoiceStudioEngine[]): string | undefined {
+  const engine = listed.find((candidate) => candidate.id === engineId);
+  if (!engine) {
+    return `VoiceStudio has no installed engine "${engineId}". Install it in VoiceStudio, or choose another engine.`;
+  }
+  if (engine.available !== true) {
+    return `${names([engine])} isn't ready in VoiceStudio on this computer. Finish setting it up in VoiceStudio's Model Catalogue, or choose another engine.`;
+  }
+  if (needsLicence(engine)) {
+    return `${names([engine])} needs its licence accepted in VoiceStudio's Model Catalogue before Reelcraft can use it.`;
+  }
+  return undefined;
+}
+
 const titled = (id: string) =>
   id
     .split(/[_-]/)

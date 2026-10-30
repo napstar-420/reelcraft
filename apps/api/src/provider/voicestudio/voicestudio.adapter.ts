@@ -38,6 +38,8 @@ import { splitSpeechText } from '../speech/speech-text';
 import { unreachableMessage, VoiceStudioClient } from './voicestudio-client';
 import {
   DEFAULT_VOICE_ID,
+  engineIssue,
+  noEngineReason,
   engineModelInfo,
   engineVoices,
   timingFromTranscription,
@@ -81,6 +83,8 @@ export class VoiceStudioAdapter implements ProviderAdapter {
   private readonly logger = new Logger(VoiceStudioAdapter.name);
   /** The engines it last listed, shown while it is closed so a stage keeps its model. */
   private lastEngines: VoiceStudioEngine[] = [];
+  /** Everything it last listed, usable or not, to say why an engine can't be used. */
+  private lastListed: VoiceStudioEngine[] = [];
 
   constructor(
     @Inject(VoiceStudioClient)
@@ -93,18 +97,11 @@ export class VoiceStudioAdapter implements ProviderAdapter {
    * closed it lists the engines it last saw, each saying why it can't speak now (`unavailableModalities`,
    * which the assistant reads), and says why there are none if it never saw any. */
   async listModels(): Promise<ModelInfo[]> {
-    const { engines, live } = await this.engines();
+    const { engines, listed, live } = await this.engines();
     const reason = live ? undefined : ((await this.client.status()).error ?? undefined);
     if (!engines.length) {
       return [
-        {
-          ...TRANSCRIBE_MODEL,
-          unavailableModalities: {
-            audio:
-              reason ??
-              'VoiceStudio has no speech engine installed. Install one in VoiceStudio’s Model Catalogue.',
-          },
-        },
+        { ...TRANSCRIBE_MODEL, unavailableModalities: { audio: reason ?? noEngineReason(listed) } },
       ];
     }
     return [
@@ -124,14 +121,9 @@ export class VoiceStudioAdapter implements ProviderAdapter {
         severity: 'warning',
       };
     }
-    const { engines } = await this.engines();
-    if (modelId === TRANSCRIBE_MODEL.modelId || engines.some((e) => e.id === modelId)) {
-      return undefined;
-    }
-    return {
-      message: `VoiceStudio has no installed engine "${modelId}". Install it in VoiceStudio, or choose another engine.`,
-      severity: 'error',
-    };
+    if (modelId === TRANSCRIBE_MODEL.modelId) return undefined;
+    const issue = engineIssue(modelId, (await this.engines()).listed);
+    return issue ? { message: issue, severity: 'error' } : undefined;
   }
 
   async listVoices(query: VoiceQuery): Promise<VoiceListDto> {
@@ -399,11 +391,19 @@ export class VoiceStudioAdapter implements ProviderAdapter {
     };
   }
 
-  /** The engines Reelcraft can use, from VoiceStudio (`live`), else the ones it last listed. */
-  private async engines(): Promise<{ engines: VoiceStudioEngine[]; live: boolean }> {
-    const listed = await this.lookup<{ backends?: VoiceStudioEngine[] }>('/engines/tts');
-    if (listed?.backends) this.lastEngines = usableEngines(listed.backends);
-    return { engines: this.lastEngines, live: !!listed?.backends };
+  /** The engines Reelcraft can use, and every engine VoiceStudio listed, from VoiceStudio
+   * (`live`), else as it last listed them. */
+  private async engines(): Promise<{
+    engines: VoiceStudioEngine[];
+    listed: VoiceStudioEngine[];
+    live: boolean;
+  }> {
+    const answer = await this.lookup<{ backends?: VoiceStudioEngine[] }>('/engines/tts');
+    if (answer?.backends) {
+      this.lastListed = answer.backends;
+      this.lastEngines = usableEngines(answer.backends);
+    }
+    return { engines: this.lastEngines, listed: this.lastListed, live: !!answer?.backends };
   }
 
   private text(req: ProviderRequest): string {

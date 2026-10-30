@@ -123,6 +123,7 @@ describe('assistant guide coverage', () => {
       // Messages a provider or QC's audio check adds to validation.
       '../provider/voicestudio/voicestudio.adapter.ts',
       '../provider/voicestudio/voicestudio-client.ts',
+      '../provider/voicestudio/voicestudio-speech.ts',
       '../qc/qc-audio.ts',
     ]
       .map((f) => readFileSync(path.join(__dirname, f), 'utf8'))
