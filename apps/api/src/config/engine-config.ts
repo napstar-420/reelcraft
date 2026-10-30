@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { Injectable, Logger, type OnModuleInit } from '@nestjs/common';
@@ -148,6 +149,20 @@ export class EngineConfig implements OnModuleInit {
 
   get qwenTtsUrlFromEnv(): string | undefined {
     return this.config.get('QWEN_TTS_URL', { infer: true });
+  }
+
+  /** VoiceStudio's address from the environment, else its default port on this computer, or on the
+   * computer running Docker when Reelcraft runs in a container. Use `SettingsService.voiceStudioUrl()`,
+   * which also honours Settings. */
+  get voiceStudioUrl(): string {
+    return (
+      this.voiceStudioUrlFromEnv ??
+      (existsSync('/.dockerenv') ? 'http://host.docker.internal:3900' : 'http://127.0.0.1:3900')
+    );
+  }
+
+  get voiceStudioUrlFromEnv(): string | undefined {
+    return this.config.get('VOICESTUDIO_URL', { infer: true });
   }
 
   /** Where the managed Qwen3-TTS service keeps its packages (`venv/`) and models (`models/`). */

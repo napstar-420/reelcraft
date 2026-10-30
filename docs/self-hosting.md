@@ -21,28 +21,29 @@ the release-please PR for 0.3.0 (Settings and the guide's in-app links) is #51.
 
 ## Where things are
 
-| Path                                                          | What                                                                                        |
-| ------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| `docker/app/Dockerfile`, `rootfs/`                            | The image. s6 services in `rootfs/etc/s6-overlay/s6-rc.d/`, scripts in `.../scripts/`       |
-| `docker/app/RUNTIME_VERSION`                                  | The image's runtime number (see rules below)                                                |
-| `docker/app/release-signing.pub`                              | Public key the updater verifies releases with                                               |
-| `docker/app/rootfs/usr/local/lib/reelcraft/updater/`          | The in-app updater: agent (root, Unix socket), releases, signing, state, select-app         |
-| `docker/app/smoke-test.sh`, `update-test.sh`                  | Boot-and-run test, and the end-to-end update/rollback test (both run in CI)                 |
-| `docker/app/DOCKERHUB.md`                                     | The Docker Hub page, pushed by the release workflow                                         |
-| `scripts/release/`                                            | Manifest build, signing and key generation (`pnpm test:release`)                            |
-| `.github/workflows/`                                          | `ci.yml`, `release.yml`, `runtime-version.yml`, `docs.yml`                                  |
-| `apps/api/src/update/`                                        | Relays the UI's update requests to the agent. No update logic lives here                    |
-| `apps/api/src/settings/`                                      | Encrypted settings store, `/settings` routes, `/codex` and `/claude` routes, key tester     |
-| `apps/api/src/provider/key-provider.ts`                       | `KEY_PROVIDER` → `SettingsKeyProvider` (environment, then saved)                            |
-| `apps/api/src/provider/codex/`                                | `codex-login.service.ts`, `codex-device-page.ts` (Neo scripts), `codex-neo-registrar.ts`    |
-| `apps/api/src/provider/claude/`                               | `claude-login.service.ts`, `claude-login-page.ts` (sign-in addresses), the Claude adapter   |
-| `apps/api/src/provider/cli-job/`                              | The durable job adapter and runner shared by Codex and Claude                               |
-| `services/qwen-tts/`                                          | The local Qwen3-TTS service (Python). Its source is copied into the image; see below        |
-| `apps/api/src/provider/qwen/`                                 | The `qwen-tts` provider, and `qwen-runtime.service.ts`, which installs and runs the service |
-| `apps/web/src/pages/SettingsPage.tsx`, `components/settings/` | Settings UI. `settings.logic.ts` holds the tested pure helpers                              |
-| `apps/web/src/components/update/`                             | Update indicator, dialog and `use-update-status.ts`                                         |
-| `apps/web/src/lib/docs-url.ts`                                | Links from the app into the user guide                                                      |
-| `apps/docs/`                                                  | The user guide (Docusaurus, outside the pnpm workspace)                                     |
+| Path                                                          | What                                                                                          |
+| ------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `docker/app/Dockerfile`, `rootfs/`                            | The image. s6 services in `rootfs/etc/s6-overlay/s6-rc.d/`, scripts in `.../scripts/`         |
+| `docker/app/RUNTIME_VERSION`                                  | The image's runtime number (see rules below)                                                  |
+| `docker/app/release-signing.pub`                              | Public key the updater verifies releases with                                                 |
+| `docker/app/rootfs/usr/local/lib/reelcraft/updater/`          | The in-app updater: agent (root, Unix socket), releases, signing, state, select-app           |
+| `docker/app/smoke-test.sh`, `update-test.sh`                  | Boot-and-run test, and the end-to-end update/rollback test (both run in CI)                   |
+| `docker/app/DOCKERHUB.md`                                     | The Docker Hub page, pushed by the release workflow                                           |
+| `scripts/release/`                                            | Manifest build, signing and key generation (`pnpm test:release`)                              |
+| `.github/workflows/`                                          | `ci.yml`, `release.yml`, `runtime-version.yml`, `docs.yml`                                    |
+| `apps/api/src/update/`                                        | Relays the UI's update requests to the agent. No update logic lives here                      |
+| `apps/api/src/settings/`                                      | Encrypted settings store, `/settings` routes, `/codex` and `/claude` routes, key tester       |
+| `apps/api/src/provider/key-provider.ts`                       | `KEY_PROVIDER` → `SettingsKeyProvider` (environment, then saved)                              |
+| `apps/api/src/provider/codex/`                                | `codex-login.service.ts`, `codex-device-page.ts` (Neo scripts), `codex-neo-registrar.ts`      |
+| `apps/api/src/provider/claude/`                               | `claude-login.service.ts`, `claude-login-page.ts` (sign-in addresses), the Claude adapter     |
+| `apps/api/src/provider/cli-job/`                              | The durable job adapter and runner shared by Codex and Claude                                 |
+| `services/qwen-tts/`                                          | The local Qwen3-TTS service (Python). Its source is copied into the image; see below          |
+| `apps/api/src/provider/qwen/`                                 | The `qwen-tts` provider, and `qwen-runtime.service.ts`, which installs and runs the service   |
+| `apps/api/src/provider/voicestudio/`                          | The `voicestudio` provider: VoiceStudio, a voice app the user runs, reached by URL (ADR 0018) |
+| `apps/web/src/pages/SettingsPage.tsx`, `components/settings/` | Settings UI. `settings.logic.ts` holds the tested pure helpers                                |
+| `apps/web/src/components/update/`                             | Update indicator, dialog and `use-update-status.ts`                                           |
+| `apps/web/src/lib/docs-url.ts`                                | Links from the app into the user guide                                                        |
+| `apps/docs/`                                                  | The user guide (Docusaurus, outside the pnpm workspace)                                       |
 
 ## How it runs
 
@@ -76,6 +77,16 @@ the release-please PR for 0.3.0 (Settings and the guide's in-app links) is #51.
   is needed, and stops it after 10 idle minutes. The service exits when its stdin closes, so it never outlives
   the API. `/data/qwen-tts` is left out of the documented backups. A saved service address (or `QWEN_TTS_URL`)
   turns all of this off: Reelcraft then only talks to a service the user runs.
+- **VoiceStudio** (ADR 0018): a voice app the user installs and runs; the image has nothing of it. The API
+  reaches it at the saved address, else `VOICESTUDIO_URL`, else `http://host.docker.internal:3900` inside the
+  container (`/.dockerenv`) and `http://127.0.0.1:3900` outside, sending `VOICESTUDIO_API_KEY` (or the key saved
+  in Settings) as a bearer token, and only ever to the configured address (a Test connection to another
+  address goes without it). VoiceStudio's desktop app listens on `127.0.0.1`, which Docker Desktop
+  reaches through `host.docker.internal` but Linux Docker Engine does not: there the user runs
+  VoiceStudio with `OMNIVOICE_BIND_HOST=0.0.0.0` and an API key, or runs it in Docker on a shared network
+  (user guide, VoiceStudio page). Don't suggest `--network host` for the Reelcraft container: its bundled
+  PostgreSQL, MinIO and Inngest would then listen on the host's own ports. Voices cloned from the library live
+  in VoiceStudio, not in Reelcraft's backups.
 
 ## Rules to follow when changing this
 

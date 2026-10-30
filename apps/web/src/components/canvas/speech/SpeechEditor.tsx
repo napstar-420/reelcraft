@@ -18,6 +18,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { InfoHeading, InfoLabel } from '../info-label';
+import { VoiceStudioSpeechPanel } from '@/components/voicestudio/VoiceStudioSpeechPanel';
 import { QwenSetupPanel } from './QwenSetupPanel';
 import { SpeechModelCards } from './SpeechModelCards';
 import { SpeechPreview } from './SpeechPreview';
@@ -125,6 +126,7 @@ export function SpeechEditor({
             Model
           </InfoLabel>
           {provider === 'qwen-tts' && <QwenSetupPanel />}
+          {provider === 'voicestudio' && <VoiceStudioSpeechPanel />}
           {models.isPending && <p className="text-xs text-muted-foreground">Loading models…</p>}
           {models.isError && (
             <p className="text-xs text-destructive">

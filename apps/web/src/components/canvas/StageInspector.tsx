@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { cn } from 'cn';
 import { api } from '../../api/client';
+import { useVoiceStudioStatus } from '../voicestudio/VoiceStudioStatus';
+import { voiceStudioReady } from '../voicestudio/voicestudio.logic';
 import { BindingPicker } from './BindingPicker';
 import { CapabilityPicker } from './CapabilityPicker';
 import { OutputSchemaField } from './OutputSchemaEditor';
@@ -533,7 +535,7 @@ function QcDimensionsEditor({
  * validator's job), so this editor renders unconditionally whenever a
  * `qc` block exists regardless of `stage.output.kind`. */
 /** Whether QC's Include transcript can work: the judge model listens to the
- * audio, or a Deepgram key lets the audio be transcribed (`qc-audio.ts`). */
+ * audio, or VoiceStudio or a Deepgram key lets the audio be transcribed (`qc-audio.ts`). */
 function useTranscriptAvailability(judge: QcDef['model'] | undefined) {
   const provider = judge?.provider;
   const models = useQuery({
@@ -546,13 +548,16 @@ function useTranscriptAvailability(judge: QcDef['model'] | undefined) {
   const hearsAudio = (model?.capabilities?.inputKinds ?? []).some(
     (kind) => kind === 'media.audio' || kind === 'media.*',
   );
+  const voiceStudio = useVoiceStudioStatus();
   const hasDeepgram = !!settings.data?.keys.find((key) => key.id === 'deepgram')?.configured;
   if (hearsAudio) return { available: true, how: 'The judge model listens to the audio.' };
+  if (voiceStudioReady(voiceStudio.data))
+    return { available: true, how: 'VoiceStudio transcribes the audio for the judge (free).' };
   if (hasDeepgram)
     return { available: true, how: 'Deepgram transcribes the audio for the judge (paid).' };
   return {
     available: false,
-    how: "This judge model can't listen to audio and no Deepgram key is set (Settings → Provider keys).",
+    how: "This judge model can't listen to audio, VoiceStudio isn't reachable and no Deepgram key is set (Settings).",
   };
 }
 

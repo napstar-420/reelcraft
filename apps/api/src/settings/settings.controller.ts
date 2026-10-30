@@ -17,14 +17,17 @@ import {
   SaveBrowserOsDto,
   SaveProviderKeyDto,
   SaveQwenTtsDto,
+  SaveVoiceStudioDto,
   type SettingsDto,
   TestBrowserOsDto,
   TestQwenTtsDto,
+  TestVoiceStudioDto,
 } from '@reelcraft/shared';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { NeoClient } from '../provider/chatgpt/neo-client';
 import { CodexNeoRegistrar } from '../provider/codex/codex-neo-registrar';
 import { QwenTtsAdapter } from '../provider/qwen/qwen.adapter';
+import { VoiceStudioClient } from '../provider/voicestudio/voicestudio-client';
 import { isProviderKeyId, PROVIDER_KEYS, SettingsKeyProvider } from '../provider/key-provider';
 import { isTestable, testProviderKey } from './provider-key-tester';
 import { SETTING, SettingsService } from './settings.service';
@@ -46,6 +49,7 @@ export class SettingsController {
     private readonly neo: NeoClient,
     private readonly registrar: CodexNeoRegistrar,
     private readonly qwenTts: QwenTtsAdapter,
+    private readonly voiceStudio: VoiceStudioClient,
   ) {}
 
   @Get()
@@ -55,6 +59,7 @@ export class SettingsController {
       keys: await Promise.all(ids.map((id) => this.keyStatus(id))),
       browserOs: await this.settings.browserOs(),
       qwenTts: await this.settings.qwenTts(),
+      voiceStudio: await this.settings.voiceStudio(),
     };
   }
 
@@ -141,6 +146,27 @@ export class SettingsController {
     } catch (error) {
       return { ok: false, error: (error as Error).message };
     }
+  }
+
+  @Put('voice-studio')
+  async saveVoiceStudio(
+    @Body(new ZodValidationPipe(SaveVoiceStudioDto)) dto: SaveVoiceStudioDto,
+  ): Promise<SettingsDto['voiceStudio']> {
+    if (dto.url) await this.settings.set(SETTING.voiceStudioUrl, dto.url);
+    else await this.settings.delete(SETTING.voiceStudioUrl);
+    return this.settings.voiceStudio();
+  }
+
+  /** Checks VoiceStudio at `url` or the configured address. The resolved API key is used only
+   * when the checked address matches the configured address. */
+  @Post('voice-studio/test')
+  @HttpCode(200)
+  async testVoiceStudio(
+    @Body(new ZodValidationPipe(TestVoiceStudioDto)) dto: TestVoiceStudioDto,
+  ): Promise<ConnectionTestDto> {
+    const status = await this.voiceStudio.status(dto.url || undefined);
+    if (status.reachable && !status.starting && !status.error) return { ok: true };
+    return { ok: false, error: status.error ?? 'VoiceStudio is not ready.' };
   }
 
   private providerId(provider: string): ProviderKeyId {

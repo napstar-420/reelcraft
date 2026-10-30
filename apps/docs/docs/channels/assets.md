@@ -74,6 +74,12 @@ uploaded and generated assets, give it both. See [Layered videos](../video/layer
 When a run starts, it records which assets the library held, so uploading or deleting assets while it runs
 doesn't change what it sees.
 
+## Make a voice from a recording
+
+An audio or video file in the library has **Make a VoiceStudio voice** on its card. It saves the voice
+in [VoiceStudio](../voice-studio.md#your-own-voices). A Generate Speech stage can then speak in it
+with a VoiceStudio engine that can clone voices (such as OmniVoice). The file can be up to 50 MB.
+
 ## Delete an asset
 
 Select the bin on the asset's card and confirm.

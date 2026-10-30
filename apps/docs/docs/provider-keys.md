@@ -59,12 +59,13 @@ You can also give keys to the container as **environment variables**. This is us
 manage Reelcraft with scripts. A key set this way **takes priority** over a saved one, and
 Settings shows it as **Set by container environment**, without a box to change it.
 
-| Variable             | Service    |
-| -------------------- | ---------- |
-| `OPENROUTER_API_KEY` | OpenRouter |
-| `FAL_KEY`            | fal        |
-| `ELEVENLABS_API_KEY` | ElevenLabs |
-| `DEEPGRAM_API_KEY`   | Deepgram   |
+| Variable              | Service                                                                   |
+| --------------------- | ------------------------------------------------------------------------- |
+| `OPENROUTER_API_KEY`  | OpenRouter                                                                |
+| `FAL_KEY`             | fal                                                                       |
+| `ELEVENLABS_API_KEY`  | ElevenLabs                                                                |
+| `DEEPGRAM_API_KEY`    | Deepgram                                                                  |
+| `VOICESTUDIO_API_KEY` | [VoiceStudio](./voice-studio.md#api-key) (only if VoiceStudio uses a key) |
 
 In Docker Desktop, add them under **Optional settings → Environment variables** when you click
 **Run**. On the command line, add `-e NAME=value` to `docker run`. Environment variables can only

@@ -44,6 +44,13 @@ export const EnvSchema = z
     FAL_KEY: z.string().optional(),
     ELEVENLABS_API_KEY: z.string().optional(),
     DEEPGRAM_API_KEY: z.string().optional(),
+    /** VoiceStudio's API key, when VoiceStudio was started with one (`OMNIVOICE_API_KEY`). */
+    VOICESTUDIO_API_KEY: z.string().optional(),
+    /** Where VoiceStudio's local API is. Unset (or blank) means the default address. */
+    VOICESTUDIO_URL: z.preprocess(
+      (value) => (value === '' ? undefined : value),
+      z.string().url().optional(),
+    ),
     /** Address of a Qwen3-TTS service you run yourself. Unset (or blank, as in `.env.example`) means
      * Reelcraft installs and runs the service itself. */
     QWEN_TTS_URL: z.preprocess(

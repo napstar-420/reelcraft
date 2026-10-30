@@ -19,6 +19,7 @@ export const PROVIDER_KEYS: Record<ProviderKeyId, { label: string; envVar: strin
   fal: { label: 'fal.ai', envVar: 'FAL_KEY' },
   elevenlabs: { label: 'ElevenLabs', envVar: 'ELEVENLABS_API_KEY' },
   deepgram: { label: 'Deepgram', envVar: 'DEEPGRAM_API_KEY' },
+  voicestudio: { label: 'VoiceStudio', envVar: 'VOICESTUDIO_API_KEY' },
 };
 
 export function isProviderKeyId(id: string): id is ProviderKeyId {

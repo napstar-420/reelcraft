@@ -496,18 +496,18 @@ export class BlueprintService {
     );
   }
 
-  /** "Include transcript" needs a judge model that can listen to audio, or a
-   * Deepgram key to transcribe it (see `QcAudioService`). */
+  /** "Include transcript" needs a judge model that can listen to audio, or
+   * VoiceStudio or a Deepgram key to transcribe it (see `QcAudioService`). */
   private async validateQcTranscript(dto: CreateBlueprintVersionDto): Promise<ValidationIssue[]> {
     const issues: ValidationIssue[] = [];
     for (const stage of dto.graph) {
       if (!stage.qc?.media?.includeTranscript || stage.output.kind !== 'media.audio') continue;
-      const mode = await this.qcAudio.mode(stage.qc.model);
+      const mode = await this.qcAudio.mode(stage.qc.model, { recent: true });
       if (mode.mode === 'unavailable') {
         issues.push({
           path: `stages.${stage.key}.qc.media.includeTranscript`,
           message: mode.reason,
-          severity: 'error',
+          severity: mode.severity,
         });
       }
     }

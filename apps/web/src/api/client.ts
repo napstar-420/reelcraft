@@ -21,6 +21,10 @@ import type {
   BlenderSetupDto,
   QwenTtsBackend,
   QwenTtsSettingsDto,
+  CloneVoiceStudioVoiceDto,
+  VoiceStudioSettingsDto,
+  VoiceStudioStatusDto,
+  VoiceStudioVoiceDto,
   QwenTtsSetupDto,
   ClaudeLoginDto,
   ClaudeStatusDto,
@@ -672,6 +676,22 @@ export const api = {
     request<ConnectionTestDto>('/settings/qwen-tts/test', {
       method: 'POST',
       body: JSON.stringify(url ? { url } : {}),
+    }),
+  saveVoiceStudio: (url: string) =>
+    request<VoiceStudioSettingsDto>('/settings/voice-studio', {
+      method: 'PUT',
+      body: JSON.stringify({ url }),
+    }),
+  testVoiceStudio: (url?: string) =>
+    request<ConnectionTestDto>('/settings/voice-studio/test', {
+      method: 'POST',
+      body: JSON.stringify(url ? { url } : {}),
+    }),
+  voiceStudioStatus: () => request<VoiceStudioStatusDto>('/voicestudio/status'),
+  cloneVoiceStudioVoice: (dto: CloneVoiceStudioVoiceDto) =>
+    request<VoiceStudioVoiceDto>('/voicestudio/voices', {
+      method: 'POST',
+      body: JSON.stringify(dto),
     }),
   blenderSetup: () => request<BlenderSetupDto>('/blender/setup'),
   saveBlenderPath: (path: string | null) =>

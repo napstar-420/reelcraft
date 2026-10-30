@@ -11,6 +11,7 @@ export * from './system.dto';
 export * from './update.dto';
 export * from './settings.dto';
 export * from './qwen-tts-setup.dto';
+export * from './voicestudio.dto';
 export * from './blender-setup.dto';
 export * from './package.dto';
 export * from './assistant.dto';

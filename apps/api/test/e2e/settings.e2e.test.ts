@@ -98,4 +98,25 @@ describe('settings (e2e)', () => {
     const reset = await controller.saveBrowserOs({ url: '' });
     expect(reset.source).not.toBe('saved');
   });
+
+  it('saves and resets the VoiceStudio address, and sends its key to VoiceStudio', async () => {
+    const saved = await controller.saveVoiceStudio({ url: 'http://gpu-box:3900' });
+    expect(saved).toEqual({ url: 'http://gpu-box:3900', source: 'saved' });
+    expect((await controller.get()).voiceStudio).toEqual(saved);
+
+    await controller.saveKey('voicestudio', { value: 'vs-key-0123456789abcdef' });
+    const keys = testApp.app.get<KeyProvider>(KEY_PROVIDER);
+    expect(await keys.get('voicestudio')).toBe('vs-key-0123456789abcdef');
+    await controller.deleteKey('voicestudio');
+
+    const reset = await controller.saveVoiceStudio({ url: '' });
+    expect(reset.source).not.toBe('saved');
+    expect(reset.url).toMatch(/:3900$/);
+  });
+
+  it('reports a VoiceStudio that is not running', async () => {
+    const result = await controller.testVoiceStudio({ url: 'http://127.0.0.1:1' });
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/VoiceStudio isn't reachable at http:\/\/127\.0\.0\.1:1/);
+  });
 });

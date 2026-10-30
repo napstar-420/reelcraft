@@ -2,7 +2,9 @@ import { z } from 'zod';
 import { Modality } from '../primitives';
 
 /** Providers whose API key can be entered on the Settings page. */
-export const ProviderKeyId = z.enum(['openrouter', 'fal', 'elevenlabs', 'deepgram']);
+/** `voicestudio` is VoiceStudio's optional API key: needed only when it was started with one and
+ * Reelcraft reaches it from another computer or from Docker. */
+export const ProviderKeyId = z.enum(['openrouter', 'fal', 'elevenlabs', 'deepgram', 'voicestudio']);
 export type ProviderKeyId = z.infer<typeof ProviderKeyId>;
 
 /** Where a provider key comes from. The container environment wins over a
@@ -45,10 +47,21 @@ export const QwenTtsSettingsDto = z.object({
 });
 export type QwenTtsSettingsDto = z.infer<typeof QwenTtsSettingsDto>;
 
+export const VoiceStudioSource = z.enum(['saved', 'env', 'default']);
+export type VoiceStudioSource = z.infer<typeof VoiceStudioSource>;
+
+/** VoiceStudio, the voice app the user installs separately: where its local API is. */
+export const VoiceStudioSettingsDto = z.object({
+  url: z.string(),
+  source: VoiceStudioSource,
+});
+export type VoiceStudioSettingsDto = z.infer<typeof VoiceStudioSettingsDto>;
+
 export const SettingsDto = z.object({
   keys: z.array(ProviderKeyStatusDto),
   browserOs: BrowserOsSettingsDto,
   qwenTts: QwenTtsSettingsDto,
+  voiceStudio: VoiceStudioSettingsDto,
 });
 export type SettingsDto = z.infer<typeof SettingsDto>;
 
@@ -87,6 +100,12 @@ export const SaveQwenTtsDto = SaveBrowserOsDto;
 export type SaveQwenTtsDto = SaveBrowserOsDto;
 export const TestQwenTtsDto = TestBrowserOsDto;
 export type TestQwenTtsDto = TestBrowserOsDto;
+
+/** An empty `url` removes the saved address. */
+export const SaveVoiceStudioDto = SaveBrowserOsDto;
+export type SaveVoiceStudioDto = SaveBrowserOsDto;
+export const TestVoiceStudioDto = TestBrowserOsDto;
+export type TestVoiceStudioDto = TestBrowserOsDto;
 
 export const ConnectionTestDto = z.object({
   ok: z.boolean(),

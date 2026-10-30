@@ -78,10 +78,13 @@ A judge model reads text, not sound. For a **Generate Speech** stage, tick **Inc
 let the judge assess what was said:
 
 - If the judge model can listen to audio, it **listens to the audio itself**.
+- Otherwise, if [VoiceStudio](../voice-studio.md) is running, it **transcribes the audio** for the
+  judge, for free.
 - Otherwise, if you've added a Deepgram key in **Settings**, Deepgram **transcribes the audio** for the
   judge. This is paid, and its cost counts toward the stage's quality control cap.
-- If neither is possible, the box is greyed out with the reason: **This judge model can't listen to
-  audio and no Deepgram key is set (Settings → Provider keys).**
+- If none is possible, the box is greyed out with the reason: **This judge model can't listen to
+  audio, VoiceStudio isn't reachable and no Deepgram key is set (Settings).** When you set VoiceStudio
+  up and it is only closed, saving shows a warning instead, and the run needs VoiceStudio open.
 
 If the option is on and later becomes impossible, the quality control fails to run and the stage
 fails with that reason. The blueprint also shows **Include transcript only works on an audio

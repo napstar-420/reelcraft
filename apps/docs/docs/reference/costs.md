@@ -40,6 +40,8 @@ against your plan's own limits and are recorded as $0. See [Connect Codex](../co
 - [Analyze Media](../stage-types/analyze-media.md) with **Probe**.
 - [Generate Speech](../stage-types/generate-speech.md) with **Qwen3-TTS (local)**: it runs on your
   computer. See [Qwen3-TTS on your computer](../qwen-tts.md).
+- Everything with [VoiceStudio](../voice-studio.md): speech, word timings, transcription in
+  [Analyze Media](../stage-types/analyze-media.md) and for quality control. It runs on your computer.
 - [Human Input](../stage-types/human-input.md) and [Human Timeline Edit](../stage-types/human-timeline-edit.md),
   and waiting for approval.
 - [Checks](../blueprints/checks.md).

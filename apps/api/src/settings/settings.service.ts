@@ -1,6 +1,10 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
-import type { BrowserOsSettingsDto, QwenTtsSettingsDto } from '@reelcraft/shared';
+import type {
+  BrowserOsSettingsDto,
+  QwenTtsSettingsDto,
+  VoiceStudioSettingsDto,
+} from '@reelcraft/shared';
 import { EngineConfig } from '../config/engine-config';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
 import { appSetting } from '../db/schema';
@@ -11,6 +15,7 @@ export const SETTING = {
   providerKey: (providerId: string) => `providerKey.${providerId}`,
   browserOsUrl: 'browserOs.url',
   qwenTtsUrl: 'qwenTts.url',
+  voiceStudioUrl: 'voiceStudio.url',
   /** The Blender executable chosen in Settings. */
   blenderPath: 'blender.path',
   /** The Neo address Reelcraft registered with Codex, so it only ever
@@ -110,6 +115,18 @@ export class SettingsService {
 
   async qwenTtsUrl(): Promise<string> {
     return (await this.qwenTts()).url;
+  }
+
+  /** VoiceStudio's address: saved in Settings, else the environment's, else the default. */
+  async voiceStudio(): Promise<VoiceStudioSettingsDto> {
+    const saved = await this.get(SETTING.voiceStudioUrl);
+    if (saved) return { url: saved, source: 'saved' };
+    const env = this.config.voiceStudioUrlFromEnv;
+    return { url: this.config.voiceStudioUrl, source: env ? 'env' : 'default' };
+  }
+
+  async voiceStudioUrl(): Promise<string> {
+    return (await this.voiceStudio()).url;
   }
 
   private async write(key: string, value: string, secret: boolean): Promise<void> {

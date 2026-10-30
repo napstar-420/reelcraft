@@ -536,8 +536,8 @@ export function recipeComposedVideo(mode: 'generated' | 'library'): CreateBluepr
         slots: { text: { from: 'memory', key: 'script' } },
         context: {},
         output: { kind: 'media.audio' },
-        // Word timings place drawings on the words that name them. With ElevenLabs, turn on Word
-        // timings in this stage's model settings.
+        // Word timings place drawings on the words that name them. With ElevenLabs or VoiceStudio,
+        // turn on Word timings in this stage's model settings.
         writes: { timing: 'timing' },
         checks: [{ type: 'builtin', key: 'wpm', params: { min: 110, max: 175 } }],
         approval: { mode: 'stage' },

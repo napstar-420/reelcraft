@@ -11,6 +11,9 @@ import { QwenTtsAdapter } from './qwen/qwen.adapter';
 import { QwenTtsController } from './qwen/qwen.controller';
 import { QwenTtsRuntime } from './qwen/qwen-runtime.service';
 import { QwenSetupController } from './qwen/qwen-setup.controller';
+import { VoiceStudioAdapter } from './voicestudio/voicestudio.adapter';
+import { VoiceStudioClient } from './voicestudio/voicestudio-client';
+import { VoiceStudioController } from './voicestudio/voicestudio.controller';
 import { DeepgramInboxService } from './deepgram/deepgram-inbox.service';
 import { DeepgramController } from './deepgram/deepgram.controller';
 import { DbModule } from '../db/db.module';
@@ -54,6 +57,8 @@ import { ClaudeLoginService } from './claude/claude-login.service';
       useFactory: (config: EngineConfig, settings: SettingsService) =>
         new QwenTtsRuntime(config, settings),
     },
+    VoiceStudioClient,
+    VoiceStudioAdapter,
     DeepgramInboxService,
     CodexAppServerClient,
     CliJobLauncher,
@@ -124,7 +129,7 @@ import { ClaudeLoginService } from './claude/claude-login.service';
       ) => new ClaudeProviderAdapter(config, launcher, settings, readiness, inputs),
     },
   ],
-  controllers: [DeepgramController, QwenTtsController, QwenSetupController],
+  controllers: [DeepgramController, QwenTtsController, QwenSetupController, VoiceStudioController],
   exports: [
     SettingsKeyProvider,
     KEY_PROVIDER,
@@ -140,6 +145,8 @@ import { ClaudeLoginService } from './claude/claude-login.service';
     FalAdapter,
     DeepgramAdapter,
     QwenTtsAdapter,
+    VoiceStudioClient,
+    VoiceStudioAdapter,
     CodexProviderAdapter,
     ClaudeProviderAdapter,
     ClaudeRuntimeReadiness,
@@ -156,6 +163,7 @@ export class ProviderModule implements OnModuleInit {
     private readonly fal: FalAdapter,
     private readonly deepgram: DeepgramAdapter,
     private readonly qwenTts: QwenTtsAdapter,
+    private readonly voiceStudio: VoiceStudioAdapter,
     private readonly codex: CodexProviderAdapter,
     private readonly claude: ClaudeProviderAdapter,
     private readonly chatgpt: ChatgptProviderAdapter,
@@ -180,6 +188,7 @@ export class ProviderModule implements OnModuleInit {
     this.registry.register(this.fal);
     this.registry.register(this.deepgram);
     this.registry.register(this.qwenTts);
+    this.registry.register(this.voiceStudio);
     this.registry.register(this.codex);
     this.registry.register(this.claude);
     this.registry.register(this.chatgpt);

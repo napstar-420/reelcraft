@@ -389,7 +389,7 @@ export class MediaAnalyzeCapability extends ProviderMediaCapability {
         type: 'string',
         enum: ['transcribe_align', 'probe'],
         description:
-          'Transcribe align: speech to text with word timings, using Deepgram (paid). Probe: reads the duration and streams locally (free). Defaults to Transcribe align.',
+          'Transcribe align: speech to text with word timings, using VoiceStudio (free, on your computer) or Deepgram (paid). Probe: reads the duration and streams locally (free). Defaults to Transcribe align.',
       },
     },
   };

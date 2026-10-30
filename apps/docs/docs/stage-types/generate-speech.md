@@ -27,7 +27,8 @@ prompt: to change what is said, change the stage that writes the script.
 Everything about how the voice sounds is in the stage's **Model** section. It is also what you set as
 the **Speech and audio** [default](../channels/defaults.md) for a channel or blueprint.
 
-1. Choose a **Provider**: **ElevenLabs**, **Deepgram**, **Qwen3-TTS (local)** or **Fake (test)**.
+1. Choose a **Provider**: **ElevenLabs**, **Deepgram**, **VoiceStudio**, **Qwen3-TTS (local)** or
+   **Fake (test)**.
 2. Choose a **Model**. Each card says what the model is for, how many languages it speaks and how much
    text it takes in one request. Select **Change model** to see the others.
 3. Choose a **Voice**. Select the box to search by name, accent or use, filter by gender or language,
@@ -106,6 +107,23 @@ The voice is part of the model, so choosing another model asks you to choose a v
 
 For a pause in Flux, write `\{pause:1s\}` in the text (500 ms to 3 s, at most 8 per request).
 
+### VoiceStudio
+
+[VoiceStudio](../voice-studio.md) is a free voice app you install next to Reelcraft. It runs on your
+computer, costs nothing, and can speak in voices you cloned, including from a recording in your
+channel's Library.
+
+Each speech engine installed in VoiceStudio is a model here (for example **VoiceStudio (OmniVoice)**,
+**KittenTTS**, **IndexTTS 2.5**). The voice list has the voices saved in VoiceStudio, for engines that
+can clone, and the engine's built-in voices. Until you choose one, the engine's default voice speaks.
+
+Settings: **Language** (a code such as `en`; empty lets the engine decide), **Speed** (0.5 to 2),
+**Delivery** (on engines that follow written instructions), **Word timings**, and under **Advanced**
+**Seed**.
+
+If VoiceStudio isn't running, the stage shows **VoiceStudio isn't reachable**, the blueprint saves with
+a warning, and a run fails when it reaches this stage. See [VoiceStudio](../voice-studio.md).
+
 ### Qwen3-TTS (local)
 
 Qwen3-TTS runs on your own computer, so it costs nothing per request and no text leaves it. Reelcraft
@@ -129,14 +147,15 @@ word timings.
 
 ### Word timings
 
-With **Word timings** on (ElevenLabs only), the stage still makes the same audio, and also keeps when
-each word and sentence is spoken. To use them, open **Output & memory writes** and add a **Memory
+With **Word timings** on (ElevenLabs and VoiceStudio), the stage still makes the same audio, and also
+keeps when each word and sentence is spoken. To use them, open **Output & memory writes** and add a **Memory
 write** with the path `timing`, for example the key `voiceTiming` and the path `timing`. Later stages
 read it with a `memory` reference: it has the same shape as the result of **Transcribe align** in
 [Analyze Media](./analyze-media.md) (`transcript`, `durationSec`, `sentences` and `words`), so it
 works where that result does, such as [Export Subtitles](./export-subtitles.md).
 
-- It costs nothing extra: ElevenLabs sends the timings with the audio.
+- It costs nothing extra: ElevenLabs sends the timings with the audio, and VoiceStudio transcribes its
+  own speech on your computer (a few seconds more).
 - A blueprint that writes `timing` is not runnable while **Word timings** is off, or on a model that
   can't make them (Deepgram, Qwen3-TTS).
 - For a text longer than the model takes at once, the pieces' timings are joined end to end, so later
@@ -145,15 +164,16 @@ works where that result does, such as [Export Subtitles](./export-subtitles.md).
 
 ### Output format
 
-| Provider   | Formats                                                                                                |
-| ---------- | ------------------------------------------------------------------------------------------------------ |
-| ElevenLabs | MP3 (several rates), WAV, Opus. `MP3 44.1 kHz 192 kbps` needs a Creator plan, WAV 44.1 kHz a Pro plan. |
-| Deepgram   | WAV (default), MP3, FLAC, Opus, AAC                                                                    |
-| Qwen3-TTS  | WAV (default), MP3, FLAC, Opus                                                                         |
+| Provider    | Formats                                                                                                |
+| ----------- | ------------------------------------------------------------------------------------------------------ |
+| ElevenLabs  | MP3 (several rates), WAV, Opus. `MP3 44.1 kHz 192 kbps` needs a Creator plan, WAV 44.1 kHz a Pro plan. |
+| Deepgram    | WAV (default), MP3, FLAC, Opus, AAC                                                                    |
+| VoiceStudio | WAV (default), MP3, FLAC, Opus                                                                         |
+| Qwen3-TTS   | WAV (default), MP3, FLAC, Opus                                                                         |
 
 ### Long text
 
-Each model takes a limited number of characters in one request (for example 2,000 on Deepgram, 500 on Qwen3-TTS). Longer
+Each model takes a limited number of characters in one request (for example 2,000 on Deepgram, 4,000 on VoiceStudio, 500 on Qwen3-TTS). Longer
 text is split at sentence ends, spoken piece by piece and joined into one file. Splitting works for
 **MP3** and **WAV**. For the other formats, a text that is too long fails with a message saying so:
 choose MP3 or WAV, or shorten the text.
@@ -172,6 +192,7 @@ enter your price under **Advanced → Price per 1,000 characters**, and the esti
 | Deepgram Flux                      | $0.045                          |
 | Deepgram Aura-2                    | $0.03                           |
 | Deepgram Aura                      | $0.015                          |
+| VoiceStudio                        | Free                            |
 | Qwen3-TTS (local)                  | Free                            |
 
 ## Checks and quality control
@@ -192,7 +213,8 @@ enter your price under **Advanced → Price per 1,000 characters**, and the esti
 
 ## Tips
 
-- Follow this stage with [Analyze Media](./analyze-media.md) to get word timings for captions.
+- For captions, turn on **Word timings** (ElevenLabs, VoiceStudio), or follow this stage with
+  [Analyze Media](./analyze-media.md).
 - Write the script for the ear: short sentences, numbers as words.
 
 ## Example

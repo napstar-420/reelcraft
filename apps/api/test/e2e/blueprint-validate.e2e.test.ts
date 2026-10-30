@@ -1,9 +1,10 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { eq } from 'drizzle-orm';
 import type { StageDef } from '@reelcraft/shared';
 import { ChannelService } from '../../src/channel/channel.service';
 import { BlueprintService } from '../../src/blueprint/blueprint.service';
 import { blueprintVersion } from '../../src/db/schema/index';
+import { VoiceStudioClient } from '../../src/provider/voicestudio/voicestudio-client';
 import { buildTestApp, type TestApp } from '../support/build-app';
 import { createTestDb, type TestDb } from '../support/test-db';
 
@@ -21,6 +22,8 @@ describe('BlueprintService.validateOnly (e2e)', () => {
     testDb = await createTestDb();
     testApp = await buildTestApp(testDb);
   });
+
+  afterEach(() => vi.restoreAllMocks());
 
   afterAll(async () => {
     await testApp?.close();
@@ -116,8 +119,19 @@ describe('BlueprintService.validateOnly (e2e)', () => {
     expect(validated.runnable).toBe(created.runnable);
   });
 
-  it('refuses Include transcript when the judge cannot listen and no Deepgram key is set', async () => {
+  it('refuses Include transcript when the judge cannot listen, VoiceStudio is not set up and no Deepgram key is set', async () => {
     const { blueprints, blueprintId } = await setup();
+    // VoiceStudio closed and never set up, even when a developer has it running locally.
+    const voiceStudio = testApp.app.get(VoiceStudioClient);
+    vi.spyOn(voiceStudio, 'recentStatus').mockResolvedValue({
+      url: 'http://127.0.0.1:3900',
+      reachable: false,
+      starting: false,
+      version: null,
+      device: null,
+      error: "VoiceStudio isn't reachable at http://127.0.0.1:3900.",
+    });
+    vi.spyOn(voiceStudio, 'configured').mockResolvedValue(false);
     const speech: StageDef = {
       key: 'voice',
       label: 'Voice',
@@ -147,7 +161,9 @@ describe('BlueprintService.validateOnly (e2e)', () => {
     expect(result.issues).toContainEqual(
       expect.objectContaining({
         path: 'stages.voice.qc.media.includeTranscript',
-        message: expect.stringMatching(/can't listen to audio and no Deepgram key/),
+        message: expect.stringMatching(
+          /can't listen to audio, VoiceStudio isn't reachable and no Deepgram key/,
+        ),
         severity: 'error',
       }),
     );
