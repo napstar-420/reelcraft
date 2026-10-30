@@ -95,9 +95,9 @@ export class VoiceStudioAdapter implements ProviderAdapter {
     @Inject(DRIZZLE) private readonly db: Db,
   ) {}
 
-  /** The installed engines as speech models, and transcription. Never fails: while VoiceStudio is
-   * closed it lists the engines it last saw, each saying why it can't speak now (`unavailableModalities`,
-   * which the assistant reads), and says why there are none if it never saw any. */
+  /** Lists usable speech engines and transcription. If the engine lookup fails, uses the last
+   * list from the same address and reports an audio unavailability reason when status provides one.
+   * Address and status lookup errors can propagate. */
   async listModels(): Promise<ModelInfo[]> {
     const { engines, listed, live } = await this.engines();
     const reason = live ? undefined : ((await this.client.status()).error ?? undefined);
@@ -115,6 +115,8 @@ export class VoiceStudioAdapter implements ProviderAdapter {
     ];
   }
 
+  /** Returns a warning when availability cannot be checked, an error for an unusable listed
+   * engine, or undefined when the model passes the available checks. */
   async checkModel(modelId: string): Promise<ModelIssue | undefined> {
     const status = await this.client.status();
     if (!status.reachable || status.starting || status.error) {
@@ -151,6 +153,8 @@ export class VoiceStudioAdapter implements ProviderAdapter {
     return { expectedUsd, ceilingUsd: expectedUsd, basis: 'configured_ceiling' };
   }
 
+  /** Prepares a durable speech or transcription request without running it. Throws for invalid
+   * speech settings or a missing media binding or blob; database errors propagate. */
   async submit(req: ProviderRequest, key: string): Promise<JobHandle> {
     if (req.modality === 'media') {
       const source = (req.params.slots as Record<string, { blobId?: string }> | undefined)?.source;
@@ -190,6 +194,8 @@ export class VoiceStudioAdapter implements ProviderAdapter {
     };
   }
 
+  /** Runs the durable speech or transcription request. Throws if the payload is missing and
+   * propagates failures from storage, VoiceStudio, audio joining, or word timing. */
   async fetch(handle: JobHandle): Promise<ProviderResult> {
     const payload = handle.payload as
       { speech?: ProviderRequest; transcribe?: TranscribeJob } | undefined;
@@ -202,7 +208,8 @@ export class VoiceStudioAdapter implements ProviderAdapter {
     return { confirmed: false };
   }
 
-  /** Transcribes audio with word timings, with the engine active in VoiceStudio. */
+  /** Transcribes audio with the engine active in VoiceStudio, returning word timings and the raw
+   * response. VoiceStudio request and response parsing errors propagate. */
   async transcribe(
     audio: Buffer,
     mime: string,
@@ -228,9 +235,10 @@ export class VoiceStudioAdapter implements ProviderAdapter {
   }
 
   /**
-   * Makes a VoiceStudio voice from an audio (or video) file in the channel library: VoiceStudio
-   * keeps a copy of the recording as the voice's reference, and every engine that clones can
-   * then speak in it. Throws `AssetNotUsable` when the asset can't be used.
+   * Creates a VoiceStudio voice from a library audio or video asset, uploading its recording as
+   * the reference. Throws `AssetNotUsable` for a missing, deleted, unsupported, or larger than
+   * 50,000,000-byte asset. Storage and VoiceStudio errors propagate; a response without an ID
+   * also throws after the upload.
    */
   async cloneFromAsset(dto: CloneVoiceStudioVoiceDto): Promise<VoiceStudioVoiceDto> {
     const [row] = await this.db

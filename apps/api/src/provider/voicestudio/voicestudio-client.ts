@@ -22,7 +22,7 @@ export class VoiceStudioError extends Error {
 export const voiceStudioBaseUrl = (url: string): string =>
   url.trim().replace(/\/+$/, '').replace(/\/v1$/, '');
 
-/** The reason in VoiceStudio's error body: OpenAI's `{ error: { message } }` on `/v1`, FastAPI's `{ detail }` elsewhere. */
+/** Extracts a VoiceStudio error message, or returns the first 200 characters of the body. */
 export function voiceStudioErrorReason(body: string): string {
   try {
     const parsed = JSON.parse(body) as { error?: { message?: string }; detail?: unknown };
@@ -65,10 +65,10 @@ export class VoiceStudioClient {
   }
 
   /**
-   * A request to VoiceStudio, at `url` or else the configured address. Throws
-   * `unreachableMessage` when nothing answers, and a `VoiceStudioError` with VoiceStudio's own
-   * reason when it answers with an error. The API key only ever goes to the configured address:
-   * an address being tried out (Test connection) could be anyone's.
+   * Requests `path` at `url` or the configured address, using `timeoutMs` in milliseconds.
+   * The API key is sent only when the normalized address matches the configured address.
+   * Network failures and timeouts throw errors; non-success responses throw `VoiceStudioError`,
+   * with a specific key message for 401 responses. Settings and response-reading errors propagate.
    */
   async request(
     path: string,
@@ -112,9 +112,10 @@ export class VoiceStudioClient {
   }
 
   /**
-   * Whether VoiceStudio answers at `url` (else the saved address) and accepts Reelcraft's
-   * requests: it can be used when it is reachable, not starting, and has no `error`. Starts
-   * nothing; quick enough for the UI to ask often.
+   * Checks `url` or the configured address. Configured-address results are cached for two seconds;
+   * a nonempty `url` is checked afresh. Network failures become an unreachable status, and a
+   * 401 from the voice endpoint becomes a status error. Other voice endpoint errors are ignored.
+   * Settings errors can propagate.
    */
   async status(url?: string): Promise<VoiceStudioStatusDto> {
     // An address being tried out is always asked afresh; the configured one is reused briefly.
