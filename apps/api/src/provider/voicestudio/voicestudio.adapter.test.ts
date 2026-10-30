@@ -494,6 +494,23 @@ describe('VoiceStudioAdapter', () => {
     expect(client.json.mock.calls.some(([path]) => path.startsWith('/archetypes'))).toBe(false);
   });
 
+  it('refuses a designed voice on an engine that cannot read voice-design tags', async () => {
+    const { client, calls } = fakeClient({
+      '/engines/tts': { backends: [KITTEN] },
+      '/archetypes/feat_00_the_librarian': LIBRARIAN,
+      '/v1/audio/speech': 'RIFF',
+    });
+    const vs = adapter(client);
+    const req = {
+      ...speechReq({ voiceId: 'archetype:feat_00_the_librarian' }),
+      modelId: 'kittentts',
+    };
+    await expect(vs.fetch(await vs.submit(req, 'k'))).rejects.toThrow(
+      `VoiceStudio: "The Librarian" is a VoiceStudio premade voice, which KittenTTS can't speak.`,
+    );
+    expect(calls.filter((c) => c.path === '/v1/audio/speech')).toHaveLength(0);
+  });
+
   it('says so when a built-in designed voice is gone', async () => {
     const { client } = fakeClient({
       '/archetypes/gone': new VoiceStudioError(404, 'Archetype not found'),

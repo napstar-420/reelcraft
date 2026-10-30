@@ -331,6 +331,16 @@ export class VoiceStudioAdapter implements ProviderAdapter {
     const voiceId = textParam(params, 'voiceId') ?? DEFAULT_VOICE_ID;
     const ids = { providerId: this.id, jobId: handle.externalId, model: req.modelId };
     const design = await this.archetype(voiceId);
+    if (design) {
+      // A designed voice is a set of voice-design tags; only engines that read them can speak it
+      // (a stage can keep one after its engine is switched).
+      const engine = (await this.engines()).listed.find((e) => e.id === req.modelId);
+      if (engine && !speaksDesignedVoices(engine)) {
+        throw new Error(
+          `VoiceStudio: "${design.name}" is a VoiceStudio premade voice, which ${engine.display_name || engine.id} can't speak. Choose another voice, or an OmniVoice engine.`,
+        );
+      }
+    }
     const seed = speechSeed(params, design);
     const startedAt = Date.now();
     const audio: Buffer[] = [];
