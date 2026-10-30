@@ -82,9 +82,10 @@ the release-please PR for 0.3.0 (Settings and the guide's in-app links) is #51.
   container (`/.dockerenv`) and `http://127.0.0.1:3900` outside, sending `VOICESTUDIO_API_KEY` (or the key saved
   in Settings) as a bearer token, and only ever to the configured address (a Test connection to another
   address goes without it). VoiceStudio's desktop app listens on `127.0.0.1`, which Docker Desktop
-  reaches through `host.docker.internal` but Linux Docker Engine does not: there the user runs the
-  container with `--network host`, or VoiceStudio with `OMNIVOICE_BIND_HOST=0.0.0.0` and an API key (user
-  guide, VoiceStudio page). Voices cloned from the library live
+  reaches through `host.docker.internal` but Linux Docker Engine does not: there the user runs
+  VoiceStudio with `OMNIVOICE_BIND_HOST=0.0.0.0` and an API key, or runs it in Docker on a shared network
+  (user guide, VoiceStudio page). Don't suggest `--network host` for the Reelcraft container: its bundled
+  PostgreSQL, MinIO and Inngest would then listen on the host's own ports. Voices cloned from the library live
   in VoiceStudio, not in Reelcraft's backups.
 
 ## Rules to follow when changing this

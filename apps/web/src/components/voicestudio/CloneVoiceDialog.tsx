@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useRef, useState } from 'react';
+import { useIsMutating, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { AssetDto } from '@reelcraft/shared';
@@ -38,7 +38,20 @@ export function CloneVoiceDialog({
   const [name, setName] = useState(() => voiceNameFrom(asset.name));
   const [transcript, setTranscript] = useState('');
   const [language, setLanguage] = useState('');
+  // Whether this dialog is on screen, read by the mutation's callbacks, which still run after the
+  // dialog is closed (making a voice can take minutes).
+  const shown = useRef(true);
+  useEffect(() => {
+    shown.current = open;
+    return () => {
+      shown.current = false;
+    };
+  }, [open]);
+  const mutationKey = ['voicestudio-clone', asset.id];
+  // A voice still being made from this file, possibly by a dialog that was closed since.
+  const making = useIsMutating({ mutationKey }) > 0;
   const clone = useMutation({
+    mutationKey,
     mutationFn: () =>
       api.cloneVoiceStudioVoice({
         assetId: asset.id,
@@ -51,19 +64,18 @@ export function CloneVoiceDialog({
       toast.success(
         `“${voice.name}” is saved in VoiceStudio. To use it, choose a VoiceStudio engine that can clone voices (such as OmniVoice) in a Generate Speech stage, then pick it as the voice.`,
       );
-      onOpenChange(false);
+      if (shown.current) onOpenChange(false);
+    },
+    onError: (error) => {
+      // Shown in the dialog while it is open; after it was closed, as a notice.
+      if (!shown.current) toast.error(apiErrorMessage(error, 'The voice could not be made.'));
     },
   });
   const ready = voiceStudioReady(status.data);
-  // Closing while the voice is being made would let a reopened dialog make it a second time.
-  const close = (next: boolean) => {
-    if (!next && clone.isPending) return;
-    onOpenChange(next);
-  };
   const tooBig = asset.file.bytes > MAX_CLONE_BYTES;
 
   return (
-    <Dialog open={open} onOpenChange={close}>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Make a VoiceStudio voice</DialogTitle>
@@ -77,10 +89,16 @@ export function CloneVoiceDialog({
           className="flex flex-col gap-4"
           onSubmit={(event) => {
             event.preventDefault();
-            if (ready && !tooBig && name.trim()) clone.mutate();
+            if (ready && !tooBig && !making && name.trim()) clone.mutate();
           }}
         >
           {!ready ? <VoiceStudioStatus /> : null}
+          {making ? (
+            <p className="text-sm text-muted-foreground">
+              VoiceStudio is making a voice from this file. You can close this window: Reelcraft
+              tells you when it is done.
+            </p>
+          ) : null}
           {tooBig ? (
             <p className="text-sm text-destructive">
               This file is too large to clone from (over {MAX_CLONE_BYTES / 1_000_000} MB). Upload a
@@ -124,17 +142,12 @@ export function CloneVoiceDialog({
             </p>
           ) : null}
           <DialogFooter>
-            <Button
-              type="button"
-              variant="ghost"
-              disabled={clone.isPending}
-              onClick={() => close(false)}
-            >
+            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button type="submit" disabled={!ready || tooBig || !name.trim() || clone.isPending}>
-              {clone.isPending ? <Loader2 className="animate-spin" /> : null}
-              {clone.isPending ? 'Making the voice…' : 'Make voice'}
+            <Button type="submit" disabled={!ready || tooBig || !name.trim() || making}>
+              {making ? <Loader2 className="animate-spin" /> : null}
+              {making ? 'Making the voice…' : 'Make voice'}
             </Button>
           </DialogFooter>
         </form>

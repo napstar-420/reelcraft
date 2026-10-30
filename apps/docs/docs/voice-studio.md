@@ -60,9 +60,6 @@ requests from there.
   reachable, use one of the Linux setups below.
 - **Docker on Linux (Docker Engine, without Docker Desktop)** can't reach a program that only listens
   on `127.0.0.1`. Use one of these:
-  - **Host networking (simplest).** Start the Reelcraft container with `--network host` instead of
-    `-p 8080:8080`, and save `http://127.0.0.1:3900` as the VoiceStudio address. Reelcraft then reaches
-    VoiceStudio as the same computer, with no key.
   - **VoiceStudio on all interfaces, with a key.** Start VoiceStudio's backend with
     `OMNIVOICE_BIND_HOST=0.0.0.0` and `OMNIVOICE_API_KEY` set to a long random key (see VoiceStudio's
     [API authentication](https://github.com/debpalash/VoiceStudio/blob/main/docs/api-auth.md)). Start the
@@ -72,6 +69,10 @@ requests from there.
   - **VoiceStudio in Docker too.** Put both containers on one Docker network, save
     `http://<VoiceStudio's container name>:3900` as the address, and start VoiceStudio with
     `OMNIVOICE_API_KEY` and enter the same key here.
+
+  Don't start the Reelcraft container with `--network host` for this: the database, file storage and
+  job runner inside it would then use your computer's own ports, and could clash with other programs
+  or be reachable from your network.
 
 Don't use VoiceStudio's **Network** sharing (the **Local** / **Network** switch) for Reelcraft: it
 listens on another port and asks for a PIN that changes every time, which Reelcraft can't send.
