@@ -85,6 +85,30 @@ const accentLabel = (accent: string) =>
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(' ');
 
+/** Language codes for the language names VoiceStudio uses on voices. */
+const LANGUAGE_CODES: Record<string, string> = {
+  english: 'en',
+  chinese: 'zh',
+  spanish: 'es',
+  french: 'fr',
+  german: 'de',
+  italian: 'it',
+  portuguese: 'pt',
+  russian: 'ru',
+  hindi: 'hi',
+  japanese: 'ja',
+  korean: 'ko',
+  arabic: 'ar',
+  dutch: 'nl',
+  polish: 'pl',
+  turkish: 'tr',
+};
+
+/** A VoiceStudio voice's language as the voice list gives it, a code such as `en` (the picker's
+ * language filter matches it exactly). A name it doesn't know, or a code, is kept as it is. */
+export const languageCode = (language: string): string =>
+  LANGUAGE_CODES[language.trim().toLowerCase()] ?? language;
+
 /** A built-in designed voice, as the voice picker lists it. */
 export function archetypeVoice(archetype: VoiceStudioArchetype): VoiceInfo {
   const facets = archetype.facets ?? {};
@@ -97,7 +121,7 @@ export function archetypeVoice(archetype: VoiceStudioArchetype): VoiceInfo {
     ...(facets.gender && { gender: facets.gender }),
     ...(facets.age && { age: facets.age }),
     ...(facets.accent && { accent: accentLabel(facets.accent) }),
-    ...(archetype.language && { languages: [archetype.language] }),
+    ...(archetype.language && { languages: [languageCode(archetype.language)] }),
     ...(useCase && { useCases: [useCase] }),
   };
 }
@@ -291,7 +315,7 @@ export function engineVoices(
             name: p.name,
             category: 'cloned',
             description: 'Saved in VoiceStudio',
-            ...(p.language && p.language !== 'Auto' && { languages: [p.language] }),
+            ...(p.language && p.language !== 'Auto' && { languages: [languageCode(p.language)] }),
           }));
   const builtIn: VoiceInfo[] = (engine.preset_voices ?? []).map((id) => ({
     id,
@@ -301,6 +325,10 @@ export function engineVoices(
   const designed = speaksDesignedVoices(engine) ? archetypes.map(archetypeVoice) : [];
   return [...saved, ...builtIn, ...designed];
 }
+
+/** The seed speech is made with: the stage's, else a designed voice's own, else none. */
+export const speechSeed = (params: SpeechParams, design?: unknown): number | undefined =>
+  numberParam(params, 'seed') ?? (design ? ARCHETYPE_SEED : undefined);
 
 /**
  * The JSON body of one `POST /v1/audio/speech`. A setting left unset is not sent. A built-in
@@ -317,7 +345,7 @@ export function voiceStudioRequestBody(args: {
 }): Record<string, unknown> {
   const { params, design } = args;
   const speed = numberParam(params, 'speed');
-  const seed = numberParam(params, 'seed') ?? (design ? ARCHETYPE_SEED : undefined);
+  const seed = speechSeed(params, design);
   const instructions = design?.instruct || textParam(params, 'instructions');
   return {
     model: args.engineId,

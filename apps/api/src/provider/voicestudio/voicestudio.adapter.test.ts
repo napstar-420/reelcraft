@@ -185,7 +185,7 @@ describe('VoiceStudio helpers', () => {
         gender: 'female',
         age: 'middle-aged',
         accent: 'British',
-        languages: ['English'],
+        languages: ['en'],
         useCases: ['Narration & story'],
       },
       expect.objectContaining({ id: 'archetype:feat_08_captain_crusty', gender: 'male' }),
@@ -399,12 +399,43 @@ describe('VoiceStudioAdapter', () => {
       '/v1/audio/speech': 'RIFF',
     });
     const vs = adapter(client);
-    await vs.fetch(await vs.submit(speechReq({ voiceId: 'archetype:feat_00_the_librarian' }), 'k'));
+    const result = await vs.fetch(
+      await vs.submit(speechReq({ voiceId: 'archetype:feat_00_the_librarian' }), 'k'),
+    );
     expect(calls[0]!.json).toMatchObject({
       voice: 'default',
       seed: 42,
       instructions: LIBRARIAN.instruct,
     });
+    // The run records the seed it was made with.
+    expect(result.repro).toMatchObject({ level: 'approximate', seed: '42' });
+  });
+
+  it('gives voice languages as codes, so the language filter matches them', async () => {
+    const { client } = fakeClient({
+      '/engines/tts': { backends: [OMNI] },
+      '/v1/audio/voices': {
+        voices: [{ voice_id: 'p1', name: 'Story teller', type: 'profile', language: 'English' }],
+      },
+      '/archetypes?limit=500&offset=0': { total: 1, items: [{ ...LIBRARIAN, language: 'Hindi' }] },
+    });
+    const vs = adapter(client);
+    expect(
+      (await vs.listVoices({ modelId: 'omnivoice', language: 'en' })).voices.map((v) => v.id),
+    ).toEqual(['p1']);
+    expect(
+      (await vs.listVoices({ modelId: 'omnivoice', language: 'hi' })).voices.map((v) => v.id),
+    ).toEqual(['archetype:feat_00_the_librarian']);
+  });
+
+  it('does not read the designed-voice catalogue for engines that cannot use it', async () => {
+    const { client } = fakeClient({
+      '/engines/tts': { backends: [KITTEN] },
+      '/v1/audio/voices': { voices: [] },
+    });
+    const voices = await adapter(client).listVoices({ modelId: 'kittentts' });
+    expect(voices.voices.map((v) => v.id)).toEqual(['expr-voice-2-f', 'expr-voice-3-m']);
+    expect(client.json.mock.calls.some(([path]) => path.startsWith('/archetypes'))).toBe(false);
   });
 
   it('says so when a built-in designed voice is gone', async () => {

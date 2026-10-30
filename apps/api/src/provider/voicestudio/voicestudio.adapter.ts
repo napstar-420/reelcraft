@@ -41,6 +41,8 @@ import {
   DEFAULT_VOICE_ID,
   engineIssue,
   noEngineReason,
+  speaksDesignedVoices,
+  speechSeed,
   engineModelInfo,
   engineVoices,
   timingFromTranscription,
@@ -158,7 +160,7 @@ export class VoiceStudioAdapter implements ProviderAdapter {
     if (!engine) return { voices: [] };
     const [listed, designed] = await Promise.all([
       this.lookup<{ voices?: VoiceStudioProfile[] }>('/v1/audio/voices'),
-      this.archetypes(),
+      speaksDesignedVoices(engine) ? this.archetypes() : [],
     ]);
     const voices = filterVoices(engineVoices(engine, listed?.voices ?? [], designed), query);
     const start = Number(query.cursor) || 0;
@@ -328,6 +330,7 @@ export class VoiceStudioAdapter implements ProviderAdapter {
     const voiceId = textParam(params, 'voiceId') ?? DEFAULT_VOICE_ID;
     const ids = { providerId: this.id, jobId: handle.externalId, model: req.modelId };
     const design = await this.archetype(voiceId);
+    const seed = speechSeed(params, design);
     const startedAt = Date.now();
     const audio: Buffer[] = [];
     for (const [index, piece] of pieces.entries()) {
@@ -383,8 +386,8 @@ export class VoiceStudioAdapter implements ProviderAdapter {
       },
       costUsd: text.length * ownPrice(params),
       repro: {
-        level: params.seed !== undefined ? 'approximate' : 'none',
-        ...(params.seed !== undefined && { seed: String(params.seed) }),
+        level: seed !== undefined ? 'approximate' : 'none',
+        ...(seed !== undefined && { seed: String(seed) }),
         providerVersion: req.modelId,
       },
       rawResponse: { voiceId, format: family, characters: text.length, pieces: pieces.length },
