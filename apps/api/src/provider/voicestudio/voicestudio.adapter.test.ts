@@ -13,6 +13,7 @@ import {
   usableEngines,
   voiceStudioOptions,
   voiceStudioRequestBody,
+  type VoiceStudioArchetype,
   type VoiceStudioEngine,
 } from './voicestudio-speech';
 
@@ -33,6 +34,25 @@ const KITTEN: VoiceStudioEngine = {
   instruct_vocabulary: 'freeform',
   preset_voices: ['expr-voice-2-f', 'expr-voice-3-m'],
   default_voice: 'expr-voice-2-f',
+};
+
+const LIBRARIAN: VoiceStudioArchetype = {
+  id: 'feat_00_the_librarian',
+  name: 'The Librarian',
+  instruct: 'female, middle-aged, low pitch, british accent',
+  use_case: 'narration',
+  language: 'English',
+  is_featured: true,
+  facets: { gender: 'female', age: 'middle-aged', accent: 'british accent' },
+};
+const CAPTAIN: VoiceStudioArchetype = {
+  id: 'feat_08_captain_crusty',
+  name: 'Captain Crusty',
+  instruct: 'male, elderly, very low pitch',
+  use_case: 'characters',
+  language: 'English',
+  is_featured: true,
+  facets: { gender: 'male', age: 'elderly', accent: null },
 };
 
 const UP: VoiceStudioStatusDto = {
@@ -153,6 +173,50 @@ describe('VoiceStudio helpers', () => {
       'expr-voice-2-f',
       'expr-voice-3-m',
     ]);
+  });
+
+  it("lists VoiceStudio's built-in designed voices for engines that read voice-design tags", () => {
+    expect(engineVoices(OMNI, [], [LIBRARIAN, CAPTAIN])).toEqual([
+      {
+        id: 'archetype:feat_00_the_librarian',
+        name: 'The Librarian',
+        category: 'premade',
+        description: 'Built into VoiceStudio · Narration & story',
+        gender: 'female',
+        age: 'middle-aged',
+        accent: 'British',
+        languages: ['English'],
+        useCases: ['Narration & story'],
+      },
+      expect.objectContaining({ id: 'archetype:feat_08_captain_crusty', gender: 'male' }),
+    ]);
+    // KittenTTS reads instructions as text, not voice-design tags: only its own voices.
+    expect(engineVoices(KITTEN, [], [LIBRARIAN]).map((v) => v.id)).toEqual([
+      'expr-voice-2-f',
+      'expr-voice-3-m',
+    ]);
+  });
+
+  it("speaks a designed voice as VoiceStudio does: the engine's voice shaped by its tags", () => {
+    const body = (params: Record<string, unknown>) =>
+      voiceStudioRequestBody({
+        engineId: 'omnivoice',
+        voiceId: 'archetype:feat_00_the_librarian',
+        text: 'Hi',
+        format: 'wav',
+        params,
+        design: LIBRARIAN,
+      });
+    expect(body({})).toEqual({
+      model: 'omnivoice',
+      input: 'Hi',
+      voice: 'default',
+      response_format: 'wav',
+      seed: 42,
+      instructions: 'female, middle-aged, low pitch, british accent',
+    });
+    // A seed set on the stage still wins.
+    expect(body({ seed: 7 })).toMatchObject({ seed: 7 });
   });
 
   it('sends only the settings that are set', () => {
@@ -327,6 +391,61 @@ describe('VoiceStudioAdapter', () => {
     expect(result.output).toMatchObject({ kind: 'media.audio', mime: 'audio/mpeg' });
     expect(result.costUsd).toBe(0);
     expect(result.timing).toBeUndefined();
+  });
+
+  it('speaks in a built-in designed voice, looking up its recipe first', async () => {
+    const { client, calls } = fakeClient({
+      '/archetypes/feat_00_the_librarian': LIBRARIAN,
+      '/v1/audio/speech': 'RIFF',
+    });
+    const vs = adapter(client);
+    await vs.fetch(await vs.submit(speechReq({ voiceId: 'archetype:feat_00_the_librarian' }), 'k'));
+    expect(calls[0]!.json).toMatchObject({
+      voice: 'default',
+      seed: 42,
+      instructions: LIBRARIAN.instruct,
+    });
+  });
+
+  it('says so when a built-in designed voice is gone', async () => {
+    const { client } = fakeClient({
+      '/archetypes/gone': new VoiceStudioError(404, 'Archetype not found'),
+    });
+    const vs = adapter(client);
+    await expect(
+      vs.fetch(await vs.submit(speechReq({ voiceId: 'archetype:gone' }), 'k')),
+    ).rejects.toThrow(
+      'VoiceStudio: it has no built-in voice "gone" any more. Choose another voice.',
+    );
+  });
+
+  it('lists voices a page at a time, with designed voices read once', async () => {
+    const designed = Array.from({ length: 45 }, (_, i) => ({
+      ...LIBRARIAN,
+      id: `a_${i}`,
+      name: `Voice ${i}`,
+    }));
+    const { client } = fakeClient({
+      '/engines/tts': { backends: [OMNI] },
+      '/v1/audio/voices': {
+        voices: [{ voice_id: 'p1', name: 'Story teller', type: 'profile' }],
+      },
+      '/archetypes?limit=500&offset=0': { total: 45, items: designed },
+    });
+    const vs = adapter(client);
+    const first = await vs.listVoices({ modelId: 'omnivoice' });
+    expect(first.voices).toHaveLength(30);
+    expect(first.voices[0]!.name).toBe('Story teller');
+    expect(first.nextCursor).toBe('30');
+    const second = await vs.listVoices({ modelId: 'omnivoice', cursor: '30' });
+    expect(second.voices.map((v) => v.name).at(-1)).toBe('Voice 44');
+    expect(second.nextCursor).toBeUndefined();
+    const catalogue = client.json.mock.calls.filter(([path]) => path.startsWith('/archetypes'));
+    expect(catalogue).toHaveLength(1);
+    // The picker's search reaches every designed voice.
+    expect(
+      (await vs.listVoices({ modelId: 'omnivoice', search: 'voice 44' })).voices.map((v) => v.id),
+    ).toEqual(['archetype:a_44']);
   });
 
   it('transcribes its own speech when Word timings is on', async () => {

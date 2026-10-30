@@ -115,7 +115,8 @@ channel's Library.
 
 Each speech engine installed in VoiceStudio is a model here (for example **VoiceStudio (OmniVoice)**,
 **KittenTTS**, **IndexTTS 2.5**). The voice list has the voices saved in VoiceStudio, for engines that
-can clone, and the engine's built-in voices. Until you choose one, the engine's default voice speaks.
+can clone, the engine's built-in voices, and, for OmniVoice engines, VoiceStudio's ready-made
+**Premade** voices. Until you choose one, the engine's default voice speaks.
 
 Settings: **Language** (a code such as `en`; empty lets the engine decide), **Speed** (0.5 to 2),
 **Delivery** (on engines that follow written instructions), **Word timings**, and under **Advanced**

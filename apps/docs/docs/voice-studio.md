@@ -103,6 +103,12 @@ before testing it with a key.
 3. Choose a **Voice**: one you saved in VoiceStudio, or one of the engine's built-in voices. Until you
    choose, the engine's default voice speaks. Engines that can't clone (such as KittenTTS) only show
    their built-in voices.
+
+   OmniVoice engines also offer VoiceStudio's ready-made voices, marked **Premade**: hundreds of
+   designed voices such as **The Librarian** or **The Storyteller**, the same ones as in VoiceStudio's
+   voice gallery. Search by name, accent or use, or filter by gender and language. They have no sample
+   in the list: choose one and select **Speak it**.
+
 4. Adjust the settings, and select **Speak it** to hear a sample. Samples are free.
 
 A blueprint keeps the engine you chose, even if you switch the active engine inside VoiceStudio.

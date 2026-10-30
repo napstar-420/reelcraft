@@ -25,7 +25,12 @@ It is a large Python and Electron app with its own installer, updater and model 
 - **Speech is `POST /v1/audio/speech`**, one request per ≤ 4,000 characters, joined like the other speech
   providers. `voiceId` is a saved VoiceStudio voice (profile id) or an engine's built-in voice; unset means
   `default`, the engine's own. Voices come from `GET /v1/audio/voices` (profiles) plus the engine's
-  `preset_voices`; profiles are listed only for engines that can clone.
+  `preset_voices`; profiles are listed only for engines that can clone. Engines that read voice-design
+  tags (`instruct_vocabulary: "tags"`, OmniVoice) also list VoiceStudio's designed voices
+  (`GET /archetypes`) as `archetype:<id>`. Those are recipes, not recordings: speech sends voice
+  `default` with the archetype's tags as `instructions` and its seed (42) unless the stage sets one,
+  which is how VoiceStudio speaks one saved as a voice. Reelcraft doesn't save them as VoiceStudio
+  profiles, so picking one leaves nothing behind in VoiceStudio.
 - **Word timings by transcription.** VoiceStudio returns no timings with speech, so with **Word timings** on,
   the adapter transcribes its own result (`/v1/audio/transcriptions`, `verbose_json`, word granularity) into
   the same `TimingMap` as Analyze Media. QC's **Include transcript** prefers VoiceStudio (free) over Deepgram.

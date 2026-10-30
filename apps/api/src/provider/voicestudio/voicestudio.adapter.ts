@@ -35,8 +35,9 @@ import {
   type SpeechParams,
 } from '../speech/speech-params';
 import { splitSpeechText } from '../speech/speech-text';
-import { unreachableMessage, VoiceStudioClient } from './voicestudio-client';
+import { unreachableMessage, VoiceStudioClient, VoiceStudioError } from './voicestudio-client';
 import {
+  archetypeId,
   DEFAULT_VOICE_ID,
   engineIssue,
   noEngineReason,
@@ -49,11 +50,16 @@ import {
   voiceStudioRequestBody,
   VOICESTUDIO_MAX_CHARS,
   type VerboseTranscription,
+  type VoiceStudioArchetype,
   type VoiceStudioEngine,
   type VoiceStudioProfile,
 } from './voicestudio-speech';
 
 const LOOKUP_TIMEOUT_MS = 5_000;
+/** VoiceStudio's largest page of built-in designed voices. */
+const ARCHETYPE_PAGE = 500;
+/** Voices per page of the picker when it doesn't ask for a size. */
+const VOICE_PAGE = 30;
 /** The first request to an engine can load (or download) its model, which VoiceStudio allows up to
  * 20 minutes; a long piece on a CPU is slow too. */
 const SPEECH_TIMEOUT_MS = 1_500_000;
@@ -85,6 +91,8 @@ export class VoiceStudioAdapter implements ProviderAdapter {
   private lastEngines: VoiceStudioEngine[] = [];
   /** Everything it last listed, usable or not, to say why an engine can't be used. */
   private lastListed: VoiceStudioEngine[] = [];
+  /** Its built-in designed voices: a fixed catalogue, so read once per address. */
+  private designed: VoiceStudioArchetype[] | undefined;
   /** The VoiceStudio address the cached lists came from. */
   private listedAt: string | undefined;
 
@@ -143,11 +151,22 @@ export class VoiceStudioAdapter implements ProviderAdapter {
     return issue ? { message: issue, severity: 'error' } : undefined;
   }
 
+  /** Saved, built-in and designed voices for one engine, a page at a time (`cursor` is the
+   * offset). */
   async listVoices(query: VoiceQuery): Promise<VoiceListDto> {
     const engine = (await this.engines()).engines.find((e) => e.id === query.modelId);
     if (!engine) return { voices: [] };
-    const listed = await this.lookup<{ voices?: VoiceStudioProfile[] }>('/v1/audio/voices');
-    return { voices: filterVoices(engineVoices(engine, listed?.voices ?? []), query) };
+    const [listed, designed] = await Promise.all([
+      this.lookup<{ voices?: VoiceStudioProfile[] }>('/v1/audio/voices'),
+      this.archetypes(),
+    ]);
+    const voices = filterVoices(engineVoices(engine, listed?.voices ?? [], designed), query);
+    const start = Number(query.cursor) || 0;
+    const end = start + (query.limit ?? VOICE_PAGE);
+    return {
+      voices: voices.slice(start, end),
+      ...(end < voices.length && { nextCursor: String(end) }),
+    };
   }
 
   async estimate(req: ProviderRequest): Promise<CostEstimate> {
@@ -308,6 +327,7 @@ export class VoiceStudioAdapter implements ProviderAdapter {
     }
     const voiceId = textParam(params, 'voiceId') ?? DEFAULT_VOICE_ID;
     const ids = { providerId: this.id, jobId: handle.externalId, model: req.modelId };
+    const design = await this.archetype(voiceId);
     const startedAt = Date.now();
     const audio: Buffer[] = [];
     for (const [index, piece] of pieces.entries()) {
@@ -320,6 +340,7 @@ export class VoiceStudioAdapter implements ProviderAdapter {
             text: piece,
             format: family,
             params,
+            ...(design && { design }),
           }),
           timeoutMs: SPEECH_TIMEOUT_MS,
         });
@@ -428,6 +449,7 @@ export class VoiceStudioAdapter implements ProviderAdapter {
       this.listedAt = base;
       this.lastListed = [];
       this.lastEngines = [];
+      this.designed = undefined;
     }
     const answer = await this.lookup<{ backends?: VoiceStudioEngine[] }>('/engines/tts');
     if (answer?.backends) {
@@ -435,6 +457,42 @@ export class VoiceStudioAdapter implements ProviderAdapter {
       this.lastEngines = usableEngines(answer.backends);
     }
     return { engines: this.lastEngines, listed: this.lastListed, live: !!answer?.backends };
+  }
+
+  /** VoiceStudio's built-in designed voices, or none when it can't list them (not remembered,
+   * so the next look asks again). */
+  private async archetypes(): Promise<VoiceStudioArchetype[]> {
+    if (this.designed) return this.designed;
+    const found: VoiceStudioArchetype[] = [];
+    for (;;) {
+      const page = await this.lookup<{ total?: number; items?: VoiceStudioArchetype[] }>(
+        `/archetypes?limit=${ARCHETYPE_PAGE}&offset=${found.length}`,
+      );
+      if (!page?.items) return [];
+      found.push(...page.items);
+      if (!page.items.length || found.length >= (page.total ?? 0)) break;
+    }
+    this.designed = found;
+    return found;
+  }
+
+  /** The recipe of a built-in designed voice, or undefined for any other voice. */
+  private async archetype(voiceId: string): Promise<VoiceStudioArchetype | undefined> {
+    const id = archetypeId(voiceId);
+    if (id === undefined) return undefined;
+    try {
+      return await this.client.json<VoiceStudioArchetype>(
+        `/archetypes/${encodeURIComponent(id)}`,
+        LOOKUP_TIMEOUT_MS,
+      );
+    } catch (error) {
+      if (error instanceof VoiceStudioError && error.status === 404) {
+        throw new Error(
+          `VoiceStudio: it has no built-in voice "${id}" any more. Choose another voice.`,
+        );
+      }
+      throw new Error(named((error as Error).message));
+    }
   }
 
   private text(req: ProviderRequest): string {
