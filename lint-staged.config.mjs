@@ -1,6 +1,6 @@
 // Pre-commit lint and format of the staged files (.husky/pre-commit): eslint
-// and Prettier fix what they can. The hook then typechecks and runs the unit
-// tests for the whole project. CI doesn't repeat these checks.
+// and Prettier fix what they can. The hook then builds, typechecks and runs the
+// unit tests for the whole project. CI doesn't repeat these checks.
 const code = /\.(c|m)?[jt]sx?$/;
 const args = (files) => files.map((file) => JSON.stringify(file)).join(' ');
 

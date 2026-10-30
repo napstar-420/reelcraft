@@ -8,10 +8,10 @@ on:
   pull_request:
   workflow_dispatch:
 
-# A new commit on a PR cancels the run for the one before it. Runs on main
-# always finish.
+# A new commit on a PR cancels the run for the one before it. Each run on main
+# gets its own group, so none is cancelled or replaced while it waits.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && github.run_id || github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:

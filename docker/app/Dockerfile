@@ -101,19 +101,12 @@ RUN useradd --system --uid 10001 --user-group --create-home --home-dir /home/ree
 
 ENV REELCRAFT_APP_DIR=/opt/reelcraft/app
 COPY --from=build /src/package.json /src/pnpm-workspace.yaml ${REELCRAFT_APP_DIR}/
+# Dependencies first; the workspace packages, the built app and the Qwen3-TTS
+# source go after the browser install below, so a source-only change doesn't
+# re-download the browser.
 COPY --from=build /src/node_modules ${REELCRAFT_APP_DIR}/node_modules
-COPY --from=build /src/packages ${REELCRAFT_APP_DIR}/packages
-# Dependencies first and the built app after the browser install below, so a
-# source-only change doesn't re-download the browser.
 COPY --from=build /src/apps/api/node_modules ${REELCRAFT_APP_DIR}/apps/api/node_modules
 COPY --from=build /src/apps/render-worker/node_modules ${REELCRAFT_APP_DIR}/apps/render-worker/node_modules
-
-# The Qwen3-TTS service's source and the pinned package list `uv` installs it from. They are
-# outside the app bundle on purpose: that bundle is what in-app updates replace, and this is
-# runtime, so changing it is a RUNTIME_VERSION bump. Only the source is here. The Python
-# packages and the voice models are installed and downloaded on request into /data/qwen-tts.
-COPY services/qwen-tts/pyproject.toml services/qwen-tts/constraints.txt /opt/reelcraft/qwen-tts/
-COPY services/qwen-tts/src /opt/reelcraft/qwen-tts/src
 
 # Remotion looks for its browser relative to the working directory, and render
 # jobs run in per-job folders, so install it once and point at it explicitly.
@@ -126,6 +119,7 @@ RUN mkdir -p /opt/remotion && cd /opt/remotion \
  && /usr/local/bin/chrome-headless-shell --version \
  && install -d -o reelcraft -g reelcraft "${REELCRAFT_APP_DIR}/apps/render-worker/node_modules/.cache"
 
+COPY --from=build /src/packages ${REELCRAFT_APP_DIR}/packages
 COPY --from=build /src/apps/api/package.json ${REELCRAFT_APP_DIR}/apps/api/
 COPY --from=build /src/apps/api/dist ${REELCRAFT_APP_DIR}/apps/api/dist
 COPY --from=build /src/apps/api/drizzle ${REELCRAFT_APP_DIR}/apps/api/drizzle
@@ -133,6 +127,13 @@ COPY --from=build /src/apps/render-worker/package.json ${REELCRAFT_APP_DIR}/apps
 COPY --from=build /src/apps/render-worker/dist ${REELCRAFT_APP_DIR}/apps/render-worker/dist
 COPY --from=build /src/apps/render-worker/blender ${REELCRAFT_APP_DIR}/apps/render-worker/blender
 COPY --from=build /src/apps/web/dist ${REELCRAFT_APP_DIR}/apps/web/dist
+
+# The Qwen3-TTS service's source and the pinned package list `uv` installs it from. They are
+# outside the app bundle on purpose: that bundle is what in-app updates replace, and this is
+# runtime, so changing it is a RUNTIME_VERSION bump. Only the source is here. The Python
+# packages and the voice models are installed and downloaded on request into /data/qwen-tts.
+COPY services/qwen-tts/pyproject.toml services/qwen-tts/constraints.txt /opt/reelcraft/qwen-tts/
+COPY services/qwen-tts/src /opt/reelcraft/qwen-tts/src
 
 COPY docker/app/rootfs/ /
 # The image/app-bundle contract: RUNTIME_VERSION says which runtime this image
