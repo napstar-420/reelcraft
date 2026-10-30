@@ -59,6 +59,10 @@ export const ARCHETYPE_PREFIX = 'archetype:';
  * every time and in every piece of a long script. */
 export const ARCHETYPE_SEED = 42;
 
+/** Diffusion steps for a designed voice. VoiceStudio renders its designed voices with 32: at its
+ * default of 16, seed 42 can collapse into a tonal buzz instead of speech for some text. */
+export const ARCHETYPE_STEPS = 32;
+
 /** The archetype id in a voice id, or undefined for any other voice. */
 export const archetypeId = (voiceId: string): string | undefined =>
   voiceId.startsWith(ARCHETYPE_PREFIX) ? voiceId.slice(ARCHETYPE_PREFIX.length) : undefined;
@@ -354,6 +358,7 @@ export function voiceStudioRequestBody(args: {
     response_format: args.format,
     ...(speed !== undefined && speed !== 1 && { speed }),
     ...(seed !== undefined && { seed }),
+    ...(design && { num_step: ARCHETYPE_STEPS }),
     ...(textParam(params, 'language') && { language: textParam(params, 'language') }),
     ...(instructions && { instructions }),
   };

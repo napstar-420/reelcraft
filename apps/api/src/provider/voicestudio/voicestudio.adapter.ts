@@ -466,6 +466,8 @@ export class VoiceStudioAdapter implements ProviderAdapter {
    * so the next look asks again). */
   private async archetypes(): Promise<VoiceStudioArchetype[]> {
     if (this.designed) return this.designed;
+    // The address can change while the pages come in; another VoiceStudio has its own catalogue.
+    const base = await this.client.baseUrl();
     const found: VoiceStudioArchetype[] = [];
     for (;;) {
       const page = await this.lookup<{ total?: number; items?: VoiceStudioArchetype[] }>(
@@ -475,6 +477,7 @@ export class VoiceStudioAdapter implements ProviderAdapter {
       found.push(...page.items);
       if (!page.items.length || found.length >= (page.total ?? 0)) break;
     }
+    if ((await this.client.baseUrl()) !== base) return [];
     this.designed = found;
     return found;
   }

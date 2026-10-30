@@ -28,7 +28,7 @@ It is a large Python and Electron app with its own installer, updater and model 
   `preset_voices`; profiles are listed only for engines that can clone. Engines that read voice-design
   tags (`instruct_vocabulary: "tags"`, OmniVoice) also list VoiceStudio's designed voices
   (`GET /archetypes`) as `archetype:<id>`. Those are recipes, not recordings: speech sends voice
-  `default` with the archetype's tags as `instructions` and its seed (42) unless the stage sets one,
+  `default` with the archetype's tags as `instructions`, 32 steps (VoiceStudio's own setting for them) and its seed (42) unless the stage sets one,
   which is how VoiceStudio speaks one saved as a voice. Reelcraft doesn't save them as VoiceStudio
   profiles, so picking one leaves nothing behind in VoiceStudio.
 - **Word timings by transcription.** VoiceStudio returns no timings with speech, so with **Word timings** on,

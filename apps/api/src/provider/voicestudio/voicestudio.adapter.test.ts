@@ -213,6 +213,7 @@ describe('VoiceStudio helpers', () => {
       voice: 'default',
       response_format: 'wav',
       seed: 42,
+      num_step: 32,
       instructions: 'female, middle-aged, low pitch, british accent',
     });
     // A seed set on the stage still wins.
@@ -426,6 +427,29 @@ describe('VoiceStudioAdapter', () => {
     expect(
       (await vs.listVoices({ modelId: 'omnivoice', language: 'hi' })).voices.map((v) => v.id),
     ).toEqual(['archetype:feat_00_the_librarian']);
+  });
+
+  it('keeps no designed voices fetched from an address that changed meanwhile', async () => {
+    let base = 'http://vs:3900';
+    const { client } = fakeClient({
+      '/engines/tts': { backends: [OMNI] },
+      '/v1/audio/voices': { voices: [] },
+      '/archetypes?limit=500&offset=0': { total: 1, items: [LIBRARIAN] },
+    });
+    client.baseUrl = async () => base;
+    const answer = client.json.getMockImplementation()!;
+    client.json.mockImplementation(async (path: string) => {
+      const value = await answer(path);
+      // The address is changed in Settings while the catalogue is on its way.
+      if (path.startsWith('/archetypes')) base = 'http://other:3900';
+      return value;
+    });
+    const vs = adapter(client);
+    expect((await vs.listVoices({ modelId: 'omnivoice' })).voices).toEqual([]);
+    // The next look at the new address asks again rather than reusing the old catalogue.
+    await vs.listVoices({ modelId: 'omnivoice' });
+    const catalogue = client.json.mock.calls.filter(([path]) => path.startsWith('/archetypes'));
+    expect(catalogue).toHaveLength(2);
   });
 
   it('does not read the designed-voice catalogue for engines that cannot use it', async () => {
