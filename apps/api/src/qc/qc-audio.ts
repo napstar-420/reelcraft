@@ -72,14 +72,26 @@ export class QcAudioService {
     return chooseQcAudioMode(false, hasDeepgramKey, await this.voiceStudioState());
   }
 
+  /** Transcribes with `by`. When VoiceStudio fails (it can close mid-run) and a Deepgram key is
+   * set, Deepgram does it instead; when both fail, both reasons are given. */
   async transcribe(
     objectKey: string,
     mime: string,
     by: QcTranscriber,
   ): Promise<{ transcript: string; costUsd: number }> {
-    return by === 'voicestudio'
-      ? this.voiceStudio.transcribeStored(objectKey, mime)
-      : this.deepgram.transcribeStored(objectKey, mime);
+    if (by === 'deepgram') return this.deepgram.transcribeStored(objectKey, mime);
+    try {
+      return await this.voiceStudio.transcribeStored(objectKey, mime);
+    } catch (error) {
+      if (!(await this.keys.get('deepgram'))) throw error;
+      try {
+        return await this.deepgram.transcribeStored(objectKey, mime);
+      } catch (fallback) {
+        throw new Error(
+          `VoiceStudio: ${(error as Error).message} Deepgram, tried instead: ${(fallback as Error).message}`,
+        );
+      }
+    }
   }
 
   private async voiceStudioState(): Promise<VoiceStudioState> {

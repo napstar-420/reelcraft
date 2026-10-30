@@ -57,6 +57,8 @@ const LOOKUP_TIMEOUT_MS = 5_000;
 const SPEECH_TIMEOUT_MS = 1_500_000;
 const TRANSCRIBE_TIMEOUT_MS = 1_500_000;
 const FAMILIES = ['wav', 'mp3', 'flac', 'opus'] as const;
+/** The largest library file a voice is cloned from (the web app's limit matches). */
+export const MAX_CLONE_BYTES = 50_000_000;
 
 /** What Analyze Media's transcription needs at `fetch` time. */
 interface TranscribeJob {
@@ -228,7 +230,13 @@ export class VoiceStudioAdapter implements ProviderAdapter {
    */
   async cloneFromAsset(dto: CloneVoiceStudioVoiceDto): Promise<VoiceStudioVoiceDto> {
     const [row] = await this.db
-      .select({ kind: asset.kind, name: asset.name, objectKey: blob.objectKey, mime: blob.mime })
+      .select({
+        kind: asset.kind,
+        name: asset.name,
+        objectKey: blob.objectKey,
+        mime: blob.mime,
+        bytes: blob.bytes,
+      })
       .from(asset)
       .innerJoin(blob, eq(blob.id, asset.blobId))
       .where(and(eq(asset.id, dto.assetId), isNull(asset.deletedAt)))
@@ -236,6 +244,12 @@ export class VoiceStudioAdapter implements ProviderAdapter {
     if (!row) throw new AssetNotUsable('That library file no longer exists.');
     if (row.kind !== 'media.audio' && row.kind !== 'media.video') {
       throw new AssetNotUsable('Choose an audio or video file to clone the voice from.');
+    }
+    // The file is held in memory to upload it; a voice needs seconds of speech, not a whole video.
+    if (row.bytes > MAX_CLONE_BYTES) {
+      throw new AssetNotUsable(
+        `That file is ${Math.round(row.bytes / 1_000_000)} MB. Use a recording under ${MAX_CLONE_BYTES / 1_000_000} MB: 5 to 30 seconds of one person speaking is enough.`,
+      );
     }
     const audio = await this.read(row.objectKey);
     const form = new FormData();

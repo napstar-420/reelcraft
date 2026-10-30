@@ -18,7 +18,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { apiErrorMessage } from '@/lib/api-error-message';
 import { useVoiceStudioStatus, VoiceStudioStatus } from './VoiceStudioStatus';
-import { voiceNameFrom, voiceStudioReady } from './voicestudio.logic';
+import { MAX_CLONE_BYTES, voiceNameFrom, voiceStudioReady } from './voicestudio.logic';
 
 /**
  * Makes a VoiceStudio voice from a recording in the channel library. VoiceStudio keeps the voice;
@@ -49,15 +49,21 @@ export function CloneVoiceDialog({
     onSuccess: (voice) => {
       void queryClient.invalidateQueries({ queryKey: ['voices', 'voicestudio'] });
       toast.success(
-        `“${voice.name}” is saved in VoiceStudio. Choose it as the voice of a Generate Speech stage that uses VoiceStudio.`,
+        `“${voice.name}” is saved in VoiceStudio. To use it, choose a VoiceStudio engine that can clone voices (such as OmniVoice) in a Generate Speech stage, then pick it as the voice.`,
       );
       onOpenChange(false);
     },
   });
   const ready = voiceStudioReady(status.data);
+  // Closing while the voice is being made would let a reopened dialog make it a second time.
+  const close = (next: boolean) => {
+    if (!next && clone.isPending) return;
+    onOpenChange(next);
+  };
+  const tooBig = asset.file.bytes > MAX_CLONE_BYTES;
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={close}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Make a VoiceStudio voice</DialogTitle>
@@ -71,10 +77,16 @@ export function CloneVoiceDialog({
           className="flex flex-col gap-4"
           onSubmit={(event) => {
             event.preventDefault();
-            if (ready && name.trim()) clone.mutate();
+            if (ready && !tooBig && name.trim()) clone.mutate();
           }}
         >
           {!ready ? <VoiceStudioStatus /> : null}
+          {tooBig ? (
+            <p className="text-sm text-destructive">
+              This file is too large to clone from (over {MAX_CLONE_BYTES / 1_000_000} MB). Upload a
+              short recording instead: 5 to 30 seconds of one person speaking is enough.
+            </p>
+          ) : null}
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="clone-name">Voice name</Label>
             <Input
@@ -112,10 +124,15 @@ export function CloneVoiceDialog({
             </p>
           ) : null}
           <DialogFooter>
-            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={clone.isPending}
+              onClick={() => close(false)}
+            >
               Cancel
             </Button>
-            <Button type="submit" disabled={!ready || !name.trim() || clone.isPending}>
+            <Button type="submit" disabled={!ready || tooBig || !name.trim() || clone.isPending}>
               {clone.isPending ? <Loader2 className="animate-spin" /> : null}
               {clone.isPending ? 'Making the voice…' : 'Make voice'}
             </Button>

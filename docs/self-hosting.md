@@ -80,8 +80,11 @@ the release-please PR for 0.3.0 (Settings and the guide's in-app links) is #51.
 - **VoiceStudio** (ADR 0018): a voice app the user installs and runs; the image has nothing of it. The API
   reaches it at the saved address, else `VOICESTUDIO_URL`, else `http://host.docker.internal:3900` inside the
   container (`/.dockerenv`) and `http://127.0.0.1:3900` outside, sending `VOICESTUDIO_API_KEY` (or the key saved
-  in Settings) as a bearer token. A Linux host without Docker Desktop needs
-  `--add-host=host.docker.internal:host-gateway` for the default to work. Voices cloned from the library live
+  in Settings) as a bearer token, and only ever to the configured address (a Test connection to another
+  address goes without it). VoiceStudio's desktop app listens on `127.0.0.1`, which Docker Desktop
+  reaches through `host.docker.internal` but Linux Docker Engine does not: there the user runs the
+  container with `--network host`, or VoiceStudio with `OMNIVOICE_BIND_HOST=0.0.0.0` and an API key (user
+  guide, VoiceStudio page). Voices cloned from the library live
   in VoiceStudio, not in Reelcraft's backups.
 
 ## Rules to follow when changing this

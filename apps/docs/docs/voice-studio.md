@@ -14,7 +14,12 @@ your own computer. Reelcraft can use it for:
 - **Transcription** in [Analyze Media](./stage-types/analyze-media.md) and for
   [quality control](./blueprints/quality-control.md)'s **Include transcript**.
 
-All of it is free: nothing is billed per request, and no text or audio leaves your computer.
+All of it is free: nothing is billed per request. With VoiceStudio on the same computer, no text or
+audio leaves it. With VoiceStudio on another computer, the text and audio go to that computer.
+
+When VoiceStudio isn't reachable, quality control's **Include transcript** uses Deepgram instead if you
+set a Deepgram key, which is paid and sends the audio to Deepgram. See
+[Transcription](#transcription).
 
 VoiceStudio is a separate app. Reelcraft doesn't install, start or update it: it only talks to it while
 it is running.
@@ -47,10 +52,29 @@ under **VoiceStudio address** in **Settings → VoiceStudio**, select **Test con
 **Reset** goes back to the default. The address can also be set with the `VOICESTUDIO_URL` environment
 variable; one saved in Settings takes priority.
 
-:::note Linux without Docker Desktop
-Start the Reelcraft container with `--add-host=host.docker.internal:host-gateway`, or
-`host.docker.internal` doesn't exist inside it.
-:::
+VoiceStudio's desktop app only listens on the computer itself (`127.0.0.1`), and needs no key for
+requests from there.
+
+- **Docker Desktop (Mac and Windows)** passes `host.docker.internal` through to your computer, so the
+  default address is expected to work with VoiceStudio's default settings. If the status says it isn't
+  reachable, use one of the Linux setups below.
+- **Docker on Linux (Docker Engine, without Docker Desktop)** can't reach a program that only listens
+  on `127.0.0.1`. Use one of these:
+  - **Host networking (simplest).** Start the Reelcraft container with `--network host` instead of
+    `-p 8080:8080`, and save `http://127.0.0.1:3900` as the VoiceStudio address. Reelcraft then reaches
+    VoiceStudio as the same computer, with no key.
+  - **VoiceStudio on all interfaces, with a key.** Start VoiceStudio's backend with
+    `OMNIVOICE_BIND_HOST=0.0.0.0` and `OMNIVOICE_API_KEY` set to a long random key (see VoiceStudio's
+    [API authentication](https://github.com/debpalash/VoiceStudio/blob/main/docs/api-auth.md)). Start the
+    Reelcraft container with `--add-host=host.docker.internal:host-gateway`, keep the default address,
+    and enter the same key under **API key (optional)**. Allow port 3900 from Docker's network in your
+    firewall, and not from anywhere else.
+  - **VoiceStudio in Docker too.** Put both containers on one Docker network, save
+    `http://<VoiceStudio's container name>:3900` as the address, and start VoiceStudio with
+    `OMNIVOICE_API_KEY` and enter the same key here.
+
+Don't use VoiceStudio's **Network** sharing (the **Local** / **Network** switch) for Reelcraft: it
+listens on another port and asks for a PIN that changes every time, which Reelcraft can't send.
 
 ### API key
 
@@ -62,8 +86,11 @@ needs the same key when it reaches VoiceStudio from Docker or from another compu
 encrypted, like the [AI provider keys](./provider-keys.md). Without it, the status says **VoiceStudio
 refused the request**.
 
-Use `https://` for a VoiceStudio on another computer, unless both are on a network you trust: over
-plain `http://` the key travels unencrypted.
+For a VoiceStudio on another computer, use `https://` (for example through VoiceStudio's Tailscale
+support or a reverse proxy) or an encrypted tunnel such as Tailscale or WireGuard. Over plain `http://`
+the key, the text and the audio travel unencrypted, and anyone on the network path can read and reuse
+the key. The connection test only sends the key to the address that is saved, so save an address
+before testing it with a key.
 
 ## Make speech with it
 
@@ -106,8 +133,12 @@ To make a voice from a recording:
    empty, VoiceStudio works them out.
 4. Select **Make voice**.
 
-The voice is saved in VoiceStudio, so it also appears in VoiceStudio's own app. In a Generate Speech
-stage that uses VoiceStudio, pick it from the voice list like any other voice.
+The voice is saved in VoiceStudio, so it also appears in VoiceStudio's own app. To use it, choose a
+VoiceStudio engine that can clone voices (such as **VoiceStudio (OmniVoice)**) in a Generate Speech
+stage, then pick it from the voice list. Engines that can't clone, such as KittenTTS, only offer their
+built-in voices.
+
+The file can be up to 50 MB. A short recording is better anyway.
 
 Voices you clone or design in VoiceStudio's own app appear in the list too.
 

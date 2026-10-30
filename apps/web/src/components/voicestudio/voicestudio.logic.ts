@@ -63,3 +63,7 @@ export function voiceNameFrom(assetName: string): string {
     .trim();
   return (base || assetName).slice(0, 80);
 }
+
+/** The largest library file a voice can be cloned from; the API refuses bigger ones
+ * (`MAX_CLONE_BYTES` in `voicestudio.adapter.ts`). */
+export const MAX_CLONE_BYTES = 50_000_000;

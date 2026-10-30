@@ -322,6 +322,41 @@ describe('VoiceStudioAdapter', () => {
   });
 });
 
+describe('VoiceStudioAdapter.cloneFromAsset', () => {
+  const dbReturning = (row: Record<string, unknown> | undefined) => ({
+    select: () => ({
+      from: () => ({
+        innerJoin: () => ({ where: () => ({ limit: async () => (row ? [row] : []) }) }),
+      }),
+    }),
+  });
+  const file = { kind: 'media.video', name: 'talk.mp4', objectKey: 'k', mime: 'video/mp4' };
+
+  it('refuses a file too big to hold in memory, before reading it', async () => {
+    const storage = { getStream: vi.fn() };
+    const vs = new VoiceStudioAdapter(
+      fakeClient({}).client as never,
+      storage as never,
+      dbReturning({ ...file, bytes: 2_000_000_000 }) as never,
+    );
+    await expect(vs.cloneFromAsset({ assetId: 'a1', name: 'Me' })).rejects.toThrow(
+      /2000 MB\. Use a recording under 50 MB/,
+    );
+    expect(storage.getStream).not.toHaveBeenCalled();
+  });
+
+  it('refuses files that are not audio or video', async () => {
+    const vs = new VoiceStudioAdapter(
+      fakeClient({}).client as never,
+      { getStream: vi.fn() } as never,
+      dbReturning({ ...file, kind: 'media.image', bytes: 10 }) as never,
+    );
+    await expect(vs.cloneFromAsset({ assetId: 'a1', name: 'Me' })).rejects.toThrow(
+      /audio or video/,
+    );
+  });
+});
+
 describe('VoiceStudioClient', () => {
   const client = (key?: string) =>
     new VoiceStudioClient(
@@ -397,6 +432,25 @@ describe('VoiceStudioClient', () => {
   it('counts as set up once its key is saved', async () => {
     expect(await client().configured()).toBe(false);
     expect(await client('secret-key-123').configured()).toBe(true);
+  });
+
+  it('never sends the saved key to an address that is only being tried', async () => {
+    const fetchMock = vi.fn(async (url: string) =>
+      url.endsWith('/health')
+        ? response({ status: 'ok', device: 'cpu', version: '2.0.0' })
+        : response({ detail: 'Unauthorized' }, 401),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const status = await client('secret-key-123').status('http://attacker:3900');
+    const calls = fetchMock.mock.calls as unknown as Array<[string, RequestInit | undefined]>;
+    expect(calls.map(([url]) => url)).toEqual([
+      'http://attacker:3900/health',
+      'http://attacker:3900/v1/audio/voices',
+    ]);
+    expect(calls.every(([, init]) => !JSON.stringify(init?.headers ?? {}).includes('secret'))).toBe(
+      true,
+    );
+    expect(status.error).toMatch(/Save the address first/);
   });
 
   it('tests an address before it is saved', async () => {

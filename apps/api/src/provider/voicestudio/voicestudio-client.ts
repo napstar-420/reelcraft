@@ -37,6 +37,9 @@ export function voiceStudioErrorReason(body: string): string {
 export const unreachableMessage = (base: string): string =>
   `VoiceStudio isn't reachable at ${base}. Start VoiceStudio, or check its address in Settings → VoiceStudio.`;
 
+const NEEDS_KEY =
+  'VoiceStudio at this address asks for an API key. Save the address first, then enter its key in Settings → VoiceStudio.';
+
 const REFUSED =
   'VoiceStudio refused the request: it was started with an API key. Enter the same key in Settings → VoiceStudio.';
 
@@ -59,16 +62,19 @@ export class VoiceStudioClient {
   }
 
   /**
-   * A request to VoiceStudio. Throws `unreachableMessage` when nothing answers, and a
-   * `VoiceStudioError` with VoiceStudio's own reason when it answers with an error.
+   * A request to VoiceStudio, at `url` or else the configured address. Throws
+   * `unreachableMessage` when nothing answers, and a `VoiceStudioError` with VoiceStudio's own
+   * reason when it answers with an error. The API key only ever goes to the configured address:
+   * an address being tried out (Test connection) could be anyone's.
    */
   async request(
     path: string,
     init: { method?: string; body?: BodyInit; json?: unknown; timeoutMs: number },
     url?: string,
   ): Promise<Response> {
-    const base = url ? voiceStudioBaseUrl(url) : await this.baseUrl();
-    const headers: Record<string, string> = { ...(await this.auth()) };
+    const configured = await this.baseUrl();
+    const base = url ? voiceStudioBaseUrl(url) : configured;
+    const headers: Record<string, string> = base === configured ? await this.auth() : {};
     if (init.json !== undefined) headers['Content-Type'] = 'application/json';
     let response: Response;
     try {
@@ -88,7 +94,11 @@ export class VoiceStudioClient {
     }
     if (!response.ok) {
       const reason =
-        response.status === 401 ? REFUSED : voiceStudioErrorReason(await response.text());
+        response.status === 401
+          ? base === configured
+            ? REFUSED
+            : NEEDS_KEY
+          : voiceStudioErrorReason(await response.text());
       throw new VoiceStudioError(response.status, reason);
     }
     return response;
@@ -144,12 +154,13 @@ export class VoiceStudioClient {
       version: body.version ?? null,
       device: body.device ?? null,
     };
-    // `/health` needs no key; this checks the key too, when VoiceStudio asks for one.
+    // `/health` needs no key; this checks the key too, when VoiceStudio asks for one. The key
+    // goes only to the configured address (see `request`).
     try {
       await this.request('/v1/audio/voices', { timeoutMs: HEALTH_TIMEOUT_MS }, base);
     } catch (error) {
       if (error instanceof VoiceStudioError && error.status === 401) {
-        return { ...found, error: REFUSED };
+        return { ...found, error: error.message };
       }
     }
     return { ...found, error: null };

@@ -108,7 +108,8 @@ See [Generate Speech](./stage-types/generate-speech.md#if-it-fails).
 - Open VoiceStudio, wait until it has started, and select **Check again** in **Settings →
   VoiceStudio**.
 - Reelcraft in Docker looks for it at `http://host.docker.internal:3900`. On Linux without Docker
-  Desktop, start the container with `--add-host=host.docker.internal:host-gateway`.
+  Desktop, VoiceStudio's default `127.0.0.1` listener can't be reached from a container: see
+  [Where Reelcraft looks for VoiceStudio](./voice-studio.md#where-reelcraft-looks-for-voicestudio).
 - **"VoiceStudio refused the request"**: VoiceStudio was started with an API key. Enter the same key
   under **API key (optional)** in **Settings → VoiceStudio**.
 - **"VoiceStudio has no installed engine"**: the stage uses an engine that isn't installed in
