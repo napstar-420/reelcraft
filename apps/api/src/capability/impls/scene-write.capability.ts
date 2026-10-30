@@ -313,6 +313,14 @@ export class SceneWriteCapability implements CapabilityImpl<SceneWriteConfig> {
           : 'The model returned no outputs/scene.py.',
       };
     }
+    // The previews run the real script, so none means it was never run and may not even build.
+    if (!evidence.length) {
+      return {
+        output: null,
+        ...base,
+        rejection: `The scene script was never previewed, so it may not run. Run \`${PREVIEW_COMMAND} <frame> ...\` on its own and attach the previews.`,
+      };
+    }
     const shot = this.shot(ctx);
     const answer = result.output as { durationSec?: unknown; summary?: unknown } | null;
     const durationSec =

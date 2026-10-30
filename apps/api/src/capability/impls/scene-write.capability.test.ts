@@ -7,7 +7,7 @@ import { SceneWriteCapability } from './scene-write.capability';
 
 const SCRIPT = 'import bpy\n\ndef build(rc):\n    pass\n';
 
-function setup(answer: { output?: unknown; script?: string | null } = {}) {
+function setup(answer: { output?: unknown; script?: string | null; previews?: boolean } = {}) {
   const provider = {
     submit: vi.fn(async () => ({ providerId: 'claude', externalId: 'x' })),
     estimate: vi.fn(),
@@ -29,12 +29,16 @@ function setup(answer: { output?: unknown; script?: string | null } = {}) {
                 base64: Buffer.from(answer.script ?? SCRIPT).toString('base64'),
               },
             ]),
-        {
-          role: 'evidence' as const,
-          filename: 'frame_0001.png',
-          mime: 'image/png',
-          base64: 'AA==',
-        },
+        ...(answer.previews === false
+          ? []
+          : [
+              {
+                role: 'evidence' as const,
+                filename: 'frame_0001.png',
+                mime: 'image/png',
+                base64: 'AA==',
+              },
+            ]),
       ],
     })),
   };
@@ -177,6 +181,11 @@ describe('SceneWriteCapability', () => {
       ctx(),
     );
     expect(noBuild.rejection).toMatch(/no build\(rc\)/);
+    const untested = await setup({ previews: false }).capability.fetch(
+      { providerId: 'claude', externalId: 'x' },
+      ctx(),
+    );
+    expect(untested.rejection).toMatch(/never previewed/);
   });
 
   it('refuses extra input names that clash or could not be slot names', () => {
