@@ -93,8 +93,9 @@ export class VoiceStudioAdapter implements ProviderAdapter {
   private lastEngines: VoiceStudioEngine[] = [];
   /** Everything it last listed, usable or not, to say why an engine can't be used. */
   private lastListed: VoiceStudioEngine[] = [];
-  /** Its built-in designed voices: a fixed catalogue, so read once per address. */
-  private designed: VoiceStudioArchetype[] | undefined;
+  /** Its built-in designed voices and the address they came from: a fixed catalogue, so read
+   * once per address. */
+  private designed: { base: string; voices: VoiceStudioArchetype[] } | undefined;
   /** The VoiceStudio address the cached lists came from. */
   private listedAt: string | undefined;
 
@@ -452,7 +453,6 @@ export class VoiceStudioAdapter implements ProviderAdapter {
       this.listedAt = base;
       this.lastListed = [];
       this.lastEngines = [];
-      this.designed = undefined;
     }
     const answer = await this.lookup<{ backends?: VoiceStudioEngine[] }>('/engines/tts');
     if (answer?.backends) {
@@ -465,20 +465,22 @@ export class VoiceStudioAdapter implements ProviderAdapter {
   /** VoiceStudio's built-in designed voices, or none when it can't list them (not remembered,
    * so the next look asks again). */
   private async archetypes(): Promise<VoiceStudioArchetype[]> {
-    if (this.designed) return this.designed;
-    // The address can change while the pages come in; another VoiceStudio has its own catalogue.
+    // Every page comes from one address, and the catalogue is kept as that address's: another
+    // VoiceStudio has its own, and the address can change while the pages come in.
     const base = await this.client.baseUrl();
+    if (this.designed?.base === base) return this.designed.voices;
     const found: VoiceStudioArchetype[] = [];
     for (;;) {
       const page = await this.lookup<{ total?: number; items?: VoiceStudioArchetype[] }>(
         `/archetypes?limit=${ARCHETYPE_PAGE}&offset=${found.length}`,
+        base,
       );
       if (!page?.items) return [];
       found.push(...page.items);
       if (!page.items.length || found.length >= (page.total ?? 0)) break;
     }
     if ((await this.client.baseUrl()) !== base) return [];
-    this.designed = found;
+    this.designed = { base, voices: found };
     return found;
   }
 
@@ -505,10 +507,11 @@ export class VoiceStudioAdapter implements ProviderAdapter {
     return String((req.params.slots as Record<string, unknown> | undefined)?.text ?? '');
   }
 
-  /** A quick GET, or undefined when VoiceStudio isn't running or doesn't answer. */
-  private async lookup<T>(path: string): Promise<T | undefined> {
+  /** A quick GET (to `url`, else the configured address), or undefined when VoiceStudio isn't
+   * running or doesn't answer. */
+  private async lookup<T>(path: string, url?: string): Promise<T | undefined> {
     try {
-      return await this.client.json<T>(path, LOOKUP_TIMEOUT_MS);
+      return await this.client.json<T>(path, LOOKUP_TIMEOUT_MS, url);
     } catch {
       return undefined;
     }

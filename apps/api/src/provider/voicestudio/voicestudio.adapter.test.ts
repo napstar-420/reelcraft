@@ -452,6 +452,38 @@ describe('VoiceStudioAdapter', () => {
     expect(catalogue).toHaveLength(2);
   });
 
+  it('gives each VoiceStudio address its own designed voices, read from that address', async () => {
+    let base = 'http://a:3900';
+    const catalogues: Record<string, VoiceStudioArchetype[]> = {
+      'http://a:3900': [LIBRARIAN],
+      'http://b:3900': [CAPTAIN],
+    };
+    const { client } = fakeClient({
+      '/engines/tts': { backends: [OMNI] },
+      '/v1/audio/voices': { voices: [] },
+    });
+    client.baseUrl = async () => base;
+    const answer = client.json.getMockImplementation()!;
+    client.json.mockImplementation(async (path: string, _timeout?: number, url?: string) => {
+      if (!path.startsWith('/archetypes')) return answer(path);
+      const items = catalogues[url ?? base]!;
+      return { total: items.length, items };
+    });
+    const vs = adapter(client);
+    const names = async () =>
+      (await vs.listVoices({ modelId: 'omnivoice' })).voices.map((v) => v.name);
+    expect(await names()).toEqual(['The Librarian']);
+    base = 'http://b:3900';
+    expect(await names()).toEqual(['Captain Crusty']);
+    base = 'http://a:3900';
+    expect(await names()).toEqual(['The Librarian']);
+    // Every page was asked of the address it was kept for.
+    const urls = (client.json.mock.calls as unknown as Array<[string, number, string?]>)
+      .filter(([path]) => path.startsWith('/archetypes'))
+      .map(([, , url]) => url);
+    expect(urls).toEqual(['http://a:3900', 'http://b:3900', 'http://a:3900']);
+  });
+
   it('does not read the designed-voice catalogue for engines that cannot use it', async () => {
     const { client } = fakeClient({
       '/engines/tts': { backends: [KITTEN] },
