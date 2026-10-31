@@ -1,4 +1,4 @@
-import { useState, type PointerEvent, type RefObject } from 'react';
+import { useRef, useState, type PointerEvent, type RefObject } from 'react';
 import {
   Pause,
   Play,
@@ -12,6 +12,7 @@ import {
 import { Player, type PlayerRef } from '@remotion/player';
 import type { TextStyleTokens, Timeline, TimingMap } from '@reelcraft/shared';
 import { TimelineComposition, type CompositionResource } from '@reelcraft/timeline-composition';
+import { clampCaptionPoint } from '@reelcraft/timeline-composition/src/render-helpers';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { formatTimecode } from '@/pages/timeline-editor/format-time';
@@ -111,13 +112,15 @@ function Transport({
   );
 }
 
-/** Where on the frame a pointer is, in percent, kept inside the frame. Snaps to the middle across. */
+/** Where on the frame a pointer is, in percent, kept off its edges. Snaps to the middle across. */
 function framePoint(event: PointerEvent<HTMLElement>): { x: number; y: number } {
   const box = event.currentTarget.getBoundingClientRect();
-  const percent = (offset: number, size: number) =>
-    Math.round(Math.min(100, Math.max(0, (offset / size) * 100)) * 10) / 10;
-  const x = percent(event.clientX - box.left, box.width);
-  return { x: Math.abs(x - 50) < 2 ? 50 : x, y: percent(event.clientY - box.top, box.height) };
+  const percent = (offset: number, size: number) => Math.round((offset / size) * 1000) / 10;
+  const point = clampCaptionPoint({
+    x: percent(event.clientX - box.left, box.width),
+    y: percent(event.clientY - box.top, box.height),
+  });
+  return { ...point, x: Math.abs(point.x - 50) < 2 ? 50 : point.x };
 }
 
 /** Over the preview while a captions item is selected: click or drag to put the captions there. */
@@ -126,8 +129,10 @@ function CaptionPlacer({
   onPlace,
 }: {
   point: { x: number; y: number } | undefined;
-  onPlace: (point: { x: number; y: number }) => void;
+  onPlace: (point: { x: number; y: number }, gesture: number) => void;
 }) {
+  // Each press starts a new drag, so each drag is its own undo step.
+  const gesture = useRef(0);
   return (
     <div
       role="presentation"
@@ -135,10 +140,12 @@ function CaptionPlacer({
       className="absolute inset-0 cursor-move touch-none"
       onPointerDown={(event) => {
         event.currentTarget.setPointerCapture(event.pointerId);
-        onPlace(framePoint(event));
+        gesture.current = event.timeStamp;
+        onPlace(framePoint(event), gesture.current);
       }}
       onPointerMove={(event) => {
-        if (event.currentTarget.hasPointerCapture(event.pointerId)) onPlace(framePoint(event));
+        if (event.currentTarget.hasPointerCapture(event.pointerId))
+          onPlace(framePoint(event), gesture.current);
       }}
     >
       {point && (
@@ -174,7 +181,7 @@ export function PreviewPanel({
   captions?:
     | {
         point: { x: number; y: number } | undefined;
-        onPlace: (point: { x: number; y: number }) => void;
+        onPlace: (point: { x: number; y: number }, gesture: number) => void;
       }
     | undefined;
 }) {

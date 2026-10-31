@@ -31,6 +31,8 @@ import {
 } from './graphic/graphic-math';
 import {
   type CaptionLook,
+  captionWidthAt,
+  clampCaptionPoint,
   DEFAULT_TEXT_STYLE,
   highlightWordCss,
   kenBurnsTransform,
@@ -329,15 +331,17 @@ const CaptionsItem = ({
     <CaptionWords words={(sentence?.text ?? '').split(' ')} activeIndex={-1} look={look} />
   );
   if (typeof look.position === 'object') {
+    // Centred on its point, and never wider than the frame allows there.
+    const point = clampCaptionPoint(look.position);
     return (
       <AbsoluteFill>
         <div
           style={{
             position: 'absolute',
-            left: `${look.position.x}%`,
-            top: `${look.position.y}%`,
+            left: `${point.x}%`,
+            top: `${point.y}%`,
             transform: 'translate(-50%, -50%)',
-            width: '86%',
+            width: `${captionWidthAt(point.x)}%`,
             textAlign: left ? 'left' : 'center',
           }}
         >

@@ -528,11 +528,11 @@ export function TimelineEditorPage() {
                     typeof selectedItem.style?.position === 'object'
                       ? selectedItem.style.position
                       : undefined,
-                  onPlace: (position) =>
+                  onPlace: (position, gesture) =>
                     mutate((next) => {
                       const item = next.tracks[selection.trackIndex]?.items[selection.itemIndex];
                       if (item?.type === 'captions') item.style = { ...item.style, position };
-                    }, `inspector-${selection.trackIndex}-${selection.itemIndex}`),
+                    }, `place-captions-${gesture}`),
                 }
               : undefined
           }

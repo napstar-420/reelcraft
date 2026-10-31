@@ -62,6 +62,15 @@ export function resolveCaptionLook(
   };
 }
 
+/** Keeps a caption point off the very edge of the frame, in percent. */
+export const clampCaptionPoint = ({ x, y }: { x: number; y: number }) => {
+  const clamp = (value: number) => Math.min(95, Math.max(5, value));
+  return { x: clamp(x), y: clamp(y) };
+};
+
+/** How wide a caption centred on `x` may be (percent of the frame) without leaving it. */
+export const captionWidthAt = (x: number) => Math.min(86, 2 * Math.min(x, 100 - x));
+
 /** The extra CSS the word being spoken gets, for each way of standing out. */
 export function highlightWordCss(highlight: CaptionLook['highlight']): Css | undefined {
   switch (highlight.style) {
