@@ -125,7 +125,7 @@ export function MediaPanel({
   return (
     <aside className="flex min-h-0 flex-col border-r bg-card/40">
       <div className="flex items-center justify-between gap-2 px-4 pt-3 pb-2">
-        <h2 className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">
+        <h2 className="text-xs font-semibold text-muted-foreground">
           Media
           <span className="ml-1.5 font-mono font-normal">{resources.length}</span>
         </h2>

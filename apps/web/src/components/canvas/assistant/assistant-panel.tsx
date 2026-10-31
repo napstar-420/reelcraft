@@ -1,14 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import {
-  Loader2,
-  MessageSquarePlus,
-  MoreHorizontal,
-  Send,
-  Sparkles,
-  Square,
-  Trash2,
-} from 'lucide-react';
+import { ArrowUp, History, Loader2, MessageSquarePlus, Square, Trash2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -38,13 +30,23 @@ const EXAMPLES = [
   'What can this blueprint do right now?',
 ];
 
-/** The Assistant tab: chat with the agent that builds and edits this blueprint. */
-export function AssistantPanel({ assistant }: { assistant: AssistantController }) {
+/** The assistant beside the blueprint: chat with the agent that builds and edits it. */
+export function AssistantPanel({
+  assistant,
+  stageLabel,
+}: {
+  assistant: AssistantController;
+  /** The stage open in the editor: offered as context for the next message. */
+  stageLabel?: string | null;
+}) {
   const [text, setText] = useState('');
+  const [withStage, setWithStage] = useState(true);
   const scroller = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
   const { session, items, running, disabled, unavailableReason } = assistant;
   const question = pendingQuestion(items);
+
+  useEffect(() => setWithStage(true), [stageLabel]);
 
   // follow new content while the user is at the bottom
   useEffect(() => {
@@ -55,7 +57,7 @@ export function AssistantPanel({ assistant }: { assistant: AssistantController }
   const send = () => {
     const value = text.trim();
     if (!value || running || disabled || unavailableReason) return;
-    assistant.send(value);
+    assistant.send(stageLabel && withStage ? `About the stage “${stageLabel}”: ${value}` : value);
     setText('');
     stickToBottom.current = true;
   };
@@ -65,14 +67,18 @@ export function AssistantPanel({ assistant }: { assistant: AssistantController }
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b px-3 py-2">
+      <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b px-3 py-2">
         {assistant.providers.length > 1 && (
           <Select
             value={assistant.provider?.id ?? ''}
             onValueChange={assistant.setProvider}
             disabled={running}
           >
-            <SelectTrigger size="sm" className="h-7 w-auto text-xs" aria-label="Provider">
+            <SelectTrigger
+              size="sm"
+              className="h-7 w-auto border-border text-xs"
+              aria-label="Provider"
+            >
               <SelectValue placeholder="Provider" />
             </SelectTrigger>
             <SelectContent>
@@ -90,7 +96,11 @@ export function AssistantPanel({ assistant }: { assistant: AssistantController }
           onValueChange={assistant.setModel}
           disabled={!assistant.provider?.models.length || running}
         >
-          <SelectTrigger size="sm" className="h-7 w-auto max-w-[11rem] text-xs" aria-label="Model">
+          <SelectTrigger
+            size="sm"
+            className="h-7 w-auto max-w-[11rem] border-border text-xs"
+            aria-label="Model"
+          >
             <SelectValue placeholder="Model" />
           </SelectTrigger>
           <SelectContent>
@@ -107,7 +117,11 @@ export function AssistantPanel({ assistant }: { assistant: AssistantController }
             onValueChange={assistant.setEffort}
             disabled={running}
           >
-            <SelectTrigger size="sm" className="h-7 w-auto text-xs" aria-label="Effort">
+            <SelectTrigger
+              size="sm"
+              className="h-7 w-auto border-border text-xs"
+              aria-label="Effort"
+            >
               <SelectValue placeholder="Effort" />
             </SelectTrigger>
             <SelectContent>
@@ -119,38 +133,41 @@ export function AssistantPanel({ assistant }: { assistant: AssistantController }
             </SelectContent>
           </Select>
         )}
-        <label
-          className="ml-auto flex cursor-pointer items-center gap-1.5 text-xs"
-          title="Apply the assistant's changes to the canvas as soon as they are valid. You can undo them."
+        <span className="flex-1" />
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          aria-label="New chat"
+          title="New chat"
+          onClick={assistant.newChat}
         >
-          Auto-apply
-          <Switch
-            checked={assistant.applyMode === 'auto'}
-            onCheckedChange={(on) => assistant.setApplyMode(on ? 'auto' : 'manual')}
-            aria-label="Auto-apply"
-          />
-        </label>
+          <MessageSquarePlus />
+        </Button>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button type="button" variant="ghost" size="icon-sm" aria-label="Chats">
-              <MoreHorizontal />
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Chat history"
+              title="Chat history"
+            >
+              <History />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-64">
-            <DropdownMenuItem onSelect={assistant.newChat}>
-              <MessageSquarePlus /> New chat
-            </DropdownMenuItem>
             {session && (
               <DropdownMenuItem
                 variant="destructive"
                 onSelect={() => assistant.deleteChat(session.id)}
               >
-                <Trash2 /> Delete chat
+                <Trash2 /> Delete this chat
               </DropdownMenuItem>
             )}
-            {assistant.sessions.length > 0 && (
+            {assistant.sessions.length > 0 ? (
               <>
-                <DropdownMenuSeparator />
+                {session ? <DropdownMenuSeparator /> : null}
                 <DropdownMenuLabel>Earlier chats</DropdownMenuLabel>
                 {assistant.sessions.map((s) => (
                   <DropdownMenuItem key={s.id} onSelect={() => assistant.selectSession(s.id)}>
@@ -158,6 +175,10 @@ export function AssistantPanel({ assistant }: { assistant: AssistantController }
                   </DropdownMenuItem>
                 ))}
               </>
+            ) : (
+              <DropdownMenuLabel className="font-normal text-muted-foreground">
+                No earlier chats
+              </DropdownMenuLabel>
             )}
           </DropdownMenuContent>
         </DropdownMenu>
@@ -176,17 +197,17 @@ export function AssistantPanel({ assistant }: { assistant: AssistantController }
 
       <div
         ref={scroller}
-        className="min-h-0 flex-1 overflow-y-auto px-3 py-3"
+        className="min-h-0 flex-1 overflow-y-auto px-3.5 py-4"
         onScroll={(e) => {
           const el = e.currentTarget;
           stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
         }}
       >
         {unavailableReason && (
-          <div className="mb-3 rounded-lg border border-wait/40 bg-wait-soft p-3 text-sm">
+          <div className="mb-3 rounded-xl border border-wait bg-wait-soft p-3 text-[13px]">
             <p>{unavailableReason}</p>
             <p className="mt-1.5 text-xs">
-              <Link to="/settings" className="underline underline-offset-2">
+              <Link to="/settings/assistant" className="underline underline-offset-2">
                 Open Settings
               </Link>
               {' · '}
@@ -202,16 +223,13 @@ export function AssistantPanel({ assistant }: { assistant: AssistantController }
           </div>
         )}
         {empty && !assistant.loading ? (
-          <div className="space-y-3 pt-2 text-sm">
-            <div className="flex items-center gap-2 font-medium">
-              <Sparkles className="size-4" /> Build this blueprint by chatting
-            </div>
+          <div className="flex flex-col gap-3 text-[13px] leading-relaxed">
             <p className="text-muted-foreground">
-              Describe the video you want. The assistant looks up what this Reelcraft can do, then
-              proposes the stages. Nothing changes until you apply it
+              Describe the video you want, or what to change. The assistant looks up what this
+              Reelcraft can do and proposes the stages
               {assistant.applyMode === 'auto'
-                ? ' (auto-apply is on: valid changes are applied for you)'
-                : ''}
+                ? ': with “Apply changes for me” on, valid changes go straight onto the blueprint, and you can undo them'
+                : '. Nothing changes until you apply it'}
               .
             </p>
             <p className="text-xs">
@@ -219,18 +237,19 @@ export function AssistantPanel({ assistant }: { assistant: AssistantController }
                 href={docsUrl('blueprints/assistant')}
                 target="_blank"
                 rel="noreferrer"
-                className="underline underline-offset-2"
+                className="text-faint underline underline-offset-2 hover:text-foreground"
               >
                 How the assistant works
               </a>
             </p>
-            <div className="flex flex-col gap-1.5">
+            <p className="text-xs text-faint">Try asking</p>
+            <div className="flex flex-col gap-2">
               {EXAMPLES.map((example) => (
                 <button
                   key={example}
                   type="button"
                   disabled={blocked}
-                  className="rounded-lg border px-2.5 py-1.5 text-left text-xs hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
+                  className="rounded-[10px] border border-line-strong px-3 py-2.5 text-left text-[13px] font-medium hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
                   onClick={() => setText(example)}
                 >
                   {example}
@@ -251,11 +270,27 @@ export function AssistantPanel({ assistant }: { assistant: AssistantController }
       <div className="shrink-0 border-t p-3">
         {disabled && (
           <p className="mb-2 text-xs text-muted-foreground">
-            You're viewing an older version. Go back to the latest to use the assistant.
+            You&apos;re viewing an older version. Go back to the latest to use the assistant.
           </p>
         )}
-        <div className="flex items-end gap-2">
+        <div className="rounded-[14px] border border-line-strong bg-background p-2.5 focus-within:border-faint">
+          {stageLabel && withStage ? (
+            <div className="mb-1.5 flex">
+              <span className="inline-flex h-[22px] items-center gap-1 rounded-full bg-surface-3 pr-1 pl-2.5 text-xs text-muted-foreground">
+                {stageLabel}
+                <button
+                  type="button"
+                  aria-label="Don't mention this stage"
+                  className="rounded-full p-0.5 hover:text-foreground"
+                  onClick={() => setWithStage(false)}
+                >
+                  <X className="size-3" />
+                </button>
+              </span>
+            </div>
+          ) : null}
           <Textarea
+            id="assistant-message"
             value={text}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => {
@@ -265,36 +300,53 @@ export function AssistantPanel({ assistant }: { assistant: AssistantController }
               }
             }}
             placeholder={
-              question ? 'Answer above, or type a new message' : 'Describe what to build or change'
+              question
+                ? 'Answer above, or type a new message'
+                : 'Ask about this blueprint or say what to change'
             }
             aria-label="Message the assistant"
-            className="max-h-40 min-h-9 resize-none py-1.5"
-            rows={1}
+            className="max-h-40 min-h-12 resize-none border-0 bg-transparent p-0 text-[13px] shadow-none focus-visible:ring-0"
+            rows={2}
             disabled={blocked}
           />
-          {running ? (
-            <Button
-              type="button"
-              size="icon"
-              variant="outline"
-              aria-label="Stop"
-              title="Stop"
-              onClick={assistant.interrupt}
+          <div className="mt-1.5 flex items-center gap-2">
+            <label
+              className="flex cursor-pointer items-center gap-2 text-xs text-faint"
+              title="Apply the assistant's changes as soon as they are valid. You can undo them."
             >
-              <Square />
-            </Button>
-          ) : (
-            <Button
-              type="button"
-              size="icon"
-              aria-label="Send"
-              title="Send"
-              disabled={blocked || !text.trim()}
-              onClick={send}
-            >
-              <Send />
-            </Button>
-          )}
+              <Switch
+                checked={assistant.applyMode === 'auto'}
+                onCheckedChange={(on) => assistant.setApplyMode(on ? 'auto' : 'manual')}
+                aria-label="Apply changes for me"
+              />
+              Apply changes for me
+            </label>
+            <span className="flex-1" />
+            {running ? (
+              <Button
+                type="button"
+                size="icon-sm"
+                variant="outline"
+                aria-label="Stop"
+                title="Stop"
+                onClick={assistant.interrupt}
+              >
+                <Square />
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                size="icon-sm"
+                variant="accent"
+                aria-label="Send"
+                title="Send"
+                disabled={blocked || !text.trim()}
+                onClick={send}
+              >
+                <ArrowUp />
+              </Button>
+            )}
+          </div>
         </div>
       </div>
     </div>

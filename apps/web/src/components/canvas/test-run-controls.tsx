@@ -57,7 +57,7 @@ export function TestRunControls({
         start={
           <Button size="sm" onClick={() => setOpen(true)} disabled={!channelId}>
             <Play />
-            Start test run
+            Test run
           </Button>
         }
         startOver={

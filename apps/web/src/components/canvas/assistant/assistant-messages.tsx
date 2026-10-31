@@ -12,7 +12,10 @@ const MARKDOWN: Components = {
   ),
   p: ({ node: _node, ...props }) => <p {...props} className="my-1.5 first:mt-0 last:mb-0" />,
   pre: ({ node: _node, ...props }) => (
-    <pre {...props} className="my-1.5 overflow-x-auto rounded bg-muted p-2 font-mono text-xs" />
+    <pre
+      {...props}
+      className="my-1.5 overflow-x-auto rounded-lg bg-surface-2 p-2 font-mono text-xs"
+    />
   ),
   code: ({ node: _node, ...props }) => <code {...props} className="font-mono text-[0.85em]" />,
   ul: ({ node: _node, ...props }) => (
@@ -58,13 +61,13 @@ function Row({
   switch (row.kind) {
     case 'user':
       return (
-        <div className="ml-8 self-end rounded-2xl rounded-br-sm bg-primary px-3 py-2 text-sm whitespace-pre-wrap text-primary-foreground">
+        <div className="ml-8 self-end rounded-[12px_12px_4px_12px] bg-surface-3 px-3 py-2.5 text-[13px] leading-relaxed whitespace-pre-wrap">
           {payloadOf<{ text: string }>(row.item).text}
         </div>
       );
     case 'agent':
       return (
-        <div className="mr-4 text-sm">
+        <div className="mr-4 text-[13px] leading-relaxed">
           <Markdown components={MARKDOWN}>{payloadOf<{ text: string }>(row.item).text}</Markdown>
         </div>
       );
@@ -97,7 +100,7 @@ export function AssistantMessages({
 }) {
   const rows = toRows(items);
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-4">
       {rows.map((row) => (
         <Row
           key={row.kind === 'tools' ? row.id : row.item.id}

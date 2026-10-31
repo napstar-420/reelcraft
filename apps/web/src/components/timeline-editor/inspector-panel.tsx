@@ -137,9 +137,7 @@ export function InspectorPanel({
   return (
     <aside className="flex min-h-0 flex-col border-l bg-card/40">
       <div className="flex items-center gap-2 px-4 pt-3 pb-2">
-        <h2 className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">
-          Inspector
-        </h2>
+        <h2 className="text-xs font-semibold text-muted-foreground">Inspector</h2>
       </div>
       <ScrollArea className="min-h-0 flex-1">
         <div className="space-y-4 px-4 pb-6">

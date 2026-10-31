@@ -179,7 +179,7 @@ export function ProposalCard({
   const kind = payloadOf<{ kind: string }>(item).kind;
   return (
     <div className="rounded-lg border bg-card p-3 shadow-xs">
-      <p className="mb-1.5 text-[0.7rem] font-semibold tracking-wide text-muted-foreground uppercase">
+      <p className="mb-1.5 text-[0.7rem] font-semibold text-muted-foreground">
         {kind === 'metadata' ? 'Proposed details' : 'Proposed changes'}
       </p>
       {kind === 'metadata' ? (

@@ -154,9 +154,7 @@ function Panel({
 }) {
   return (
     <Card className="gap-1 px-4 py-3">
-      <h3 className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">
-        {title}
-      </h3>
+      <h3 className="text-xs font-semibold text-muted-foreground">{title}</h3>
       {children.length ? children : <p className="py-1 text-sm text-muted-foreground">{empty}</p>}
     </Card>
   );

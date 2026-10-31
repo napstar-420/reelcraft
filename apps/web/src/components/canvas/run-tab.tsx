@@ -68,7 +68,7 @@ function Section({
 }) {
   return (
     <section className={cn('flex flex-col gap-2.5 p-4', !last && 'border-b')}>
-      <h3 className="flex items-center text-[11px] font-semibold tracking-wider text-muted-foreground uppercase">
+      <h3 className="flex items-center text-[11px] font-semibold text-muted-foreground">
         {title}
         {aside ? (
           <span className="ml-auto font-medium tracking-normal normal-case">{aside}</span>
@@ -257,7 +257,7 @@ export function RunTab({
                     />
                   )}
                   {reusedKeys.has(stage.key) && (
-                    <Badge variant="outline" className="text-[10px] tracking-wide uppercase">
+                    <Badge variant="outline" className="text-[10px] ">
                       Reused
                     </Badge>
                   )}

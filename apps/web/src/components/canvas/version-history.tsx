@@ -28,8 +28,8 @@ export function VersionHistory({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button type="button" variant="outline" size="sm">
-          <History /> Versions
+        <Button type="button" variant="ghost" size="sm">
+          <History /> History
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="max-h-96 w-72 overflow-y-auto">
