@@ -41,7 +41,7 @@ export const DEFAULT_CAPTION_WORDS_PER_PAGE = 3;
 export type CaptionLook = {
   tokens: TextStyleTokens;
   wordsPerPage: number;
-  position: 'top' | 'center' | 'bottom';
+  position: NonNullable<CaptionStyleOverrides['position']>;
   highlight: { style: CaptionHighlightStyle; color: string; textColor: string | undefined };
 };
 

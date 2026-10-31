@@ -46,7 +46,13 @@ export const CaptionStyleOverrides = z.object({
   color: z.string().min(1).max(40).optional(),
   fontSize: z.number().min(16).max(200).optional(),
   uppercase: z.boolean().optional(),
-  position: z.enum(['top', 'center', 'bottom']).optional(),
+  /** A band of the frame, or the point the captions are centred on, in percent of the frame. */
+  position: z
+    .union([
+      z.enum(['top', 'center', 'bottom']),
+      z.object({ x: z.number().min(0).max(100), y: z.number().min(0).max(100) }),
+    ])
+    .optional(),
 });
 export type CaptionStyleOverrides = z.infer<typeof CaptionStyleOverrides>;
 

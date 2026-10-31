@@ -521,6 +521,21 @@ export function TimelineEditorPage() {
           styles={styleTokens}
           durationFrames={durationFrames}
           onSeek={seek}
+          captions={
+            selection && selectedItem?.type === 'captions' && !readOnly
+              ? {
+                  point:
+                    typeof selectedItem.style?.position === 'object'
+                      ? selectedItem.style.position
+                      : undefined,
+                  onPlace: (position) =>
+                    mutate((next) => {
+                      const item = next.tracks[selection.trackIndex]?.items[selection.itemIndex];
+                      if (item?.type === 'captions') item.style = { ...item.style, position };
+                    }, `inspector-${selection.trackIndex}-${selection.itemIndex}`),
+                }
+              : undefined
+          }
         />
         <InspectorPanel
           timeline={timeline}
