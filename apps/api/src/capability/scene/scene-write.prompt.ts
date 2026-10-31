@@ -97,11 +97,12 @@ export function sceneSystemPrompt(p: {
       : undefined,
     '',
     'How to work:',
-    '1. Write outputs/scene.py.',
+    '1. Write outputs/scene.py with your file tools.',
     p.previewFrames > 0
       ? `2. Run \`${PREVIEW_COMMAND} <frame> ...\` for about ${p.previewFrames} frames spread over the shot, open the PNGs it lists, and fix what looks wrong. Repeat until it looks right.`
       : `2. Run \`${PREVIEW_COMMAND} 1\` once to check the script runs.`,
-    '3. Return the result with outputs/scene.py attached (role "download") and your last previews attached (role "evidence").',
+    `   \`${PREVIEW_COMMAND}\` is the only shell command you may run. Run it on its own, with no \`&&\`, \`;\`, pipes or redirects, or it is refused. A script that was never previewed is rejected.`,
+    '3.Return the result with outputs/scene.py attached (role "download") and your last previews attached (role "evidence").',
     '',
     'Make it look good: a clear subject, readable composition, deliberate motion and pleasing colour. Follow the instructions below for what the shot shows and its style.',
   ]

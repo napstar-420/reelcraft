@@ -7,7 +7,14 @@ import { SceneWriteCapability } from './scene-write.capability';
 
 const SCRIPT = 'import bpy\n\ndef build(rc):\n    pass\n';
 
-function setup(answer: { output?: unknown; script?: string | null } = {}) {
+function setup(
+  answer: {
+    output?: unknown;
+    script?: string | null;
+    previews?: boolean | string;
+    previewPath?: string;
+  } = {},
+) {
   const provider = {
     submit: vi.fn(async () => ({ providerId: 'claude', externalId: 'x' })),
     estimate: vi.fn(),
@@ -29,12 +36,17 @@ function setup(answer: { output?: unknown; script?: string | null } = {}) {
                 base64: Buffer.from(answer.script ?? SCRIPT).toString('base64'),
               },
             ]),
-        {
-          role: 'evidence' as const,
-          filename: 'frame_0001.png',
-          mime: 'image/png',
-          base64: 'AA==',
-        },
+        ...(answer.previews === false
+          ? []
+          : [
+              {
+                role: 'evidence' as const,
+                filename: typeof answer.previews === 'string' ? answer.previews : 'frame_0001.png',
+                mime: 'image/png',
+                base64: 'AA==',
+                ...(answer.previewPath && { localPath: answer.previewPath }),
+              },
+            ]),
       ],
     })),
   };
@@ -177,6 +189,23 @@ describe('SceneWriteCapability', () => {
       ctx(),
     );
     expect(noBuild.rejection).toMatch(/no build\(rc\)/);
+    const untested = await setup({ previews: false }).capability.fetch(
+      { providerId: 'claude', externalId: 'x' },
+      ctx(),
+    );
+    expect(untested.rejection).toMatch(/never previewed/);
+    // Evidence that isn't a preview frame doesn't count.
+    const notAPreview = await setup({ previews: 'frame.png' }).capability.fetch(
+      { providerId: 'claude', externalId: 'x' },
+      ctx(),
+    );
+    expect(notAPreview.rejection).toMatch(/never previewed/);
+    // A frame counts by its file, whatever name it was attached under, and past frame 9999.
+    const renamed = await setup({
+      previews: 'preview.png',
+      previewPath: '/job/outputs/previews/frame_10000.png',
+    }).capability.fetch({ providerId: 'claude', externalId: 'x' }, ctx());
+    expect(renamed.rejection).toBeUndefined();
   });
 
   it('refuses extra input names that clash or could not be slot names', () => {

@@ -59,6 +59,8 @@ type Shot = {
 const MINUTE_MS = 60_000;
 const DEFAULT_TIMEOUT_MIN = 30;
 const DEFAULT_PREVIEW_FRAMES = 4;
+/** The name `preview.mjs` gives each frame it renders (at least four digits). */
+const PREVIEW_FRAME = /^frame_\d{4,}\.png$/;
 const RESERVED_SLOTS = new Set([GENERAL_ASSET_SLOT, 'timing']);
 const ASSET_KINDS: SlotDef['accepts'] = [
   'media.image',
@@ -299,6 +301,14 @@ export class SceneWriteCapability implements CapabilityImpl<SceneWriteConfig> {
     const evidence = files
       .filter((file) => file !== scriptFile && file.role === 'evidence')
       .map((file) => ({ ...file, role: 'evidence' as const }));
+    // ponytail: frames are recognised by the names preview.mjs gives them, not proven to come from
+    // it; running build() here before accepting the script would prove it runs.
+    const previews = evidence.filter(
+      // The file's own name: the agent may attach it under another.
+      (file) =>
+        file.mime === 'image/png' &&
+        PREVIEW_FRAME.test(path.basename(file.localPath ?? file.filename)),
+    );
     const script = scriptFile?.localPath
       ? await readFile(scriptFile.localPath, 'utf8')
       : scriptFile?.base64
@@ -311,6 +321,14 @@ export class SceneWriteCapability implements CapabilityImpl<SceneWriteConfig> {
         rejection: script
           ? 'The scene script has no build(rc) function.'
           : 'The model returned no outputs/scene.py.',
+      };
+    }
+    // The previews run the real script, so none means it was never run and may not even build.
+    if (!previews.length) {
+      return {
+        output: null,
+        ...base,
+        rejection: `The scene script was never previewed, so it may not run. Run \`${PREVIEW_COMMAND} <frame> ...\` on its own and attach the previews.`,
       };
     }
     const shot = this.shot(ctx);
