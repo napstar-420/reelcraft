@@ -8,7 +8,12 @@ import { SceneWriteCapability } from './scene-write.capability';
 const SCRIPT = 'import bpy\n\ndef build(rc):\n    pass\n';
 
 function setup(
-  answer: { output?: unknown; script?: string | null; previews?: boolean | string } = {},
+  answer: {
+    output?: unknown;
+    script?: string | null;
+    previews?: boolean | string;
+    previewPath?: string;
+  } = {},
 ) {
   const provider = {
     submit: vi.fn(async () => ({ providerId: 'claude', externalId: 'x' })),
@@ -39,6 +44,7 @@ function setup(
                 filename: typeof answer.previews === 'string' ? answer.previews : 'frame_0001.png',
                 mime: 'image/png',
                 base64: 'AA==',
+                ...(answer.previewPath && { localPath: answer.previewPath }),
               },
             ]),
       ],
@@ -194,6 +200,12 @@ describe('SceneWriteCapability', () => {
       ctx(),
     );
     expect(notAPreview.rejection).toMatch(/never previewed/);
+    // A frame counts by its file, whatever name it was attached under, and past frame 9999.
+    const renamed = await setup({
+      previews: 'preview.png',
+      previewPath: '/job/outputs/previews/frame_10000.png',
+    }).capability.fetch({ providerId: 'claude', externalId: 'x' }, ctx());
+    expect(renamed.rejection).toBeUndefined();
   });
 
   it('refuses extra input names that clash or could not be slot names', () => {
