@@ -171,7 +171,9 @@ show at once and where they sit. It replaces any tweaks you made under **Look**,
 
 **Look** changes this captions item only, on top of its template:
 
-- **Position**: **Top**, **Middle** or **Bottom**;
+- **Position**: **Top**, **Middle** or **Bottom**. To put the captions anywhere else, select the captions
+  clip and click or drag in the preview; they snap to the centre across. While a captions clip is selected,
+  use the play button to play, since a click on the video places the captions;
 - **Spoken word**: how the word being spoken stands out: **Change colour**, **Highlight box**,
   **Underline**, **Grow** or **No highlight**;
 - **Text colour** and **Highlight**, the colour of the spoken word;
