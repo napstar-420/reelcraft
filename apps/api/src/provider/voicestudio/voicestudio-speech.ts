@@ -20,6 +20,9 @@ export interface VoiceStudioEngine {
   supports_cloning?: boolean | null;
   /** How the engine reads a style instruction: `freeform` text, or a closed list of `tags`. */
   instruct_vocabulary?: 'tags' | 'freeform';
+  /** `false` when every request needs a reference recording, so it can't speak a designed voice;
+   * missing or null when undeclared. */
+  supports_voice_design?: boolean | null;
   expression_caps?: { tags?: string[] };
   /** Built-in voices a request can pick by name. */
   preset_voices?: string[];
@@ -34,6 +37,106 @@ export interface VoiceStudioProfile {
   name: string;
   type: string;
   language?: string | null;
+}
+
+/**
+ * One of VoiceStudio's built-in designed voices (`GET /archetypes`): a voice-design recipe, not a
+ * recording. Engines that read voice-design tags (`instruct_vocabulary: "tags"`, the OmniVoice
+ * family) speak in it.
+ */
+export interface VoiceStudioArchetype {
+  id: string;
+  name: string;
+  /** The voice-design tags, such as "female, middle-aged, low pitch, british accent". */
+  instruct: string;
+  use_case?: string;
+  language?: string;
+  is_featured?: boolean;
+  facets?: { gender?: string | null; age?: string | null; accent?: string | null };
+}
+
+/** Voice ids of built-in designed voices start with this, then the archetype id. */
+export const ARCHETYPE_PREFIX = 'archetype:';
+
+/** The seed VoiceStudio renders and saves its designed voices with, so a voice sounds the same
+ * every time and in every piece of a long script. */
+export const ARCHETYPE_SEED = 42;
+
+/** Diffusion steps for a designed voice. VoiceStudio renders its designed voices with 32: at its
+ * default of 16, seed 42 can collapse into a tonal buzz instead of speech for some text. */
+export const ARCHETYPE_STEPS = 32;
+
+/** The archetype id in a voice id, or undefined for any other voice. */
+export const archetypeId = (voiceId: string): string | undefined =>
+  voiceId.startsWith(ARCHETYPE_PREFIX) ? voiceId.slice(ARCHETYPE_PREFIX.length) : undefined;
+
+/** How an engine reads a style instruction. Older VoiceStudio versions don't say; on those, only
+ * the OmniVoice engines read voice-design tags. */
+const vocabulary = (engine: VoiceStudioEngine): 'tags' | 'freeform' | undefined =>
+  engine.instruct_vocabulary ?? (engine.id.startsWith('omnivoice') ? 'tags' : undefined);
+
+/** Whether an engine speaks in VoiceStudio's built-in designed voices: it reads voice-design tags
+ * and doesn't need a reference recording. */
+export const speaksDesignedVoices = (engine: VoiceStudioEngine): boolean =>
+  engine.supports_voice_design !== false && vocabulary(engine) === 'tags';
+
+const USE_CASES: Record<string, string> = {
+  narration: 'Narration & story',
+  conversational: 'Conversational',
+  characters: 'Characters & animation',
+  social: 'Social media',
+  entertainment: 'Entertainment & TV',
+  advertisement: 'Advertisement',
+  informative: 'Informative & educational',
+};
+
+/** "british accent" → "British", as VoiceStudio labels it. */
+const accentLabel = (accent: string) =>
+  accent
+    .replace(/ accent$/, '')
+    .split(' ')
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+
+/** Language codes for the language names VoiceStudio uses on voices. */
+const LANGUAGE_CODES: Record<string, string> = {
+  english: 'en',
+  chinese: 'zh',
+  spanish: 'es',
+  french: 'fr',
+  german: 'de',
+  italian: 'it',
+  portuguese: 'pt',
+  russian: 'ru',
+  hindi: 'hi',
+  japanese: 'ja',
+  korean: 'ko',
+  arabic: 'ar',
+  dutch: 'nl',
+  polish: 'pl',
+  turkish: 'tr',
+};
+
+/** A VoiceStudio voice's language as the voice list gives it, a code such as `en` (the picker's
+ * language filter matches it exactly). A name it doesn't know, or a code, is kept as it is. */
+export const languageCode = (language: string): string =>
+  LANGUAGE_CODES[language.trim().toLowerCase()] ?? language;
+
+/** A built-in designed voice, as the voice picker lists it. */
+export function archetypeVoice(archetype: VoiceStudioArchetype): VoiceInfo {
+  const facets = archetype.facets ?? {};
+  const useCase = archetype.use_case ? (USE_CASES[archetype.use_case] ?? archetype.use_case) : '';
+  return {
+    id: `${ARCHETYPE_PREFIX}${archetype.id}`,
+    name: archetype.name,
+    category: 'premade',
+    description: ['Built into VoiceStudio', useCase].filter(Boolean).join(' · '),
+    ...(facets.gender && { gender: facets.gender }),
+    ...(facets.age && { age: facets.age }),
+    ...(facets.accent && { accent: accentLabel(facets.accent) }),
+    ...(archetype.language && { languages: [languageCode(archetype.language)] }),
+    ...(useCase && { useCases: [useCase] }),
+  };
 }
 
 /** The voice VoiceStudio uses when none is picked: the engine's own default. */
@@ -207,11 +310,13 @@ export const TRANSCRIBE_MODEL: ModelInfo = {
 
 /**
  * The voices one engine can speak in: the user's saved VoiceStudio voices when the engine can
- * clone, then its built-in voices.
+ * clone, then its built-in voices, then VoiceStudio's built-in designed voices when the engine
+ * reads voice-design tags.
  */
 export function engineVoices(
   engine: VoiceStudioEngine,
   profiles: VoiceStudioProfile[],
+  archetypes: VoiceStudioArchetype[] = [],
 ): VoiceInfo[] {
   const saved: VoiceInfo[] =
     engine.supports_cloning === false
@@ -223,36 +328,48 @@ export function engineVoices(
             name: p.name,
             category: 'cloned',
             description: 'Saved in VoiceStudio',
-            ...(p.language && p.language !== 'Auto' && { languages: [p.language] }),
+            ...(p.language && p.language !== 'Auto' && { languages: [languageCode(p.language)] }),
           }));
   const builtIn: VoiceInfo[] = (engine.preset_voices ?? []).map((id) => ({
     id,
     name: titled(id),
     category: 'premade',
   }));
-  return [...saved, ...builtIn];
+  const designed = speaksDesignedVoices(engine) ? archetypes.map(archetypeVoice) : [];
+  return [...saved, ...builtIn, ...designed];
 }
 
-/** The JSON body of one `POST /v1/audio/speech`. A setting left unset is not sent. */
+/** The seed speech is made with: the stage's, else a designed voice's own, else none. */
+export const speechSeed = (params: SpeechParams, design?: unknown): number | undefined =>
+  numberParam(params, 'seed') ?? (design ? ARCHETYPE_SEED : undefined);
+
+/**
+ * The JSON body of one `POST /v1/audio/speech`. A setting left unset is not sent. A built-in
+ * designed voice (`design`) is spoken the way VoiceStudio speaks one saved as a voice: the
+ * engine's default voice shaped by its tags, with its seed unless the stage sets one.
+ */
 export function voiceStudioRequestBody(args: {
   engineId: string;
   voiceId: string;
   text: string;
   format: AudioFamily;
   params: SpeechParams;
+  design?: Pick<VoiceStudioArchetype, 'instruct'>;
 }): Record<string, unknown> {
-  const { params } = args;
+  const { params, design } = args;
   const speed = numberParam(params, 'speed');
-  const seed = numberParam(params, 'seed');
+  const seed = speechSeed(params, design);
+  const instructions = design?.instruct || textParam(params, 'instructions');
   return {
     model: args.engineId,
     input: args.text,
-    voice: args.voiceId,
+    voice: design ? DEFAULT_VOICE_ID : args.voiceId,
     response_format: args.format,
     ...(speed !== undefined && speed !== 1 && { speed }),
     ...(seed !== undefined && { seed }),
+    ...(design && { num_step: ARCHETYPE_STEPS }),
     ...(textParam(params, 'language') && { language: textParam(params, 'language') }),
-    ...(textParam(params, 'instructions') && { instructions: textParam(params, 'instructions') }),
+    ...(instructions && { instructions }),
   };
 }
 
