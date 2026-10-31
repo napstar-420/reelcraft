@@ -68,7 +68,9 @@ describe('approval review logic', () => {
     ];
     const parked = { state: 'PAUSED_APPROVAL', stageExecutions: executions };
     expect(isApprovalStillOpen('stage-1', parked)).toBe(true);
-    expect(isApprovalStillOpen('stage-1', { ...parked, state: 'RUNNING' })).toBe(false);
+    // Still running other stages: it can be approved now.
+    expect(isApprovalStillOpen('stage-1', { ...parked, state: 'RUNNING' })).toBe(true);
+    expect(isApprovalStillOpen('stage-1', { ...parked, state: 'CANCELLING' })).toBe(false);
     expect(isApprovalStillOpen('stage-2', parked)).toBe(false);
     // A run parked on an input wait can still hold an approval to answer.
     expect(isApprovalStillOpen('stage-1', { ...parked, state: 'PAUSED_INPUT' })).toBe(true);

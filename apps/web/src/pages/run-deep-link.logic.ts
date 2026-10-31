@@ -1,4 +1,4 @@
-import { canAnswerWaits } from '../lib/run-action-policy';
+import { canAnswerWaits, canApproveWaits } from '../lib/run-action-policy';
 
 /** A notification links to `/runs/:id?review=<stage>` or `?input=<stage>`.
  * Only open what is still waiting: if the user already answered somewhere else,
@@ -15,7 +15,7 @@ export function deepLinkTarget(
   },
 ): { review: string | null; input: string | null } {
   const waiting = (stageKey: string | null, kind: string, interaction?: string) =>
-    canAnswerWaits(run.state) &&
+    (kind === 'approval' ? canApproveWaits : canAnswerWaits)(run.state) &&
     run.stageExecutions.some(
       (se) =>
         se.stageKey === stageKey &&

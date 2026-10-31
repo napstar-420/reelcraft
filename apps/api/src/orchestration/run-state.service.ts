@@ -1,10 +1,14 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { RunState } from '@reelcraft/shared';
-import { DRIZZLE, type Db } from '../db/drizzle.provider';
+import { DRIZZLE, type Db, type Tx } from '../db/drizzle.provider';
 import { ulid } from '../common/ulid';
 import { run, runWakeup, stageExecution } from '../db/schema/index';
 import { LiveEvents } from '../live/live-events';
+import type { RunWakeupEventData } from '../run/run-wakeup-claim.service';
+
+/** A queued wakeup, as the event that delivers it. */
+export type RunWakeupEvent = RunWakeupEventData & { executionEpoch: number; executionKey: string };
 
 @Injectable()
 export class RunStateService {
@@ -68,6 +72,67 @@ export class RunStateService {
       );
     this.logger.log({ runId, toState: state }, 'run state changed');
     this.events.publish({ type: 'run', runId });
+  }
+
+  /** Parks a RUNNING run on the waits still open, read by `openState` under the run's lock. An
+   * approval can arrive while the run is still running other stages; if every wait was answered
+   * that way, there is nothing left to park on, so the run parks and queues its own resume, as an
+   * answer to a parked run would. A run no longer RUNNING in `epoch` is left alone. */
+  async parkOnWaits(
+    runId: string,
+    epoch: number,
+    fallback: 'PAUSED_APPROVAL' | 'PAUSED_INPUT',
+    openState: (tx: Tx) => Promise<'PAUSED_APPROVAL' | 'PAUSED_INPUT' | undefined>,
+  ): Promise<{ state: RunState; resume?: RunWakeupEvent }> {
+    const result = await this.db.transaction(async (tx) => {
+      const [locked] = await tx
+        .select({ state: run.state, epoch: run.executionEpoch, revision: run.revision })
+        .from(run)
+        .where(eq(run.id, runId))
+        .for('update');
+      if (!locked || locked.epoch !== epoch || !['RUNNING', 'PAUSING'].includes(locked.state)) {
+        return { state: fallback as RunState };
+      }
+      if (locked.state === 'PAUSING') {
+        await tx.update(run).set({ state: 'PAUSED_MANUAL' }).where(eq(run.id, runId));
+        return { state: 'PAUSED_MANUAL' as RunState };
+      }
+      const open = await openState(tx);
+      if (open) {
+        await tx.update(run).set({ state: open }).where(eq(run.id, runId));
+        return { state: open as RunState };
+      }
+      const [parked] = await tx
+        .update(run)
+        .set({ state: 'PAUSED_APPROVAL', executionEpoch: sql`${run.executionEpoch} + 1` })
+        .where(eq(run.id, runId))
+        .returning({ revision: run.revision, executionEpoch: run.executionEpoch });
+      const resume: RunWakeupEvent = {
+        wakeupId: ulid(),
+        runId,
+        action: 'approve',
+        sourceState: 'PAUSED_APPROVAL',
+        expectedRevision: parked!.revision,
+        executionEpoch: parked!.executionEpoch,
+        executionKey: `${runId}:${parked!.executionEpoch}`,
+      };
+      await tx.insert(runWakeup).values({
+        id: resume.wakeupId,
+        runId,
+        action: resume.action,
+        sourceState: resume.sourceState,
+        expectedRevision: resume.expectedRevision,
+        executionEpoch: resume.executionEpoch,
+        eventName: 'run/resumed',
+      });
+      return { state: 'PAUSED_APPROVAL' as RunState, resume };
+    });
+    this.logger.log(
+      { runId, toState: result.state, resumes: Boolean(result.resume) },
+      'run state changed',
+    );
+    this.events.publish({ type: 'run', runId });
+    return result;
   }
 
   /** Pauses a RUNNING run until `resumeAt` and queues the wakeup that resumes

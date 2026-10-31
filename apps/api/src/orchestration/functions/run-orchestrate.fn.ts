@@ -241,12 +241,6 @@ export function buildRunOrchestrateFunction(
         'run orchestration started',
       );
 
-      // A run parks with the state that matches what it is waiting for. The
-      // fallback is the state an older invocation recorded, so a replay of a
-      // memoised park step still returns what it did.
-      const pausedState = async (fallback: 'PAUSED_APPROVAL' | 'PAUSED_INPUT') =>
-        (await waits?.pausedStateFor(db, runId)) ?? fallback;
-
       const rows = executions.map((execution) => ({
         ...execution,
         state: ['failed', 'cancelled', 'running'].includes(execution.state)
@@ -406,13 +400,29 @@ export function buildRunOrchestrateFunction(
         return { state: 'FAILED' as const };
       }
       if (approval || input || rows.some((r) => r.openWait)) {
-        const state = await step.run('mark-paused-waiting', async () => {
-          const next = await pausedState(input ? 'PAUSED_INPUT' : 'PAUSED_APPROVAL');
-          await runState.transition(runId, next, settings.epoch);
-          return next;
-        });
+        // A run parks with the state that matches what it is waiting for. Without
+        // `waits` to read them, it parks on what its stages reported.
+        const fallback = input ? 'PAUSED_INPUT' : 'PAUSED_APPROVAL';
+        const parked = await step.run('park-on-waits', () =>
+          runState.parkOnWaits(runId, settings.epoch, fallback, async (tx) => {
+            if (!waits) return fallback;
+            // Only a run whose every wait was answered carries on; any other parks as it reported.
+            const open = await waits.pausedStateFor(tx, runId);
+            return open ?? ((await waits.anyUnanswered(tx, runId)) ? fallback : undefined);
+          }),
+        );
+        if (parked.resume) {
+          // Every wait was answered while the run was still running: carry on. The id makes the
+          // dispatcher's sweep of the same row a no-op.
+          await step.sendEvent('resume-answered', {
+            id: parked.resume.wakeupId,
+            name: 'run/resumed',
+            data: parked.resume,
+          });
+          return { state: parked.state };
+        }
         if (approval || input) await notify(approval ? 'awaiting_approval' : 'awaiting_input');
-        return { state };
+        return { state: parked.state };
       }
       if (!planWave(rows).allDone) {
         await step.run('mark-idle', () => runState.transition(runId, 'IDLE', settings.epoch));
