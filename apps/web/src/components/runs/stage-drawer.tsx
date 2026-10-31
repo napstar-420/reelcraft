@@ -1,5 +1,7 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
+import { Check, Loader2 } from 'lucide-react';
 import type {
   RunDetailDto,
   RunMemoryEntryDto,
@@ -9,17 +11,10 @@ import type {
 import { api } from '@/api/client';
 import type { RunExecutionActions } from '@/hooks/useRunExecutionActions';
 import { Button } from '@/components/ui/button';
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from '@/components/ui/sheet';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { attemptOutcomeTone, formatStatusLabel } from '@/lib/status';
-import { formatOffset, stageLogLines } from '@/lib/stage-logs';
-import { formatRunDuration } from '@/pages/runs-page.logic';
+import { activityLines, formatOffset, stageLogLines } from '@/lib/stage-logs';
+import { formatElapsed, formatUsd } from '@/lib/format-elapsed';
 import { cn } from 'cn';
 import { ArtifactOrigin } from './artifact-origin';
 import { ArtifactPreview } from './artifact-preview';
@@ -27,7 +22,7 @@ import { DataView } from './artifact-views/data-view';
 import { StageExecutionControls } from './execution-controls';
 import { MotionCodeEditor } from './motion-code-editor';
 import { motionSourceOf } from './motion-code-editor.logic';
-import { VIEW_LABEL, viewTone, type RunView, type StageView } from './run-phases.logic';
+import { stageStatusLabel, viewTone, type RunView, type StageView } from './run-phases.logic';
 import { StageAnswerButtons } from './stage-answer-buttons';
 import {
   STALE_WARNING,
@@ -37,32 +32,25 @@ import {
   stageReads,
 } from './stage-drawer.logic';
 
-type Tab = 'output' | 'attempts' | 'memory';
+type Tab = 'live' | 'output' | 'attempts' | 'memory';
 
-type DrawerProps = {
+type DetailProps = {
   run: RunDetailDto;
   view: RunView;
-  stageKey: string | null;
+  stage: StageView;
   actions: RunExecutionActions;
-  onClose: () => void;
   onOpenStage: (key: string) => void;
   onReview: (key: string) => void;
   onProvideInput: (key: string) => void;
 };
 
-/** A stage's details beside the run graph: what it made, every attempt, and the memory it read and wrote. */
-export function StageDrawer(props: DrawerProps) {
-  const stage = props.view.stages.find((s) => s.key === props.stageKey);
-  return (
-    <Sheet open={!!stage} onOpenChange={(open) => !open && props.onClose()}>
-      <SheetContent className="w-full gap-0 sm:max-w-xl">
-        {stage ? <DrawerBody key={stage.key} {...props} stage={stage} /> : null}
-      </SheetContent>
-    </Sheet>
-  );
+/** The selected stage on the run page: what it is doing now, what it made, every attempt, and the
+ * memory it read and wrote. Keyed by stage so its tab and item picks reset on a new stage. */
+export function StageDetail(props: DetailProps) {
+  return <DetailBody key={props.stage.key} {...props} />;
 }
 
-function DrawerBody({
+function DetailBody({
   run,
   view,
   stage,
@@ -70,9 +58,11 @@ function DrawerBody({
   onOpenStage,
   onReview,
   onProvideInput,
-}: DrawerProps & { stage: StageView }) {
+}: DetailProps) {
   const execution = stage.execution;
-  const [tab, setTab] = useState<Tab>(stage.state === 'failed' ? 'attempts' : 'output');
+  const [tab, setTab] = useState<Tab>(
+    stage.state === 'failed' ? 'output' : stage.state === 'running' ? 'live' : 'output',
+  );
   const attempts = useQuery({
     queryKey: ['run', run.id, 'stage-attempts', stage.key],
     queryFn: () => api.listStageAttempts(run.id, stage.key),
@@ -93,49 +83,88 @@ function DrawerBody({
   const busy = run.availableActions?.busy ?? true;
   const reason = stage.state === 'failed' ? failureReason(execution.failure) : null;
   const tabs: Array<[Tab, string, number | null]> = [
-    ['output', 'Output', null],
-    ['attempts', 'Attempts', execution.attemptCount],
-    ['memory', 'Memory', reads.length + wrote.length],
+    ['live', stage.state === 'failed' ? 'Activity' : 'Live', null],
+    ['output', 'Output', output.data?.items.length || null],
+    ['attempts', 'Attempts', execution.attemptCount || null],
+    ['memory', 'Memory', reads.length + wrote.length || null],
   ];
+  const meta = [
+    `Stage ${stage.number}`,
+    phaseName && phaseName !== stage.name ? phaseName : null,
+    execution.startedAt
+      ? stage.state === 'running'
+        ? `started ${formatElapsed(execution.startedAt, null)} ago`
+        : execution.endedAt
+          ? `ran ${formatElapsed(execution.startedAt, execution.endedAt)}`
+          : null
+      : null,
+    execution.costUsd
+      ? `${formatUsd(Number(execution.costUsd))}${stage.state === 'running' ? ' so far' : ''}`
+      : null,
+  ].filter(Boolean);
 
   return (
-    <>
-      <SheetHeader className="gap-2 pr-12">
-        <p className="text-xs text-muted-foreground">
-          Stage {stage.number}
-          {phaseName && phaseName !== stage.name ? ` · ${phaseName}` : ''}
-        </p>
-        <SheetTitle className="text-lg">{stage.name}</SheetTitle>
-        <SheetDescription asChild>
-          <div className="flex flex-wrap items-center gap-2">
-            <StatusBadge tone={viewTone(stage.state)} label={VIEW_LABEL[stage.state]} />
-            {execution.startedAt && (execution.endedAt || stage.state === 'running') ? (
-              <span className="text-xs tabular-nums">
-                {formatRunDuration(execution.startedAt, execution.endedAt)} · $
-                {Number(execution.costUsd).toFixed(2)}
-              </span>
-            ) : null}
-          </div>
-        </SheetDescription>
-        {stage.state === 'failed' ? (
-          <p className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm">
-            {reason ?? 'This stage failed. Open Attempts to see why.'}
-          </p>
-        ) : null}
-        {stage.state === 'waiting' ? (
-          <p className="rounded-md border border-wait/40 bg-wait-soft p-3 text-sm">
-            {execution.waiting === 'approval'
-              ? 'This stage is waiting for your review.'
-              : 'This stage is waiting for your input.'}
-          </p>
-        ) : null}
+    <div className="mx-auto flex w-full max-w-[820px] flex-col gap-4 px-6 pt-5 pb-10">
+      <div className="flex flex-wrap items-start gap-3">
+        <div className="min-w-0 flex-1">
+          <p className="text-xs text-faint">{meta.join(' · ')}</p>
+          <h2 className="mt-0.5 text-[22px] font-semibold tracking-[-0.015em]">{stage.name}</h2>
+        </div>
         <div className="flex flex-wrap items-center gap-2">
+          <StatusBadge tone={viewTone(stage.state)} label={stageStatusLabel(stage)} />
+          {run.blueprintId ? (
+            <Button size="sm" variant="ghost" asChild>
+              <Link
+                to={`/blueprints/${run.blueprintId}/build?stage=${encodeURIComponent(stage.key)}`}
+              >
+                Edit stage
+              </Link>
+            </Button>
+          ) : null}
+        </div>
+      </div>
+
+      {stage.state === 'failed' ? (
+        <div className="flex flex-col gap-2.5 rounded-[14px] border border-bad bg-bad-soft p-4">
+          <p className="text-[15px] font-semibold">What went wrong</p>
+          <p className="text-sm leading-relaxed">
+            {reason ??
+              'This stage failed without a recorded reason. Open Attempts to see each try.'}
+          </p>
+          {execution.isIterating && execution.itemCount ? (
+            <p className="text-[13px] text-muted-foreground">
+              {execution.availableActions?.completedItems ?? 0} of {execution.itemCount} items
+              finished and are kept: only what failed needs to run again.
+            </p>
+          ) : null}
+          <div className="flex flex-wrap items-center gap-2 pt-1">
+            <StageExecutionControls
+              compact
+              available={execution.availableActions}
+              busy={busy}
+              pending={actions.runStage.isPending}
+              onAction={(request) => actions.runStage.mutate({ stageKey: stage.key, ...request })}
+            />
+          </div>
+        </div>
+      ) : null}
+      {stage.state === 'waiting' ? (
+        <div className="flex flex-wrap items-center gap-3 rounded-[14px] border border-wait bg-wait-soft p-4">
+          <p className="min-w-60 flex-1 text-sm">
+            {execution.waiting === 'approval'
+              ? 'This stage is waiting for your review before the run carries on.'
+              : 'This stage is waiting for your input before the run carries on.'}
+          </p>
           <StageAnswerButtons
             run={run}
             stage={execution}
             onReview={onReview}
             onProvideInput={onProvideInput}
           />
+        </div>
+      ) : null}
+      {stage.state !== 'failed' && stage.state !== 'waiting' ? (
+        <div className="flex flex-wrap items-center gap-2">
           <StageExecutionControls
             compact
             available={execution.availableActions}
@@ -144,8 +173,9 @@ function DrawerBody({
             onAction={(request) => actions.runStage.mutate({ stageKey: stage.key, ...request })}
           />
         </div>
-      </SheetHeader>
-      <nav aria-label="Stage details" className="flex gap-1 border-b px-4">
+      ) : null}
+
+      <nav aria-label="Stage details" className="flex gap-1 border-b">
         {tabs.map(([key, label, count]) => (
           <button
             key={key}
@@ -153,64 +183,202 @@ function DrawerBody({
             onClick={() => setTab(key)}
             aria-current={tab === key}
             className={cn(
-              '-mb-px border-b-2 px-3 py-2 text-sm',
+              '-mb-px border-b-2 px-3 py-2.5 text-[13px] font-medium',
               tab === key
-                ? 'border-primary font-medium text-foreground'
-                : 'border-transparent text-muted-foreground hover:text-foreground',
+                ? 'border-foreground text-foreground'
+                : 'border-transparent text-faint hover:text-foreground',
             )}
           >
             {label}
-            {count ? <span className="ml-1 text-xs text-muted-foreground">{count}</span> : null}
+            {count ? <span className="ml-1.5 text-faint">{count}</span> : null}
           </button>
         ))}
       </nav>
-      <div className="min-h-0 flex-1 overflow-y-auto p-4">
-        {(attempts.isError || output.isError) && (
-          <p role="alert" className="mb-3 text-sm text-destructive">
-            Some stage details could not be loaded.{' '}
-            <Button
-              size="xs"
-              onClick={() => {
-                void attempts.refetch();
-                void output.refetch();
-              }}
-            >
-              Retry
-            </Button>
+
+      {(attempts.isError || output.isError) && (
+        <p role="alert" className="text-sm text-bad">
+          Some stage details could not be loaded.{' '}
+          <Button
+            size="xs"
+            variant="outline"
+            onClick={() => {
+              void attempts.refetch();
+              void output.refetch();
+            }}
+          >
+            Retry
+          </Button>
+        </p>
+      )}
+      {tab === 'live' ? (
+        <LiveTab runId={run.id} stage={stage} output={output.data} />
+      ) : tab === 'output' ? (
+        <OutputTab
+          runId={run.id}
+          stage={stage}
+          output={output.data}
+          rerunItem={
+            !busy && execution.availableActions?.rerun
+              ? (itemIndex) =>
+                  actions.runStage.mutate({ stageKey: stage.key, action: 'rerun', itemIndex })
+              : undefined
+          }
+        />
+      ) : tab === 'attempts' ? (
+        <AttemptsTab
+          runId={run.id}
+          stageKey={stage.key}
+          attempts={attempts.data}
+          output={output.data}
+        />
+      ) : (
+        <MemoryTab
+          runId={run.id}
+          view={view}
+          reads={reads}
+          wrote={wrote}
+          current={memory.data?.current ?? {}}
+          loading={memory.isLoading}
+          onOpenStage={onOpenStage}
+        />
+      )}
+    </div>
+  );
+}
+
+/** What the stage is doing right now: a card for the current step, one tile per item, and the
+ * stage's events as they arrive (refetched every few seconds while it runs). */
+function LiveTab({
+  runId,
+  stage,
+  output,
+}: {
+  runId: string;
+  stage: StageView;
+  output: StageOutputDto | undefined;
+}) {
+  const running = stage.state === 'running';
+  const [showDebug, setShowDebug] = useState(false);
+  const logs = useQuery({
+    queryKey: ['run', runId, 'stage-logs', stage.key],
+    queryFn: () => api.listStageLogs(runId, stage.key),
+    refetchInterval: running ? 3000 : false,
+  });
+  const lines = activityLines(logs.data ?? [], showDebug);
+  const latest = lines[0];
+  const { isIterating, itemCount, availableActions } = stage.execution;
+  const done = new Set(
+    (output?.items ?? []).flatMap((i) => (i.itemIndex === null ? [] : [i.itemIndex])),
+  );
+  const completed = availableActions?.completedItems ?? done.size;
+
+  return (
+    <div className="flex flex-col gap-4">
+      {running ? (
+        <div className="flex items-center gap-3.5 rounded-[14px] border border-run bg-run-soft p-4">
+          <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-run-soft text-run ring-3 ring-run-soft">
+            <Loader2 className="size-[18px] animate-spin" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="font-semibold">
+              {isIterating && itemCount
+                ? `Item ${Math.min(completed + 1, itemCount)} of ${itemCount} is being made`
+                : 'Working on it'}
+            </p>
+            <p className="truncate text-[13px] text-muted-foreground">
+              {latest ? latest.message : 'Waiting for the first update from the provider.'}
+            </p>
+          </div>
+        </div>
+      ) : null}
+
+      {isIterating && itemCount ? (
+        <div
+          className="grid grid-cols-[repeat(auto-fill,minmax(64px,1fr))] gap-2.5"
+          role="list"
+          aria-label="Items"
+        >
+          {Array.from({ length: itemCount }, (_, i) => {
+            const isDone = done.has(i) || i < completed;
+            const isNow = running && !isDone && i === completed;
+            return (
+              <div key={i} role="listitem" className="flex flex-col gap-1.5">
+                <div
+                  className={cn(
+                    'flex aspect-[9/16] items-center justify-center rounded-[10px] text-xs',
+                    isDone
+                      ? 'bg-ok-soft text-ok'
+                      : isNow
+                        ? 'border-[1.5px] border-run bg-run-soft text-run'
+                        : stage.state === 'failed' && i === completed
+                          ? 'border-[1.5px] border-bad bg-bad-soft text-bad'
+                          : 'border-[1.5px] border-dashed border-line-strong text-faint',
+                  )}
+                >
+                  {isDone ? (
+                    <Check className="size-4" />
+                  ) : isNow ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : null}
+                </div>
+                <span className={cn('text-xs', isNow ? 'text-run' : 'text-faint')}>
+                  Item {i + 1}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
+
+      <section className="rounded-[14px] border bg-card px-4 py-1.5">
+        <div className="flex items-center gap-2 py-2.5">
+          <h3 className="text-sm font-semibold">Activity</h3>
+          {running ? <StatusBadge tone="running" label="Live" /> : null}
+          <span className="flex-1" />
+          <label className="flex items-center gap-2 text-xs text-faint">
+            <input
+              type="checkbox"
+              checked={showDebug}
+              onChange={(e) => setShowDebug(e.target.checked)}
+            />
+            Show technical events
+          </label>
+        </div>
+        {logs.isLoading ? <p className="py-3 text-sm text-muted-foreground">Loading…</p> : null}
+        {logs.data && !lines.length ? (
+          <p className="py-3 text-sm text-muted-foreground">
+            {stage.state === 'pending' || stage.state === 'next'
+              ? 'Nothing yet: this stage has not started.'
+              : 'No events recorded.'}
           </p>
-        )}
-        {tab === 'output' ? (
-          <OutputTab
-            runId={run.id}
-            stage={stage}
-            output={output.data}
-            rerunItem={
-              !busy && execution.availableActions?.rerun
-                ? (itemIndex) =>
-                    actions.runStage.mutate({ stageKey: stage.key, action: 'rerun', itemIndex })
-                : undefined
-            }
-          />
-        ) : tab === 'attempts' ? (
-          <AttemptsTab
-            runId={run.id}
-            stageKey={stage.key}
-            attempts={attempts.data}
-            output={output.data}
-          />
-        ) : (
-          <MemoryTab
-            runId={run.id}
-            view={view}
-            reads={reads}
-            wrote={wrote}
-            current={memory.data?.current ?? {}}
-            loading={memory.isLoading}
-            onOpenStage={onOpenStage}
-          />
-        )}
-      </div>
-    </>
+        ) : null}
+        {lines.slice(0, 60).map((line) => (
+          <details key={line.id} className="border-t py-2 text-[13px] first-of-type:border-t-0">
+            <summary className="flex cursor-pointer list-none gap-3">
+              <span className="w-11 shrink-0 font-mono text-xs text-faint">{line.clock}</span>
+              <span
+                className={cn(
+                  'min-w-0 flex-1 break-words',
+                  line.level === 'error' && 'text-bad',
+                  line.level === 'warn' && 'text-wait',
+                )}
+              >
+                {line.message.length > 220 ? `${line.message.slice(0, 220)}…` : line.message}
+                {line.itemIndex !== null ? (
+                  <span className="text-faint"> · item {line.itemIndex + 1}</span>
+                ) : null}
+              </span>
+            </summary>
+            <div className="mt-2 ml-14">
+              <p className="break-words whitespace-pre-wrap text-muted-foreground">
+                {line.message}
+              </p>
+              {line.data !== null ? <DataView data={line.data} /> : null}
+            </div>
+          </details>
+        ))}
+      </section>
+    </div>
   );
 }
 
@@ -253,7 +421,7 @@ function OutputTab({
   if (!output) return <p className="text-sm text-muted-foreground">Loading output…</p>;
   if (!items.length && !staleItems.length)
     return (
-      <p className="rounded-md border p-4 text-sm text-muted-foreground">
+      <p className="rounded-[14px] border p-4 text-sm text-muted-foreground">
         {EMPTY_OUTPUT[stage.state] ?? 'No output yet.'}
       </p>
     );
@@ -301,7 +469,7 @@ function OutputTab({
           <ArtifactPreview artifact={old.artifact} />
         </>
       ) : (
-        <p className="rounded-md border p-4 text-sm text-muted-foreground">
+        <p className="rounded-[14px] border p-4 text-sm text-muted-foreground">
           {itemEmptyText(
             active ?? 0,
             staleItems.some((i) => i.itemIndex === active),
@@ -341,7 +509,7 @@ function AttemptsTab({
         <details
           key={a.id}
           open={i === 0 && !['success', 'awaiting_approval'].includes(a.outcome)}
-          className="rounded-lg bg-muted/40 px-3 py-2 text-sm"
+          className="rounded-[10px] bg-surface-2 px-3 py-2.5 text-sm"
         >
           <summary className="flex cursor-pointer list-none items-center gap-2">
             <StatusBadge
@@ -385,7 +553,7 @@ function AttemptsTab({
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-1">
-      <p className="text-xs font-semibold tracking-wider uppercase">{title}</p>
+      <p className="text-xs font-semibold text-faint">{title}</p>
       {children}
     </div>
   );
@@ -492,15 +660,13 @@ function MemoryTab({
   const labelOf = (key: string) => view.stages.find((s) => s.key === key)?.label ?? key;
   return (
     <div className="flex flex-col gap-3">
-      <p className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">
-        Read ({reads.length})
-      </p>
+      <p className="text-xs font-semibold text-faint">Read ({reads.length})</p>
       {reads.length ? (
         reads.map((r) => {
           const entry = Object.values(current).find((e) => e.memKey.replace(/#\d+$/, '') === r.key);
           const preview = previewOf(entry);
           return (
-            <div key={r.key} className="rounded-lg bg-muted/40 px-3 py-2 text-sm">
+            <div key={r.key} className="rounded-[10px] bg-surface-2 px-3 py-2.5 text-sm">
               <div className="flex items-start justify-between gap-2">
                 <code className="text-xs">
                   {r.key.startsWith('stage:') ? `Output of ${labelOf(r.key.slice(6))}` : r.key}
@@ -524,12 +690,10 @@ function MemoryTab({
       ) : (
         <p className="text-sm text-muted-foreground">Reads nothing from earlier stages.</p>
       )}
-      <p className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">
-        Wrote ({wrote.length})
-      </p>
+      <p className="text-xs font-semibold text-faint">Wrote ({wrote.length})</p>
       {wrote.length ? (
         wrote.map((e) => (
-          <div key={e.id} className="rounded-lg bg-muted/40 px-3 py-2 text-sm">
+          <div key={e.id} className="rounded-[10px] bg-surface-2 px-3 py-2.5 text-sm">
             <div className="flex items-center gap-2">
               <code className="text-xs">{e.memKey}</code>
               <span className="text-xs text-muted-foreground">
