@@ -162,7 +162,7 @@ describe('nodeRunStatus', () => {
     ).toBe('');
   });
 
-  it('is reviewable only for a stage with an open approval, in either paused state', () => {
+  it('is reviewable only for a stage with an open approval, paused or still running', () => {
     const waiting = execution({ state: 'awaiting_approval', endedAt: null, waiting: 'approval' });
     const paused = { id: 'r1', state: 'PAUSED_APPROVAL' } as const;
     expect(nodeRunStatus(waiting, paused)).toMatchObject({
@@ -171,7 +171,8 @@ describe('nodeRunStatus', () => {
       reviewable: true,
     });
     expect(nodeRunStatus(waiting, { ...paused, state: 'PAUSED_INPUT' })?.reviewable).toBe(true);
-    expect(nodeRunStatus(waiting, { ...paused, state: 'RUNNING' })?.reviewable).toBe(false);
+    expect(nodeRunStatus(waiting, { ...paused, state: 'RUNNING' })?.reviewable).toBe(true);
+    expect(nodeRunStatus(waiting, { ...paused, state: 'CANCELLING' })?.reviewable).toBe(false);
     expect(nodeRunStatus(execution({ state: 'running' }), paused)?.reviewable).toBe(false);
   });
 

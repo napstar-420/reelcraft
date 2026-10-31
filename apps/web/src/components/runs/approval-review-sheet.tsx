@@ -25,11 +25,15 @@ export function ApprovalReviewSheet({
   stageKey,
   open,
   onOpenChange,
+  running = false,
 }: {
   runId: string;
   stageKey: string | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** The run is still running other stages: it can be approved now, but rejecting or
+   * retrying QC waits until it pauses. */
+  running?: boolean;
 }) {
   const queryClient = useQueryClient();
   const [note, setNote] = useState('');
@@ -142,6 +146,12 @@ export function ApprovalReviewSheet({
             </Alert>
           ) : candidateQuery.data ? (
             <>
+              {running ? (
+                <p className="mt-4 text-sm text-muted-foreground">
+                  The run is still working on other stages. Approve now to let this stage carry on;
+                  to reject or retry QC, pause the run first.
+                </p>
+              ) : null}
               {candidateQuery.data.attempt.qcUnavailable !== null ? (
                 <Alert className="mt-4">
                   <AlertCircle />
@@ -231,15 +241,18 @@ export function ApprovalReviewSheet({
             </>
           ) : (
             <>
-              <Button
-                variant="outline"
-                disabled={busy || !candidateQuery.data}
-                onClick={() => previewRejection.mutate()}
-              >
-                {previewRejection.isPending ? <Loader2 className="animate-spin" /> : null}
-                Reject
-              </Button>
-              {candidateQuery.data?.attempt.qcUnavailable !== null &&
+              {running ? null : (
+                <Button
+                  variant="outline"
+                  disabled={busy || !candidateQuery.data}
+                  onClick={() => previewRejection.mutate()}
+                >
+                  {previewRejection.isPending ? <Loader2 className="animate-spin" /> : null}
+                  Reject
+                </Button>
+              )}
+              {!running &&
+              candidateQuery.data?.attempt.qcUnavailable !== null &&
               candidateQuery.data !== undefined ? (
                 <Button disabled={busy} onClick={() => retryQc.mutate()}>
                   {retryQc.isPending ? <Loader2 className="animate-spin" /> : null}

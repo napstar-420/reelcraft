@@ -12,7 +12,7 @@ import { stageExecutionStateTone, type StatusTone } from '../../lib/status';
 import { displayStageState } from '../../lib/run-actions';
 import { describeSeedStop } from '../../pages/canvas-run.logic';
 import { formatRunDuration } from '../../pages/runs-page.logic';
-import { canAnswerWaits } from '../../lib/run-action-policy';
+import { canApproveWaits } from '../../lib/run-action-policy';
 import { ancestorsOf, stageDependencies } from '../../lib/stage-deps';
 
 /** Where a slot or context value comes from, as short as it can be said
@@ -206,7 +206,7 @@ export function nodeRunStatus(
     label: NODE_STATE_LABELS[shown],
     meta: parts.join(' · '),
     // `waiting` also covers an item-mode approval, which leaves the stage `running`.
-    reviewable: run !== undefined && canAnswerWaits(run.state) && execution.waiting === 'approval',
+    reviewable: run !== undefined && canApproveWaits(run.state) && execution.waiting === 'approval',
     ...(run &&
       execution.interaction === 'timeline_editor' &&
       execution.state === 'awaiting_input' && {

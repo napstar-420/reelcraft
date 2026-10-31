@@ -1,4 +1,4 @@
-import { canAnswerWaits } from '../lib/run-action-policy';
+import { canApproveWaits } from '../lib/run-action-policy';
 export type ApprovalCandidateView =
   | { kind: 'text' | 'json'; text: string }
   | { kind: 'image' | 'video' | 'audio' | 'download'; url: string }
@@ -51,7 +51,7 @@ export function isApprovalStillOpen(
   run: { state: string; stageExecutions: Array<{ stageKey: string; waiting?: string | null }> },
 ) {
   return (
-    canAnswerWaits(run.state) &&
+    canApproveWaits(run.state) &&
     run.stageExecutions.some((e) => e.stageKey === stageKey && e.waiting === 'approval')
   );
 }
