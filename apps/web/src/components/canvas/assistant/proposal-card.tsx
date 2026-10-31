@@ -12,9 +12,9 @@ import { baseDraftOf, payloadOf } from './assistant.logic';
 
 const KIND_ICON = { added: Plus, removed: Minus, changed: Pencil } as const;
 const KIND_STYLE = {
-  added: 'text-emerald-600 dark:text-emerald-400',
-  removed: 'text-red-600 dark:text-red-400',
-  changed: 'text-amber-600 dark:text-amber-400',
+  added: 'text-ok',
+  removed: 'text-bad',
+  changed: 'text-wait',
 } as const;
 
 function StageLine({ change }: { change: StageChange }) {
@@ -45,7 +45,7 @@ function ApplyFooter({
 }) {
   if (state === 'applied') {
     return (
-      <p className="flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400">
+      <p className="flex items-center gap-1 text-xs text-ok">
         <Check className="size-3.5" /> Applied
       </p>
     );
@@ -53,7 +53,7 @@ function ApplyFooter({
   return (
     <div className="space-y-1.5">
       {conflict && (
-        <p className="flex items-start gap-1 text-xs text-amber-600 dark:text-amber-400">
+        <p className="flex items-start gap-1 text-xs text-wait">
           <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
           The canvas changed since this was proposed. Applying replaces those edits.
         </p>
@@ -108,7 +108,7 @@ function DraftProposal({
         </ul>
       )}
       {payload.warnings.length > 0 && (
-        <ul className="space-y-0.5 text-xs text-amber-600 dark:text-amber-400">
+        <ul className="space-y-0.5 text-xs text-wait">
           {payload.warnings.slice(0, 4).map((w, i) => (
             <li key={i} className="flex gap-1">
               <AlertTriangle className="mt-0.5 size-3 shrink-0" />

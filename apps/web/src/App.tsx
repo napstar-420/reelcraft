@@ -1,7 +1,8 @@
 import { lazy, Suspense, useEffect } from 'react';
-import { Routes, Route, useLocation } from 'react-router-dom';
-import { ChannelsPage } from './pages/ChannelsPage';
+import { Navigate, Routes, Route } from 'react-router-dom';
+import { HomePage } from './pages/HomePage';
 import { BlueprintsPage } from './pages/BlueprintsPage';
+import { ChannelsPage } from './pages/ChannelsPage';
 import { BlueprintCanvasPage } from './pages/BlueprintCanvasPage';
 import { RunsPage } from './pages/RunsPage';
 import { RunPage } from './pages/RunPage';
@@ -16,40 +17,35 @@ const TimelineEditorPage = lazy(() =>
   import('./pages/TimelineEditorPage').then((module) => ({ default: module.TimelineEditorPage })),
 );
 
-/** The timeline editor renders its own full-bleed layout (media bin, player,
- * tracks) and shouldn't be constrained by the shell's sidebar/breadcrumb —
- * every other route renders inside `AppShell`. */
-function RoutedShell({ children }: { children: React.ReactNode }) {
-  const location = useLocation();
-  const fullBleed = location.pathname.includes('/stages/');
-  return fullBleed ? <>{children}</> : <AppShell>{children}</AppShell>;
-}
-
 export function App() {
   useLiveUpdates();
   useEffect(() => {
     void syncPushFromPrefs();
   }, []);
   return (
-    <RoutedShell>
+    <AppShell>
       <Routes>
-        <Route path="/" element={<ChannelsPage />} />
-        <Route path="/editor" element={<EditorPage />} />
-        <Route path="/channels/:channelId" element={<BlueprintsPage />} />
-        <Route path="/channels/:channelId/build" element={<BlueprintCanvasPage />} />
+        <Route path="/" element={<HomePage />} />
+        <Route path="/blueprints" element={<BlueprintsPage />} />
         <Route path="/blueprints/:blueprintId/build" element={<BlueprintCanvasPage />} />
+        <Route path="/channels" element={<ChannelsPage />} />
+        <Route path="/channels/:channelId" element={<ChannelsPage />} />
+        <Route path="/channels/:channelId/build" element={<BlueprintCanvasPage />} />
         <Route path="/runs" element={<RunsPage />} />
         <Route path="/runs/:runId" element={<RunPage />} />
-        <Route path="/settings" element={<SettingsPage />} />
         <Route
           path="/runs/:runId/stages/:stageKey/edit"
           element={
-            <Suspense fallback={<Skeleton className="h-screen w-full" />}>
+            <Suspense fallback={<Skeleton className="h-full w-full" />}>
               <TimelineEditorPage />
             </Suspense>
           }
         />
+        <Route path="/settings" element={<SettingsPage />} />
+        <Route path="/settings/:section" element={<SettingsPage />} />
+        <Route path="/editor" element={<EditorPage />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
-    </RoutedShell>
+    </AppShell>
   );
 }

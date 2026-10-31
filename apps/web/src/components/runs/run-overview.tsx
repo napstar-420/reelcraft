@@ -9,9 +9,9 @@ import { StageAnswerButtons } from './stage-answer-buttons';
 import { VIEW_LABEL, viewTone, type RunView, type StageView } from './run-phases.logic';
 
 const SEGMENTS = [
-  ['done', 'bg-emerald-500'],
-  ['running', 'bg-blue-500'],
-  ['waiting', 'bg-amber-500'],
+  ['done', 'bg-ok'],
+  ['running', 'bg-run'],
+  ['waiting', 'bg-wait'],
   ['failed', 'bg-destructive'],
 ] as const;
 
@@ -77,7 +77,7 @@ export function RunAttention({
     <Card
       className={cn(
         'gap-2 px-4 py-3',
-        view.waiting.length && !view.failed.length && 'bg-amber-500/5 ring-amber-500/40',
+        view.waiting.length && !view.failed.length && 'bg-wait-soft ring-wait/40',
       )}
     >
       {view.failed.length ? (

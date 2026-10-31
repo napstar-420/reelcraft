@@ -192,7 +192,7 @@ export function SpeechEditor({
                 onChange={(next) => onChange(withVoice(value, next))}
               />
               {!voice && !options.defaultVoice && (
-                <p className="text-xs text-amber-700 dark:text-amber-400">
+                <p className="text-xs text-wait">
                   Choose a voice. Voices belong to your account, so there is no default.
                 </p>
               )}

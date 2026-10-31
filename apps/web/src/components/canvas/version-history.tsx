@@ -49,9 +49,7 @@ export function VersionHistory({
                 {isCurrent ? <span className="text-xs text-muted-foreground">latest</span> : null}
                 {isViewing ? <span className="text-xs text-primary">viewing</span> : null}
                 {!version.runnable ? (
-                  <span className="ml-auto text-xs text-amber-700 dark:text-amber-400">
-                    not runnable
-                  </span>
+                  <span className="ml-auto text-xs text-wait">not runnable</span>
                 ) : null}
               </span>
               <span className="text-xs text-muted-foreground">

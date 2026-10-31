@@ -45,9 +45,7 @@ function ProblemsButton({
                 <Icon
                   className={cn(
                     'mt-0.5 size-4 shrink-0',
-                    issue.severity === 'error'
-                      ? 'text-destructive'
-                      : 'text-amber-600 dark:text-amber-400',
+                    issue.severity === 'error' ? 'text-destructive' : 'text-wait',
                   )}
                 />
                 <span className="min-w-0">

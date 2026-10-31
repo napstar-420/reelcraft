@@ -58,7 +58,7 @@ export function DraftRenderDialog({
         <Button type="button" size="sm" variant="outline" disabled={disabled}>
           {rendering ? <Loader2 className="animate-spin" /> : <Clapperboard />}
           {rendering ? 'Rendering…' : 'Render draft'}
-          {done && !outOfDate ? <CheckCircle2 className="text-emerald-400" /> : null}
+          {done && !outOfDate ? <CheckCircle2 className="text-ok" /> : null}
         </Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-md">
@@ -89,14 +89,13 @@ export function DraftRenderDialog({
               style={{ aspectRatio: aspect }}
             />
             {outOfDate ? (
-              <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+              <p className="rounded-lg border border-wait/40 bg-wait-soft px-3 py-2 text-xs text-wait">
                 You’ve changed the timeline since this was rendered. Render again to see the
                 changes.
               </p>
             ) : (
               <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <CheckCircle2 className="size-3.5 text-emerald-400" /> Matches your latest saved
-                changes.
+                <CheckCircle2 className="size-3.5 text-ok" /> Matches your latest saved changes.
               </p>
             )}
           </div>

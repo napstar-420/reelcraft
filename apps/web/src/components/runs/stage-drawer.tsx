@@ -123,7 +123,7 @@ function DrawerBody({
           </p>
         ) : null}
         {stage.state === 'waiting' ? (
-          <p className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+          <p className="rounded-md border border-wait/40 bg-wait-soft p-3 text-sm">
             {execution.waiting === 'approval'
               ? 'This stage is waiting for your review.'
               : 'This stage is waiting for your input.'}
@@ -295,7 +295,7 @@ function OutputTab({
         </>
       ) : old?.artifact ? (
         <>
-          <p role="status" className="text-sm text-amber-600 dark:text-amber-400">
+          <p role="status" className="text-sm text-wait">
             {STALE_WARNING}
           </p>
           <ArtifactPreview artifact={old.artifact} />
@@ -358,9 +358,7 @@ function AttemptsTab({
           </summary>
           <div className="mt-2 flex flex-col gap-2 border-t pt-2 text-muted-foreground">
             {a.artifactId && used.has(a.artifactId) ? (
-              <p className="font-medium text-emerald-600 dark:text-emerald-400">
-                Used as the stage output.
-              </p>
+              <p className="font-medium text-ok">Used as the stage output.</p>
             ) : null}
             {a.reviewNote ? (
               <p className="whitespace-pre-wrap text-foreground">{a.reviewNote}</p>

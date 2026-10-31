@@ -11,8 +11,8 @@ import {
 } from './voicestudio.logic';
 
 const DOT: Record<StatusTone, string> = {
-  ok: 'bg-emerald-500',
-  warn: 'bg-amber-500',
+  ok: 'bg-ok',
+  warn: 'bg-wait',
   error: 'bg-destructive',
   muted: 'bg-muted-foreground/50',
 };

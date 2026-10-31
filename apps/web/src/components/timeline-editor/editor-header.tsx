@@ -24,7 +24,7 @@ const SAVE_VIEW: Record<SaveState, { label: string; tone: string; icon: React.Re
     tone: 'text-muted-foreground',
     icon: <Loader2 className="animate-spin" />,
   },
-  saved: { label: 'All changes saved', tone: 'text-emerald-400', icon: <Check /> },
+  saved: { label: 'All changes saved', tone: 'text-ok', icon: <Check /> },
   saving: {
     label: 'Saving…',
     tone: 'text-muted-foreground',
@@ -32,10 +32,10 @@ const SAVE_VIEW: Record<SaveState, { label: string; tone: string; icon: React.Re
   },
   error: {
     label: 'Couldn’t save — retrying on your next change',
-    tone: 'text-amber-400',
+    tone: 'text-wait',
     icon: <AlertTriangle />,
   },
-  conflict: { label: 'Out of date', tone: 'text-amber-400', icon: <AlertTriangle /> },
+  conflict: { label: 'Out of date', tone: 'text-wait', icon: <AlertTriangle /> },
   readonly: { label: 'Read only', tone: 'text-muted-foreground', icon: <Lock /> },
 };
 

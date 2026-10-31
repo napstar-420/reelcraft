@@ -66,7 +66,7 @@ function Tile({
           className="absolute inset-0 size-full object-cover"
         />
       ) : (
-        <span className="absolute inset-0 flex items-center justify-center bg-emerald-500/10 text-emerald-400">
+        <span className="absolute inset-0 flex items-center justify-center bg-ok-soft text-ok">
           <Music className="size-8" />
         </span>
       )}

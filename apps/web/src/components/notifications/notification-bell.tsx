@@ -47,13 +47,13 @@ export function NotificationBell() {
         <Button
           variant="ghost"
           size="icon"
-          className="relative"
+          className="relative size-11 rounded-xl text-faint"
           aria-label={unread > 0 ? `Notifications, ${unread} unread` : 'Notifications'}
         >
-          <Bell className="size-4" />
+          <Bell className="size-[18px]" />
           {badge ? (
             <Badge
-              className="absolute -top-0.5 -right-0.5 h-4 min-w-4 justify-center px-1 text-[10px]"
+              className="absolute top-1 right-1 h-4 min-w-4 justify-center bg-acc px-1 text-[10px] text-acc-foreground"
               aria-hidden
             >
               {badge}
@@ -61,7 +61,7 @@ export function NotificationBell() {
           ) : null}
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-96 gap-0 p-0">
+      <PopoverContent side="right" align="end" sideOffset={8} className="w-96 gap-0 p-0">
         <div className="flex items-center justify-between border-b px-4 py-3">
           <h2 className="text-sm font-medium">Notifications</h2>
           <Button
@@ -90,15 +90,15 @@ export function NotificationBell() {
                     type="button"
                     onClick={() => openItem(item)}
                     className={cn(
-                      'flex w-full gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/60 focus-visible:bg-muted/60 focus-visible:outline-none',
-                      item.readAt === null ? 'bg-muted/30' : 'text-muted-foreground',
+                      'flex w-full gap-3 px-4 py-3 text-left transition-colors hover:bg-surface-2 focus-visible:bg-surface-2 focus-visible:outline-none',
+                      item.readAt === null ? '' : 'text-muted-foreground',
                     )}
                   >
                     <span
                       aria-hidden
                       className={cn(
                         'mt-1.5 size-2 shrink-0 rounded-full',
-                        item.readAt === null ? 'bg-primary' : 'bg-transparent',
+                        item.readAt === null ? 'bg-acc' : 'bg-transparent',
                       )}
                     />
                     <span className="flex min-w-0 flex-col gap-0.5">

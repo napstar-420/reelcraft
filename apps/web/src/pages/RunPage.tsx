@@ -183,12 +183,12 @@ export function RunPage() {
             {budgetCapUsd > 0 ? ` of ${formatCapUsd(budgetCapUsd)} budget` : ' (no budget limit)'}
           </p>
           {run.state === 'PAUSED_QUOTA' ? (
-            <p className="text-sm text-amber-700 dark:text-amber-400">
+            <p className="text-sm text-wait">
               {quotaPauseMessage(run.resumeAt, (when) => when.toLocaleString())}
             </p>
           ) : null}
           {run.budgetBlock ? (
-            <p className="text-sm text-amber-700 dark:text-amber-400">
+            <p className="text-sm text-wait">
               {run.budgetBlock.scope === 'stage'
                 ? `Paused: stage "${
                     run.stageExecutions.find((se) => se.stageKey === run.budgetBlock!.stageKey)

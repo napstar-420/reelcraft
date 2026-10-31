@@ -21,7 +21,7 @@ export function IssueList({
           className={cn(
             'py-1.5',
             issue.severity === 'warning' &&
-              'border-amber-500/30 bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400 [&>svg]:text-current',
+              'border-wait/30 bg-wait-soft text-wait [&>svg]:text-current',
           )}
         >
           {issue.severity === 'error' ? (

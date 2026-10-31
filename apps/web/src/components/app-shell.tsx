@@ -1,82 +1,66 @@
-import { Fragment } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { Link, useLocation } from 'react-router-dom';
-import { api } from '@/api/client';
-import { AppSidebar } from '@/components/app-sidebar';
-import { ModeToggle } from '@/components/mode-toggle';
-import { NotificationBell } from '@/components/notifications/notification-bell';
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbList,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from '@/components/ui/breadcrumb';
-import { Separator } from '@/components/ui/separator';
-import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
-import { breadcrumbsForPath } from '@/lib/breadcrumbs';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { AppRail } from '@/components/shell/app-rail';
+import { AskAssistantButton } from '@/components/shell/ask-assistant-button';
+import { CommandPalette } from '@/components/shell/command-palette';
+import { CommandPaletteContext } from '@/components/shell/command-palette-context';
+import { useRunBuckets } from '@/hooks/useRunBuckets';
 import { shellLayoutForPath } from '@/lib/shell-layout';
 
+/** The frame around every page: the icon rail, Cmd+K search, Cmd+J for the assistant, and the
+ * floating assistant button where the assistant is not already on screen. */
 export function AppShell({ children }: { children: React.ReactNode }) {
   const location = useLocation();
-  const channelId = location.pathname.match(/^\/channels\/([^/]+)/)?.[1];
-
-  const channel = useQuery({
-    queryKey: ['channel', channelId],
-    queryFn: () => api.getChannel(channelId!),
-    enabled: Boolean(channelId),
-  });
-
-  const crumbs = breadcrumbsForPath(location.pathname, { channel: channel.data?.name });
+  const navigate = useNavigate();
   const layout = shellLayoutForPath(location.pathname);
+  const { needsYou } = useRunBuckets();
+  const [palette, setPalette] = useState<{ open: boolean; query: string }>({
+    open: false,
+    query: '',
+  });
+  const open = useCallback((query = '') => setPalette({ open: true, query }), []);
+  const paletteApi = useMemo(() => ({ open }), [open]);
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (!(event.metaKey || event.ctrlKey) || event.altKey) return;
+      const key = event.key.toLowerCase();
+      if (key === 'k') {
+        event.preventDefault();
+        setPalette((p) => ({ open: !p.open, query: '' }));
+      } else if (key === 'j' && layout.askButton) {
+        event.preventDefault();
+        navigate('/?focus=assistant');
+      }
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [layout.askButton, navigate]);
 
   return (
-    <SidebarProvider className="h-svh">
-      <a href="#main-content" className="skip-link">
-        Skip to content
-      </a>
-      <AppSidebar />
-      <SidebarInset className="min-h-0 min-w-0">
-        <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
-          <SidebarTrigger className="-ml-1" />
-          <Separator orientation="vertical" className="mr-2 h-4" />
-          <Breadcrumb>
-            <BreadcrumbList>
-              {crumbs.map((crumb, index) => (
-                <Fragment key={index}>
-                  {index > 0 && <BreadcrumbSeparator />}
-                  <BreadcrumbItem>
-                    {crumb.to ? (
-                      <BreadcrumbLink asChild>
-                        <Link to={crumb.to}>{crumb.label}</Link>
-                      </BreadcrumbLink>
-                    ) : (
-                      <BreadcrumbPage>{crumb.label}</BreadcrumbPage>
-                    )}
-                  </BreadcrumbItem>
-                </Fragment>
-              ))}
-            </BreadcrumbList>
-          </Breadcrumb>
-          <div className="ml-auto flex items-center gap-2">
-            <NotificationBell />
-            <ModeToggle />
-          </div>
-        </header>
-        {layout === 'workbench' ? (
-          // The blueprint canvas fills the viewport and does its own scrolling.
-          <main id="main-content" className="min-h-0 min-w-0 flex-1 overflow-hidden">
-            {children}
-          </main>
-        ) : (
-          <main id="main-content" className="min-h-0 min-w-0 flex-1 overflow-auto p-6">
-            <div className={layout === 'wide' ? undefined : 'mx-auto w-full max-w-7xl'}>
-              {children}
-            </div>
-          </main>
-        )}
-      </SidebarInset>
-    </SidebarProvider>
+    <CommandPaletteContext.Provider value={paletteApi}>
+      <div className="flex h-svh min-h-0 bg-background">
+        <a href="#main-content" className="skip-link">
+          Skip to content
+        </a>
+        <AppRail needsYou={needsYou.length} />
+        <main
+          id="main-content"
+          className={
+            layout.frame === 'workbench'
+              ? 'min-h-0 min-w-0 flex-1 overflow-hidden'
+              : 'min-h-0 min-w-0 flex-1 overflow-y-auto'
+          }
+        >
+          {children}
+        </main>
+      </div>
+      {layout.askButton ? <AskAssistantButton /> : null}
+      <CommandPalette
+        open={palette.open}
+        initialQuery={palette.query}
+        onOpenChange={(next) => setPalette((p) => ({ ...p, open: next }))}
+      />
+    </CommandPaletteContext.Provider>
   );
 }
