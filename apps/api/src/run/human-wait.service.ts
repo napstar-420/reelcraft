@@ -93,16 +93,6 @@ export class HumanWaitService {
     return waits.length > 0 ? 'PAUSED_INPUT' : undefined;
   }
 
-  /** Whether any of the run's waits is still unanswered, live or not. */
-  async anyUnanswered(db: Db | Tx, runId: string): Promise<boolean> {
-    const [wait] = await db
-      .select({ id: humanWait.id })
-      .from(humanWait)
-      .where(and(eq(humanWait.runId, runId), isNull(humanWait.resolvedAt)))
-      .limit(1);
-    return !!wait;
-  }
-
   /** Throws unless this stage (or item) has a live open wait of `kind`. */
   async requireOpen(
     tx: Tx,

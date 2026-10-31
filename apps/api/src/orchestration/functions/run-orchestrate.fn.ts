@@ -406,9 +406,10 @@ export function buildRunOrchestrateFunction(
         const parked = await step.run('park-on-waits', () =>
           runState.parkOnWaits(runId, settings.epoch, fallback, async (tx) => {
             if (!waits) return fallback;
-            // Only a run whose every wait was answered carries on; any other parks as it reported.
-            const open = await waits.pausedStateFor(tx, runId);
-            return open ?? ((await waits.anyUnanswered(tx, runId)) ? fallback : undefined);
+            // A wait left behind by a stage that moved on can never be answered: close it, so only
+            // the waits someone can still answer keep the run parked.
+            await waits.resolveNotLive(tx, runId);
+            return waits.pausedStateFor(tx, runId);
           }),
         );
         if (parked.resume) {
