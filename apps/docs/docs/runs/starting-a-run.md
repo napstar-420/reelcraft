@@ -7,13 +7,13 @@ A **run** is one go at making a video: Reelcraft carries out the blueprint's dep
 inputs and budget you give it. There are two kinds:
 
 - **Production runs** run a saved version, exactly as it was saved. You start them from the
-  blueprints page, as described here.
+  **Blueprints** page, as described here.
 - **Test runs** run what's on the canvas while you build, saved or not. See
   [Test runs on the canvas](./canvas-runs.md).
 
 ## Before you start
 
-- The blueprint must have at least one **saved** version that shows **Runnable**. See
+- The blueprint must have at least one **saved** version that shows **Ready to run**. See
   [Versions](../blueprints/versions.md).
 - The models and keys it uses must be set up. See [Models](../blueprints/models.md) and
   [AI provider keys](../provider-keys.md).
@@ -22,10 +22,10 @@ inputs and budget you give it. There are two kinds:
 
 ## Start a run
 
-1. Open the channel's **Blueprints** tab and select **Run** on the blueprint's card. (**Run** is off
-   until the blueprint has been saved once.)
-2. In the dialog, choose the **Saved version** to run. The latest is selected. Keep **Live run**
-   selected and set the **Budget cap (USD)**. It starts as the version's
+1. Open **Blueprints** (or the channel's **Blueprints** tab) and select **Run** on the blueprint's
+   card. (**Run** is off until the blueprint has been saved once.)
+2. In the dialog, choose the **Saved version** to run. The latest is selected. Keep **Real run**
+   selected and set the **Budget limit (USD)**. It starts as the version's
    [run cap](../blueprints/settings.md#budget). The run never spends more than this unless you raise
    it. See [Budget and costs](./budget-and-costs.md).
 3. Fill in the blueprint's inputs. A **\*** marks a required one:
@@ -33,7 +33,8 @@ inputs and budget you give it. There are two kinds:
    - data inputs: paste JSON, which must be valid;
    - image, video and audio inputs: choose a file. An input that accepts `many` files lets you pick
      several.
-4. Select **Start real run**.
+4. Check **What will happen**, which says how many stages run and the most the run may spend, then
+   select **Start run**.
 
 Reelcraft checks your entries first, and shows what to fix under each box, for example **Topic is
 required.** or **Script must contain valid JSON.**
@@ -44,8 +45,8 @@ The run page opens as soon as the run starts. See [Run page](./run-page.md).
 
 :::note A real run costs real money
 
-The dialog reminds you: **This is a real run. It uses each stage's configured provider, including
-Codex and Claude, and may consume provider usage.**
+The dialog reminds you: **Each stage uses its configured provider, including Codex and Claude, and
+may use paid provider credit.**
 
 :::
 
@@ -72,4 +73,4 @@ If the run can't start at all, the reason appears under **Run could not start**.
 
 - **Run again** on a production run's page opens the same dialog with that run's version, inputs and
   budget filled in. Files are picked again.
-- **Start test run** on the canvas runs the canvas as it is. See [Test runs on the canvas](./canvas-runs.md).
+- **Test run** in the blueprint editor runs the canvas as it is. See [Test runs on the canvas](./canvas-runs.md).

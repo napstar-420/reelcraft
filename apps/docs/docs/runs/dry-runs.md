@@ -10,12 +10,12 @@ connected correctly before you pay for a real run. It has limits: see
 
 ## Start a dry run
 
-1. Open the blueprint's canvas and select **Run** in the top bar.
-2. In the dialog, select **Dry run**. The title changes to **Dry run**. Fill in the inputs, as for a
+1. Select **Run** on the blueprint's card, or **Test run** in the blueprint editor.
+2. In the dialog, select **Free test run**. Fill in the inputs, as for a
    [real run](./starting-a-run.md).
    Uploads work the same way.
-3. The **Budget cap (USD)** changes to $1. Keep it small.
-4. Select **Start dry run**.
+3. The **Budget limit (USD)** changes to $1. Keep it small.
+4. Select **Start free test run**.
 
 Like a real run, a dry run needs a saved, runnable version.
 
@@ -47,7 +47,7 @@ The placeholder results are very simple, so some things fail in a dry run that w
 
 A dry run is best for checking that stages are connected and that the blueprint reaches its end, for
 blueprints built from text, image, video and speech stages. To try a stage that a dry run can't handle,
-use the [canvas **Run** tab](./canvas-runs.md) with a real model, or temporarily turn off the check that fails.
+use the [**Test runs**](./canvas-runs.md) with a real model, or temporarily turn off the check that fails.
 
 ## Finding dry runs afterwards
 
@@ -56,5 +56,5 @@ on **Show test runs** to see them. They're marked with a **dry run** badge.
 
 ## Dry runs on the canvas
 
-The [**Run** tab](./canvas-runs.md) on the canvas starts real runs. To try a blueprint for free, select
-**Run** in the top bar and choose **Dry run**.
+The [**Test runs**](./canvas-runs.md) on the canvas starts real runs. To try a blueprint for free, select
+**Run** on its card and choose **Free test run**.

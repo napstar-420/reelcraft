@@ -16,17 +16,17 @@ Production runs of a saved version start from the blueprints page and never show
 
 The canvas toolbar shows one main button, which changes with the test run's state:
 
-| The test run is…                      | Main button        | What it does                                                                                  |
-| ------------------------------------- | ------------------ | --------------------------------------------------------------------------------------------- |
-| Not started yet, or finished          | **Start test run** | Opens the inputs dialog, filled in with the last test run's inputs, and starts a new test run |
-| Running                               | **Pause**          | Lets the current work finish, then pauses                                                     |
-| Failed, paused, stopped or partly run | **Continue**       | Keeps every passed stage and runs the rest to the end, using your current canvas edits        |
-| Waiting for your review or input      | none               | Answer it with **Review output** or **Provide input**                                         |
+| The test run is…                      | Main button  | What it does                                                                                  |
+| ------------------------------------- | ------------ | --------------------------------------------------------------------------------------------- |
+| Not started yet, or finished          | **Test run** | Opens the inputs dialog, filled in with the last test run's inputs, and starts a new test run |
+| Running                               | **Pause**    | Lets the current work finish, then pauses                                                     |
+| Failed, paused, stopped or partly run | **Continue** | Keeps every passed stage and runs the rest to the end, using your current canvas edits        |
+| Waiting for your review or input      | none         | Answer it with **Review output** or **Provide input**                                         |
 
 The **⋯** menu next to it holds:
 
 - **Stop run**: ends the run. Finished outputs are kept, and you can **Continue** later.
-- **Start over (new test run)**: the same as **Start test run**, while a run is still open.
+- **Start over (new test run)**: the same as **Test run**, while a run is still open.
 - **Concurrent branches**: how many stages may run at once (default **2**).
 
 If you added or removed stages, or changed the blueprint's inputs, roles or defaults, the open test run
@@ -46,7 +46,7 @@ If you edit a stage that already finished, it and the stages after it are marked
 
 ## Stage buttons
 
-Select a stage on the canvas or in the **Run** tab to see its buttons:
+Select a stage in the outline, on the graph or in **Test runs** to see its buttons:
 
 - **Run this stage only**: runs just this stage, using the outputs that already exist before it.
 - In its **⋯** menu:

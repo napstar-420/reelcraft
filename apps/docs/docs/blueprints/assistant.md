@@ -8,19 +8,31 @@ reel: script, voice-over, one image per scene, then render") and it proposes the
 and checked, for you to apply.
 
 It runs on **Codex** or **Claude**, so you need to [connect Codex](../codex.md) or
-[connect Claude](../claude-code.md) first. If the one you picked isn't connected, the Assistant tab
+[connect Claude](../claude-code.md) first. If the one you picked isn't connected, the assistant
 says so and links to **Settings**.
 
 ## Open it
 
-On the blueprint's canvas, open the **Assistant** tab in the panel next to the canvas. The first time,
-you'll see a few example requests. Pick one or type your own and press **Enter**
+The assistant is the column on the right of the blueprint editor. If you hid it, select **Assistant**
+in the bottom right corner. The first time, you'll see a few example requests.
+
+You can also start from anywhere else:
+
+- On **Home**, type in **What are we making today?**, pick the channel and either **New blueprint**
+  or an existing one, and select **Send**. The blueprint opens and your message goes to its
+  assistant.
+- On a run, **Fix with assistant** (on a failed stage) or a question in the run's assistant column
+  opens the run's blueprint with that message.
+- In **Cmd K** search, **Ask the assistant about …** puts your text in Home's message box.
+
+While a stage is open in Stages view, its name shows above the message box: the message is sent
+about that stage. Select **✕** on it to send a message about the whole blueprint. Pick one or type your own and press **Enter**
 (**Shift + Enter** starts a new line).
 
 Messages can contain up to 64,000 characters. This is Reelcraft's per-message limit; the selected
 model's context capacity also includes conversation history and tool results.
 
-When both are connected, pick **Codex** or **Claude** in the provider menu at the top. A chat keeps
+When both are connected, pick **Codex** or **Claude** in the provider menu at the top of the column. A chat keeps
 the provider it started with: switching starts a new chat.
 
 Pick the **Model** and its **Effort** next to it. On Codex they start as the model set in your Codex
@@ -68,13 +80,15 @@ summary to see which stages, and which of their settings. Any warnings are liste
 
 A proposal for the blueprint's **name, description or tags** works the same way: apply it, or undo.
 
-## Auto-apply
+## Apply changes for me
 
-Switch on **Auto-apply** at the top of the panel and the assistant's valid changes go onto the canvas
+Switch on **Apply changes for me** next to **Send** and the assistant's valid changes go onto the canvas
 as soon as they're ready, with an **Undo** each time. It never applies over edits you made in the
 meantime: those proposals wait for you, as in manual mode.
 
-Auto-apply is remembered in this browser. It works while the blueprint is open on the canvas.
+This choice is remembered in this browser. It works while the blueprint is open in the editor.
+
+The clock button at the top of the column lists earlier chats; the **+** button starts a new chat.
 
 ## Questions
 

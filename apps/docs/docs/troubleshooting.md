@@ -44,7 +44,7 @@ Rendering video uses a lot of memory. Give Docker at least 4 GB (macOS and Linux
 
 ## BrowserOS Neo test fails
 
-**Test connection** in [Settings → BrowserOS Neo](./browseros-neo.md) says why it failed. A plain
+**Test connection** in [Settings → Browser automation](./browseros-neo.md) says why it failed. A plain
 `fetch failed` means Reelcraft couldn't reach Neo at all:
 
 - Is Neo open, and is its MCP server on?
@@ -111,7 +111,7 @@ See [Generate Speech](./stage-types/generate-speech.md#if-it-fails).
   Desktop, VoiceStudio's default `127.0.0.1` listener can't be reached from a container: see
   [Where Reelcraft looks for VoiceStudio](./voice-studio.md#where-reelcraft-looks-for-voicestudio).
 - **"VoiceStudio refused the request"**: VoiceStudio was started with an API key. Enter the same key
-  under **API key (optional)** in **Settings → VoiceStudio**.
+  under **API key (optional)** in **Settings → Voice and speech → VoiceStudio**.
 - **"VoiceStudio has no installed engine"**: the stage uses an engine that isn't installed in
   VoiceStudio. Install it in VoiceStudio's Model Catalogue, or choose another.
 
@@ -126,5 +126,5 @@ The stage's error ends with Deepgram's own reason. A key problem shows up there;
 ## Getting help
 
 [Open an issue on GitHub](https://github.com/napstar-420/reelcraft/issues) with what you did, what
-happened, your Reelcraft version (shown at the bottom of the sidebar), and the last lines of the
+happened, your Reelcraft version (shown in **Settings → Updates, about and help**), and the last lines of the
 [log](#looking-at-the-logs). Check that the log you paste contains no API keys.

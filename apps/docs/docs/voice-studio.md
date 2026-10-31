@@ -31,7 +31,7 @@ it is running.
    [Get started](https://github.com/debpalash/VoiceStudio#get-started)). It runs on macOS, Windows and
    Linux, and in Docker.
 2. Open VoiceStudio. The first time, it offers to download its default speech engine. Let it.
-3. In Reelcraft, open **Settings → VoiceStudio**. The status at the top says **Connected to
+3. In Reelcraft, open **Settings → Voice and speech → VoiceStudio**. The status at the top says **Connected to
    VoiceStudio**, with its version and what it runs on (`cuda` for an NVIDIA graphics card, `mps` for a
    Mac's GPU, `cpu` otherwise).
 
@@ -48,7 +48,7 @@ VoiceStudio listens on port **3900**. Reelcraft looks for it at:
 | In Docker (the Reelcraft app) | `http://host.docker.internal:3900` |
 
 To use another address, for example VoiceStudio on another computer with a graphics card, enter it
-under **VoiceStudio address** in **Settings → VoiceStudio**, select **Test connection**, then **Save**.
+under **VoiceStudio address** in **Settings → Voice and speech → VoiceStudio**, select **Test connection**, then **Save**.
 **Reset** goes back to the default. The address can also be set with the `VOICESTUDIO_URL` environment
 variable; one saved in Settings takes priority.
 
@@ -83,7 +83,7 @@ VoiceStudio accepts requests from the same computer without a key. If you starte
 API key (`OMNIVOICE_API_KEY`, see VoiceStudio's
 [API authentication](https://github.com/debpalash/VoiceStudio/blob/main/docs/api-auth.md)), Reelcraft
 needs the same key when it reaches VoiceStudio from Docker or from another computer. Paste it under
-**API key (optional)** in **Settings → VoiceStudio**, or set `VOICESTUDIO_API_KEY`. It is stored
+**API key (optional)** in **Settings → Voice and speech → VoiceStudio**, or set `VOICESTUDIO_API_KEY`. It is stored
 encrypted, like the [AI provider keys](./provider-keys.md). Without it, the status says **VoiceStudio
 refused the request**.
 

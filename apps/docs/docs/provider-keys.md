@@ -29,7 +29,7 @@ voice ID in the voice picker. The simplest choice is a key with no restrictions.
 
 ## Add a key
 
-1. In Reelcraft, click **Settings** in the sidebar.
+1. In Reelcraft, click **Settings** at the bottom of the rail, then **AI providers and keys**.
 2. Under **AI providers**, find the service and click **Get a key** to open its website. Create a
    key there and copy it.
 3. Paste the key into the box next to the service and click **Save**.

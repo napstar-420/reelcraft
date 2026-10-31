@@ -44,7 +44,7 @@ the character's picture on its card, and it's always sent first to the model.
 A blueprint uses a character through a **role**: a named slot, such as "Host", that you fill with
 one of the channel's characters.
 
-1. Open the blueprint and go to the **Blueprint** tab → **Role**.
+1. Open the blueprint and go to **Inputs, voices and budget** → **Role**.
 2. Select **Add role**.
 3. Choose the **Character**. Characters without images show **(no references)** and can't be
    picked.
@@ -78,4 +78,4 @@ character as it is at the time of the rerun.
 
 The character and its reference images are removed from the channel. Past runs keep the copy they
 used. A blueprint whose role used the character shows an error until you choose another character
-in the **Blueprint** tab → **Role**, and it can't run until you do.
+in **Inputs, voices and budget** → **Role**, and it can't run until you do.

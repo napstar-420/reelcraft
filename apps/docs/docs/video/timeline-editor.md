@@ -210,9 +210,9 @@ is quick, and watch it before you submit. Any changes not yet saved are saved fi
 Each editor keeps only its latest draft, and a draft is deleted with its run. It's free: it renders inside
 Reelcraft. The final video is made by the [Render Timeline](../stage-types/render-timeline.md) stage.
 
-## Submit timeline
+## Use this timeline and continue
 
-When you're done, select **Submit timeline**. Reelcraft runs the [timeline checks](./timeline-checks.md)
+When you're done, select **Use this timeline and continue**. Reelcraft runs the [timeline checks](./timeline-checks.md)
 again:
 
 - If they pass, the run continues.

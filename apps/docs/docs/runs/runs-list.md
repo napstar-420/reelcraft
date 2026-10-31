@@ -3,17 +3,23 @@ title: Runs list
 description: Find, filter and manage every run, across all channels or within one channel.
 ---
 
-Select **Runs** in the sidebar to see every run, newest first. A channel's **Runs** tab shows the same
-list for just that channel.
+Select **Runs** in the rail to see your runs. A channel's **Runs** tab shows the same page for just
+that channel.
+
+At the top, **Needs you** lists runs that failed or are waiting for a review, an input or more budget,
+each with the one action that answers it: **Fix with assistant** and **Open** for a failure,
+**Review**, **Provide input** or **Open editor** for a waiting stage, **Raise budget** for a budget
+pause. **Running** lists runs still going, with a segment per stage and the stage they are on, plus
+**Pause** and **Stop**. Below them, **All runs** lists every run, newest first.
 
 ## Filters
 
 At the top:
 
+- **All**, **Running**, **Failed**, **Done**, **Stopped**, and **More states** for the rest: pick one
+  [status](../reference/run-statuses.md).
 - **All channels**: pick one channel (not shown inside a channel's tab).
 - **All blueprints**: pick one blueprint.
-- **All states**: pick one [status](../reference/run-statuses.md), such as **Failed** or **Paused
-  Approval**.
 - **Show test runs**: include [dry runs](./dry-runs.md) and the temporary runs from the
   [canvas](./canvas-runs.md). They're hidden by default and marked with a **dry run** or **draft**
   badge.
@@ -23,17 +29,9 @@ If nothing matches, the list says **No runs match these filters.** With no runs 
 
 ## The list
 
-Each row shows:
-
-| Column             | What it is                                             |
-| ------------------ | ------------------------------------------------------ |
-| **Run**            | The first 8 characters of the run's id                 |
-| **Channel**        | Its channel                                            |
-| **Blueprint**      | The blueprint and version, such as `Launch video v1.3` |
-| **State**          | Its [status](../reference/run-statuses.md)             |
-| **Spent / Budget** | What it has spent, out of its budget cap               |
-| **Started**        | When it began                                          |
-| **Duration**       | How long it has run, or took                           |
+Each row in **All runs** shows the blueprint and the run's short id (the first 8 characters of its
+id), its channel and when it started, its [status](../reference/run-statuses.md), how long it has
+run or took, and what it has spent.
 
 Select a row to open its [run page](./run-page.md).
 

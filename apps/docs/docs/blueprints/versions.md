@@ -47,7 +47,7 @@ Edits from before Reelcraft tracked this say "based on an earlier version".
 
 Reelcraft checks the blueprint while you edit. The top bar shows:
 
-- **Runnable**: it has no errors, so it can run.
+- **Ready to run**: it has no errors, so it can run.
 - **Not runnable yet**: it has at least one error. It also says how many problems there are.
 
 Errors and warnings appear on the stages they belong to, as **✗** and **⚠** counts on the stage cards.
@@ -60,7 +60,7 @@ can't run that version.
 
 ## Test runs and production runs
 
-You don't need to save to try a change. **Start test run** on the canvas runs the canvas as it is,
+You don't need to save to try a change. **Test run** on the canvas runs the canvas as it is,
 saved or not, as a temporary copy that doesn't appear in your versions. See
 [Test runs on the canvas](../runs/canvas-runs.md).
 
@@ -69,7 +69,7 @@ channel's **Blueprints** tab, and pick the version. See [Starting a run](../runs
 
 ## Look at an older version
 
-1. Select **Versions** in the top bar. The menu lists every saved version, newest first, with:
+1. Select **History** in the top bar. The menu lists every saved version, newest first, with:
    - when it was saved;
    - how many runs used it;
    - **latest** next to the newest one;
@@ -77,7 +77,7 @@ channel's **Blueprints** tab, and pick the version. See [Starting a run](../runs
 2. Select a version.
 
 The canvas shows that version, read-only, with the note **Viewing v1.1 (read-only)**. You can open
-its stages to see their settings, but you can't change them. **Run**, **Save** and the **Run** tab are
+its stages to see their settings, but you can't change them. **Test run**, **Save** and **Test runs** are
 off. Your unsaved changes are kept, out of
 sight. Select **Back to latest** to return to them.
 
@@ -85,7 +85,7 @@ sight. Select **Back to latest** to return to them.
 
 ## Restore an older version
 
-1. Open the version from the **Versions** menu.
+1. Open the version from the **History** menu.
 2. Select **Restore this version**, then **Restore**.
 
 Restoring saves a **new** version with the older version's content. For example, restoring `v1.1`
