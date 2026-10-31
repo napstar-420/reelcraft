@@ -404,9 +404,12 @@ export function buildRunOrchestrateFunction(
         // `waits` to read them, it parks on what its stages reported.
         const fallback = input ? 'PAUSED_INPUT' : 'PAUSED_APPROVAL';
         const parked = await step.run('park-on-waits', () =>
-          runState.parkOnWaits(runId, settings.epoch, fallback, async (tx) =>
-            waits ? waits.pausedStateFor(tx, runId) : fallback,
-          ),
+          runState.parkOnWaits(runId, settings.epoch, fallback, async (tx) => {
+            if (!waits) return fallback;
+            // Only a run whose every wait was answered carries on; any other parks as it reported.
+            const open = await waits.pausedStateFor(tx, runId);
+            return open ?? ((await waits.anyUnanswered(tx, runId)) ? fallback : undefined);
+          }),
         );
         if (parked.resume) {
           // Every wait was answered while the run was still running: carry on. The id makes the
