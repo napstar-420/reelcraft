@@ -94,6 +94,12 @@ describe('Timeline', () => {
       expect(captions({}).success).toBe(true);
     });
 
+    it('places captions in a band or at a point inside the frame', () => {
+      expect(captions({ style: { position: 'top' } }).success).toBe(true);
+      expect(captions({ style: { position: { x: 50, y: 72.5 } } }).success).toBe(true);
+      expect(captions({ style: { position: { x: 50, y: 120 } } }).success).toBe(false);
+    });
+
     it('accepts edited pages and style overrides', () => {
       const result = captions({
         pages: [

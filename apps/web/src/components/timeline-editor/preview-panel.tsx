@@ -1,4 +1,4 @@
-import { useState, type RefObject } from 'react';
+import { useRef, useState, type PointerEvent, type RefObject } from 'react';
 import {
   Pause,
   Play,
@@ -12,6 +12,7 @@ import {
 import { Player, type PlayerRef } from '@remotion/player';
 import type { TextStyleTokens, Timeline, TimingMap } from '@reelcraft/shared';
 import { TimelineComposition, type CompositionResource } from '@reelcraft/timeline-composition';
+import { clampCaptionPoint } from '@reelcraft/timeline-composition/src/render-helpers';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { formatTimecode } from '@/pages/timeline-editor/format-time';
@@ -111,6 +112,52 @@ function Transport({
   );
 }
 
+/** Where on the frame a pointer is, in percent, kept off its edges. Snaps to the middle across. */
+function framePoint(event: PointerEvent<HTMLElement>): { x: number; y: number } {
+  const box = event.currentTarget.getBoundingClientRect();
+  const percent = (offset: number, size: number) => Math.round((offset / size) * 1000) / 10;
+  const point = clampCaptionPoint({
+    x: percent(event.clientX - box.left, box.width),
+    y: percent(event.clientY - box.top, box.height),
+  });
+  return { ...point, x: Math.abs(point.x - 50) < 2 ? 50 : point.x };
+}
+
+/** Over the preview while a captions item is selected: click or drag to put the captions there. */
+function CaptionPlacer({
+  point,
+  onPlace,
+}: {
+  point: { x: number; y: number } | undefined;
+  onPlace: (point: { x: number; y: number }, gesture: number) => void;
+}) {
+  // Each press starts a new drag, so each drag is its own undo step.
+  const gesture = useRef(0);
+  return (
+    <div
+      role="presentation"
+      title="Click or drag to place the captions"
+      className="absolute inset-0 cursor-move touch-none"
+      onPointerDown={(event) => {
+        event.currentTarget.setPointerCapture(event.pointerId);
+        gesture.current = event.timeStamp;
+        onPlace(framePoint(event), gesture.current);
+      }}
+      onPointerMove={(event) => {
+        if (event.currentTarget.hasPointerCapture(event.pointerId))
+          onPlace(framePoint(event), gesture.current);
+      }}
+    >
+      {point && (
+        <span
+          className="pointer-events-none absolute size-3 -translate-1/2 rounded-full border-2 border-white bg-primary shadow"
+          style={{ left: `${point.x}%`, top: `${point.y}%` }}
+        />
+      )}
+    </div>
+  );
+}
+
 /** The preview: the same composition the final render uses, fitted to the space it has, with a
  * transport bar under it. */
 export function PreviewPanel({
@@ -121,6 +168,7 @@ export function PreviewPanel({
   styles,
   durationFrames,
   onSeek,
+  captions,
 }: {
   playerRef: RefObject<PlayerRef>;
   timeline: Timeline;
@@ -129,6 +177,13 @@ export function PreviewPanel({
   styles: Record<string, TextStyleTokens>;
   durationFrames: number;
   onSeek: (frame: number) => void;
+  /** Set while an editable captions item is selected, so it can be placed by hand. */
+  captions?:
+    | {
+        point: { x: number; y: number } | undefined;
+        onPlace: (point: { x: number; y: number }, gesture: number) => void;
+      }
+    | undefined;
 }) {
   const { width, height, fps } = timeline.canvas;
   return (
@@ -140,22 +195,28 @@ export function PreviewPanel({
           className="flex size-full items-center justify-center"
           style={{ containerType: 'size' }}
         >
-          <Player
-            ref={playerRef}
-            component={TimelineComposition}
-            inputProps={{ timeline, resources, timingMaps, styles }}
-            durationInFrames={durationFrames}
-            compositionWidth={width}
-            compositionHeight={height}
-            fps={fps}
-            clickToPlay
-            spaceKeyToPlayOrPause={false}
-            className="overflow-hidden rounded-md shadow-2xl ring-1 ring-white/10"
+          <div
+            className="relative"
             style={{
               width: `min(100cqw, calc(100cqh * ${width} / ${height}))`,
               height: `min(100cqh, calc(100cqw * ${height} / ${width}))`,
             }}
-          />
+          >
+            <Player
+              ref={playerRef}
+              component={TimelineComposition}
+              inputProps={{ timeline, resources, timingMaps, styles }}
+              durationInFrames={durationFrames}
+              compositionWidth={width}
+              compositionHeight={height}
+              fps={fps}
+              clickToPlay
+              spaceKeyToPlayOrPause={false}
+              className="overflow-hidden rounded-md shadow-2xl ring-1 ring-white/10"
+              style={{ width: '100%', height: '100%' }}
+            />
+            {captions && <CaptionPlacer {...captions} />}
+          </div>
         </div>
         <span className="pointer-events-none absolute right-6 bottom-6 rounded bg-black/50 px-2 py-0.5 font-mono text-[10px] text-white/70">
           {width}×{height} · {fps} fps
