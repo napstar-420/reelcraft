@@ -105,17 +105,21 @@ export function EditorHeader({
 }) {
   const view = SAVE_VIEW[save];
   return (
-    <header className="flex h-12 shrink-0 items-center justify-between gap-4 border-b bg-card/60 px-3">
-      <div className="flex min-w-0 items-center gap-2">
-        <Button variant="ghost" size="sm" asChild>
-          <Link to={`/runs/${runId}`}>
-            <ChevronLeft /> Run
+    <header className="flex min-h-[60px] shrink-0 flex-wrap items-center justify-between gap-3 border-b px-4 py-2.5">
+      <div className="flex min-w-0 items-center gap-3">
+        <Button variant="ghost" size="icon-sm" asChild>
+          <Link to={`/runs/${runId}`} aria-label="Back to the run">
+            <ChevronLeft />
           </Link>
         </Button>
-        <span className="h-5 w-px bg-border" />
-        <div className="min-w-0 leading-tight">
-          <h1 className="truncate text-sm font-semibold">{title}</h1>
-          <p className="text-[11px] text-muted-foreground">Timeline editor</p>
+        <div className="min-w-0">
+          <p className="truncate text-xs text-faint">
+            <Link to={`/runs/${runId}`} className="hover:text-foreground">
+              Run #{runId.slice(0, 8)}
+            </Link>{' '}
+            / Timeline editor
+          </p>
+          <h1 className="truncate text-base font-semibold">{title}</h1>
         </div>
       </div>
       <div className="flex items-center gap-1.5">
@@ -157,7 +161,7 @@ export function EditorHeader({
                 <div key={row.label} className="flex items-center justify-between gap-3 text-xs">
                   <dt className="text-muted-foreground">{row.label}</dt>
                   <dd>
-                    <kbd className="rounded border bg-muted px-1.5 py-0.5 font-mono text-[11px]">
+                    <kbd className="rounded-md border border-line-strong px-1.5 py-0.5 font-mono text-[11px]">
                       {row.keys}
                     </kbd>
                   </dd>
@@ -167,14 +171,9 @@ export function EditorHeader({
           </PopoverContent>
         </Popover>
         {render ? <div className="ml-2">{render}</div> : null}
-        <Button
-          className="ml-2"
-          size="default"
-          disabled={!canSubmit || submitting}
-          onClick={onSubmit}
-        >
+        <Button className="ml-2" size="sm" disabled={!canSubmit || submitting} onClick={onSubmit}>
           {submitting ? <Loader2 className="animate-spin" /> : <Send />}
-          {submitting ? 'Submitting…' : 'Submit timeline'}
+          {submitting ? 'Submitting…' : 'Use this timeline and continue'}
         </Button>
       </div>
     </header>

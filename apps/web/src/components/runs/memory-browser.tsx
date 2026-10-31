@@ -77,7 +77,7 @@ export function MemoryBrowser({
           aria-label="Memory stage"
           value={producer}
           onChange={(e) => setProducer(e.target.value)}
-          className="min-w-0 rounded border bg-background p-1 text-xs"
+          className="h-[30px] min-w-0 rounded-lg border border-line-strong bg-surface-2 px-2 text-xs"
         >
           <option value="">All stages</option>
           {[...new Set(all.map((e) => e.writtenBy))].map((key) => (
@@ -90,7 +90,7 @@ export function MemoryBrowser({
           aria-label="Sort memory"
           value={sort}
           onChange={(e) => setSort(e.target.value as typeof sort)}
-          className="min-w-0 rounded border bg-background p-1 text-xs"
+          className="h-[30px] min-w-0 rounded-lg border border-line-strong bg-surface-2 px-2 text-xs"
         >
           <option value="stage">Stage order</option>
           <option value="newest">Newest first</option>
@@ -101,7 +101,7 @@ export function MemoryBrowser({
           aria-label="Memory kind"
           value={kind}
           onChange={(e) => setKind(e.target.value)}
-          className="min-w-0 rounded border bg-background p-1 text-xs"
+          className="h-[30px] min-w-0 rounded-lg border border-line-strong bg-surface-2 px-2 text-xs"
         >
           <option value="">All types</option>
           {[...new Set(all.map((e) => e.kind))].map((key) => (

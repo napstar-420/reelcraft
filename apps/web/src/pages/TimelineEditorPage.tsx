@@ -413,7 +413,7 @@ export function TimelineEditorPage() {
 
   if (!timeline) {
     return (
-      <main className="dark flex h-screen flex-col items-center justify-center gap-3 bg-background text-foreground">
+      <div className="dark flex h-full flex-col items-center justify-center gap-3 bg-background text-foreground">
         {loadError ? (
           <>
             <AlertTriangle className="size-6 text-wait" />
@@ -428,7 +428,7 @@ export function TimelineEditorPage() {
             <p className="text-sm text-muted-foreground">Loading the editor…</p>
           </>
         )}
-      </main>
+      </div>
     );
   }
 
@@ -444,7 +444,7 @@ export function TimelineEditorPage() {
             : 'Captions';
 
   return (
-    <main className="dark flex h-screen flex-col overflow-hidden bg-background text-foreground">
+    <div className="dark flex h-full flex-col overflow-hidden bg-background text-foreground">
       <EditorHeader
         runId={runId}
         title={stageLabel ?? 'Edit the timeline'}
@@ -567,6 +567,6 @@ export function TimelineEditorPage() {
         onDelete={() => remove(false)}
         onRippleDelete={() => remove(true)}
       />
-    </main>
+    </div>
   );
 }
