@@ -1,4 +1,7 @@
 import { randomUUID } from 'node:crypto';
+import { writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { Injectable, Logger } from '@nestjs/common';
 import type { CostEstimate, JobHandle, JobStatus } from '@reelcraft/shared';
 import type {
@@ -373,6 +376,9 @@ export class FakeProviderAdapter implements ProviderAdapter {
     if (job.modelId.startsWith('fake-code-')) {
       // A code job's answer: its result, the file it wrote (a scene that needs no assets) and the
       // preview frame it checked it with.
+      // Evidence is stored from a file, as a real agent's previews are.
+      const frame = path.join(tmpdir(), `reelcraft-fake-${handle.externalId}-frame_0001.png`);
+      await writeFile(frame, Buffer.from(FAKE_PNG, 'base64'));
       return {
         output: { durationSec: 2, summary: 'A red ball bounces on a grey floor.' },
         attachments: [
@@ -382,7 +388,7 @@ export class FakeProviderAdapter implements ProviderAdapter {
             filename: 'scene.py',
             base64: Buffer.from(FAKE_SCENE).toString('base64'),
           },
-          { role: 'evidence', mime: 'image/png', filename: 'frame_0001.png', base64: FAKE_PNG },
+          { role: 'evidence', mime: 'image/png', filename: 'frame_0001.png', localPath: frame },
         ],
         costUsd: job.costUsd ?? 0,
         repro: { level: 'exact', seed: '42', providerVersion: job.modelId },
