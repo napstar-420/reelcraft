@@ -31,6 +31,8 @@ import {
 } from './graphic/graphic-math';
 import {
   type CaptionLook,
+  captionWidthAt,
+  clampCaptionPoint,
   DEFAULT_TEXT_STYLE,
   highlightWordCss,
   kenBurnsTransform,
@@ -319,6 +321,35 @@ const CaptionsItem = ({
       );
   if (!active && !sentence) return null;
   const left = look.tokens.align === 'left';
+  const words = active ? (
+    <CaptionWords
+      words={active.page.words.map((word) => word.text)}
+      activeIndex={active.wordIndex}
+      look={look}
+    />
+  ) : (
+    <CaptionWords words={(sentence?.text ?? '').split(' ')} activeIndex={-1} look={look} />
+  );
+  if (typeof look.position === 'object') {
+    // Centred on its point, and never wider than the frame allows there.
+    const point = clampCaptionPoint(look.position);
+    return (
+      <AbsoluteFill>
+        <div
+          style={{
+            position: 'absolute',
+            left: `${point.x}%`,
+            top: `${point.y}%`,
+            transform: 'translate(-50%, -50%)',
+            width: `${captionWidthAt(point.x)}%`,
+            textAlign: left ? 'left' : 'center',
+          }}
+        >
+          {words}
+        </div>
+      </AbsoluteFill>
+    );
+  }
   return (
     <AbsoluteFill
       style={{
@@ -329,17 +360,7 @@ const CaptionsItem = ({
         textAlign: left ? 'left' : 'center',
       }}
     >
-      <div>
-        {active ? (
-          <CaptionWords
-            words={active.page.words.map((word) => word.text)}
-            activeIndex={active.wordIndex}
-            look={look}
-          />
-        ) : (
-          <CaptionWords words={(sentence?.text ?? '').split(' ')} activeIndex={-1} look={look} />
-        )}
-      </div>
+      <div>{words}</div>
     </AbsoluteFill>
   );
 };

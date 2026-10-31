@@ -47,7 +47,7 @@ import { CaptionTemplatePicker } from './caption-templates';
 import { usePlayerFrame } from './use-player';
 
 type Captions = Extract<TimelineItem, { type: 'captions' }>;
-type Position = NonNullable<CaptionStyleOverrides['position']>;
+type Position = Extract<NonNullable<CaptionStyleOverrides['position']>, string>;
 
 const POSITIONS: Array<{ value: Position; label: string; Icon: typeof AlignVerticalJustifyEnd }> = [
   { value: 'top', label: 'Top', Icon: AlignVerticalJustifyStart },
@@ -374,6 +374,11 @@ export function CaptionInspector({
               );
             })}
           </div>
+          <p className="text-xs text-muted-foreground">
+            {typeof resolved?.position === 'object'
+              ? 'Placed by hand. Drag the captions in the preview to move them.'
+              : 'Or drag the captions in the preview to place them anywhere.'}
+          </p>
         </div>
         <div className="space-y-1.5">
           <Label>Spoken word</Label>
