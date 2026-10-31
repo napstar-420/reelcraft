@@ -20,6 +20,9 @@ export interface VoiceStudioEngine {
   supports_cloning?: boolean | null;
   /** How the engine reads a style instruction: `freeform` text, or a closed list of `tags`. */
   instruct_vocabulary?: 'tags' | 'freeform';
+  /** `false` when every request needs a reference recording, so it can't speak a designed voice;
+   * missing or null when undeclared. */
+  supports_voice_design?: boolean | null;
   expression_caps?: { tags?: string[] };
   /** Built-in voices a request can pick by name. */
   preset_voices?: string[];
@@ -67,9 +70,19 @@ export const ARCHETYPE_STEPS = 32;
 export const archetypeId = (voiceId: string): string | undefined =>
   voiceId.startsWith(ARCHETYPE_PREFIX) ? voiceId.slice(ARCHETYPE_PREFIX.length) : undefined;
 
-/** Whether an engine speaks in VoiceStudio's built-in designed voices. */
+/** How an engine reads a style instruction. Older VoiceStudio versions don't say; their OmniVoice
+ * engines read voice-design tags. */
+const vocabulary = (engine: VoiceStudioEngine): 'tags' | 'freeform' | undefined =>
+  engine.instruct_vocabulary ?? (engine.id.startsWith('omnivoice') ? 'tags' : undefined);
+
+/** Whether an engine speaks in VoiceStudio's built-in designed voices, so the picker lists them. */
 export const speaksDesignedVoices = (engine: VoiceStudioEngine): boolean =>
-  engine.instruct_vocabulary === 'tags';
+  engine.supports_voice_design !== false && vocabulary(engine) === 'tags';
+
+/** Whether VoiceStudio says an engine can't speak a designed voice. When it doesn't say, the
+ * engine is given the benefit of the doubt and VoiceStudio has the last word. */
+export const refusesDesignedVoices = (engine: VoiceStudioEngine): boolean =>
+  engine.supports_voice_design === false || vocabulary(engine) === 'freeform';
 
 const USE_CASES: Record<string, string> = {
   narration: 'Narration & story',

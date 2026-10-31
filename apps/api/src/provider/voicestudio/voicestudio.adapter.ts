@@ -41,6 +41,7 @@ import {
   DEFAULT_VOICE_ID,
   engineIssue,
   noEngineReason,
+  refusesDesignedVoices,
   speaksDesignedVoices,
   speechSeed,
   engineModelInfo,
@@ -60,6 +61,9 @@ import {
 const LOOKUP_TIMEOUT_MS = 5_000;
 /** VoiceStudio's largest page of built-in designed voices. */
 const ARCHETYPE_PAGE = 500;
+/** Pages of designed voices read at most: its catalogue is a few hundred voices, so this only
+ * stops a VoiceStudio that keeps answering with more. */
+const ARCHETYPE_MAX_PAGES = 10;
 /** Voices per page of the picker when it doesn't ask for a size. */
 const VOICE_PAGE = 30;
 /** The first request to an engine can load (or download) its model, which VoiceStudio allows up to
@@ -335,7 +339,7 @@ export class VoiceStudioAdapter implements ProviderAdapter {
       // A designed voice is a set of voice-design tags; only engines that read them can speak it
       // (a stage can keep one after its engine is switched).
       const engine = (await this.engines()).listed.find((e) => e.id === req.modelId);
-      if (engine && !speaksDesignedVoices(engine)) {
+      if (engine && refusesDesignedVoices(engine)) {
         throw new Error(
           `VoiceStudio: "${design.name}" is a VoiceStudio premade voice, which ${engine.display_name || engine.id} can't speak. Choose another voice, or an OmniVoice engine.`,
         );
@@ -480,7 +484,7 @@ export class VoiceStudioAdapter implements ProviderAdapter {
     const base = await this.client.baseUrl();
     if (this.designed?.base === base) return this.designed.voices;
     const found: VoiceStudioArchetype[] = [];
-    for (;;) {
+    for (let pages = 0; pages < ARCHETYPE_MAX_PAGES; pages += 1) {
       const page = await this.lookup<{ total?: number; items?: VoiceStudioArchetype[] }>(
         `/archetypes?limit=${ARCHETYPE_PAGE}&offset=${found.length}`,
         base,

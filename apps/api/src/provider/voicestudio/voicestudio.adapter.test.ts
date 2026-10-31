@@ -511,6 +511,60 @@ describe('VoiceStudioAdapter', () => {
     expect(calls.filter((c) => c.path === '/v1/audio/speech')).toHaveLength(0);
   });
 
+  it('lets an older VoiceStudio that does not say how engines read instructions decide', async () => {
+    // Older versions don't report instruct_vocabulary; their OmniVoice engines still read tags.
+    const olderOmni: VoiceStudioEngine = { ...OMNI };
+    delete olderOmni.instruct_vocabulary;
+    const { client, calls } = fakeClient({
+      '/engines/tts': { backends: [olderOmni, { id: 'other', available: true }] },
+      '/v1/audio/voices': { voices: [] },
+      '/archetypes?limit=500&offset=0': { total: 1, items: [LIBRARIAN] },
+      '/archetypes/feat_00_the_librarian': LIBRARIAN,
+      '/v1/audio/speech': 'RIFF',
+    });
+    const vs = adapter(client);
+    expect((await vs.listVoices({ modelId: 'omnivoice' })).voices.map((v) => v.id)).toEqual([
+      'archetype:feat_00_the_librarian',
+    ]);
+    // An engine that says nothing is left to VoiceStudio rather than refused.
+    for (const modelId of ['omnivoice', 'other']) {
+      const req = { ...speechReq({ voiceId: 'archetype:feat_00_the_librarian' }), modelId };
+      await vs.fetch(await vs.submit(req, 'k'));
+    }
+    expect(calls.filter((c) => c.path === '/v1/audio/speech')).toHaveLength(2);
+  });
+
+  it('neither lists nor speaks designed voices on an engine that needs a recording', async () => {
+    const cloneOnly = { ...OMNI, id: 'cloner', supports_voice_design: false };
+    const { client, calls } = fakeClient({
+      '/engines/tts': { backends: [cloneOnly] },
+      '/v1/audio/voices': { voices: [] },
+      '/archetypes/feat_00_the_librarian': LIBRARIAN,
+    });
+    const vs = adapter(client);
+    expect((await vs.listVoices({ modelId: 'cloner' })).voices).toEqual([]);
+    const req = { ...speechReq({ voiceId: 'archetype:feat_00_the_librarian' }), modelId: 'cloner' };
+    await expect(vs.fetch(await vs.submit(req, 'k'))).rejects.toThrow("can't speak");
+    expect(calls).toHaveLength(0);
+  });
+
+  it('stops reading designed voices after ten pages', async () => {
+    const { client } = fakeClient({
+      '/engines/tts': { backends: [OMNI] },
+      '/v1/audio/voices': { voices: [] },
+    });
+    const answer = client.json.getMockImplementation()!;
+    // A VoiceStudio that always says there is more.
+    client.json.mockImplementation(async (path: string) =>
+      path.startsWith('/archetypes')
+        ? { total: 1_000_000, items: [{ ...LIBRARIAN, id: path }] }
+        : answer(path),
+    );
+    await adapter(client).listVoices({ modelId: 'omnivoice' });
+    const pages = client.json.mock.calls.filter(([path]) => path.startsWith('/archetypes'));
+    expect(pages).toHaveLength(10);
+  });
+
   it('says so when a built-in designed voice is gone', async () => {
     const { client } = fakeClient({
       '/archetypes/gone': new VoiceStudioError(404, 'Archetype not found'),
