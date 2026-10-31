@@ -59,6 +59,8 @@ type Shot = {
 const MINUTE_MS = 60_000;
 const DEFAULT_TIMEOUT_MIN = 30;
 const DEFAULT_PREVIEW_FRAMES = 4;
+/** The name `preview.mjs` gives each frame it renders. */
+const PREVIEW_FRAME = /^frame_\d{4}\.png$/;
 const RESERVED_SLOTS = new Set([GENERAL_ASSET_SLOT, 'timing']);
 const ASSET_KINDS: SlotDef['accepts'] = [
   'media.image',
@@ -299,6 +301,11 @@ export class SceneWriteCapability implements CapabilityImpl<SceneWriteConfig> {
     const evidence = files
       .filter((file) => file !== scriptFile && file.role === 'evidence')
       .map((file) => ({ ...file, role: 'evidence' as const }));
+    // ponytail: frames are recognised by the names preview.mjs gives them, not proven to come from
+    // it; running build() here before accepting the script would prove it runs.
+    const previews = evidence.filter(
+      (file) => file.mime === 'image/png' && PREVIEW_FRAME.test(file.filename),
+    );
     const script = scriptFile?.localPath
       ? await readFile(scriptFile.localPath, 'utf8')
       : scriptFile?.base64
@@ -314,7 +321,7 @@ export class SceneWriteCapability implements CapabilityImpl<SceneWriteConfig> {
       };
     }
     // The previews run the real script, so none means it was never run and may not even build.
-    if (!evidence.length) {
+    if (!previews.length) {
       return {
         output: null,
         ...base,

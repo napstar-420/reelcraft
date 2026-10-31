@@ -84,6 +84,10 @@ interface FakeJobPayload {
  * to a deterministic cap-hit and a real multi-cycle poll/backoff loop.
  */
 /** The scene the fake code model writes: a ball bouncing, built from primitives. */
+/** A 1x1 PNG. */
+const FAKE_PNG =
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL8WQAAAABJRU5ErkJggg==';
+
 const FAKE_SCENE = `import math
 import bpy
 
@@ -351,8 +355,7 @@ export class FakeProviderAdapter implements ProviderAdapter {
         kind: 'media.image' as const,
         mime: 'image/png',
         filename: position === 0 ? 'fixture.png' : `fixture-${position + 1}.png`,
-        base64:
-          'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL8WQAAAABJRU5ErkJggg==',
+        base64: FAKE_PNG,
       });
       // More than one image was asked for: hand back the list.
       const requested = job.imageCount ?? 1;
@@ -368,7 +371,8 @@ export class FakeProviderAdapter implements ProviderAdapter {
       };
     }
     if (job.modelId.startsWith('fake-code-')) {
-      // A code job's answer: its result, and the file it wrote (a scene that needs no assets).
+      // A code job's answer: its result, the file it wrote (a scene that needs no assets) and the
+      // preview frame it checked it with.
       return {
         output: { durationSec: 2, summary: 'A red ball bounces on a grey floor.' },
         attachments: [
@@ -378,6 +382,7 @@ export class FakeProviderAdapter implements ProviderAdapter {
             filename: 'scene.py',
             base64: Buffer.from(FAKE_SCENE).toString('base64'),
           },
+          { role: 'evidence', mime: 'image/png', filename: 'frame_0001.png', base64: FAKE_PNG },
         ],
         costUsd: job.costUsd ?? 0,
         repro: { level: 'exact', seed: '42', providerVersion: job.modelId },

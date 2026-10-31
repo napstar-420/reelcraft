@@ -7,7 +7,9 @@ import { SceneWriteCapability } from './scene-write.capability';
 
 const SCRIPT = 'import bpy\n\ndef build(rc):\n    pass\n';
 
-function setup(answer: { output?: unknown; script?: string | null; previews?: boolean } = {}) {
+function setup(
+  answer: { output?: unknown; script?: string | null; previews?: boolean | string } = {},
+) {
   const provider = {
     submit: vi.fn(async () => ({ providerId: 'claude', externalId: 'x' })),
     estimate: vi.fn(),
@@ -34,7 +36,7 @@ function setup(answer: { output?: unknown; script?: string | null; previews?: bo
           : [
               {
                 role: 'evidence' as const,
-                filename: 'frame_0001.png',
+                filename: typeof answer.previews === 'string' ? answer.previews : 'frame_0001.png',
                 mime: 'image/png',
                 base64: 'AA==',
               },
@@ -186,6 +188,12 @@ describe('SceneWriteCapability', () => {
       ctx(),
     );
     expect(untested.rejection).toMatch(/never previewed/);
+    // Evidence that isn't a preview frame doesn't count.
+    const notAPreview = await setup({ previews: 'frame.png' }).capability.fetch(
+      { providerId: 'claude', externalId: 'x' },
+      ctx(),
+    );
+    expect(notAPreview.rejection).toMatch(/never previewed/);
   });
 
   it('refuses extra input names that clash or could not be slot names', () => {
