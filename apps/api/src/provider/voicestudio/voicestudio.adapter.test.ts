@@ -511,12 +511,13 @@ describe('VoiceStudioAdapter', () => {
     expect(calls.filter((c) => c.path === '/v1/audio/speech')).toHaveLength(0);
   });
 
-  it('lets an older VoiceStudio that does not say how engines read instructions decide', async () => {
-    // Older versions don't report instruct_vocabulary; their OmniVoice engines still read tags.
+  it('on an older VoiceStudio that does not say how engines read instructions, uses OmniVoice only', async () => {
+    // Older versions report no instruct_vocabulary; only their OmniVoice engines read tags.
     const olderOmni: VoiceStudioEngine = { ...OMNI };
     delete olderOmni.instruct_vocabulary;
+    const olderKitten: VoiceStudioEngine = { id: 'kittentts', available: true };
     const { client, calls } = fakeClient({
-      '/engines/tts': { backends: [olderOmni, { id: 'other', available: true }] },
+      '/engines/tts': { backends: [olderOmni, olderKitten] },
       '/v1/audio/voices': { voices: [] },
       '/archetypes?limit=500&offset=0': { total: 1, items: [LIBRARIAN] },
       '/archetypes/feat_00_the_librarian': LIBRARIAN,
@@ -526,12 +527,15 @@ describe('VoiceStudioAdapter', () => {
     expect((await vs.listVoices({ modelId: 'omnivoice' })).voices.map((v) => v.id)).toEqual([
       'archetype:feat_00_the_librarian',
     ]);
-    // An engine that says nothing is left to VoiceStudio rather than refused.
-    for (const modelId of ['omnivoice', 'other']) {
-      const req = { ...speechReq({ voiceId: 'archetype:feat_00_the_librarian' }), modelId };
-      await vs.fetch(await vs.submit(req, 'k'));
-    }
-    expect(calls.filter((c) => c.path === '/v1/audio/speech')).toHaveLength(2);
+    expect((await vs.listVoices({ modelId: 'kittentts' })).voices).toEqual([]);
+    const req = (modelId: string) => ({
+      ...speechReq({ voiceId: 'archetype:feat_00_the_librarian' }),
+      modelId,
+    });
+    await vs.fetch(await vs.submit(req('omnivoice'), 'k'));
+    // KittenTTS would ignore the tags and speak in its own voice: refused instead.
+    await expect(vs.fetch(await vs.submit(req('kittentts'), 'k'))).rejects.toThrow("can't speak");
+    expect(calls.filter((c) => c.path === '/v1/audio/speech')).toHaveLength(1);
   });
 
   it('neither lists nor speaks designed voices on an engine that needs a recording', async () => {

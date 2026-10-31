@@ -41,7 +41,6 @@ import {
   DEFAULT_VOICE_ID,
   engineIssue,
   noEngineReason,
-  refusesDesignedVoices,
   speaksDesignedVoices,
   speechSeed,
   engineModelInfo,
@@ -339,7 +338,7 @@ export class VoiceStudioAdapter implements ProviderAdapter {
       // A designed voice is a set of voice-design tags; only engines that read them can speak it
       // (a stage can keep one after its engine is switched).
       const engine = (await this.engines()).listed.find((e) => e.id === req.modelId);
-      if (engine && refusesDesignedVoices(engine)) {
+      if (engine && !speaksDesignedVoices(engine)) {
         throw new Error(
           `VoiceStudio: "${design.name}" is a VoiceStudio premade voice, which ${engine.display_name || engine.id} can't speak. Choose another voice, or an OmniVoice engine.`,
         );
