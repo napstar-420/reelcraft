@@ -16,6 +16,7 @@ import {
   blob,
   ledgerEntry,
   run,
+  runWakeup,
   stageAttempt,
   stageExecution,
   stageItem,
@@ -439,6 +440,84 @@ describe('assistant (e2e)', () => {
     expect((await http.app.get(BlueprintService).getBlueprint(blueprintId)).name).toBe(
       'Clear name',
     );
+  });
+
+  it('Auto: creates a channel and a blueprint, builds and saves it, and starts a free test run', async () => {
+    const sid = await newSession('auto');
+    const seen: Record<string, { ok: boolean; text: string }> = {};
+    const note = (name: string) => (r: { ok: boolean; text: string }) => (seen[name] = r);
+    let newChannel = '';
+    let newBlueprint = '';
+    useScript([
+      [
+        {
+          call: 'create_channel',
+          args: { name: `Made by the assistant ${Date.now()}` },
+          expect: (r) => {
+            note('channel')(r);
+            newChannel = JSON.parse(r.text).channelId;
+          },
+        },
+      ],
+      [
+        {
+          call: 'create_blueprint',
+          get args() {
+            return { channelId: newChannel, name: 'Otter facts' };
+          },
+          expect: (r) => {
+            note('blueprint')(r);
+            newBlueprint = JSON.parse(r.text).blueprintId;
+          },
+        },
+      ],
+      [
+        {
+          call: 'propose_draft',
+          get args() {
+            return { blueprintId: newBlueprint, draft: exampleScript(), summary: 'Script' };
+          },
+          expect: note('draft'),
+        },
+        {
+          call: 'save_version',
+          get args() {
+            return { blueprintId: newBlueprint, reason: 'First version' };
+          },
+          expect: note('save'),
+        },
+        {
+          call: 'start_run',
+          get args() {
+            return { blueprintId: newBlueprint, free: true, inputs: { topic: 'otters' } };
+          },
+          expect: note('run'),
+        },
+      ],
+    ]);
+    await turn(sid, { text: 'make a channel' });
+    await waitIdle(sid);
+    await turn(sid, { text: 'and a blueprint' });
+    await waitIdle(sid);
+    await turn(sid, { text: 'build, save and test it' });
+    const session = await waitIdle(sid);
+
+    expect(seen.channel!.ok).toBe(true);
+    expect(seen.blueprint!.ok).toBe(true);
+    expect(JSON.parse(seen.draft!.text)).toMatchObject({ status: 'written' });
+    expect(JSON.parse(seen.save!.text)).toMatchObject({ status: 'saved', version: '1.0' });
+    const started = JSON.parse(seen.run!.text);
+    expect(seen.run!.ok).toBe(true);
+    expect(started).toMatchObject({ status: 'started', free: true });
+    const [row] = await testDb.db.select().from(run).where(eq(run.id, started.runId));
+    expect(row).toMatchObject({ dryRun: true, channelId: newChannel });
+    // started: the run/started wakeup is queued for the orchestrator
+    const wakeups = await testDb.db
+      .select()
+      .from(runWakeup)
+      .where(eq(runWakeup.runId, started.runId));
+    expect(wakeups.map((w) => w.eventName)).toContain('run/started');
+    expect(ofType(session, 'tool_call').every((c) => c.state === 'completed')).toBe(true);
   });
 
   it('changes metadata, undoes it, and reports a name clash', async () => {

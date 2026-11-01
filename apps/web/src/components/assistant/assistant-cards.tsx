@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Check, ClipboardList, History, ShieldQuestion, Undo2, X } from 'lucide-react';
+import { Activity, Check, ClipboardList, History, ShieldQuestion, Undo2, X } from 'lucide-react';
 import { cn } from 'cn';
 import type {
   ApprovalPayload,
@@ -10,7 +10,11 @@ import type {
 } from '@reelcraft/shared';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { StatusBadge } from '@/components/ui/status-badge';
+import { useRun } from '@/hooks/useRun';
 import { formatUsd } from '@/lib/format-elapsed';
+import { runHandle } from '@/lib/run-buckets';
+import { formatStatusLabel, runStateTone } from '@/lib/status';
 import type { AssistantController } from '@/hooks/useAssistant';
 import { ChangeDetails } from './change-details';
 import { payloadOf } from './assistant.logic';
@@ -286,5 +290,24 @@ export function LegacyProposalCard({ item }: { item: AssistantItemDto }) {
         {item.state === 'applied' ? ' (applied)' : ''}
       </p>
     </Card>
+  );
+}
+
+/** A run the assistant started or set going again, with its live state and a link. */
+export function RunCard({ runId, action }: { runId: string; action: string }) {
+  const { data: run } = useRun(runId);
+  return (
+    <Link
+      to={`/runs/${runId}`}
+      className="flex items-center gap-2.5 rounded-[12px] border bg-card px-3 py-2.5 transition-colors hover:border-line-strong"
+    >
+      <Activity className="size-4 shrink-0 text-muted-foreground" />
+      <span className="min-w-0 flex-1 text-[13px]">
+        {action} run <span className="font-mono">{runHandle(runId)}</span>
+      </span>
+      {run ? (
+        <StatusBadge tone={runStateTone(run.state)} label={formatStatusLabel(run.state)} />
+      ) : null}
+    </Link>
   );
 }

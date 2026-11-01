@@ -325,7 +325,7 @@ describe('edit_draft operations', () => {
   });
 
   it('updates a stage field by setting and unsetting, but never its key', async () => {
-    const { c, out } = await run([
+    const { out } = await run([
       { op: 'update_stage', key: 's05', set: { label: 'Renamed', approval: { mode: 'stage' } } },
       { op: 'update_stage', key: 's22', unset: ['dependsOn'] },
     ]);
@@ -355,7 +355,7 @@ describe('edit_draft operations', () => {
   });
 
   it('is all or nothing: a bad edit after good ones changes nothing', async () => {
-    const { out, c } = await run([
+    const { out } = await run([
       { op: 'update_stage', key: 's02', set: { label: 'Changed' } },
       { op: 'remove_stage', key: 'ghost' },
     ]);

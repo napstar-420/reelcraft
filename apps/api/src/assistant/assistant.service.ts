@@ -41,6 +41,11 @@ import { AssetService } from '../channel/asset.service';
 import { CharacterService } from '../channel/character.service';
 import { SchemaValidatorService } from '../json-schema/schema-validator.service';
 import { RunInsightService } from '../run/run-insight.service';
+import { RunService } from '../run/run.service';
+import { RunCancellationService } from '../run/run-cancellation.service';
+import { RunActionService } from '../run/run-action.service';
+import { HumanActionService } from '../run/human-action.service';
+import { RunStagePlanService } from '../run/run-stage-plan.service';
 import { MediaPreviewService } from '../artifact/media-preview.service';
 import { ConfigResolverService } from '../run-config/config-resolver.service';
 import { engineDefaults } from '../run-config/engine-defaults';
@@ -119,6 +124,11 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
     media: MediaPreviewService,
     private readonly config: EngineConfig,
     private readonly events: LiveEvents,
+    runControl: RunService,
+    cancellation: RunCancellationService,
+    retries: RunActionService,
+    humanActions: HumanActionService,
+    stagePlans: RunStagePlanService,
   ) {
     this.toolDeps = {
       blueprints,
@@ -132,6 +142,11 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
       configResolver,
       runs,
       media,
+      runControl,
+      cancellation,
+      retries,
+      humanActions,
+      stagePlans,
       engineLayer: () => engineDefaults(config),
       blueprintChanged: (blueprintId) => this.events.publish({ type: 'blueprint', blueprintId }),
     };
@@ -514,7 +529,7 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
     // a plan decided through decidePlan is no longer pending here; anything else moved on
     for (const plan of plans) await this.updateItem(plan.id, { state: 'dismissed' });
 
-    const userItem = await this.createItem(sessionId, turnId, 'user_message', null, {
+    await this.createItem(sessionId, turnId, 'user_message', null, {
       text,
       context: dto.context ?? null,
       model: dto.model,

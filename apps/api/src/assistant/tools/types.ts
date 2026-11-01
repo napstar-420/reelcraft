@@ -21,6 +21,11 @@ import type { CharacterService } from '../../channel/character.service';
 import type { RunInsightService } from '../../run/run-insight.service';
 import type { MediaPreviewService } from '../../artifact/media-preview.service';
 import type { ConfigResolverService } from '../../run-config/config-resolver.service';
+import type { RunService } from '../../run/run.service';
+import type { RunCancellationService } from '../../run/run-cancellation.service';
+import type { RunActionService } from '../../run/run-action.service';
+import type { HumanActionService } from '../../run/human-action.service';
+import type { RunStagePlanService } from '../../run/run-stage-plan.service';
 import type { SchemaValidatorService } from '../../json-schema/schema-validator.service';
 
 /** What a tool wants to do, shown to the user on an approval card in Manual mode. */
@@ -93,15 +98,26 @@ export interface ToolDeps {
     | 'assertNameFree'
     | 'setWorkingDraft'
     | 'update'
+    | 'createBlueprint'
+    | 'createVersion'
+    | 'delete'
   >;
   capabilities: Pick<CapabilityRegistry, 'list' | 'get'>;
   providers: Pick<ProviderRegistry, 'list' | 'get'>;
   styles: Pick<StyleRegistry, 'list'>;
-  channels: Pick<ChannelService, 'get' | 'list'>;
+  channels: Pick<ChannelService, 'get' | 'list' | 'create' | 'update' | 'setArchived' | 'delete'>;
   assets: Pick<AssetService, 'list'>;
   characters: Pick<CharacterService, 'list'>;
   schemas: Pick<SchemaValidatorService, 'validate'>;
   runs: Pick<RunInsightService, 'list' | 'get' | 'stage' | 'media'>;
+  runControl: Pick<
+    RunService,
+    'create' | 'start' | 'get' | 'pause' | 'resume' | 'raiseBudget' | 'updateExecutionSettings'
+  >;
+  cancellation: Pick<RunCancellationService, 'cancel'>;
+  retries: Pick<RunActionService, 'previewStageRetry' | 'confirmStageRetry'>;
+  humanActions: Pick<HumanActionService, 'approve' | 'reject' | 'submitInput'>;
+  stagePlans: Pick<RunStagePlanService, 'preview' | 'confirm'>;
   media: Pick<MediaPreviewService, 'imageFromBlob' | 'framesOfVideo'>;
   configResolver: Pick<ConfigResolverService, 'resolveRunConfig'>;
   /** Reelcraft's built-in bottom config layer. */

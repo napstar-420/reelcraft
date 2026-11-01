@@ -118,6 +118,11 @@ function makeDeps(overrides: Partial<ToolDeps> = {}): ToolDeps {
     configResolver: new ConfigResolverService({} as never, {} as never),
     engineLayer: () => ({ retryLimit: 0, iterate: { maxItems: 50 } }),
     blueprintChanged: vi.fn(),
+    runControl: {} as never,
+    cancellation: {} as never,
+    retries: {} as never,
+    humanActions: {} as never,
+    stagePlans: {} as never,
     ...overrides,
   };
 }
@@ -130,8 +135,28 @@ describe('tool registry', () => {
     expect(new Set(names).size).toBe(names.length);
     expect(names.sort()).toEqual(
       [
+        'approve_stage',
+        'archive_blueprint',
+        'archive_channel',
         'ask_user',
+        'cancel_run',
+        'create_blueprint',
+        'create_channel',
+        'delete_blueprint',
+        'delete_channel',
         'diff_drafts',
+        'pause_run',
+        'provide_input',
+        'raise_budget',
+        'reject_stage',
+        'restore_version',
+        'resume_run',
+        'retry_stage',
+        'run_stages',
+        'save_version',
+        'set_concurrency',
+        'start_run',
+        'update_channel',
         'edit_draft',
         'get_blueprint',
         'get_capability',
@@ -160,7 +185,23 @@ describe('tool registry', () => {
       ASSISTANT_TOOLS.filter((t) => t.kind === 'change')
         .map((t) => t.name)
         .sort(),
-    ).toEqual(['edit_draft', 'propose_draft', 'update_metadata']);
+    ).toEqual([
+      'archive_blueprint',
+      'archive_channel',
+      'create_blueprint',
+      'create_channel',
+      'edit_draft',
+      'propose_draft',
+      'restore_version',
+      'save_version',
+      'update_channel',
+      'update_metadata',
+    ]);
+    expect(
+      ASSISTANT_TOOLS.filter((t) => t.kind === 'destroy')
+        .map((t) => t.name)
+        .sort(),
+    ).toEqual(['delete_blueprint', 'delete_channel']);
     expect(
       ASSISTANT_TOOLS.filter((t) => t.kind === 'interact')
         .map((t) => t.name)
@@ -265,6 +306,33 @@ describe('JSON Schemas stay in sync with the Zod inputs (drift guard)', () => {
       summary: 'Rename',
     },
     present_plan: { title: 'Plan', summary: 'What I found', steps: ['Do this'] },
+    create_channel: { name: 'Science', description: 'Short science facts' },
+    update_channel: { channelId: 'ch1', name: 'New', description: 'd', defaults: {} },
+    archive_channel: { channelId: 'ch1', archived: true },
+    delete_channel: { channelId: 'ch1' },
+    create_blueprint: { channelId: 'ch1', name: 'Reel', description: 'd', tags: ['a'] },
+    archive_blueprint: { blueprintId: 'bp1', archived: false },
+    delete_blueprint: { blueprintId: 'bp1' },
+    save_version: { blueprintId: 'bp1', bump: 'major', reason: 'Adds a hook' },
+    restore_version: { blueprintId: 'bp1', version: '1.0' },
+    start_run: {
+      blueprintId: 'bp1',
+      version: 'draft',
+      free: true,
+      inputs: { topic: 'otters' },
+      budgetUsd: 2,
+      untilStageKey: 'script',
+    },
+    run_stages: { runId: 'r1', stageKey: 'script', scope: 'from_here', version: 'saved' },
+    retry_stage: { runId: 'r1', stageKey: 'images', itemIndex: 0, onlyFailedItems: true },
+    pause_run: { runId: 'r1' },
+    resume_run: { runId: 'r1' },
+    cancel_run: { runId: 'r1' },
+    raise_budget: { runId: 'r1', capUsd: 5, stageKey: 'images' },
+    set_concurrency: { runId: 'r1', concurrentBranches: 3 },
+    approve_stage: { runId: 'r1', stageKey: 'review', itemIndex: 1 },
+    reject_stage: { runId: 'r1', stageKey: 'review', note: 'Shorter', itemIndex: 0 },
+    provide_input: { runId: 'r1', stageKey: 'brief', value: { topic: 'otters' } },
     ask_user: {
       questions: [
         {

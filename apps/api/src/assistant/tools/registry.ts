@@ -2,7 +2,9 @@ import { createHash } from 'node:crypto';
 import { BUILTIN_CHECKS } from '../../check/builtins/index';
 import { GUIDE_TOPICS } from '../guide';
 import type { AssistantToolDef } from '../agent/assistant-agent.interface';
+import { ACTION_TOOLS } from './action-tools';
 import { askUser } from './ask-user';
+import { MANAGE_TOOLS } from './manage-tools';
 import { presentPlan } from './present-plan';
 import { BLUEPRINT_TOOLS } from './blueprint-tools';
 import { CATALOG_TOOLS } from './catalog-tools';
@@ -18,6 +20,8 @@ export const ASSISTANT_TOOLS: ReadonlyArray<AssistantTool<never>> = [
   ...BLUEPRINT_TOOLS,
   ...RUN_TOOLS,
   ...WRITE_TOOLS,
+  ...MANAGE_TOOLS,
+  ...ACTION_TOOLS,
   askUser as unknown as AssistantTool<never>,
   presentPlan as unknown as AssistantTool<never>,
 ];
@@ -77,6 +81,22 @@ export async function runTool(
   try {
     return await tool.handler(ctx, deps, parsed.data as never);
   } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    return { ok: false, error: errorText(error) };
   }
+}
+
+/** A failure in words the model can act on: a Nest HTTP error's own message (a 409 "The run is
+ * executing…") rather than "Conflict Exception". */
+export function errorText(error: unknown): string {
+  if (error && typeof error === 'object' && 'getResponse' in error) {
+    const response = (error as { getResponse(): unknown }).getResponse();
+    if (typeof response === 'string') return response;
+    if (response && typeof response === 'object') {
+      const { message, code } = response as { message?: unknown; code?: unknown };
+      const text = Array.isArray(message) ? message.join('; ') : message;
+      if (typeof text === 'string' && text) return code ? `${text} (${String(code)})` : text;
+      return JSON.stringify(response);
+    }
+  }
+  return error instanceof Error ? error.message : String(error);
 }

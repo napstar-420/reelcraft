@@ -84,9 +84,12 @@ describe('assistant guide coverage', () => {
 
   it('says what the assistant can and cannot do with runs', () => {
     const limits = GUIDE.limits!.body;
-    expect(limits).toContain('get_run');
-    expect(limits).toMatch(/Starting, retrying, approving or cancelling runs/);
-    expect(limits).not.toContain("you can't. You only know");
+    expect(limits).toMatch(/Run inputs that are files/);
+    expect(limits).not.toMatch(/Starting, retrying, approving or cancelling runs/);
+    const execution = GUIDE.execution!.body;
+    for (const tool of ['run_stages', 'retry_stage', 'pause_run', 'cancel_run']) {
+      expect(execution).toContain(tool);
+    }
   });
 
   it('has an entry for every message the validator can produce', () => {

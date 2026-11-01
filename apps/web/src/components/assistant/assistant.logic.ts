@@ -117,8 +117,26 @@ export type ChatRow =
   | { kind: 'approval'; item: AssistantItemDto }
   | { kind: 'plan'; item: AssistantItemDto }
   | { kind: 'legacy'; item: AssistantItemDto }
+  /** A run the assistant started or set going again: shown with its live state. */
+  | { kind: 'run'; id: string; runId: string; action: string }
   | { kind: 'question'; item: AssistantItemDto }
   | { kind: 'problem'; item: AssistantItemDto };
+
+const RUN_TOOLS: Record<string, string> = {
+  start_run: 'Started',
+  run_stages: 'Running stages again in',
+  retry_stage: 'Retrying a stage in',
+  resume_run: 'Continued',
+};
+
+/** The run a completed run tool started, from its result. */
+export function startedRun(item: AssistantItemDto): { runId: string; action: string } | null {
+  const call = payloadOf<ToolCallPayload>(item);
+  const action = RUN_TOOLS[call.tool];
+  if (!action || item.state !== 'completed' || call.ok === false) return null;
+  const runId = (call.result as { runId?: unknown } | undefined)?.runId;
+  return typeof runId === 'string' ? { runId, action } : null;
+}
 
 /** Items → rows: consecutive tool calls fold into one row, and only a turn that did not complete
  * normally shows its status. */
@@ -136,6 +154,8 @@ export function toRows(items: AssistantItemDto[]): ChatRow[] {
         const last = rows.at(-1);
         if (last?.kind === 'tools') last.items.push(item);
         else rows.push({ kind: 'tools', id: item.id, items: [item] });
+        const run = startedRun(item);
+        if (run) rows.push({ kind: 'run', id: `${item.id}:run`, ...run });
         break;
       }
       case 'change':
@@ -219,6 +239,46 @@ export function describeToolCall(call: ToolCallPayload, state: string | null): s
         return 'Asked a question';
       case 'present_plan':
         return 'Showed a plan';
+      case 'create_channel':
+        return `Created the channel ${str(args.name) ?? ''}`.trim();
+      case 'update_channel':
+        return 'Changed a channel';
+      case 'archive_channel':
+        return args.archived === false ? 'Unarchived a channel' : 'Archived a channel';
+      case 'delete_channel':
+        return 'Deleted a channel';
+      case 'create_blueprint':
+        return `Created the blueprint ${str(args.name) ?? ''}`.trim();
+      case 'archive_blueprint':
+        return args.archived === false ? 'Unarchived a blueprint' : 'Archived a blueprint';
+      case 'delete_blueprint':
+        return 'Deleted a blueprint';
+      case 'save_version':
+        return 'Saved a version';
+      case 'restore_version':
+        return `Brought back version ${str(args.version) ?? ''}`.trim();
+      case 'start_run':
+        return args.free === true ? 'Started a free test run' : 'Started a real run';
+      case 'run_stages':
+        return `Ran ${stage ?? 'stages'} again`;
+      case 'retry_stage':
+        return `Retried ${stage ?? 'a stage'}`;
+      case 'pause_run':
+        return 'Paused a run';
+      case 'resume_run':
+        return 'Continued a run';
+      case 'cancel_run':
+        return 'Stopped a run';
+      case 'raise_budget':
+        return 'Raised a budget';
+      case 'set_concurrency':
+        return 'Changed how many stages run at once';
+      case 'approve_stage':
+        return `Approved ${stage ?? 'a stage'}`;
+      case 'reject_stage':
+        return `Rejected ${stage ?? 'a stage'}`;
+      case 'provide_input':
+        return `Filled in ${stage ?? 'a stage'}`;
       default:
         return call.tool.replace(/_/g, ' ');
     }

@@ -148,6 +148,25 @@ describe('toRows', () => {
     expect(rows[1]).toMatchObject({ items: [{ id: 'i3' }, { id: 'i4' }] });
   });
 
+  it('adds a live run card after a run tool that started one', () => {
+    const rows = toRows([
+      item(
+        1,
+        'tool_call',
+        { tool: 'start_run', args: { free: true }, ok: true, result: { runId: 'r9' } },
+        'completed',
+      ),
+      item(
+        2,
+        'tool_call',
+        { tool: 'retry_stage', args: {}, ok: false, result: { error: 'x' } },
+        'failed',
+      ),
+    ]);
+    expect(rows.map((r) => r.kind)).toEqual(['tools', 'run', 'tools']);
+    expect(rows[1]).toMatchObject({ runId: 'r9', action: 'Started' });
+  });
+
   it('finds the pending question', () => {
     const items = [
       item(1, 'question', { questions: [] }, 'answered'),
@@ -181,5 +200,11 @@ describe('describeToolCall', () => {
       'Changed the draft',
     );
     expect(describeToolCall({ tool: 'mystery_tool', args: {} }, 'completed')).toBe('mystery tool');
+    expect(describeToolCall({ tool: 'start_run', args: { free: false } }, 'completed')).toBe(
+      'Started a real run',
+    );
+    expect(describeToolCall({ tool: 'run_stages', args: { stageKey: 'voice' } }, 'running')).toBe(
+      'Ran voice again…',
+    );
   });
 });
