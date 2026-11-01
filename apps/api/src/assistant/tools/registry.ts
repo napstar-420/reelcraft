@@ -5,6 +5,7 @@ import type { AssistantToolDef } from '../agent/assistant-agent.interface';
 import { ACTION_TOOLS } from './action-tools';
 import { askUser } from './ask-user';
 import { MANAGE_TOOLS } from './manage-tools';
+import { REVIEW_TOOLS } from './review-tools';
 import { presentPlan } from './present-plan';
 import { BLUEPRINT_TOOLS } from './blueprint-tools';
 import { CATALOG_TOOLS } from './catalog-tools';
@@ -19,6 +20,7 @@ export const ASSISTANT_TOOLS: ReadonlyArray<AssistantTool<never>> = [
   ...READ_TOOLS,
   ...BLUEPRINT_TOOLS,
   ...RUN_TOOLS,
+  ...REVIEW_TOOLS,
   ...WRITE_TOOLS,
   ...MANAGE_TOOLS,
   ...ACTION_TOOLS,

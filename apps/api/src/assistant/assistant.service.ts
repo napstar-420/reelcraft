@@ -46,6 +46,8 @@ import { RunCancellationService } from '../run/run-cancellation.service';
 import { RunActionService } from '../run/run-action.service';
 import { HumanActionService } from '../run/human-action.service';
 import { RunStagePlanService } from '../run/run-stage-plan.service';
+import { InvalidationService } from '../run/invalidation.service';
+import { MediaReviewService } from './review/media-review.service';
 import { MediaPreviewService } from '../artifact/media-preview.service';
 import { ConfigResolverService } from '../run-config/config-resolver.service';
 import { engineDefaults } from '../run-config/engine-defaults';
@@ -129,6 +131,8 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
     retries: RunActionService,
     humanActions: HumanActionService,
     stagePlans: RunStagePlanService,
+    memory: InvalidationService,
+    review: MediaReviewService,
   ) {
     this.toolDeps = {
       blueprints,
@@ -147,6 +151,9 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
       retries,
       humanActions,
       stagePlans,
+      attempts: runControl,
+      memory,
+      review,
       engineLayer: () => engineDefaults(config),
       blueprintChanged: (blueprintId) => this.events.publish({ type: 'blueprint', blueprintId }),
     };

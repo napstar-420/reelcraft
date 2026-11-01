@@ -115,6 +115,18 @@ function deps(over: Partial<ToolDeps['runs']> = {}, media: Partial<ToolDeps['med
       framesOfVideo: vi.fn(async () => []),
       ...media,
     },
+    review: {
+      contactSheet: vi.fn(async (_blob: string, options: { count?: number; at?: number[] }) => ({
+        mime: 'image/jpeg' as const,
+        base64: 'SHEET',
+        times: options.at ?? [1, 2, 3, 4, 5, 6].slice(0, options.count ?? 6),
+        columns: 3,
+        durationSec: 7,
+      })),
+    },
+    runControl: {
+      get: vi.fn(async () => ({ finalVideo: { blobId: 'fv', artifactId: 'af' } })),
+    },
   } as unknown as ToolDeps;
 }
 
@@ -332,7 +344,7 @@ describe('view_stage_media', () => {
     expect(out.ok && out.images).toHaveLength(1);
   });
 
-  it('gives three frames of a single video, one per item of several, and only details for the rest', async () => {
+  it('gives one contact sheet for a single video, one frame per item of several, and only details for the rest', async () => {
     const frames = ['first frame', 'a third of the way in', 'last frame'].map((label) => ({
       mime: 'image/jpeg' as const,
       base64: 'FFFF',
@@ -353,8 +365,15 @@ describe('view_stage_media', () => {
       },
       { framesOfVideo: vi.fn(async () => frames) },
     );
-    const single = await runTool('view_stage_media', { runId: 'r1', stageKey: 'v' }, ctx(), one);
-    expect(single.ok && single.images).toHaveLength(3);
+    const single = await runTool(
+      'view_stage_media',
+      { runId: 'r1', stageKey: 'v', at: [0.5, 3] },
+      ctx(),
+      one,
+    );
+    expect(single.ok && single.images).toEqual([{ mime: 'image/jpeg', base64: 'SHEET' }]);
+    expect(JSON.stringify(single)).toContain('at 0.5s, 3s');
+    expect(one.review.contactSheet).toHaveBeenCalledWith('v0', { count: undefined, at: [0.5, 3] });
 
     const many = deps(
       {
@@ -369,6 +388,15 @@ describe('view_stage_media', () => {
     const several = await runTool('view_stage_media', { runId: 'r1', stageKey: 'v' }, ctx(), many);
     expect(several.ok && several.images).toHaveLength(2);
     expect(several).toMatchObject({ result: { notShown: [{ kind: 'media.audio' }] } });
+  });
+
+  it('shows the final video as a contact sheet when no stage is named', async () => {
+    const d = deps();
+    const c = ctx();
+    const out = await runTool('view_stage_media', { runId: 'r1', frames: 4 }, c, d);
+    expect(out).toMatchObject({ ok: true, images: [{ base64: 'SHEET' }] });
+    expect(d.review.contactSheet).toHaveBeenCalledWith('fv', { count: 4, at: undefined });
+    expect(c.imagesShown).toBe(1);
   });
 
   it('reports a stage with no media output, and an unknown run or stage', async () => {

@@ -433,7 +433,7 @@ ${renderTroubleshooting()}`,
 - **Template logic**: \`{{ }}\` only inserts values: no conditions, loops, formulas, and no \`{{ item }}\`.
 - **\`prev\` on the first stage**, \`prevItem\` or \`item\` outside an iterating stage, a memory key written by two stages that can run at the same time (make one \`dependsOn\` the other).
 - **Anything about a model, style, check, asset or capability that the tools don't list.** Don't guess and don't use training knowledge about what Reelcraft "probably" has: look it up, and if it isn't there, it doesn't exist in this install.
-- **Anything on the web**, and playing audio or watching a whole video: you see pictures and frames of a video.
+- **Anything on the web**, and watching a video as motion or hearing its sound: you see frames (view_stage_media) and read a transcript with loudness and silences (listen_to_audio).
 - Anything you did not read with a tool: you only know what the tools return.`,
   },
 

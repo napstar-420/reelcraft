@@ -104,6 +104,40 @@ export class QcAudioService {
     }
   }
 
+  /** Who can transcribe right now when nothing listens itself (the assistant): VoiceStudio when
+   * it answers (free), else Deepgram when it has a key (paid), else why neither can. */
+  async transcriber(): Promise<QcAudioMode> {
+    const hasDeepgramKey = Boolean(await this.keys.get('deepgram'));
+    return chooseQcAudioMode(false, hasDeepgramKey, await this.voiceStudioState(false));
+  }
+
+  /** Transcribes audio in memory with word timings. VoiceStudio falls back to Deepgram like
+   * `transcribe` does. */
+  async transcribeBuffer(
+    audio: Buffer,
+    mime: string,
+    by: QcTranscriber,
+  ): Promise<{
+    transcript: string;
+    durationSec: number;
+    words: Array<{ text: string; startSec: number; endSec: number }>;
+    costUsd: number;
+    by: QcTranscriber;
+  }> {
+    const viaDeepgram = async () => {
+      const result = await this.deepgram.transcribeBuffer(audio, mime);
+      return { ...result, by: 'deepgram' as const };
+    };
+    if (by === 'deepgram') return viaDeepgram();
+    try {
+      const { timing } = await this.voiceStudio.transcribe(audio, mime);
+      return { ...timing, costUsd: 0, by: 'voicestudio' };
+    } catch (error) {
+      if (!(await this.keys.get('deepgram'))) throw error;
+      return viaDeepgram();
+    }
+  }
+
   private async voiceStudioState(recent: boolean): Promise<VoiceStudioState> {
     const status = recent
       ? await this.voiceStudioClient.recentStatus()

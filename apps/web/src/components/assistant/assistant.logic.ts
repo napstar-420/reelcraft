@@ -214,7 +214,15 @@ export function describeToolCall(call: ToolCallPayload, state: string | null): s
       case 'get_stage':
         return `Looked at stage ${stage ?? ''}`.trim();
       case 'view_stage_media':
-        return `Looked at what ${stage ?? 'a stage'} made`;
+        return stage ? `Looked at what ${stage} made` : 'Watched the final video';
+      case 'get_attempt':
+        return `Read a try of ${stage ?? 'a stage'} in full`;
+      case 'get_run_memory':
+        return 'Read what the stages passed on';
+      case 'listen_to_audio':
+        return stage ? `Listened to ${stage}` : 'Listened to the final video';
+      case 'view_asset':
+        return 'Looked at a library picture';
       case 'list_capabilities':
         return 'Listed the stage types';
       case 'get_capability':
