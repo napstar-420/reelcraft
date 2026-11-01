@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.14.0](https://github.com/napstar-420/reelcraft/compare/v0.13.0...v0.14.0) (2026-11-01)
+
+
+### Features
+
+* **api:** offer VoiceStudio's premade designed voices in the voice picker ([#213](https://github.com/napstar-420/reelcraft/issues/213)) ([3e8049c](https://github.com/napstar-420/reelcraft/commit/3e8049c8182ff57619669a1787f16575dbb2638e))
+* support VoiceStudio for speech, cloned voices, word timings and transcription ([#209](https://github.com/napstar-420/reelcraft/issues/209)) ([8668f45](https://github.com/napstar-420/reelcraft/commit/8668f457efff347d31a2689b5de1aefc8c78b622))
+* **web:** drag captions anywhere in the timeline editor preview ([#216](https://github.com/napstar-420/reelcraft/issues/216)) ([5d98421](https://github.com/napstar-420/reelcraft/commit/5d984218dd9e3ba9b67f7eddf6f4d3f087a60286))
+* **web:** new design system, icon rail shell, Home, Blueprints and Channels pages ([#217](https://github.com/napstar-420/reelcraft/issues/217)) ([52be28a](https://github.com/napstar-420/reelcraft/commit/52be28ae5826c9dadb75a743d69bbf67b831a667))
+
+
+### Bug Fixes
+
+* **api:** Write Scene rejects a script that was never previewed ([#214](https://github.com/napstar-420/reelcraft/issues/214)) ([d201985](https://github.com/napstar-420/reelcraft/commit/d201985727926fd0077f24f6219236b0b92dffac))
+* approve a stage item's output while the run is still running ([#215](https://github.com/napstar-420/reelcraft/issues/215)) ([ec1f4f5](https://github.com/napstar-420/reelcraft/commit/ec1f4f564984bfbbffe7b843b3d91f7ed2a4a1ae))
+
 ## [0.13.0](https://github.com/napstar-420/reelcraft/compare/v0.12.0...v0.13.0) (2026-10-29)
 
 
