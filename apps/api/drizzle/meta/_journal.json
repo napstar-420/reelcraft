@@ -295,6 +295,27 @@
       "when": 1792481462615,
       "tag": "0041_scene_model_kinds",
       "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1793557671993,
+      "tag": "0042_assistant_global",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1793557677814,
+      "tag": "0043_assistant_drop_apply_mode",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1793561035808,
+      "tag": "0044_assistant_watch",
+      "breakpoints": true
     }
   ]
 }

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { Check, Loader2 } from 'lucide-react';
+import { Check, Loader2, Sparkles } from 'lucide-react';
 import type {
   RunDetailDto,
   RunMemoryEntryDto,
@@ -9,6 +9,9 @@ import type {
   StageOutputDto,
 } from '@reelcraft/shared';
 import { api } from '@/api/client';
+import { useAssistantUi } from '@/components/assistant/assistant-context';
+import { fixFailedStagePrompt } from '@/lib/assistant-prompts';
+import { runHandle } from '@/lib/run-buckets';
 import type { RunExecutionActions } from '@/hooks/useRunExecutionActions';
 import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/components/ui/status-badge';
@@ -60,6 +63,7 @@ function DetailBody({
   onProvideInput,
 }: DetailProps) {
   const execution = stage.execution;
+  const { ask } = useAssistantUi();
   const [tab, setTab] = useState<Tab>(
     stage.state === 'failed' ? 'output' : stage.state === 'running' ? 'live' : 'output',
   );
@@ -138,6 +142,23 @@ function DetailBody({
             </p>
           ) : null}
           <div className="flex flex-wrap items-center gap-2 pt-1">
+            <Button
+              size="sm"
+              variant="accent"
+              onClick={() =>
+                ask(
+                  fixFailedStagePrompt({
+                    runId: run.id,
+                    runHandle: runHandle(run.id),
+                    stageKey: stage.key,
+                    stageLabel: stage.name,
+                    reason,
+                  }),
+                )
+              }
+            >
+              <Sparkles /> Fix with assistant
+            </Button>
             <StageExecutionControls
               compact
               available={execution.availableActions}

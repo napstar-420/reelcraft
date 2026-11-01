@@ -1,0 +1,1 @@
+ALTER TABLE "assistant_session" DROP COLUMN "apply_mode";

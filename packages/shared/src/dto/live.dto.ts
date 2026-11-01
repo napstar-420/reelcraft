@@ -10,6 +10,8 @@ import type { NotificationDto } from './notification.dto';
 export interface ServerToClientEvents {
   'run:updated': (payload: { runId: string }) => void;
   'stage:updated': (payload: { runId: string; stageKey: string }) => void;
+  /** A blueprint's details, working draft or versions changed. */
+  'blueprint:updated': (payload: { blueprintId: string }) => void;
   /** A notification was recorded for this user. */
   'notification:created': (notification: NotificationDto) => void;
   /** Read state changed (here or in another tab); refetch the list. */

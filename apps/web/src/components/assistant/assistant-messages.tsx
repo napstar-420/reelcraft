@@ -1,10 +1,10 @@
 import Markdown, { type Components } from 'react-markdown';
-import { AlertCircle, Wrench } from 'lucide-react';
+import { Activity, AlertCircle, Wrench } from 'lucide-react';
 import type { AssistantItemDto, ToolCallPayload, TurnStatusPayload } from '@reelcraft/shared';
 import type { AssistantController } from '@/hooks/useAssistant';
-import { ProposalCard } from './proposal-card';
+import { ApprovalCard, ChangeCard, LegacyProposalCard, PlanCard, RunCard } from './assistant-cards';
 import { QuestionCard } from './question-card';
-import { describeToolCall, payloadOf, toRows, type ChatRow } from './assistant.logic';
+import { describeToolCall, payloadOf, toRows, wakeHeadline, type ChatRow } from './assistant.logic';
 
 const MARKDOWN: Components = {
   a: ({ node: _node, ...props }) => (
@@ -49,21 +49,23 @@ function ToolsRow({ items }: { items: AssistantItemDto[] }) {
   );
 }
 
-function Row({
-  row,
-  items,
-  assistant,
-}: {
-  row: ChatRow;
-  items: AssistantItemDto[];
-  assistant: AssistantController;
-}) {
+function Row({ row, assistant }: { row: ChatRow; assistant: AssistantController }) {
   switch (row.kind) {
     case 'user':
       return (
         <div className="ml-8 self-end rounded-[12px_12px_4px_12px] bg-surface-3 px-3 py-2.5 text-[13px] leading-relaxed whitespace-pre-wrap">
           {payloadOf<{ text: string }>(row.item).text}
         </div>
+      );
+    case 'wake':
+      return (
+        <p className="flex items-start gap-1.5 rounded-[10px] bg-surface-2 px-3 py-2 text-xs text-muted-foreground">
+          <Activity className="mt-0.5 size-3.5 shrink-0 text-acc" />
+          <span>
+            <span className="font-medium text-foreground">Run update: </span>
+            {wakeHeadline(payloadOf<{ text: string }>(row.item).text)}
+          </span>
+        </p>
       );
     case 'agent':
       return (
@@ -73,8 +75,16 @@ function Row({
       );
     case 'tools':
       return <ToolsRow items={row.items} />;
-    case 'proposal':
-      return <ProposalCard item={row.item} items={items} assistant={assistant} />;
+    case 'change':
+      return <ChangeCard item={row.item} assistant={assistant} />;
+    case 'approval':
+      return <ApprovalCard item={row.item} assistant={assistant} />;
+    case 'plan':
+      return <PlanCard item={row.item} assistant={assistant} />;
+    case 'legacy':
+      return <LegacyProposalCard item={row.item} />;
+    case 'run':
+      return <RunCard runId={row.runId} action={row.action} />;
     case 'question':
       return <QuestionCard item={row.item} assistant={assistant} />;
     case 'problem': {
@@ -103,9 +113,8 @@ export function AssistantMessages({
     <div className="flex flex-col gap-4">
       {rows.map((row) => (
         <Row
-          key={row.kind === 'tools' ? row.id : row.item.id}
+          key={row.kind === 'tools' || row.kind === 'run' ? row.id : row.item.id}
           row={row}
-          items={items}
           assistant={assistant}
         />
       ))}

@@ -120,11 +120,7 @@ export function QuestionCard({
           </fieldset>
         );
       })}
-      <Button
-        type="submit"
-        size="sm"
-        disabled={!complete || assistant.running || assistant.disabled}
-      >
+      <Button type="submit" size="sm" disabled={!complete || assistant.running}>
         Send answers
       </Button>
     </form>

@@ -10,6 +10,7 @@ import { exampleScenesToImages, exampleScript } from '../guide';
 import { ASSISTANT_TOOLS, buildNarrowedEnums, buildToolDefs, runTool, toolsHash } from './registry';
 import { realCapabilityRegistry } from './test-support';
 import { newTurnContext, type ToolDeps } from './types';
+import { UserGuideService } from '../user-guide/user-guide.service';
 
 const capabilities = realCapabilityRegistry();
 const styles = new StyleRegistry();
@@ -68,6 +69,8 @@ function makeDeps(overrides: Partial<ToolDeps> = {}): ToolDeps {
       ]),
       validateOnly: vi.fn(async () => ({ issues: [], runnable: true })),
       assertNameFree: vi.fn(async () => undefined),
+      setWorkingDraft: vi.fn(async () => BLUEPRINT),
+      update: vi.fn(async () => BLUEPRINT),
     } as unknown as ToolDeps['blueprints'],
     capabilities,
     providers: {
@@ -90,6 +93,9 @@ function makeDeps(overrides: Partial<ToolDeps> = {}): ToolDeps {
     styles,
     channels: {
       get: vi.fn(async () => ({ id: 'ch1', name: 'Channel', defaults: { x: 1 } })),
+      list: vi.fn(async () => [
+        { id: 'ch1', name: 'Channel', description: null, archived: false, counts: {} },
+      ]),
     } as never,
     assets: {
       list: vi.fn(async () => [{ id: 'a1', name: 'Logo', kind: 'image', tags: [] }]),
@@ -101,10 +107,10 @@ function makeDeps(overrides: Partial<ToolDeps> = {}): ToolDeps {
     } as never,
     schemas: new SchemaValidatorService(),
     runs: {
-      listForBlueprint: vi.fn(async () => ({ runs: [], total: 0 })),
-      getForBlueprint: vi.fn(async () => null),
-      stageForBlueprint: vi.fn(async () => null),
-      mediaForBlueprint: vi.fn(async () => null),
+      list: vi.fn(async () => ({ runs: [], total: 0 })),
+      get: vi.fn(async () => null),
+      stage: vi.fn(async () => null),
+      media: vi.fn(async () => null),
     },
     media: {
       imageFromBlob: vi.fn(async () => null),
@@ -112,46 +118,108 @@ function makeDeps(overrides: Partial<ToolDeps> = {}): ToolDeps {
     },
     configResolver: new ConfigResolverService({} as never, {} as never),
     engineLayer: () => ({ retryLimit: 0, iterate: { maxItems: 50 } }),
+    blueprintChanged: vi.fn(),
+    runControl: {} as never,
+    cancellation: {} as never,
+    retries: {} as never,
+    humanActions: {} as never,
+    stagePlans: {} as never,
+    attempts: {} as never,
+    memory: {} as never,
+    review: {} as never,
+    watches: {} as never,
+    userGuide: new UserGuideService(),
     ...overrides,
   };
 }
 
-const ctx = () => newTurnContext('bp1', null);
+const ctx = () => newTurnContext();
 
 describe('tool registry', () => {
-  it('has the 21 tools, each with a unique name and a kind', () => {
+  it('has every tool once, each with a kind', () => {
     const names = ASSISTANT_TOOLS.map((t) => t.name);
     expect(new Set(names).size).toBe(names.length);
     expect(names.sort()).toEqual(
       [
+        'approve_stage',
+        'archive_blueprint',
+        'archive_channel',
         'ask_user',
+        'cancel_run',
+        'create_blueprint',
+        'create_channel',
+        'delete_blueprint',
+        'delete_channel',
         'diff_drafts',
+        'pause_run',
+        'provide_input',
+        'raise_budget',
+        'reject_stage',
+        'restore_version',
+        'resume_run',
+        'retry_stage',
+        'run_stages',
+        'save_version',
+        'search_docs',
+        'set_concurrency',
+        'start_run',
+        'unwatch_run',
+        'update_channel',
+        'edit_draft',
         'get_blueprint',
         'get_capability',
-        'get_channel_resources',
+        'get_channel',
+        'get_attempt',
         'get_effective_config',
-        'get_version',
-        'get_stages',
-        'edit_draft',
-        'list_runs',
         'get_run',
+        'get_run_memory',
         'get_stage',
-        'view_stage_media',
+        'get_stages',
+        'get_version',
+        'list_blueprints',
         'list_capabilities',
+        'list_channels',
         'list_checks',
         'list_models',
+        'list_runs',
         'list_styles',
+        'listen_to_audio',
+        'present_plan',
         'propose_draft',
         'read_guide',
         'update_metadata',
         'validate_draft',
+        'view_asset',
+        'view_stage_media',
+        'watch_run',
       ].sort(),
     );
     expect(
-      ASSISTANT_TOOLS.filter((t) => t.kind === 'write')
+      ASSISTANT_TOOLS.filter((t) => t.kind === 'change')
         .map((t) => t.name)
         .sort(),
-    ).toEqual(['edit_draft', 'propose_draft', 'update_metadata']);
+    ).toEqual([
+      'archive_blueprint',
+      'archive_channel',
+      'create_blueprint',
+      'create_channel',
+      'edit_draft',
+      'propose_draft',
+      'restore_version',
+      'save_version',
+      'update_channel',
+      'update_metadata',
+    ]);
+    expect(
+      ASSISTANT_TOOLS.filter((t) => t.kind === 'destroy')
+        .map((t) => t.name)
+        .sort(),
+    ).toEqual(['delete_blueprint', 'delete_channel']);
+    expect(
+      ASSISTANT_TOOLS.filter((t) => t.kind === 'interact')
+        .map((t) => t.name)
+        .sort(),
+    ).toEqual(['ask_user', 'present_plan']);
   });
 
   it('narrows enums to the live registries', () => {
@@ -178,7 +246,7 @@ describe('tool registry', () => {
   it('returns {ok:false} for an unknown tool and for invalid input', async () => {
     const deps = makeDeps();
     expect(await runTool('nope', {}, ctx(), deps)).toMatchObject({ ok: false });
-    const bad = await runTool('update_metadata', { name: 'x' }, ctx(), deps);
+    const bad = await runTool('update_metadata', { blueprintId: 'bp1', name: 'x' }, ctx(), deps);
     expect(bad).toMatchObject({ ok: false, error: 'Invalid input for update_metadata.' });
   });
 
@@ -191,7 +259,10 @@ describe('tool registry', () => {
         },
       } as ToolDeps['blueprints'],
     });
-    expect(await runTool('get_blueprint', {}, ctx(), deps)).toEqual({ ok: false, error: 'boom' });
+    expect(await runTool('get_blueprint', { blueprintId: 'bp1' }, ctx(), deps)).toEqual({
+      ok: false,
+      error: 'boom',
+    });
   });
 });
 
@@ -199,25 +270,45 @@ describe('JSON Schemas stay in sync with the Zod inputs (drift guard)', () => {
   // One input valid for BOTH the Zod schema and the JSON Schema sent to the model. Neither is
   // derived from the other, so this is what catches them drifting apart.
   const FIXTURES: Record<string, unknown> = {
-    get_blueprint: {},
+    list_channels: { includeArchived: true },
+    list_blueprints: { channelId: 'ch1', query: 'reel', includeArchived: false },
+    get_blueprint: { blueprintId: 'bp1' },
     list_capabilities: {},
     get_capability: { key: 'text.generate', config: {} },
     list_models: { modality: 'text' },
     list_checks: {},
     list_styles: {},
-    get_channel_resources: {},
-    get_version: { version: '1.1' },
-    get_stages: { keys: ['script'], version: '1.1' },
-    diff_drafts: { from: '1.0', to: 'current' },
-    get_effective_config: { stageKey: 'script' },
-    list_runs: { limit: 5 },
+    get_channel: { channelId: 'ch1' },
+    get_version: { blueprintId: 'bp1', version: '1.1' },
+    get_stages: { blueprintId: 'bp1', keys: ['script'], version: '1.1' },
+    diff_drafts: { blueprintId: 'bp1', from: '1.0', to: 'current' },
+    get_effective_config: { blueprintId: 'bp1', stageKey: 'script' },
+    list_runs: {
+      blueprintId: 'bp1',
+      channelId: 'ch1',
+      group: 'needs_you',
+      includeTestRuns: false,
+      limit: 5,
+    },
     get_run: { runId: 'r1' },
     get_stage: { runId: 'r1', stageKey: 'script', itemIndex: 0, full: true, includePrompt: true },
-    view_stage_media: { runId: 'r1', stageKey: 'images', itemIndex: 0 },
+    view_stage_media: { runId: 'r1', stageKey: 'images', itemIndex: 0, frames: 4, at: [1.5] },
+    get_attempt: { runId: 'r1', stageKey: 'script', attemptNo: 2, itemIndex: 0 },
+    get_run_memory: { runId: 'r1', key: 'scenes' },
+    listen_to_audio: { runId: 'r1', stageKey: 'voice', itemIndex: 0 },
+    view_asset: { characterId: 'c1', blobId: 'b1' },
+    watch_run: { runId: 'r1' },
+    unwatch_run: { runId: 'r1' },
+    search_docs: { query: 'raise budget', limit: 3 },
     read_guide: { topic: 'limits' },
-    validate_draft: { draft: exampleScript() },
-    propose_draft: { draft: exampleScenesToImages(), summary: 'Plan then images' },
+    validate_draft: { blueprintId: 'bp1', draft: exampleScript() },
+    propose_draft: {
+      blueprintId: 'bp1',
+      draft: exampleScenesToImages(),
+      summary: 'Plan then images',
+    },
     edit_draft: {
+      blueprintId: 'bp1',
       ops: [
         { op: 'remove_stage', key: 'a' },
         { op: 'add_stage', stage: exampleScript().graph[0], after: 'b' },
@@ -227,7 +318,41 @@ describe('JSON Schemas stay in sync with the Zod inputs (drift guard)', () => {
       ],
       summary: 'Edit',
     },
-    update_metadata: { name: 'New name', description: null, tags: ['x'], summary: 'Rename' },
+    update_metadata: {
+      blueprintId: 'bp1',
+      name: 'New name',
+      description: null,
+      tags: ['x'],
+      summary: 'Rename',
+    },
+    present_plan: { title: 'Plan', summary: 'What I found', steps: ['Do this'] },
+    create_channel: { name: 'Science', description: 'Short science facts' },
+    update_channel: { channelId: 'ch1', name: 'New', description: 'd', defaults: {} },
+    archive_channel: { channelId: 'ch1', archived: true },
+    delete_channel: { channelId: 'ch1' },
+    create_blueprint: { channelId: 'ch1', name: 'Reel', description: 'd', tags: ['a'] },
+    archive_blueprint: { blueprintId: 'bp1', archived: false },
+    delete_blueprint: { blueprintId: 'bp1' },
+    save_version: { blueprintId: 'bp1', bump: 'major', reason: 'Adds a hook' },
+    restore_version: { blueprintId: 'bp1', version: '1.0' },
+    start_run: {
+      blueprintId: 'bp1',
+      version: 'draft',
+      free: true,
+      inputs: { topic: 'otters' },
+      budgetUsd: 2,
+      untilStageKey: 'script',
+    },
+    run_stages: { runId: 'r1', stageKey: 'script', scope: 'from_here', version: 'saved' },
+    retry_stage: { runId: 'r1', stageKey: 'images', itemIndex: 0, onlyFailedItems: true },
+    pause_run: { runId: 'r1' },
+    resume_run: { runId: 'r1' },
+    cancel_run: { runId: 'r1' },
+    raise_budget: { runId: 'r1', capUsd: 5, stageKey: 'images' },
+    set_concurrency: { runId: 'r1', concurrentBranches: 3 },
+    approve_stage: { runId: 'r1', stageKey: 'review', itemIndex: 1 },
+    reject_stage: { runId: 'r1', stageKey: 'review', note: 'Shorter', itemIndex: 0 },
+    provide_input: { runId: 'r1', stageKey: 'brief', value: { topic: 'otters' } },
     ask_user: {
       questions: [
         {
@@ -283,17 +408,16 @@ describe('JSON Schemas stay in sync with the Zod inputs (drift guard)', () => {
 });
 
 describe('read tools', () => {
-  it('get_blueprint prefers the proposal, then the canvas, then the saved draft', async () => {
+  it('get_blueprint prefers the editor, then the saved draft', async () => {
     const deps = makeDeps();
     const base = exampleScript();
-    const c = newTurnContext('bp1', base);
-    const fromCanvas = await runTool('get_blueprint', {}, c, deps);
-    expect(fromCanvas).toMatchObject({ ok: true, result: { draftSource: 'canvas', name: 'Reel' } });
-    c.lastProposal = exampleScenesToImages();
-    expect(await runTool('get_blueprint', {}, c, deps)).toMatchObject({
-      result: { draftSource: 'proposal in this turn' },
+    const c = newTurnContext({ editorDraft: { blueprintId: 'bp1', draft: base } });
+    const fromCanvas = await runTool('get_blueprint', { blueprintId: 'bp1' }, c, deps);
+    expect(fromCanvas).toMatchObject({
+      ok: true,
+      result: { draftSource: 'editor', name: 'Reel', channelId: 'ch1' },
     });
-    expect(await runTool('get_blueprint', {}, ctx(), deps)).toMatchObject({
+    expect(await runTool('get_blueprint', { blueprintId: 'bp1' }, ctx(), deps)).toMatchObject({
       result: { draftSource: 'latest saved version' },
     });
     const none = makeDeps({
@@ -302,7 +426,7 @@ describe('read tools', () => {
         listVersions: async () => [],
       } as unknown as ToolDeps['blueprints'],
     });
-    expect(await runTool('get_blueprint', {}, ctx(), none)).toMatchObject({
+    expect(await runTool('get_blueprint', { blueprintId: 'bp1' }, ctx(), none)).toMatchObject({
       result: { draftSource: 'empty', versionCount: 0, draftDiffersFromLatest: false },
     });
   });
@@ -317,7 +441,7 @@ describe('read tools', () => {
         ],
       } as unknown as ToolDeps['blueprints'],
     });
-    const out = await runTool('get_blueprint', {}, ctx(), deps);
+    const out = await runTool('get_blueprint', { blueprintId: 'bp1' }, ctx(), deps);
     expect(out).toMatchObject({
       result: { draftSource: 'latest saved version', versions: [{ version: '1.2' }] },
     });
@@ -335,7 +459,12 @@ describe('read tools', () => {
         }),
       } as unknown as ToolDeps['blueprints'],
     });
-    const out = await runTool('get_blueprint', {}, newTurnContext('bp1', draft), deps);
+    const out = await runTool(
+      'get_blueprint',
+      { blueprintId: 'bp1' },
+      newTurnContext({ editorDraft: { blueprintId: 'bp1', draft: draft } }),
+      deps,
+    );
     expect(out).toMatchObject({
       ok: true,
       result: {
@@ -355,13 +484,18 @@ describe('read tools', () => {
     });
     const changed = structuredClone(draft);
     changed.graph[1]!.label = 'Renamed';
-    const diff = await runTool('get_blueprint', {}, newTurnContext('bp1', changed), deps);
+    const diff = await runTool(
+      'get_blueprint',
+      { blueprintId: 'bp1' },
+      newTurnContext({ editorDraft: { blueprintId: 'bp1', draft: changed } }),
+      deps,
+    );
     expect(diff).toMatchObject({ result: { draftDiffersFromLatest: true } });
   });
 
   it('get_version returns the saved content, and lists the labels when one is unknown', async () => {
     const deps = makeDeps();
-    const out = await runTool('get_version', { version: '1.0' }, ctx(), deps);
+    const out = await runTool('get_version', { blueprintId: 'bp1', version: '1.0' }, ctx(), deps);
     expect(out).toMatchObject({
       ok: true,
       result: {
@@ -371,7 +505,9 @@ describe('read tools', () => {
         draft: { graph: [{ key: 'script' }] },
       },
     });
-    expect(await runTool('get_version', { version: '9.9' }, ctx(), deps)).toMatchObject({
+    expect(
+      await runTool('get_version', { blueprintId: 'bp1', version: '9.9' }, ctx(), deps),
+    ).toMatchObject({
       ok: false,
       error: expect.stringContaining('1.1, 1.0'),
     });
@@ -381,8 +517,13 @@ describe('read tools', () => {
     const deps = makeDeps();
     const current = exampleScenesToImages();
     current.graph[0]!.label = 'Plan the story';
-    const c = newTurnContext('bp1', current);
-    const out = await runTool('diff_drafts', { from: '1.1', to: 'current' }, c, deps);
+    const c = newTurnContext({ editorDraft: { blueprintId: 'bp1', draft: current } });
+    const out = await runTool(
+      'diff_drafts',
+      { blueprintId: 'bp1', from: '1.1', to: 'current' },
+      c,
+      deps,
+    );
     expect(out).toMatchObject({
       ok: true,
       result: {
@@ -398,7 +539,9 @@ describe('read tools', () => {
         budgetChanged: false,
       },
     });
-    expect(await runTool('diff_drafts', { from: '1.0', to: '1.1' }, ctx(), deps)).toMatchObject({
+    expect(
+      await runTool('diff_drafts', { blueprintId: 'bp1', from: '1.0', to: '1.1' }, ctx(), deps),
+    ).toMatchObject({
       result: {
         stages: expect.arrayContaining([
           expect.objectContaining({ key: 'script', kind: 'removed' }),
@@ -407,10 +550,14 @@ describe('read tools', () => {
         budgetChanged: true,
       },
     });
-    expect(await runTool('diff_drafts', { from: '1.1', to: '1.1' }, ctx(), deps)).toMatchObject({
+    expect(
+      await runTool('diff_drafts', { blueprintId: 'bp1', from: '1.1', to: '1.1' }, ctx(), deps),
+    ).toMatchObject({
       result: { identical: true },
     });
-    expect(await runTool('diff_drafts', { from: 'nope', to: 'current' }, c, deps)).toMatchObject({
+    expect(
+      await runTool('diff_drafts', { blueprintId: 'bp1', from: 'nope', to: 'current' }, c, deps),
+    ).toMatchObject({
       ok: false,
     });
   });
@@ -425,8 +572,8 @@ describe('read tools', () => {
     });
     const out = await runTool(
       'get_effective_config',
-      { stageKey: 'script' },
-      newTurnContext('bp1', draft),
+      { blueprintId: 'bp1', stageKey: 'script' },
+      newTurnContext({ editorDraft: { blueprintId: 'bp1', draft: draft } }),
       deps,
     );
     expect(out).toMatchObject({
@@ -443,8 +590,8 @@ describe('read tools', () => {
     expect(
       await runTool(
         'get_effective_config',
-        { stageKey: 'zzz' },
-        newTurnContext('bp1', draft),
+        { blueprintId: 'bp1', stageKey: 'zzz' },
+        newTurnContext({ editorDraft: { blueprintId: 'bp1', draft: draft } }),
         deps,
       ),
     ).toMatchObject({ ok: false, error: expect.stringContaining('Stages: script') });
@@ -516,14 +663,17 @@ describe('read tools', () => {
     expect(out).toMatchObject({ ok: true, result: { models: [] } });
   });
 
-  it('get_channel_resources lists assets and characters', async () => {
-    const out = await runTool('get_channel_resources', {}, ctx(), makeDeps());
+  it('get_channel lists blueprints, assets and characters', async () => {
+    const out = await runTool('get_channel', { channelId: 'ch1' }, ctx(), makeDeps());
     expect(out).toMatchObject({
       ok: true,
       result: {
         channel: { defaults: { x: 1 } },
-        // this blueprint and archived ones are left out
-        otherBlueprints: [{ name: 'Other reel', runCount: 3 }],
+        blueprints: [
+          { id: 'bp1', name: 'Reel' },
+          { id: 'bp2', name: 'Other reel', runCount: 3 },
+          { id: 'bp3', archived: true },
+        ],
         assets: [{ id: 'a1' }],
         characters: [{ id: 'c1', referenceCount: 2 }],
       },
@@ -554,7 +704,7 @@ describe('read tools', () => {
     const draft = exampleScript() as Draft & { bogus?: unknown };
     (draft as Record<string, unknown>).bogus = 1;
     (draft.graph[0] as Record<string, unknown>).magic = true;
-    const out = await runTool('validate_draft', { draft }, ctx(), makeDeps());
+    const out = await runTool('validate_draft', { blueprintId: 'bp1', draft }, ctx(), makeDeps());
     expect(out.ok).toBe(false);
     const paths = (!out.ok && out.issues?.map((i) => i.path)) || [];
     expect(paths).toEqual(expect.arrayContaining(['bogus', 'graph.0.magic']));
@@ -573,23 +723,38 @@ describe('write tools', () => {
       blueprints: { ...makeDeps().blueprints, validateOnly } as unknown as ToolDeps['blueprints'],
     });
     const c = ctx();
-    const out = await runTool('propose_draft', { draft: exampleScript(), summary: 's' }, c, deps);
+    const out = await runTool(
+      'propose_draft',
+      { blueprintId: 'bp1', draft: exampleScript(), summary: 's' },
+      c,
+      deps,
+    );
     expect(out).toMatchObject({ ok: false, issues: [{ message: 'required slot "x" is unbound' }] });
     expect(out.ok === false && 'item' in out).toBe(false);
-    expect(c.lastProposal).toBeNull();
+    expect(deps.blueprints.setWorkingDraft).not.toHaveBeenCalled();
   });
 
   it('propose_draft refuses a draft that breaks the quality rules', async () => {
     const draft = exampleScript();
     delete draft.graph[0]!.instructions!.system;
-    const c = ctx();
-    const out = await runTool('propose_draft', { draft, summary: 's' }, c, makeDeps());
+    const deps = makeDeps();
+    const out = await runTool(
+      'propose_draft',
+      { blueprintId: 'bp1', draft, summary: 's' },
+      ctx(),
+      deps,
+    );
     expect(out).toMatchObject({
       ok: false,
       issues: [{ path: 'stages.script.instructions.system', severity: 'error' }],
     });
-    expect(c.lastProposal).toBeNull();
-    const validated = await runTool('validate_draft', { draft }, ctx(), makeDeps());
+    expect(deps.blueprints.setWorkingDraft).not.toHaveBeenCalled();
+    const validated = await runTool(
+      'validate_draft',
+      { blueprintId: 'bp1', draft },
+      ctx(),
+      makeDeps(),
+    );
     expect(JSON.stringify(validated)).toContain('quality: a text stage needs a system prompt');
   });
 
@@ -600,23 +765,23 @@ describe('write tools', () => {
     edited.graph[0]!.checks = [
       { type: 'builtin', key: 'word_count', params: { min: 40, max: 60 } },
     ];
-    const c = newTurnContext('bp1', canvas);
+    const c = newTurnContext({ editorDraft: { blueprintId: 'bp1', draft: canvas } });
     const out = await runTool(
       'propose_draft',
-      { draft: edited, summary: 'word limit' },
+      { blueprintId: 'bp1', draft: edited, summary: 'word limit' },
       c,
       makeDeps(),
     );
     expect(out).toMatchObject({
       ok: true,
       result: {
-        status: 'proposed',
+        status: 'written',
         warnings: [{ message: expect.stringContaining('already in this blueprint') }],
       },
     });
   });
 
-  it('propose_draft accepts a valid draft with warnings and remembers it', async () => {
+  it('propose_draft writes a valid draft with warnings as the working draft', async () => {
     const warning = {
       path: 'graph.0',
       message: 'declares neither checks nor qc',
@@ -631,33 +796,45 @@ describe('write tools', () => {
     const c = ctx();
     const out = await runTool(
       'propose_draft',
-      { draft: exampleScript(), summary: 'Script' },
+      { blueprintId: 'bp1', draft: exampleScript(), summary: 'Script' },
       c,
       deps,
     );
     expect(out).toMatchObject({
       ok: true,
-      result: { status: 'proposed', warnings: [warning] },
+      result: { status: 'written', warnings: [warning] },
       item: {
-        type: 'proposal',
-        payload: { kind: 'draft', summary: 'Script', warnings: [warning] },
+        type: 'change',
+        payload: {
+          kind: 'draft',
+          blueprintId: 'bp1',
+          blueprintName: 'Reel',
+          summary: 'Script',
+          warnings: [warning],
+        },
       },
     });
-    expect(c.lastProposal?.graph[0]?.key).toBe('script');
+    expect(deps.blueprints.setWorkingDraft).toHaveBeenCalledWith(
+      'bp1',
+      expect.objectContaining({ graph: [expect.objectContaining({ key: 'script' })] }),
+      'v2',
+    );
+    expect(deps.blueprintChanged).toHaveBeenCalledWith('bp1');
+    expect(c.baselines.has('bp1')).toBe(true);
   });
 
-  it('update_metadata checks the name is free and records the previous values', async () => {
+  it('update_metadata checks the name is free, changes it and records the previous values', async () => {
     const deps = makeDeps();
     const out = await runTool(
       'update_metadata',
-      { name: 'Better', tags: ['b'], summary: 'Rename' },
+      { blueprintId: 'bp1', name: 'Better', tags: ['b'], summary: 'Rename' },
       ctx(),
       deps,
     );
     expect(out).toMatchObject({
       ok: true,
       item: {
-        type: 'proposal',
+        type: 'change',
         payload: {
           kind: 'metadata',
           changes: { name: 'Better', tags: ['b'] },
@@ -666,6 +843,7 @@ describe('write tools', () => {
       },
     });
     expect(deps.blueprints.assertNameFree).toHaveBeenCalledWith('ch1', 'Better', 'bp1');
+    expect(deps.blueprints.update).toHaveBeenCalledWith('bp1', { name: 'Better', tags: ['b'] });
   });
 
   it('update_metadata reports a name already used in the channel', async () => {
@@ -678,7 +856,12 @@ describe('write tools', () => {
       } as unknown as ToolDeps['blueprints'],
     });
     expect(
-      await runTool('update_metadata', { name: 'Taken', summary: 's' }, ctx(), deps),
+      await runTool(
+        'update_metadata',
+        { blueprintId: 'bp1', name: 'Taken', summary: 's' },
+        ctx(),
+        deps,
+      ),
     ).toMatchObject({
       ok: false,
       error: expect.stringContaining('already exists'),
@@ -700,16 +883,107 @@ describe('write tools', () => {
     );
     expect(asked).toMatchObject({ ok: true, item: { type: 'question' } });
     expect(
-      await runTool('propose_draft', { draft: exampleScript(), summary: 's' }, c, deps),
+      await runTool(
+        'propose_draft',
+        { blueprintId: 'bp1', draft: exampleScript(), summary: 's' },
+        c,
+        deps,
+      ),
     ).toMatchObject({
       ok: false,
       error: expect.stringContaining('End your turn'),
     });
-    expect(await runTool('update_metadata', { name: 'x', summary: 's' }, c, deps)).toMatchObject({
+    expect(
+      await runTool('update_metadata', { blueprintId: 'bp1', name: 'x', summary: 's' }, c, deps),
+    ).toMatchObject({
       ok: false,
     });
     // read tools still work
     expect(await runTool('list_checks', {}, c, deps)).toMatchObject({ ok: true });
+  });
+});
+
+describe('modes', () => {
+  const draft = () => ({ blueprintId: 'bp1', draft: exampleScript(), summary: 'Script' });
+
+  it('Plan mode refuses changes before anything runs, but reads and present_plan work', async () => {
+    const deps = makeDeps();
+    const c = newTurnContext({ mode: 'plan' });
+    expect(await runTool('propose_draft', draft(), c, deps)).toMatchObject({
+      ok: false,
+      error: expect.stringContaining('Plan mode'),
+    });
+    expect(deps.blueprints.validateOnly).not.toHaveBeenCalled();
+    expect(await runTool('list_checks', {}, c, deps)).toMatchObject({ ok: true });
+    const plan = await runTool(
+      'present_plan',
+      { title: 'Add a hook', summary: 'The intro is slow.', steps: ['Edit Write the script'] },
+      c,
+      deps,
+    );
+    expect(plan).toMatchObject({ ok: true, item: { type: 'plan' } });
+    expect(c.planPresented).toBe(true);
+  });
+
+  it('present_plan is refused outside Plan mode', async () => {
+    const out = await runTool(
+      'present_plan',
+      { title: 't', summary: 's', steps: ['x'] },
+      newTurnContext({ mode: 'auto' }),
+      makeDeps(),
+    );
+    expect(out).toMatchObject({ ok: false });
+  });
+
+  it('Manual mode asks with a diff first, writes on yes and passes the feedback on no', async () => {
+    const confirm = vi.fn(async () => ({ answer: 'yes' as const }));
+    const deps = makeDeps();
+    const yes = await runTool(
+      'propose_draft',
+      draft(),
+      newTurnContext({ mode: 'manual', confirm }),
+      deps,
+    );
+    expect(yes).toMatchObject({ ok: true });
+    expect(confirm).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tool: 'propose_draft',
+        kind: 'change',
+        change: expect.objectContaining({ kind: 'draft', blueprintId: 'bp1' }),
+      }),
+    );
+    expect(deps.blueprints.setWorkingDraft).toHaveBeenCalledTimes(1);
+
+    const denied = makeDeps();
+    const no = await runTool(
+      'propose_draft',
+      draft(),
+      newTurnContext({
+        mode: 'manual',
+        confirm: async () => ({ answer: 'no', feedback: 'Keep it short' }),
+      }),
+      denied,
+    );
+    expect(no).toMatchObject({ ok: false, error: expect.stringContaining('Keep it short') });
+    expect(denied.blueprints.setWorkingDraft).not.toHaveBeenCalled();
+
+    const expired = makeDeps();
+    expect(
+      await runTool(
+        'update_metadata',
+        { blueprintId: 'bp1', name: 'New', summary: 's' },
+        newTurnContext({ mode: 'manual', confirm: async () => ({ answer: 'expired' }) }),
+        expired,
+      ),
+    ).toMatchObject({ ok: false, error: expect.stringContaining('did not answer') });
+    expect(expired.blueprints.update).not.toHaveBeenCalled();
+  });
+
+  it('drops the editor draft once a tool writes the blueprint, so later reads see the write', async () => {
+    const deps = makeDeps();
+    const c = newTurnContext({ editorDraft: { blueprintId: 'bp1', draft: exampleScript() } });
+    await runTool('propose_draft', draft(), c, deps);
+    expect(c.editorDraft).toBeNull();
   });
 });
 
@@ -753,5 +1027,61 @@ describe('ask_user', () => {
       await ask([{ id: 'q', header: 'Q', question: '?', options: [{ label: 'A' }] }]),
     ).toMatchObject({ ok: false });
     expect(await ask([])).toMatchObject({ ok: false });
+  });
+});
+
+describe('search_docs', () => {
+  it('finds the user guide sections for a question, with links', async () => {
+    const out = await runTool('search_docs', { query: 'raise the run budget' }, ctx(), makeDeps());
+    expect(out.ok).toBe(true);
+    const { results } = (out as { result: { results: Array<{ page: string; url: string }> } })
+      .result;
+    expect(results.length).toBeGreaterThan(0);
+    expect(results.length).toBeLessThanOrEqual(5);
+    expect(results.some((r) => r.page.startsWith('runs/'))).toBe(true);
+    for (const r of results) {
+      expect(r.url).toMatch(/^https:\/\/napstar-420\.github\.io\/reelcraft\/docs\//);
+    }
+  });
+
+  it('reads a whole page, lists pages, and refuses an unknown page', async () => {
+    const page = await runTool('search_docs', { page: 'runs/retries' }, ctx(), makeDeps());
+    expect(page).toMatchObject({ ok: true, result: { page: 'runs/retries' } });
+    expect((page as { result: { text: string } }).result.text).toContain('Continue');
+
+    const intro = await runTool('search_docs', { page: '/' }, ctx(), makeDeps());
+    expect(intro).toMatchObject({ ok: true, result: { page: '', title: 'Reelcraft guide' } });
+
+    const list = await runTool('search_docs', {}, ctx(), makeDeps());
+    const pages = (list as { result: { pages: Array<{ page: string }> } }).result.pages;
+    expect(pages.map((p) => p.page)).toContain('blueprints/assistant');
+
+    const missing = await runTool('search_docs', { page: 'nope/nothing' }, ctx(), makeDeps());
+    expect(missing).toMatchObject({ ok: false });
+    expect((missing as { error: string }).error).toContain('runs/retries');
+
+    expect(
+      await runTool('search_docs', { query: 'x', page: 'y' }, ctx(), makeDeps()),
+    ).toMatchObject({
+      ok: false,
+    });
+  });
+
+  it('says so when the guide is not installed', async () => {
+    const out = await runTool(
+      'search_docs',
+      { query: 'budget' },
+      ctx(),
+      makeDeps({ userGuide: new UserGuideService(['/nonexistent/guide']) }),
+    );
+    expect(out).toMatchObject({ ok: false });
+    expect((out as { error: string }).error).toContain("isn't installed");
+  });
+
+  it('works in Plan mode (it only reads)', async () => {
+    const plan = { ...ctx(), mode: 'plan' as const };
+    expect(await runTool('search_docs', { query: 'budget' }, plan, makeDeps())).toMatchObject({
+      ok: true,
+    });
   });
 });

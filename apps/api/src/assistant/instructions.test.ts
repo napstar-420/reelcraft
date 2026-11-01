@@ -1,24 +1,23 @@
 import { describe, expect, it } from 'vitest';
-import { answersToText, applyModeNote, buildInstructions } from './instructions';
+import { answersToText, buildInstructions, contextNote } from './instructions';
 import { GUIDE_TOPICS } from './guide';
 import { ASSISTANT_TOOLS } from './tools/registry';
 
-const text = buildInstructions({
-  blueprintName: 'My reel',
-  appVersion: '0.5.0',
-  date: '2026-10-06',
-});
+const text = buildInstructions({ appVersion: '0.5.0', date: '2026-10-06' });
 
 describe('assistant instructions', () => {
-  it('bind the assistant to the blueprint, version and date', () => {
-    expect(text).toContain('"My reel"');
+  it('name the version and date, and explain the context and modes', () => {
+    expect(text).toContain('<reelcraft_context>');
+    for (const mode of ['Manual:', 'Auto:', 'Plan:']) expect(text).toContain(mode);
     expect(text).toContain('Reelcraft 0.5.0');
     expect(text).toContain('2026-10-06');
   });
 
   it('only name tools that exist, and name every tool the flow depends on', () => {
     const mentioned = new Set(
-      text.match(/\b(?:get|list|read|validate|propose|edit|update|ask)_[a-z_]+\b/g),
+      text.match(
+        /\b(?:get|list|read|validate|propose|edit|update|ask|present|create|archive|delete|save|restore|start|run|retry|pause|resume|cancel|raise|set|approve|reject|provide|view|listen|watch|unwatch|search)_[a-z_]+\b/g,
+      ),
     );
     const real = new Set(ASSISTANT_TOOLS.map((t) => t.name));
     expect([...mentioned].filter((name) => !real.has(name))).toEqual([]);
@@ -52,12 +51,17 @@ describe('assistant instructions', () => {
     const headings = [...text.matchAll(/^# (.+)$/gm)].map((m) => m[1]);
     expect(headings).toEqual([
       'Who you are',
+      'Where you are and what "this" means',
+      'Modes',
       'Where your knowledge comes from',
       'What Reelcraft cannot do (always true)',
-      'How you work',
+      'How you work on a blueprint',
       'Build quality: you know Reelcraft better than the user',
-      'Runs',
-      'Versions and going back',
+      'Channels and blueprints',
+      'Versions',
+      'Runs: reading them',
+      'Runs: acting on them',
+      'Watching runs',
       'Untrusted data',
       'Talking to the user',
     ]);
@@ -92,10 +96,11 @@ describe('assistant instructions', () => {
   });
 });
 
-describe('applyModeNote', () => {
-  it('says whether proposals are applied for the user', () => {
-    expect(applyModeNote('auto')).toContain('applied to the canvas immediately');
-    expect(applyModeNote('manual')).toContain('waits for the user');
+describe('contextNote', () => {
+  it('states the mode and where the user is', () => {
+    expect(contextNote('auto', null)).toContain('Mode: Auto');
+    expect(contextNote('plan', 'run #a1b2')).toContain('The user is looking at run #a1b2.');
+    expect(contextNote('manual', null)).toContain('not looking at anything');
   });
 });
 

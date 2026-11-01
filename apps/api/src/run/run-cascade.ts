@@ -3,6 +3,7 @@ import type { Tx } from '../db/drizzle.provider';
 import {
   artifact,
   artifactAttachment,
+  assistantWatch,
   blob,
   humanWait,
   ledgerEntry,
@@ -48,6 +49,7 @@ export async function deleteRunsCascade(
   await tx.delete(humanWait).where(inArray(humanWait.runId, runIds));
   await tx.delete(runWakeup).where(inArray(runWakeup.runId, runIds));
   await tx.delete(notification).where(inArray(notification.runId, runIds));
+  await tx.delete(assistantWatch).where(inArray(assistantWatch.runId, runIds));
   await tx.delete(runMemory).where(inArray(runMemory.runId, runIds));
   if (artifactIds.length) {
     await tx.delete(artifactAttachment).where(inArray(artifactAttachment.artifactId, artifactIds));

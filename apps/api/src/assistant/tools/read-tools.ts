@@ -14,23 +14,29 @@ import type { AssistantTool } from './types';
 const NoInput = z.object({});
 const noInputSchema = () => obj({});
 
-const getBlueprint: AssistantTool = {
+const BlueprintIdInput = z.object({ blueprintId: z.string().min(1) });
+const blueprintIdSchema = () =>
+  obj({ blueprintId: str('A blueprint id (from list_blueprints or the context).') }, [
+    'blueprintId',
+  ]);
+
+const getBlueprint: AssistantTool<z.infer<typeof BlueprintIdInput>> = {
   name: 'get_blueprint',
   kind: 'read',
   description:
-    "Return the blueprint you are working on: name, description, tags, where it came from, its CURRENT draft (what is on the canvas right now, or your last proposal in this turn), an outline of its stages, the draft's validation issues, how its memory keys flow between stages, and its saved versions (label, which is current, runs, whether the draft differs from the latest save). Call this at the start of every turn and never rely on an earlier result. A large draft is not returned whole: you get `draft: null`, the other draft fields and the stage outline, and read stages with get_stages. Use get_version to read an older version.",
-  input: NoInput,
-  jsonSchema: noInputSchema,
-  async handler(ctx, deps) {
-    const blueprint = await deps.blueprints.getBlueprint(ctx.blueprintId);
-    const { draft, source } = await currentDraft(ctx, deps);
+    "Return a blueprint: its channel, name, description, tags, where it came from, its CURRENT draft (what the editor shows right now, including unsaved edits and your own changes), an outline of its stages, the draft's validation issues, how its memory keys flow between stages, and its saved versions (label, which is current, runs, whether the draft differs from the latest save). Call this before changing a blueprint and never rely on an earlier result. A large draft is not returned whole: you get `draft: null`, the other draft fields and the stage outline, and read stages with get_stages. Use get_version to read an older version.",
+  input: BlueprintIdInput,
+  jsonSchema: blueprintIdSchema,
+  async handler(ctx, deps, { blueprintId }) {
+    const blueprint = await deps.blueprints.getBlueprint(blueprintId);
+    const { draft, source } = await currentDraft(ctx, deps, blueprintId);
     let validation: unknown = null;
     try {
-      validation = await deps.blueprints.validateOnly(ctx.blueprintId, draft);
+      validation = await deps.blueprints.validateOnly(blueprintId, draft);
     } catch (error) {
       validation = { error: error instanceof Error ? error.message : String(error) };
     }
-    const allVersions = await deps.blueprints.listVersions(ctx.blueprintId);
+    const allVersions = await deps.blueprints.listVersions(blueprintId);
     const latest = allVersions[0];
     const versions = allVersions.slice(0, 20).map((v) => ({
       version: `${v.major}.${v.minor}`,
@@ -43,6 +49,7 @@ const getBlueprint: AssistantTool = {
       ok: true,
       result: {
         id: blueprint.id,
+        channelId: blueprint.channelId,
         name: blueprint.name,
         description: blueprint.description,
         tags: blueprint.tags,
@@ -274,15 +281,19 @@ const listStyles: AssistantTool = {
   },
 };
 
-const getChannelResources: AssistantTool = {
-  name: 'get_channel_resources',
+const ChannelIdInput = z.object({ channelId: z.string().min(1) });
+
+const getChannel: AssistantTool<z.infer<typeof ChannelIdInput>> = {
+  name: 'get_channel',
   kind: 'read',
   description:
-    "The blueprint's channel: its name, description, theme and default settings (models etc.), its assets (id, name, kind, file details such as size, dimensions and duration), its Characters (id, name, description, readiness, and their reference images: a role needs a Character id and at least one of its reference blobIds) and the channel's other blueprints (name, description, tags: so you can avoid name clashes and say like your other blueprint; you can read only THIS blueprint's contents). Asset and Character ids in a draft must come from here.",
-  input: NoInput,
-  jsonSchema: noInputSchema,
-  async handler(ctx, deps) {
-    const { channelId } = await deps.blueprints.getBlueprint(ctx.blueprintId);
+    "A channel: its name, description, theme and default settings (models etc.), its blueprints (id, name, description, tags, runs, archived), its assets (id, name, kind, file details such as size, dimensions and duration) and its Characters (id, name, description, readiness, and their reference images: a role needs a Character id and at least one of its reference blobIds). Asset and Character ids in a blueprint's draft must come from its own channel.",
+  input: ChannelIdInput,
+  jsonSchema: () =>
+    obj({ channelId: str('A channel id (from list_channels, a blueprint or the context).') }, [
+      'channelId',
+    ]),
+  async handler(_ctx, deps, { channelId }) {
     const [channel, assets, characters, siblings] = await Promise.all([
       deps.channels.get(channelId),
       deps.assets.list(channelId),
@@ -299,14 +310,14 @@ const getChannelResources: AssistantTool = {
           theme: channel.theme,
           defaults: channel.defaults,
         },
-        otherBlueprints: siblings
-          .filter((b) => b.id !== ctx.blueprintId && !b.archived)
-          .map((b) => ({
-            name: b.name,
-            description: b.description,
-            tags: b.tags,
-            runCount: b.runCount,
-          })),
+        blueprints: siblings.map((b) => ({
+          id: b.id,
+          archived: b.archived,
+          name: b.name,
+          description: b.description,
+          tags: b.tags,
+          runCount: b.runCount,
+        })),
         assets: assets.map((a) => ({
           id: a.id,
           name: a.name,
@@ -356,21 +367,28 @@ const readGuideTool: AssistantTool<z.infer<typeof ReadGuideInput>> = {
   },
 };
 
-const DraftInput = z.object({ draft: z.unknown() });
+const DraftInput = z.object({ blueprintId: z.string().min(1), draft: z.unknown() });
 
 const validateDraft: AssistantTool<z.infer<typeof DraftInput>> = {
   name: 'validate_draft',
   kind: 'read',
   description:
-    'Validate a complete draft with the real blueprint validator WITHOUT proposing it. Returns the errors and warnings, including the assistant quality rules (messages starting "quality:") that propose_draft enforces. Use it while building; use propose_draft when it has no errors.',
+    'Validate a complete draft for a blueprint with the real blueprint validator WITHOUT writing it. Returns the errors and warnings, including the assistant quality rules (messages starting "quality:") that propose_draft enforces. Use it while building; use propose_draft when it has no errors.',
   input: DraftInput,
-  jsonSchema: (n) => obj({ draft: draftJsonSchema(n) }, ['draft']),
+  jsonSchema: (n) =>
+    obj(
+      {
+        blueprintId: str('The blueprint the draft is for (its channel resolves assets).'),
+        draft: draftJsonSchema(n),
+      },
+      ['blueprintId', 'draft'],
+    ),
   async handler(ctx, deps, input) {
     const parsed = parseDraft(input.draft);
     if (!parsed.ok)
       return { ok: false, error: 'The draft has the wrong shape.', issues: parsed.issues };
-    const validation = await deps.blueprints.validateOnly(ctx.blueprintId, parsed.draft);
-    const quality = qualityIssues(parsed.draft, await baselineDraft(ctx, deps));
+    const validation = await deps.blueprints.validateOnly(input.blueprintId, parsed.draft);
+    const quality = qualityIssues(parsed.draft, await baselineDraft(ctx, deps, input.blueprintId));
     return {
       ok: true,
       result: { ...validation, issues: [...validation.issues, ...quality] },
@@ -385,7 +403,7 @@ export const READ_TOOLS: AssistantTool<never>[] = [
   listModels,
   listChecks,
   listStyles,
-  getChannelResources,
+  getChannel,
   readGuideTool,
   validateDraft,
 ] as unknown as AssistantTool<never>[];

@@ -5,6 +5,7 @@ import {
   artifact,
   artifactAttachment,
   blob,
+  blueprint,
   blueprintVersion,
   ledgerEntry,
   run,
@@ -14,13 +15,11 @@ import {
 } from '../db/schema/index';
 import { toUsd } from '../common/money';
 import { mergeLayer } from '../run-config/layer-merge';
-import type { ConfigLayer } from '@reelcraft/shared';
+import type { ConfigLayer, RunState } from '@reelcraft/shared';
 
 /**
- * Read-only views of a blueprint's runs for the blueprint assistant. Every method is scoped to one
- * blueprint (`run ⋈ blueprint_version`), so a run id from another blueprint, or a made-up one,
- * simply isn't found. Nothing here exposes blob ids, URLs, rendered inputs or provider handles:
- * the assistant is told what happened, not given the means to reach the files.
+ * Read-only views of runs for the assistant. Nothing here exposes blob ids, URLs, rendered inputs
+ * or provider handles: the assistant is told what happened, not given the means to reach the files.
  *
  * `RunService.get()` is deliberately not reused: it presigns URLs, returns raw numeric-string
  * money and takes only a run id.
@@ -28,6 +27,9 @@ import type { ConfigLayer } from '@reelcraft/shared';
 
 export interface RunBrief {
   runId: string;
+  blueprintId: string;
+  blueprintName: string;
+  channelId: string;
   /** "1.2", or "canvas draft" for a run of unsaved canvas edits. */
   version: string;
   dryRun: boolean;
@@ -39,6 +41,14 @@ export interface RunBrief {
   /** The stage the run stopped at, when it did not complete. */
   stoppedAt: string | null;
   failure: unknown;
+}
+
+export interface RunListFilter {
+  blueprintId?: string | undefined;
+  channelId?: string | undefined;
+  states?: RunState[] | undefined;
+  includeDryRuns?: boolean | undefined;
+  limit: number;
 }
 
 export interface StageCost {
@@ -171,28 +181,32 @@ function modelOf(layer: ConfigLayer | undefined): string | null {
 export class RunInsightService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  async listForBlueprint(
-    blueprintId: string,
-    limit: number,
-  ): Promise<{ runs: RunBrief[]; total: number }> {
+  /** Runs, newest first, narrowed by blueprint, channel and state. */
+  async list(filter: RunListFilter): Promise<{ runs: RunBrief[]; total: number }> {
+    const where = and(
+      filter.blueprintId ? eq(blueprintVersion.blueprintId, filter.blueprintId) : undefined,
+      filter.channelId ? eq(run.channelId, filter.channelId) : undefined,
+      filter.states?.length ? inArray(run.state, filter.states) : undefined,
+      filter.includeDryRuns === false ? eq(run.dryRun, false) : undefined,
+    );
     const rows = await this.db
-      .select({ run, version: blueprintVersion })
+      .select({ run, version: blueprintVersion, blueprintName: blueprint.name })
       .from(run)
       .innerJoin(blueprintVersion, eq(run.blueprintVersionId, blueprintVersion.id))
-      .where(eq(blueprintVersion.blueprintId, blueprintId))
+      .innerJoin(blueprint, eq(blueprintVersion.blueprintId, blueprint.id))
+      .where(where)
       .orderBy(desc(run.startedAt))
-      .limit(limit);
+      .limit(filter.limit);
     const [{ total } = { total: 0 }] = await this.db
       .select({ total: sql<number>`count(*)::int` })
       .from(run)
       .innerJoin(blueprintVersion, eq(run.blueprintVersionId, blueprintVersion.id))
-      .where(eq(blueprintVersion.blueprintId, blueprintId));
-    return { runs: rows.map((r) => this.brief(r.run, r.version)), total };
+      .where(where);
+    return { runs: rows.map((r) => this.brief(r.run, r.version, r.blueprintName)), total };
   }
 
-  /** `runId` omitted means the blueprint's latest run. */
-  async getForBlueprint(blueprintId: string, runId?: string): Promise<RunInsight | null> {
-    const owned = await this.ownedRun(blueprintId, runId);
+  async get(runId: string): Promise<RunInsight | null> {
+    const owned = await this.findRun(runId);
     if (!owned) return null;
     const graph = graphOf(owned.version.graph);
     const executions = await this.db
@@ -274,16 +288,19 @@ export class RunInsightService {
       }
       return summary;
     });
-    return { ...this.brief(owned.run, owned.version), inputs: owned.run.inputs, stages };
+    return {
+      ...this.brief(owned.run, owned.version, owned.blueprintName),
+      inputs: owned.run.inputs,
+      stages,
+    };
   }
 
-  async stageForBlueprint(
-    blueprintId: string,
+  async stage(
     runId: string,
     stageKey: string,
     options: { itemIndex?: number | undefined; includePrompt?: boolean | undefined },
   ): Promise<StageLookup | null> {
-    const owned = await this.ownedRun(blueprintId, runId);
+    const owned = await this.findRun(runId);
     if (!owned) return null;
     const graph = graphOf(owned.version.graph);
     const entry = graph.find((s) => s.key === stageKey);
@@ -418,13 +435,8 @@ export class RunInsightService {
   }
 
   /** The media outputs of a stage (its current artifacts), for pictures. */
-  async mediaForBlueprint(
-    blueprintId: string,
-    runId: string,
-    stageKey: string,
-    itemIndex?: number,
-  ): Promise<MediaLookup | null> {
-    const owned = await this.ownedRun(blueprintId, runId);
+  async media(runId: string, stageKey: string, itemIndex?: number): Promise<MediaLookup | null> {
+    const owned = await this.findRun(runId);
     if (!owned) return null;
     const graph = graphOf(owned.version.graph);
     if (!graph.some((s) => s.key === stageKey)) {
@@ -484,25 +496,27 @@ export class RunInsightService {
     };
   }
 
-  private async ownedRun(blueprintId: string, runId?: string) {
+  private async findRun(runId: string) {
     const [row] = await this.db
-      .select({ run, version: blueprintVersion })
+      .select({ run, version: blueprintVersion, blueprintName: blueprint.name })
       .from(run)
       .innerJoin(blueprintVersion, eq(run.blueprintVersionId, blueprintVersion.id))
-      .where(
-        and(
-          eq(blueprintVersion.blueprintId, blueprintId),
-          runId === undefined ? undefined : eq(run.id, runId),
-        ),
-      )
-      .orderBy(desc(run.startedAt))
+      .innerJoin(blueprint, eq(blueprintVersion.blueprintId, blueprint.id))
+      .where(eq(run.id, runId))
       .limit(1);
     return row ?? null;
   }
 
-  private brief(r: typeof run.$inferSelect, v: typeof blueprintVersion.$inferSelect): RunBrief {
+  private brief(
+    r: typeof run.$inferSelect,
+    v: typeof blueprintVersion.$inferSelect,
+    blueprintName: string,
+  ): RunBrief {
     return {
       runId: r.id,
+      blueprintId: v.blueprintId,
+      blueprintName,
+      channelId: r.channelId,
       version: v.draft ? 'canvas draft' : `${v.major}.${v.minor}`,
       dryRun: r.dryRun,
       state: r.state,

@@ -18,10 +18,9 @@ import { RunMemorySheet } from '@/components/runs/run-memory-sheet';
 import { StageDetail } from '@/components/runs/stage-drawer';
 import { RunSegments } from '@/components/runs/run-segments';
 import { RESULT_KEY, RunStageList } from '@/components/runs/run-stage-list';
-import { RunAssistantPanel } from '@/components/runs/run-assistant-panel';
 import { buildRunView } from '@/components/runs/run-phases.logic';
 import { focusStage, runNow } from '@/components/runs/run-now.logic';
-import { AssistantDock, loadDockOpen, saveDockOpen } from '@/components/assistant/assistant-dock';
+import { useAssistantPageDetail } from '@/components/assistant/assistant-context';
 import { runStateTone, toneTextClassName } from '@/lib/status';
 import { isRunActionAllowed } from '@/lib/run-action-policy';
 import { quotaPauseMessage } from '@/lib/quota-pause';
@@ -41,8 +40,8 @@ function useTick(active: boolean) {
   }, [active]);
 }
 
-/** A run: what it is doing now on top, every stage on the left, the chosen stage in the middle,
- * and the assistant on the right. */
+/** A run: what it is doing now on top, every stage on the left, the chosen stage in the middle.
+ * The assistant (docked by the shell) is told which run and stage are open. */
 export function RunPage() {
   const { runId } = useParams<{ runId: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -52,7 +51,6 @@ export function RunPage() {
   const [pickedKey, setPickedKey] = useState<string | null>(null);
   const [memoryOpen, setMemoryOpen] = useState(false);
   const [raiseBudgetOpen, setRaiseBudgetOpen] = useState(false);
-  const [dockOpen, setDockOpen] = useState(() => loadDockOpen('run'));
 
   // A different run starts on its own default stage, not the one picked on the last run.
   useEffect(() => {
@@ -96,6 +94,9 @@ export function RunPage() {
   const view = useMemo(() => (run ? buildRunView(run) : null), [run]);
   const live = !!run && !run.endedAt && ['RUNNING', 'CREATED', 'PAUSING'].includes(run.state);
   useTick(live);
+  // the assistant hears which stage is open (the final video is the run as a whole)
+  const openStage = view?.stages.find((s) => s.key === (pickedKey ?? focusStage(view)?.key));
+  useAssistantPageDetail(openStage ? { stageKey: openStage.key, label: openStage.name } : null);
 
   if (isLoading || !run || !view) {
     return (
@@ -128,10 +129,6 @@ export function RunPage() {
   const budgetCapUsd = Number(run.budgetCapUsd);
   const canRaiseBudget = isRunActionAllowed('raise_budget', run.state);
   const title = blueprint.data?.name ?? 'Run';
-  const setDock = (open: boolean) => {
-    setDockOpen(open);
-    saveDockOpen('run', open);
-  };
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -310,18 +307,6 @@ export function RunPage() {
             <p className="p-6 text-sm text-muted-foreground">This run has no stages.</p>
           )}
         </main>
-        <AssistantDock
-          open={dockOpen}
-          onOpenChange={setDock}
-          width="w-[340px]"
-          badge={
-            <span className="inline-flex h-5 items-center rounded-full bg-acc-soft px-2 text-xs font-medium text-acc">
-              This run
-            </span>
-          }
-        >
-          <RunAssistantPanel run={run} view={view} selectedStage={selectedStage?.key} />
-        </AssistantDock>
       </div>
     </div>
   );

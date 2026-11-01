@@ -12,6 +12,9 @@ import type {
 
 const brief: RunBrief = {
   runId: 'r1',
+  blueprintId: 'bp1',
+  blueprintName: 'Reel',
+  channelId: 'ch1',
   version: '1.2',
   dryRun: false,
   state: 'FAILED',
@@ -97,10 +100,10 @@ const stage = (over: Partial<StageInsight> = {}): StageInsight => ({
 function deps(over: Partial<ToolDeps['runs']> = {}, media: Partial<ToolDeps['media']> = {}) {
   return {
     runs: {
-      listForBlueprint: vi.fn(async () => ({ runs: [brief], total: 1 })),
-      getForBlueprint: vi.fn(async () => insight),
-      stageForBlueprint: vi.fn(async () => ({ found: true as const, stage: stage() })),
-      mediaForBlueprint: vi.fn(),
+      list: vi.fn(async () => ({ runs: [brief], total: 1 })),
+      get: vi.fn(async () => insight),
+      stage: vi.fn(async () => ({ found: true as const, stage: stage() })),
+      media: vi.fn(),
       ...over,
     },
     media: {
@@ -112,17 +115,43 @@ function deps(over: Partial<ToolDeps['runs']> = {}, media: Partial<ToolDeps['med
       framesOfVideo: vi.fn(async () => []),
       ...media,
     },
+    review: {
+      contactSheet: vi.fn(async (_blob: string, options: { count?: number; at?: number[] }) => ({
+        mime: 'image/jpeg' as const,
+        base64: 'SHEET',
+        times: options.at ?? [1, 2, 3, 4, 5, 6].slice(0, options.count ?? 6),
+        columns: 3,
+        durationSec: 7,
+      })),
+    },
+    runControl: {
+      get: vi.fn(async () => ({ finalVideo: { blobId: 'fv', artifactId: 'af' } })),
+    },
   } as unknown as ToolDeps;
 }
 
-const ctx = () => newTurnContext('bp1', null);
+const ctx = () => newTurnContext();
 const text = (out: unknown) => JSON.stringify(out);
 
 describe('list_runs and get_run', () => {
-  it('scope to the turn blueprint and carry the untrusted-content notice', async () => {
+  it('list across the app or narrowed, and carry the untrusted-content notice', async () => {
     const d = deps();
     const list = await runTool('list_runs', {}, ctx(), d);
-    expect(d.runs.listForBlueprint).toHaveBeenCalledWith('bp1', 10);
+    expect(d.runs.list).toHaveBeenCalledWith({
+      blueprintId: undefined,
+      channelId: undefined,
+      states: undefined,
+      includeDryRuns: undefined,
+      limit: 10,
+    });
+    await runTool('list_runs', { blueprintId: 'bp1', group: 'needs_you', limit: 5 }, ctx(), d);
+    expect(d.runs.list).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        blueprintId: 'bp1',
+        states: ['FAILED', 'PAUSED_APPROVAL', 'PAUSED_INPUT', 'PAUSED_BUDGET'],
+        limit: 5,
+      }),
+    );
     expect(list).toMatchObject({
       ok: true,
       result: {
@@ -131,8 +160,8 @@ describe('list_runs and get_run', () => {
         runs: [{ runId: 'r1', version: '1.2' }],
       },
     });
-    const run = await runTool('get_run', {}, ctx(), d);
-    expect(d.runs.getForBlueprint).toHaveBeenCalledWith('bp1', undefined);
+    const run = await runTool('get_run', { runId: 'r1' }, ctx(), d);
+    expect(d.runs.get).toHaveBeenCalledWith('r1');
     expect(run).toMatchObject({
       ok: true,
       result: {
@@ -143,21 +172,17 @@ describe('list_runs and get_run', () => {
   });
 
   it('redact secret-looking keys in failures and inputs', async () => {
-    const out = text(await runTool('get_run', {}, ctx(), deps()));
+    const out = text(await runTool('get_run', { runId: 'r1' }, ctx(), deps()));
     expect(out).not.toContain('sk-secret');
     expect(out).not.toContain('"abc"');
     expect(out).toContain('[REDACTED]');
   });
 
-  it('say so, naming list_runs, for a run this blueprint does not have', async () => {
-    const d = deps({ getForBlueprint: vi.fn(async () => null) });
+  it('say so, naming list_runs, for a run that does not exist', async () => {
+    const d = deps({ get: vi.fn(async () => null) });
     expect(await runTool('get_run', { runId: 'nope' }, ctx(), d)).toMatchObject({
       ok: false,
       error: expect.stringContaining('list_runs'),
-    });
-    expect(await runTool('get_run', {}, ctx(), d)).toMatchObject({
-      ok: false,
-      error: expect.stringContaining('no runs yet'),
     });
   });
 });
@@ -166,7 +191,7 @@ describe('get_stage', () => {
   it('shows failed checks (with fault), QC, and the rejected output, bounded', async () => {
     const d = deps();
     const out = await runTool('get_stage', { runId: 'r1', stageKey: 'script' }, ctx(), d);
-    expect(d.runs.stageForBlueprint).toHaveBeenCalledWith('bp1', 'r1', 'script', {
+    expect(d.runs.stage).toHaveBeenCalledWith('r1', 'script', {
       itemIndex: undefined,
       includePrompt: undefined,
     });
@@ -206,7 +231,7 @@ describe('get_stage', () => {
 
   it('describes media instead of returning data, and points to view_stage_media', async () => {
     const d = deps({
-      stageForBlueprint: vi.fn(async () => ({
+      stage: vi.fn(async () => ({
         found: true as const,
         stage: stage({
           outputs: [
@@ -230,13 +255,13 @@ describe('get_stage', () => {
 
   it('lists the stage keys for an unknown stage, and refuses a foreign run', async () => {
     const d = deps({
-      stageForBlueprint: vi.fn(async () => ({ found: false as const, stageKeys: ['a', 'b'] })),
+      stage: vi.fn(async () => ({ found: false as const, stageKeys: ['a', 'b'] })),
     });
     expect(await runTool('get_stage', { runId: 'r1', stageKey: 'z' }, ctx(), d)).toMatchObject({
       ok: false,
       error: expect.stringContaining('Stages: a, b'),
     });
-    const foreign = deps({ stageForBlueprint: vi.fn(async () => null) });
+    const foreign = deps({ stage: vi.fn(async () => null) });
     expect(
       await runTool('get_stage', { runId: 'other', stageKey: 'z' }, ctx(), foreign),
     ).toMatchObject({
@@ -257,7 +282,7 @@ describe('get_stage', () => {
       })),
     }));
     const d = deps({
-      stageForBlueprint: vi.fn(async () => ({
+      stage: vi.fn(async () => ({
         found: true as const,
         stage: stage({ attempts, attemptCount: 30 }),
       })),
@@ -281,7 +306,7 @@ describe('view_stage_media', () => {
   it('returns pictures as images next to a text list, and counts them for the turn', async () => {
     const targets = [0, 1, 2, 3, 4, 5].map(imageTarget);
     const d = deps({
-      mediaForBlueprint: vi.fn(async () => ({ found: true as const, stageKey: 'images', targets })),
+      media: vi.fn(async () => ({ found: true as const, stageKey: 'images', targets })),
     });
     const c = ctx();
     const out = await runTool('view_stage_media', { runId: 'r1', stageKey: 'images' }, c, d);
@@ -300,7 +325,7 @@ describe('view_stage_media', () => {
 
   it('stops at the per-turn limit', async () => {
     const d = deps({
-      mediaForBlueprint: vi.fn(async () => ({
+      media: vi.fn(async () => ({
         found: true as const,
         stageKey: 'images',
         targets: [imageTarget(0)],
@@ -319,7 +344,7 @@ describe('view_stage_media', () => {
     expect(out.ok && out.images).toHaveLength(1);
   });
 
-  it('gives three frames of a single video, one per item of several, and only details for the rest', async () => {
+  it('gives one contact sheet for a single video, one frame per item of several, and only details for the rest', async () => {
     const frames = ['first frame', 'a third of the way in', 'last frame'].map((label) => ({
       mime: 'image/jpeg' as const,
       base64: 'FFFF',
@@ -332,7 +357,7 @@ describe('view_stage_media', () => {
     });
     const one = deps(
       {
-        mediaForBlueprint: vi.fn(async () => ({
+        media: vi.fn(async () => ({
           found: true as const,
           stageKey: 'v',
           targets: [video(0)],
@@ -340,12 +365,19 @@ describe('view_stage_media', () => {
       },
       { framesOfVideo: vi.fn(async () => frames) },
     );
-    const single = await runTool('view_stage_media', { runId: 'r1', stageKey: 'v' }, ctx(), one);
-    expect(single.ok && single.images).toHaveLength(3);
+    const single = await runTool(
+      'view_stage_media',
+      { runId: 'r1', stageKey: 'v', at: [0.5, 3] },
+      ctx(),
+      one,
+    );
+    expect(single.ok && single.images).toEqual([{ mime: 'image/jpeg', base64: 'SHEET' }]);
+    expect(JSON.stringify(single)).toContain('at 0.5s, 3s');
+    expect(one.review.contactSheet).toHaveBeenCalledWith('v0', { count: undefined, at: [0.5, 3] });
 
     const many = deps(
       {
-        mediaForBlueprint: vi.fn(async () => ({
+        media: vi.fn(async () => ({
           found: true as const,
           stageKey: 'v',
           targets: [video(0), video(1), { ...imageTarget(2), kind: 'media.audio', blobId: 'au' }],
@@ -358,9 +390,18 @@ describe('view_stage_media', () => {
     expect(several).toMatchObject({ result: { notShown: [{ kind: 'media.audio' }] } });
   });
 
+  it('shows the final video as a contact sheet when no stage is named', async () => {
+    const d = deps();
+    const c = ctx();
+    const out = await runTool('view_stage_media', { runId: 'r1', frames: 4 }, c, d);
+    expect(out).toMatchObject({ ok: true, images: [{ base64: 'SHEET' }] });
+    expect(d.review.contactSheet).toHaveBeenCalledWith('fv', { count: 4, at: undefined });
+    expect(c.imagesShown).toBe(1);
+  });
+
   it('reports a stage with no media output, and an unknown run or stage', async () => {
     const empty = deps({
-      mediaForBlueprint: vi.fn(async () => ({ found: true as const, stageKey: 's', targets: [] })),
+      media: vi.fn(async () => ({ found: true as const, stageKey: 's', targets: [] })),
     });
     expect(
       await runTool('view_stage_media', { runId: 'r1', stageKey: 's' }, ctx(), empty),
@@ -368,12 +409,12 @@ describe('view_stage_media', () => {
       ok: true,
       result: { shown: [] },
     });
-    const none = deps({ mediaForBlueprint: vi.fn(async () => null) });
+    const none = deps({ media: vi.fn(async () => null) });
     expect(
       await runTool('view_stage_media', { runId: 'x', stageKey: 's' }, ctx(), none),
     ).toMatchObject({ ok: false });
     const stages = deps({
-      mediaForBlueprint: vi.fn(async () => ({ found: false as const, stageKeys: ['a'] })),
+      media: vi.fn(async () => ({ found: false as const, stageKeys: ['a'] })),
     });
     expect(
       await runTool('view_stage_media', { runId: 'r1', stageKey: 's' }, ctx(), stages),

@@ -7,7 +7,7 @@ Open a run from the [Runs list](./runs-list.md), from **Home**, from a channel's
 right after you start it. The page updates by itself while the run is going.
 
 The page has the header across the top, every stage on the left, the selected stage in the middle,
-and the assistant on the right.
+and the assistant on the right (the same chat as on every page).
 
 ## The header
 
@@ -63,7 +63,8 @@ The top shows the stage's number, phase, how long it ran and what it cost, its s
 stage**, which opens the stage in the blueprint editor.
 
 - A failed stage shows **What went wrong**: the reason it failed and, for a stage that repeats, how
-  many items finished and are kept.
+  many items finished and are kept. **Fix with assistant** asks the assistant to find the cause, fix
+  the blueprint and re-make what the fix changes.
 - A stage waiting for you has its **Review output**, **Provide input** or **Open editor** button.
 - The stage buttons: **Run this stage only**, with **Run up to this stage** and **Run from this stage
   to the end** in its **⋯** menu. A production run always uses its saved version. A stage that can't
@@ -89,13 +90,13 @@ input was worked out. It's the best place to look when a stage did something you
 
 ## The assistant
 
-The right column is the assistant, for this run. When a stage failed it shows why, with **Fix with
-assistant**: that opens the run's blueprint and asks its assistant to find the cause and change the
-stage. You then retry the stage here. You can also type a question about the run, or pick a
-suggestion such as **Explain what this run did, stage by stage**; it opens the blueprint with your
-question. See [The assistant](../blueprints/assistant.md).
+The right column is the assistant. It knows which run and stage you have open, so you can ask
+"why did this fail?" or "is this good enough?" and it looks at the stage's tries, output, pictures
+and sound before it answers. It can fix the blueprint and re-make stages of this run, retry a stage,
+approve or reject a review, and watch the run for you. In **Manual** mode it asks before each of
+these. See [The assistant](../blueprints/assistant.md).
 
-Hide the column with the panel button in its header.
+Hide the column with the panel button in its header, or **Cmd J**.
 
 ## Memory
 

@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useAssistantUi } from '@/components/assistant/assistant-context';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
@@ -154,6 +155,8 @@ export function ChannelsPage() {
 }
 
 function ChannelDetail({ channelId }: { channelId: string }) {
+  const { openAssistant } = useAssistantUi();
+  const describePrompt = 'Make me a new blueprint in this channel: ';
   const [searchParams, setSearchParams] = useSearchParams();
   const tab = searchParams.get('tab') ?? 'blueprints';
   const queryClient = useQueryClient();
@@ -288,7 +291,7 @@ function ChannelDetail({ channelId }: { channelId: string }) {
             <BlueprintGrid
               blueprints={visibleBlueprints}
               status={status}
-              describeTo="/?focus=assistant"
+              onDescribe={() => openAssistant({ prefill: describePrompt })}
             />
           )}
         </TabsContent>
