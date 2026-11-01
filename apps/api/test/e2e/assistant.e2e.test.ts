@@ -9,12 +9,14 @@ import { AssistantService } from '../../src/assistant/assistant.service';
 import { FakeAssistantAgent, type FakeStep } from '../../src/assistant/agent/fake-assistant.agent';
 import { exampleScript } from '../../src/assistant/guide';
 import { STORAGE_ADAPTER } from '../../src/storage/storage.adapter';
+import { LiveEvents } from '../../src/live/live-events';
 import {
   artifact,
   assistantItem,
   assistantSession,
   blob,
   ledgerEntry,
+  notification,
   run,
   runWakeup,
   stageAttempt,
@@ -518,6 +520,85 @@ describe('assistant (e2e)', () => {
       .where(eq(runWakeup.runId, started.runId));
     expect(wakeups.map((w) => w.eventName)).toContain('run/started');
     expect(ofType(session, 'tool_call').every((c) => c.state === 'completed')).toBe(true);
+  });
+
+  it('watches a run and wakes up when it fails, until the wake limit', async () => {
+    const settings = await call<{ defaultMode: string; maxWakesPerRun: number }>(
+      '/assistant/settings',
+    );
+    expect(settings.body).toEqual({ defaultMode: 'manual', maxWakesPerRun: 5 });
+    expect(
+      (
+        await call('/assistant/settings', {
+          method: 'PUT',
+          body: { maxWakesPerRun: 1 },
+        })
+      ).body,
+    ).toEqual({ defaultMode: 'manual', maxWakesPerRun: 1 });
+
+    const sid = await newSession('auto');
+    const version = await http.app
+      .get(BlueprintService)
+      .createVersion(blueprintId, exampleScript());
+    const runId = ulid();
+    await testDb.db.insert(run).values({
+      id: runId,
+      channelId,
+      blueprintVersionId: version.id,
+      state: 'RUNNING',
+      inputs: { topic: 'otters' },
+      resolvedConfig: {},
+      budgetCapUsd: '2.0000',
+      spentUsd: '0.0000',
+      startedAt: new Date().toISOString(),
+    });
+    useScript([[{ call: 'watch_run', args: { runId } }], [{ say: 'I will look into it.' }]]);
+    await turn(sid, { text: 'keep an eye on it' });
+    const first = await waitIdle(sid);
+    expect(first.watches).toEqual([expect.objectContaining({ runId, wakeCount: 0, maxWakes: 1 })]);
+
+    // the orchestrator records a failure: the chat wakes up
+    const createdAt = new Date().toISOString();
+    await testDb.db.insert(notification).values({
+      id: ulid(),
+      kind: 'failed',
+      runId,
+      stageKey: 'script',
+      title: 'Daily short failed',
+      body: 'Write the script failed its checks',
+      url: `/runs/${runId}`,
+      dedupeKey: `test:${runId}`,
+      createdAt,
+    });
+    http.app.get(LiveEvents).publish({
+      type: 'notification',
+      recipientId: 'local',
+      notification: {
+        id: 'n',
+        kind: 'failed',
+        runId,
+        stageKey: 'script',
+        title: 'Daily short failed',
+        body: 'Write the script failed its checks',
+        url: `/runs/${runId}`,
+        readAt: null,
+        createdAt,
+      },
+    });
+    await expect
+      .poll(async () => ofType(await getSession(sid), 'user_message').length, { timeout: 5000 })
+      .toBe(2);
+    const woken = await waitIdle(sid);
+    const wake = ofType(woken, 'user_message')[1]!;
+    expect(wake.payload).toMatchObject({
+      source: 'wake',
+      text: expect.stringContaining('[Run update'),
+    });
+    expect(agent.turns.at(-1)!.text).toContain('Write the script failed its checks');
+    // the limit was one wake-up: it stopped watching
+    expect(woken.watches).toEqual([]);
+
+    await call('/assistant/settings', { method: 'PUT', body: { maxWakesPerRun: 5 } });
   });
 
   it('changes metadata, undoes it, and reports a name clash', async () => {

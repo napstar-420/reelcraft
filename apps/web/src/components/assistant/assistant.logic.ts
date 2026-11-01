@@ -111,6 +111,8 @@ export function buildAnswers(
 
 export type ChatRow =
   | { kind: 'user'; item: AssistantItemDto }
+  /** A watched run woke the chat: written by Reelcraft, not the user. */
+  | { kind: 'wake'; item: AssistantItemDto }
   | { kind: 'agent'; item: AssistantItemDto }
   | { kind: 'tools'; id: string; items: AssistantItemDto[] }
   | { kind: 'change'; item: AssistantItemDto }
@@ -145,7 +147,10 @@ export function toRows(items: AssistantItemDto[]): ChatRow[] {
   for (const item of items) {
     switch (item.type) {
       case 'user_message':
-        rows.push({ kind: 'user', item });
+        rows.push({
+          kind: payloadOf<{ source?: string }>(item).source === 'wake' ? 'wake' : 'user',
+          item,
+        });
         break;
       case 'agent_message':
         if (payloadOf<{ text: string }>(item).text.trim()) rows.push({ kind: 'agent', item });
@@ -247,6 +252,10 @@ export function describeToolCall(call: ToolCallPayload, state: string | null): s
         return 'Asked a question';
       case 'present_plan':
         return 'Showed a plan';
+      case 'watch_run':
+        return 'Started watching a run';
+      case 'unwatch_run':
+        return 'Stopped watching a run';
       case 'create_channel':
         return `Created the channel ${str(args.name) ?? ''}`.trim();
       case 'update_channel':
@@ -297,4 +306,10 @@ export function describeToolCall(call: ToolCallPayload, state: string | null): s
 
 export function questionOf(item: AssistantItemDto): QuestionPayload {
   return payloadOf<QuestionPayload>(item);
+}
+
+/** The headline of a run update ("Daily short failed. …"), without Reelcraft's bracketed tag. */
+export function wakeHeadline(text: string): string {
+  const first = text.split('\n')[0] ?? '';
+  return first.replace(/^\[Run update:[^\]]*\]\s*/, '');
 }

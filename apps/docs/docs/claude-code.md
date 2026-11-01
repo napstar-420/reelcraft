@@ -5,7 +5,7 @@ description: Sign Reelcraft's built-in Claude Code in to your Claude plan from t
 
 [Claude Code](https://claude.com/claude-code) is Anthropic's coding agent. It comes with your
 **Claude plan** (Pro or Max), and Reelcraft can use it for text and browser steps, for judging
-quality, and for the blueprint assistant, instead of a paid API. The Claude Code program is
+quality, and for the assistant, instead of a paid API. The Claude Code program is
 already installed inside Reelcraft; you only sign it in once.
 
 Claude can't make images. For image steps, use Codex or a provider with image models.
@@ -58,7 +58,7 @@ The sign-in is kept in your volume (`/data/claude`), so it survives restarts and
 - **Stages**: pick **Claude** as a stage's provider, then a model (**Claude Sonnet**,
   **Claude Opus**, **Claude Fable** or **Claude Haiku**) and an effort. Which models you can use
   depends on your plan.
-- **The assistant**: pick **Claude** in the provider menu at the top of the assistant panel. A
+- **The assistant**: pick **Claude** in the provider menu at the top of the assistant's chat. A
   chat keeps the provider it started with; switching starts a new chat.
 
 Using Claude counts against your Claude plan's usage limits. Reelcraft records it as $0.

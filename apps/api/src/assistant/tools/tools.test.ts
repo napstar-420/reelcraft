@@ -126,6 +126,7 @@ function makeDeps(overrides: Partial<ToolDeps> = {}): ToolDeps {
     attempts: {} as never,
     memory: {} as never,
     review: {} as never,
+    watches: {} as never,
     ...overrides,
   };
 }
@@ -159,6 +160,7 @@ describe('tool registry', () => {
         'save_version',
         'set_concurrency',
         'start_run',
+        'unwatch_run',
         'update_channel',
         'edit_draft',
         'get_blueprint',
@@ -186,6 +188,7 @@ describe('tool registry', () => {
         'validate_draft',
         'view_asset',
         'view_stage_media',
+        'watch_run',
       ].sort(),
     );
     expect(
@@ -291,6 +294,8 @@ describe('JSON Schemas stay in sync with the Zod inputs (drift guard)', () => {
     get_run_memory: { runId: 'r1', key: 'scenes' },
     listen_to_audio: { runId: 'r1', stageKey: 'voice', itemIndex: 0 },
     view_asset: { characterId: 'c1', blobId: 'b1' },
+    watch_run: { runId: 'r1' },
+    unwatch_run: { runId: 'r1' },
     read_guide: { topic: 'limits' },
     validate_draft: { blueprintId: 'bp1', draft: exampleScript() },
     propose_draft: {

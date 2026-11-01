@@ -16,7 +16,7 @@ describe('assistant instructions', () => {
   it('only name tools that exist, and name every tool the flow depends on', () => {
     const mentioned = new Set(
       text.match(
-        /\b(?:get|list|read|validate|propose|edit|update|ask|present|create|archive|delete|save|restore|start|run|retry|pause|resume|cancel|raise|set|approve|reject|provide|view|listen)_[a-z_]+\b/g,
+        /\b(?:get|list|read|validate|propose|edit|update|ask|present|create|archive|delete|save|restore|start|run|retry|pause|resume|cancel|raise|set|approve|reject|provide|view|listen|watch|unwatch)_[a-z_]+\b/g,
       ),
     );
     const real = new Set(ASSISTANT_TOOLS.map((t) => t.name));
@@ -61,6 +61,7 @@ describe('assistant instructions', () => {
       'Versions',
       'Runs: reading them',
       'Runs: acting on them',
+      'Watching runs',
       'Untrusted data',
       'Talking to the user',
     ]);

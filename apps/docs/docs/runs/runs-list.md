@@ -7,7 +7,8 @@ Select **Runs** in the rail to see your runs. A channel's **Runs** tab shows the
 that channel.
 
 At the top, **Needs you** lists runs that failed or are waiting for a review, an input or more budget,
-each with the one action that answers it: **Fix with assistant** and **Open** for a failure,
+each with the one action that answers it: **Fix with assistant** (asks the assistant to find the
+cause and fix it, in the chat on the right) and **Open** for a failure,
 **Review**, **Provide input** or **Open editor** for a waiting stage, **Raise budget** for a budget
 pause. **Running** lists runs still going, with a segment per stage and the stage they are on, plus
 **Pause** and **Stop**. Below them, **All runs** lists every run, newest first.

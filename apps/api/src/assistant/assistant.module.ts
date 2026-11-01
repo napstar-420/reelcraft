@@ -12,6 +12,9 @@ import { LiveModule } from '../live/live.module';
 import { AssistantController } from './assistant.controller';
 import { AssistantService } from './assistant.service';
 import { MediaReviewService } from './review/media-review.service';
+import { AssistantWatchService } from './watch/assistant-watch.service';
+import { AssistantSettingsService } from './watch/assistant-settings.service';
+import { SettingsModule } from '../settings/settings.module';
 import { QcModule } from '../qc/qc.module';
 import { StorageModule } from '../storage/storage.module';
 import { ASSISTANT_AGENTS } from './agent/assistant-agent.interface';
@@ -37,11 +40,14 @@ import { CodexNeoRegistrar } from '../provider/codex/codex-neo-registrar';
     LiveModule,
     QcModule,
     StorageModule,
+    SettingsModule,
   ],
   controllers: [AssistantController],
   providers: [
     AssistantService,
     MediaReviewService,
+    AssistantWatchService,
+    AssistantSettingsService,
     // The order is the default: a new chat starts on the first available agent.
     {
       provide: ASSISTANT_AGENTS,

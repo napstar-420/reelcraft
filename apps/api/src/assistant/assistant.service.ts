@@ -27,6 +27,7 @@ import type {
   QuestionPayload,
   StartAssistantTurnDto,
   UpdateAssistantSessionDto,
+  UpdateAssistantSettingsDto,
 } from '@reelcraft/shared';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
 import { assistantItem, assistantSession } from '../db/schema/index';
@@ -48,6 +49,8 @@ import { HumanActionService } from '../run/human-action.service';
 import { RunStagePlanService } from '../run/run-stage-plan.service';
 import { InvalidationService } from '../run/invalidation.service';
 import { MediaReviewService } from './review/media-review.service';
+import { AssistantWatchService } from './watch/assistant-watch.service';
+import { AssistantSettingsService } from './watch/assistant-settings.service';
 import { MediaPreviewService } from '../artifact/media-preview.service';
 import { ConfigResolverService } from '../run-config/config-resolver.service';
 import { engineDefaults } from '../run-config/engine-defaults';
@@ -107,6 +110,8 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
   private readonly turnContexts = new Map<string, TurnContext>();
   /** Approval cards a tool call is waiting on, by item id. */
   private readonly approvals = new Map<string, PendingApproval>();
+  /** Run updates that arrived while the chat was busy: told once the turn ends. */
+  private readonly pendingWakes = new Map<string, string[]>();
   private readonly seqs = new Map<string, number>();
   private readonly toolDeps: ToolDeps;
 
@@ -133,6 +138,8 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
     stagePlans: RunStagePlanService,
     memory: InvalidationService,
     review: MediaReviewService,
+    private readonly watches: AssistantWatchService,
+    private readonly assistantSettings: AssistantSettingsService,
   ) {
     this.toolDeps = {
       blueprints,
@@ -154,6 +161,7 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
       attempts: runControl,
       memory,
       review,
+      watches,
       engineLayer: () => engineDefaults(config),
       blueprintChanged: (blueprintId) => this.events.publish({ type: 'blueprint', blueprintId }),
     };
@@ -161,6 +169,7 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
 
   /** A turn that was running when the process stopped can never finish. */
   async onModuleInit(): Promise<void> {
+    this.watches.setWakeHandler((sessionId, text) => this.wake(sessionId, text));
     const interrupted = JSON.stringify({ error: 'Interrupted: send your message again.' });
     await this.db
       .update(assistantItem)
@@ -300,7 +309,7 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
         externalSessionId,
         appVersion: this.config.version,
         toolsHash: toolsHash(tools),
-        mode: dto.mode ?? 'manual',
+        mode: dto.mode ?? (await this.assistantSettings.get()).defaultMode,
       })
       .returning();
     this.logger.log({ sessionId: row!.id, providerId: dto.providerId }, 'chat created');
@@ -314,7 +323,11 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
       .from(assistantItem)
       .where(eq(assistantItem.sessionId, id))
       .orderBy(asc(assistantItem.seq));
-    return { ...this.toSessionDto(row), items: items.map((item) => this.toItemDto(item)) };
+    return {
+      ...this.toSessionDto(row),
+      items: items.map((item) => this.toItemDto(item)),
+      watches: await this.watches.list(id),
+    };
   }
 
   async updateSession(id: string, dto: UpdateAssistantSessionDto): Promise<AssistantSessionDto> {
@@ -341,7 +354,9 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
       .catch((error: unknown) =>
         this.logger.warn({ err: error, sessionId: id }, 'provider session was not deleted'),
       );
+    this.pendingWakes.delete(id);
     await this.db.transaction(async (tx) => {
+      await this.watches.forgetSession(tx, id);
       await tx.delete(assistantItem).where(eq(assistantItem.sessionId, id));
       await tx.delete(assistantSession).where(eq(assistantSession.id, id));
     });
@@ -466,7 +481,11 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
 
   // ---- turns -----------------------------------------------------------------------------
 
-  async startTurn(sessionId: string, dto: StartAssistantTurnDto): Promise<{ turnId: string }> {
+  async startTurn(
+    sessionId: string,
+    dto: StartAssistantTurnDto,
+    source: 'user' | 'wake' = 'user',
+  ): Promise<{ turnId: string }> {
     if (this.active.has(sessionId)) {
       throw new ConflictException('A turn is already running in this chat.');
     }
@@ -475,7 +494,7 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
     this.active.set(sessionId, controller);
     let prepared;
     try {
-      prepared = await this.prepareTurn(sessionId, dto);
+      prepared = await this.prepareTurn(sessionId, dto, source);
     } catch (error) {
       this.active.delete(sessionId);
       throw error;
@@ -484,7 +503,11 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
     return { turnId: prepared.turnId };
   }
 
-  private async prepareTurn(sessionId: string, dto: StartAssistantTurnDto) {
+  private async prepareTurn(
+    sessionId: string,
+    dto: StartAssistantTurnDto,
+    source: 'user' | 'wake' = 'user',
+  ) {
     const session = await this.requireSession(sessionId);
     const agent = this.agentFor(session.providerId);
     await this.ensureSeq(sessionId);
@@ -542,6 +565,7 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
       model: dto.model,
       effort: dto.effort ?? null,
       mode: session.mode,
+      ...(source === 'wake' && { source }),
     });
     const statusItem = await this.createItem(sessionId, turnId, 'turn_status', 'running', {
       model: dto.model,
@@ -566,6 +590,7 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
       controller.abort();
     });
     const ctx = newTurnContext({
+      sessionId: session.id,
       mode: session.mode as AssistantMode,
       editorDraft: dto.editorDraft ?? null,
       confirm: (request) =>
@@ -694,6 +719,11 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
       this.active.delete(session.id);
       this.turnContexts.delete(session.id);
     }
+    // a run update that came in meanwhile is told now
+    const next = this.pendingWakes.get(session.id)?.shift();
+    if (next !== undefined) {
+      setImmediate(() => void this.wake(session.id, next).catch(this.logQueueError));
+    }
 
     try {
       await this.updateItem(statusItem.id, {
@@ -721,6 +751,52 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
     const controller = this.active.get(sessionId);
     if (!controller) throw new ConflictException('No turn is running in this chat.');
     controller.abort();
+  }
+
+  // ---- run watches -----------------------------------------------------------------------
+
+  /** A watched run changed: tell the chat in a new turn (after the running one, if any), with
+   * the model it used last. */
+  async wake(sessionId: string, text: string): Promise<void> {
+    if (this.active.has(sessionId)) {
+      const queue = this.pendingWakes.get(sessionId) ?? [];
+      queue.push(text);
+      this.pendingWakes.set(sessionId, queue);
+      return;
+    }
+    const session = await this.requireSession(sessionId).catch(() => null);
+    if (!session) return;
+    const agent = this.agentFor(session.providerId);
+    let model = session.model;
+    if (!model) {
+      const models = await agent.listModels().catch(() => []);
+      model = (models.find((m) => m.isDefault) ?? models[0])?.modelId ?? null;
+    }
+    if (!model) return;
+    await this.startTurn(
+      sessionId,
+      { text, model, ...(session.effort && { effort: session.effort }) },
+      'wake',
+    ).catch((error: unknown) => {
+      this.logger.warn({ err: error, sessionId }, 'assistant could not be woken');
+    });
+  }
+
+  listWatches(sessionId: string) {
+    return this.watches.list(sessionId);
+  }
+
+  async unwatch(sessionId: string, runId: string) {
+    await this.requireSession(sessionId);
+    return this.watches.unwatch(sessionId, runId);
+  }
+
+  getSettings() {
+    return this.assistantSettings.get();
+  }
+
+  updateSettings(dto: UpdateAssistantSettingsDto) {
+    return this.assistantSettings.update(dto);
   }
 
   // ---- approvals (Manual mode) ---------------------------------------------------------

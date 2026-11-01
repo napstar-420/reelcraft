@@ -1,10 +1,11 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Put } from '@nestjs/common';
 import {
   CreateAssistantSessionDto,
   DecideApprovalDto,
   DecidePlanDto,
   StartAssistantTurnDto,
   UpdateAssistantSessionDto,
+  UpdateAssistantSettingsDto,
 } from '@reelcraft/shared';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { AssistantService } from './assistant.service';
@@ -16,6 +17,23 @@ export class AssistantController {
   @Get('assistant/providers')
   providers() {
     return this.assistant.listProviders();
+  }
+
+  @Get('assistant/settings')
+  settings() {
+    return this.assistant.getSettings();
+  }
+
+  @Put('assistant/settings')
+  updateSettings(
+    @Body(new ZodValidationPipe(UpdateAssistantSettingsDto)) dto: UpdateAssistantSettingsDto,
+  ) {
+    return this.assistant.updateSettings(dto);
+  }
+
+  @Delete('assistant/sessions/:sid/watches/:runId')
+  unwatch(@Param('sid') sessionId: string, @Param('runId') runId: string) {
+    return this.assistant.unwatch(sessionId, runId);
   }
 
   @Get('assistant/sessions')

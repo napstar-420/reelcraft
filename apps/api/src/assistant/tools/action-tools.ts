@@ -4,6 +4,7 @@ import { currentDraft } from './current-draft';
 import { confirmChange, turnEnded } from './gate';
 import { freeObject, obj, str } from './json-schemas';
 import type { AssistantTool, ToolDeps, ToolOutcome, TurnContext } from './types';
+import { autoWatch } from './watch-tools';
 
 const RUN_ID = str('A run id (from list_runs, a result or the context).', { minLength: 1 });
 const STAGE_KEY = str('A stage key of that run (from get_run).', { minLength: 1 });
@@ -159,12 +160,16 @@ const startRun: AssistantTool<z.infer<typeof StartRunInput>> = {
       await deps.cancellation.cancel(created.id).catch(() => undefined);
       throw error;
     }
+    const watching = await autoWatch(ctx, deps, created.id);
     return {
       ok: true,
       result: runResult(created.id, {
         status: 'started',
         free: input.free,
-        note: 'Follow it with get_run.',
+        watching,
+        note: watching
+          ? 'You are watching it: this chat wakes up when it fails, needs someone or ends.'
+          : 'Follow it with get_run.',
       }),
     };
   },
@@ -247,10 +252,12 @@ const runStages: AssistantTool<z.infer<typeof RunStagesInput>> = {
       ...plan.request,
       previewToken: plan.previewToken,
     });
+    const watching = await autoWatch(ctx, deps, input.runId);
     return {
       ok: true,
       result: runResult(input.runId, {
         status: 'started',
+        watching,
         runs: plan.runStageKeys,
         estimatedUsd: plan.estimatedRerunUsd,
       }),
@@ -317,10 +324,12 @@ const retryStage: AssistantTool<z.infer<typeof RetryInput>> = {
       'dependents',
       items,
     );
+    const watching = await autoWatch(ctx, deps, input.runId);
     return {
       ok: true,
       result: runResult(input.runId, {
         status: 'retrying',
+        watching,
         estimatedUsd: preview.estimatedRerunUsd,
       }),
     };

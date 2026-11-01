@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import type { AssistantPageContext } from '@reelcraft/shared';
 import { api } from '@/api/client';
 import { useAssistant, type EditorDraft } from '@/hooks/useAssistant';
@@ -63,6 +64,20 @@ export function AssistantProvider({ children }: { children: React.ReactNode }) {
     },
     [setDockOpen, send],
   );
+
+  // an approval card the user can't see: say so, with a way to it
+  const wasWaiting = useRef(false);
+  const layoutHasDock = location.pathname !== '/';
+  useEffect(() => {
+    const waiting = assistant.waiting;
+    if (waiting && !wasWaiting.current && ((layoutHasDock && !dockOpen) || document.hidden)) {
+      toast.info('The assistant needs your OK', {
+        description: 'It is waiting for you to answer a card in the chat.',
+        action: { label: 'Open', onClick: () => openAssistant() },
+      });
+    }
+    wasWaiting.current = waiting;
+  }, [assistant.waiting, dockOpen, layoutHasDock, openAssistant]);
 
   const ui: AssistantUi = {
     assistant,

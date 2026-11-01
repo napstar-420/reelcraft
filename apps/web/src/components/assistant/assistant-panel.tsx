@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowUp, History, Loader2, MessageSquarePlus, Square, Trash2, X } from 'lucide-react';
+import { ArrowUp, Eye, History, Loader2, MessageSquarePlus, Square, Trash2, X } from 'lucide-react';
 import { cn } from 'cn';
 import type { AssistantMode } from '@reelcraft/shared';
 import { Button } from '@/components/ui/button';
@@ -21,6 +21,7 @@ import {
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { docsUrl } from '@/lib/docs-url';
+import { runHandle } from '@/lib/run-buckets';
 import { AssistantMessages } from './assistant-messages';
 import { MODES, pendingQuestion } from './assistant.logic';
 import { useAssistantUi } from './assistant-context';
@@ -278,6 +279,31 @@ export function AssistantPanel({ variant = 'dock' }: { variant?: 'dock' | 'page'
           </p>
         )}
       </div>
+
+      {assistant.watches.length > 0 && (
+        <div className="flex shrink-0 flex-wrap gap-1.5 border-t px-3 pt-2.5">
+          {assistant.watches.map((w) => (
+            <span
+              key={w.runId}
+              className="inline-flex h-6 items-center gap-1.5 rounded-full bg-acc-soft pr-1 pl-2.5 text-xs text-acc"
+              title={`The assistant wakes up when this run fails, needs someone or ends (${w.wakeCount} of ${w.maxWakes} wake-ups used)`}
+            >
+              <Eye className="size-3" />
+              <Link to={`/runs/${w.runId}`} className="hover:underline">
+                Watching {runHandle(w.runId)}
+              </Link>
+              <button
+                type="button"
+                aria-label={`Stop watching run ${runHandle(w.runId)}`}
+                className="rounded-full p-0.5 hover:bg-acc/15"
+                onClick={() => assistant.unwatch(w.runId)}
+              >
+                <X className="size-3" />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
 
       <div className="shrink-0 border-t p-3">
         <div className="rounded-[14px] border border-line-strong bg-background p-2.5 focus-within:border-faint">

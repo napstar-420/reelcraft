@@ -16,6 +16,7 @@ import {
   asset,
   assistantItem,
   assistantSession,
+  assistantWatch,
   blob,
   blueprint,
   blueprintVersion,
@@ -81,6 +82,11 @@ async function seedDraftRender(testDb: TestDb, runId: string): Promise<void> {
     state: 'done',
     blobId,
   });
+}
+
+/** A chat watching a run, so the cascade has a watch to delete with the run. */
+async function seedWatch(testDb: TestDb, sessionId: string, runId: string): Promise<void> {
+  await testDb.db.insert(assistantWatch).values({ id: ulid(), sessionId, runId });
 }
 
 /** A chat with one item, to check deleting its blueprint leaves the chat alone. */
@@ -250,6 +256,7 @@ describe('channel delete cascade (e2e)', () => {
     const { error } = await runThroughRealPipeline(dryRun.id, dryRun.stageExecutions);
     expect(error).toBeUndefined();
     await seedNotification(testDb, dryRun.id);
+    await seedWatch(testDb, chatId, dryRun.id);
     await seedDraftRender(testDb, dryRun.id);
     await addRunFile(dryRun.id);
     const runBlobKeys = (
@@ -294,6 +301,9 @@ describe('channel delete cascade (e2e)', () => {
     ).toHaveLength(0);
     expect(
       await testDb.db.select().from(notification).where(eq(notification.runId, dryRun.id)),
+    ).toHaveLength(0);
+    expect(
+      await testDb.db.select().from(assistantWatch).where(eq(assistantWatch.runId, dryRun.id)),
     ).toHaveLength(0);
     expect(
       await testDb.db
@@ -400,6 +410,7 @@ describe('channel delete cascade (e2e)', () => {
     expect(assetBlobBefore).toHaveLength(1);
 
     await seedNotification(testDb, dryRun.id);
+    await seedWatch(testDb, chatId, dryRun.id);
     await seedDraftRender(testDb, dryRun.id);
     await addRunFile(dryRun.id);
     const runBlobKeys = (
@@ -447,6 +458,9 @@ describe('channel delete cascade (e2e)', () => {
     expect(runRowAfter).toBeUndefined();
     expect(
       await testDb.db.select().from(notification).where(eq(notification.runId, dryRun.id)),
+    ).toHaveLength(0);
+    expect(
+      await testDb.db.select().from(assistantWatch).where(eq(assistantWatch.runId, dryRun.id)),
     ).toHaveLength(0);
     expect(
       await testDb.db

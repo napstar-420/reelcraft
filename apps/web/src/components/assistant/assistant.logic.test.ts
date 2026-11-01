@@ -6,6 +6,7 @@ import {
   buildAnswers,
   describeToolCall,
   invalidationsFor,
+  wakeHeadline,
   nextMode,
   pendingApproval,
   pendingQuestion,
@@ -165,6 +166,16 @@ describe('toRows', () => {
     ]);
     expect(rows.map((r) => r.kind)).toEqual(['tools', 'run', 'tools']);
     expect(rows[1]).toMatchObject({ runId: 'r9', action: 'Started' });
+  });
+
+  it('shows a run update as a wake line, not as the user', () => {
+    const rows = toRows([
+      item(1, 'user_message', { text: '[Run update: x] Failed.\nFix it.', source: 'wake' }),
+    ]);
+    expect(rows.map((r) => r.kind)).toEqual(['wake']);
+    expect(wakeHeadline('[Run update: you are watching run #ab] Daily short failed.\nNext')).toBe(
+      'Daily short failed.',
+    );
   });
 
   it('finds the pending question', () => {

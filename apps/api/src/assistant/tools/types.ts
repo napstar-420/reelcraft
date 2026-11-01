@@ -28,6 +28,7 @@ import type { HumanActionService } from '../../run/human-action.service';
 import type { RunStagePlanService } from '../../run/run-stage-plan.service';
 import type { InvalidationService } from '../../run/invalidation.service';
 import type { MediaReviewService } from '../review/media-review.service';
+import type { AssistantWatchService } from '../watch/assistant-watch.service';
 import type { SchemaValidatorService } from '../../json-schema/schema-validator.service';
 
 /** What a tool wants to do, shown to the user on an approval card in Manual mode. */
@@ -55,6 +56,8 @@ export type ApprovalDecision =
  * act through services, address everything by id, and ask through `confirm` before changing
  * anything (Manual mode). */
 export interface TurnContext {
+  /** The chat this turn belongs to (watches wake it). */
+  sessionId: string;
   mode: AssistantMode;
   /** The blueprint editor's draft sent with this turn: it may hold edits not yet autosaved. Used
    * only for that blueprint, and dropped once a tool writes the blueprint. */
@@ -74,12 +77,14 @@ export interface TurnContext {
 
 export function newTurnContext(
   options: {
+    sessionId?: string;
     mode?: AssistantMode;
     editorDraft?: TurnContext['editorDraft'];
     confirm?: TurnContext['confirm'];
   } = {},
 ): TurnContext {
   return {
+    sessionId: options.sessionId ?? 'chat',
     mode: options.mode ?? 'auto',
     editorDraft: options.editorDraft ?? null,
     baselines: new Map(),
@@ -123,6 +128,7 @@ export interface ToolDeps {
   attempts: Pick<RunService, 'listStageAttempts' | 'stageAttemptDetail' | 'listStageEvents'>;
   memory: Pick<InvalidationService, 'listMemory'>;
   review: Pick<MediaReviewService, 'contactSheet' | 'transcriber' | 'listen'>;
+  watches: Pick<AssistantWatchService, 'watch' | 'unwatch'>;
   media: Pick<MediaPreviewService, 'imageFromBlob' | 'framesOfVideo'>;
   configResolver: Pick<ConfigResolverService, 'resolveRunConfig'>;
   /** Reelcraft's built-in bottom config layer. */

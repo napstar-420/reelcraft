@@ -1,4 +1,5 @@
-import { integer, jsonb, pgTable, text, timestamptz, uniqueIndex } from './pg-helpers';
+import { index, integer, jsonb, pgTable, text, timestamptz, uniqueIndex } from './pg-helpers';
+import { run } from './run';
 /** A chat between the user and the assistant, bound to one provider session (Codex thread). It
  * is not tied to a blueprint: one chat can work across channels, blueprints and runs. The
  * provider keeps the model's context; the items below are what the chat shows. */
@@ -37,4 +38,28 @@ export const assistantItem = pgTable(
     updatedAt: timestamptz('updated_at').notNull().defaultNow(), // last change (state or text)
   },
   (t) => [uniqueIndex('assistant_item_session_id_seq_uq').on(t.sessionId, t.seq)],
+);
+
+/** A chat watching a run: when the run fails, needs someone or ends, the chat wakes up and the
+ * assistant decides what to do. Deleted with its run (`deleteRunsCascade`) or its chat. */
+export const assistantWatch = pgTable(
+  'assistant_watch',
+  {
+    id: text('id').primaryKey(), // unique watch identifier
+    sessionId: text('session_id')
+      .notNull()
+      .references(() => assistantSession.id), // the chat that wakes up
+    runId: text('run_id')
+      .notNull()
+      .references(() => run.id), // the run it watches
+    wakeCount: integer('wake_count').notNull().default(0), // how many times the run has woken the chat
+    lastNotifiedAt: timestamptz('last_notified_at'), // the newest run notification acted on (a restart replays newer ones)
+    createdAt: timestamptz('created_at').notNull().defaultNow(), // when watching started
+    endedAt: timestamptz('ended_at'), // when it stopped; null while watching
+    endedReason: text('ended_reason'), // finished | limit | stopped
+  },
+  (t) => [
+    index('assistant_watch_run_idx').on(t.runId),
+    index('assistant_watch_session_idx').on(t.sessionId),
+  ],
 );

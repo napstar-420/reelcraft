@@ -15,8 +15,11 @@ import type {
   AssistantSessionDetailDto,
   AssistantSessionDto,
   CreateAssistantSessionDto,
+  AssistantSettingsDto,
+  AssistantWatchDto,
   DecideApprovalDto,
   DecidePlanDto,
+  UpdateAssistantSettingsDto,
   StartAssistantTurnDto,
   UpdateAssistantSessionDto,
   BrowserOsSettingsDto,
@@ -783,6 +786,16 @@ export const api = {
     request<{ turnId: string }>(`/assistant/sessions/${sessionId}/plans/${itemId}`, {
       method: 'POST',
       body: JSON.stringify(dto),
+    }),
+  getAssistantSettings: () => request<AssistantSettingsDto>('/assistant/settings'),
+  updateAssistantSettings: (dto: UpdateAssistantSettingsDto) =>
+    request<AssistantSettingsDto>('/assistant/settings', {
+      method: 'PUT',
+      body: JSON.stringify(dto),
+    }),
+  unwatchAssistantRun: (sessionId: string, runId: string) =>
+    request<AssistantWatchDto[]>(`/assistant/sessions/${sessionId}/watches/${runId}`, {
+      method: 'DELETE',
     }),
   undoAssistantChange: (sessionId: string, itemId: string) =>
     request<AssistantItemDto>(`/assistant/sessions/${sessionId}/changes/${itemId}/undo`, {

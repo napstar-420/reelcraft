@@ -77,7 +77,7 @@ The first start takes **one to three minutes**: Reelcraft creates its database, 
 passwords and keys into `/data/secrets.env`. If the page doesn't load yet, wait a moment and
 refresh. Later starts are faster.
 
-When Reelcraft opens, you see **Home**: the assistant's message box (**What are we making today?**), the runs that need you, the runs in progress and your blueprints. The rail on the left goes to **Home**, **Blueprints**, **Runs** and **Channels and library**, with notifications, search (**Cmd K**) and **Settings** at the bottom.
+When Reelcraft opens, you see **Home**: the assistant's chat (**What are we making today?**), the runs that need you, the runs in progress and your blueprints. The rail on the left goes to **Home**, **Blueprints**, **Runs** and **Channels and library**, with the **Assistant** (**Cmd J**), notifications, search (**Cmd K**) and **Settings** at the bottom. On every page but Home, the assistant is the column on the right.
 
 ![Reelcraft's home screen](/img/app/home.png)
 

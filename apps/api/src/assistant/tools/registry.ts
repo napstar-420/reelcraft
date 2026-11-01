@@ -6,6 +6,7 @@ import { ACTION_TOOLS } from './action-tools';
 import { askUser } from './ask-user';
 import { MANAGE_TOOLS } from './manage-tools';
 import { REVIEW_TOOLS } from './review-tools';
+import { WATCH_TOOLS } from './watch-tools';
 import { presentPlan } from './present-plan';
 import { BLUEPRINT_TOOLS } from './blueprint-tools';
 import { CATALOG_TOOLS } from './catalog-tools';
@@ -24,6 +25,7 @@ export const ASSISTANT_TOOLS: ReadonlyArray<AssistantTool<never>> = [
   ...WRITE_TOOLS,
   ...MANAGE_TOOLS,
   ...ACTION_TOOLS,
+  ...WATCH_TOOLS,
   askUser as unknown as AssistantTool<never>,
   presentPlan as unknown as AssistantTool<never>,
 ];

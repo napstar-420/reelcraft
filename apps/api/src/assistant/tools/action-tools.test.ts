@@ -91,6 +91,7 @@ function deps(over: Partial<Record<keyof ToolDeps, unknown>> = {}): ToolDeps {
       confirm: vi.fn(async () => ({})),
     },
     blueprintChanged: vi.fn(),
+    watches: { watch: vi.fn(async () => []), unwatch: vi.fn(async () => []) },
     ...over,
   } as unknown as ToolDeps;
 }
@@ -133,6 +134,9 @@ describe('start_run', () => {
       { dryRun: true },
     );
     expect(d.runControl.start).toHaveBeenCalledWith('run-new');
+    // a run it starts is watched by this chat
+    expect(d.watches.watch).toHaveBeenCalledWith('chat', 'run-new');
+    expect(out).toMatchObject({ result: { watching: true } });
   });
 
   it('runs the unsaved draft through a hidden snapshot, with the budget as the cost', async () => {

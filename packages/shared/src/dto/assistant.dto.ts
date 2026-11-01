@@ -154,6 +154,8 @@ export const UserMessagePayload = z.object({
   model: z.string(),
   effort: z.string().nullable(),
   mode: AssistantMode,
+  /** `wake`: written by Reelcraft when a watched run changed, not typed by the user. */
+  source: z.enum(['user', 'wake']).optional(),
 });
 export type UserMessagePayload = z.infer<typeof UserMessagePayload>;
 
@@ -220,8 +222,19 @@ export const AssistantSessionDto = z.object({
 });
 export type AssistantSessionDto = z.infer<typeof AssistantSessionDto>;
 
+/** A run the chat is watching: it wakes up when the run fails, needs someone or ends. */
+export const AssistantWatchDto = z.object({
+  runId: z.string(),
+  wakeCount: z.number().int(),
+  maxWakes: z.number().int(),
+  createdAt: z.string(),
+});
+export type AssistantWatchDto = z.infer<typeof AssistantWatchDto>;
+
 export const AssistantSessionDetailDto = AssistantSessionDto.extend({
   items: z.array(AssistantItemDto),
+  /** The runs this chat is watching now. */
+  watches: z.array(AssistantWatchDto),
 });
 export type AssistantSessionDetailDto = z.infer<typeof AssistantSessionDetailDto>;
 
@@ -287,6 +300,8 @@ export const AssistantStreamEvent = z.discriminatedUnion('type', [
     text: z.string(),
   }),
   z.object({ type: z.literal('session'), session: AssistantSessionDto }),
+  /** The runs the chat watches changed. */
+  z.object({ type: z.literal('watches'), watches: z.array(AssistantWatchDto) }),
 ]);
 export type AssistantStreamEvent = z.infer<typeof AssistantStreamEvent>;
 
@@ -305,3 +320,15 @@ export const DecidePlanDto = z.object({
   effort: z.string().min(1).optional(),
 });
 export type DecidePlanDto = z.infer<typeof DecidePlanDto>;
+
+/** Settings › Assistant. */
+export const AssistantSettingsDto = z.object({
+  /** The mode a new chat starts in. */
+  defaultMode: AssistantMode,
+  /** How many times one watched run may wake the assistant before it stops watching. */
+  maxWakesPerRun: z.number().int().min(1).max(20),
+});
+export type AssistantSettingsDto = z.infer<typeof AssistantSettingsDto>;
+
+export const UpdateAssistantSettingsDto = AssistantSettingsDto.partial();
+export type UpdateAssistantSettingsDto = z.infer<typeof UpdateAssistantSettingsDto>;

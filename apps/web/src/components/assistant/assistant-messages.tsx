@@ -1,10 +1,10 @@
 import Markdown, { type Components } from 'react-markdown';
-import { AlertCircle, Wrench } from 'lucide-react';
+import { Activity, AlertCircle, Wrench } from 'lucide-react';
 import type { AssistantItemDto, ToolCallPayload, TurnStatusPayload } from '@reelcraft/shared';
 import type { AssistantController } from '@/hooks/useAssistant';
 import { ApprovalCard, ChangeCard, LegacyProposalCard, PlanCard, RunCard } from './assistant-cards';
 import { QuestionCard } from './question-card';
-import { describeToolCall, payloadOf, toRows, type ChatRow } from './assistant.logic';
+import { describeToolCall, payloadOf, toRows, wakeHeadline, type ChatRow } from './assistant.logic';
 
 const MARKDOWN: Components = {
   a: ({ node: _node, ...props }) => (
@@ -56,6 +56,16 @@ function Row({ row, assistant }: { row: ChatRow; assistant: AssistantController 
         <div className="ml-8 self-end rounded-[12px_12px_4px_12px] bg-surface-3 px-3 py-2.5 text-[13px] leading-relaxed whitespace-pre-wrap">
           {payloadOf<{ text: string }>(row.item).text}
         </div>
+      );
+    case 'wake':
+      return (
+        <p className="flex items-start gap-1.5 rounded-[10px] bg-surface-2 px-3 py-2 text-xs text-muted-foreground">
+          <Activity className="mt-0.5 size-3.5 shrink-0 text-acc" />
+          <span>
+            <span className="font-medium text-foreground">Run update: </span>
+            {wakeHeadline(payloadOf<{ text: string }>(row.item).text)}
+          </span>
+        </p>
       );
     case 'agent':
       return (

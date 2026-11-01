@@ -30,6 +30,7 @@ import {
 export type EditorDraft = { blueprintId: string; draft: CreateBlueprintVersionDto };
 
 const PROVIDERS_KEY = ['assistant-providers'] as const;
+export const ASSISTANT_SETTINGS_KEY = ['assistant-settings'] as const;
 const SESSIONS_KEY = ['assistant-sessions'] as const;
 const sessionKey = (sessionId: string | undefined) => ['assistant-session', sessionId] as const;
 
@@ -89,6 +90,7 @@ export function useAssistant({
         if (event.type === 'delta') {
           return { ...old, items: appendDelta(old.items, event.itemId, event.text) };
         }
+        if (event.type === 'watches') return { ...old, watches: event.watches };
         return { ...old, ...event.session };
       });
       if (event.type === 'session') {
@@ -161,8 +163,13 @@ export function useAssistant({
 
   // ---- mode ------------------------------------------------------------------------------
 
-  const [modePref, setModePref] = useState<AssistantMode>(prefs.mode ?? 'manual');
-  const mode: AssistantMode = session?.mode ?? modePref;
+  const settings = useQuery({
+    queryKey: ASSISTANT_SETTINGS_KEY,
+    queryFn: api.getAssistantSettings,
+  });
+  // a mode picked before the chat exists; otherwise a new chat starts in Settings' default
+  const [modePick, setModePick] = useState<AssistantMode | undefined>(undefined);
+  const mode: AssistantMode = session?.mode ?? modePick ?? settings.data?.defaultMode ?? 'manual';
 
   const updateMode = useMutation({
     mutationFn: ({ sessionId, next }: { sessionId: string; next: AssistantMode }) =>
@@ -176,8 +183,7 @@ export function useAssistant({
   });
   const setMode = useCallback(
     (next: AssistantMode) => {
-      setModePref(next);
-      saveAssistantPrefs({ mode: next });
+      if (!session) setModePick(next);
       if (session) {
         // show it at once; the server's answer confirms it
         queryClient.setQueryData<AssistantSessionDetailDto>(sessionKey(session.id), (old) =>
@@ -198,12 +204,13 @@ export function useAssistant({
       const context = contextRef.current;
       return api.createAssistantSession({
         providerId: provider.id,
-        mode: modePref,
+        ...(modePick ? { mode: modePick } : {}),
         ...(context.blueprintId ? { blueprintId: context.blueprintId } : {}),
       });
     },
     onSuccess: (created) => {
       void queryClient.invalidateQueries({ queryKey: SESSIONS_KEY });
+      setModePick(undefined);
       pick(created.id);
     },
     onError: (error) => toast.error(apiErrorMessage(error, 'Could not start the chat.')),
@@ -287,6 +294,15 @@ export function useAssistant({
     onError: (error) => toast.error(apiErrorMessage(error, 'Could not send your decision.')),
   });
 
+  const unwatch = useMutation({
+    mutationFn: (runId: string) => api.unwatchAssistantRun(activeSessionId!, runId),
+    onSuccess: (watches) =>
+      queryClient.setQueryData<AssistantSessionDetailDto>(sessionKey(activeSessionId), (old) =>
+        old ? { ...old, watches } : old,
+      ),
+    onError: (error) => toast.error(apiErrorMessage(error, 'Could not stop watching.')),
+  });
+
   const undoChange = useMutation({
     mutationFn: (item: AssistantItemDto) => api.undoAssistantChange(item.sessionId, item.id),
     onSuccess: (updated) => {
@@ -333,6 +349,8 @@ export function useAssistant({
       feedback?: string,
     ) => decidePlan.mutate({ item, decision, ...(feedback ? { feedback } : {}) }),
     undoChange: (item: AssistantItemDto) => undoChange.mutate(item),
+    watches: session?.watches ?? [],
+    unwatch: (runId: string) => unwatch.mutate(runId),
     deciding: decideApproval.isPending || decidePlan.isPending,
     undoing: undoChange.isPending ? undoChange.variables?.id : undefined,
     running,
