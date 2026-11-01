@@ -11,6 +11,7 @@ import {
   type AssistantModel,
   type AssistantToolDef,
   type AssistantTurnHandlers,
+  APPROVAL_WAIT_MS,
 } from './assistant-agent.interface';
 import { AssistantToolServer, type ToolEndpoint } from './assistant-tool-server';
 
@@ -148,7 +149,12 @@ export class ClaudeAssistantAgent implements AssistantAgent {
     this.spawnClaude =
       deps.spawn ??
       ((args, options) =>
-        nodeSpawn('claude', args, { cwd: options.cwd, stdio: ['pipe', 'pipe', 'pipe'] }));
+        nodeSpawn('claude', args, {
+          cwd: options.cwd,
+          stdio: ['pipe', 'pipe', 'pipe'],
+          // a tool call can wait for the user's answer on an approval card
+          env: { ...process.env, MCP_TOOL_TIMEOUT: String(APPROVAL_WAIT_MS + 5 * 60 * 1000) },
+        }));
     this.tools = deps.tools ?? new AssistantToolServer();
   }
 

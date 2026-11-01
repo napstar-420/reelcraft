@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { RunState } from '@reelcraft/shared';
 import { sanitizeForLog } from '../../common/redact';
 import type { AttemptView, StageOutputView } from '../../run/run-insight.service';
 import { truncateForDisplay } from '../display';
@@ -42,7 +43,7 @@ const MAX_DIMENSIONS = 12;
 
 /** Pictures per `view_stage_media` call, and per turn. */
 export const IMAGES_PER_CALL = 4;
-export const IMAGES_PER_TURN = 12;
+export const IMAGES_PER_TURN = 24;
 
 const clip = (value: unknown, max: number): string | null =>
   typeof value === 'string' ? (value.length > max ? `${value.slice(0, max)}…` : value) : null;
@@ -172,24 +173,46 @@ const withNotice = (result: Record<string, unknown>) => ({
 
 const notFound = (what: string): ToolOutcome => ({
   ok: false,
-  error: `${what} Use list_runs to see this blueprint's runs.`,
+  error: `${what} Use list_runs to find runs.`,
 });
 
 // ---- list_runs ----
 
-const ListRunsInput = z.object({ limit: z.number().int().min(1).max(20).optional() });
+const RUN_GROUPS: Record<'needs_you' | 'active' | 'finished', RunState[]> = {
+  needs_you: ['FAILED', 'PAUSED_APPROVAL', 'PAUSED_INPUT', 'PAUSED_BUDGET'],
+  active: ['CREATED', 'RUNNING', 'PAUSING', 'CANCELLING', 'PAUSED_QUOTA', 'PAUSED_MANUAL', 'IDLE'],
+  finished: ['COMPLETED', 'CANCELLED'],
+};
+
+const ListRunsInput = z.object({
+  blueprintId: z.string().min(1).optional(),
+  channelId: z.string().min(1).optional(),
+  group: z.enum(['needs_you', 'active', 'finished']).optional(),
+  includeTestRuns: z.boolean().optional(),
+  limit: z.number().int().min(1).max(30).optional(),
+});
 
 const listRuns: AssistantTool<z.infer<typeof ListRunsInput>> = {
   name: 'list_runs',
   kind: 'read',
-  description: `List this blueprint's runs, newest first: version ("canvas draft" for a run of unsaved canvas edits), whether it was a dry run (the free fake provider: its outputs, scores and costs are placeholders), state, when, spend against the cap, where it stopped and why it failed. Use it to find the run a user means.${UNTRUSTED_TAIL}`,
+  description: `List runs, newest first, across the whole app or narrowed to a blueprint or channel, and to a group: needs_you (failed, waiting for a review, an input or more budget), active (going or paused in a way that resumes) or finished. Each run: id, blueprint, version ("canvas draft" for a run of unsaved edits), whether it was a free test run (dryRun: the fake provider, so its outputs, scores and costs are placeholders), state, when, spend against the cap, where it stopped and why it failed. Use it to find the run a user means.${UNTRUSTED_TAIL}`,
   input: ListRunsInput,
   jsonSchema: () =>
     obj({
-      limit: { type: 'integer', minimum: 1, maximum: 20, description: 'How many (default 10).' },
+      blueprintId: str('Only this blueprint.'),
+      channelId: str('Only this channel.'),
+      group: str('Only runs in this group.', { enum: ['needs_you', 'active', 'finished'] }),
+      includeTestRuns: { type: 'boolean', description: 'Include free test runs (default true).' },
+      limit: { type: 'integer', minimum: 1, maximum: 30, description: 'How many (default 10).' },
     }),
-  async handler(ctx, deps, input) {
-    const { runs, total } = await deps.runs.listForBlueprint(ctx.blueprintId, input.limit ?? 10);
+  async handler(_ctx, deps, input) {
+    const { runs, total } = await deps.runs.list({
+      blueprintId: input.blueprintId,
+      channelId: input.channelId,
+      states: input.group ? [...RUN_GROUPS[input.group]] : undefined,
+      includeDryRuns: input.includeTestRuns,
+      limit: input.limit ?? 10,
+    });
     return {
       ok: true,
       result: withNotice({
@@ -202,23 +225,18 @@ const listRuns: AssistantTool<z.infer<typeof ListRunsInput>> = {
 
 // ---- get_run ----
 
-const GetRunInput = z.object({ runId: z.string().min(1).optional() });
+const GetRunInput = z.object({ runId: z.string().min(1) });
 
 const getRun: AssistantTool<z.infer<typeof GetRunInput>> = {
   name: 'get_run',
   kind: 'read',
-  description: `One run of this blueprint (the latest when runId is omitted): its state, spend and failure, the inputs it ran with, and for every stage in order: state, the model used, attempts and how each ended (outcome counts), cost split into output, QC and checks, the failure, and for iterating stages how many items passed or failed. Start here for "why did it fail" and "why was it expensive", then call get_stage for the stage that matters.${UNTRUSTED_TAIL}`,
+  description: `One run: its blueprint, state, spend and failure, the inputs it ran with, and for every stage in order: state, the model used, attempts and how each ended (outcome counts), cost split into output, QC and checks, the failure, and for iterating stages how many items passed or failed. Start here for "why did it fail" and "why was it expensive", then call get_stage for the stage that matters.${UNTRUSTED_TAIL}`,
   input: GetRunInput,
-  jsonSchema: () => obj({ runId: str('A run id from list_runs; omit for the latest run.') }),
-  async handler(ctx, deps, input) {
-    const run = await deps.runs.getForBlueprint(ctx.blueprintId, input.runId);
-    if (!run) {
-      return notFound(
-        input.runId
-          ? `This blueprint has no run "${input.runId}".`
-          : 'This blueprint has no runs yet.',
-      );
-    }
+  jsonSchema: () =>
+    obj({ runId: str('A run id from list_runs or the context.', { minLength: 1 }) }, ['runId']),
+  async handler(_ctx, deps, input) {
+    const run = await deps.runs.get(input.runId);
+    if (!run) return notFound(`There is no run "${input.runId}".`);
     return {
       ok: true,
       result: guard(
@@ -276,12 +294,12 @@ const getStage: AssistantTool<z.infer<typeof GetStageInput>> = {
       },
       ['runId', 'stageKey'],
     ),
-  async handler(ctx, deps, input) {
-    const lookup = await deps.runs.stageForBlueprint(ctx.blueprintId, input.runId, input.stageKey, {
+  async handler(_ctx, deps, input) {
+    const lookup = await deps.runs.stage(input.runId, input.stageKey, {
       itemIndex: input.itemIndex,
       includePrompt: input.includePrompt,
     });
-    if (!lookup) return notFound(`This blueprint has no run "${input.runId}".`);
+    if (!lookup) return notFound(`There is no run "${input.runId}".`);
     if (!lookup.found) {
       return {
         ok: false,
@@ -346,13 +364,8 @@ const viewStageMedia: AssistantTool<z.infer<typeof ViewMediaInput>> = {
       ['runId', 'stageKey'],
     ),
   async handler(ctx, deps, input) {
-    const lookup = await deps.runs.mediaForBlueprint(
-      ctx.blueprintId,
-      input.runId,
-      input.stageKey,
-      input.itemIndex,
-    );
-    if (!lookup) return notFound(`This blueprint has no run "${input.runId}".`);
+    const lookup = await deps.runs.media(input.runId, input.stageKey, input.itemIndex);
+    if (!lookup) return notFound(`There is no run "${input.runId}".`);
     if (!lookup.found) {
       return {
         ok: false,

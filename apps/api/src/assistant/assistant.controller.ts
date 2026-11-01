@@ -1,6 +1,8 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post } from '@nestjs/common';
 import {
   CreateAssistantSessionDto,
+  DecideApprovalDto,
+  DecidePlanDto,
   StartAssistantTurnDto,
   UpdateAssistantSessionDto,
 } from '@reelcraft/shared';
@@ -16,17 +18,14 @@ export class AssistantController {
     return this.assistant.listProviders();
   }
 
-  @Get('blueprints/:id/assistant/sessions')
-  list(@Param('id') blueprintId: string) {
-    return this.assistant.listSessions(blueprintId);
+  @Get('assistant/sessions')
+  list() {
+    return this.assistant.listSessions();
   }
 
-  @Post('blueprints/:id/assistant/sessions')
-  create(
-    @Param('id') blueprintId: string,
-    @Body(new ZodValidationPipe(CreateAssistantSessionDto)) dto: CreateAssistantSessionDto,
-  ) {
-    return this.assistant.createSession(blueprintId, dto);
+  @Post('assistant/sessions')
+  create(@Body(new ZodValidationPipe(CreateAssistantSessionDto)) dto: CreateAssistantSessionDto) {
+    return this.assistant.createSession(dto);
   }
 
   @Get('assistant/sessions/:sid')
@@ -63,8 +62,27 @@ export class AssistantController {
     await this.assistant.interrupt(sessionId);
   }
 
-  @Post('assistant/sessions/:sid/proposals/:itemId/apply')
-  apply(@Param('sid') sessionId: string, @Param('itemId') itemId: string) {
-    return this.assistant.applyProposal(sessionId, itemId);
+  @Post('assistant/sessions/:sid/approvals/:itemId')
+  decideApproval(
+    @Param('sid') sessionId: string,
+    @Param('itemId') itemId: string,
+    @Body(new ZodValidationPipe(DecideApprovalDto)) dto: DecideApprovalDto,
+  ) {
+    return this.assistant.decideApproval(sessionId, itemId, dto);
+  }
+
+  @Post('assistant/sessions/:sid/plans/:itemId')
+  @HttpCode(202)
+  decidePlan(
+    @Param('sid') sessionId: string,
+    @Param('itemId') itemId: string,
+    @Body(new ZodValidationPipe(DecidePlanDto)) dto: DecidePlanDto,
+  ) {
+    return this.assistant.decidePlan(sessionId, itemId, dto);
+  }
+
+  @Post('assistant/sessions/:sid/changes/:itemId/undo')
+  undo(@Param('sid') sessionId: string, @Param('itemId') itemId: string) {
+    return this.assistant.undoChange(sessionId, itemId);
   }
 }

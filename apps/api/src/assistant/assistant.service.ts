@@ -10,13 +10,20 @@ import {
 } from '@nestjs/common';
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import type {
+  ApprovalPayload,
   AssistantItemDto,
+  AssistantMode,
+  AssistantPageContext,
   AssistantProviderDto,
   AssistantSessionDetailDto,
   AssistantSessionDto,
   AssistantStreamEvent,
+  ChangePayload,
   CreateAssistantSessionDto,
-  ProposalPayload,
+  CreateBlueprintVersionDto,
+  DecideApprovalDto,
+  DecidePlanDto,
+  PlanPayload,
   QuestionPayload,
   StartAssistantTurnDto,
   UpdateAssistantSessionDto,
@@ -39,15 +46,24 @@ import { ConfigResolverService } from '../run-config/config-resolver.service';
 import { engineDefaults } from '../run-config/engine-defaults';
 import { LiveEvents } from '../live/live-events';
 import {
+  APPROVAL_WAIT_MS,
   ASSISTANT_AGENTS,
   AssistantTurnError,
   type AgentEvent,
   type AssistantAgent,
 } from './agent/assistant-agent.interface';
-import { answersToText, applyModeNote, buildInstructions } from './instructions';
+import { answersToText, buildInstructions, contextNote } from './instructions';
 import { buildNarrowedEnums, buildToolDefs, runTool, toolsHash } from './tools/registry';
-import { newTurnContext, type ToolDeps } from './tools/types';
+import {
+  newTurnContext,
+  type ApprovalDecision,
+  type ApprovalRequest,
+  type ToolDeps,
+  type TurnContext,
+} from './tools/types';
+import { sameDraft } from './tools/draft-diff';
 import { titleFrom, truncateForDisplay } from './display';
+import { TurnTimer } from './turn-timer';
 
 type SessionRow = typeof assistantSession.$inferSelect;
 type ItemRow = typeof assistantItem.$inferSelect;
@@ -61,8 +77,16 @@ const PROVIDER_LABELS: Record<string, string> = {
   fake: 'Fake (test)',
 };
 
+/** Chats belong to the local user until Reelcraft has accounts (see common/owner.decorator.ts). */
+const OWNER = 'local';
+
+interface PendingApproval {
+  sessionId: string;
+  resolve: (decision: ApprovalDecision) => void;
+}
+
 /**
- * The blueprint assistant's chats. A turn runs in this process, not through Inngest: it isn't run
+ * The assistant's chats. A turn runs in this process, not through Inngest: it isn't run
  * state, and a provider turn is a live conversation with tool callbacks that can't be split into
  * durable steps. The durable parts are the provider's own session and the items stored here; a
  * turn cut off by a restart is marked `interrupted` at boot.
@@ -72,6 +96,10 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(AssistantService.name);
   /** One running turn per session. */
   private readonly active = new Map<string, AbortController>();
+  /** The running turn's tool state, so a mode change reaches it. */
+  private readonly turnContexts = new Map<string, TurnContext>();
+  /** Approval cards a tool call is waiting on, by item id. */
+  private readonly approvals = new Map<string, PendingApproval>();
   private readonly seqs = new Map<string, number>();
   private readonly toolDeps: ToolDeps;
 
@@ -105,6 +133,7 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
       runs,
       media,
       engineLayer: () => engineDefaults(config),
+      blueprintChanged: (blueprintId) => this.events.publish({ type: 'blueprint', blueprintId }),
     };
   }
 
@@ -124,12 +153,17 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
       .set({ state: 'failed', updatedAt: sql`now()` })
       .where(and(eq(assistantItem.type, 'tool_call'), eq(assistantItem.state, 'running')));
     await this.db
+      .update(assistantItem)
+      .set({ state: 'expired', updatedAt: sql`now()` })
+      .where(and(eq(assistantItem.type, 'approval'), eq(assistantItem.state, 'pending')));
+    await this.db
       .update(assistantSession)
       .set({ status: 'idle' })
       .where(eq(assistantSession.status, 'running'));
   }
 
   onModuleDestroy(): void {
+    for (const pending of this.approvals.values()) pending.resolve({ answer: 'expired' });
     for (const controller of this.active.values()) controller.abort();
     for (const agent of this.agents) agent.close?.();
   }
@@ -177,7 +211,7 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
       id: row.id,
       blueprintId: row.blueprintId,
       providerId: row.providerId,
-      applyMode: row.applyMode as AssistantSessionDto['applyMode'],
+      mode: row.mode as AssistantMode,
       status: row.status as AssistantSessionDto['status'],
       model: row.model,
       effort: row.effort,
@@ -212,21 +246,17 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
     return row;
   }
 
-  async listSessions(blueprintId: string): Promise<AssistantSessionDto[]> {
-    await this.blueprints.getBlueprint(blueprintId);
+  async listSessions(): Promise<AssistantSessionDto[]> {
     const rows = await this.db
       .select()
       .from(assistantSession)
-      .where(eq(assistantSession.blueprintId, blueprintId))
-      .orderBy(desc(assistantSession.createdAt), desc(assistantSession.id));
+      .where(eq(assistantSession.ownerId, OWNER))
+      .orderBy(desc(assistantSession.updatedAt), desc(assistantSession.id));
     return rows.map((row) => this.toSessionDto(row));
   }
 
-  async createSession(
-    blueprintId: string,
-    dto: CreateAssistantSessionDto,
-  ): Promise<AssistantSessionDto> {
-    const blueprint = await this.blueprints.getBlueprint(blueprintId);
+  async createSession(dto: CreateAssistantSessionDto): Promise<AssistantSessionDto> {
+    if (dto.blueprintId) await this.blueprints.getBlueprint(dto.blueprintId);
     const agent = this.agentFor(dto.providerId);
     const reason = await agent.unavailableReason();
     if (reason) throw new ConflictException(reason);
@@ -234,7 +264,7 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
     const narrowed = buildNarrowedEnums({ capabilities: this.capabilities, styles: this.styles });
     const tools = buildToolDefs(narrowed);
     const externalSessionId = await agent
-      .startSession({ instructions: this.instructionsFor(blueprint.name), tools })
+      .startSession({ instructions: this.instructions(), tools })
       .catch((error: unknown) => {
         throw new ConflictException(error instanceof Error ? error.message : String(error));
       });
@@ -242,18 +272,16 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
       .insert(assistantSession)
       .values({
         id: ulid(),
-        blueprintId,
+        ownerId: OWNER,
+        blueprintId: dto.blueprintId ?? null,
         providerId: dto.providerId,
         externalSessionId,
         appVersion: this.config.version,
         toolsHash: toolsHash(tools),
-        applyMode: dto.applyMode,
+        mode: dto.mode ?? 'manual',
       })
       .returning();
-    this.logger.log(
-      { sessionId: row!.id, blueprintId, providerId: dto.providerId },
-      'chat created',
-    );
+    this.logger.log({ sessionId: row!.id, providerId: dto.providerId }, 'chat created');
     return this.toSessionDto(row!);
   }
 
@@ -271,9 +299,11 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
     await this.requireSession(id);
     const [row] = await this.db
       .update(assistantSession)
-      .set({ applyMode: dto.applyMode, updatedAt: sql`now()` })
+      .set({ mode: dto.mode, updatedAt: sql`now()` })
       .where(eq(assistantSession.id, id))
       .returning();
+    const running = this.turnContexts.get(id);
+    if (running) running.mode = dto.mode;
     const session = this.toSessionDto(row!);
     this.publish(id, { type: 'session', session });
     return session;
@@ -281,6 +311,7 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
 
   async deleteSession(id: string): Promise<void> {
     const row = await this.requireSession(id);
+    this.expireApprovals(id);
     this.active.get(id)?.abort();
     this.active.delete(id);
     await this.agentFor(row.providerId)
@@ -351,7 +382,7 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
   private async setSessionStatus(
     id: string,
     status: 'idle' | 'running',
-    extra: { model?: string; effort?: string | null; title?: string } = {},
+    extra: { model?: string; effort?: string | null; title?: string; mode?: AssistantMode } = {},
   ): Promise<void> {
     const [row] = await this.db
       .update(assistantSession)
@@ -361,12 +392,54 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
     if (row) this.publish(id, { type: 'session', session: this.toSessionDto(row) });
   }
 
-  private instructionsFor(blueprintName: string): string {
+  private instructions(): string {
     return buildInstructions({
-      blueprintName,
       appVersion: this.config.version,
       date: new Date().toISOString().slice(0, 10),
     });
+  }
+
+  /** "the run #a1b2c3d4 of the blueprint …", with the ids the tools need. Null when there is
+   * nothing in particular (or it no longer exists). */
+  async describeContext(context: AssistantPageContext | undefined): Promise<string | null> {
+    if (!context) return null;
+    const parts: string[] = [];
+    try {
+      if (context.runId) {
+        const run = await this.toolDeps.runs.get(context.runId);
+        if (run) {
+          parts.push(
+            `the run #${run.runId.slice(-8).toLowerCase()} (runId ${run.runId}, state ${run.state}${
+              run.dryRun ? ', a free test run' : ''
+            }) of the blueprint "${run.blueprintName}" (blueprintId ${run.blueprintId}, channelId ${run.channelId})`,
+          );
+          const stage = context.stageKey
+            ? run.stages.find((s) => s.key === context.stageKey)
+            : undefined;
+          if (stage) parts.push(`its stage "${stage.label}" (stageKey ${stage.key})`);
+        }
+      } else if (context.blueprintId) {
+        const blueprint = await this.blueprints.getBlueprint(context.blueprintId);
+        parts.push(
+          `the blueprint "${blueprint.name}" in the editor (blueprintId ${blueprint.id}, channelId ${blueprint.channelId})`,
+        );
+        if (context.stageKey) parts.push(`its stage with stageKey ${context.stageKey}`);
+      } else if (context.channelId) {
+        const channel = await this.toolDeps.channels.get(context.channelId);
+        parts.push(`the channel "${channel.name}" (channelId ${channel.id})`);
+      }
+    } catch {
+      // deleted meanwhile: say nothing rather than fail the turn
+    }
+    if (parts.length) return parts.join(', ');
+    const pages: Partial<Record<AssistantPageContext['page'], string>> = {
+      home: 'Home',
+      blueprints: 'the list of all blueprints',
+      runs: 'the list of all runs',
+      channels: 'the list of channels',
+      settings: 'Settings',
+    };
+    return pages[context.page] ?? null;
   }
 
   // ---- turns -----------------------------------------------------------------------------
@@ -405,6 +478,17 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
         ),
       );
 
+    const plans = await this.db
+      .select()
+      .from(assistantItem)
+      .where(
+        and(
+          eq(assistantItem.sessionId, sessionId),
+          eq(assistantItem.type, 'plan'),
+          eq(assistantItem.state, 'pending'),
+        ),
+      );
+
     let text = dto.text ?? '';
     let answered: ItemRow | undefined;
     if (dto.answer) {
@@ -427,13 +511,15 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
         await this.updateItem(question.id, { state: 'dismissed' });
       }
     }
+    // a plan decided through decidePlan is no longer pending here; anything else moved on
+    for (const plan of plans) await this.updateItem(plan.id, { state: 'dismissed' });
 
     const userItem = await this.createItem(sessionId, turnId, 'user_message', null, {
       text,
-      baseDraft: dto.draft,
+      context: dto.context ?? null,
       model: dto.model,
       effort: dto.effort ?? null,
-      applyMode: session.applyMode,
+      mode: session.mode,
     });
     const statusItem = await this.createItem(sessionId, turnId, 'turn_status', 'running', {
       model: dto.model,
@@ -444,7 +530,7 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
       effort: dto.effort ?? null,
       ...(session.title ? {} : { title: titleFrom(text) }),
     });
-    return { session, agent, turnId, text, userItem, statusItem };
+    return { session, agent, turnId, text, statusItem };
   }
 
   private async runTurn(
@@ -452,9 +538,18 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
     dto: StartAssistantTurnDto,
     controller: AbortController,
   ): Promise<void> {
-    const { session, agent, turnId, text, userItem, statusItem } = prepared;
-    const ctx = newTurnContext(session.blueprintId, dto.draft);
-    let baseItemId = userItem.id;
+    const { session, agent, turnId, text, statusItem } = prepared;
+    const timer = new TurnTimer(TURN_TIMEOUT_MS, () => {
+      timedOut = true;
+      controller.abort();
+    });
+    const ctx = newTurnContext({
+      mode: session.mode as AssistantMode,
+      editorDraft: dto.editorDraft ?? null,
+      confirm: (request) =>
+        this.confirm(session.id, turnId, ctx, request, timer, controller.signal),
+    });
+    this.turnContexts.set(session.id, ctx);
     const messages = new Map<string, { id: string; text: string }>();
     let usage: { inputTokens: number; outputTokens: number } | undefined;
     let timedOut = false;
@@ -503,23 +598,16 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
       });
       const outcome = await runTool(tool, args, ctx, this.toolDeps);
       let extra: Record<string, unknown> = {};
-      if (outcome.ok && outcome.item?.type === 'proposal') {
-        const payload: ProposalPayload =
-          outcome.item.payload.kind === 'draft'
-            ? { ...outcome.item.payload, baseItemId }
-            : outcome.item.payload;
-        const proposal = await this.createItem(session.id, turnId, 'proposal', 'pending', payload);
-        if (payload.kind === 'draft') baseItemId = proposal.id;
-        extra = { proposalId: proposal.id };
-      } else if (outcome.ok && outcome.item?.type === 'question') {
-        const question = await this.createItem(
+      if (outcome.ok && outcome.item) {
+        const state = outcome.item.type === 'change' ? 'applied' : 'pending';
+        const created = await this.createItem(
           session.id,
           turnId,
-          'question',
-          'pending',
+          outcome.item.type,
+          state,
           outcome.item.payload,
         );
-        extra = { questionId: question.id };
+        extra = { [`${outcome.item.type}Id`]: created.id };
       }
       const forModel = outcome.ok
         ? { ...(isRecord(outcome.result) ? outcome.result : { result: outcome.result }), ...extra }
@@ -544,22 +632,17 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
       return { ok: outcome.ok, text: JSON.stringify(forModel), ...(images?.length && { images }) };
     };
 
-    const timer = setTimeout(() => {
-      timedOut = true;
-      controller.abort();
-    }, TURN_TIMEOUT_MS);
-
     let finalState: 'completed' | 'failed' | 'interrupted' = 'completed';
     let error: string | undefined;
     try {
-      const blueprint = await this.blueprints.getBlueprint(session.blueprintId);
+      const where = await this.describeContext(dto.context);
       await agent.runTurn({
         sessionId: session.externalSessionId,
-        text: `${text}\n\n${applyModeNote(session.applyMode as 'manual' | 'auto')}`,
+        text: `${text}\n\n${contextNote(ctx.mode, where)}`,
         model: dto.model,
         effort: dto.effort,
-        instructions: this.instructionsFor(blueprint.name),
-        applyMode: session.applyMode as 'manual' | 'auto',
+        instructions: this.instructions(),
+        mode: ctx.mode,
         signal: controller.signal,
         handlers: {
           callTool,
@@ -583,9 +666,11 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
         this.logger.warn({ err: caught, sessionId: session.id }, 'assistant turn failed');
       }
     } finally {
-      clearTimeout(timer);
+      timer.stop();
+      this.expireApprovals(session.id);
       await queue.catch(this.logQueueError);
       this.active.delete(session.id);
+      this.turnContexts.delete(session.id);
     }
 
     try {
@@ -616,24 +701,171 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
     controller.abort();
   }
 
-  // ---- proposals -------------------------------------------------------------------------
+  // ---- approvals (Manual mode) ---------------------------------------------------------
 
-  /** Marks a proposal applied. A metadata proposal is applied here (name, description, tags); a
-   * draft proposal is applied by the open canvas, which then calls this to record it. Idempotent. */
-  async applyProposal(sessionId: string, itemId: string): Promise<AssistantItemDto> {
-    const session = await this.requireSession(sessionId);
+  /** A tool's request to change something. Auto says yes at once. Manual puts a card in the chat
+   * and waits (the turn's clock stops meanwhile) for the user, a timeout or the turn's end. */
+  private async confirm(
+    sessionId: string,
+    turnId: string,
+    ctx: TurnContext,
+    request: ApprovalRequest,
+    timer: TurnTimer,
+    signal: AbortSignal,
+  ): Promise<ApprovalDecision> {
+    if (ctx.mode === 'auto') return { answer: 'yes' };
+    if (signal.aborted) return { answer: 'expired' };
+    const payload: ApprovalPayload = {
+      tool: request.tool,
+      kind: request.kind,
+      title: request.title,
+      details: request.details ?? [],
+      costUsd: request.costUsd ?? null,
+      ...(request.change && { change: request.change }),
+    };
+    const item = await this.createItem(sessionId, turnId, 'approval', 'pending', payload);
+    timer.pause();
+    try {
+      return await new Promise<ApprovalDecision>((resolve) => {
+        const done = (decision: ApprovalDecision) => {
+          clearTimeout(expiry);
+          signal.removeEventListener('abort', onAbort);
+          this.approvals.delete(item.id);
+          resolve(decision);
+        };
+        const onAbort = () => done({ answer: 'expired' });
+        const expiry = setTimeout(() => done({ answer: 'expired' }), APPROVAL_WAIT_MS);
+        signal.addEventListener('abort', onAbort);
+        this.approvals.set(item.id, { sessionId, resolve: done });
+      }).then(async (decision) => {
+        if (decision.answer === 'expired') {
+          await this.updateItem(item.id, { state: 'expired' }).catch(this.logQueueError);
+        }
+        return decision;
+      });
+    } finally {
+      timer.resume();
+    }
+  }
+
+  private expireApprovals(sessionId: string): void {
+    for (const pending of [...this.approvals.values()]) {
+      if (pending.sessionId === sessionId) pending.resolve({ answer: 'expired' });
+    }
+  }
+
+  /** The user's answer to an approval card. */
+  async decideApproval(
+    sessionId: string,
+    itemId: string,
+    dto: DecideApprovalDto,
+  ): Promise<AssistantItemDto> {
+    const row = await this.requireItem(sessionId, itemId, 'approval');
+    const pending = this.approvals.get(itemId);
+    if (row.state !== 'pending' || !pending) {
+      throw new ConflictException('This request is no longer waiting for an answer.');
+    }
+    const payload = row.payload as ApprovalPayload;
+    const item = await this.updateItem(itemId, {
+      state: dto.answer === 'no' ? 'denied' : 'approved',
+      payload: {
+        ...payload,
+        answer: dto.answer,
+        ...(dto.answer === 'no' && dto.feedback ? { feedback: dto.feedback } : {}),
+      },
+    });
+    if (dto.answer === 'yes_auto') await this.updateSession(sessionId, { mode: 'auto' });
+    pending.resolve(
+      dto.answer === 'no' ? { answer: 'no', feedback: dto.feedback } : { answer: dto.answer },
+    );
+    return item;
+  }
+
+  // ---- plans (Plan mode) -----------------------------------------------------------------
+
+  /** Approving a plan switches the chat to Auto or Manual and starts a turn that carries it out;
+   * "Keep planning" sends the feedback back in Plan mode. */
+  async decidePlan(
+    sessionId: string,
+    itemId: string,
+    dto: DecidePlanDto,
+  ): Promise<{ turnId: string }> {
+    const row = await this.requireItem(sessionId, itemId, 'plan');
+    if (row.state !== 'pending') throw new ConflictException('This plan was already decided.');
+    if (this.active.has(sessionId)) {
+      throw new ConflictException('A turn is already running in this chat.');
+    }
+    const payload = row.payload as PlanPayload;
+    await this.updateItem(itemId, {
+      state: dto.decision === 'revise' ? 'revised' : 'approved',
+      payload: {
+        ...payload,
+        decision: dto.decision,
+        ...(dto.feedback ? { feedback: dto.feedback } : {}),
+      },
+    });
+    let text: string;
+    if (dto.decision === 'revise') {
+      text = `Keep planning. Change the plan "${payload.title}": ${dto.feedback || 'the user wants changes'}`;
+    } else {
+      await this.updateSession(sessionId, { mode: dto.decision });
+      text = `The user approved your plan "${payload.title}". Carry it out now, step by step, in ${
+        dto.decision === 'auto' ? 'Auto' : 'Manual'
+      } mode.${dto.feedback ? ` They added: ${dto.feedback}` : ''}`;
+    }
+    return this.startTurn(sessionId, {
+      text,
+      model: dto.model,
+      ...(dto.effort && { effort: dto.effort }),
+    });
+  }
+
+  // ---- changes ---------------------------------------------------------------------------
+
+  /** Puts a blueprint back the way it was before one of the assistant's changes, as long as
+   * nothing has changed it since. */
+  async undoChange(sessionId: string, itemId: string): Promise<AssistantItemDto> {
+    const row = await this.requireItem(sessionId, itemId, 'change');
+    if (row.state === 'undone') return this.toItemDto(row);
+    const change = row.payload as ChangePayload;
+    const blueprint = await this.blueprints.getBlueprint(change.blueprintId);
+    if (change.kind === 'draft') {
+      const working =
+        blueprint.workingDraft && blueprint.workingDraftBaseVersionId === blueprint.currentVersionId
+          ? (blueprint.workingDraft as CreateBlueprintVersionDto)
+          : null;
+      if (!working || !sameDraft(working, change.after)) {
+        throw new ConflictException(
+          'The blueprint has changed since, so this can no longer be undone here. Use its History, or ask the assistant.',
+        );
+      }
+      await this.blueprints.setWorkingDraft(
+        change.blueprintId,
+        change.before,
+        blueprint.currentVersionId,
+      );
+    } else {
+      const restore = Object.fromEntries(
+        Object.keys(change.changes).map((key) => [
+          key,
+          change.previous[key as keyof typeof change.previous],
+        ]),
+      );
+      await this.blueprints.update(change.blueprintId, restore);
+    }
+    this.events.publish({ type: 'blueprint', blueprintId: change.blueprintId });
+    return this.updateItem(itemId, { state: 'undone' });
+  }
+
+  private async requireItem(sessionId: string, itemId: string, type: string): Promise<ItemRow> {
+    await this.requireSession(sessionId);
     const [row] = await this.db
       .select()
       .from(assistantItem)
       .where(and(eq(assistantItem.id, itemId), eq(assistantItem.sessionId, sessionId)))
       .limit(1);
-    if (!row || row.type !== 'proposal') throw new NotFoundException('Proposal not found');
-    if (row.state === 'applied') return this.toItemDto(row);
-    const payload = row.payload as ProposalPayload;
-    if (payload.kind === 'metadata') {
-      await this.blueprints.update(session.blueprintId, payload.changes);
-    }
-    return this.updateItem(itemId, { state: 'applied' });
+    if (!row || row.type !== type) throw new NotFoundException('Item not found');
+    return row;
   }
 }
 

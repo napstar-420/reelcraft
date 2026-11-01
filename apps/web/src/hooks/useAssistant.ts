@@ -1,16 +1,18 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import type { MutableRefObject } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import type {
+  ApprovalAnswer,
   AssistantAnswers,
-  AssistantApplyMode,
   AssistantItemDto,
+  AssistantMode,
+  AssistantPageContext,
   AssistantSessionDetailDto,
   AssistantSessionDto,
   AssistantStreamEvent,
+  ChangePayload,
   CreateBlueprintVersionDto,
-  DraftProposalPayload,
-  MetadataProposalPayload,
 } from '@reelcraft/shared';
 import { api } from '@/api/client';
 import { apiErrorMessage } from '@/lib/api-error-message';
@@ -18,60 +20,53 @@ import { loadAssistantPrefs, saveAssistantPrefs } from '@/lib/assistant-prefs';
 import { socket } from '@/lib/socket';
 import {
   appendDelta,
-  decideDraftApply,
+  invalidationsFor,
+  nextMode,
   payloadOf,
+  pendingApproval,
   upsertItem,
-  type ApplyDecision,
-} from '@/components/canvas/assistant/assistant.logic';
+} from '@/components/assistant/assistant.logic';
 
-export type CanvasDraft = Pick<
-  CreateBlueprintVersionDto,
-  'graph' | 'inputs' | 'roles' | 'defaults' | 'budget'
->;
+export type EditorDraft = { blueprintId: string; draft: CreateBlueprintVersionDto };
 
 const PROVIDERS_KEY = ['assistant-providers'] as const;
-const sessionsKey = (blueprintId: string) => ['assistant-sessions', blueprintId] as const;
+const SESSIONS_KEY = ['assistant-sessions'] as const;
 const sessionKey = (sessionId: string | undefined) => ['assistant-session', sessionId] as const;
 
 /**
- * The blueprint assistant's chat: sessions, the live event stream, sending turns, and applying
- * proposals to the canvas. Mounted by the canvas itself (not by the Assistant tab), because the
- * tab unmounts when another one is open while the stream and auto-apply must keep running.
- *
- * The canvas owns the draft: applying a draft proposal goes through `replaceDraft`, the same path
- * a user edit takes, so autosave, validation and Save behave as usual. The server never writes it.
+ * The one assistant chat of the app: sessions, the live event stream, sending messages with the
+ * page the user is on, the mode, and answering approval and plan cards. Mounted once by the
+ * shell, so the chat follows the user from page to page and keeps streaming when the dock is
+ * closed. The assistant writes changes on the server; open pages refresh from live updates.
  */
 export function useAssistant({
-  blueprintId,
-  draft,
-  replaceDraft,
-  disabled,
+  contextRef,
+  editorDraftRef,
 }: {
-  blueprintId: string;
-  /** The canvas draft right now (null while it loads). */
-  draft: CanvasDraft | null;
-  replaceDraft: (next: CanvasDraft) => Promise<void>;
-  /** Viewing an old version: the chat is read-only. */
-  disabled: boolean;
+  /** Where the user is right now: sent with every message. */
+  contextRef: MutableRefObject<AssistantPageContext>;
+  /** The open blueprint editor's draft, which may hold edits not yet autosaved. */
+  editorDraftRef: MutableRefObject<EditorDraft | null>;
 }) {
   const queryClient = useQueryClient();
-  const prefs = useRef(loadAssistantPrefs()).current;
-
-  // The latest canvas draft, readable inside async code (a stale closure would compare against
-  // a draft the canvas has since moved past).
-  const draftRef = useRef(draft);
-  draftRef.current = draft;
+  const [prefs] = useState(loadAssistantPrefs);
 
   const providers = useQuery({ queryKey: PROVIDERS_KEY, queryFn: api.listAssistantProviders });
-  const sessions = useQuery({
-    queryKey: sessionsKey(blueprintId),
-    queryFn: () => api.listAssistantSessions(blueprintId),
-  });
+  const sessions = useQuery({ queryKey: SESSIONS_KEY, queryFn: api.listAssistantSessions });
 
-  const [pickedSessionId, setPickedSessionId] = useState<string | null | undefined>(undefined);
-  // newest chat unless the user picked another (or asked for a new one)
+  // `undefined`: the newest chat; `null`: a new one; else the chat the user picked
+  const [pickedSessionId, setPicked] = useState<string | null | undefined>(prefs.sessionId);
+  const pick = useCallback((id: string | null | undefined) => {
+    setPicked(id);
+    saveAssistantPrefs({ sessionId: id ?? null });
+  }, []);
+  const known = sessions.data?.some((s) => s.id === pickedSessionId);
   const activeSessionId =
-    pickedSessionId === undefined ? sessions.data?.[0]?.id : (pickedSessionId ?? undefined);
+    pickedSessionId === null
+      ? undefined
+      : pickedSessionId && (known || !sessions.data)
+        ? pickedSessionId
+        : sessions.data?.[0]?.id;
 
   const detail = useQuery({
     queryKey: sessionKey(activeSessionId),
@@ -79,7 +74,7 @@ export function useAssistant({
     enabled: !!activeSessionId,
   });
   const session = detail.data;
-  const items = session?.items ?? [];
+  const items = useMemo(() => session?.items ?? [], [session?.items]);
 
   // ---- the live event stream -------------------------------------------------------------
 
@@ -97,12 +92,17 @@ export function useAssistant({
         return { ...old, ...event.session };
       });
       if (event.type === 'session') {
-        void queryClient.invalidateQueries({ queryKey: sessionsKey(blueprintId) });
+        void queryClient.invalidateQueries({ queryKey: SESSIONS_KEY });
+      }
+      if (event.type === 'item') {
+        // what the assistant changed: the pages showing it refetch
+        for (const queryKey of invalidationsFor(event.item)) {
+          void queryClient.invalidateQueries({ queryKey });
+        }
       }
     };
-    // A socket's rooms are lost when it reconnects, so ask again on every connect.
-    // The server answers after it has joined the room, so the refetch that catches up
-    // on what was missed cannot itself miss anything.
+    // A socket's rooms are lost when it reconnects, so ask again on every connect. The server
+    // answers after it has joined the room, so the refetch that catches up can't miss anything.
     const watch = () => {
       socket.emit('assistant:watch', activeSessionId, () => {
         void queryClient.invalidateQueries({ queryKey: sessionKey(activeSessionId) });
@@ -116,7 +116,7 @@ export function useAssistant({
       socket.off('connect', watch);
       if (socket.connected) socket.emit('assistant:unwatch', activeSessionId);
     };
-  }, [activeSessionId, blueprintId, queryClient]);
+  }, [activeSessionId, queryClient]);
 
   // ---- provider, model, effort -----------------------------------------------------------
 
@@ -148,7 +148,7 @@ export function useAssistant({
     setModelPick(undefined);
     setEffortPick(undefined);
     saveAssistantPrefs({ providerId, modelId: undefined, effort: undefined });
-    if (session && session.providerId !== providerId) setPickedSessionId(null);
+    if (session && session.providerId !== providerId) pick(null);
   };
   const setModel = (modelId: string) => {
     setModelPick(modelId);
@@ -159,44 +159,52 @@ export function useAssistant({
     saveAssistantPrefs({ effort: next });
   };
 
-  // ---- apply mode ------------------------------------------------------------------------
+  // ---- mode ------------------------------------------------------------------------------
 
-  const [autoApplyPref, setAutoApplyPref] = useState(prefs.autoApply ?? false);
-  const applyMode: AssistantApplyMode = session
-    ? session.applyMode
-    : autoApplyPref
-      ? 'auto'
-      : 'manual';
+  const [modePref, setModePref] = useState<AssistantMode>(prefs.mode ?? 'manual');
+  const mode: AssistantMode = session?.mode ?? modePref;
 
   const updateMode = useMutation({
-    mutationFn: ({ sessionId, mode }: { sessionId: string; mode: AssistantApplyMode }) =>
-      api.updateAssistantSession(sessionId, { applyMode: mode }),
+    mutationFn: ({ sessionId, next }: { sessionId: string; next: AssistantMode }) =>
+      api.updateAssistantSession(sessionId, { mode: next }),
     onSuccess: (updated) => {
       queryClient.setQueryData<AssistantSessionDetailDto>(sessionKey(updated.id), (old) =>
         old ? { ...old, ...updated } : old,
       );
     },
-    onError: (error) => toast.error(apiErrorMessage(error, 'Could not change the apply mode.')),
+    onError: (error) => toast.error(apiErrorMessage(error, 'Could not change the mode.')),
   });
-  const setApplyMode = (mode: AssistantApplyMode) => {
-    setAutoApplyPref(mode === 'auto');
-    saveAssistantPrefs({ autoApply: mode === 'auto' });
-    if (session) updateMode.mutate({ sessionId: session.id, mode });
-  };
+  const setMode = useCallback(
+    (next: AssistantMode) => {
+      setModePref(next);
+      saveAssistantPrefs({ mode: next });
+      if (session) {
+        // show it at once; the server's answer confirms it
+        queryClient.setQueryData<AssistantSessionDetailDto>(sessionKey(session.id), (old) =>
+          old ? { ...old, mode: next } : old,
+        );
+        updateMode.mutate({ sessionId: session.id, next });
+      }
+    },
+    [session, queryClient, updateMode],
+  );
+  const cycleMode = useCallback(() => setMode(nextMode(mode)), [mode, setMode]);
 
   // ---- sessions --------------------------------------------------------------------------
 
   const createSession = useMutation({
     mutationFn: () => {
       if (!provider) throw new Error('No assistant provider is available.');
-      return api.createAssistantSession(blueprintId, {
+      const context = contextRef.current;
+      return api.createAssistantSession({
         providerId: provider.id,
-        applyMode: autoApplyPref ? 'auto' : 'manual',
+        mode: modePref,
+        ...(context.blueprintId ? { blueprintId: context.blueprintId } : {}),
       });
     },
     onSuccess: (created) => {
-      void queryClient.invalidateQueries({ queryKey: sessionsKey(blueprintId) });
-      setPickedSessionId(created.id);
+      void queryClient.invalidateQueries({ queryKey: SESSIONS_KEY });
+      pick(created.id);
     },
     onError: (error) => toast.error(apiErrorMessage(error, 'Could not start the chat.')),
   });
@@ -205,8 +213,8 @@ export function useAssistant({
     mutationFn: (sessionId: string) => api.deleteAssistantSession(sessionId),
     onSuccess: (_void, sessionId) => {
       queryClient.removeQueries({ queryKey: sessionKey(sessionId) });
-      void queryClient.invalidateQueries({ queryKey: sessionsKey(blueprintId) });
-      setPickedSessionId(null);
+      void queryClient.invalidateQueries({ queryKey: SESSIONS_KEY });
+      pick(null);
     },
     onError: (error) => toast.error(apiErrorMessage(error, 'Could not delete the chat.')),
   });
@@ -220,11 +228,14 @@ export function useAssistant({
     }) => {
       if (!model) throw new Error('No assistant model is available.');
       const sessionId = activeSessionId ?? (await createSession.mutateAsync()).id;
+      const context = contextRef.current;
+      const editor = editorDraftRef.current;
       return api.startAssistantTurn(sessionId, {
         ...(input.text ? { text: input.text } : {}),
         ...(input.answer ? { answer: input.answer } : {}),
-        // what the assistant's tools read: the canvas as it is right now
-        draft: draftRef.current,
+        context,
+        // the editor's draft only when the user is looking at that blueprint
+        ...(editor && editor.blueprintId === context.blueprintId ? { editorDraft: editor } : {}),
         model: model.modelId,
         ...(effort ? { effort } : {}),
       });
@@ -239,116 +250,52 @@ export function useAssistant({
 
   const running = session?.status === 'running' || sendTurn.isPending;
 
-  // ---- applying proposals ----------------------------------------------------------------
+  // ---- cards -----------------------------------------------------------------------------
 
-  const record = useCallback(
-    async (proposal: AssistantItemDto) => {
-      const updated = await api.applyAssistantProposal(proposal.sessionId, proposal.id);
-      queryClient.setQueryData<AssistantSessionDetailDto>(sessionKey(proposal.sessionId), (old) =>
-        old ? { ...old, items: upsertItem(old.items, updated) } : old,
-      );
-    },
+  const store = useCallback(
+    (item: AssistantItemDto) =>
+      queryClient.setQueryData<AssistantSessionDetailDto>(sessionKey(item.sessionId), (old) =>
+        old ? { ...old, items: upsertItem(old.items, item) } : old,
+      ),
     [queryClient],
   );
 
-  const applyDraftProposal = useCallback(
-    async (proposal: AssistantItemDto) => {
-      const payload = payloadOf<DraftProposalPayload>(proposal);
-      const before = draftRef.current;
-      const next: CanvasDraft = payload.draft;
-      draftRef.current = next;
-      await replaceDraft(next);
-      await record(proposal);
-      toast.success('The assistant changed the blueprint.', {
-        duration: 5_000,
-        action: before
-          ? {
-              label: 'Undo',
-              onClick: () => void replaceDraft(before).then(() => (draftRef.current = before)),
-            }
-          : undefined,
+  const decideApproval = useMutation({
+    mutationFn: (input: { item: AssistantItemDto; answer: ApprovalAnswer; feedback?: string }) =>
+      api.decideAssistantApproval(input.item.sessionId, input.item.id, {
+        answer: input.answer,
+        ...(input.feedback ? { feedback: input.feedback } : {}),
+      }),
+    onSuccess: store,
+    onError: (error) => toast.error(apiErrorMessage(error, 'Could not send your answer.')),
+  });
+
+  const decidePlan = useMutation({
+    mutationFn: (input: {
+      item: AssistantItemDto;
+      decision: 'auto' | 'manual' | 'revise';
+      feedback?: string;
+    }) => {
+      if (!model) throw new Error('No assistant model is available.');
+      return api.decideAssistantPlan(input.item.sessionId, input.item.id, {
+        decision: input.decision,
+        ...(input.feedback ? { feedback: input.feedback } : {}),
+        model: model.modelId,
+        ...(effort ? { effort } : {}),
       });
     },
-    [record, replaceDraft],
-  );
+    onError: (error) => toast.error(apiErrorMessage(error, 'Could not send your decision.')),
+  });
 
-  const applyMetadataProposal = useCallback(
-    async (proposal: AssistantItemDto) => {
-      const payload = payloadOf<MetadataProposalPayload>(proposal);
-      await record(proposal); // the server applies name, description and tags
-      void queryClient.invalidateQueries({ queryKey: ['blueprint', blueprintId] });
-      void queryClient.invalidateQueries({ queryKey: ['blueprints'] });
-      toast.success('The assistant changed the blueprint details.', {
-        duration: 5_000,
-        action: {
-          label: 'Undo',
-          onClick: () =>
-            void api
-              .updateBlueprint(blueprintId, payload.previous)
-              .then(() => {
-                void queryClient.invalidateQueries({ queryKey: ['blueprint', blueprintId] });
-                void queryClient.invalidateQueries({ queryKey: ['blueprints'] });
-              })
-              .catch((error) => toast.error(apiErrorMessage(error, 'Could not undo.'))),
-        },
-      });
+  const undoChange = useMutation({
+    mutationFn: (item: AssistantItemDto) => api.undoAssistantChange(item.sessionId, item.id),
+    onSuccess: (updated) => {
+      store(updated);
+      const change = payloadOf<ChangePayload>(updated);
+      toast.success(`Undone: ${change.summary}`);
     },
-    [blueprintId, queryClient, record],
-  );
-
-  /** Applies a proposal: from the card's Apply button, or automatically in auto mode. */
-  const applyProposal = useCallback(
-    async (proposal: AssistantItemDto) => {
-      try {
-        if (payloadOf<{ kind: string }>(proposal).kind === 'metadata') {
-          await applyMetadataProposal(proposal);
-        } else {
-          await applyDraftProposal(proposal);
-        }
-      } catch (error) {
-        toast.error(apiErrorMessage(error, 'Could not apply the proposal.'));
-      }
-    },
-    [applyDraftProposal, applyMetadataProposal],
-  );
-
-  /** What Apply would do for a draft proposal right now. */
-  const decisionFor = useCallback(
-    (proposal: AssistantItemDto): ApplyDecision => decideDraftApply(proposal, items, draft),
-    [items, draft],
-  );
-
-  // Auto mode: apply proposals as they arrive, one at a time and in order, but never the ones that
-  // were already there when the chat was opened, and never over edits the user made meanwhile.
-  const handled = useRef(new Set<string>());
-  const handledFor = useRef<string | undefined>(undefined);
-  const chain = useRef<Promise<void>>(Promise.resolve());
-  useEffect(() => {
-    if (!session) return;
-    const proposals = session.items.filter((i) => i.type === 'proposal');
-    if (handledFor.current !== session.id) {
-      handledFor.current = session.id;
-      handled.current = new Set(proposals.map((p) => p.id));
-      return;
-    }
-    if (session.applyMode !== 'auto' || disabled) return;
-    for (const proposal of proposals) {
-      if (proposal.state !== 'pending' || handled.current.has(proposal.id)) continue;
-      handled.current.add(proposal.id);
-      chain.current = chain.current.then(async () => {
-        const isDraft = payloadOf<{ kind: string }>(proposal).kind === 'draft';
-        const decision = isDraft
-          ? decideDraftApply(
-              proposal,
-              queryClient.getQueryData<AssistantSessionDetailDto>(sessionKey(session.id))?.items ??
-                [],
-              draftRef.current,
-            )
-          : ({ kind: 'apply' } as const);
-        if (decision.kind === 'apply') await applyProposal(proposal);
-      });
-    }
-  }, [session, disabled, applyProposal, queryClient]);
+    onError: (error) => toast.error(apiErrorMessage(error, 'Could not undo this change.')),
+  });
 
   return {
     // data
@@ -366,21 +313,31 @@ export function useAssistant({
     setModel,
     effort,
     setEffort,
-    applyMode,
-    setApplyMode,
+    mode,
+    setMode,
+    cycleMode,
     // actions
     activeSessionId,
-    selectSession: (id: string) => setPickedSessionId(id),
-    newChat: () => setPickedSessionId(null),
+    selectSession: (id: string) => pick(id),
+    newChat: () => pick(null),
     deleteChat: (id: string) => deleteSession.mutate(id),
     send: (text: string) => sendTurn.mutate({ text }),
     answer: (questionItemId: string, answers: AssistantAnswers) =>
       sendTurn.mutate({ answer: { questionItemId, answers } }),
     interrupt: () => interrupt.mutate(),
-    applyProposal,
-    decisionFor,
+    decideApproval: (item: AssistantItemDto, answer: ApprovalAnswer, feedback?: string) =>
+      decideApproval.mutate({ item, answer, ...(feedback ? { feedback } : {}) }),
+    decidePlan: (
+      item: AssistantItemDto,
+      decision: 'auto' | 'manual' | 'revise',
+      feedback?: string,
+    ) => decidePlan.mutate({ item, decision, ...(feedback ? { feedback } : {}) }),
+    undoChange: (item: AssistantItemDto) => undoChange.mutate(item),
+    deciding: decideApproval.isPending || decidePlan.isPending,
+    undoing: undoChange.isPending ? undoChange.variables?.id : undefined,
     running,
-    disabled,
+    /** An approval card is waiting for the user. */
+    waiting: !!pendingApproval(items),
   };
 }
 

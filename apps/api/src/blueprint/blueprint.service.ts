@@ -19,7 +19,6 @@ import {
   run,
 } from '../db/schema/index';
 import { deleteRunsCascade } from '../run/run-cascade';
-import { deleteAssistantCascade } from '../assistant/assistant-cascade';
 import { queueStorageOrphans } from '../artifact/storage-orphans';
 import { ulid } from '../common/ulid';
 import { blueprintChanged } from './blueprint-changed';
@@ -209,7 +208,6 @@ export class BlueprintService {
         await tx.delete(character).where(inArray(character.id, characterIds));
       }
       await tx.update(blueprint).set({ currentVersionId: null }).where(eq(blueprint.id, id));
-      await deleteAssistantCascade(tx, [id]);
       await tx.delete(packageImport).where(eq(packageImport.blueprintId, id));
       await tx.delete(blueprintVersion).where(eq(blueprintVersion.blueprintId, id));
       await tx.delete(blueprint).where(eq(blueprint.id, id));

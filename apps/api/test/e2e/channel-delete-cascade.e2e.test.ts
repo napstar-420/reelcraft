@@ -83,7 +83,7 @@ async function seedDraftRender(testDb: TestDb, runId: string): Promise<void> {
   });
 }
 
-/** A chat with one item, so the cascade has assistant rows to delete. */
+/** A chat with one item, to check deleting its blueprint leaves the chat alone. */
 async function seedAssistantChat(testDb: TestDb, blueprintId: string): Promise<string> {
   const sessionId = ulid();
   await testDb.db.insert(assistantSession).values({
@@ -273,9 +273,10 @@ describe('channel delete cascade (e2e)', () => {
         .from(packageImport)
         .where(eq(packageImport.blueprintId, blueprintId)),
     ).toHaveLength(0);
+    // chats are not tied to a blueprint: they outlive it (their tools answer "not found")
     const chatRowsAfter = await assistantRowsFor(testDb, chatId, blueprintId);
-    expect(chatRowsAfter.items).toHaveLength(0);
-    expect(chatRowsAfter.sessions).toHaveLength(0);
+    expect(chatRowsAfter.items).toHaveLength(1);
+    expect(chatRowsAfter.sessions).toHaveLength(1);
     expect(
       await testDb.db
         .select()
@@ -438,9 +439,10 @@ describe('channel delete cascade (e2e)', () => {
         .from(packageImport)
         .where(eq(packageImport.blueprintId, blueprintId)),
     ).toHaveLength(0);
+    // chats are not tied to a blueprint: they outlive it (their tools answer "not found")
     const chatRowsAfter = await assistantRowsFor(testDb, chatId, blueprintId);
-    expect(chatRowsAfter.items).toHaveLength(0);
-    expect(chatRowsAfter.sessions).toHaveLength(0);
+    expect(chatRowsAfter.items).toHaveLength(1);
+    expect(chatRowsAfter.sessions).toHaveLength(1);
     const [runRowAfter] = await testDb.db.select().from(run).where(eq(run.id, dryRun.id));
     expect(runRowAfter).toBeUndefined();
     expect(

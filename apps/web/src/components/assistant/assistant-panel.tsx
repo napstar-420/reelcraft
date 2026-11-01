@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowUp, History, Loader2, MessageSquarePlus, Square, Trash2, X } from 'lucide-react';
+import { cn } from 'cn';
+import type { AssistantMode } from '@reelcraft/shared';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -17,41 +19,43 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { docsUrl } from '@/lib/docs-url';
-import type { AssistantController } from '@/hooks/useAssistant';
 import { AssistantMessages } from './assistant-messages';
-import { pendingQuestion } from './assistant.logic';
+import { MODES, pendingQuestion } from './assistant.logic';
+import { useAssistantUi } from './assistant-context';
 
-const EXAMPLES = [
-  'A 30-second faceless reel: script, voice-over, one image per scene, then render',
-  'Add a quality check to my script stage',
-  'What can this blueprint do right now?',
-];
+const EXAMPLES: Record<'subject' | 'none', string[]> = {
+  none: [
+    'Make me a 30-second faceless reel about space facts: script, voice-over, images, render',
+    'Which runs need me, and why?',
+    'What can Reelcraft make? Show me the stage types',
+  ],
+  subject: [
+    'Explain what this does, step by step',
+    'What went wrong here, and how do I fix it?',
+    'Make the script punchier and add a quality check',
+  ],
+};
 
-/** The assistant beside the blueprint: chat with the agent that builds and edits it. */
-export function AssistantPanel({
-  assistant,
-  stageLabel,
-  prefill,
-}: {
-  assistant: AssistantController;
-  /** Text to put in the message box (not send), e.g. from a `?ask=` link. */
-  prefill?: string | null;
-  /** The stage open in the editor: offered as context for the next message. */
-  stageLabel?: string | null;
-}) {
+const MODE_HELP: Record<AssistantMode, string> = {
+  manual: 'It asks before every change: you answer Yes or No on a card.',
+  auto: 'It makes changes without asking. Blueprint changes can be undone.',
+  plan: 'It only reads and investigates, then shows you a plan to approve.',
+};
+
+/** The assistant's chat, the same everywhere: the dock on every page and Home. */
+export function AssistantPanel({ variant = 'dock' }: { variant?: 'dock' | 'page' }) {
+  const ui = useAssistantUi();
+  const { assistant, contextLabel, includeContext, setIncludeContext, prefill } = ui;
   const [text, setText] = useState('');
-  const [withStage, setWithStage] = useState(true);
   const scroller = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
-  const { session, items, running, disabled, unavailableReason } = assistant;
+  const { session, items, running, unavailableReason } = assistant;
   const question = pendingQuestion(items);
 
-  useEffect(() => setWithStage(true), [stageLabel]);
   useEffect(() => {
-    if (prefill) setText(prefill);
+    if (prefill) setText(prefill.text);
   }, [prefill]);
 
   // follow new content while the user is at the bottom
@@ -62,17 +66,23 @@ export function AssistantPanel({
 
   const send = () => {
     const value = text.trim();
-    if (!value || running || disabled || unavailableReason) return;
-    assistant.send(stageLabel && withStage ? `About the stage “${stageLabel}”: ${value}` : value);
+    if (!value || running || unavailableReason) return;
+    assistant.send(value);
     setText('');
     stickToBottom.current = true;
   };
 
   const empty = items.length === 0;
-  const blocked = disabled || !!unavailableReason || !assistant.model;
+  const blocked = !!unavailableReason || !assistant.model;
+  const examples = EXAMPLES[contextLabel && includeContext ? 'subject' : 'none'];
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div
+      className={cn(
+        'flex h-full min-h-0 flex-col',
+        variant === 'page' && 'mx-auto w-full max-w-3xl',
+      )}
+    >
       <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b px-3 py-2">
         {assistant.providers.length > 1 && (
           <Select
@@ -231,12 +241,8 @@ export function AssistantPanel({
         {empty && !assistant.loading ? (
           <div className="flex flex-col gap-3 text-[13px] leading-relaxed">
             <p className="text-muted-foreground">
-              Describe the video you want, or what to change. The assistant looks up what this
-              Reelcraft can do and proposes the stages
-              {assistant.applyMode === 'auto'
-                ? ': with “Apply changes for me” on, valid changes go straight onto the blueprint, and you can undo them'
-                : '. Nothing changes until you apply it'}
-              .
+              Ask about anything in Reelcraft, or say what to make or change: channels, blueprints,
+              runs and what they made. {MODE_HELP[assistant.mode]}
             </p>
             <p className="text-xs">
               <a
@@ -250,7 +256,7 @@ export function AssistantPanel({
             </p>
             <p className="text-xs text-faint">Try asking</p>
             <div className="flex flex-col gap-2">
-              {EXAMPLES.map((example) => (
+              {examples.map((example) => (
                 <button
                   key={example}
                   type="button"
@@ -274,21 +280,19 @@ export function AssistantPanel({
       </div>
 
       <div className="shrink-0 border-t p-3">
-        {disabled && (
-          <p className="mb-2 text-xs text-muted-foreground">
-            You&apos;re viewing an older version. Go back to the latest to use the assistant.
-          </p>
-        )}
         <div className="rounded-[14px] border border-line-strong bg-background p-2.5 focus-within:border-faint">
-          {stageLabel && withStage ? (
+          {contextLabel && includeContext ? (
             <div className="mb-1.5 flex">
-              <span className="inline-flex h-[22px] items-center gap-1 rounded-full bg-surface-3 pr-1 pl-2.5 text-xs text-muted-foreground">
-                {stageLabel}
+              <span
+                className="inline-flex h-[22px] max-w-full items-center gap-1 rounded-full bg-surface-3 pr-1 pl-2.5 text-xs text-muted-foreground"
+                title="The assistant is told you are looking at this"
+              >
+                <span className="truncate">{contextLabel}</span>
                 <button
                   type="button"
-                  aria-label="Don't mention this stage"
+                  aria-label="Don't tell the assistant what I'm looking at"
                   className="rounded-full p-0.5 hover:text-foreground"
-                  onClick={() => setWithStage(false)}
+                  onClick={() => setIncludeContext(false)}
                 >
                   <X className="size-3" />
                 </button>
@@ -303,12 +307,17 @@ export function AssistantPanel({
               if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                 e.preventDefault();
                 send();
+              } else if (e.key === 'Tab' && e.shiftKey) {
+                e.preventDefault();
+                assistant.cycleMode();
               }
             }}
             placeholder={
               question
                 ? 'Answer above, or type a new message'
-                : 'Ask about this blueprint or say what to change'
+                : assistant.waiting
+                  ? 'Answer the card above first'
+                  : 'Ask anything, or say what to make or change'
             }
             aria-label="Message the assistant"
             className="max-h-40 min-h-12 resize-none border-0 bg-transparent p-0 text-[13px] shadow-none focus-visible:ring-0"
@@ -316,17 +325,30 @@ export function AssistantPanel({
             disabled={blocked}
           />
           <div className="mt-1.5 flex items-center gap-2">
-            <label
-              className="flex cursor-pointer items-center gap-2 text-xs text-faint"
-              title="Apply the assistant's changes as soon as they are valid. You can undo them."
+            <div
+              role="radiogroup"
+              aria-label="Mode"
+              title="Shift+Tab switches the mode"
+              className="inline-flex rounded-lg bg-surface-2 p-0.5"
             >
-              <Switch
-                checked={assistant.applyMode === 'auto'}
-                onCheckedChange={(on) => assistant.setApplyMode(on ? 'auto' : 'manual')}
-                aria-label="Apply changes for me"
-              />
-              Apply changes for me
-            </label>
+              {MODES.map((m) => (
+                <button
+                  key={m.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={assistant.mode === m.id}
+                  title={m.hint}
+                  onClick={() => assistant.setMode(m.id)}
+                  className={cn(
+                    'h-6 rounded-md px-2 text-xs text-muted-foreground transition-colors hover:text-foreground',
+                    assistant.mode === m.id && 'bg-surface-3 font-medium text-foreground',
+                    assistant.mode === m.id && m.id === 'auto' && 'text-acc',
+                  )}
+                >
+                  {m.label}
+                </button>
+              ))}
+            </div>
             <span className="flex-1" />
             {running ? (
               <Button

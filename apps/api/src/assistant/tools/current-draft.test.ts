@@ -19,11 +19,11 @@ function depsWith(blueprint: {
 }
 
 describe('currentDraft', () => {
-  const ctx = () => newTurnContext('bp1', null);
+  const ctx = () => newTurnContext();
 
   it('uses the working draft while it is based on the current saved version', async () => {
     const deps = depsWith({ workingDraftBaseVersionId: 'v2', currentVersionId: 'v2' });
-    expect(await currentDraft(ctx(), deps)).toMatchObject({
+    expect(await currentDraft(ctx(), deps, 'bp1')).toMatchObject({
       draft: working,
       source: 'working draft',
     });
@@ -32,19 +32,34 @@ describe('currentDraft', () => {
   it('ignores a working draft based on an older version, and one with no base once a version is saved', async () => {
     for (const base of ['v1', null]) {
       const deps = depsWith({ workingDraftBaseVersionId: base, currentVersionId: 'v2' });
-      expect((await currentDraft(ctx(), deps)).source).toBe('latest saved version');
+      expect((await currentDraft(ctx(), deps, 'bp1')).source).toBe('latest saved version');
     }
   });
 
   it('takes a null base as current while nothing is saved', async () => {
     const deps = depsWith({ workingDraftBaseVersionId: null, currentVersionId: null });
-    expect((await currentDraft(ctx(), deps)).source).toBe('working draft');
+    expect((await currentDraft(ctx(), deps, 'bp1')).source).toBe('working draft');
     (deps.blueprints.getBlueprint as ReturnType<typeof vi.fn>).mockResolvedValue({
       workingDraft: null,
       workingDraftBaseVersionId: null,
       currentVersionId: null,
     });
     (deps.blueprints.listVersions as ReturnType<typeof vi.fn>).mockResolvedValue([]);
-    expect(await currentDraft(ctx(), deps)).toMatchObject({ draft: EMPTY_DRAFT, source: 'empty' });
+    expect(await currentDraft(ctx(), deps, 'bp1')).toMatchObject({
+      draft: EMPTY_DRAFT,
+      source: 'empty',
+    });
+  });
+});
+
+describe('currentDraft with the editor', () => {
+  it("uses the editor's draft only for its own blueprint, and remembers the first read as the baseline", async () => {
+    const deps = depsWith({ workingDraftBaseVersionId: 'v2', currentVersionId: 'v2' });
+    const c = newTurnContext({ editorDraft: { blueprintId: 'bp1', draft: saved } });
+    expect(await currentDraft(c, deps, 'bp1')).toMatchObject({ draft: saved, source: 'editor' });
+    expect((await currentDraft(c, deps, 'bp2')).source).toBe('working draft');
+    c.editorDraft = null;
+    expect((await currentDraft(c, deps, 'bp1')).source).toBe('working draft');
+    expect(c.baselines.get('bp1')).toBe(saved);
   });
 });

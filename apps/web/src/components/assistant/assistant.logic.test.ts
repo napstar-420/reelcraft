@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import type { AssistantItemDto, StageDef } from '@reelcraft/shared';
+import type { AssistantItemDto } from '@reelcraft/shared';
 import {
   OTHER,
   appendDelta,
   buildAnswers,
-  decideDraftApply,
   describeToolCall,
+  invalidationsFor,
+  nextMode,
+  pendingApproval,
   pendingQuestion,
   toRows,
   upsertItem,
@@ -27,24 +29,6 @@ const item = (
   payload,
   createdAt: 'now',
   updatedAt: 'now',
-});
-
-const stage = (key: string): StageDef => ({
-  key,
-  label: key,
-  capability: 'text.generate',
-  config: {},
-  slots: {},
-  context: {},
-  output: { kind: 'text' },
-  checks: [],
-});
-const draft = (...keys: string[]) => ({
-  graph: keys.map(stage),
-  inputs: [],
-  roles: [],
-  defaults: {},
-  budget: { runCapUsd: 5 },
 });
 
 describe('upsertItem / appendDelta', () => {
@@ -69,112 +53,29 @@ describe('upsertItem / appendDelta', () => {
   });
 });
 
-describe('decideDraftApply', () => {
-  const proposal = (base: string, state = 'pending') =>
-    item(
-      3,
-      'proposal',
-      { kind: 'draft', draft: draft('a', 'b'), summary: 's', warnings: [], baseItemId: base },
-      state,
-      'p',
-    );
-
-  it('applies when the canvas still matches the draft the proposal was built on', () => {
-    const items = [
-      item(1, 'user_message', {
-        text: 'go',
-        baseDraft: draft('a'),
-        model: 'm',
-        effort: null,
-        applyMode: 'auto',
-      }),
-      proposal('i1'),
-    ];
-    expect(decideDraftApply(items[1]!, items, draft('a'))).toEqual({ kind: 'apply' });
+describe('modes and invalidation', () => {
+  it('cycles Manual → Auto → Plan → Manual', () => {
+    expect(nextMode('manual')).toBe('auto');
+    expect(nextMode('auto')).toBe('plan');
+    expect(nextMode('plan')).toBe('manual');
   });
 
-  it('reports a conflict when the user changed the canvas meanwhile', () => {
-    const items = [
-      item(1, 'user_message', {
-        text: 'go',
-        baseDraft: draft('a'),
-        model: 'm',
-        effort: null,
-        applyMode: 'auto',
-      }),
-      proposal('i1'),
-    ];
-    expect(decideDraftApply(items[1]!, items, draft('a', 'mine'))).toEqual({ kind: 'conflict' });
+  it('refreshes the changed blueprint, and the lists when a turn ends', () => {
+    expect(invalidationsFor(item(1, 'change', { kind: 'draft', blueprintId: 'bp1' }))).toEqual([
+      ['blueprint', 'bp1'],
+      ['blueprint-versions', 'bp1'],
+      ['blueprints'],
+    ]);
+    expect(invalidationsFor(item(2, 'turn_status', {}, 'running'))).toEqual([]);
+    expect(invalidationsFor(item(3, 'turn_status', {}, 'completed'))).toContainEqual(['runs']);
+    expect(invalidationsFor(item(4, 'agent_message', { text: 'x' }))).toEqual([]);
   });
 
-  it('chains: a second proposal is built on the first', () => {
-    const first = item(
-      3,
-      'proposal',
-      { kind: 'draft', draft: draft('a', 'b'), summary: '', warnings: [], baseItemId: 'i1' },
-      'applied',
-      'p1',
-    );
-    const second = item(
-      4,
-      'proposal',
-      { kind: 'draft', draft: draft('a', 'b', 'c'), summary: '', warnings: [], baseItemId: 'p1' },
-      'pending',
-      'p2',
-    );
-    const items = [
-      item(1, 'user_message', {
-        text: '',
-        baseDraft: draft('a'),
-        model: 'm',
-        effort: null,
-        applyMode: 'auto',
-      }),
-      first,
-      second,
-    ];
-    expect(decideDraftApply(second, items, draft('a', 'b'))).toEqual({ kind: 'apply' });
-    expect(decideDraftApply(second, items, draft('a'))).toEqual({ kind: 'conflict' });
-  });
-
-  it('is key-order independent, and does not block on an unknown or empty base', () => {
-    const a = draft('a');
-    const reordered = {
-      budget: a.budget,
-      defaults: a.defaults,
-      roles: a.roles,
-      inputs: a.inputs,
-      graph: a.graph,
-    };
-    const items = [
-      item(1, 'user_message', {
-        text: '',
-        baseDraft: a,
-        model: 'm',
-        effort: null,
-        applyMode: 'manual',
-      }),
-      proposal('i1'),
-    ];
-    expect(decideDraftApply(items[1]!, items, reordered)).toEqual({ kind: 'apply' });
-    expect(decideDraftApply(proposal('missing'), [], draft('x'))).toEqual({ kind: 'apply' });
-    const nullBase = [
-      item(1, 'user_message', {
-        text: '',
-        baseDraft: null,
-        model: 'm',
-        effort: null,
-        applyMode: 'manual',
-      }),
-      proposal('i1'),
-    ];
-    expect(decideDraftApply(nullBase[1]!, nullBase, draft('x'))).toEqual({ kind: 'apply' });
-  });
-
-  it('reports an applied proposal as applied', () => {
-    expect(decideDraftApply(proposal('i1', 'applied'), [], draft('a'))).toEqual({
-      kind: 'applied',
-    });
+  it('finds the approval card that is waiting', () => {
+    expect(
+      pendingApproval([item(1, 'approval', {}, 'approved'), item(2, 'approval', {}, 'pending')])
+        ?.id,
+    ).toBe('i2');
   });
 });
 
@@ -227,9 +128,23 @@ describe('toRows', () => {
       item(5, 'agent_message', { text: '   ' }),
       item(6, 'agent_message', { text: 'Done' }),
       item(7, 'tool_call', { tool: 'propose_draft', args: {} }, 'completed'),
-      item(8, 'turn_status', { model: 'm', error: 'boom' }, 'failed'),
+      item(8, 'approval', { title: 't' }, 'approved'),
+      item(9, 'change', { kind: 'draft' }, 'applied'),
+      item(10, 'plan', { title: 'p' }, 'pending'),
+      item(11, 'proposal', { kind: 'draft' }, 'applied'),
+      item(12, 'turn_status', { model: 'm', error: 'boom' }, 'failed'),
     ]);
-    expect(rows.map((r) => r.kind)).toEqual(['user', 'tools', 'agent', 'tools', 'problem']);
+    expect(rows.map((r) => r.kind)).toEqual([
+      'user',
+      'tools',
+      'agent',
+      'tools',
+      'approval',
+      'change',
+      'plan',
+      'legacy',
+      'problem',
+    ]);
     expect(rows[1]).toMatchObject({ items: [{ id: 'i3' }, { id: 'i4' }] });
   });
 
@@ -251,7 +166,7 @@ describe('describeToolCall', () => {
       'Read the guide: limits',
     );
     expect(describeToolCall({ tool: 'propose_draft', args: {}, ok: false }, 'failed')).toBe(
-      'Proposed a draft (refused)',
+      'Wrote a new draft (refused)',
     );
     expect(describeToolCall({ tool: 'list_models', args: {} }, 'running')).toBe(
       'Listed the models…',
@@ -263,8 +178,8 @@ describe('describeToolCall', () => {
       'Read some stages',
     );
     expect(describeToolCall({ tool: 'edit_draft', args: {} }, 'completed')).toBe(
-      'Proposed changes to the draft',
+      'Changed the draft',
     );
-    expect(describeToolCall({ tool: 'mystery', args: {} }, 'completed')).toBe('mystery');
+    expect(describeToolCall({ tool: 'mystery_tool', args: {} }, 'completed')).toBe('mystery tool');
   });
 });

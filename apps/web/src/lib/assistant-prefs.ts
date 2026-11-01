@@ -1,12 +1,17 @@
-/** The assistant's per-browser choices (provider, model, effort, auto-apply). A convenience only:
- * storage can be missing or blocked, so every access is guarded. */
+import type { AssistantMode } from '@reelcraft/shared';
+
+/** The assistant's per-browser choices (provider, model, effort, mode, the open chat). A
+ * convenience only: storage can be missing or blocked, so every access is guarded. */
 export interface AssistantPrefs {
   providerId?: string;
   modelId?: string | undefined;
   effort?: string | undefined;
-  autoApply?: boolean;
-  /** The channel Home's composer last used. */
-  channelId?: string;
+  /** The mode new chats start in on this device. */
+  mode?: AssistantMode;
+  /** The chat open in the dock, so it follows the user from page to page. `null`: a new chat. */
+  sessionId?: string | null;
+  /** Whether the dock is open. */
+  dockOpen?: boolean;
 }
 
 const KEY = 'reelcraft.assistant';

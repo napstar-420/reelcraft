@@ -35,9 +35,20 @@ function depsFor(saved: Draft | null = null): ToolDeps {
   const versions = saved
     ? [{ ...saved, id: 'v1', major: 1, minor: 0, runnable: true, createdAt: 'now', runCount: 0 }]
     : [];
+  // the working draft a change tool wrote, read back like the real service does
+  let working: Draft | null = null;
+  const blueprint = () => ({
+    ...BLUEPRINT,
+    workingDraft: working,
+    workingDraftBaseVersionId: working ? BLUEPRINT.currentVersionId : null,
+  });
   return {
     blueprints: {
-      getBlueprint: vi.fn(async () => BLUEPRINT),
+      getBlueprint: vi.fn(async () => blueprint()),
+      setWorkingDraft: vi.fn(async (_id: string, draft: Draft) => {
+        working = draft;
+        return blueprint();
+      }),
       listVersions: vi.fn(async () => versions),
       validateOnly: vi.fn(async (_id: string, dto: Draft) => {
         const issues = validator.validate({
@@ -50,6 +61,7 @@ function depsFor(saved: Draft | null = null): ToolDeps {
     } as unknown as ToolDeps['blueprints'],
     capabilities,
     channels: { get: vi.fn(async () => ({ id: 'ch1', defaults: {} })) } as never,
+    blueprintChanged: vi.fn(),
   } as unknown as ToolDeps;
 }
 
@@ -59,6 +71,11 @@ const result = (out: ToolOutcome) => {
   return (out as { result: Record<string, any> }).result;
 };
 const ids = (draft: Draft) => draft.graph.map((s) => s.key);
+/** The draft a change tool wrote (its change item's `after`), or null when it wrote nothing. */
+const written = (out: ToolOutcome): Draft | null =>
+  out.ok && out.item?.type === 'change' && out.item.payload.kind === 'draft'
+    ? out.item.payload.after
+    : null;
 
 describe('a large blueprint', () => {
   it('is as big as the one that broke the assistant', () => {
@@ -66,7 +83,12 @@ describe('a large blueprint', () => {
   });
 
   it('comes back from get_blueprint as an outline, small enough for any CLI', async () => {
-    const out = await runTool('get_blueprint', {}, newTurnContext('bp1', largeDraft()), depsFor());
+    const out = await runTool(
+      'get_blueprint',
+      { blueprintId: 'bp1' },
+      newTurnContext({ editorDraft: { blueprintId: 'bp1', draft: largeDraft() } }),
+      depsFor(),
+    );
     const r = result(out);
     expect(r.draft).toBeNull();
     expect(r.draftOmitted).toContain('get_stages');
@@ -84,7 +106,14 @@ describe('a large blueprint', () => {
 
   it('is still returned whole when it is small', async () => {
     const small = largeDraft(10);
-    const r = result(await runTool('get_blueprint', {}, newTurnContext('bp1', small), depsFor()));
+    const r = result(
+      await runTool(
+        'get_blueprint',
+        { blueprintId: 'bp1' },
+        newTurnContext({ editorDraft: { blueprintId: 'bp1', draft: small } }),
+        depsFor(),
+      ),
+    );
     expect(r.draft).toEqual(small);
     expect(r.outline).toHaveLength(31);
   });
@@ -92,23 +121,37 @@ describe('a large blueprint', () => {
   it('is read stage by stage with get_stages, from the draft or a saved version', async () => {
     const draft = largeDraft();
     const deps = depsFor(draft);
-    const c = newTurnContext('bp1', draft);
-    const r = result(await runTool('get_stages', { keys: ['s20', 's21', 'nope'] }, c, deps));
+    const c = newTurnContext({ editorDraft: { blueprintId: 'bp1', draft: draft } });
+    const r = result(
+      await runTool('get_stages', { blueprintId: 'bp1', keys: ['s20', 's21', 'nope'] }, c, deps),
+    );
     expect(r.stages.map((s: { key: string }) => s.key)).toEqual(['s20', 's21']);
     expect(r.stages[0]).toEqual(draft.graph[19]);
     expect(r.missing).toEqual(['nope']);
 
     const edited = structuredClone(draft);
     edited.graph[19]!.label = 'Edited on the canvas';
-    const canvas = newTurnContext('bp1', edited);
-    const now = result(await runTool('get_stages', { keys: ['s20'] }, canvas, deps));
+    const canvas = newTurnContext({ editorDraft: { blueprintId: 'bp1', draft: edited } });
+    const now = result(
+      await runTool('get_stages', { blueprintId: 'bp1', keys: ['s20'] }, canvas, deps),
+    );
     expect(now.stages[0].label).toBe('Edited on the canvas');
     const saved = result(
-      await runTool('get_stages', { keys: ['s20'], version: '1.0' }, canvas, deps),
+      await runTool(
+        'get_stages',
+        { blueprintId: 'bp1', keys: ['s20'], version: '1.0' },
+        canvas,
+        deps,
+      ),
     );
     expect(saved.stages[0].label).toBe('Step 20');
     expect(
-      await runTool('get_stages', { keys: ['s20'], version: '9.9' }, canvas, deps),
+      await runTool(
+        'get_stages',
+        { blueprintId: 'bp1', keys: ['s20'], version: '9.9' },
+        canvas,
+        deps,
+      ),
     ).toMatchObject({
       ok: false,
       error: expect.stringContaining('no version "9.9"'),
@@ -119,16 +162,16 @@ describe('a large blueprint', () => {
     const draft = largeDraft();
     const out = await runTool(
       'get_stages',
-      { keys: ids(draft).slice(0, 20) },
-      newTurnContext('bp1', draft),
+      { blueprintId: 'bp1', keys: ids(draft).slice(0, 20) },
+      newTurnContext({ editorDraft: { blueprintId: 'bp1', draft: draft } }),
       depsFor(),
     );
     expect(out).toMatchObject({ ok: false, error: expect.stringContaining('Ask for fewer') });
     const ten = result(
       await runTool(
         'get_stages',
-        { keys: ids(draft).slice(0, 6) },
-        newTurnContext('bp1', draft),
+        { blueprintId: 'bp1', keys: ids(draft).slice(0, 6) },
+        newTurnContext({ editorDraft: { blueprintId: 'bp1', draft: draft } }),
         depsFor(),
       ),
     );
@@ -139,8 +182,8 @@ describe('a large blueprint', () => {
     const r = result(
       await runTool(
         'get_version',
-        { version: '1.0' },
-        newTurnContext('bp1', null),
+        { blueprintId: 'bp1', version: '1.0' },
+        newTurnContext(),
         depsFor(largeDraft()),
       ),
     );
@@ -163,29 +206,40 @@ describe('edit_draft on a large blueprint', () => {
   ];
 
   it('refuses while a removed stage is still referenced, and then changes nothing', async () => {
-    const c = newTurnContext('bp1', largeDraft());
-    const out = await runTool('edit_draft', { ops: REMOVE_REVIEWS, summary: 'x' }, c, depsFor());
+    const c = newTurnContext({ editorDraft: { blueprintId: 'bp1', draft: largeDraft() } });
+    const out = await runTool(
+      'edit_draft',
+      { blueprintId: 'bp1', ops: REMOVE_REVIEWS, summary: 'x' },
+      c,
+      depsFor(),
+    );
     expect(out).toMatchObject({ ok: false, error: expect.stringContaining('error(s)') });
     expect(JSON.stringify(out)).toContain('s21');
-    expect(c.lastProposal).toBeNull();
+    expect(written(out)).toBeNull();
   });
 
   it('removes the two stages, adds approval and leaves every other stage as it was', async () => {
     const original = largeDraft();
-    const c = newTurnContext('bp1', structuredClone(original));
+    const c = newTurnContext({
+      editorDraft: { blueprintId: 'bp1', draft: structuredClone(original) },
+    });
     const out = await runTool(
       'edit_draft',
-      { ops: [...REMOVE_REVIEWS, ...REPAIRS], summary: 'Approval replaces the review stages' },
+      {
+        blueprintId: 'bp1',
+        ops: [...REMOVE_REVIEWS, ...REPAIRS],
+        summary: 'Approval replaces the review stages',
+      },
       c,
       depsFor(),
     );
     const r = result(out);
-    expect(r).toMatchObject({ status: 'proposed', stageCount: 29 });
+    expect(r).toMatchObject({ status: 'written', stageCount: 29 });
     expect(out).toMatchObject({
-      item: { type: 'proposal', payload: { kind: 'draft', summary: expect.any(String) } },
+      item: { type: 'change', payload: { kind: 'draft', summary: expect.any(String) } },
     });
 
-    const draft = c.lastProposal!;
+    const draft = written(out)!;
     expect(ids(draft)).toEqual(ids(original).filter((k) => k !== 's21' && k !== 's27'));
     expect(draft.graph.find((s) => s.key === 's20')!.approval).toEqual({ mode: 'stage' });
     expect(draft.graph.find((s) => s.key === 's25')!.approval).toEqual({ mode: 'stage' });
@@ -201,23 +255,28 @@ describe('edit_draft on a large blueprint', () => {
     expect(draft.presentation!.positions.s20).toEqual({ x: 19 * 300, y: 0 });
   });
 
-  it('builds on its own earlier proposal in the same turn', async () => {
-    const c = newTurnContext('bp1', largeDraft());
+  it('builds on its own earlier change in the same turn', async () => {
+    const c = newTurnContext({ editorDraft: { blueprintId: 'bp1', draft: largeDraft() } });
     const deps = depsFor();
     result(
-      await runTool('edit_draft', { ops: [...REMOVE_REVIEWS, ...REPAIRS], summary: 'a' }, c, deps),
+      await runTool(
+        'edit_draft',
+        { blueprintId: 'bp1', ops: [...REMOVE_REVIEWS, ...REPAIRS], summary: 'a' },
+        c,
+        deps,
+      ),
     );
     const next = result(
       await runTool(
         'edit_draft',
-        { ops: [{ op: 'remove_stage', key: 's31' }], summary: 'b' },
+        { blueprintId: 'bp1', ops: [{ op: 'remove_stage', key: 's31' }], summary: 'b' },
         c,
         deps,
       ),
     );
     expect(next.stageCount).toBe(28);
-    const view = result(await runTool('get_blueprint', {}, c, deps));
-    expect(view).toMatchObject({ draftSource: 'proposal in this turn' });
+    const view = result(await runTool('get_blueprint', { blueprintId: 'bp1' }, c, deps));
+    expect(view).toMatchObject({ draftSource: 'working draft' });
     expect(view.outline).toHaveLength(28);
   });
 });
@@ -225,8 +284,10 @@ describe('edit_draft on a large blueprint', () => {
 describe('edit_draft operations', () => {
   const base = () => largeDraft(50);
   const run = (ops: unknown[], draft: Draft = base()) => {
-    const c = newTurnContext('bp1', draft);
-    return runTool('edit_draft', { ops, summary: 's' }, c, depsFor()).then((out) => ({ out, c }));
+    const c = newTurnContext({ editorDraft: { blueprintId: 'bp1', draft: draft } });
+    return runTool('edit_draft', { blueprintId: 'bp1', ops, summary: 's' }, c, depsFor()).then(
+      (out) => ({ out, c }),
+    );
   };
 
   it('adds a stage after another, or at the end, and rejects a repeated key', async () => {
@@ -236,11 +297,11 @@ describe('edit_draft operations', () => {
       label: 'Extra',
       approval: { mode: 'stage' },
     };
-    const { c } = await run([
+    const { out } = await run([
       { op: 'add_stage', stage, after: 's03' },
       { op: 'add_stage', stage: { ...stage, key: 'last' } },
     ]);
-    const keys = ids(c.lastProposal!);
+    const keys = ids(written(out)!);
     expect(keys.slice(0, 5)).toEqual(['s01', 's02', 's03', 'extra', 's04']);
     expect(keys.at(-1)).toBe('last');
 
@@ -255,8 +316,8 @@ describe('edit_draft operations', () => {
 
   it('replaces a stage, keeping its key', async () => {
     const stage = { ...base().graph[4]!, label: 'Replaced' };
-    const { c } = await run([{ op: 'replace_stage', key: 's05', stage }]);
-    expect(c.lastProposal!.graph[4]!.label).toBe('Replaced');
+    const { out } = await run([{ op: 'replace_stage', key: 's05', stage }]);
+    expect(written(out)!.graph[4]!.label).toBe('Replaced');
     const renamed = await run([
       { op: 'replace_stage', key: 's05', stage: { ...stage, key: 'other' } },
     ]);
@@ -269,11 +330,11 @@ describe('edit_draft operations', () => {
       { op: 'update_stage', key: 's22', unset: ['dependsOn'] },
     ]);
     expect(out.ok, JSON.stringify(out)).toBe(true);
-    expect(c.lastProposal!.graph[4]).toMatchObject({
+    expect(written(out)!.graph[4]).toMatchObject({
       label: 'Renamed',
       approval: { mode: 'stage' },
     });
-    expect(c.lastProposal!.graph[21]!.dependsOn).toBeUndefined();
+    expect(written(out)!.graph[21]!.dependsOn).toBeUndefined();
     for (const op of [
       { op: 'update_stage', key: 's05', set: { key: 'x' } },
       { op: 'update_stage', key: 's05' },
@@ -283,12 +344,12 @@ describe('edit_draft operations', () => {
   });
 
   it('sets and clears draft fields', async () => {
-    const { c } = await run([
+    const { out } = await run([
       { op: 'set_draft_field', field: 'budget', value: { runCapUsd: 3 } },
       { op: 'set_draft_field', field: 'presentation', value: null },
     ]);
-    expect(c.lastProposal!.budget).toEqual({ runCapUsd: 3 });
-    expect(c.lastProposal!.presentation).toBeUndefined();
+    expect(written(out)!.budget).toEqual({ runCapUsd: 3 });
+    expect(written(out)!.presentation).toBeUndefined();
     const bad = await run([{ op: 'set_draft_field', field: 'graph', value: [] }]);
     expect(bad.out).toMatchObject({ ok: false, error: expect.stringContaining('Invalid input') });
   });
@@ -304,7 +365,7 @@ describe('edit_draft operations', () => {
         /Edit 2 \(remove_stage "ghost"\) failed.*Nothing was changed.*s01, s02/s,
       ),
     });
-    expect(c.lastProposal).toBeNull();
+    expect(written(out)).toBeNull();
   });
 
   it('reports a made-up stage field the way propose_draft does', async () => {
@@ -320,11 +381,11 @@ describe('edit_draft operations', () => {
   it('does not run after ask_user, and does not touch the original draft object', async () => {
     const draft = base();
     const snapshot = structuredClone(draft);
-    const c = newTurnContext('bp1', draft);
+    const c = newTurnContext({ editorDraft: { blueprintId: 'bp1', draft: draft } });
     result(
       await runTool(
         'edit_draft',
-        { ops: [{ op: 'remove_stage', key: 's31' }], summary: 's' },
+        { blueprintId: 'bp1', ops: [{ op: 'remove_stage', key: 's31' }], summary: 's' },
         c,
         depsFor(),
       ),
@@ -334,7 +395,7 @@ describe('edit_draft operations', () => {
     expect(
       await runTool(
         'edit_draft',
-        { ops: [{ op: 'remove_stage', key: 's30' }], summary: 's' },
+        { blueprintId: 'bp1', ops: [{ op: 'remove_stage', key: 's30' }], summary: 's' },
         c,
         depsFor(),
       ),

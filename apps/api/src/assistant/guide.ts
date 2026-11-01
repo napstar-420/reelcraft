@@ -34,7 +34,7 @@ export const GUIDE: Record<string, GuideSection> = {
 - Stage \`key\`s must be unique. Pick short descriptive keys such as \`script\`, \`scenes\`, \`images\`, \`voice\`. Once saved, runs refer to a stage by its key, so don't rename keys of existing stages without a reason.
 - \`propose_draft\` and \`validate_draft\` take the COMPLETE draft (every stage, inputs, roles, defaults, budget, execution and presentation when present): a draft there is not a patch. \`edit_draft\` is the patch form: a list of edits to the current draft, which keeps everything it doesn't touch (use it for changes to an existing blueprint).
 - Top-level draft fields are graph, inputs, roles, defaults, budget, execution and presentation. Preserve execution and presentation from the current draft when proposing unrelated edits. Only the stage fields in the tool schema exist. Invented fields are rejected.
-- Saving a version is the user's job. You propose a draft; the user (or auto-apply) puts it on the canvas.
+- \`edit_draft\` and \`propose_draft\` write the blueprint's unsaved draft: the editor shows it at once and the user can Undo. It is not a saved version.
 - Keep the user's existing stages unless they ask to change them: start from the draft that \`get_blueprint\` returns (an outline plus \`get_stages\` when it is large) and change it with \`edit_draft\`.
 - The usual end-to-end shape: plan scenes (\`text.generate\`, data) → write script (\`text.generate\`) → make visuals per scene (\`image.generate\`/\`video.generate\` with iterate) → voice-over (\`audio.speech\`) → word timings (\`media.analyze\`) → assemble (\`timeline.render\` or \`video.concat\`) → human approval. The last stage that makes a video is the run's final video, so end the graph with it.`,
   },
@@ -181,7 +181,7 @@ Every stage a model writes needs at least one check, a qc or an approval (propos
     title: 'Run inputs, roles and budget',
     body: `**inputs**: what a run asks for. \`{ key, label, required, accepts }\` where \`accepts\` is \`{kind:'text'}\`, \`{kind:'data', schema}\`, or \`{kind:'media.image'|'media.video'|'media.audio', cardinality:'one'|'many'}\`. Keys are unique. Bind a stage to one with \`{from:'input', inputKey}\`. Use inputs for what changes run to run (topic, tone, a photo); put constants in the prompt.
 
-**roles**: at most ONE. \`{ key, label, required, characterId?, referenceBlobIds? }\`. It selects a channel Character (take the id from \`get_channel_resources\`; the Character must be ready, with usable references, and in this channel) and at least one of its reference images. Bind it with \`{from:'role', roleKey}\` to a many-cardinality image \`references\` slot. A declared role that no stage binds only gets a warning. You can't create Characters.
+**roles**: at most ONE. \`{ key, label, required, characterId?, referenceBlobIds? }\`. It selects a channel Character (take the id from \`get_channel\`; the Character must be ready, with usable references, and in this channel) and at least one of its reference images. Bind it with \`{from:'role', roleKey}\` to a many-cardinality image \`references\` slot. A declared role that no stage binds only gets a warning. You can't create Characters.
 
 **budget**: \`{ runCapUsd }\`, the usual spending limit for a run (the run dialog starts from it). Choose a sensible cap for the paid stages (an all-fake or all-free blueprint can use a small cap).`,
   },
@@ -230,7 +230,7 @@ QC block shape: \`{ criteria, threshold, model: { provider, modelId, params }, i
 
   diagnose: {
     title: 'Using run results to improve the blueprint',
-    body: `Use this when the user asks why something failed, why a run was expensive or slow, whether a result is good, or says the output is not what they wanted. You can read this blueprint's runs and what they made; you cannot start, retry, approve or cancel anything.
+    body: `Use this when the user asks why something failed, why a run was expensive or slow, whether a result is good, or says the output is not what they wanted. You can read every run and what it made.
 
 **Get the evidence first.** \`list_runs\` to find the run, \`get_run\` for the stage-by-stage picture (state, model, how each attempt ended, cost split, failure), \`get_stage\` for the stage that matters (failed checks, QC critique, the error or rejection note, the output including the one that was rejected), \`view_stage_media\` to look at images and video frames. Quote what you found (stage, attempt, the message) before proposing a fix, and fix only what the evidence points to.
 
@@ -376,7 +376,7 @@ When a request mixes shapes (a story with a few real clips, a voice-over plus mu
     title: 'Versions, the draft and going back',
     body: `- The canvas holds a working **draft** that autosaves. It is not a version. Only the user's **Save** creates a saved version, numbered \`major.minor\` (1.0, then 1.1, 1.2…; the Save menu can start a new major, 2.0). Runs refer to the saved version they ran (a run of unsaved canvas edits uses a hidden "canvas draft" snapshot).
 - \`get_blueprint\` lists the saved versions (label, which is current, run counts) and says whether the draft differs from the latest save (\`draftDiffersFromLatest\`). \`get_version\` reads one (an outline plus \`get_stages\` with its label, when it is large). \`diff_drafts\` compares any two (\`current\` is the draft on the canvas now).
-- **Going back**: there is no restore button for you. Read the old version with \`get_version\`, propose a draft that brings back what the user wants (the whole version, or only some stages or settings, keeping the rest of the current draft), and tell them to Save to keep it. Say what you brought back and what you left alone.
+- **Going back**: there is no restore button for you. Read the old version with \`get_version\`, write a draft that brings back what the user wants (the whole version, or only some stages or settings, keeping the rest of the current draft) with \`edit_draft\` or \`propose_draft\`, and tell them to Save to keep it. Say what you brought back and what you left alone.
 - "What changed since the last save / between 1.1 and 1.3?": \`diff_drafts\`, then explain in the user's terms (stage labels, settings), not field names.
 - Versions have no notes, changelog or author: do not invent them. The package and sharing features exist in the app, but you cannot export, import or sign anything.`,
   },

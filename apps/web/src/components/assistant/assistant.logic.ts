@@ -2,18 +2,11 @@ import type {
   AskUserQuestion,
   AssistantAnswers,
   AssistantItemDto,
-  CreateBlueprintVersionDto,
-  DraftProposalPayload,
+  AssistantMode,
+  ChangePayload,
   QuestionPayload,
   ToolCallPayload,
-  UserMessagePayload,
 } from '@reelcraft/shared';
-import { stableStringify } from '../../../lib/stable-stringify';
-
-type DraftLike = Pick<
-  CreateBlueprintVersionDto,
-  'graph' | 'inputs' | 'roles' | 'defaults' | 'budget'
->;
 
 export const payloadOf = <T>(item: AssistantItemDto): T => item.payload as T;
 
@@ -45,51 +38,35 @@ export function appendDelta(
   );
 }
 
-// ---- applying a proposal --------------------------------------------------------------------
+// ---- modes and what changed ----------------------------------------------------------------
 
-export type ApplyDecision =
-  | { kind: 'apply' }
-  | { kind: 'applied' }
-  /** The canvas no longer matches the draft the proposal was built on. */
-  | { kind: 'conflict' };
+export const MODES: Array<{ id: AssistantMode; label: string; hint: string }> = [
+  { id: 'manual', label: 'Manual', hint: 'Asks before every change' },
+  { id: 'auto', label: 'Auto', hint: 'Makes changes without asking' },
+  { id: 'plan', label: 'Plan', hint: 'Only reads, then shows a plan' },
+];
 
-/** The draft a draft proposal was built on: the turn's user message (the canvas as sent) or an
- * earlier proposal in the same turn. `undefined` when it can't be found. */
-export function baseDraftOf(
-  proposal: AssistantItemDto,
-  items: AssistantItemDto[],
-): DraftLike | null | undefined {
-  const { baseItemId } = payloadOf<DraftProposalPayload>(proposal);
-  const base = items.find((i) => i.id === baseItemId);
-  if (!base) return undefined;
-  if (base.type === 'user_message') return payloadOf<UserMessagePayload>(base).baseDraft;
-  if (base.type === 'proposal') {
-    const payload = payloadOf<DraftProposalPayload | { kind: 'metadata' }>(base);
-    return payload.kind === 'draft' ? payload.draft : undefined;
-  }
-  return undefined;
+/** Shift+Tab's order, like Claude Code. */
+export function nextMode(mode: AssistantMode): AssistantMode {
+  const index = MODES.findIndex((m) => m.id === mode);
+  return MODES[(index + 1) % MODES.length]!.id;
 }
 
-/** Whether a draft proposal can go onto the canvas as it is. Compares content (key-order
- * independent) because the canvas's draft may have round-tripped through `jsonb`. */
-export function decideDraftApply(
-  proposal: AssistantItemDto,
-  items: AssistantItemDto[],
-  canvas: DraftLike | null,
-): ApplyDecision {
-  if (proposal.state === 'applied') return { kind: 'applied' };
-  const base = baseDraftOf(proposal, items);
-  // an unknown or empty base can't be compared: don't block the user over it
-  if (base === undefined || base === null || canvas === null) return { kind: 'apply' };
-  const key = (d: DraftLike) =>
-    stableStringify({
-      graph: d.graph,
-      inputs: d.inputs,
-      roles: d.roles,
-      defaults: d.defaults,
-      budget: d.budget,
-    });
-  return key(base) === key(canvas) ? { kind: 'apply' } : { kind: 'conflict' };
+/** The queries an item makes stale: a change refreshes the blueprint it changed, and a turn that
+ * ended refreshes the lists the assistant may have changed. */
+export function invalidationsFor(item: AssistantItemDto): Array<readonly unknown[]> {
+  if (item.type === 'change') {
+    const { blueprintId } = payloadOf<ChangePayload>(item);
+    return [['blueprint', blueprintId], ['blueprint-versions', blueprintId], ['blueprints']];
+  }
+  if (item.type === 'turn_status' && item.state !== 'running') {
+    return [['blueprints'], ['channels'], ['runs']];
+  }
+  return [];
+}
+
+export function pendingApproval(items: AssistantItemDto[]): AssistantItemDto | undefined {
+  return items.find((i) => i.type === 'approval' && i.state === 'pending');
 }
 
 // ---- questions ------------------------------------------------------------------------------
@@ -136,7 +113,10 @@ export type ChatRow =
   | { kind: 'user'; item: AssistantItemDto }
   | { kind: 'agent'; item: AssistantItemDto }
   | { kind: 'tools'; id: string; items: AssistantItemDto[] }
-  | { kind: 'proposal'; item: AssistantItemDto }
+  | { kind: 'change'; item: AssistantItemDto }
+  | { kind: 'approval'; item: AssistantItemDto }
+  | { kind: 'plan'; item: AssistantItemDto }
+  | { kind: 'legacy'; item: AssistantItemDto }
   | { kind: 'question'; item: AssistantItemDto }
   | { kind: 'problem'; item: AssistantItemDto };
 
@@ -158,8 +138,13 @@ export function toRows(items: AssistantItemDto[]): ChatRow[] {
         else rows.push({ kind: 'tools', id: item.id, items: [item] });
         break;
       }
+      case 'change':
+      case 'approval':
+      case 'plan':
+        rows.push({ kind: item.type, item });
+        break;
       case 'proposal':
-        rows.push({ kind: 'proposal', item });
+        rows.push({ kind: 'legacy', item });
         break;
       case 'question':
         rows.push({ kind: 'question', item });
@@ -174,15 +159,26 @@ export function toRows(items: AssistantItemDto[]): ChatRow[] {
   return rows;
 }
 
+const str = (value: unknown): string | null => (typeof value === 'string' ? value : null);
+
 /** A short, plain-language line for a tool call. */
 export function describeToolCall(call: ToolCallPayload, state: string | null): string {
   const args = (call.args ?? {}) as Record<string, unknown>;
+  const stage = str(args.stageKey);
   const text = (() => {
     switch (call.tool) {
+      case 'list_channels':
+        return 'Listed the channels';
+      case 'list_blueprints':
+        return str(args.query)
+          ? `Looked for blueprints about “${str(args.query)}”`
+          : 'Listed the blueprints';
+      case 'get_channel':
+        return 'Read a channel: its blueprints, assets and characters';
       case 'get_blueprint':
         return 'Read the blueprint';
       case 'get_version':
-        return `Read version ${typeof args.version === 'string' ? args.version : ''}`.trim();
+        return `Read version ${str(args.version) ?? ''}`.trim();
       case 'get_stages':
         return Array.isArray(args.keys) && args.keys.length === 1
           ? `Read stage ${String(args.keys[0])}`
@@ -190,41 +186,41 @@ export function describeToolCall(call: ToolCallPayload, state: string | null): s
       case 'diff_drafts':
         return 'Compared two versions';
       case 'get_effective_config':
-        return `Checked the settings of ${typeof args.stageKey === 'string' ? args.stageKey : 'a stage'}`;
+        return `Checked the settings of ${stage ?? 'a stage'}`;
       case 'list_runs':
         return 'Listed the runs';
       case 'get_run':
         return 'Read a run';
       case 'get_stage':
-        return `Looked at stage ${typeof args.stageKey === 'string' ? args.stageKey : ''}`.trim();
+        return `Looked at stage ${stage ?? ''}`.trim();
       case 'view_stage_media':
-        return `Looked at what ${typeof args.stageKey === 'string' ? args.stageKey : 'a stage'} made`;
+        return `Looked at what ${stage ?? 'a stage'} made`;
       case 'list_capabilities':
         return 'Listed the stage types';
       case 'get_capability':
-        return `Looked up ${typeof args.key === 'string' ? args.key : 'a stage type'}`;
+        return `Looked up ${str(args.key) ?? 'a stage type'}`;
       case 'list_models':
         return 'Listed the models';
       case 'list_checks':
         return 'Listed the checks';
       case 'list_styles':
         return 'Listed the styles';
-      case 'get_channel_resources':
-        return "Read the channel's assets and characters";
       case 'read_guide':
-        return `Read the guide${typeof args.topic === 'string' ? `: ${args.topic}` : ''}`;
+        return `Read the guide${str(args.topic) ? `: ${str(args.topic)}` : ''}`;
       case 'validate_draft':
         return 'Checked a draft';
       case 'propose_draft':
-        return 'Proposed a draft';
+        return 'Wrote a new draft';
       case 'edit_draft':
-        return 'Proposed changes to the draft';
+        return 'Changed the draft';
       case 'update_metadata':
-        return 'Proposed a new name, description or tags';
+        return 'Changed the name, description or tags';
       case 'ask_user':
         return 'Asked a question';
+      case 'present_plan':
+        return 'Showed a plan';
       default:
-        return call.tool;
+        return call.tool.replace(/_/g, ' ');
     }
   })();
   if (state === 'running') return `${text}…`;

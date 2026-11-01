@@ -2,10 +2,35 @@ import { z } from 'zod';
 import { CreateBlueprintVersionDto, UpdateBlueprintDto } from './blueprint.dto';
 import { ValidationIssue } from '../provider';
 
-/** `manual`: a proposal waits for the user's Apply. `auto`: the open canvas applies a valid
- * proposal itself (and offers Undo). Either way the agent never saves a version. */
-export const AssistantApplyMode = z.enum(['manual', 'auto']);
-export type AssistantApplyMode = z.infer<typeof AssistantApplyMode>;
+/** How much the assistant does on its own, like Claude Code's modes:
+ * - `manual`: reads freely; every change or action waits for the user's Yes on an approval card.
+ * - `auto`: does everything without asking (each run's own budget still applies).
+ * - `plan`: reads only, then presents a plan for the user to approve. */
+export const AssistantMode = z.enum(['manual', 'auto', 'plan']);
+export type AssistantMode = z.infer<typeof AssistantMode>;
+
+/** Where the user is in the app when they send a message: what "this" means. */
+export const AssistantPage = z.enum([
+  'home',
+  'blueprints',
+  'blueprint',
+  'runs',
+  'run',
+  'channels',
+  'channel',
+  'settings',
+  'other',
+]);
+export type AssistantPage = z.infer<typeof AssistantPage>;
+
+export const AssistantPageContext = z.object({
+  page: AssistantPage,
+  channelId: z.string().min(1).max(64).optional(),
+  blueprintId: z.string().min(1).max(64).optional(),
+  runId: z.string().min(1).max(64).optional(),
+  stageKey: z.string().min(1).max(120).optional(),
+});
+export type AssistantPageContext = z.infer<typeof AssistantPageContext>;
 
 /** One question the agent asks the user. The UI always adds a final free-text "Other…" choice,
  * so the agent must not offer one itself. */
@@ -41,35 +66,70 @@ export const BlueprintMetadataChanges = UpdateBlueprintDto.pick({
 });
 export type BlueprintMetadataChanges = z.infer<typeof BlueprintMetadataChanges>;
 
-export const DraftProposalPayload = z.object({
+/** A change the assistant made to a blueprint (Undo restores `before`). */
+export const DraftChangePayload = z.object({
   kind: z.literal('draft'),
-  draft: CreateBlueprintVersionDto,
+  blueprintId: z.string(),
+  blueprintName: z.string(),
   summary: z.string(),
-  /** Warnings only: a draft with validation errors is never proposed. */
+  /** The draft the change was made from (what the editor showed). */
+  before: CreateBlueprintVersionDto,
+  after: CreateBlueprintVersionDto,
+  /** Warnings only: a draft with validation errors is never written. */
   warnings: z.array(ValidationIssue),
-  /** The item whose draft this proposal was built on (the turn's `user_message` or the previous
-   * proposal in the turn); the canvas applies automatically only while it still matches. */
-  baseItemId: z.string().nullable(),
 });
-export type DraftProposalPayload = z.infer<typeof DraftProposalPayload>;
+export type DraftChangePayload = z.infer<typeof DraftChangePayload>;
 
-export const MetadataProposalPayload = z.object({
+export const MetadataChangePayload = z.object({
   kind: z.literal('metadata'),
+  blueprintId: z.string(),
+  blueprintName: z.string(),
+  summary: z.string(),
   changes: BlueprintMetadataChanges,
   previous: z.object({
     name: z.string(),
     description: z.string().nullable(),
     tags: z.array(z.string()),
   }),
-  summary: z.string(),
 });
-export type MetadataProposalPayload = z.infer<typeof MetadataProposalPayload>;
+export type MetadataChangePayload = z.infer<typeof MetadataChangePayload>;
 
-export const ProposalPayload = z.discriminatedUnion('kind', [
-  DraftProposalPayload,
-  MetadataProposalPayload,
+export const ChangePayload = z.discriminatedUnion('kind', [
+  DraftChangePayload,
+  MetadataChangePayload,
 ]);
-export type ProposalPayload = z.infer<typeof ProposalPayload>;
+export type ChangePayload = z.infer<typeof ChangePayload>;
+
+/** Manual mode: what the assistant wants to do, waiting for the user's decision. */
+export const ApprovalAnswer = z.enum(['yes', 'yes_auto', 'no']);
+export type ApprovalAnswer = z.infer<typeof ApprovalAnswer>;
+
+export const ApprovalPayload = z.object({
+  tool: z.string(),
+  /** `change` edits something, `action` acts on a run, `destroy` deletes or archives. */
+  kind: z.enum(['change', 'action', 'destroy']),
+  /** One line, e.g. "Retry the stage Scene images". */
+  title: z.string(),
+  /** Plain-language consequences, e.g. "Re-makes 3 images and the stages after them". */
+  details: z.array(z.string()),
+  /** Estimated cost in USD when known. */
+  costUsd: z.number().nullable(),
+  /** A blueprint change, shown as a diff. */
+  change: ChangePayload.optional(),
+  answer: ApprovalAnswer.optional(),
+  feedback: z.string().optional(),
+});
+export type ApprovalPayload = z.infer<typeof ApprovalPayload>;
+
+/** Plan mode: what the assistant would do, for the user to approve. */
+export const PlanPayload = z.object({
+  title: z.string(),
+  summary: z.string(),
+  steps: z.array(z.string()),
+  decision: z.enum(['auto', 'manual', 'revise']).optional(),
+  feedback: z.string().optional(),
+});
+export type PlanPayload = z.infer<typeof PlanPayload>;
 
 // ---- Sessions, turns and the event stream -------------------------------------------------
 
@@ -77,19 +137,23 @@ export const AssistantItemType = z.enum([
   'user_message',
   'agent_message',
   'tool_call',
-  'proposal',
+  'change',
+  'approval',
+  'plan',
   'question',
   'turn_status',
+  /** Chats from before the assistant could write: kept for display only. */
+  'proposal',
 ]);
 export type AssistantItemType = z.infer<typeof AssistantItemType>;
 
 export const UserMessagePayload = z.object({
   text: z.string(),
-  /** The canvas draft sent with the turn: what the assistant's tools read. */
-  baseDraft: CreateBlueprintVersionDto.nullable(),
+  /** Where the user was when they sent it. */
+  context: AssistantPageContext.nullable(),
   model: z.string(),
   effort: z.string().nullable(),
-  applyMode: AssistantApplyMode,
+  mode: AssistantMode,
 });
 export type UserMessagePayload = z.infer<typeof UserMessagePayload>;
 
@@ -119,7 +183,9 @@ export const TurnStatusPayload = z.object({
 });
 export type TurnStatusPayload = z.infer<typeof TurnStatusPayload>;
 
-export const ProposalState = z.enum(['pending', 'applied']);
+export const ChangeState = z.enum(['applied', 'undone']);
+export const ApprovalState = z.enum(['pending', 'approved', 'denied', 'expired']);
+export const PlanState = z.enum(['pending', 'approved', 'revised', 'dismissed']);
 export const QuestionState = z.enum(['pending', 'answered', 'dismissed']);
 export const TurnState = z.enum(['running', 'completed', 'failed', 'interrupted']);
 
@@ -139,9 +205,10 @@ export type AssistantItemDto = z.infer<typeof AssistantItemDto>;
 
 export const AssistantSessionDto = z.object({
   id: z.string(),
-  blueprintId: z.string(),
+  /** The blueprint the chat was started from, if any (chats are not tied to it). */
+  blueprintId: z.string().nullable(),
   providerId: z.string(),
-  applyMode: AssistantApplyMode,
+  mode: AssistantMode,
   status: z.enum(['idle', 'running']),
   model: z.string().nullable(),
   effort: z.string().nullable(),
@@ -178,11 +245,14 @@ export type AssistantProviderDto = z.infer<typeof AssistantProviderDto>;
 
 export const CreateAssistantSessionDto = z.object({
   providerId: z.string().min(1),
-  applyMode: AssistantApplyMode.default('manual'),
+  /** Omitted: the default mode from Settings. */
+  mode: AssistantMode.optional(),
+  /** The blueprint the chat is started from, if any. */
+  blueprintId: z.string().min(1).optional(),
 });
 export type CreateAssistantSessionDto = z.infer<typeof CreateAssistantSessionDto>;
 
-export const UpdateAssistantSessionDto = z.object({ applyMode: AssistantApplyMode });
+export const UpdateAssistantSessionDto = z.object({ mode: AssistantMode });
 export type UpdateAssistantSessionDto = z.infer<typeof UpdateAssistantSessionDto>;
 
 /** `text` is the user's message; `answer` replies to an `ask_user` question card (its answers
@@ -191,8 +261,13 @@ export const StartAssistantTurnDto = z
   .object({
     text: z.string().trim().max(64_000).optional(),
     answer: z.object({ questionItemId: z.string(), answers: AssistantAnswers }).optional(),
-    /** The canvas draft right now (null when the canvas has none). */
-    draft: CreateBlueprintVersionDto.nullable(),
+    /** Where the user is. */
+    context: AssistantPageContext.optional(),
+    /** The blueprint editor's draft right now, when sent from the editor: it may hold edits that
+     * aren't autosaved yet. */
+    editorDraft: z
+      .object({ blueprintId: z.string().min(1), draft: CreateBlueprintVersionDto })
+      .optional(),
     model: z.string().min(1),
     effort: z.string().min(1).optional(),
   })
@@ -214,3 +289,19 @@ export const AssistantStreamEvent = z.discriminatedUnion('type', [
   z.object({ type: z.literal('session'), session: AssistantSessionDto }),
 ]);
 export type AssistantStreamEvent = z.infer<typeof AssistantStreamEvent>;
+
+export const DecideApprovalDto = z.object({
+  answer: ApprovalAnswer,
+  /** With `no`: what to do instead. */
+  feedback: z.string().trim().max(4000).optional(),
+});
+export type DecideApprovalDto = z.infer<typeof DecideApprovalDto>;
+
+/** Approving a plan starts a turn that carries it out, so it needs the model to use. */
+export const DecidePlanDto = z.object({
+  decision: z.enum(['auto', 'manual', 'revise']),
+  feedback: z.string().trim().max(4000).optional(),
+  model: z.string().min(1),
+  effort: z.string().min(1).optional(),
+});
+export type DecidePlanDto = z.infer<typeof DecidePlanDto>;

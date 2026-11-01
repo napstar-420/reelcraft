@@ -1,4 +1,7 @@
-import type { AssistantApplyMode } from '@reelcraft/shared';
+import type { AssistantMode } from '@reelcraft/shared';
+
+/** How long a tool call may wait for the user's answer on an approval card (Manual mode). */
+export const APPROVAL_WAIT_MS = 30 * 60 * 1000;
 
 /** A tool as the model sees it. Defined once by Reelcraft; each adapter maps it to its provider
  * (Codex dynamic tools, an MCP server for Claude). */
@@ -69,7 +72,7 @@ export interface AssistantAgent {
     effort?: string | undefined;
     /** Refreshed every turn (date, app version, blueprint name). */
     instructions: string;
-    applyMode: AssistantApplyMode;
+    mode: AssistantMode;
     handlers: AssistantTurnHandlers;
     signal: AbortSignal;
   }): Promise<void>;

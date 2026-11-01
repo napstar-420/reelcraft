@@ -1,12 +1,21 @@
 export type QueryKey = readonly unknown[];
 
 export type LiveUpdate =
-  { type: 'run'; runId: string } | { type: 'stage'; runId: string; stageKey: string };
+  | { type: 'run'; runId: string }
+  | { type: 'stage'; runId: string; stageKey: string }
+  | { type: 'blueprint'; blueprintId: string };
 
 /** Which cached queries a server hint makes stale. Never `run-reused-stages`:
  * it fetches the logs of every stage, so refetching it per event would cost
  * one request per stage each time. */
 export function queryKeysFor(update: LiveUpdate): QueryKey[] {
+  if (update.type === 'blueprint') {
+    return [
+      ['blueprint', update.blueprintId],
+      ['blueprint-versions', update.blueprintId],
+      ['blueprints'],
+    ];
+  }
   const keys: QueryKey[] = [['run', update.runId], ['runs']];
   if (update.type === 'stage') {
     for (const name of ['stage-output', 'stage-attempts', 'stage-logs', 'approval-candidate']) {

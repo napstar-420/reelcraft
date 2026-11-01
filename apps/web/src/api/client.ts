@@ -15,6 +15,8 @@ import type {
   AssistantSessionDetailDto,
   AssistantSessionDto,
   CreateAssistantSessionDto,
+  DecideApprovalDto,
+  DecidePlanDto,
   StartAssistantTurnDto,
   UpdateAssistantSessionDto,
   BrowserOsSettingsDto,
@@ -750,10 +752,9 @@ export const api = {
     request<{ login: ClaudeLoginDto | null }>('/claude/login', { method: 'DELETE' }),
   claudeLogout: () => request<ClaudeStatusDto>('/claude/logout', { method: 'POST' }),
   listAssistantProviders: () => request<AssistantProviderDto[]>('/assistant/providers'),
-  listAssistantSessions: (blueprintId: string) =>
-    request<AssistantSessionDto[]>(`/blueprints/${blueprintId}/assistant/sessions`),
-  createAssistantSession: (blueprintId: string, dto: CreateAssistantSessionDto) =>
-    request<AssistantSessionDto>(`/blueprints/${blueprintId}/assistant/sessions`, {
+  listAssistantSessions: () => request<AssistantSessionDto[]>('/assistant/sessions'),
+  createAssistantSession: (dto: CreateAssistantSessionDto) =>
+    request<AssistantSessionDto>('/assistant/sessions', {
       method: 'POST',
       body: JSON.stringify(dto),
     }),
@@ -773,8 +774,18 @@ export const api = {
     }),
   interruptAssistantTurn: (sessionId: string) =>
     request<void>(`/assistant/sessions/${sessionId}/interrupt`, { method: 'POST' }),
-  applyAssistantProposal: (sessionId: string, itemId: string) =>
-    request<AssistantItemDto>(`/assistant/sessions/${sessionId}/proposals/${itemId}/apply`, {
+  decideAssistantApproval: (sessionId: string, itemId: string, dto: DecideApprovalDto) =>
+    request<AssistantItemDto>(`/assistant/sessions/${sessionId}/approvals/${itemId}`, {
+      method: 'POST',
+      body: JSON.stringify(dto),
+    }),
+  decideAssistantPlan: (sessionId: string, itemId: string, dto: DecidePlanDto) =>
+    request<{ turnId: string }>(`/assistant/sessions/${sessionId}/plans/${itemId}`, {
+      method: 'POST',
+      body: JSON.stringify(dto),
+    }),
+  undoAssistantChange: (sessionId: string, itemId: string) =>
+    request<AssistantItemDto>(`/assistant/sessions/${sessionId}/changes/${itemId}/undo`, {
       method: 'POST',
     }),
 };

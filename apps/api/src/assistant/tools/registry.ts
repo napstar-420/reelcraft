@@ -3,7 +3,9 @@ import { BUILTIN_CHECKS } from '../../check/builtins/index';
 import { GUIDE_TOPICS } from '../guide';
 import type { AssistantToolDef } from '../agent/assistant-agent.interface';
 import { askUser } from './ask-user';
+import { presentPlan } from './present-plan';
 import { BLUEPRINT_TOOLS } from './blueprint-tools';
+import { CATALOG_TOOLS } from './catalog-tools';
 import { zodIssues } from './draft-checks';
 import { READ_TOOLS } from './read-tools';
 import { RUN_TOOLS } from './run-tools';
@@ -11,12 +13,17 @@ import { WRITE_TOOLS } from './write-tools';
 import type { AssistantTool, NarrowedEnums, ToolDeps, ToolOutcome, TurnContext } from './types';
 
 export const ASSISTANT_TOOLS: ReadonlyArray<AssistantTool<never>> = [
+  ...CATALOG_TOOLS,
   ...READ_TOOLS,
   ...BLUEPRINT_TOOLS,
   ...RUN_TOOLS,
   ...WRITE_TOOLS,
   askUser as unknown as AssistantTool<never>,
+  presentPlan as unknown as AssistantTool<never>,
 ];
+
+const PLAN_REFUSAL =
+  'Plan mode: you can read and investigate, but not change or run anything. Finish looking, then call present_plan with what you would do.';
 
 const BY_NAME = new Map(ASSISTANT_TOOLS.map((tool) => [tool.name, tool]));
 
@@ -59,6 +66,9 @@ export async function runTool(
   const tool = BY_NAME.get(name);
   if (!tool) {
     return { ok: false, error: `Unknown tool "${name}". Tools: ${[...BY_NAME.keys()].join(', ')}` };
+  }
+  if (ctx.mode === 'plan' && tool.kind !== 'read' && tool.kind !== 'interact') {
+    return { ok: false, error: PLAN_REFUSAL };
   }
   const parsed = tool.input.safeParse(rawArgs ?? {});
   if (!parsed.success) {

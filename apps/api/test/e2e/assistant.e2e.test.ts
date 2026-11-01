@@ -24,7 +24,7 @@ import { buildHttpTestApp, type HttpTestApp } from '../support/build-http-test-a
 import { createTestDb, type TestDb } from '../support/test-db';
 
 /** Real Postgres + real HTTP + the real tools and validator; only the model is scripted. */
-describe('blueprint assistant (e2e)', () => {
+describe('assistant (e2e)', () => {
   let testDb: TestDb;
   let http: HttpTestApp;
   let agent: FakeAssistantAgent;
@@ -99,11 +99,11 @@ describe('blueprint assistant (e2e)', () => {
     return { status: response.status, body: (text ? JSON.parse(text) : undefined) as T };
   }
 
-  async function newSession(applyMode: 'manual' | 'auto' = 'manual') {
+  async function newSession(mode: 'manual' | 'auto' | 'plan' = 'auto') {
     blueprintId = await newBlueprint();
-    const created = await call<{ id: string }>(`/blueprints/${blueprintId}/assistant/sessions`, {
+    const created = await call<{ id: string }>('/assistant/sessions', {
       method: 'POST',
-      body: { providerId: 'fake', applyMode },
+      body: { providerId: 'fake', mode, blueprintId },
     });
     expect(created.status).toBe(201);
     return created.body.id;
@@ -115,7 +115,7 @@ describe('blueprint assistant (e2e)', () => {
   async function turn(sid: string, body: Record<string, unknown>) {
     return call<{ turnId: string }>(`/assistant/sessions/${sid}/turns`, {
       method: 'POST',
-      body: { draft: null, model: 'fake-assistant', ...body },
+      body: { model: 'fake-assistant', ...body },
     });
   }
 
@@ -145,56 +145,68 @@ describe('blueprint assistant (e2e)', () => {
     ]);
   });
 
-  it('creates, lists, patches and deletes a chat', async () => {
+  it('creates, lists (across blueprints), patches and deletes a chat', async () => {
     useScript([]);
-    const sid = await newSession();
-    const listed = await call<Array<{ id: string; stale: boolean; applyMode: string }>>(
-      `/blueprints/${blueprintId}/assistant/sessions`,
-    );
-    expect(listed.body).toEqual([
-      expect.objectContaining({ id: sid, stale: false, applyMode: 'manual' }),
-    ]);
-
-    const patched = await call<{ applyMode: string }>(`/assistant/sessions/${sid}`, {
-      method: 'PATCH',
-      body: { applyMode: 'auto' },
+    const sid = await newSession('manual');
+    const loose = await call<{ id: string; blueprintId: string | null }>('/assistant/sessions', {
+      method: 'POST',
+      body: { providerId: 'fake' },
     });
-    expect(patched.body.applyMode).toBe('auto');
+    expect(loose.body.blueprintId).toBeNull();
+    const listed =
+      await call<Array<{ id: string; stale: boolean; mode: string }>>('/assistant/sessions');
+    expect(listed.body).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: sid, stale: false, mode: 'manual', blueprintId }),
+        expect.objectContaining({ id: loose.body.id }),
+      ]),
+    );
+
+    const patched = await call<{ mode: string }>(`/assistant/sessions/${sid}`, {
+      method: 'PATCH',
+      body: { mode: 'plan' },
+    });
+    expect(patched.body.mode).toBe('plan');
 
     expect((await call(`/assistant/sessions/${sid}`, { method: 'DELETE' })).status).toBe(204);
     expect((await call(`/assistant/sessions/${sid}`)).status).toBe(404);
     expect(agent.deleted).toHaveLength(1);
+    await call(`/assistant/sessions/${loose.body.id}`, { method: 'DELETE' });
   });
 
   it('rejects an unknown provider and an unknown blueprint', async () => {
-    const bp = await newBlueprint();
+    expect(
+      (await call('/assistant/sessions', { method: 'POST', body: { providerId: 'nope' } })).status,
+    ).toBe(400);
     expect(
       (
-        await call(`/blueprints/${bp}/assistant/sessions`, {
+        await call('/assistant/sessions', {
           method: 'POST',
-          body: { providerId: 'nope' },
+          body: { providerId: 'fake', blueprintId: 'does-not-exist' },
         })
       ).status,
-    ).toBe(400);
-    expect((await call('/blueprints/does-not-exist/assistant/sessions')).status).toBe(404);
+    ).toBe(404);
   });
 
-  it('runs a turn: messages, tool calls and a stored proposal built on the user message', async () => {
+  it('runs a turn in Auto: messages, tool calls, and a change written to the blueprint', async () => {
     const draft = exampleScript();
+    const sid = await newSession('auto');
     useScript([
       [
         { say: 'Looking at it.' },
-        { call: 'get_blueprint', args: {} },
+        { call: 'get_blueprint', args: { blueprintId } },
         {
           call: 'propose_draft',
-          args: { draft, summary: 'Adds a script stage' },
-          expect: (r) => expect(JSON.parse(r.text)).toMatchObject({ status: 'proposed' }),
+          args: { blueprintId, draft, summary: 'Adds a script stage' },
+          expect: (r) => expect(JSON.parse(r.text)).toMatchObject({ status: 'written' }),
         },
         { say: 'Done: one script stage.' },
       ],
     ]);
-    const sid = await newSession();
-    const started = await turn(sid, { text: 'Make me a script blueprint', draft: null });
+    const started = await turn(sid, {
+      text: 'Make me a script blueprint',
+      context: { page: 'blueprint', blueprintId },
+    });
     expect(started.status).toBe(202);
 
     const session = await waitIdle(sid);
@@ -206,7 +218,7 @@ describe('blueprint assistant (e2e)', () => {
       'agent_message',
       'tool_call',
       'tool_call',
-      'proposal',
+      'change',
       'agent_message',
     ]);
     const status = ofType(session, 'turn_status')[0]!;
@@ -219,17 +231,30 @@ describe('blueprint assistant (e2e)', () => {
     });
     expect(proposeCall).toMatchObject({ state: 'completed', payload: { tool: 'propose_draft' } });
 
-    const proposal = ofType(session, 'proposal')[0]!;
-    expect(proposal.state).toBe('pending');
-    expect(proposal.payload).toMatchObject({
+    const change = ofType(session, 'change')[0]!;
+    expect(change.state).toBe('applied');
+    expect(change.payload).toMatchObject({
       kind: 'draft',
+      blueprintId,
       summary: 'Adds a script stage',
-      baseItemId: ofType(session, 'user_message')[0]!.id,
+      after: { graph: [{ key: 'script' }] },
     });
-    expect(agent.turns[0]!.text).toContain('Apply mode: manual');
+    const blueprint = await http.app.get(BlueprintService).getBlueprint(blueprintId);
+    expect(blueprint.workingDraft).toMatchObject({ graph: [{ key: 'script' }] });
+    expect(agent.turns[0]!.text).toContain('Mode: Auto');
+    expect(agent.turns[0]!.text).toContain(`blueprintId ${blueprintId}`);
+
+    // Undo puts the draft back, once
+    const undone = await call<AssistantItemDto>(
+      `/assistant/sessions/${sid}/changes/${change.id}/undo`,
+      { method: 'POST' },
+    );
+    expect(undone.body.state).toBe('undone');
+    const restored = await http.app.get(BlueprintService).getBlueprint(blueprintId);
+    expect(restored.workingDraft).toMatchObject({ graph: [] });
   });
 
-  it('refuses an invalid proposal: nothing is stored and the model sees the issues', async () => {
+  it('refuses an invalid draft: nothing is written and the model sees the issues', async () => {
     const bad = exampleScript();
     bad.graph.push({
       key: 'voice',
@@ -242,11 +267,12 @@ describe('blueprint assistant (e2e)', () => {
       checks: [],
     });
     let seen = '';
+    const sid = await newSession();
     useScript([
       [
         {
           call: 'propose_draft',
-          args: { draft: bad, summary: 's' },
+          args: { blueprintId, draft: bad, summary: 's' },
           expect: (r) => {
             seen = r.text;
             expect(r.ok).toBe(false);
@@ -254,62 +280,202 @@ describe('blueprint assistant (e2e)', () => {
         },
       ],
     ]);
-    const sid = await newSession();
     await turn(sid, { text: 'add voice' });
     const session = await waitIdle(sid);
-    expect(ofType(session, 'proposal')).toHaveLength(0);
+    expect(ofType(session, 'change')).toHaveLength(0);
     expect(ofType(session, 'tool_call')[0]).toMatchObject({ state: 'failed' });
     expect(seen).toContain('required slot');
   });
 
-  it('applies a draft proposal idempotently', async () => {
-    useScript([[{ call: 'propose_draft', args: { draft: exampleScript(), summary: 's' } }]]);
-    const sid = await newSession();
+  /** Waits until the chat shows a pending approval card. */
+  async function pendingApproval(sid: string): Promise<AssistantItemDto> {
+    for (let i = 0; i < 200; i++) {
+      const found = ofType(await getSession(sid), 'approval').find((a) => a.state === 'pending');
+      if (found) return found;
+      await new Promise((r) => setTimeout(r, 25));
+    }
+    throw new Error('no approval card appeared');
+  }
+
+  it('Manual: the tool call waits on an approval card, and Yes writes the change', async () => {
+    const sid = await newSession('manual');
+    let seen = '';
+    useScript([
+      [
+        {
+          call: 'propose_draft',
+          args: { blueprintId, draft: exampleScript(), summary: 'Adds a script stage' },
+          expect: (r) => (seen = r.text),
+        },
+        { say: 'Written.' },
+      ],
+    ]);
     await turn(sid, { text: 'go' });
-    const proposal = ofType(await waitIdle(sid), 'proposal')[0]!;
-    const first = await call<AssistantItemDto>(
-      `/assistant/sessions/${sid}/proposals/${proposal.id}/apply`,
-      { method: 'POST' },
-    );
-    expect(first.body.state).toBe('applied');
-    const again = await call<AssistantItemDto>(
-      `/assistant/sessions/${sid}/proposals/${proposal.id}/apply`,
-      { method: 'POST' },
-    );
-    expect(again.body.state).toBe('applied');
+    const card = await pendingApproval(sid);
+    expect(card.payload).toMatchObject({
+      tool: 'propose_draft',
+      kind: 'change',
+      change: { kind: 'draft', blueprintId, after: { graph: [{ key: 'script' }] } },
+    });
+    // nothing is written while the card waits
     expect(
-      (await call(`/assistant/sessions/${sid}/proposals/nope/apply`, { method: 'POST' })).status,
-    ).toBe(404);
+      (await http.app.get(BlueprintService).getBlueprint(blueprintId)).workingDraft,
+    ).toBeNull();
+    expect((await getSession(sid)).status).toBe('running');
+
+    const decided = await call<AssistantItemDto>(
+      `/assistant/sessions/${sid}/approvals/${card.id}`,
+      {
+        method: 'POST',
+        body: { answer: 'yes' },
+      },
+    );
+    expect(decided.body).toMatchObject({ state: 'approved', payload: { answer: 'yes' } });
+    const session = await waitIdle(sid);
+    expect(JSON.parse(seen)).toMatchObject({ status: 'written' });
+    expect(ofType(session, 'change')).toHaveLength(1);
+    expect(
+      (await http.app.get(BlueprintService).getBlueprint(blueprintId)).workingDraft,
+    ).toMatchObject({ graph: [{ key: 'script' }] });
+    // a decided card can't be answered again
+    expect(
+      (
+        await call(`/assistant/sessions/${sid}/approvals/${card.id}`, {
+          method: 'POST',
+          body: { answer: 'no' },
+        })
+      ).status,
+    ).toBe(409);
   });
 
-  it('applies a metadata proposal to the blueprint, and reports a name clash', async () => {
+  it('Manual: No with feedback reaches the model, and Yes + Auto switches the chat to Auto', async () => {
+    const sid = await newSession('manual');
+    let refused = '';
+    let second = '';
     useScript([
       [
         {
           call: 'update_metadata',
-          args: { name: 'Renamed by assistant', tags: ['ai'], summary: 'rename' },
+          args: { blueprintId, name: 'Space facts', summary: 'rename' },
+          expect: (r) => (refused = r.text),
+        },
+        {
+          call: 'update_metadata',
+          args: { blueprintId, name: 'Ocean facts', summary: 'rename' },
+          expect: (r) => (second = r.text),
         },
       ],
-      [{ call: 'update_metadata', args: { name: 'Assistant blueprint 1', summary: 'clash' } }],
     ]);
-    const sid = await newSession();
     await turn(sid, { text: 'rename it' });
-    const proposal = ofType(await waitIdle(sid), 'proposal')[0]!;
-    expect(proposal.payload).toMatchObject({
+    const first = await pendingApproval(sid);
+    await call(`/assistant/sessions/${sid}/approvals/${first.id}`, {
+      method: 'POST',
+      body: { answer: 'no', feedback: 'Call it Ocean facts' },
+    });
+    const next = await pendingApproval(sid);
+    expect(next.id).not.toBe(first.id);
+    await call(`/assistant/sessions/${sid}/approvals/${next.id}`, {
+      method: 'POST',
+      body: { answer: 'yes_auto' },
+    });
+    const session = await waitIdle(sid);
+    expect(refused).toContain('Call it Ocean facts');
+    expect(JSON.parse(second)).toMatchObject({ status: 'changed' });
+    expect(session.mode).toBe('auto');
+    expect(ofType(session, 'approval').map((a) => a.state)).toEqual(['denied', 'approved']);
+    expect((await http.app.get(BlueprintService).getBlueprint(blueprintId)).name).toBe(
+      'Ocean facts',
+    );
+  });
+
+  it('Manual: stopping the turn expires a waiting card', async () => {
+    const sid = await newSession('manual');
+    useScript([
+      [{ call: 'update_metadata', args: { blueprintId, name: 'Never', summary: 'rename' } }],
+    ]);
+    await turn(sid, { text: 'rename' });
+    const card = await pendingApproval(sid);
+    await call(`/assistant/sessions/${sid}/interrupt`, { method: 'POST' });
+    const session = await waitIdle(sid);
+    expect(ofType(session, 'approval').find((a) => a.id === card.id)!.state).toBe('expired');
+    expect((await http.app.get(BlueprintService).getBlueprint(blueprintId)).name).not.toBe('Never');
+  });
+
+  it('Plan: refuses changes, shows a plan, and approving it switches mode and carries it out', async () => {
+    const sid = await newSession('plan');
+    let refused = '';
+    useScript([
+      [
+        {
+          call: 'update_metadata',
+          args: { blueprintId, name: 'x', summary: 's' },
+          expect: (r) => (refused = r.text),
+        },
+        {
+          call: 'present_plan',
+          args: { title: 'Rename', summary: 'A clearer name.', steps: ['Rename to Clear name'] },
+        },
+      ],
+      [{ call: 'update_metadata', args: { blueprintId, name: 'Clear name', summary: 's' } }],
+    ]);
+    await turn(sid, { text: 'plan a rename' });
+    const planned = await waitIdle(sid);
+    expect(refused).toContain('Plan mode');
+    const plan = ofType(planned, 'plan')[0]!;
+    expect(plan).toMatchObject({ state: 'pending', payload: { title: 'Rename' } });
+
+    const approved = await call(`/assistant/sessions/${sid}/plans/${plan.id}`, {
+      method: 'POST',
+      body: { decision: 'auto', model: 'fake-assistant' },
+    });
+    expect(approved.status).toBe(202);
+    const done = await waitIdle(sid);
+    expect(done.mode).toBe('auto');
+    expect(ofType(done, 'plan')[0]).toMatchObject({
+      state: 'approved',
+      payload: { decision: 'auto' },
+    });
+    expect(agent.turns[1]!.text).toContain('approved your plan');
+    expect((await http.app.get(BlueprintService).getBlueprint(blueprintId)).name).toBe(
+      'Clear name',
+    );
+  });
+
+  it('changes metadata, undoes it, and reports a name clash', async () => {
+    const sid = await newSession();
+    const original = (await http.app.get(BlueprintService).getBlueprint(blueprintId)).name;
+    useScript([
+      [
+        {
+          call: 'update_metadata',
+          args: { blueprintId, name: 'Renamed by assistant', tags: ['ai'], summary: 'rename' },
+        },
+      ],
+      [
+        {
+          call: 'update_metadata',
+          args: { blueprintId, name: 'Assistant blueprint 1', summary: 'clash' },
+        },
+      ],
+    ]);
+    await turn(sid, { text: 'rename it' });
+    const change = ofType(await waitIdle(sid), 'change')[0]!;
+    expect(change.payload).toMatchObject({
       kind: 'metadata',
       changes: { name: 'Renamed by assistant', tags: ['ai'] },
     });
-    const applied = await call(`/assistant/sessions/${sid}/proposals/${proposal.id}/apply`, {
-      method: 'POST',
+    const blueprints = http.app.get(BlueprintService);
+    expect(await blueprints.getBlueprint(blueprintId)).toMatchObject({
+      name: 'Renamed by assistant',
+      tags: ['ai'],
     });
-    expect(applied.status).toBe(201);
-    const blueprint = await http.app.get(BlueprintService).getBlueprint(blueprintId);
-    expect(blueprint).toMatchObject({ name: 'Renamed by assistant', tags: ['ai'] });
+    await call(`/assistant/sessions/${sid}/changes/${change.id}/undo`, { method: 'POST' });
+    expect((await blueprints.getBlueprint(blueprintId)).name).toBe(original);
 
-    // a name already used in the channel is refused before a proposal exists
+    // a name already used in the channel is refused before anything changes
     await turn(sid, { text: 'rename to an existing one' });
     const second = await waitIdle(sid);
-    expect(ofType(second, 'proposal')).toHaveLength(1);
+    expect(ofType(second, 'change')).toHaveLength(1);
     expect(ofType(second, 'tool_call').at(-1)).toMatchObject({ state: 'failed' });
   });
 
@@ -318,17 +484,26 @@ describe('blueprint assistant (e2e)', () => {
     const note = (name: string) => (r: { ok: boolean; text: string }) => {
       seen[name] = r.ok ? JSON.parse(r.text) : r.text;
     };
+    const sid = await newSession();
     useScript([
       [
-        { call: 'get_blueprint', args: {}, expect: note('blueprint') },
-        { call: 'get_version', args: { version: '1.0' }, expect: note('version') },
-        { call: 'diff_drafts', args: { from: '1.0', to: '1.1' }, expect: note('diff') },
-        { call: 'get_effective_config', args: { stageKey: 'script' }, expect: note('config') },
-        { call: 'get_channel_resources', args: {}, expect: note('channel') },
-        { call: 'get_version', args: { version: '7.7' }, expect: note('missing') },
+        { call: 'get_blueprint', args: { blueprintId }, expect: note('blueprint') },
+        { call: 'get_version', args: { blueprintId, version: '1.0' }, expect: note('version') },
+        {
+          call: 'diff_drafts',
+          args: { blueprintId, from: '1.0', to: '1.1' },
+          expect: note('diff'),
+        },
+        {
+          call: 'get_effective_config',
+          args: { blueprintId, stageKey: 'script' },
+          expect: note('config'),
+        },
+        { call: 'get_channel', args: { channelId }, expect: note('channel') },
+        { call: 'list_blueprints', args: { channelId }, expect: note('blueprints') },
+        { call: 'get_version', args: { blueprintId, version: '7.7' }, expect: note('missing') },
       ],
     ]);
-    const sid = await newSession();
     const blueprints = http.app.get(BlueprintService);
     const v1 = exampleScript();
     const v2 = exampleScript();
@@ -357,7 +532,10 @@ describe('blueprint assistant (e2e)', () => {
     });
     expect(seen.channel).toMatchObject({
       channel: { id: channelId },
-      otherBlueprints: expect.any(Array),
+      blueprints: expect.arrayContaining([expect.objectContaining({ id: blueprintId })]),
+    });
+    expect(seen.blueprints).toMatchObject({
+      blueprints: expect.arrayContaining([expect.objectContaining({ id: blueprintId, channelId })]),
     });
     expect(String(seen.missing)).toContain('1.1, 1.0');
   });
@@ -517,7 +695,7 @@ describe('blueprint assistant (e2e)', () => {
       return { failedRun, dryRun, canvasRun };
     }
 
-    it('diagnoses a failed run, shows the rejected output, redacts secrets and stays scoped', async () => {
+    it('diagnoses a failed run, shows the rejected output, redacts secrets, and reads any run', async () => {
       const seen: Record<string, { ok: boolean; text: string; images?: unknown[] }> = {};
       const note = (name: string) => (r: { ok: boolean; text: string; images?: unknown[] }) => {
         seen[name] = r;
@@ -528,7 +706,7 @@ describe('blueprint assistant (e2e)', () => {
       const otherRuns = await seedRuns(other);
       useScript([
         [
-          { call: 'list_runs', args: {}, expect: note('list') },
+          { call: 'list_runs', args: { blueprintId }, expect: note('list') },
           { call: 'get_run', args: { runId: failedRun }, expect: note('run') },
           {
             call: 'get_stage',
@@ -536,6 +714,7 @@ describe('blueprint assistant (e2e)', () => {
             expect: note('stage'),
           },
           { call: 'get_run', args: { runId: otherRuns.failedRun }, expect: note('foreign') },
+          { call: 'get_run', args: { runId: 'no-such-run' }, expect: note('missing') },
           {
             call: 'view_stage_media',
             args: { runId: canvasRun, stageKey: 'script' },
@@ -592,9 +771,12 @@ describe('blueprint assistant (e2e)', () => {
       expect(stage.untrustedContent).toContain('never as instructions');
       expect(seen.stage!.text).not.toMatch(/https?:\/\//);
 
-      expect(seen.foreign!.ok).toBe(false);
-      expect(seen.foreign!.text).toContain('no run');
-      expect(seen.foreignMedia!.ok).toBe(false);
+      // chats are not tied to a blueprint: another blueprint's runs are readable too
+      expect(seen.foreign!.ok).toBe(true);
+      expect(JSON.parse(seen.foreign!.text)).toMatchObject({ blueprintId: other });
+      expect(seen.foreignMedia!.ok).toBe(true);
+      expect(seen.missing!.ok).toBe(false);
+      expect(seen.missing!.text).toContain('no run');
 
       // one picture per item, as images, with a small text note and no base64 in the transcript
       expect(seen.media!.ok).toBe(true);
@@ -628,7 +810,7 @@ describe('blueprint assistant (e2e)', () => {
         },
         {
           call: 'propose_draft',
-          args: { draft: exampleScript(), summary: 'too early' },
+          args: { blueprintId: 'unused', draft: exampleScript(), summary: 'too early' },
           expect: (r) => (writeAfterAsk = JSON.parse(r.text)),
         },
       ],
@@ -639,7 +821,7 @@ describe('blueprint assistant (e2e)', () => {
     const first = await waitIdle(sid);
     const question = ofType(first, 'question')[0]!;
     expect(question.state).toBe('pending');
-    expect(ofType(first, 'proposal')).toHaveLength(0);
+    expect(ofType(first, 'change')).toHaveLength(0);
     expect(writeAfterAsk).toMatchObject({ error: expect.stringContaining('End your turn') });
 
     const answered = await turn(sid, {
@@ -688,7 +870,7 @@ describe('blueprint assistant (e2e)', () => {
       (
         await call(`/assistant/sessions/${sid}/turns`, {
           method: 'POST',
-          body: { draft: null, model: 'm' },
+          body: { model: 'm' },
         })
       ).status,
     ).toBe(400);

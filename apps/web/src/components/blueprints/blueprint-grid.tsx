@@ -268,14 +268,14 @@ export function BlueprintGrid({
   blueprints,
   channelNames,
   status,
-  describeTo,
+  onDescribe,
 }: {
   blueprints: BlueprintDto[];
   /** Shows each card's channel when the grid spans several. */
   channelNames?: Map<string, string> | undefined;
   status: Map<string, BlueprintCardStatus>;
-  /** Where "Describe a new blueprint" goes. */
-  describeTo: string;
+  /** "Describe a new blueprint": opens the assistant. */
+  onDescribe: () => void;
 }) {
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState<BlueprintDto | null>(null);
@@ -325,9 +325,10 @@ export function BlueprintGrid({
             }}
           />
         ))}
-        <Link
-          to={describeTo}
-          className="flex flex-col items-start justify-center gap-3.5 rounded-[14px] border border-dashed p-[18px] transition-colors hover:border-line-strong"
+        <button
+          type="button"
+          onClick={onDescribe}
+          className="flex flex-col items-start justify-center gap-3.5 text-left rounded-[14px] border border-dashed p-[18px] transition-colors hover:border-line-strong"
         >
           <span className="flex size-9 items-center justify-center rounded-[10px] bg-acc-soft text-acc">
             <Sparkles className="size-[18px]" />
@@ -337,7 +338,7 @@ export function BlueprintGrid({
             Tell the assistant what the video should be. It picks the stages, wires them up and
             shows you the result before anything runs.
           </span>
-        </Link>
+        </button>
       </div>
 
       <BlueprintEditDialog blueprint={editing} onOpenChange={(open) => !open && setEditing(null)} />

@@ -2,7 +2,7 @@ import Markdown, { type Components } from 'react-markdown';
 import { AlertCircle, Wrench } from 'lucide-react';
 import type { AssistantItemDto, ToolCallPayload, TurnStatusPayload } from '@reelcraft/shared';
 import type { AssistantController } from '@/hooks/useAssistant';
-import { ProposalCard } from './proposal-card';
+import { ApprovalCard, ChangeCard, LegacyProposalCard, PlanCard } from './assistant-cards';
 import { QuestionCard } from './question-card';
 import { describeToolCall, payloadOf, toRows, type ChatRow } from './assistant.logic';
 
@@ -49,15 +49,7 @@ function ToolsRow({ items }: { items: AssistantItemDto[] }) {
   );
 }
 
-function Row({
-  row,
-  items,
-  assistant,
-}: {
-  row: ChatRow;
-  items: AssistantItemDto[];
-  assistant: AssistantController;
-}) {
+function Row({ row, assistant }: { row: ChatRow; assistant: AssistantController }) {
   switch (row.kind) {
     case 'user':
       return (
@@ -73,8 +65,14 @@ function Row({
       );
     case 'tools':
       return <ToolsRow items={row.items} />;
-    case 'proposal':
-      return <ProposalCard item={row.item} items={items} assistant={assistant} />;
+    case 'change':
+      return <ChangeCard item={row.item} assistant={assistant} />;
+    case 'approval':
+      return <ApprovalCard item={row.item} assistant={assistant} />;
+    case 'plan':
+      return <PlanCard item={row.item} assistant={assistant} />;
+    case 'legacy':
+      return <LegacyProposalCard item={row.item} />;
     case 'question':
       return <QuestionCard item={row.item} assistant={assistant} />;
     case 'problem': {
@@ -102,12 +100,7 @@ export function AssistantMessages({
   return (
     <div className="flex flex-col gap-4">
       {rows.map((row) => (
-        <Row
-          key={row.kind === 'tools' ? row.id : row.item.id}
-          row={row}
-          items={items}
-          assistant={assistant}
-        />
+        <Row key={row.kind === 'tools' ? row.id : row.item.id} row={row} assistant={assistant} />
       ))}
     </div>
   );
