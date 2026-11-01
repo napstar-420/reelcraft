@@ -1,16 +1,29 @@
 import { describe, expect, it } from 'vitest';
 import {
   aboutRunPrompt,
-  askInBlueprintUrl,
+  askInBlueprint,
+  handoffMessage,
   blueprintNameFromPrompt,
   fixFailedStagePrompt,
 } from './assistant-handoff';
 
-describe('askInBlueprintUrl', () => {
-  it('encodes the message into the editor URL', () => {
-    expect(askInBlueprintUrl('b1', 'add captions & music')).toBe(
-      '/blueprints/b1/build?ask=add%20captions%20%26%20music',
-    );
+describe('askInBlueprint', () => {
+  it('keeps the message out of the URL, in navigation state', () => {
+    expect(askInBlueprint('b1', 'add captions')).toEqual({
+      to: '/blueprints/b1/build',
+      state: { ask: 'add captions' },
+    });
+  });
+});
+
+describe('handoffMessage', () => {
+  it('reads the message an in-app hand-off carries', () => {
+    expect(handoffMessage({ ask: 'add captions' })).toBe('add captions');
+  });
+
+  it('ignores anything else', () => {
+    for (const state of [null, undefined, 'ask', {}, { ask: 3 }, { ask: '  ' }])
+      expect(handoffMessage(state)).toBeNull();
   });
 });
 

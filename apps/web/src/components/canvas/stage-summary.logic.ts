@@ -1,9 +1,30 @@
-import type { StageDef } from '@reelcraft/shared';
+import type { Ref, StageDef } from '@reelcraft/shared';
 import { stageDependencies } from '@/lib/stage-deps';
+import { stageDisplayName } from '@/lib/stage-display-name';
 
-const LEADING_NUMBER = /^\s*\d+\s*[·.:)\-–—]\s*/;
 const nameOf = (stage: StageDef | undefined, key: string) =>
-  (stage?.label || key || 'another stage').replace(LEADING_NUMBER, '');
+  stage ? stageDisplayName(stage) : key || 'another stage';
+
+/** Where a repeating stage's items come from, in a few words. */
+function iterationSource(over: Ref, byKey: Map<string, StageDef>): string {
+  switch (over.from) {
+    case 'stage':
+      return nameOf(byKey.get(over.stageKey), over.stageKey);
+    case 'prev':
+      return 'the previous stage';
+    case 'input':
+      return 'an input';
+    case 'memory':
+      return 'run memory';
+    case 'const':
+      return 'a fixed list';
+    case 'asset':
+    case 'library':
+      return 'the library';
+    default:
+      return 'its source';
+  }
+}
 
 function list(names: string[]): string {
   if (names.length <= 1) return names.join('');
@@ -28,14 +49,7 @@ export function stageSummary(
   if (stage.model?.modelId) what += ` with ${stage.model.modelId}`;
   const over = stage.iterate?.over;
   if (stage.iterate && over) {
-    const source =
-      over.from === 'stage'
-        ? nameOf(byKey.get(over.stageKey), over.stageKey)
-        : over.from === 'prev'
-          ? 'the previous stage'
-          : over.from === 'input'
-            ? 'an input'
-            : 'run memory';
+    const source = iterationSource(over, byKey);
     what += `, once for each ${stage.iterate.itemAlias} from ${source}`;
     if (stage.iterate.concurrency && stage.iterate.concurrency > 1)
       what += `, ${stage.iterate.concurrency} at a time`;

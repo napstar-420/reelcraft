@@ -106,7 +106,7 @@ See [Generate Speech](./stage-types/generate-speech.md#if-it-fails).
 ## VoiceStudio isn't reachable
 
 - Open VoiceStudio, wait until it has started, and select **Check again** in **Settings →
-  VoiceStudio**.
+  Voice and speech → VoiceStudio**.
 - Reelcraft in Docker looks for it at `http://host.docker.internal:3900`. On Linux without Docker
   Desktop, VoiceStudio's default `127.0.0.1` listener can't be reached from a container: see
   [Where Reelcraft looks for VoiceStudio](./voice-studio.md#where-reelcraft-looks-for-voicestudio).

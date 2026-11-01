@@ -65,6 +65,18 @@ describe('runNow', () => {
     );
   });
 
+  it('still says a run failed when no stage is marked failed', () => {
+    expect(runNow({ state: 'FAILED' }, view([stage('Render', 'done')]))).toEqual({
+      tone: 'error',
+      text: 'The run failed: open a stage to see why',
+    });
+  });
+
+  it('still says what a paused run waits for without a waiting stage', () => {
+    expect(runNow({ state: 'PAUSED_APPROVAL' }, view([])).text).toBe('Waiting for your review');
+    expect(runNow({ state: 'PAUSED_INPUT' }, view([])).text).toBe('Waiting for your input');
+  });
+
   it('describes a finished run', () => {
     expect(runNow({ state: 'COMPLETED' }, view([stage('Render', 'done')])).tone).toBe('success');
   });

@@ -200,6 +200,10 @@ function ChannelDetail({ channelId }: { channelId: string }) {
       setDeleteConfirmText('');
       // The channel no longer exists: leave its page before refetching it.
       queryClient.removeQueries({ queryKey: ['channel', target.id] });
+      // /channels opens the first cached channel: drop this one first so it can't reopen.
+      queryClient.setQueriesData<ChannelDto[]>({ queryKey: ['channels'] }, (old) =>
+        Array.isArray(old) ? old.filter((c) => c.id !== target.id) : old,
+      );
       void queryClient.invalidateQueries({ queryKey: ['channels'] });
       navigate('/channels');
       toast.success(`Channel "${target.name}" deleted`);

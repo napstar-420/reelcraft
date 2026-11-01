@@ -18,7 +18,7 @@ import {
 } from '@/components/ui/select';
 import type { BlueprintWithChannel } from '@/hooks/useAllBlueprints';
 import { apiErrorMessage } from '@/lib/api-error-message';
-import { askInBlueprintUrl, blueprintNameFromPrompt } from '@/lib/assistant-handoff';
+import { askInBlueprint, blueprintNameFromPrompt } from '@/lib/assistant-handoff';
 import { loadAssistantPrefs, saveAssistantPrefs } from '@/lib/assistant-prefs';
 
 const NEW = '__new__';
@@ -56,15 +56,23 @@ export function HomeComposer({
     [blueprints, channel?.id],
   );
 
+  // A preset fills the box once; its blueprint is picked once it has loaded. Neither runs again
+  // for the same preset, so later re-renders never overwrite what the user typed or chose.
+  const textApplied = useRef<ComposerPreset | null>(null);
+  const targetApplied = useRef<ComposerPreset | null>(null);
   useEffect(() => {
-    if (!preset) return;
+    if (!preset || textApplied.current === preset) return;
+    textApplied.current = preset;
     setText(preset.text);
-    const target = blueprints.find((b) => b.id === preset.blueprintId);
-    if (target) {
-      setChannelId(target.channelId);
-      setBlueprintId(target.id);
-    }
     area.current?.focus();
+  }, [preset]);
+  useEffect(() => {
+    if (!preset || targetApplied.current === preset || !preset.blueprintId) return;
+    const target = blueprints.find((b) => b.id === preset.blueprintId);
+    if (!target) return; // not loaded yet: try again when the list arrives
+    targetApplied.current = preset;
+    setChannelId(target.channelId);
+    setBlueprintId(target.id);
   }, [preset, blueprints]);
 
   useEffect(() => {
@@ -79,7 +87,10 @@ export function HomeComposer({
       void queryClient.invalidateQueries({ queryKey: ['blueprints', channel.id] });
       return { id: created.blueprintId, message };
     },
-    onSuccess: ({ id, message }) => navigate(askInBlueprintUrl(id, message)),
+    onSuccess: ({ id, message }) => {
+      const handoff = askInBlueprint(id, message);
+      navigate(handoff.to, { state: handoff.state });
+    },
     onError: (error) => toast.error(apiErrorMessage(error, 'Could not open the assistant.')),
   });
 

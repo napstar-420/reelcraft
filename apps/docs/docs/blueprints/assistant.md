@@ -26,8 +26,10 @@ You can also start from anywhere else:
 - In **Cmd K** search, **Ask the assistant about …** puts your text in Home's message box.
 
 While a stage is open in Stages view, its name shows above the message box: the message is sent
-about that stage. Select **✕** on it to send a message about the whole blueprint. Pick one or type your own and press **Enter**
-(**Shift + Enter** starts a new line).
+about that stage. Select **✕** on it to send a message about the whole blueprint.
+
+Pick an example request or type your own, then press **Enter** (**Shift + Enter** starts a new
+line).
 
 Messages can contain up to 64,000 characters. This is Reelcraft's per-message limit; the selected
 model's context capacity also includes conversation history and tool results.

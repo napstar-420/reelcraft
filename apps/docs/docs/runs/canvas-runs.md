@@ -71,7 +71,7 @@ Most buttons start straight away. You're asked to confirm only when the action w
 already passed, or when a provider request may have been charged already. The confirmation lists the
 stages that will run and what they cost last time.
 
-## The Run tab
+## Test runs
 
 - The top line says what's happening, such as **Running: Write the draft narration (4/12 done)**, or
   where it stopped, such as **Failed at Write the draft narration: …**.

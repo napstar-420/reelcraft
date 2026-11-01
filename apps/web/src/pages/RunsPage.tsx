@@ -76,7 +76,8 @@ export function RunsPage({ channelId: fixedChannelId }: { channelId?: string } =
   const inScope = (r: RunSummaryDto) => !fixedChannelId || r.channelId === fixedChannelId;
   const needsYou = buckets.needsYou.filter(inScope);
   const active = buckets.active.filter(inScope);
-  const details = useRunDetails([...needsYou, ...active].slice(0, 12).map((r) => r.id));
+  // Every rendered row needs its run: cap only the attention list, never the active one.
+  const details = useRunDetails([...needsYou.slice(0, 12), ...active].map((r) => r.id));
 
   const channels = useQuery({
     queryKey: ['channels'],
@@ -208,7 +209,7 @@ export function RunsPage({ channelId: fixedChannelId }: { channelId?: string } =
     <>
       {needsYou.length ? (
         <Section title="Needs you" badge={<CountPill count={needsYou.length} tone="wait" />}>
-          {needsYou.map((r) => (
+          {needsYou.slice(0, 12).map((r) => (
             <AttentionRow key={r.id} summary={r} detail={details.get(r.id)} />
           ))}
         </Section>

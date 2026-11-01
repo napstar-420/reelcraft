@@ -10,14 +10,16 @@ connected correctly before you pay for a real run. It has limits: see
 
 ## Start a dry run
 
-1. Select **Run** on the blueprint's card, or **Test run** in the blueprint editor.
-2. In the dialog, select **Free test run**. Fill in the inputs, as for a
+1. Select **Run** on the blueprint's card, or **Test run** in the blueprint editor. Both open the same
+   dialog, where you choose **Real run** or **Free test run**.
+2. Select **Free test run**. Fill in the inputs, as for a
    [real run](./starting-a-run.md).
    Uploads work the same way.
 3. The **Budget limit (USD)** changes to $1. Keep it small.
 4. Select **Start free test run**.
 
-Like a real run, a dry run needs a saved, runnable version.
+Started from a blueprint card, a dry run needs a saved, runnable version, like a real run. Started
+with **Test run** in the editor, it runs the blueprint as it is on screen, saved or not.
 
 ## What is different
 

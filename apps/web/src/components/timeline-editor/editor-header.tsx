@@ -122,7 +122,7 @@ export function EditorHeader({
           <h1 className="truncate text-base font-semibold">{title}</h1>
         </div>
       </div>
-      <div className="flex items-center gap-1.5">
+      <div className="flex flex-wrap items-center justify-end gap-1.5">
         {checks ? <div className="mr-3">{checks}</div> : null}
         <span
           className={cn('mr-2 flex items-center gap-1.5 text-xs [&_svg]:size-3.5', view.tone)}
@@ -173,7 +173,14 @@ export function EditorHeader({
         {render ? <div className="ml-2">{render}</div> : null}
         <Button className="ml-2" size="sm" disabled={!canSubmit || submitting} onClick={onSubmit}>
           {submitting ? <Loader2 className="animate-spin" /> : <Send />}
-          {submitting ? 'Submitting…' : 'Use this timeline and continue'}
+          {submitting ? (
+            'Submitting…'
+          ) : (
+            <>
+              <span className="sm:hidden">Use timeline</span>
+              <span className="max-sm:hidden">Use this timeline and continue</span>
+            </>
+          )}
         </Button>
       </div>
     </header>

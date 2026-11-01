@@ -4,11 +4,10 @@ import { cn } from 'cn';
 import type { RunDetailDto, StageDef, ValidationIssue } from '@reelcraft/shared';
 import { Button } from '@/components/ui/button';
 import { runStateTone, toneDotClassName } from '@/lib/status';
+import { stageDisplayName } from '@/lib/stage-display-name';
 
 export type OutlineFocus =
   { kind: 'stage'; key: string } | { kind: 'settings' } | { kind: 'tests' };
-
-const LEADING_NUMBER = /^\s*\d+\s*[·.:)\-–—]\s*/;
 
 function StageMark({ state }: { state: string | undefined }) {
   switch (state) {
@@ -100,7 +99,7 @@ export function StageOutline({
           </>
         ) : null}
         {graph.map((stage, index) => {
-          const name = (stage.label || stage.key).replace(LEADING_NUMBER, '');
+          const name = stageDisplayName(stage);
           if (words.length && !words.every((w) => `${name} ${stage.key}`.toLowerCase().includes(w)))
             return null;
           const group = stage.group?.trim();

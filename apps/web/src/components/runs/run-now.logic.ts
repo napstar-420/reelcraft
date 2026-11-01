@@ -48,6 +48,12 @@ export function runNow(run: Pick<RunDetailDto, 'state'>, view: RunView): RunNow 
       return { tone: 'neutral', text: 'Stopped' };
     case 'CREATED':
       return { tone: 'neutral', text: 'Starting' };
+    case 'FAILED':
+      return { tone: 'error', text: 'The run failed: open a stage to see why' };
+    case 'PAUSED_APPROVAL':
+      return { tone: 'warning', text: 'Waiting for your review' };
+    case 'PAUSED_INPUT':
+      return { tone: 'warning', text: 'Waiting for your input' };
     default: {
       const [next] = view.next;
       return next

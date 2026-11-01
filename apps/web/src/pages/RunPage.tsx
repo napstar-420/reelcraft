@@ -54,6 +54,13 @@ export function RunPage() {
   const [raiseBudgetOpen, setRaiseBudgetOpen] = useState(false);
   const [dockOpen, setDockOpen] = useState(() => loadDockOpen('run'));
 
+  // A different run starts on its own default stage, not the one picked on the last run.
+  useEffect(() => {
+    setPickedKey(null);
+    setReviewStageKey(null);
+    setFormInputStageKey(null);
+  }, [runId]);
+
   const blueprint = useQuery({
     queryKey: ['blueprint', run?.blueprintId],
     queryFn: () => api.getBlueprint(run!.blueprintId!),
@@ -103,8 +110,17 @@ export function RunPage() {
     );
   }
 
+  // A pick that no longer exists (no final video yet, or a stage gone) falls back to the default.
+  const validPick =
+    pickedKey === RESULT_KEY
+      ? run.finalVideo
+        ? pickedKey
+        : null
+      : view.stages.some((s) => s.key === pickedKey)
+        ? pickedKey
+        : null;
   const selectedKey =
-    pickedKey ?? (run.state === 'COMPLETED' && run.finalVideo ? RESULT_KEY : focusStage(view)?.key);
+    validPick ?? (run.state === 'COMPLETED' && run.finalVideo ? RESULT_KEY : focusStage(view)?.key);
   const selectedStage = view.stages.find((s) => s.key === selectedKey);
   const now = runNow(run, view);
   const counted = view.stages.filter((s) => s.state !== 'skipped');

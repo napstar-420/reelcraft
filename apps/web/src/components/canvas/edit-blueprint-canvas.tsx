@@ -2,7 +2,7 @@ import { connectStages, disconnectStages, explicitGraph } from '@/pages/dag-edit
 import { TestRunControls, withoutStageActions } from './test-run-controls';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Lock } from 'lucide-react';
 import { api, ApiError } from '@/api/client';
@@ -64,6 +64,7 @@ import { CanvasWorkspace } from './canvas-workspace';
 import { OrphanDraftBanner, SavedElsewhereBanner } from './draft-banners';
 import { RunTab } from './run-tab';
 import { stageSummary } from './stage-summary.logic';
+import { handoffMessage } from '@/lib/assistant-handoff';
 import { StageExecutionControls } from '@/components/runs/execution-controls';
 import { Link } from 'react-router-dom';
 import { createStage } from './stage-factory.logic';
@@ -574,16 +575,33 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
     );
   }, [stageParam, draft, setSearchParams]);
 
-  // `?ask=<message>` (from Home, a run or a failure) sends that message to the assistant once it
-  // is ready, then drops the param so a reload does not send it again.
-  const askParam = searchParams.get('ask');
+  // A message handed over from Home, a run or a failure arrives in navigation state, which only
+  // the app can set: send it once the assistant is ready, then clear it so going back or
+  // reloading doesn't send it again.
+  const location = useLocation();
+  const navigate = useNavigate();
+  const handoff = handoffMessage(location.state);
   const askSent = useRef(false);
   useEffect(() => {
-    if (!askParam || askSent.current || !draft || viewing) return;
+    if (!handoff || askSent.current || !draft || viewing) return;
     if (!assistant.model || assistant.unavailableReason || assistant.running) return;
     askSent.current = true;
     setDockOpen(true);
-    assistant.send(askParam);
+    assistant.send(handoff);
+    navigate(
+      { pathname: location.pathname, search: location.search },
+      { replace: true, state: null },
+    );
+  }, [handoff, draft, viewing, assistant.model, assistant.unavailableReason, assistant.running]);
+
+  // A `?ask=` in the URL comes from outside the app (a link anyone can write), so it only fills in
+  // the assistant's message box: nothing is sent until the user presses Send.
+  const askParam = searchParams.get('ask');
+  const [askPrefill, setAskPrefill] = useState<string | null>(null);
+  useEffect(() => {
+    if (!askParam) return;
+    setAskPrefill(askParam);
+    setDockOpen(true);
     setSearchParams(
       (params) => {
         params.delete('ask');
@@ -591,7 +609,7 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
       },
       { replace: true },
     );
-  }, [askParam, draft, viewing, assistant.model, assistant.unavailableReason, assistant.running]);
+  }, [askParam, setSearchParams]);
 
   // `A` adds a stage from anywhere in Stages view (the graph has its own).
   useEffect(() => {
@@ -654,6 +672,26 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
         ? 'at the end'
         : 'as the first stage';
   const selectedExecution = canvasRun.run?.stageExecutions.find((e) => e.stageKey === selectedKey);
+  /** The test run as the canvas shows it: a passed stage whose output an edit made out of date
+   * reads as stale, and stage actions a fresh run is needed for are withdrawn. The outline and
+   * the graph both show this one. */
+  const decoratedRun = canvasRun.run
+    ? {
+        ...canvasRun.run,
+        stageExecutions: canvasRun.run.stageExecutions.map((e) => ({
+          ...e,
+          ...(e.state === 'passed' &&
+            (runActions.staleStageKeys.has(e.stageKey) ||
+              runActions.validationStageKeys.has(e.stageKey)) && {
+              state: 'stale' as const,
+            }),
+          ...(runActions.newRunReason &&
+            e.availableActions && {
+              availableActions: withoutStageActions(e.availableActions, runActions.newRunReason),
+            }),
+        })),
+      }
+    : undefined;
 
   async function addStage(capabilityKey: string, index: number, branchFrom?: string) {
     const capability = capabilities.data?.find((c) => c.key === capabilityKey);
@@ -844,7 +882,7 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
             focus={focus}
             issuesByStage={issuesByStage}
             editedKeys={editedKeys}
-            run={readOnly ? undefined : canvasRun.run}
+            run={readOnly ? undefined : decoratedRun}
             readOnly={readOnly}
             onFocus={(next) => {
               if (next.kind === 'stage') selectStage(next.key);
@@ -886,28 +924,7 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
                 issues={shownIssues}
                 issuesByStage={issuesByStage}
                 selectedKey={selectedKey}
-                run={
-                  canvasRun.run
-                    ? {
-                        ...canvasRun.run,
-                        stageExecutions: canvasRun.run.stageExecutions.map((e) => ({
-                          ...e,
-                          ...(e.state === 'passed' &&
-                            (runActions.staleStageKeys.has(e.stageKey) ||
-                              runActions.validationStageKeys.has(e.stageKey)) && {
-                              state: 'stale' as const,
-                            }),
-                          ...(runActions.newRunReason &&
-                            e.availableActions && {
-                              availableActions: withoutStageActions(
-                                e.availableActions,
-                                runActions.newRunReason,
-                              ),
-                            }),
-                        })),
-                      }
-                    : undefined
-                }
+                run={decoratedRun}
                 readOnly={readOnly}
                 dockOpen
                 onToggleDock={() => undefined}
@@ -1102,6 +1119,7 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
         >
           <AssistantPanel
             assistant={assistant}
+            prefill={askPrefill}
             stageLabel={
               view === 'stages' && panel === 'stage' && selectedIndex >= 0
                 ? shown.graph[selectedIndex]!.label || selectedKey

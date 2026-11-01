@@ -1,6 +1,5 @@
 import type { StageDef } from '@reelcraft/shared';
-
-const LEADING_NUMBER = /^\s*\d+\s*[·.:)\-–—]\s*/;
+import { stageDisplayName } from './stage-display-name';
 
 /** The short "Script › Voice › Visuals" line for a blueprint: its phases (stage groups) in order,
  * or, for a blueprint without phases, its first few stage names. */
@@ -14,5 +13,5 @@ export function blueprintFlow(
     if (group && !phases.includes(group)) phases.push(group);
   }
   if (phases.length) return phases.slice(0, max);
-  return graph.slice(0, max).map((s) => (s.label || s.key).replace(LEADING_NUMBER, ''));
+  return graph.slice(0, max).map(stageDisplayName);
 }

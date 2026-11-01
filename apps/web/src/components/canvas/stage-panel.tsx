@@ -9,8 +9,7 @@ import { capabilityStyle } from './capability-style';
 import { StageDependencies } from './stage-dependencies';
 import { StageInspector } from './StageInspector';
 import { stageSummary } from './stage-summary.logic';
-
-const LEADING_NUMBER = /^\s*\d+\s*[·.:)\-–—]\s*/;
+import { stageDisplayName } from '@/lib/stage-display-name';
 
 /** The selected stage as a document: what it is and does in plain words, what it runs after,
  * then its settings. `lastRun` adds a tab with the stage's latest test-run result. */
@@ -96,7 +95,7 @@ export function StagePanel({
             className="mt-0.5 truncate text-[22px] font-semibold tracking-[-0.015em]"
             title={stage.label}
           >
-            {(stage.label || stage.key).replace(LEADING_NUMBER, '')}
+            {stageDisplayName(stage)}
           </h2>
           <code className="text-[11px] text-faint">{stage.key}</code>
         </div>
@@ -123,7 +122,7 @@ export function StagePanel({
       </div>
 
       {lastRun ? (
-        <nav aria-label="Stage views" className="flex gap-1 border-b">
+        <div role="tablist" aria-label="Stage views" className="flex gap-1 border-b">
           {(
             [
               ['setup', 'Setup'],
@@ -133,7 +132,10 @@ export function StagePanel({
             <button
               key={key}
               type="button"
-              aria-current={tab === key}
+              role="tab"
+              id={`stage-view-tab-${key}`}
+              aria-selected={tab === key}
+              aria-controls="stage-view-panel"
               onClick={() => setTab(key)}
               className={cn(
                 '-mb-px border-b-2 px-3 py-2.5 text-[13px] font-medium',
@@ -145,13 +147,27 @@ export function StagePanel({
               {label}
             </button>
           ))}
-        </nav>
+        </div>
       ) : null}
 
       {lastRun && tab === 'run' ? (
-        <div className="min-h-[480px] overflow-hidden rounded-[14px] border bg-card">{lastRun}</div>
+        <div
+          role="tabpanel"
+          id="stage-view-panel"
+          aria-labelledby="stage-view-tab-run"
+          className="min-h-[480px] overflow-hidden rounded-[14px] border bg-card"
+        >
+          {lastRun}
+        </div>
       ) : (
-        <>
+        <div
+          className="flex flex-col gap-4"
+          {...(lastRun && {
+            role: 'tabpanel',
+            id: 'stage-view-panel',
+            'aria-labelledby': 'stage-view-tab-setup',
+          })}
+        >
           <StageDependencies
             stage={stage}
             graph={graph}
@@ -188,7 +204,7 @@ export function StagePanel({
               onChange={readOnly ? () => undefined : onChange}
             />
           </fieldset>
-        </>
+        </div>
       )}
     </div>
   );

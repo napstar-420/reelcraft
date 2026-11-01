@@ -34,8 +34,11 @@ const EXAMPLES = [
 export function AssistantPanel({
   assistant,
   stageLabel,
+  prefill,
 }: {
   assistant: AssistantController;
+  /** Text to put in the message box (not send), e.g. from a `?ask=` link. */
+  prefill?: string | null;
   /** The stage open in the editor: offered as context for the next message. */
   stageLabel?: string | null;
 }) {
@@ -47,6 +50,9 @@ export function AssistantPanel({
   const question = pendingQuestion(items);
 
   useEffect(() => setWithStage(true), [stageLabel]);
+  useEffect(() => {
+    if (prefill) setText(prefill);
+  }, [prefill]);
 
   // follow new content while the user is at the bottom
   useEffect(() => {

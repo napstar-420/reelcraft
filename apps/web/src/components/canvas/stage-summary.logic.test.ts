@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { StageDef } from '@reelcraft/shared';
+import type { Ref, StageDef } from '@reelcraft/shared';
 import { stageSummary } from './stage-summary.logic';
 
 const stage = (key: string, label: string, extra: Partial<StageDef> = {}): StageDef => ({
@@ -46,6 +46,18 @@ describe('stageSummary', () => {
       'Every result must pass 1 check before it is kept.',
       'Waits for your approval before the run carries on.',
     ]);
+  });
+
+  it('names where repeated items come from for each kind of source', () => {
+    const repeat = (over: Ref) =>
+      stageSummary(
+        [stage('a', 'A', { iterate: { over, itemAlias: 'item', itemRetryLimit: 0 } })],
+        'a',
+        label,
+      )[0];
+    expect(repeat({ from: 'memory', key: 'scenes' })).toContain('from run memory');
+    expect(repeat({ from: 'const', value: [1, 2] })).toContain('from a fixed list');
+    expect(repeat({ from: 'item' })).toContain('from its source');
   });
 
   it('notes a stage that is turned off', () => {

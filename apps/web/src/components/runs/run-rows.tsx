@@ -8,7 +8,7 @@ import { cn } from 'cn';
 import { api } from '@/api/client';
 import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/components/ui/status-badge';
-import { askInBlueprintUrl, fixFailedStagePrompt } from '@/lib/assistant-handoff';
+import { askInBlueprint, fixFailedStagePrompt } from '@/lib/assistant-handoff';
 import { formatElapsed, formatUsd } from '@/lib/format-elapsed';
 import { runHandle, runStateSentence } from '@/lib/run-buckets';
 import { runStateTone } from '@/lib/status';
@@ -83,18 +83,17 @@ export function AttentionRow({
           <Button
             size="sm"
             variant="accent"
-            onClick={() =>
-              navigate(
-                askInBlueprintUrl(
-                  summary.blueprintId,
-                  fixFailedStagePrompt({
-                    runHandle: runHandle(summary.id),
-                    stageLabel: failed.label,
-                    reason,
-                  }),
-                ),
-              )
-            }
+            onClick={() => {
+              const handoff = askInBlueprint(
+                summary.blueprintId,
+                fixFailedStagePrompt({
+                  runHandle: runHandle(summary.id),
+                  stageLabel: failed.label,
+                  reason,
+                }),
+              );
+              navigate(handoff.to, { state: handoff.state });
+            }}
           >
             <Sparkles /> Fix with assistant
           </Button>

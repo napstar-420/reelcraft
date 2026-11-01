@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowUp, Sparkles } from 'lucide-react';
 import type { RunDetailDto } from '@reelcraft/shared';
 import { Button } from '@/components/ui/button';
-import { aboutRunPrompt, askInBlueprintUrl, fixFailedStagePrompt } from '@/lib/assistant-handoff';
+import { aboutRunPrompt, askInBlueprint, fixFailedStagePrompt } from '@/lib/assistant-handoff';
 import { runHandle } from '@/lib/run-buckets';
 import type { RunView } from './run-phases.logic';
 import { failureReason } from './stage-drawer.logic';
@@ -28,7 +28,9 @@ export function RunAssistantPanel({
   const stageName = view.stages.find((s) => s.key === selectedStage)?.name;
 
   const ask = (message: string) => {
-    if (blueprintId) navigate(askInBlueprintUrl(blueprintId, message));
+    if (!blueprintId) return;
+    const handoff = askInBlueprint(blueprintId, message);
+    navigate(handoff.to, { state: handoff.state });
   };
   const send = () => {
     const question = text.trim();

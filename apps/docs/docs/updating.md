@@ -29,8 +29,8 @@ to the previous version** on its own, and the Updates window says what went wron
 
 ### Checking now
 
-To check without waiting, open **Settings →
-About and updates → Updates…**, then click **Check now**.
+To check without waiting, open **Settings → Updates, about and help**, select **Updates…** on the
+**About and updates** card, then click **Check now**.
 
 ## Update to a new image
 

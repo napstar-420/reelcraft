@@ -175,13 +175,16 @@ function DetailBody({
         </div>
       ) : null}
 
-      <nav aria-label="Stage details" className="flex gap-1 border-b">
+      <div role="tablist" aria-label="Stage details" className="flex gap-1 border-b">
         {tabs.map(([key, label, count]) => (
           <button
             key={key}
             type="button"
+            role="tab"
+            id={`stage-tab-${key}`}
+            aria-selected={tab === key}
+            aria-controls="stage-tabpanel"
             onClick={() => setTab(key)}
-            aria-current={tab === key}
             className={cn(
               '-mb-px border-b-2 px-3 py-2.5 text-[13px] font-medium',
               tab === key
@@ -193,7 +196,7 @@ function DetailBody({
             {count ? <span className="ml-1.5 text-faint">{count}</span> : null}
           </button>
         ))}
-      </nav>
+      </div>
 
       {(attempts.isError || output.isError) && (
         <p role="alert" className="text-sm text-bad">
@@ -210,38 +213,40 @@ function DetailBody({
           </Button>
         </p>
       )}
-      {tab === 'live' ? (
-        <LiveTab runId={run.id} stage={stage} output={output.data} />
-      ) : tab === 'output' ? (
-        <OutputTab
-          runId={run.id}
-          stage={stage}
-          output={output.data}
-          rerunItem={
-            !busy && execution.availableActions?.rerun
-              ? (itemIndex) =>
-                  actions.runStage.mutate({ stageKey: stage.key, action: 'rerun', itemIndex })
-              : undefined
-          }
-        />
-      ) : tab === 'attempts' ? (
-        <AttemptsTab
-          runId={run.id}
-          stageKey={stage.key}
-          attempts={attempts.data}
-          output={output.data}
-        />
-      ) : (
-        <MemoryTab
-          runId={run.id}
-          view={view}
-          reads={reads}
-          wrote={wrote}
-          current={memory.data?.current ?? {}}
-          loading={memory.isLoading}
-          onOpenStage={onOpenStage}
-        />
-      )}
+      <div role="tabpanel" id="stage-tabpanel" aria-labelledby={`stage-tab-${tab}`}>
+        {tab === 'live' ? (
+          <LiveTab runId={run.id} stage={stage} output={output.data} />
+        ) : tab === 'output' ? (
+          <OutputTab
+            runId={run.id}
+            stage={stage}
+            output={output.data}
+            rerunItem={
+              !busy && execution.availableActions?.rerun
+                ? (itemIndex) =>
+                    actions.runStage.mutate({ stageKey: stage.key, action: 'rerun', itemIndex })
+                : undefined
+            }
+          />
+        ) : tab === 'attempts' ? (
+          <AttemptsTab
+            runId={run.id}
+            stageKey={stage.key}
+            attempts={attempts.data}
+            output={output.data}
+          />
+        ) : (
+          <MemoryTab
+            runId={run.id}
+            view={view}
+            reads={reads}
+            wrote={wrote}
+            current={memory.data?.current ?? {}}
+            loading={memory.isLoading}
+            onOpenStage={onOpenStage}
+          />
+        )}
+      </div>
     </div>
   );
 }
