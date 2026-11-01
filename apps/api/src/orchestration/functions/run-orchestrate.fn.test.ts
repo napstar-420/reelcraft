@@ -178,6 +178,10 @@ describe('durable bounded scheduler', () => {
       setCursor: vi.fn(),
       skipStage: vi.fn(),
       pauseForQuota: vi.fn(async () => true),
+      parkOnWaits: vi.fn(async (_id: string, _epoch: number, fallback: string) => {
+        owner.state = fallback;
+        return { state: fallback };
+      }),
     };
     const child = client.createFunction({ id: 'scheduler-child' }, { event: 'unused' }, () => ({
       outcome: 'passed' as const,
@@ -232,7 +236,7 @@ describe('durable bounded scheduler', () => {
       ],
     }).execute();
     expect(result.error).toBeUndefined();
-    return { ...result, started, transitions };
+    return { ...result, started, transitions, parkOnWaits: state.parkOnWaits };
   }
   const rows = [
     { stageKey: 'a', deps: [] },
@@ -310,6 +314,16 @@ describe('durable bounded scheduler', () => {
     ]);
     expect(result.started).toEqual(['b']);
     expect(result.result).toEqual({ state: 'COMPLETED' });
+  });
+  it('parks on its open waits under the run lock', async () => {
+    const result = await execute(rows, { outcomes: { b: 'approval_required' } });
+    expect(result.parkOnWaits).toHaveBeenCalledWith(
+      'r',
+      0,
+      'PAUSED_APPROVAL',
+      expect.any(Function),
+    );
+    expect(result.result).toEqual({ state: 'PAUSED_APPROVAL' });
   });
   it('skips only disabled stages and does not execute already waiting work', async () => {
     const result = await execute([

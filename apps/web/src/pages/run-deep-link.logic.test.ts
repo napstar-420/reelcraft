@@ -20,7 +20,7 @@ describe('deepLinkTarget', () => {
     expect(
       deepLinkTarget(
         { review: 'script', input: null },
-        { state: 'RUNNING', stageExecutions: stages },
+        { state: 'CANCELLING', stageExecutions: stages },
       ).review,
     ).toBeNull();
     expect(

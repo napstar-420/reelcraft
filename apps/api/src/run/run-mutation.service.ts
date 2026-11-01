@@ -70,7 +70,8 @@ export class RunMutationService {
         .update(run)
         .set({
           revision: sql`${run.revision} + 1`,
-          ...(eventName === 'run/resumed'
+          // A new epoch would retire the work a RUNNING run has in flight.
+          ...(eventName === 'run/resumed' && lockedRun.state !== 'RUNNING'
             ? {
                 executionEpoch: sql`greatest(${run.executionEpoch}, ${lockedRun.executionEpoch + 1})`,
               }

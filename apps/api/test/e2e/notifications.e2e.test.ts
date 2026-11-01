@@ -99,7 +99,26 @@ describe('notifications (e2e)', () => {
     const engine = new InngestTestEngine({
       function: orchestrateFn,
       events: [{ name: 'run/started', data: { runId } }],
-      steps: [{ id: `invoke-stage-${stageKey}`, handler: () => outcome as never }],
+      steps: [
+        {
+          id: `invoke-stage-${stageKey}`,
+          handler: async () => {
+            // A stage that stops for a person is left awaiting their answer, as a real one is.
+            const awaiting =
+              outcome.outcome === 'approval_required'
+                ? 'awaiting_approval'
+                : outcome.outcome === 'input_required'
+                  ? 'awaiting_input'
+                  : undefined;
+            if (awaiting)
+              await testDb.db
+                .update(stageExecution)
+                .set({ state: awaiting })
+                .where(and(eq(stageExecution.runId, runId), eq(stageExecution.stageKey, stageKey)));
+            return outcome as never;
+          },
+        },
+      ],
       ...extra,
     });
     const { error } = await engine.execute();

@@ -64,8 +64,10 @@ export const RUN_ACTION_ALLOWED_STATES = {
   // A run can hold approval and input waits at once (parallel stages), parked
   // in the state of the first kind, so either state accepts any answer. A run
   // stopped for another reason (failed, stopped, idle, paused) still accepts an
-  // answer to a wait left open; it is recorded and the run stays stopped.
-  approve: ANSWER_STATES,
+  // answer to a wait left open; it is recorded and the run stays stopped. A
+  // RUNNING run accepts an approval too: it parks on the waits still open when
+  // its other branches finish, or carries on if none are.
+  approve: [...ANSWER_STATES, 'RUNNING'],
   reject: ANSWER_STATES,
   retry_qc: ANSWER_STATES,
   submit_input: ANSWER_STATES,

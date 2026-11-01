@@ -93,6 +93,7 @@ export function RunPage() {
         stageKey={reviewStageKey}
         open={reviewStageKey !== null}
         onOpenChange={(open) => !open && setReviewStageKey(null)}
+        running={run.state === 'RUNNING'}
       />
       <RaiseBudgetDialog
         runId={run.id}

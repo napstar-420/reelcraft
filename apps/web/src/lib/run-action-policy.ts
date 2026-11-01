@@ -58,6 +58,12 @@ export function canAnswerWaits(state: string): boolean {
   return (RUN_ACTION_ALLOWED_STATES.submit_input as readonly string[]).includes(state);
 }
 
+/** Whether a person can approve an open review: also while the run is still running other
+ * stages. It carries on with the approved output, or parks on what is left to answer. */
+export function canApproveWaits(state: string): boolean {
+  return state === 'RUNNING' || canAnswerWaits(state);
+}
+
 export function isRunActionAllowed(action: RunAction, state: RunState): boolean {
   return (RUN_ACTION_ALLOWED_STATES[action] as readonly RunState[]).includes(state);
 }

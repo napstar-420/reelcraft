@@ -57,6 +57,7 @@ export function CanvasRunSheets({
         stageKey={approvalStageKey}
         open={approvalStageKey !== null}
         onOpenChange={(open) => !open && actions.setApprovalStageKey(null)}
+        running={run.state === 'RUNNING'}
       />
     </>
   );

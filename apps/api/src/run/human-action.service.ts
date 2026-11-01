@@ -85,7 +85,8 @@ export class HumanActionService {
     const result = await this.mutation.withLockedRunMaybeWake(
       runId,
       'approve',
-      HUMAN_WAIT_STATES,
+      // Running: recorded now; the run picks it up when it parks (`parkOnWaits`).
+      [...HUMAN_WAIT_STATES, 'RUNNING'],
       async (tx, lockedRun) => {
         await this.approveInTransaction(tx, runId, stageKey, lockedRun, itemIndex);
         return this.settleAnswer(tx, lockedRun);
