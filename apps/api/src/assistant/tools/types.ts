@@ -29,6 +29,7 @@ import type { RunStagePlanService } from '../../run/run-stage-plan.service';
 import type { InvalidationService } from '../../run/invalidation.service';
 import type { MediaReviewService } from '../review/media-review.service';
 import type { AssistantWatchService } from '../watch/assistant-watch.service';
+import type { UserGuideService } from '../user-guide/user-guide.service';
 import type { SchemaValidatorService } from '../../json-schema/schema-validator.service';
 
 /** What a tool wants to do, shown to the user on an approval card in Manual mode. */
@@ -129,6 +130,8 @@ export interface ToolDeps {
   memory: Pick<InvalidationService, 'listMemory'>;
   review: Pick<MediaReviewService, 'contactSheet' | 'transcriber' | 'listen'>;
   watches: Pick<AssistantWatchService, 'watch' | 'unwatch'>;
+  /** Reelcraft's user guide (search_docs). */
+  userGuide: Pick<UserGuideService, 'search' | 'page' | 'pages'>;
   media: Pick<MediaPreviewService, 'imageFromBlob' | 'framesOfVideo'>;
   configResolver: Pick<ConfigResolverService, 'resolveRunConfig'>;
   /** Reelcraft's built-in bottom config layer. */

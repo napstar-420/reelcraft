@@ -27,5 +27,7 @@ services/qwen-tts/tests
 docker/app/rootfs/**/*.test.mjs
 docker/app/rootfs/**/testing.mjs
 
-# The user guide (Docusaurus) is published to GitHub Pages, not shipped in the image.
-apps/docs
+# The user guide (Docusaurus) is published to GitHub Pages. Only its Markdown goes in: the API build
+# copies it into the app so the assistant can search it (search_docs).
+apps/docs/*
+!apps/docs/docs

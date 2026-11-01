@@ -88,6 +88,10 @@ What it reads from a run is treated as information, never as instructions. Pictu
 transcripts go to the same provider that runs the assistant. A free test run's text and pictures are
 placeholders, so it judges those runs by structure only.
 
+**Questions about Reelcraft.** Ask how to do something yourself, such as where a setting is, how to
+update, or how to connect Codex, and it searches this guide (the copy that came with your Reelcraft)
+and answers with a link to the page.
+
 When you ask for something Reelcraft can't do, it says so instead of faking it. For example,
 Reelcraft can't publish a video to a platform, and the assistant can't create characters or upload
 assets for you.

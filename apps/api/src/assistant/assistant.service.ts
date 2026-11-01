@@ -50,6 +50,7 @@ import { RunStagePlanService } from '../run/run-stage-plan.service';
 import { InvalidationService } from '../run/invalidation.service';
 import { MediaReviewService } from './review/media-review.service';
 import { AssistantWatchService } from './watch/assistant-watch.service';
+import { UserGuideService } from './user-guide/user-guide.service';
 import { AssistantSettingsService } from './watch/assistant-settings.service';
 import { MediaPreviewService } from '../artifact/media-preview.service';
 import { ConfigResolverService } from '../run-config/config-resolver.service';
@@ -140,6 +141,7 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
     review: MediaReviewService,
     private readonly watches: AssistantWatchService,
     private readonly assistantSettings: AssistantSettingsService,
+    userGuide: UserGuideService,
   ) {
     this.toolDeps = {
       blueprints,
@@ -162,6 +164,7 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
       memory,
       review,
       watches,
+      userGuide,
       engineLayer: () => engineDefaults(config),
       blueprintChanged: (blueprintId) => this.events.publish({ type: 'blueprint', blueprintId }),
     };

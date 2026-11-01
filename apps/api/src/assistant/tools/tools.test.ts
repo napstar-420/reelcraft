@@ -10,6 +10,7 @@ import { exampleScenesToImages, exampleScript } from '../guide';
 import { ASSISTANT_TOOLS, buildNarrowedEnums, buildToolDefs, runTool, toolsHash } from './registry';
 import { realCapabilityRegistry } from './test-support';
 import { newTurnContext, type ToolDeps } from './types';
+import { UserGuideService } from '../user-guide/user-guide.service';
 
 const capabilities = realCapabilityRegistry();
 const styles = new StyleRegistry();
@@ -127,6 +128,7 @@ function makeDeps(overrides: Partial<ToolDeps> = {}): ToolDeps {
     memory: {} as never,
     review: {} as never,
     watches: {} as never,
+    userGuide: new UserGuideService(),
     ...overrides,
   };
 }
@@ -158,6 +160,7 @@ describe('tool registry', () => {
         'retry_stage',
         'run_stages',
         'save_version',
+        'search_docs',
         'set_concurrency',
         'start_run',
         'unwatch_run',
@@ -296,6 +299,7 @@ describe('JSON Schemas stay in sync with the Zod inputs (drift guard)', () => {
     view_asset: { characterId: 'c1', blobId: 'b1' },
     watch_run: { runId: 'r1' },
     unwatch_run: { runId: 'r1' },
+    search_docs: { query: 'raise budget', limit: 3 },
     read_guide: { topic: 'limits' },
     validate_draft: { blueprintId: 'bp1', draft: exampleScript() },
     propose_draft: {
@@ -1023,5 +1027,61 @@ describe('ask_user', () => {
       await ask([{ id: 'q', header: 'Q', question: '?', options: [{ label: 'A' }] }]),
     ).toMatchObject({ ok: false });
     expect(await ask([])).toMatchObject({ ok: false });
+  });
+});
+
+describe('search_docs', () => {
+  it('finds the user guide sections for a question, with links', async () => {
+    const out = await runTool('search_docs', { query: 'raise the run budget' }, ctx(), makeDeps());
+    expect(out.ok).toBe(true);
+    const { results } = (out as { result: { results: Array<{ page: string; url: string }> } })
+      .result;
+    expect(results.length).toBeGreaterThan(0);
+    expect(results.length).toBeLessThanOrEqual(5);
+    expect(results.some((r) => r.page.startsWith('runs/'))).toBe(true);
+    for (const r of results) {
+      expect(r.url).toMatch(/^https:\/\/napstar-420\.github\.io\/reelcraft\/docs\//);
+    }
+  });
+
+  it('reads a whole page, lists pages, and refuses an unknown page', async () => {
+    const page = await runTool('search_docs', { page: 'runs/retries' }, ctx(), makeDeps());
+    expect(page).toMatchObject({ ok: true, result: { page: 'runs/retries' } });
+    expect((page as { result: { text: string } }).result.text).toContain('Continue');
+
+    const intro = await runTool('search_docs', { page: '/' }, ctx(), makeDeps());
+    expect(intro).toMatchObject({ ok: true, result: { page: '', title: 'Reelcraft guide' } });
+
+    const list = await runTool('search_docs', {}, ctx(), makeDeps());
+    const pages = (list as { result: { pages: Array<{ page: string }> } }).result.pages;
+    expect(pages.map((p) => p.page)).toContain('blueprints/assistant');
+
+    const missing = await runTool('search_docs', { page: 'nope/nothing' }, ctx(), makeDeps());
+    expect(missing).toMatchObject({ ok: false });
+    expect((missing as { error: string }).error).toContain('runs/retries');
+
+    expect(
+      await runTool('search_docs', { query: 'x', page: 'y' }, ctx(), makeDeps()),
+    ).toMatchObject({
+      ok: false,
+    });
+  });
+
+  it('says so when the guide is not installed', async () => {
+    const out = await runTool(
+      'search_docs',
+      { query: 'budget' },
+      ctx(),
+      makeDeps({ userGuide: new UserGuideService(['/nonexistent/guide']) }),
+    );
+    expect(out).toMatchObject({ ok: false });
+    expect((out as { error: string }).error).toContain("isn't installed");
+  });
+
+  it('works in Plan mode (it only reads)', async () => {
+    const plan = { ...ctx(), mode: 'plan' as const };
+    expect(await runTool('search_docs', { query: 'budget' }, plan, makeDeps())).toMatchObject({
+      ok: true,
+    });
   });
 });
