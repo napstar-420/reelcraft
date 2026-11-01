@@ -219,24 +219,30 @@ export function RunLaunchDialog({
       )}
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
         <DialogHeader>
-          <DialogTitle>{dryRun ? `${title} (dry run)` : title}</DialogTitle>
+          <DialogTitle>{title}</DialogTitle>
           <DialogDescription>
             {dryRun
-              ? 'A free test run: every stage uses the fake provider instead of its configured model, so nothing is charged. Human stages still pause for you.'
-              : "This is a real run. It uses each stage's configured provider, including Codex and Claude, and may consume provider usage. Dry run continues to use the deterministic fake provider."}
+              ? 'Every stage uses the fake provider instead of its model, so nothing is charged. Stages that need a person still pause for you.'
+              : 'Each stage uses its configured provider, including Codex and Claude, and may use paid provider credit.'}
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
           {versionPicker}
-          <div
-            role="radiogroup"
-            aria-label="Run mode"
-            className="grid grid-cols-2 gap-0.5 rounded-lg bg-muted p-0.5"
-          >
+          <div role="radiogroup" aria-label="Run mode" className="grid grid-cols-2 gap-2.5">
             {[
-              { dry: false, label: 'Live run', icon: <Play className="size-3.5" /> },
-              { dry: true, label: 'Dry run', icon: <FlaskConical className="size-3.5" /> },
+              {
+                dry: false,
+                label: 'Real run',
+                detail: 'Each stage uses its own model and provider.',
+                icon: <Play className="size-3.5" />,
+              },
+              {
+                dry: true,
+                label: 'Free test run',
+                detail: 'Every stage uses the fake provider. Nothing is charged.',
+                icon: <FlaskConical className="size-3.5" />,
+              },
             ].map((mode) => (
               <button
                 key={mode.label}
@@ -246,59 +252,18 @@ export function RunLaunchDialog({
                 disabled={recoverable !== null || launch.isPending}
                 onClick={() => chooseMode(mode.dry)}
                 className={cn(
-                  'inline-flex h-7 items-center justify-center gap-1.5 rounded-md text-sm font-medium text-muted-foreground disabled:cursor-not-allowed disabled:opacity-60',
-                  dryRun === mode.dry && 'bg-background text-foreground shadow-sm',
+                  'flex flex-col gap-1 rounded-xl border border-line-strong px-3.5 py-3 text-left disabled:cursor-not-allowed disabled:opacity-60',
+                  dryRun === mode.dry && 'border-foreground ring-1 ring-foreground',
                 )}
               >
-                {mode.icon}
-                {mode.label}
+                <span className="flex items-center gap-1.5 text-sm font-semibold">
+                  {mode.icon}
+                  {mode.label}
+                </span>
+                <span className="text-xs leading-snug text-faint">{mode.detail}</span>
               </button>
             ))}
           </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="run-budget-cap">Budget cap (USD)</Label>
-            <Input
-              id="run-budget-cap"
-              disabled={recoverable !== null}
-              type="number"
-              min="0"
-              step="0.01"
-              value={budgetCapUsd}
-              aria-invalid={!!errors.budget}
-              onChange={(event) => setBudgetCapUsd(Number(event.target.value))}
-            />
-            {errors.budget ? (
-              <p className="text-xs text-destructive">{errors.budget}</p>
-            ) : (
-              <p className="text-xs text-muted-foreground">0 means no limit.</p>
-            )}
-          </div>
-
-          {stages.length > 1 && (
-            <div className="space-y-1.5">
-              <Label htmlFor="run-until-stage">Run up to</Label>
-              <select
-                id="run-until-stage"
-                value={untilStageKey}
-                disabled={recoverable !== null}
-                onChange={(event) => setUntilStageKey(event.target.value)}
-                className="h-9 w-full rounded-md border bg-transparent px-2 text-sm disabled:opacity-60"
-              >
-                <option value="">All stages</option>
-                {stages.map((stage, index) => (
-                  <option key={stage.key} value={stage.key}>
-                    {`${index + 1}. ${stage.label}`}
-                  </option>
-                ))}
-              </select>
-              {untilStageKey && (
-                <p className="text-xs text-muted-foreground">
-                  Later stages are skipped. Run again from the canvas to continue.
-                </p>
-              )}
-            </div>
-          )}
 
           {inputs.length === 0 && (
             <p className="text-sm text-muted-foreground">This blueprint has no runtime inputs.</p>
@@ -358,6 +323,71 @@ export function RunLaunchDialog({
             );
           })}
 
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="run-budget-cap">Budget limit (USD)</Label>
+              <Input
+                id="run-budget-cap"
+                disabled={recoverable !== null}
+                type="number"
+                min="0"
+                step="0.01"
+                value={budgetCapUsd}
+                aria-invalid={!!errors.budget}
+                onChange={(event) => setBudgetCapUsd(Number(event.target.value))}
+              />
+              {errors.budget ? (
+                <p className="text-xs text-destructive">{errors.budget}</p>
+              ) : (
+                <p className="text-xs text-muted-foreground">0 means no limit.</p>
+              )}
+            </div>
+
+            {stages.length > 1 && (
+              <div className="space-y-1.5">
+                <Label htmlFor="run-until-stage">Run up to</Label>
+                <select
+                  id="run-until-stage"
+                  value={untilStageKey}
+                  disabled={recoverable !== null}
+                  onChange={(event) => setUntilStageKey(event.target.value)}
+                  className="h-9 w-full rounded-[9px] border border-input bg-surface-2 px-2.5 text-sm disabled:opacity-60"
+                >
+                  <option value="">All stages</option>
+                  {stages.map((stage, index) => (
+                    <option key={stage.key} value={stage.key}>
+                      {`${index + 1}. ${stage.label}`}
+                    </option>
+                  ))}
+                </select>
+                {untilStageKey && (
+                  <p className="text-xs text-muted-foreground">
+                    Later stages are skipped. Run again from the canvas to continue.
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="flex flex-col gap-1.5 rounded-xl bg-surface-2 px-3.5 py-3 text-[13px]">
+            <p className="font-semibold">What will happen</p>
+            <p className="text-muted-foreground">
+              {(() => {
+                const until = stages.findIndex((stage) => stage.key === untilStageKey);
+                const count = until >= 0 ? until + 1 : stages.length;
+                const scope = count
+                  ? `Runs ${count} stage${count === 1 ? '' : 's'}${until >= 0 ? `, up to ${stages[until]!.label}` : ''}.`
+                  : 'Runs the blueprint.';
+                const spend = dryRun
+                  ? ' Nothing is charged.'
+                  : budgetCapUsd > 0
+                    ? ` It stops and asks before spending more than $${budgetCapUsd.toFixed(2)}.`
+                    : ' It has no budget limit.';
+                return `${scope}${spend} Stages that need you pause the run until you answer.`;
+              })()}
+            </p>
+          </div>
+
           {recoverable && (
             <Alert>
               <AlertTitle>Run saved for retry</AlertTitle>
@@ -390,8 +420,8 @@ export function RunLaunchDialog({
               : recoverable
                 ? retryLabel
                 : dryRun
-                  ? 'Start dry run'
-                  : 'Start real run'}
+                  ? 'Start free test run'
+                  : 'Start run'}
           </Button>
         </DialogFooter>
       </DialogContent>

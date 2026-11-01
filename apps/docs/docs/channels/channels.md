@@ -9,7 +9,7 @@ Two channels never share any of these.
 
 ## Create a channel
 
-1. Open **Channels** in the sidebar.
+1. Open **Channels and library** in the rail on the left.
 2. Select **New channel**.
 3. Fill in the form:
    - **Name**: required.
@@ -55,7 +55,7 @@ runs and files stay as they are.
 1. Open **More** on the channel page, or **⋯** on its card, and select **Archive**.
 2. Confirm with **Archive**.
 
-To see archived channels, turn on **Show archived channels** at the top of the Channels list.
+To see archived channels, select **Show archived channels** at the bottom of the channel list.
 Archived channels show an **Archived** badge. To bring one back, select **Unarchive** in the same
 menu.
 

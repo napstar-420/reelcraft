@@ -24,7 +24,7 @@ default for its kind of work.
 :::warning Every model stage needs a model from somewhere
 
 Reelcraft doesn't warn you when a stage that calls an AI service has no model and there's no default
-for its kind of work. The blueprint still shows **Runnable**, but when the run reaches that stage it
+for its kind of work. The blueprint still shows **Ready to run**, but when the run reaches that stage it
 fails with `ProviderRegistry: unknown provider "undefined"`, after a few retries. If you see that
 message, set a model on the stage or a [default](../channels/defaults.md).
 

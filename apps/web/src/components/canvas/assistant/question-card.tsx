@@ -72,7 +72,7 @@ export function QuestionCard({
         ];
         return (
           <fieldset key={q.id} className="space-y-1.5">
-            <legend className="text-[0.7rem] font-semibold tracking-wide text-muted-foreground uppercase">
+            <legend className="text-[0.7rem] font-semibold text-muted-foreground">
               {q.header}
             </legend>
             <p className="text-sm">{q.question}</p>

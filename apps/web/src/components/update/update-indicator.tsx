@@ -1,43 +1,46 @@
 import { useState } from 'react';
-import { ArrowUpCircle, Info, Loader2 } from 'lucide-react';
-import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
+import { ArrowUpCircle, Loader2 } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { UpdateDialog } from './update-dialog';
 import { updateOffer } from './update.logic';
 import { useUpdateStatus } from './use-update-status';
 
-/** Sidebar footer entry: the running version, and a prompt when an update
- * is available. Opens the update dialog. */
+/** A rail button that appears only when there is an update to offer or one is installing.
+ * The running version lives in Settings, About and help. Opens the update dialog. */
 export function UpdateIndicator() {
   const [open, setOpen] = useState(false);
   const { status, target, setTarget } = useUpdateStatus();
 
   const offer = updateOffer(status.data);
-  const version = status.data?.current.version;
-  if (!version) return null;
+  const busy = offer.kind === 'busy' || !!target;
+  if (!status.data?.current.version || (offer.kind === 'none' && !busy)) return null;
 
   const label =
     offer.kind === 'available'
       ? `Update to ${offer.version}`
       : offer.kind === 'needs-image'
         ? `Version ${offer.version} available`
-        : offer.kind === 'busy' || target
-          ? 'Updating…'
-          : `Reelcraft ${version}`;
-  const Icon =
-    offer.kind === 'busy' || target ? Loader2 : offer.kind === 'none' ? Info : ArrowUpCircle;
+        : 'Updating…';
 
   return (
-    <SidebarMenu>
-      <SidebarMenuItem>
-        <SidebarMenuButton
-          tooltip={label}
-          onClick={() => setOpen(true)}
-          className={offer.kind === 'none' && !target ? 'text-muted-foreground' : 'text-primary'}
-        >
-          <Icon className={offer.kind === 'busy' || target ? 'animate-spin' : undefined} />
-          <span>{label}</span>
-        </SidebarMenuButton>
-      </SidebarMenuItem>
+    <>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            onClick={() => setOpen(true)}
+            aria-label={label}
+            className="flex size-11 items-center justify-center rounded-xl text-acc hover:bg-surface-2"
+          >
+            {busy ? (
+              <Loader2 className="size-[18px] animate-spin" />
+            ) : (
+              <ArrowUpCircle className="size-[18px]" />
+            )}
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="right">{label}</TooltipContent>
+      </Tooltip>
       <UpdateDialog
         open={open}
         onOpenChange={setOpen}
@@ -46,6 +49,6 @@ export function UpdateIndicator() {
         target={target}
         onInstallStarted={setTarget}
       />
-    </SidebarMenu>
+    </>
   );
 }

@@ -3,8 +3,8 @@ title: Blueprint settings
 description: The run cap, the inputs a run asks for, the character role and the blueprint's defaults.
 ---
 
-**Blueprint settings** are in the **Blueprint** tab of the panel on the canvas. Select the **Start**
-card on the canvas to open it. They apply to the whole blueprint, and they're saved with each version
+**Blueprint settings** are under **Inputs, voices and budget**, at the top of the stage list in the
+blueprint editor. In Graph view, selecting the **Start** card opens them too. They apply to the whole blueprint, and they're saved with each version
 like everything else on the canvas.
 
 ## Budget

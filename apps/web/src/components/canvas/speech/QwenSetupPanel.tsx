@@ -38,9 +38,9 @@ import {
 import { formatBytes } from './speech-settings.logic';
 
 const DOT: Record<SetupView['tone'], string> = {
-  ok: 'bg-emerald-500',
+  ok: 'bg-ok',
   muted: 'bg-muted-foreground/50',
-  warn: 'bg-amber-500',
+  warn: 'bg-wait',
   error: 'bg-destructive',
 };
 
@@ -170,7 +170,7 @@ export function QwenSetupPanel() {
       )}
       {view.uvCommand && <CommandBox command={view.uvCommand} />}
       {view.hints.map((hint) => (
-        <p key={hint} className="text-xs text-amber-700 dark:text-amber-400">
+        <p key={hint} className="text-xs text-wait">
           {hint}{' '}
           <a
             href={docsUrl('qwen-tts')}

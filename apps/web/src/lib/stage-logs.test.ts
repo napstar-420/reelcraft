@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { StageEventDto } from '@reelcraft/shared';
-import { formatOffset, stageLogLines } from './stage-logs';
+import { activityLines, formatOffset, stageLogLines } from './stage-logs';
 
 const event = (
   id: string,
@@ -54,5 +54,37 @@ describe('formatOffset', () => {
     expect(formatOffset(120_000)).toBe('+2m');
     expect(formatOffset(3_900_000)).toBe('+1h 5m');
     expect(formatOffset(3_661_000)).toBe('+1h 1m 1s');
+  });
+});
+
+describe('activityLines', () => {
+  const event = (id: string, createdAt: string, level: 'info' | 'debug' | 'warn' = 'info') => ({
+    id,
+    stageAttemptId: id === 'c' ? 'a2' : 'a1',
+    itemIndex: null,
+    level,
+    type: 'x',
+    message: id,
+    data: null,
+    createdAt,
+  });
+
+  it('lists every attempt newest first, timed from the first event', () => {
+    const lines = activityLines([
+      event('a', '2026-01-01T10:00:00Z'),
+      event('b', '2026-01-01T10:00:05Z'),
+      event('c', '2026-01-01T10:03:22Z'),
+    ]);
+    expect(lines.map((l) => [l.id, l.clock])).toEqual([
+      ['c', '3:22'],
+      ['b', '0:05'],
+      ['a', '0:00'],
+    ]);
+  });
+
+  it('hides debug events unless asked', () => {
+    const events = [event('a', '2026-01-01T10:00:00Z', 'debug')];
+    expect(activityLines(events)).toEqual([]);
+    expect(activityLines(events, true)).toHaveLength(1);
   });
 });

@@ -1739,7 +1739,7 @@ export function StageInspector({
                 <InheritedModelNote pin={inherited.models[modalityOf(stage.capability)]} />
               )}
               {stageCapability?.modality === 'browser' && (
-                <p className="text-xs text-amber-700 dark:text-amber-400">
+                <p className="text-xs text-wait">
                   Browser automation uses BrowserOS Neo's persistent signed-in profile and may act
                   on live accounts without an additional provider confirmation.
                 </p>

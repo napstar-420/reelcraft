@@ -50,7 +50,7 @@ about are outlined in red with an alert badge:
 - a gap in the main video track: the clips on either side of it.
 
 Problems that aren't about one clip, such as the audio and video ending at different times, are listed
-without a **Show** button. **Submit timeline** stays available, and runs the checks again.
+without a **Show** button. **Use this timeline and continue** stays available, and runs the checks again.
 
 ## How to fix each
 

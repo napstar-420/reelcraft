@@ -1,14 +1,27 @@
-export type ShellLayout = 'constrained' | 'wide' | 'workbench';
+export type ShellLayout = {
+  /** `workbench` pages fill the window and scroll their own panes; `page` routes scroll as a whole. */
+  frame: 'workbench' | 'page';
+  /** Show the floating "Ask the assistant" button: not where the assistant is already on screen. */
+  askButton: boolean;
+};
 
-const WORKBENCH_PATH = /^\/(channels\/[^/]+\/build|blueprints\/[^/]+\/build)\/?$/;
-const WIDE_PATH = /^\/runs\/[^/]+/;
+const WORKBENCH = [
+  /^\/(channels\/[^/]+\/build|blueprints\/[^/]+\/build)\/?$/,
+  /^\/runs\/[^/]+/,
+  /^\/channels(\/[^/]+)?\/?$/,
+  /^\/settings(\/[^/]+)?\/?$/,
+];
+/** The assistant is docked on these, or the page is the assistant (Home). */
+const ASSISTANT_ON_SCREEN = [
+  /^\/$/,
+  /^\/(channels\/[^/]+\/build|blueprints\/[^/]+\/build)\/?$/,
+  /^\/runs\/[^/]+\/?$/,
+];
 
-/** How `AppShell` frames a page. The blueprint canvas is a workbench: it
- * fills the viewport and manages its own scrolling and padding. Run pages
- * want the full width but still scroll as a page. Everything else reads
- * better constrained to a max width. */
+/** How `AppShell` frames a route. */
 export function shellLayoutForPath(pathname: string): ShellLayout {
-  if (WORKBENCH_PATH.test(pathname)) return 'workbench';
-  if (WIDE_PATH.test(pathname)) return 'wide';
-  return 'constrained';
+  return {
+    frame: WORKBENCH.some((re) => re.test(pathname)) ? 'workbench' : 'page',
+    askButton: !ASSISTANT_ON_SCREEN.some((re) => re.test(pathname)),
+  };
 }

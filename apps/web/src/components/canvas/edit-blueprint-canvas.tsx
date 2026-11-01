@@ -2,13 +2,13 @@ import { connectStages, disconnectStages, explicitGraph } from '@/pages/dag-edit
 import { TestRunControls, withoutStageActions } from './test-run-controls';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Lock } from 'lucide-react';
 import { api, ApiError } from '@/api/client';
 import { apiErrorMessage } from '@/lib/api-error-message';
 import { stableStringify } from '@/lib/stable-stringify';
 import { formatBlueprintVersion } from '@/lib/format-blueprint-version';
-import { runStateTone } from '@/lib/status';
 import { useCanvasRun } from '@/hooks/useCanvasRun';
 import { useCanvasRunActions } from '@/hooks/useCanvasRunActions';
 import { useAssistant } from '@/hooks/useAssistant';
@@ -47,7 +47,9 @@ import type {
 } from '@reelcraft/shared';
 import { AssistantPanel } from './assistant/assistant-panel';
 import { BlueprintSettingsPanel } from './BlueprintSettingsPanel';
-import { CanvasDock, type DockTab } from './canvas-dock';
+import { AssistantDock, loadDockOpen, saveDockOpen } from '@/components/assistant/assistant-dock';
+import { AddStageDialog } from './add-stage-dialog';
+import { StageOutline, type OutlineFocus } from './stage-outline';
 import {
   blueprintChanged,
   newerSaved,
@@ -61,6 +63,10 @@ import { CanvasToolbar } from './canvas-toolbar';
 import { CanvasWorkspace } from './canvas-workspace';
 import { OrphanDraftBanner, SavedElsewhereBanner } from './draft-banners';
 import { RunTab } from './run-tab';
+import { stageSummary } from './stage-summary.logic';
+import { handoffMessage } from '@/lib/assistant-handoff';
+import { StageExecutionControls } from '@/components/runs/execution-controls';
+import { Link } from 'react-router-dom';
 import { createStage } from './stage-factory.logic';
 import { StagePanel } from './stage-panel';
 
@@ -110,8 +116,6 @@ async function assertRunnable(blueprintId: string, draft: BlueprintDraft, allowD
   throw new Error(`Blueprint is not runnable.${summary ? ` ${summary}` : ''}`);
 }
 
-const DESKTOP_QUERY = '(min-width: 768px)';
-
 /** The blueprint workbench: a toolbar, the stage canvas, and one dock for the
  * stage inspector, the run and the blueprint's settings. Owns the draft and
  * everything that decides what Save and Run do with it. */
@@ -159,9 +163,29 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
   }
 
   const [selectedStageKey, setSelectedStageKey] = useState<string | null>(null);
-  const [tab, setTab] = useState<DockTab>('stage');
-  const [dockOpen, setDockOpen] = useState(() => window.matchMedia(DESKTOP_QUERY).matches);
-  const [dockWide, setDockWide] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const view = searchParams.get('view') === 'graph' ? 'graph' : 'stages';
+  /** What the middle of the page shows in Stages view. */
+  const [panel, setPanel] = useState<'stage' | 'settings' | 'tests'>('stage');
+  const [dockOpen, setDockOpenState] = useState(() => loadDockOpen('blueprint'));
+  const setDockOpen = (open: boolean) => {
+    setDockOpenState(open);
+    saveDockOpen('blueprint', open);
+  };
+  const [addOpen, setAddOpen] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const setView = useCallback(
+    (next: 'stages' | 'graph') =>
+      setSearchParams(
+        (params) => {
+          if (next === 'graph') params.set('view', 'graph');
+          else params.delete('view');
+          return params;
+        },
+        { replace: true },
+      ),
+    [setSearchParams],
+  );
   const [validation, setValidation] = useState<{
     issues: ValidationIssue[];
     runnable: boolean;
@@ -530,10 +554,81 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
   const detailsKey = runActions.outputSheetKey ?? runActions.attemptsSheetKey;
   useEffect(() => {
     if (detailsKey) {
-      setTab('details');
-      setDockOpen(true);
+      setSelectedStageKey(detailsKey);
+      setPanel('stage');
+      setView('stages');
     }
-  }, [detailsKey]);
+  }, [detailsKey, setView]);
+
+  // `?stage=<key>` (from a run's "Edit stage") opens that stage once.
+  const stageParam = searchParams.get('stage');
+  useEffect(() => {
+    if (!stageParam || !draft) return;
+    setSelectedStageKey(stageParam);
+    setPanel('stage');
+    setSearchParams(
+      (params) => {
+        params.delete('stage');
+        return params;
+      },
+      { replace: true },
+    );
+  }, [stageParam, draft, setSearchParams]);
+
+  // A message handed over from Home, a run or a failure arrives in navigation state, which only
+  // the app can set: send it once the assistant is ready, then clear it so going back or
+  // reloading doesn't send it again.
+  const location = useLocation();
+  const navigate = useNavigate();
+  const handoff = handoffMessage(location.state);
+  const askSent = useRef(false);
+  useEffect(() => {
+    if (!handoff || askSent.current || !draft || viewing) return;
+    if (!assistant.model || assistant.unavailableReason || assistant.running) return;
+    askSent.current = true;
+    setDockOpen(true);
+    assistant.send(handoff);
+    navigate(
+      { pathname: location.pathname, search: location.search },
+      { replace: true, state: null },
+    );
+  }, [handoff, draft, viewing, assistant.model, assistant.unavailableReason, assistant.running]);
+
+  // A `?ask=` in the URL comes from outside the app (a link anyone can write), so it only fills in
+  // the assistant's message box: nothing is sent until the user presses Send.
+  const askParam = searchParams.get('ask');
+  const [askPrefill, setAskPrefill] = useState<string | null>(null);
+  useEffect(() => {
+    if (!askParam) return;
+    setAskPrefill(askParam);
+    setDockOpen(true);
+    setSearchParams(
+      (params) => {
+        params.delete('ask');
+        return params;
+      },
+      { replace: true },
+    );
+  }, [askParam, setSearchParams]);
+
+  // `A` adds a stage from anywhere in Stages view (the graph has its own).
+  useEffect(() => {
+    if (view !== 'stages' || viewing) return;
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key.toLowerCase() !== 'a' || event.metaKey || event.ctrlKey || event.altKey) return;
+      const target = event.target;
+      if (
+        target instanceof HTMLElement &&
+        (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))
+      )
+        return;
+      if (document.querySelector('[role="dialog"]')) return;
+      event.preventDefault();
+      setAddOpen(true);
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [view, viewing]);
 
   if (versions.isLoading || !draft) {
     return <p className="p-6 text-sm text-muted-foreground">Loading…</p>;
@@ -546,16 +641,57 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
 
   function selectStage(key: string | null) {
     setSelectedStageKey(key);
-    if (key) {
-      setTab('stage');
-      setDockOpen(true);
-    }
+    if (key) setPanel('stage');
   }
 
   function openBlueprintSettings() {
-    setTab('blueprint');
-    setDockOpen(true);
+    setPanel('settings');
+    setView('stages');
   }
+
+  const savedStages = new Map(savedDraft.graph.map((s) => [s.key, stableStringify(s)]));
+  const editedKeys = new Set(
+    shown.graph
+      .filter((s) => !readOnly && savedStages.get(s.key) !== stableStringify(s))
+      .map((s) => s.key),
+  );
+  const focus: OutlineFocus | null =
+    panel === 'settings'
+      ? { kind: 'settings' }
+      : panel === 'tests'
+        ? { kind: 'tests' }
+        : selectedKey
+          ? { kind: 'stage', key: selectedKey }
+          : null;
+  const selectedIndex = selectedKey ? shown.graph.findIndex((s) => s.key === selectedKey) : -1;
+  const insertAt = selectedIndex >= 0 ? selectedIndex + 1 : shown.graph.length;
+  const insertLabel =
+    selectedIndex >= 0
+      ? `after ${shown.graph[selectedIndex]!.label || shown.graph[selectedIndex]!.key}`
+      : shown.graph.length
+        ? 'at the end'
+        : 'as the first stage';
+  const selectedExecution = canvasRun.run?.stageExecutions.find((e) => e.stageKey === selectedKey);
+  /** The test run as the canvas shows it: a passed stage whose output an edit made out of date
+   * reads as stale, and stage actions a fresh run is needed for are withdrawn. The outline and
+   * the graph both show this one. */
+  const decoratedRun = canvasRun.run
+    ? {
+        ...canvasRun.run,
+        stageExecutions: canvasRun.run.stageExecutions.map((e) => ({
+          ...e,
+          ...(e.state === 'passed' &&
+            (runActions.staleStageKeys.has(e.stageKey) ||
+              runActions.validationStageKeys.has(e.stageKey)) && {
+              state: 'stale' as const,
+            }),
+          ...(runActions.newRunReason &&
+            e.availableActions && {
+              availableActions: withoutStageActions(e.availableActions, runActions.newRunReason),
+            }),
+        })),
+      }
+    : undefined;
 
   async function addStage(capabilityKey: string, index: number, branchFrom?: string) {
     const capability = capabilities.data?.find((c) => c.key === capabilityKey);
@@ -651,11 +787,13 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
         problemCount={problemCount}
         onViewVersion={(version) => {
           setSelectedStageKey(null);
-          if (tab === 'run' && version) setTab('stage');
+          if (panel === 'tests' && version) setPanel('stage');
           setViewing(version);
         }}
         onSave={(bump) => save.mutate(bump)}
         onDiscard={discardChanges}
+        view={view}
+        onViewChange={setView}
         runButton={
           <TestRunControls
             channelId={channelId ?? ''}
@@ -738,126 +876,28 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
       )}
 
       <div className="flex min-h-0 flex-1">
-        <div className="flex min-w-0 flex-1 flex-col">
-          <CanvasWorkspace
-            presentation={shown.presentation}
-            onPresentationChange={(presentation) => editDraft({ ...draft!, presentation })}
-            onConnectStages={(source, target, remove) => {
-              try {
-                editDraft({
-                  ...draft!,
-                  graph: (remove ? disconnectStages : connectStages)(draft!.graph, source, target),
-                });
-              } catch (error) {
-                toast.error((error as Error).message);
-                selectStage(target);
-              }
-            }}
-            onUndo={() => historyEdit(false)}
-            onRedo={() => historyEdit(true)}
+        {view === 'stages' ? (
+          <StageOutline
             graph={shown.graph}
-            inputs={shown.inputs}
-            roles={shown.roles}
-            runCapUsd={shown.budget.runCapUsd}
-            capabilities={capabilities.data ?? []}
-            capabilitiesLoading={capabilities.isLoading}
-            issues={shownIssues}
+            focus={focus}
             issuesByStage={issuesByStage}
-            selectedKey={selectedKey}
-            run={
-              canvasRun.run
-                ? {
-                    ...canvasRun.run,
-                    stageExecutions: canvasRun.run.stageExecutions.map((e) => ({
-                      ...e,
-                      ...(e.state === 'passed' &&
-                        (runActions.staleStageKeys.has(e.stageKey) ||
-                          runActions.validationStageKeys.has(e.stageKey)) && {
-                          state: 'stale' as const,
-                        }),
-                      ...(runActions.newRunReason &&
-                        e.availableActions && {
-                          availableActions: withoutStageActions(
-                            e.availableActions,
-                            runActions.newRunReason,
-                          ),
-                        }),
-                    })),
-                  }
-                : undefined
-            }
+            editedKeys={editedKeys}
+            run={readOnly ? undefined : decoratedRun}
             readOnly={readOnly}
-            dockOpen={dockOpen}
-            onToggleDock={() => setDockOpen((open) => !open)}
-            onSelectStage={selectStage}
-            onReorder={reorderStage}
-            onAddStage={addStage}
-            onOpenBlueprintSettings={openBlueprintSettings}
-            runActions={{
-              onInspectStage: (key, tab) =>
-                tab === 'Output'
-                  ? runActions.setOutputSheetKey(key)
-                  : runActions.setAttemptsSheetKey(key),
-              onRunStage: (stageKey, request) =>
-                runActions.runStage.mutate({ stageKey, ...request }),
-              onCancelRun: () => runActions.setConfirmCancel(true),
-              onReviewStage: runActions.setApprovalStageKey,
-              onMoveStage: (key, delta) => {
-                const from = shown.graph.findIndex((s) => s.key === key);
-                const to = from + delta;
-                if (from !== -1 && to >= 0 && to < shown.graph.length) reorderStage(from, to);
-              },
-              onDeleteStage: deleteStage,
+            onFocus={(next) => {
+              if (next.kind === 'stage') selectStage(next.key);
+              else setPanel(next.kind);
             }}
+            onAddStage={() => setAddOpen(true)}
           />
-        </div>
+        ) : null}
 
-        {dockOpen && (
-          <CanvasDock
-            tab={tab}
-            onTabChange={setTab}
-            wide={dockWide}
-            onToggleWide={() => setDockWide((wide) => !wide)}
-            onClose={() => setDockOpen(false)}
-            runTone={!readOnly && canvasRun.run ? runStateTone(canvasRun.run.state) : undefined}
-            runDisabled={readOnly}
-            assistantBusy={assistant.running}
-            assistant={<AssistantPanel assistant={assistant} />}
-            details={
-              detailsKey && canvasRun.run ? (
-                <StageDetailsWorkspace
-                  onToggleExpanded={() => setDockWide((wide) => !wide)}
-                  embedded
-                  runId={canvasRun.run.id}
-                  stageKey={detailsKey}
-                  stageLabel={runActions.stageLabel(detailsKey)}
-                  open
-                  actions={canvasRun.run.availableActions?.busy ? undefined : runActions}
-                  freshness={runActions.staleStageKeys.has(detailsKey) ? 'stale' : undefined}
-                  stageRunning={canvasRun.run.availableActions?.busy}
-                  initialTab={runActions.attemptsSheetKey ? 'Attempts' : 'Output'}
-                  onOpenChange={(open) => {
-                    if (!open) {
-                      runActions.setOutputSheetKey(null);
-                      runActions.setAttemptsSheetKey(null);
-                    }
-                  }}
-                />
-              ) : undefined
-            }
-            stage={
-              <StagePanel
-                stageKey={selectedKey}
-                graph={shown.graph}
-                inputs={shown.inputs}
-                roles={shown.roles}
-                assets={assets.data ?? []}
-                issues={selectedKey ? (issuesByStage.get(selectedKey) ?? []) : []}
-                inherited={inheritedDefaults(channel.data?.defaults ?? {}, shown.defaults)}
-                capabilityLabel={capabilityLabel}
-                readOnly={readOnly}
-                onChange={updateStage}
-                onSelectStage={selectStage}
+        <main className="relative flex min-w-0 flex-1 flex-col">
+          {view === 'graph' ? (
+            <>
+              <CanvasWorkspace
+                presentation={shown.presentation}
+                onPresentationChange={(presentation) => editDraft({ ...draft!, presentation })}
                 onConnectStages={(source, target, remove) => {
                   try {
                     editDraft({
@@ -870,43 +910,245 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
                     });
                   } catch (error) {
                     toast.error((error as Error).message);
+                    selectStage(target);
                   }
                 }}
-                onDelete={deleteStage}
-              />
-            }
-            run={
-              <RunTab
-                presentation={shown.presentation}
-                graph={draft.graph}
-                run={canvasRun.run}
-                recentRuns={canvasRun.recentRuns}
-                actions={runActions}
+                onUndo={() => historyEdit(false)}
+                onRedo={() => historyEdit(true)}
+                graph={shown.graph}
+                inputs={shown.inputs}
+                roles={shown.roles}
+                runCapUsd={shown.budget.runCapUsd}
+                capabilities={capabilities.data ?? []}
+                capabilitiesLoading={capabilities.isLoading}
+                issues={shownIssues}
+                issuesByStage={issuesByStage}
                 selectedKey={selectedKey}
-                onSelectStage={(key) => {
-                  setSelectedStageKey(key);
-                  setTab('run');
+                run={decoratedRun}
+                readOnly={readOnly}
+                dockOpen
+                onToggleDock={() => undefined}
+                onSelectStage={selectStage}
+                onReorder={reorderStage}
+                onAddStage={addStage}
+                onOpenBlueprintSettings={openBlueprintSettings}
+                runActions={{
+                  onInspectStage: (key, tab) =>
+                    tab === 'Output'
+                      ? runActions.setOutputSheetKey(key)
+                      : runActions.setAttemptsSheetKey(key),
+                  onRunStage: (stageKey, request) =>
+                    runActions.runStage.mutate({ stageKey, ...request }),
+                  onCancelRun: () => runActions.setConfirmCancel(true),
+                  onReviewStage: runActions.setApprovalStageKey,
+                  onMoveStage: (key, delta) => {
+                    const from = shown.graph.findIndex((s) => s.key === key);
+                    const to = from + delta;
+                    if (from !== -1 && to >= 0 && to < shown.graph.length) reorderStage(from, to);
+                  },
+                  onDeleteStage: deleteStage,
                 }}
-                isDirty={isDirty}
-                onSwitchRun={canvasRun.setActiveRunId}
               />
-            }
-            blueprint={
-              <fieldset disabled={readOnly} className="min-w-0">
-                <BlueprintSettingsPanel
-                  execution={shown.execution}
+              {selectedKey && selectedIndex >= 0 ? (
+                <div className="absolute inset-x-3.5 bottom-3.5 z-20 flex flex-wrap items-center gap-3.5 rounded-[14px] border border-line-strong bg-card p-3.5 shadow-[0_16px_40px_-20px_rgba(0,0,0,0.6)]">
+                  <div className="min-w-60 flex-1">
+                    <p className="font-semibold">
+                      <span className="mr-1.5 font-mono text-xs font-normal text-faint">
+                        {selectedIndex + 1}
+                      </span>
+                      {shown.graph[selectedIndex]!.label || selectedKey}
+                    </p>
+                    <p className="line-clamp-2 text-[13px] text-muted-foreground">
+                      {stageSummary(shown.graph, selectedKey, capabilityLabel).join(' ')}
+                    </p>
+                  </div>
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      setPanel('stage');
+                      setView('stages');
+                    }}
+                  >
+                    Edit stage
+                  </Button>
+                </div>
+              ) : null}
+            </>
+          ) : (
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              {panel === 'settings' ? (
+                <div className="mx-auto flex w-full max-w-[760px] flex-col gap-4 px-7 pt-6 pb-16">
+                  <div>
+                    <h2 className="text-[22px] font-semibold tracking-[-0.015em]">
+                      Inputs, voices and budget
+                    </h2>
+                    <p className="text-sm text-muted-foreground">
+                      What every run of this blueprint asks for, who appears in it, and what it may
+                      spend.
+                    </p>
+                  </div>
+                  <fieldset
+                    disabled={readOnly}
+                    className="min-w-0 overflow-hidden rounded-[14px] border bg-card"
+                  >
+                    <BlueprintSettingsPanel
+                      execution={shown.execution}
+                      inputs={shown.inputs}
+                      roles={shown.roles}
+                      budget={shown.budget}
+                      defaults={shown.defaults}
+                      channelId={channelId ?? ''}
+                      onChange={updateSettings}
+                    />
+                  </fieldset>
+                </div>
+              ) : panel === 'tests' ? (
+                <div className="mx-auto flex w-full max-w-[760px] flex-col gap-4 px-7 pt-6 pb-16">
+                  <div>
+                    <h2 className="text-[22px] font-semibold tracking-[-0.015em]">Test runs</h2>
+                    <p className="text-sm text-muted-foreground">
+                      Test runs use the blueprint as it is on screen, saved or not.
+                      {canvasRun.run ? (
+                        <>
+                          {' '}
+                          <Link
+                            to={`/runs/${canvasRun.run.id}`}
+                            className="text-foreground underline underline-offset-2"
+                          >
+                            Open the full run page
+                          </Link>
+                        </>
+                      ) : null}
+                    </p>
+                  </div>
+                  <div className="overflow-hidden rounded-[14px] border bg-card">
+                    <RunTab
+                      presentation={shown.presentation}
+                      graph={draft.graph}
+                      run={readOnly ? undefined : canvasRun.run}
+                      recentRuns={canvasRun.recentRuns}
+                      actions={runActions}
+                      selectedKey={selectedKey}
+                      onSelectStage={(key) => selectStage(key)}
+                      isDirty={isDirty}
+                      onSwitchRun={canvasRun.setActiveRunId}
+                    />
+                  </div>
+                </div>
+              ) : (
+                <StagePanel
+                  key={`${selectedKey}-${detailsKey ?? ''}`}
+                  stageKey={selectedKey}
+                  graph={shown.graph}
                   inputs={shown.inputs}
                   roles={shown.roles}
-                  budget={shown.budget}
-                  defaults={shown.defaults}
-                  channelId={channelId ?? ''}
-                  onChange={updateSettings}
+                  assets={assets.data ?? []}
+                  issues={selectedKey ? (issuesByStage.get(selectedKey) ?? []) : []}
+                  inherited={inheritedDefaults(channel.data?.defaults ?? {}, shown.defaults)}
+                  capabilityLabel={capabilityLabel}
+                  readOnly={readOnly}
+                  defaultTab={detailsKey ? 'run' : 'setup'}
+                  headerActions={
+                    !readOnly && selectedKey && selectedExecution?.availableActions ? (
+                      <StageExecutionControls
+                        compact
+                        available={selectedExecution.availableActions}
+                        busy={canvasRun.run?.availableActions?.busy ?? true}
+                        pending={runActions.runStage.isPending}
+                        onAction={(request) =>
+                          runActions.runStage.mutate({ stageKey: selectedKey, ...request })
+                        }
+                      />
+                    ) : null
+                  }
+                  lastRunLabel="Last test run"
+                  lastRun={
+                    !readOnly && selectedKey && canvasRun.run && selectedExecution ? (
+                      <StageDetailsWorkspace
+                        embedded
+                        runId={canvasRun.run.id}
+                        stageKey={selectedKey}
+                        stageLabel={runActions.stageLabel(selectedKey)}
+                        open
+                        actions={canvasRun.run.availableActions?.busy ? undefined : runActions}
+                        freshness={runActions.staleStageKeys.has(selectedKey) ? 'stale' : undefined}
+                        stageRunning={canvasRun.run.availableActions?.busy}
+                        initialTab={runActions.attemptsSheetKey ? 'Attempts' : 'Output'}
+                        onOpenChange={(open) => {
+                          if (!open) {
+                            runActions.setOutputSheetKey(null);
+                            runActions.setAttemptsSheetKey(null);
+                          }
+                        }}
+                      />
+                    ) : undefined
+                  }
+                  onChange={updateStage}
+                  onSelectStage={selectStage}
+                  onConnectStages={(source, target, remove) => {
+                    try {
+                      editDraft({
+                        ...draft!,
+                        graph: (remove ? disconnectStages : connectStages)(
+                          draft!.graph,
+                          source,
+                          target,
+                        ),
+                      });
+                    } catch (error) {
+                      toast.error((error as Error).message);
+                    }
+                  }}
+                  onDelete={deleteStage}
                 />
-              </fieldset>
+              )}
+            </div>
+          )}
+        </main>
+
+        <AssistantDock
+          open={dockOpen}
+          onOpenChange={setDockOpen}
+          badge={
+            assistant.running ? (
+              <span className="inline-flex h-5 items-center gap-1.5 rounded-full bg-acc-soft px-2 text-xs font-medium text-acc">
+                <span className="size-1.5 animate-pulse rounded-full bg-current" /> Working
+              </span>
+            ) : null
+          }
+        >
+          <AssistantPanel
+            assistant={assistant}
+            prefill={askPrefill}
+            stageLabel={
+              view === 'stages' && panel === 'stage' && selectedIndex >= 0
+                ? shown.graph[selectedIndex]!.label || selectedKey
+                : null
             }
           />
-        )}
+        </AssistantDock>
       </div>
+
+      <AddStageDialog
+        open={addOpen}
+        onOpenChange={setAddOpen}
+        capabilities={capabilities.data ?? []}
+        loading={capabilities.isLoading}
+        contextLabel={insertLabel}
+        adding={adding}
+        onPick={(capability) => {
+          setAdding(true);
+          void addStage(capability.key, insertAt)
+            .then(() => setAddOpen(false))
+            .catch(() => undefined)
+            .finally(() => setAdding(false));
+        }}
+        onDescribe={() => {
+          setAddOpen(false);
+          setDockOpen(true);
+          window.setTimeout(() => document.getElementById('assistant-message')?.focus(), 50);
+        }}
+      />
 
       <CanvasRunSheets run={canvasRun.run} actions={runActions} embeddedDetails />
     </div>

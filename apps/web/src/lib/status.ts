@@ -8,22 +8,28 @@ import type {
 export type StatusTone = 'success' | 'running' | 'warning' | 'error' | 'neutral';
 
 export const toneBadgeClassName: Record<StatusTone, string> = {
-  success:
-    'border-transparent bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400',
-  running: 'border-transparent bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-400',
-  warning:
-    'border-transparent bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400',
-  error:
-    'border-transparent bg-destructive/10 text-destructive dark:bg-destructive/20 dark:text-destructive',
-  neutral: 'border-transparent bg-muted text-muted-foreground',
+  success: 'border-transparent bg-ok-soft text-ok',
+  running: 'border-transparent bg-run-soft text-run',
+  warning: 'border-transparent bg-wait-soft text-wait',
+  error: 'border-transparent bg-bad-soft text-bad',
+  neutral: 'border-transparent bg-surface-3 text-muted-foreground',
 };
 
 export const toneDotClassName: Record<StatusTone, string> = {
-  success: 'bg-emerald-500',
-  running: 'bg-blue-500',
-  warning: 'bg-amber-500',
-  error: 'bg-destructive',
-  neutral: 'bg-muted-foreground',
+  success: 'bg-ok',
+  running: 'bg-run',
+  warning: 'bg-wait',
+  error: 'bg-bad',
+  neutral: 'bg-faint',
+};
+
+/** Text colour for a tone, for sentences and icons. */
+export const toneTextClassName: Record<StatusTone, string> = {
+  success: 'text-ok',
+  running: 'text-run',
+  warning: 'text-wait',
+  error: 'text-bad',
+  neutral: 'text-muted-foreground',
 };
 
 const runStateTones: Record<RunState, StatusTone> = {

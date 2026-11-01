@@ -83,7 +83,7 @@ export function StageRetryDialog({
 
   return (
     <Dialog open={open} onOpenChange={(next) => !confirm.isPending && onOpenChange(next)}>
-      <DialogContent>
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>
             {copy.title} {stageLabel ?? stageKey}
@@ -104,26 +104,40 @@ export function StageRetryDialog({
             </AlertDescription>
           </Alert>
         ) : preview.data ? (
-          <dl className="grid grid-cols-2 gap-3 text-sm">
-            <div>
-              <dt className="text-muted-foreground">Affected stages</dt>
-              <dd className="font-medium">{affectedStageKeys.join(', ') || stageKey}</dd>
+          <div className="flex flex-col gap-3">
+            <div className="rounded-xl bg-surface-2 px-3.5 py-1.5 text-[13px]">
+              {(affectedStageKeys.length ? affectedStageKeys : [stageKey ?? '']).map((key, i) => (
+                <div key={key} className="flex items-center gap-2.5 border-t py-2 first:border-t-0">
+                  <span
+                    className={
+                      i === 0
+                        ? 'size-2 rounded-full bg-run'
+                        : 'size-2 rounded-full border-[1.5px] border-dashed border-faint'
+                    }
+                  />
+                  <span className="flex-1">
+                    {key === stageKey ? (stageLabel ?? key) : key}
+                    {i === 0 && items === 'failed' && itemNumbers.length > 0
+                      ? `, item${itemNumbers.length === 1 ? '' : 's'} ${itemNumbers.join(', ')}`
+                      : ''}
+                  </span>
+                  <span className="text-faint">{i === 0 ? 'runs now' : 'runs again after'}</span>
+                </div>
+              ))}
             </div>
-            {items === 'failed' && itemNumbers.length > 0 ? (
-              <div>
-                <dt className="text-muted-foreground">Items</dt>
-                <dd className="font-medium">{itemNumbers.join(', ')}</dd>
-              </div>
-            ) : null}
-            <div>
-              <dt className="text-muted-foreground">Already spent</dt>
-              <dd className="font-medium">${preview.data.spentUsd.toFixed(4)}</dd>
+            <div className="flex flex-wrap gap-6 text-[13px]">
+              <span>
+                <span className="text-faint">Spent so far</span>{' '}
+                <b className="font-mono font-medium">${preview.data.spentUsd.toFixed(2)}</b>
+              </span>
+              <span>
+                <span className="text-faint">This retry</span>{' '}
+                <b className="font-mono font-medium">
+                  about ${preview.data.estimatedRerunUsd.toFixed(2)}
+                </b>
+              </span>
             </div>
-            <div>
-              <dt className="text-muted-foreground">Estimated rerun cost</dt>
-              <dd className="font-medium">${preview.data.estimatedRerunUsd.toFixed(4)}</dd>
-            </div>
-          </dl>
+          </div>
         ) : null}
 
         {confirm.isError ? (
@@ -143,13 +157,9 @@ export function StageRetryDialog({
           >
             Cancel
           </Button>
-          <Button
-            variant="destructive"
-            disabled={!preview.data || confirm.isPending}
-            onClick={() => confirm.mutate()}
-          >
+          <Button disabled={!preview.data || confirm.isPending} onClick={() => confirm.mutate()}>
             {confirm.isPending ? <Loader2 className="animate-spin" /> : null}
-            Confirm re-run
+            {items === 'failed' ? 'Retry failed items' : 'Run again'}
           </Button>
         </DialogFooter>
       </DialogContent>

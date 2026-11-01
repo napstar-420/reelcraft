@@ -68,8 +68,8 @@ const TRACK_ICON = { video: Film, audio: Music, overlay: Type, captions: Caption
 /** Each kind of track has its own colour, so a long timeline reads at a glance. */
 const TRACK_TONE: Record<Timeline['tracks'][number]['type'], string> = {
   video: 'border-violet-400/50 bg-violet-500/25',
-  audio: 'border-emerald-400/50 bg-emerald-500/25',
-  overlay: 'border-amber-400/50 bg-amber-500/25',
+  audio: 'border-ok/50 bg-ok/25',
+  overlay: 'border-wait/50 bg-wait/25',
   captions: 'border-sky-400/50 bg-sky-500/25',
 };
 

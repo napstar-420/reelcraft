@@ -5,6 +5,8 @@ export interface AssistantPrefs {
   modelId?: string | undefined;
   effort?: string | undefined;
   autoApply?: boolean;
+  /** The channel Home's composer last used. */
+  channelId?: string;
 }
 
 const KEY = 'reelcraft.assistant';

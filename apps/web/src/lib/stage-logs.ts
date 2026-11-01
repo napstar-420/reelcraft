@@ -35,3 +35,23 @@ export function formatOffset(ms: number): string {
     .map(([n, unit]) => `${n}${unit}`)
     .join(' ')}`;
 }
+
+export interface ActivityLine extends StageEventDto {
+  /** Time since the stage's first event, as a clock ("3:22"). */
+  clock: string;
+}
+
+/** Every event of a stage across its attempts, newest first, for the run page's live feed.
+ * Debug events stay hidden unless asked for. */
+export function activityLines(events: StageEventDto[], showDebug = false): ActivityLine[] {
+  const visible = events.filter((event) => showDebug || event.level !== 'debug');
+  if (!visible.length) return [];
+  const start = Math.min(...visible.map((e) => Date.parse(e.createdAt)));
+  return visible
+    .map((event) => {
+      const total = Math.max(0, Math.floor((Date.parse(event.createdAt) - start) / 1000));
+      const clock = `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
+      return { ...event, clock };
+    })
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}

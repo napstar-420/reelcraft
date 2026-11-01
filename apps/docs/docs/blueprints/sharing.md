@@ -15,7 +15,7 @@ from you and that nobody changed it afterwards. See [Who made a package](#who-ma
 
 ## Export a blueprint
 
-1. Save the blueprint. Only a saved version can be exported, and only one that is **Runnable**. See
+1. Save the blueprint. Only a saved version can be exported, and only one that is **Ready to run**. See
    [Versions](./versions.md).
 2. Select **Export package…**. You'll find it in two places:
    - on the canvas, in the menu next to **Save** (**More save options**);

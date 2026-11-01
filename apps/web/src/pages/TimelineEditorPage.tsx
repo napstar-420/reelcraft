@@ -413,10 +413,10 @@ export function TimelineEditorPage() {
 
   if (!timeline) {
     return (
-      <main className="dark flex h-screen flex-col items-center justify-center gap-3 bg-background text-foreground">
+      <div className="dark flex h-full flex-col items-center justify-center gap-3 bg-background text-foreground">
         {loadError ? (
           <>
-            <AlertTriangle className="size-6 text-amber-400" />
+            <AlertTriangle className="size-6 text-wait" />
             <p className="max-w-md text-center text-sm text-muted-foreground">{loadError}</p>
             <Button variant="outline" onClick={() => void load()}>
               <RefreshCw /> Try again
@@ -428,7 +428,7 @@ export function TimelineEditorPage() {
             <p className="text-sm text-muted-foreground">Loading the editor…</p>
           </>
         )}
-      </main>
+      </div>
     );
   }
 
@@ -444,7 +444,7 @@ export function TimelineEditorPage() {
             : 'Captions';
 
   return (
-    <main className="dark flex h-screen flex-col overflow-hidden bg-background text-foreground">
+    <div className="dark flex h-full flex-col overflow-hidden bg-background text-foreground">
       <EditorHeader
         runId={runId}
         title={stageLabel ?? 'Edit the timeline'}
@@ -477,7 +477,7 @@ export function TimelineEditorPage() {
       {save === 'conflict' ? (
         <div
           role="alert"
-          className="flex items-center justify-between gap-3 border-b border-amber-500/40 bg-amber-500/10 px-4 py-2 text-sm text-amber-200"
+          className="flex items-center justify-between gap-3 border-b border-wait/40 bg-wait-soft px-4 py-2 text-sm text-wait"
         >
           <span>
             This draft was changed somewhere else, so your latest edits weren’t saved. Reload to
@@ -582,6 +582,6 @@ export function TimelineEditorPage() {
         onDelete={() => remove(false)}
         onRippleDelete={() => remove(true)}
       />
-    </main>
+    </div>
   );
 }

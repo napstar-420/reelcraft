@@ -265,7 +265,7 @@ function StageNodeView({ data, selected }: NodeProps<StageFlowNode>) {
           )}
           {warnings > 0 && (
             <span
-              className="inline-flex h-5 items-center gap-0.5 rounded-full bg-amber-100 px-1.5 text-[11px] font-semibold text-amber-700 dark:bg-amber-500/15 dark:text-amber-400"
+              className="inline-flex h-5 items-center gap-0.5 rounded-full bg-wait-soft px-1.5 text-[11px] font-semibold text-wait"
               title={`${warnings} warning${warnings === 1 ? '' : 's'}`}
             >
               <AlertTriangle className="size-3" />
@@ -333,8 +333,7 @@ function StageNodeView({ data, selected }: NodeProps<StageFlowNode>) {
               title={flag.title}
               className={cn(
                 'rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground',
-                flag.kind === 'approval' &&
-                  'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400',
+                flag.kind === 'approval' && 'bg-wait-soft text-wait',
               )}
             >
               {flag.label}

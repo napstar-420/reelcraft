@@ -45,9 +45,7 @@ function ProblemsButton({
                 <Icon
                   className={cn(
                     'mt-0.5 size-4 shrink-0',
-                    issue.severity === 'error'
-                      ? 'text-destructive'
-                      : 'text-amber-600 dark:text-amber-400',
+                    issue.severity === 'error' ? 'text-destructive' : 'text-wait',
                   )}
                 />
                 <span className="min-w-0">
@@ -101,9 +99,7 @@ export function StageStrip({
   const { zoom } = useViewport();
   return (
     <div className="relative z-10 flex h-12 shrink-0 items-center gap-2.5 border-t bg-card py-0 pr-2.5 pl-3.5">
-      <span className="hidden text-[11px] font-medium tracking-wider text-muted-foreground uppercase sm:block">
-        Stages
-      </span>
+      <span className="hidden text-[11px] font-medium text-muted-foreground sm:block">Stages</span>
       <div className="flex min-w-0 flex-1 gap-1.5 overflow-x-auto py-0.5 [scrollbar-width:none]">
         {graph.length === 0 && <span className="text-xs text-muted-foreground">No stages yet</span>}
         {graph.map((stage, index) => {

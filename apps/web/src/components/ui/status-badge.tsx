@@ -1,12 +1,7 @@
 import { cn } from 'cn';
-import { Badge } from '@/components/ui/badge';
-import {
-  formatStatusLabel,
-  toneBadgeClassName,
-  toneDotClassName,
-  type StatusTone,
-} from '@/lib/status';
+import { formatStatusLabel, toneBadgeClassName, type StatusTone } from '@/lib/status';
 
+/** A status pill: a dot and a short label, coloured by what the status means. */
 export function StatusBadge({
   tone,
   label,
@@ -17,9 +12,16 @@ export function StatusBadge({
   className?: string;
 }) {
   return (
-    <Badge variant="outline" className={cn(toneBadgeClassName[tone], className)}>
-      <span className={cn('size-1.5 rounded-full', toneDotClassName[tone])} aria-hidden="true" />
+    <span
+      data-slot="status-badge"
+      className={cn(
+        'inline-flex h-[22px] w-fit shrink-0 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium whitespace-nowrap',
+        toneBadgeClassName[tone],
+        className,
+      )}
+    >
+      <span className="size-1.5 rounded-full bg-current" aria-hidden="true" />
       {formatStatusLabel(label)}
-    </Badge>
+    </span>
   );
 }

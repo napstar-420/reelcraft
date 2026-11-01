@@ -11,22 +11,22 @@ import {
 } from './run-phases.logic';
 
 const SQUARE: Record<ViewState, string> = {
-  done: 'bg-emerald-500',
-  running: 'bg-blue-500 animate-pulse',
-  waiting: 'bg-amber-500',
+  done: 'bg-ok',
+  running: 'bg-run animate-pulse',
+  waiting: 'bg-wait',
   failed: 'bg-destructive',
-  paused: 'border-2 border-blue-400/70',
-  stale: 'border-2 border-dashed border-amber-500/60',
+  paused: 'border-2 border-run/70',
+  stale: 'border-2 border-dashed border-wait/60',
   next: 'border-2 border-violet-400',
   pending: 'bg-muted-foreground/30',
   skipped: 'bg-muted-foreground/15',
 };
 
 const BOX: Record<PhaseState, string> = {
-  done: 'border-emerald-500/60',
+  done: 'border-ok/60',
   partial: '',
-  running: 'border-blue-500 ring-2 ring-blue-500/25',
-  waiting: 'border-amber-500/70',
+  running: 'border-run ring-2 ring-run/25',
+  waiting: 'border-wait/70',
   failed: 'border-destructive/70',
   next: 'border-dashed border-violet-400/70',
   pending: 'opacity-60',
@@ -37,9 +37,9 @@ const STALE_BOX = new Set<PhaseState>(['done', 'partial', 'pending', 'next']);
 
 const NOTE: Partial<Record<ViewState, string>> = {
   failed: 'text-destructive',
-  stale: 'text-amber-600 dark:text-amber-400',
-  waiting: 'text-amber-600 dark:text-amber-400',
-  running: 'text-blue-600 dark:text-blue-400',
+  stale: 'text-wait',
+  waiting: 'text-wait',
+  running: 'text-run',
 };
 
 function phaseNote(phase: Phase): { text: string; state: ViewState | null } {
@@ -145,9 +145,9 @@ export function RunGraph({
             strokeWidth={2}
             className={cn(
               edge.tone === 'live'
-                ? 'stroke-blue-500'
+                ? 'stroke-run'
                 : edge.tone === 'done'
-                  ? 'stroke-emerald-500/40'
+                  ? 'stroke-ok/40'
                   : 'stroke-border',
             )}
             strokeDasharray={edge.tone === 'live' ? '5 5' : undefined}
@@ -197,7 +197,7 @@ function PhaseBox({
       ref={boxRef}
       className={cn(
         'flex flex-col gap-2 rounded-xl border bg-card px-3 py-3 text-sm transition-colors',
-        phase.stale && STALE_BOX.has(phase.state) ? 'border-amber-500/70' : BOX[phase.state],
+        phase.stale && STALE_BOX.has(phase.state) ? 'border-wait/70' : BOX[phase.state],
       )}
     >
       <button
@@ -261,7 +261,7 @@ function StageLine({
       onClick={() => onOpen(stage.key)}
       className={cn(
         'flex w-full items-center gap-2 rounded border border-transparent px-1.5 py-1 text-left text-sm hover:bg-muted',
-        stage.stale ? 'border-amber-500/70' : stage.state === 'done' && 'border-emerald-500/50',
+        stage.stale ? 'border-wait/70' : stage.state === 'done' && 'border-ok/50',
         selected && 'bg-muted',
       )}
     >

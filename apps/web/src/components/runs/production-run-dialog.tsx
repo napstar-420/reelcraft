@@ -62,7 +62,7 @@ export function ProductionRunDialog({
                 id="run-version"
                 value={version.id}
                 onChange={(event) => setVersionId(event.target.value)}
-                className="h-9 w-full rounded-md border bg-transparent px-2 text-sm"
+                className="h-9 w-full rounded-[9px] border border-input bg-surface-2 px-2.5 text-sm"
               >
                 {saved.map((v, index) => (
                   <option key={v.id} value={v.id}>

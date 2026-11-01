@@ -11,7 +11,7 @@ few clicks. Some need a **newer Docker image**, and the app tells you when.
 
 ## Update from inside Reelcraft
 
-When a new version is out, the bottom of the sidebar shows **Update to X.Y.Z**.
+When a new version is out, an update button appears near the bottom of the rail on the left; its tooltip says **Update to X.Y.Z**.
 
 1. Click **Update to X.Y.Z**. The **Updates** window shows the release notes.
 2. If any runs are in progress, the window warns you: the update restarts Reelcraft, and their
@@ -29,13 +29,13 @@ to the previous version** on its own, and the Updates window says what went wron
 
 ### Checking now
 
-To check without waiting, click the version at the bottom of the sidebar, or open **Settings →
-About and updates → Updates…**, then click **Check now**.
+To check without waiting, open **Settings → Updates, about and help**, select **Updates…** on the
+**About and updates** card, then click **Check now**.
 
 ## Update to a new image
 
 Some releases also change the Docker image itself, for example a new database or browser version.
-The sidebar then shows **Version X.Y.Z available**, and the Updates window lists these steps.
+The rail then offers **Version X.Y.Z available**, and the Updates window lists these steps.
 Images older than 0.2.0 can't update themselves, so update those this way once.
 
 Your projects, settings and keys are in the `reelcraft-data` volume, so they are kept when you

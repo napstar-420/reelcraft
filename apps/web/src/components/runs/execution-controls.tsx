@@ -248,8 +248,8 @@ export function ExecutionPlanDialog({ actions }: { actions: RunExecutionActions 
                 <p>Skips disabled stages: {names(plan.skippedStageKeys)}</p>
               )}
               {!!plan.outdated?.length && (
-                <div className="flex flex-col gap-2 rounded-md border border-amber-500/50 p-3">
-                  <p className="text-amber-600 dark:text-amber-400">
+                <div className="flex flex-col gap-2 rounded-md border border-wait/50 p-3">
+                  <p className="text-wait">
                     Out of date, because an earlier stage changed:{' '}
                     {plan.outdated
                       .map(

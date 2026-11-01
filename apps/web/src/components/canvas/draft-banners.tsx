@@ -14,7 +14,7 @@ function Banner({
   return (
     <div
       role="status"
-      className="flex shrink-0 flex-wrap items-center gap-3 border-b bg-amber-500/10 px-4 py-2 text-sm"
+      className="flex shrink-0 flex-wrap items-center gap-3 border-b bg-wait-soft px-4 py-2 text-sm"
     >
       {icon}
       <span className="min-w-52 flex-1">{children}</span>

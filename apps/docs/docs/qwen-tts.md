@@ -16,7 +16,7 @@ downloaded until you say so.
 ## Set it up
 
 1. Open a **Generate Speech** stage (or the **Speech and audio** [default](./channels/defaults.md)) and
-   choose **Qwen3-TTS (local)** as the provider. Or open **Settings → Qwen3-TTS (local)**.
+   choose **Qwen3-TTS (local)** as the provider. Or open **Settings → Voice and speech → Qwen3-TTS (local)**.
 2. Select **Set up Qwen3-TTS**. Reelcraft shows what it will install and how big it is, and how much
    disk space is free, and waits for you to confirm. This installs the **software** Qwen3-TTS runs on.
 3. Watch the progress. **Cancel** stops it.
@@ -30,7 +30,7 @@ Reelcraft never downloads or installs anything on its own, and a run never start
 
 The first time you make speech, Reelcraft starts the service (a few seconds, plus loading the model).
 After **about ten minutes** with nothing to do, it stops by itself and frees the memory, and starts
-again for the next request. Under **Settings → Qwen3-TTS (local)** you can also **Stop** it, or
+again for the next request. Under **Settings → Voice and speech → Qwen3-TTS (local)** you can also **Stop** it, or
 **Reinstall for this hardware**, for example after you add a graphics card.
 
 To free the space, select **Delete** beside a model, in the same place. The software can be removed by
@@ -84,7 +84,7 @@ docker run -d --name reelcraft --restart unless-stopped --gpus all \
   zohaibkhan97/reelcraft
 ```
 
-Then select **Reinstall for this hardware** under **Settings → Qwen3-TTS (local)** so the graphics
+Then select **Reinstall for this hardware** under **Settings → Voice and speech → Qwen3-TTS (local)** so the graphics
 card version is installed.
 
 <Tabs groupId="os" queryString>
@@ -151,7 +151,7 @@ Docker on a Mac can use the Mac's GPU.
 1. Install [`uv`](https://docs.astral.sh/uv/). From the Reelcraft folder, run `pnpm tts`. Without a
    Reelcraft folder, download the `services/qwen-tts` folder from the repository and run
    `uv run --extra engine qwen-tts-service` in it. The first start installs the packages.
-2. In **Settings → Qwen3-TTS (local)**, open **Use a service you run yourself**, enter the address
+2. In **Settings → Voice and speech → Qwen3-TTS (local)**, open **Use a service you run yourself**, enter the address
    (`http://127.0.0.1:8091`, or `http://host.docker.internal:8091` from Docker), and select **Save**.
    **Test connection** checks it. **Reset** goes back to letting Reelcraft manage it.
 
@@ -170,7 +170,7 @@ do that only on a network you trust.
 - **"The service stopped unexpectedly"**: often not enough memory. Try the 0.6B model, or close other
   apps. **Start now** tries again.
 - **"Can't reach the service you run yourself"**: start it, or **Reset** the address under
-  **Settings → Qwen3-TTS (local)**.
+  **Settings → Voice and speech → Qwen3-TTS (local)**.
 - **The download failed or failed its checksum**: select **Try again**. Files already downloaded are
   kept.
 - **A run fails with "isn't downloaded"** or "is not set up yet": set it up and download the model, as

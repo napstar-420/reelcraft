@@ -20,11 +20,7 @@ export function ChecksIndicator({
         className="flex items-center gap-1.5 text-xs text-muted-foreground [&_svg]:size-3.5"
         role="status"
       >
-        {checking ? (
-          <Loader2 className="animate-spin" />
-        ) : (
-          <ShieldCheck className="text-emerald-400" />
-        )}
+        {checking ? <Loader2 className="animate-spin" /> : <ShieldCheck className="text-ok" />}
         {checking ? 'Checking…' : 'No problems'}
       </span>
     );
@@ -40,7 +36,7 @@ export function ChecksIndicator({
           variant="outline"
           className={cn(
             problems
-              ? 'border-amber-500/50 text-amber-300 hover:text-amber-200'
+              ? 'border-wait/50 text-wait hover:text-wait'
               : 'border-sky-500/40 text-sky-300 hover:text-sky-200',
           )}
           aria-label={`${label} with the timeline`}
@@ -67,7 +63,7 @@ export function ChecksIndicator({
               {issue.advice ? (
                 <Lightbulb className="mt-0.5 size-4 shrink-0 text-sky-400" />
               ) : (
-                <TriangleAlert className="mt-0.5 size-4 shrink-0 text-amber-400" />
+                <TriangleAlert className="mt-0.5 size-4 shrink-0 text-wait" />
               )}
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium">{issue.title}</p>

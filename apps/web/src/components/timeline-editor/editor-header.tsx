@@ -24,7 +24,7 @@ const SAVE_VIEW: Record<SaveState, { label: string; tone: string; icon: React.Re
     tone: 'text-muted-foreground',
     icon: <Loader2 className="animate-spin" />,
   },
-  saved: { label: 'All changes saved', tone: 'text-emerald-400', icon: <Check /> },
+  saved: { label: 'All changes saved', tone: 'text-ok', icon: <Check /> },
   saving: {
     label: 'Saving…',
     tone: 'text-muted-foreground',
@@ -32,10 +32,10 @@ const SAVE_VIEW: Record<SaveState, { label: string; tone: string; icon: React.Re
   },
   error: {
     label: 'Couldn’t save — retrying on your next change',
-    tone: 'text-amber-400',
+    tone: 'text-wait',
     icon: <AlertTriangle />,
   },
-  conflict: { label: 'Out of date', tone: 'text-amber-400', icon: <AlertTriangle /> },
+  conflict: { label: 'Out of date', tone: 'text-wait', icon: <AlertTriangle /> },
   readonly: { label: 'Read only', tone: 'text-muted-foreground', icon: <Lock /> },
 };
 
@@ -105,20 +105,24 @@ export function EditorHeader({
 }) {
   const view = SAVE_VIEW[save];
   return (
-    <header className="flex h-12 shrink-0 items-center justify-between gap-4 border-b bg-card/60 px-3">
-      <div className="flex min-w-0 items-center gap-2">
-        <Button variant="ghost" size="sm" asChild>
-          <Link to={`/runs/${runId}`}>
-            <ChevronLeft /> Run
+    <header className="flex min-h-[60px] shrink-0 flex-wrap items-center justify-between gap-3 border-b px-4 py-2.5">
+      <div className="flex min-w-0 items-center gap-3">
+        <Button variant="ghost" size="icon-sm" asChild>
+          <Link to={`/runs/${runId}`} aria-label="Back to the run">
+            <ChevronLeft />
           </Link>
         </Button>
-        <span className="h-5 w-px bg-border" />
-        <div className="min-w-0 leading-tight">
-          <h1 className="truncate text-sm font-semibold">{title}</h1>
-          <p className="text-[11px] text-muted-foreground">Timeline editor</p>
+        <div className="min-w-0">
+          <p className="truncate text-xs text-faint">
+            <Link to={`/runs/${runId}`} className="hover:text-foreground">
+              Run #{runId.slice(0, 8)}
+            </Link>{' '}
+            / Timeline editor
+          </p>
+          <h1 className="truncate text-base font-semibold">{title}</h1>
         </div>
       </div>
-      <div className="flex items-center gap-1.5">
+      <div className="flex flex-wrap items-center justify-end gap-1.5">
         {checks ? <div className="mr-3">{checks}</div> : null}
         <span
           className={cn('mr-2 flex items-center gap-1.5 text-xs [&_svg]:size-3.5', view.tone)}
@@ -157,7 +161,7 @@ export function EditorHeader({
                 <div key={row.label} className="flex items-center justify-between gap-3 text-xs">
                   <dt className="text-muted-foreground">{row.label}</dt>
                   <dd>
-                    <kbd className="rounded border bg-muted px-1.5 py-0.5 font-mono text-[11px]">
+                    <kbd className="rounded-md border border-line-strong px-1.5 py-0.5 font-mono text-[11px]">
                       {row.keys}
                     </kbd>
                   </dd>
@@ -167,14 +171,16 @@ export function EditorHeader({
           </PopoverContent>
         </Popover>
         {render ? <div className="ml-2">{render}</div> : null}
-        <Button
-          className="ml-2"
-          size="default"
-          disabled={!canSubmit || submitting}
-          onClick={onSubmit}
-        >
+        <Button className="ml-2" size="sm" disabled={!canSubmit || submitting} onClick={onSubmit}>
           {submitting ? <Loader2 className="animate-spin" /> : <Send />}
-          {submitting ? 'Submitting…' : 'Submit timeline'}
+          {submitting ? (
+            'Submitting…'
+          ) : (
+            <>
+              <span className="sm:hidden">Use timeline</span>
+              <span className="max-sm:hidden">Use this timeline and continue</span>
+            </>
+          )}
         </Button>
       </div>
     </header>

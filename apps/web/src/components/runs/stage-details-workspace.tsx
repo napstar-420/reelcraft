@@ -157,7 +157,7 @@ export function StageDetailsWorkspace({
         )}
       </SheetHeader>
       {stage?.disabled && (
-        <p className="mx-4 rounded border border-amber-500/30 p-3 text-xs text-amber-500">
+        <p className="mx-4 rounded border border-wait/30 p-3 text-xs text-wait">
           Stored output · unavailable to descendants until this stage is enabled.
         </p>
       )}
@@ -280,7 +280,7 @@ export function StageDetailsWorkspace({
               {artifact ? (
                 <>
                   {showingOld ? (
-                    <p role="status" className="mb-2 text-sm text-amber-600 dark:text-amber-400">
+                    <p role="status" className="mb-2 text-sm text-wait">
                       {STALE_WARNING}
                     </p>
                   ) : null}

@@ -192,12 +192,10 @@ export function ProviderKeyRow({
 export function TestResult({ result, okText }: { result: ConnectionTestDto; okText: string }) {
   return result.ok ? (
     <div className="flex flex-col gap-1">
-      <p className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400">
+      <p className="flex items-center gap-1.5 text-xs text-ok">
         <CheckCircle2 className="size-3.5" /> {okText}
       </p>
-      {result.warning ? (
-        <p className="text-xs text-amber-700 dark:text-amber-400">{result.warning}</p>
-      ) : null}
+      {result.warning ? <p className="text-xs text-wait">{result.warning}</p> : null}
     </div>
   ) : (
     <p className="flex items-center gap-1.5 text-xs text-destructive">

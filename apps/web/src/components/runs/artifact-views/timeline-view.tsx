@@ -10,8 +10,8 @@ import { layoutTimeline, type TimelineBar } from './timeline-view.logic';
 
 const LANE_COLOR: Record<Track['type'], string> = {
   video: 'bg-sky-500/25 border-sky-500/60',
-  audio: 'bg-emerald-500/25 border-emerald-500/60',
-  overlay: 'bg-amber-500/25 border-amber-500/60',
+  audio: 'bg-ok/25 border-ok/60',
+  overlay: 'bg-wait/25 border-wait/60',
   captions: 'bg-violet-500/25 border-violet-500/60',
 };
 

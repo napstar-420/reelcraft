@@ -255,74 +255,71 @@ function Workspace(props: CanvasWorkspaceProps) {
               )}
             </PopoverContent>
           </Popover>
-          <button
-            type="button"
-            aria-pressed={showMemoryLinks}
-            title="Show or hide memory links between stages"
-            onClick={() => setShowMemoryLinks((on) => !on)}
-            className={cn(
-              'pointer-events-auto inline-flex h-8 items-center gap-1.5 rounded-lg border bg-card px-2.5 text-sm font-medium text-muted-foreground hover:bg-muted',
-              showMemoryLinks && 'border-[var(--memory)]/45 text-[var(--memory)]',
-            )}
-          >
-            <Database className="size-3.5" />
-            <span className="hidden sm:inline">Memory links</span>
-          </button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="pointer-events-auto"
-            disabled={readOnly}
-            onClick={() => {
-              const layout = stageLayout(graph);
-              props.onPresentationChange({
-                positions: Object.fromEntries(
-                  graph.map((s, i) => [
-                    s.key,
-                    { x: stageX(layout[i]!.level), y: stageY(layout[i]!.lane) },
-                  ]),
-                ),
-                branchNames: props.presentation?.branchNames ?? {},
-              });
-            }}
-          >
-            Format canvas
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="pointer-events-auto"
-            onClick={() => graphApi.fit()}
-          >
-            Fit workflow
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="pointer-events-auto"
-            disabled={!props.selectedKey}
-            onClick={() => props.selectedKey && focusAndSelect(props.selectedKey)}
-          >
-            Focus selected
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="pointer-events-auto"
-            disabled={readOnly}
-            onClick={props.onUndo}
-          >
-            Undo
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="pointer-events-auto"
-            disabled={readOnly}
-            onClick={props.onRedo}
-          >
-            Redo
-          </Button>
+          <div className="pointer-events-auto flex items-center rounded-[10px] border bg-card p-0.5">
+            <button
+              type="button"
+              aria-pressed={showMemoryLinks}
+              title="Show or hide memory links between stages"
+              onClick={() => setShowMemoryLinks((on) => !on)}
+              className={cn(
+                'inline-flex h-[30px] items-center gap-1.5 rounded-lg px-2.5 text-[13px] font-medium text-muted-foreground hover:bg-surface-2 hover:text-foreground',
+                showMemoryLinks && 'text-[var(--memory)]',
+              )}
+            >
+              <Database className="size-3.5" />
+              <span className="hidden sm:inline">Memory links</span>
+            </button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className=""
+              disabled={readOnly}
+              onClick={() => {
+                const layout = stageLayout(graph);
+                props.onPresentationChange({
+                  positions: Object.fromEntries(
+                    graph.map((s, i) => [
+                      s.key,
+                      { x: stageX(layout[i]!.level), y: stageY(layout[i]!.lane) },
+                    ]),
+                  ),
+                  branchNames: props.presentation?.branchNames ?? {},
+                });
+              }}
+            >
+              Tidy up
+            </Button>
+            <Button variant="ghost" size="sm" className="" onClick={() => graphApi.fit()}>
+              Fit
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className=""
+              disabled={!props.selectedKey}
+              onClick={() => props.selectedKey && focusAndSelect(props.selectedKey)}
+            >
+              Focus
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className=""
+              disabled={readOnly}
+              onClick={props.onUndo}
+            >
+              Undo
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className=""
+              disabled={readOnly}
+              onClick={props.onRedo}
+            >
+              Redo
+            </Button>
+          </div>
           <span className="flex-1" />
           {!props.dockOpen && (
             <Button

@@ -159,7 +159,7 @@ function MotionCodeDialog({
                   <Loader2 className="size-3.5 animate-spin" /> Checking…
                 </span>
               ) : issues.length ? (
-                <ul className="space-y-1 text-amber-600 dark:text-amber-300">
+                <ul className="space-y-1 text-wait">
                   {issues.map((issue) => (
                     <li
                       key={`${issue.code}-${issue.line ?? ''}-${issue.message}`}
@@ -174,7 +174,7 @@ function MotionCodeDialog({
                   ))}
                 </ul>
               ) : check.data ? (
-                <span className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
+                <span className="flex items-center gap-1.5 text-ok">
                   <CheckCircle2 className="size-3.5" /> Follows the rules
                 </span>
               ) : null}
@@ -284,7 +284,7 @@ function PreviewPictures({
     return <p className="text-xs text-muted-foreground">Rendering… this takes a few seconds.</p>;
   }
   if (preview.state === 'invalid') {
-    return <p className="text-xs text-amber-600 dark:text-amber-300">Fix the code first.</p>;
+    return <p className="text-xs text-wait">Fix the code first.</p>;
   }
   if (preview.state === 'failed' || preview.state === 'expired') {
     return (

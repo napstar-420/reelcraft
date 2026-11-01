@@ -1,261 +1,186 @@
-import { useState } from 'react';
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { toast } from 'sonner';
-import {
-  Archive,
-  ArchiveRestore,
-  Boxes,
-  Clapperboard,
-  ListVideo,
-  MoreHorizontal,
-  Pencil,
-  Trash2,
-  Users,
-} from 'lucide-react';
-import type { ChannelDto } from '@reelcraft/shared';
-import { api } from '../api/client';
-import { Badge } from '@/components/ui/badge';
+import { useMemo, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { Layers, Plus, Search, Sparkles } from 'lucide-react';
+import { cn } from 'cn';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { PlaceholderArt } from '@/components/placeholder-art';
-import { ChannelDialog, type ChannelDialogState } from '@/components/channels/channel-dialog';
-import { BlueprintsTab } from '@/components/blueprints/blueprints-tab';
-import { CharactersTab } from '@/components/characters/characters-tab';
-import { AssetsTab } from '@/components/assets/assets-tab';
-import { RunsPage } from './RunsPage';
-import { describeRunActionError } from '@/lib/describe-run-action-error';
-import { isDeleteConfirmed } from './channels-page.logic';
+import { Switch } from '@/components/ui/switch';
+import { BlueprintGrid, type BlueprintCardStatus } from '@/components/blueprints/blueprint-grid';
+import { ImportPackageDialog } from '@/components/packages/import-package-dialog';
+import { EmptyState, Page, PageHeader } from '@/components/shell/page';
+import { useAllBlueprints } from '@/hooks/useAllBlueprints';
+import { useRunBuckets } from '@/hooks/useRunBuckets';
+import { useQueries } from '@tanstack/react-query';
+import { api } from '@/api/client';
 
-const CHANNEL_TAB_CLASS =
-  'h-auto flex-none justify-start gap-2 rounded-lg border border-transparent px-3 py-2 text-sm font-medium data-[state=active]:border-primary/30 data-[state=active]:bg-primary/10 data-[state=active]:text-foreground data-[state=active]:shadow-none dark:data-[state=active]:border-primary/30 dark:data-[state=active]:bg-primary/10';
+/** Pill-shaped filter toggle used on list pages. */
+export function FilterChip({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      onClick={onClick}
+      className={cn(
+        'inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-[13px] transition-colors',
+        active
+          ? 'border-transparent bg-foreground text-background'
+          : 'text-muted-foreground hover:border-line-strong hover:text-foreground',
+      )}
+    >
+      {children}
+    </button>
+  );
+}
 
+/** Every blueprint in every channel, one click from anywhere. */
 export function BlueprintsPage() {
-  const { channelId } = useParams<{ channelId: string }>();
-  const [searchParams, setSearchParams] = useSearchParams();
-  const tab = searchParams.get('tab') ?? 'blueprints';
-  const queryClient = useQueryClient();
-  const navigate = useNavigate();
-  const [dialog, setDialog] = useState<ChannelDialogState | null>(null);
-  const [archiveTarget, setArchiveTarget] = useState<ChannelDto | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<ChannelDto | null>(null);
-  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [params, setParams] = useSearchParams();
+  const channelFilter = params.get('channel');
+  const [query, setQuery] = useState('');
+  const [showArchived, setShowArchived] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const { channels, blueprints: active, loading } = useAllBlueprints();
+  const { needsYou, active: running } = useRunBuckets();
 
-  const channel = useQuery({
-    queryKey: ['channel', channelId],
-    queryFn: () => api.getChannel(channelId!),
-    enabled: Boolean(channelId),
+  // useAllBlueprints drops archived ones; fetch them only when asked for.
+  const archivedLists = useQueries({
+    queries: showArchived
+      ? channels.map((c) => ({
+          queryKey: ['blueprints', c.id],
+          queryFn: () => api.listBlueprints(c.id),
+        }))
+      : [],
   });
+  const archived = showArchived
+    ? archivedLists.flatMap((l) => (l.data ?? []).filter((b) => b.archived))
+    : [];
 
-  function onSettled() {
-    queryClient.invalidateQueries({ queryKey: ['channel', channelId] });
-    queryClient.invalidateQueries({ queryKey: ['channels'] });
-  }
-  function onError(error: unknown) {
-    toast.error(describeRunActionError(error, 'The action could not be completed.'));
-  }
+  const status = useMemo(() => {
+    const map = new Map<string, BlueprintCardStatus>();
+    for (const r of running) map.set(r.blueprintId, 'running');
+    for (const r of needsYou) map.set(r.blueprintId, 'needs-you');
+    return map;
+  }, [running, needsYou]);
+  const channelNames = useMemo(() => new Map(channels.map((c) => [c.id, c.name])), [channels]);
+  const counts = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const b of active) map.set(b.channelId, (map.get(b.channelId) ?? 0) + 1);
+    return map;
+  }, [active]);
 
-  const archiveChannel = useMutation({
-    mutationFn: (target: ChannelDto) => api.archiveChannel(target.id, !target.archived),
-    onSuccess: onSettled,
-    onError,
-    onSettled: () => setArchiveTarget(null),
-  });
-  const deleteChannel = useMutation({
-    mutationFn: (target: ChannelDto) => api.deleteChannel(target.id),
-    onSuccess: (_result, target) => {
-      setDeleteTarget(null);
-      setDeleteConfirmText('');
-      // The channel no longer exists: leave its page before refetching it.
-      queryClient.removeQueries({ queryKey: ['channel', target.id] });
-      void queryClient.invalidateQueries({ queryKey: ['channels'] });
-      navigate('/');
-      toast.success(`Channel "${target.name}" deleted`);
-    },
-    onError,
-  });
-
-  const createdAt = channel.data
-    ? new Date(channel.data.createdAt).toLocaleDateString(undefined, {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-      })
-    : null;
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  const shown = [...active, ...archived]
+    .filter((b) => !channelFilter || b.channelId === channelFilter)
+    .filter((b) => {
+      const text = `${b.name} ${b.description ?? ''} ${b.tags.join(' ')}`.toLowerCase();
+      return words.every((w) => text.includes(w));
+    })
+    .sort(
+      (a, b) => Number(status.has(b.id)) - Number(status.has(a.id)) || a.name.localeCompare(b.name),
+    );
+  const targetChannel = channels.find((c) => c.id === channelFilter) ?? channels[0];
 
   return (
-    <section className="flex flex-col gap-6">
-      {channel.isLoading && <Skeleton className="h-20 w-full" />}
+    <Page>
+      <PageHeader
+        title="Blueprints"
+        description="A blueprint is the recipe for a video: the stages it runs, in order. Run one to make a video."
+        actions={
+          <>
+            <Button variant="ghost" disabled={!targetChannel} onClick={() => setImporting(true)}>
+              Import package
+            </Button>
+            <Button variant="outline" asChild disabled={!targetChannel}>
+              <Link to={targetChannel ? `/channels/${targetChannel.id}/build` : '/channels'}>
+                <Plus /> Blank blueprint
+              </Link>
+            </Button>
+            <Button variant="accent" asChild>
+              <Link to="/?focus=assistant">
+                <Sparkles /> Describe a new one
+              </Link>
+            </Button>
+          </>
+        }
+      />
 
-      {channel.data && (
-        <div className="flex flex-wrap items-start gap-4">
-          <PlaceholderArt seed={channel.data.id} className="size-16 shrink-0" />
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-              <span
-                className={`size-1.5 rounded-full ${channel.data.archived ? 'bg-muted-foreground' : 'bg-emerald-500'}`}
-                aria-hidden="true"
-              />
-              {channel.data.archived ? 'Archived channel' : 'Active channel'}
-            </div>
-            <h1
-              className="truncate text-2xl font-semibold tracking-tight"
-              title={channel.data.name}
-            >
-              {channel.data.name}
-            </h1>
-            {channel.data.description && (
-              <p className="mt-1 text-sm text-muted-foreground">{channel.data.description}</p>
-            )}
-            <p className="mt-1 text-xs text-muted-foreground">Created {createdAt}</p>
-          </div>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm" aria-label="Channel actions">
-                <MoreHorizontal /> More
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onSelect={() => setDialog({ mode: 'edit', channel: channel.data })}>
-                <Pencil /> Edit
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => setArchiveTarget(channel.data!)}>
-                {channel.data.archived ? <ArchiveRestore /> : <Archive />}
-                {channel.data.archived ? 'Unarchive' : 'Archive'}
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                variant="destructive"
-                onSelect={() => setDeleteTarget(channel.data!)}
-              >
-                <Trash2 /> Delete
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+      <div className="flex flex-wrap items-center gap-2.5">
+        <label className="flex h-9 max-w-[420px] min-w-[260px] flex-1 items-center gap-2.5 rounded-[10px] border bg-card px-3">
+          <Search className="size-[15px] text-faint" />
+          <span className="sr-only">Filter blueprints</span>
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Filter by name, description or tag"
+            className="flex-1 bg-transparent text-[13px] outline-none placeholder:text-faint"
+          />
+        </label>
+        <FilterChip active={!channelFilter} onClick={() => setParams({}, { replace: true })}>
+          All channels
+        </FilterChip>
+        {channels.map((c) => (
+          <FilterChip
+            key={c.id}
+            active={channelFilter === c.id}
+            onClick={() => setParams({ channel: c.id }, { replace: true })}
+          >
+            {c.name} <span className="opacity-60">{counts.get(c.id) ?? 0}</span>
+          </FilterChip>
+        ))}
+        <span className="flex-1" />
+        <label className="flex items-center gap-2 text-[13px] text-faint">
+          <Switch checked={showArchived} onCheckedChange={setShowArchived} />
+          Show archived
+        </label>
+      </div>
+
+      {loading ? (
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Skeleton key={i} className="h-56" />
+          ))}
         </div>
+      ) : channels.length === 0 ? (
+        <EmptyState
+          icon={<Layers />}
+          action={
+            <Button asChild>
+              <Link to="/channels">Create a channel</Link>
+            </Button>
+          }
+        >
+          Blueprints live in a channel. Create your first channel, then describe a blueprint to the
+          assistant.
+        </EmptyState>
+      ) : (
+        <>
+          {shown.length === 0 && words.length ? (
+            <p className="text-sm text-muted-foreground">No blueprint matches “{query}”.</p>
+          ) : null}
+          <BlueprintGrid
+            blueprints={shown}
+            channelNames={channelFilter ? undefined : channelNames}
+            status={status}
+            describeTo="/?focus=assistant"
+          />
+        </>
       )}
 
-      <ChannelDialog state={dialog} onOpenChange={(open) => !open && setDialog(null)} />
-
-      <AlertDialog
-        open={archiveTarget !== null}
-        onOpenChange={(open) => !open && setArchiveTarget(null)}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {archiveTarget?.archived ? 'Unarchive' : 'Archive'} {archiveTarget?.name}?
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {archiveTarget?.archived
-                ? 'This channel will reappear in the default channels list.'
-                : 'This hides the channel from the default channels list. Nothing else changes — you can unarchive it any time.'}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              disabled={archiveChannel.isPending}
-              onClick={() => archiveTarget && archiveChannel.mutate(archiveTarget)}
-            >
-              {archiveTarget?.archived ? 'Unarchive' : 'Archive'}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      <AlertDialog
-        open={deleteTarget !== null}
-        onOpenChange={(open) => {
-          if (!open) {
-            setDeleteTarget(null);
-            setDeleteConfirmText('');
-          }
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Permanently delete {deleteTarget?.name}?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This deletes the channel and every blueprint, run, asset, and character under it. This
-              can&apos;t be undone. Type <strong>{deleteTarget?.name}</strong> to confirm.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <Input
-            autoFocus
-            value={deleteConfirmText}
-            onChange={(e) => setDeleteConfirmText(e.target.value)}
-            placeholder={deleteTarget?.name}
-          />
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              disabled={
-                deleteChannel.isPending ||
-                !deleteTarget ||
-                !isDeleteConfirmed(deleteConfirmText, deleteTarget.name)
-              }
-              onClick={() => deleteTarget && deleteChannel.mutate(deleteTarget)}
-            >
-              Delete permanently
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      <Tabs value={tab} onValueChange={(v) => setSearchParams({ tab: v }, { replace: true })}>
-        <TabsList className="h-auto! w-full max-w-full flex-none justify-start gap-1 overflow-x-auto rounded-none border-b border-border bg-transparent p-1 pb-2">
-          <TabsTrigger value="blueprints" className={CHANNEL_TAB_CLASS}>
-            <Clapperboard />
-            Blueprints
-            {channel.data && <Badge variant="secondary">{channel.data.counts.blueprints}</Badge>}
-          </TabsTrigger>
-          <TabsTrigger value="characters" className={CHANNEL_TAB_CLASS}>
-            <Users />
-            Characters
-            {channel.data && <Badge variant="secondary">{channel.data.counts.characters}</Badge>}
-          </TabsTrigger>
-          <TabsTrigger value="assets" className={CHANNEL_TAB_CLASS}>
-            <Boxes />
-            Assets
-            {channel.data && <Badge variant="secondary">{channel.data.counts.assets}</Badge>}
-          </TabsTrigger>
-          <TabsTrigger value="runs" className={CHANNEL_TAB_CLASS}>
-            <ListVideo />
-            Runs
-            {channel.data && <Badge variant="secondary">{channel.data.counts.runs}</Badge>}
-          </TabsTrigger>
-        </TabsList>
-        <TabsContent value="blueprints">
-          <BlueprintsTab channelId={channelId} />
-        </TabsContent>
-        <TabsContent value="characters">
-          <CharactersTab channelId={channelId} />
-        </TabsContent>
-        <TabsContent value="assets">
-          <AssetsTab channelId={channelId} />
-        </TabsContent>
-        <TabsContent value="runs">{channelId && <RunsPage channelId={channelId} />}</TabsContent>
-      </Tabs>
-    </section>
+      {targetChannel ? (
+        <ImportPackageDialog
+          channelId={targetChannel.id}
+          open={importing}
+          onOpenChange={setImporting}
+        />
+      ) : null}
+    </Page>
   );
 }

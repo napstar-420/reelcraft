@@ -66,7 +66,7 @@ function Tile({
           className="absolute inset-0 size-full object-cover"
         />
       ) : (
-        <span className="absolute inset-0 flex items-center justify-center bg-emerald-500/10 text-emerald-400">
+        <span className="absolute inset-0 flex items-center justify-center bg-ok-soft text-ok">
           <Music className="size-8" />
         </span>
       )}
@@ -125,7 +125,7 @@ export function MediaPanel({
   return (
     <aside className="flex min-h-0 flex-col border-r bg-card/40">
       <div className="flex items-center justify-between gap-2 px-4 pt-3 pb-2">
-        <h2 className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">
+        <h2 className="text-xs font-semibold text-muted-foreground">
           Media
           <span className="ml-1.5 font-mono font-normal">{resources.length}</span>
         </h2>

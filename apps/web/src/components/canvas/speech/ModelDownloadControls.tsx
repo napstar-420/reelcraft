@@ -41,7 +41,7 @@ export function ModelDownloadControls({ model }: { model: ModelInfoDto }) {
   if (download.serviceDown) {
     // The setup panel above the models says what is wrong and offers the fix.
     return (
-      <p className="text-xs text-amber-700 dark:text-amber-400">
+      <p className="text-xs text-wait">
         Qwen3-TTS isn’t running yet. Set it up above, then download this model (
         {formatBytes(download.totalBytes)}).
       </p>
