@@ -60,9 +60,29 @@ export async function localUrlReason(
   return addresses.some(isPrivateAddress) ? LOCAL_REFUSAL : null;
 }
 
+/** Suffixes used only for names on a local network (RFC 6761/6762/8375 and common router
+ * defaults): the user's browser can resolve them to a LAN device even when this server can't. */
+const LOCAL_SUFFIXES = [
+  'localhost',
+  'local',
+  'localdomain',
+  'lan',
+  'home',
+  'home.arpa',
+  'internal',
+  'intranet',
+  'corp',
+  'private',
+];
+
+/** A name that only means something on a local network: a single label (`router`, `nas`,
+ * `minio`), or one under a private-use suffix (`nas.lan`). IP literals are checked separately. */
 function isLocalName(host: string): boolean {
   const name = host.toLowerCase().replace(/\.$/, '');
-  return !name || name === 'localhost' || name.endsWith('.localhost') || name.endsWith('.local');
+  if (!name) return true;
+  if (isIP(name)) return false;
+  if (!name.includes('.')) return true;
+  return LOCAL_SUFFIXES.some((suffix) => name === suffix || name.endsWith(`.${suffix}`));
 }
 
 async function defaultResolve(host: string): Promise<string[]> {

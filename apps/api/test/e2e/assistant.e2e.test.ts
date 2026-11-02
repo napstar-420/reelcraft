@@ -401,6 +401,8 @@ describe('assistant (e2e)', () => {
     expect(activity.body.some((a) => a.tool === 'get_blueprint')).toBe(false);
     expect((await call('/assistant/activity?limit=abc')).status).toBe(400);
     expect((await call('/assistant/activity?before=yesterday')).status).toBe(400);
+    // a value JS reads as a date but SQL wouldn't ("1" is a year) still works
+    expect((await call('/assistant/activity?before=1')).status).toBe(200);
     expect((await call<unknown[]>('/assistant/activity?limit=1')).body).toHaveLength(1);
 
     // a page shows the chat: no notification

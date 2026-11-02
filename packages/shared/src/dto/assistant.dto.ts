@@ -590,6 +590,8 @@ export const AssistantActivityQueryDto = z.object({
   before: z
     .string()
     .refine((v) => !Number.isNaN(Date.parse(v)), 'before must be a date and time')
+    // canonical ISO, which Postgres always accepts ("1" parses in JS as a year; SQL rejects it)
+    .transform((v) => new Date(v).toISOString())
     .optional(),
   limit: z.coerce.number().int().min(1).max(100).optional(),
 });
