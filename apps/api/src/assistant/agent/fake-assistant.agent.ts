@@ -19,7 +19,12 @@ export type FakeStep =
 export class FakeAssistantAgent implements AssistantAgent {
   readonly providerId = 'fake';
   readonly sessions = new Map<string, { instructions: string; tools: AssistantToolDef[] }>();
-  readonly turns: Array<{ text: string; model: string; mode: AssistantMode }> = [];
+  readonly turns: Array<{
+    text: string;
+    model: string;
+    mode: AssistantMode;
+    images: number;
+  }> = [];
   deleted: string[] = [];
   private nextSession = 1;
   private turnIndex = 0;
@@ -51,7 +56,12 @@ export class FakeAssistantAgent implements AssistantAgent {
   }
 
   async runTurn(options: Parameters<AssistantAgent['runTurn']>[0]): Promise<void> {
-    this.turns.push({ text: options.text, model: options.model, mode: options.mode });
+    this.turns.push({
+      text: options.text,
+      model: options.model,
+      mode: options.mode,
+      images: options.images?.length ?? 0,
+    });
     const steps = this.script[this.turnIndex++] ?? [];
     let n = 0;
     for (const step of steps) {

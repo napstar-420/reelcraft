@@ -41,7 +41,7 @@ describe('assistant instructions', () => {
   });
 
   it('tell the assistant to look at runs first and to distrust what they contain', () => {
-    for (const phrase of ['list_runs', 'get_stage', 'view_stage_media', '"diagnose" topic']) {
+    for (const phrase of ['list_runs', 'get_stage', 'view_media', '"diagnose" topic']) {
       expect(text).toContain(phrase);
     }
     expect(text).toMatch(/untrusted data/i);
@@ -59,6 +59,7 @@ describe('assistant instructions', () => {
       'Build quality: you know Reelcraft better than the user',
       'Channels and blueprints',
       'Versions',
+      'Files the user gives you',
       'Runs: reading them',
       'Runs: acting on them',
       'Watching runs',

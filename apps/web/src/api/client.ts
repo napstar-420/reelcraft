@@ -1,4 +1,7 @@
 import type {
+  AssistantAttachmentDto,
+  CreateAssistantAttachmentDto,
+  RequestAssistantAttachmentUploadResultDto,
   MotionCheckResultDto,
   MotionPreviewDto,
   MotionSource,
@@ -770,6 +773,18 @@ export const api = {
     }),
   deleteAssistantSession: (sessionId: string) =>
     request<void>(`/assistant/sessions/${sessionId}`, { method: 'DELETE' }),
+  requestAssistantAttachmentUpload: (ext: string) =>
+    request<RequestAssistantAttachmentUploadResultDto>('/assistant/attachments/upload', {
+      method: 'POST',
+      body: JSON.stringify({ ext }),
+    }),
+  createAssistantAttachment: (dto: CreateAssistantAttachmentDto) =>
+    request<AssistantAttachmentDto>('/assistant/attachments', {
+      method: 'POST',
+      body: JSON.stringify(dto),
+    }),
+  deleteAssistantAttachment: (id: string) =>
+    request<void>(`/assistant/attachments/${id}`, { method: 'DELETE' }),
   startAssistantTurn: (sessionId: string, dto: StartAssistantTurnDto) =>
     request<{ turnId: string }>(`/assistant/sessions/${sessionId}/turns`, {
       method: 'POST',

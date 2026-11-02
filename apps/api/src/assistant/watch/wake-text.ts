@@ -21,13 +21,13 @@ const NEXT: Record<string, string> = {
   failed:
     "Find out why (get_run, get_stage, get_attempt), fix the cause in the blueprint, then re-make what the fix changes (run_stages), or retry_stage when it was not the blueprint's fault. If you already tried twice, stop and tell the user what you found.",
   awaiting_approval:
-    'Look at what it made (get_stage, view_stage_media, listen_to_audio). Approve it if it meets the brief, or reject it with a specific note; when it is a matter of taste, ask the user.',
+    'Look at what it made (get_stage, view_media, listen). Approve it if it meets the brief, or reject it with a specific note; when it is a matter of taste, ask the user.',
   awaiting_input:
     'It needs someone to fill in a form. Fill it in only with what the user told you; otherwise tell the user it is waiting for them.',
   paused_budget:
     'It ran out of budget. Say what it has spent and what is left to do; raise_budget only when the user asked you to finish it.',
   completed:
-    'Review the result (view_stage_media and listen_to_audio on the final video), then tell the user how it turned out and anything worth improving.',
+    'Review the result (view_media and listen on the final video), then tell the user how it turned out and anything worth improving.',
   cancelled: 'Tell the user it was stopped, and where.',
 };
 

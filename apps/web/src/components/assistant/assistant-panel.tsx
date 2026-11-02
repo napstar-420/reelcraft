@@ -1,6 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowUp, Eye, History, Loader2, MessageSquarePlus, Square, Trash2, X } from 'lucide-react';
+import {
+  ArrowUp,
+  Eye,
+  History,
+  Loader2,
+  MessageSquarePlus,
+  Paperclip,
+  Square,
+  Trash2,
+  X,
+} from 'lucide-react';
 import { cn } from 'cn';
 import type { AssistantMode } from '@reelcraft/shared';
 import { Button } from '@/components/ui/button';
@@ -25,6 +35,9 @@ import { runHandle } from '@/lib/run-buckets';
 import { AssistantMessages } from './assistant-messages';
 import { MODES, pendingQuestion } from './assistant.logic';
 import { useAssistantUi } from './assistant-context';
+import { PendingAttachmentChips } from './attachment-chips';
+import { ACCEPT, filesFrom } from './attachments.logic';
+import { useChatAttachments } from './use-chat-attachments';
 
 const EXAMPLES: Record<'subject' | 'none', string[]> = {
   none: [
@@ -50,6 +63,9 @@ export function AssistantPanel({ variant = 'dock' }: { variant?: 'dock' | 'page'
   const ui = useAssistantUi();
   const { assistant, contextLabel, includeContext, setIncludeContext, prefill } = ui;
   const [text, setText] = useState('');
+  const files = useChatAttachments();
+  const [dragging, setDragging] = useState(false);
+  const picker = useRef<HTMLInputElement>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
   const { session, items, running, unavailableReason } = assistant;
@@ -65,10 +81,11 @@ export function AssistantPanel({ variant = 'dock' }: { variant?: 'dock' | 'page'
     if (el && stickToBottom.current) el.scrollTop = el.scrollHeight;
   }, [items, running]);
 
+  const canSend = (!!text.trim() || files.readyIds.length > 0) && !files.uploading;
   const send = () => {
     const value = text.trim();
-    if (!value || running || unavailableReason) return;
-    assistant.send(value);
+    if (!canSend || running || unavailableReason) return;
+    assistant.send(value, files.readyIds, files.clear);
     setText('');
     stickToBottom.current = true;
   };
@@ -306,7 +323,27 @@ export function AssistantPanel({ variant = 'dock' }: { variant?: 'dock' | 'page'
       )}
 
       <div className="shrink-0 border-t p-3">
-        <div className="rounded-[14px] border border-line-strong bg-background p-2.5 focus-within:border-faint">
+        <div
+          className={cn(
+            'rounded-[14px] border border-line-strong bg-background p-2.5 focus-within:border-faint',
+            dragging && 'border-acc bg-acc-soft',
+          )}
+          onDragOver={(e) => {
+            if (blocked || !e.dataTransfer.types.includes('Files')) return;
+            e.preventDefault();
+            setDragging(true);
+          }}
+          onDragLeave={(e) => {
+            if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragging(false);
+          }}
+          onDrop={(e) => {
+            if (blocked) return;
+            e.preventDefault();
+            setDragging(false);
+            files.add(filesFrom(e.dataTransfer.files));
+          }}
+        >
+          <PendingAttachmentChips items={files.items} onRemove={files.remove} />
           {contextLabel && includeContext ? (
             <div className="mb-1.5 flex">
               <span
@@ -329,6 +366,12 @@ export function AssistantPanel({ variant = 'dock' }: { variant?: 'dock' | 'page'
             id="assistant-message"
             value={text}
             onChange={(e) => setText(e.target.value)}
+            onPaste={(e) => {
+              const pasted = filesFrom(e.clipboardData.files);
+              if (pasted.length === 0) return;
+              e.preventDefault();
+              files.add(pasted);
+            }}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                 e.preventDefault();
@@ -376,6 +419,28 @@ export function AssistantPanel({ variant = 'dock' }: { variant?: 'dock' | 'page'
               ))}
             </div>
             <span className="flex-1" />
+            <input
+              ref={picker}
+              type="file"
+              multiple
+              accept={ACCEPT}
+              className="hidden"
+              onChange={(e) => {
+                files.add(filesFrom(e.target.files));
+                e.target.value = '';
+              }}
+            />
+            <Button
+              type="button"
+              size="icon-sm"
+              variant="ghost"
+              aria-label="Attach files"
+              title="Attach pictures, videos or sounds (or drop or paste them here)"
+              disabled={blocked}
+              onClick={() => picker.current?.click()}
+            >
+              <Paperclip />
+            </Button>
             {running ? (
               <Button
                 type="button"
@@ -394,7 +459,7 @@ export function AssistantPanel({ variant = 'dock' }: { variant?: 'dock' | 'page'
                 variant="accent"
                 aria-label="Send"
                 title="Send"
-                disabled={blocked || !text.trim()}
+                disabled={blocked || !canSend}
                 onClick={send}
               >
                 <ArrowUp />

@@ -218,16 +218,14 @@ export function describeToolCall(call: ToolCallPayload, state: string | null): s
         return 'Read a run';
       case 'get_stage':
         return `Looked at stage ${stage ?? ''}`.trim();
-      case 'view_stage_media':
-        return stage ? `Looked at what ${stage} made` : 'Watched the final video';
+      case 'view_media':
+        return mediaLabel('Looked at', 'Watched', args);
       case 'get_attempt':
         return `Read a try of ${stage ?? 'a stage'} in full`;
       case 'get_run_memory':
         return 'Read what the stages passed on';
-      case 'listen_to_audio':
-        return stage ? `Listened to ${stage}` : 'Listened to the final video';
-      case 'view_asset':
-        return 'Looked at a library picture';
+      case 'listen':
+        return mediaLabel('Listened to', 'Listened to', args);
       case 'list_capabilities':
         return 'Listed the stage types';
       case 'get_capability':
@@ -312,4 +310,15 @@ export function questionOf(item: AssistantItemDto): QuestionPayload {
 export function wakeHeadline(text: string): string {
   const first = text.split('\n')[0] ?? '';
   return first.replace(/^\[Run update:[^\]]*\]\s*/, '');
+}
+
+/** "Looked at what images made", "Watched the final video", "Looked at an attached file"… */
+function mediaLabel(verb: string, videoVerb: string, args: Record<string, unknown>): string {
+  const source =
+    args.source && typeof args.source === 'object' ? (args.source as Record<string, unknown>) : {};
+  if (typeof source.attachmentId === 'string') return `${verb} an attached file`;
+  if (typeof source.assetId === 'string') return `${verb} a Library file`;
+  if (typeof source.characterId === 'string') return `${verb} a Character picture`;
+  if (typeof source.stageKey === 'string') return `${verb} what ${source.stageKey} made`;
+  return `${videoVerb} the final video`;
 }

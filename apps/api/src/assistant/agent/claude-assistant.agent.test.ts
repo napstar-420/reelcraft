@@ -7,7 +7,11 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import { describe, expect, it, vi } from 'vitest';
 import { AssistantTurnError, type AgentEvent } from './assistant-agent.interface';
 import { AssistantToolServer } from './assistant-tool-server';
-import { buildAssistantClaudeArgs, ClaudeAssistantAgent } from './claude-assistant.agent';
+import {
+  buildAssistantClaudeArgs,
+  ClaudeAssistantAgent,
+  userMessageLine,
+} from './claude-assistant.agent';
 
 class FakeChild extends EventEmitter {
   stdout = new EventEmitter();
@@ -77,6 +81,36 @@ async function fixture() {
     });
   return { agent, spawn, children, tools, sessionId, events, turn };
 }
+
+describe('pictures in a Claude message', () => {
+  it('reads the message as stream-json only when it carries pictures', () => {
+    const base = {
+      sessionId: 's',
+      resume: false,
+      model: 'm',
+      instructions: 'i',
+      endpoint: { url: 'http://127.0.0.1:1/mcp', token: 't' },
+    };
+    expect(buildAssistantClaudeArgs(base)).not.toContain('--input-format');
+    const args = buildAssistantClaudeArgs({ ...base, streamInput: true });
+    expect(args[args.indexOf('--input-format') + 1]).toBe('stream-json');
+  });
+
+  it('writes one user message with the text and base64 images', () => {
+    const line = userMessageLine('look', [{ mime: 'image/png', base64: 'QUJD' }]);
+    expect(line.endsWith('\n')).toBe(true);
+    expect(JSON.parse(line)).toEqual({
+      type: 'user',
+      message: {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'look' },
+          { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'QUJD' } },
+        ],
+      },
+    });
+  });
+});
 
 describe('buildAssistantClaudeArgs', () => {
   it('gives Claude only Reelcraft tools, with every customization off', () => {

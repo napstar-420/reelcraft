@@ -1,3 +1,7 @@
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { io, type Socket } from 'socket.io-client';
@@ -8,10 +12,11 @@ import { BlueprintService } from '../../src/blueprint/blueprint.service';
 import { AssistantService } from '../../src/assistant/assistant.service';
 import { FakeAssistantAgent, type FakeStep } from '../../src/assistant/agent/fake-assistant.agent';
 import { exampleScript } from '../../src/assistant/guide';
-import { STORAGE_ADAPTER } from '../../src/storage/storage.adapter';
+import { STORAGE_ADAPTER, type StorageAdapter } from '../../src/storage/storage.adapter';
 import { LiveEvents } from '../../src/live/live-events';
 import {
   artifact,
+  assistantAttachment,
   assistantItem,
   assistantSession,
   blob,
@@ -876,13 +881,13 @@ describe('assistant (e2e)', () => {
           { call: 'get_run', args: { runId: otherRuns.failedRun }, expect: note('foreign') },
           { call: 'get_run', args: { runId: 'no-such-run' }, expect: note('missing') },
           {
-            call: 'view_stage_media',
-            args: { runId: canvasRun, stageKey: 'script' },
+            call: 'view_media',
+            args: { source: { runId: canvasRun, stageKey: 'script' } },
             expect: note('media'),
           },
           {
-            call: 'view_stage_media',
-            args: { runId: otherRuns.canvasRun, stageKey: 'script' },
+            call: 'view_media',
+            args: { source: { runId: otherRuns.canvasRun, stageKey: 'script' } },
             expect: note('foreignMedia'),
           },
         ],
@@ -942,12 +947,152 @@ describe('assistant (e2e)', () => {
       expect(seen.media!.ok).toBe(true);
       expect(seen.media!.images).toHaveLength(2);
       const mediaCall = ofType(finished, 'tool_call').find(
-        (i) => (i.payload as { tool?: string }).tool === 'view_stage_media',
+        (i) => (i.payload as { tool?: string }).tool === 'view_media',
       );
       expect(JSON.stringify(mediaCall!.payload)).not.toMatch(/AAAA|base64/);
       expect(mediaCall!.payload).toMatchObject({
         images: [{ mime: expect.any(String) }, { mime: expect.any(String) }],
       });
+    });
+  });
+
+  describe('attachments', () => {
+    let dir: string;
+    beforeAll(() => {
+      dir = mkdtempSync(join(tmpdir(), 'assistant-attach-'));
+      const ff = (args: string[]) => execFileSync('ffmpeg', ['-v', 'error', '-y', ...args]);
+      ff(['-f', 'lavfi', '-i', 'color=c=red:s=64x48', '-frames:v', '1', join(dir, 'face.png')]);
+      ff([
+        '-f',
+        'lavfi',
+        '-i',
+        'color=c=blue:s=108x192:d=2',
+        '-f',
+        'lavfi',
+        '-i',
+        'sine=frequency=440:duration=2',
+        '-shortest',
+        '-pix_fmt',
+        'yuv420p',
+        join(dir, 'ref.mp4'),
+      ]);
+    });
+    afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+    async function attach(file: string, mime: string) {
+      const ext = file.split('.').pop()!;
+      const upload = await call<{ blobId: string; objectKey: string; uploadUrl: string }>(
+        '/assistant/attachments/upload',
+        { method: 'POST', body: { ext } },
+      );
+      expect(upload.status).toBe(201);
+      await http.app
+        .get<StorageAdapter>(STORAGE_ADAPTER)
+        .put(upload.body.objectKey, readFileSync(join(dir, file)), { mime });
+      return call<{ id: string; kind: string; width: number | null; durationSec: number | null }>(
+        '/assistant/attachments',
+        {
+          method: 'POST',
+          body: {
+            blobId: upload.body.blobId,
+            objectKey: upload.body.objectKey,
+            sha256: 'a'.repeat(64),
+            name: file,
+          },
+        },
+      );
+    }
+
+    it('uploads files, sends them with a message, shows pictures to the model and lets it look at a video', async () => {
+      const picture = await attach('face.png', 'image/png');
+      expect(picture.status).toBe(201);
+      expect(picture.body).toMatchObject({ kind: 'image', width: 64 });
+      const video = await attach('ref.mp4', 'video/mp4');
+      expect(video.body).toMatchObject({ kind: 'video', width: 108 });
+      expect(video.body.durationSec).toBeGreaterThan(1.5);
+
+      const sid = await newSession('auto');
+      useScript([
+        [
+          {
+            call: 'view_media',
+            args: { source: { attachmentId: video.body.id }, frames: 2 },
+            expect: (r) => expect(r.ok).toBe(true),
+          },
+          { say: 'A red face and a blue video.' },
+        ],
+      ]);
+      const started = await turn(sid, { attachments: [picture.body.id, video.body.id] });
+      expect(started.status).toBe(202);
+      const session = await waitIdle(sid);
+
+      expect(agent.turns[0]!.images).toBe(1);
+      expect(agent.turns[0]!.text).toContain(`attachmentId ${video.body.id}`);
+      expect(agent.turns[0]!.text).toContain('The pictures are shown with this message');
+      const message = ofType(session, 'user_message')[0]!;
+      expect(message.payload).toMatchObject({
+        text: '',
+        attachments: [
+          { id: picture.body.id, kind: 'image' },
+          { id: video.body.id, kind: 'video' },
+        ],
+      });
+      expect(session.title).toBe('face.png, ref.mp4');
+
+      // a sent file can't be removed on its own, or sent in another chat
+      const removed = await call(`/assistant/attachments/${picture.body.id}`, { method: 'DELETE' });
+      expect(removed.status).toBe(400);
+      const other = await newSession('auto');
+      useScript([[{ say: 'ok' }]]);
+      expect((await turn(other, { attachments: [picture.body.id] })).status).toBe(400);
+
+      // deleting the chat deletes its files
+      expect((await call(`/assistant/sessions/${sid}`, { method: 'DELETE' })).status).toBe(204);
+      const left = await testDb.db
+        .select()
+        .from(assistantAttachment)
+        .where(eq(assistantAttachment.id, picture.body.id));
+      expect(left).toHaveLength(0);
+      const blobs = await testDb.db.select().from(blob).where(eq(blob.id, video.body.id));
+      expect(blobs).toHaveLength(0);
+    });
+
+    it('refuses a file it cannot read, a wrong key, and lets an unsent file be removed', async () => {
+      const upload = await call<{ blobId: string; objectKey: string }>(
+        '/assistant/attachments/upload',
+        { method: 'POST', body: { ext: 'mp4' } },
+      );
+      await http.app
+        .get<StorageAdapter>(STORAGE_ADAPTER)
+        .put(upload.body.objectKey, Buffer.from('not a video'), { mime: 'video/mp4' });
+      const broken = await call<{ message: string }>('/assistant/attachments', {
+        method: 'POST',
+        body: {
+          blobId: upload.body.blobId,
+          objectKey: upload.body.objectKey,
+          sha256: 'b'.repeat(64),
+          name: 'x.mp4',
+        },
+      });
+      expect(broken.status).toBe(400);
+      expect(broken.body.message).toContain("couldn't be read");
+
+      const wrongKey = await call('/assistant/attachments', {
+        method: 'POST',
+        body: {
+          blobId: 'B1',
+          objectKey: 'someone/else.png',
+          sha256: 'c'.repeat(64),
+          name: 'x.png',
+        },
+      });
+      expect(wrongKey.status).toBe(400);
+
+      const picture = await attach('face.png', 'image/png');
+      expect(
+        (await call(`/assistant/attachments/${picture.body.id}`, { method: 'DELETE' })).status,
+      ).toBe(204);
+      expect((await call(`/assistant/attachments/${picture.body.id}`)).status).toBe(404);
     });
   });
 

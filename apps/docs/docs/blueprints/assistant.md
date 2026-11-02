@@ -30,6 +30,19 @@ particular.
 Type your message and press **Enter** (**Shift + Enter** starts a new line). Messages can contain up
 to 64,000 characters.
 
+### Attach files
+
+Give the assistant a picture, a video or a sound, for example a reference video to recreate, a
+photo of a host, or a logo. Select **Attach files** (the paperclip) next to **Send**, drop files on
+the message box, or paste them. A message can carry up to 10 files: pictures up to 20 MB, videos and
+sounds up to 1 GB and 15 minutes. Each file uploads straight away and shows **Ready** when it's done.
+Select **✕** on a file to remove it before you send.
+
+The assistant sees pictures with your message. It looks at a video as frames at the times it
+chooses and listens to sound as a timed transcript, the same way it reviews what a run made. Files
+stay with the chat, and are deleted when you delete the chat. They don't go into a channel's
+**Library** unless you ask the assistant to put them there.
+
 When both are connected, pick **Codex** or **Claude** in the provider menu at the top of the chat. A
 chat keeps the provider it started with: switching starts a new chat. Pick the **Model** and its
 **Effort** next to it. A higher effort is slower and uses more of your plan.

@@ -129,6 +129,7 @@ function makeDeps(overrides: Partial<ToolDeps> = {}): ToolDeps {
     review: {} as never,
     watches: {} as never,
     userGuide: new UserGuideService(),
+    attachments: {} as never,
     ...overrides,
   };
 }
@@ -183,14 +184,13 @@ describe('tool registry', () => {
         'list_models',
         'list_runs',
         'list_styles',
-        'listen_to_audio',
+        'listen',
         'present_plan',
         'propose_draft',
         'read_guide',
         'update_metadata',
         'validate_draft',
-        'view_asset',
-        'view_stage_media',
+        'view_media',
         'watch_run',
       ].sort(),
     );
@@ -292,11 +292,10 @@ describe('JSON Schemas stay in sync with the Zod inputs (drift guard)', () => {
     },
     get_run: { runId: 'r1' },
     get_stage: { runId: 'r1', stageKey: 'script', itemIndex: 0, full: true, includePrompt: true },
-    view_stage_media: { runId: 'r1', stageKey: 'images', itemIndex: 0, frames: 4, at: [1.5] },
+    view_media: { source: { runId: 'r1', stageKey: 'images', itemIndex: 0 }, frames: 4, at: [1.5] },
     get_attempt: { runId: 'r1', stageKey: 'script', attemptNo: 2, itemIndex: 0 },
     get_run_memory: { runId: 'r1', key: 'scenes' },
-    listen_to_audio: { runId: 'r1', stageKey: 'voice', itemIndex: 0 },
-    view_asset: { characterId: 'c1', blobId: 'b1' },
+    listen: { source: { attachmentId: 'att1' } },
     watch_run: { runId: 'r1' },
     unwatch_run: { runId: 'r1' },
     search_docs: { query: 'raise budget', limit: 3 },
@@ -1082,6 +1081,102 @@ describe('search_docs', () => {
     const plan = { ...ctx(), mode: 'plan' as const };
     expect(await runTool('search_docs', { query: 'budget' }, plan, makeDeps())).toMatchObject({
       ok: true,
+    });
+  });
+});
+
+describe('media sources: attachments', () => {
+  const image = {
+    blobId: 'b-img',
+    objectKey: 'k',
+    mime: 'image/png',
+    kind: 'image' as const,
+    name: 'face.png',
+    probe: null,
+  };
+  const video = {
+    blobId: 'b-vid',
+    objectKey: 'k2',
+    mime: 'video/mp4',
+    kind: 'video' as const,
+    name: 'ref.mp4',
+    probe: {
+      container: 'mp4',
+      durationSec: 20,
+      streams: [{ type: 'video', codec: 'h264', width: 1080, height: 1920 }],
+    },
+  };
+  const withFiles = () =>
+    makeDeps({
+      attachments: {
+        file: vi.fn(async (id: string) => {
+          if (id === 'att-img') return image;
+          if (id === 'att-vid') return video;
+          throw new Error('missing');
+        }),
+        get: vi.fn(),
+      } as never,
+      media: {
+        imageFromBlob: vi.fn(async () => ({ mime: 'image/jpeg', base64: 'AAA', label: 'x' })),
+        framesOfVideo: vi.fn(),
+      } as never,
+      review: {
+        contactSheet: vi.fn(async () => ({
+          mime: 'image/jpeg' as const,
+          base64: 'BBB',
+          times: [0, 10],
+          columns: 2,
+          durationSec: 20,
+        })),
+        transcriber: vi.fn(async () => ({ available: true, by: 'voicestudio', paid: false })),
+        listen: vi.fn(async () => ({
+          by: 'voicestudio',
+          costUsd: 0,
+          durationSec: 20,
+          transcript: 'hello there',
+          lines: [{ atSec: 0, text: 'hello there' }],
+          stats: { meanVolumeDb: -20, maxVolumeDb: -3, silences: [] },
+        })),
+      } as never,
+    });
+
+  it('shows an attached picture and an attached video as a contact sheet', async () => {
+    const d = withFiles();
+    const c = ctx();
+    const pic = await runTool('view_media', { source: { attachmentId: 'att-img' } }, c, d);
+    expect(pic).toMatchObject({ ok: true, images: [{ base64: 'AAA' }] });
+    const vid = await runTool(
+      'view_media',
+      { source: { attachmentId: 'att-vid' }, at: [1, 5] },
+      c,
+      d,
+    );
+    expect(vid).toMatchObject({
+      ok: true,
+      result: { kind: 'video', size: '1080x1920', durationSec: 20 },
+      images: [{ base64: 'BBB' }],
+    });
+    expect(d.review.contactSheet).toHaveBeenCalledWith('b-vid', { count: undefined, at: [1, 5] });
+    expect(c.imagesShown).toBe(2);
+  });
+
+  it('listens to an attached video and refuses to listen to a picture', async () => {
+    const d = withFiles();
+    const heard = await runTool('listen', { source: { attachmentId: 'att-vid' } }, ctx(), d);
+    expect(heard).toMatchObject({ ok: true, result: { heard: 'the attached file "ref.mp4"' } });
+    const pic = await runTool('listen', { source: { attachmentId: 'att-img' } }, ctx(), d);
+    expect(pic).toMatchObject({ ok: false });
+    expect((pic as { error: string }).error).toContain('needs audio or video');
+  });
+
+  it('refuses a source that names two things, or none', async () => {
+    const d = withFiles();
+    expect(
+      await runTool('view_media', { source: { attachmentId: 'a', assetId: 'b' } }, ctx(), d),
+    ).toMatchObject({ ok: false });
+    expect(await runTool('view_media', { source: {} }, ctx(), d)).toMatchObject({ ok: false });
+    expect(await runTool('view_media', { source: { stageKey: 'x' } }, ctx(), d)).toMatchObject({
+      ok: false,
     });
   });
 });

@@ -473,7 +473,7 @@ const approveStage: AssistantTool<z.infer<typeof ApproveInput>> = {
   name: 'approve_stage',
   kind: 'action',
   description:
-    'Approve a stage (or one item of it) that is waiting for review, so the run carries on. Look at its output first (get_stage, view_stage_media) and only approve what meets the brief.',
+    'Approve a stage (or one item of it) that is waiting for review, so the run carries on. Look at its output first (get_stage, view_media) and only approve what meets the brief.',
   input: ApproveInput,
   jsonSchema: () =>
     obj(

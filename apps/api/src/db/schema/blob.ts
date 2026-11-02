@@ -13,11 +13,18 @@ import {
 import { run } from './run';
 import { character } from './character';
 
-export const blobScopeEnum = pgEnum('blob_scope', ['run', 'input', 'character', 'asset']);
+export const blobScopeEnum = pgEnum('blob_scope', [
+  'run',
+  'input',
+  'character',
+  'asset',
+  'assistant',
+]);
 
 /**
  * §3.10 — only `scope = 'run'` is collectable by retention GC (§4.5). Input
- * blobs are the user's originals; character and asset blobs outlive runs.
+ * blobs are the user's originals; character and asset blobs outlive runs. `assistant` blobs are
+ * files attached to an assistant chat (`assistant_attachment`), deleted with the chat.
  */
 export const blob = pgTable(
   'blob',
@@ -44,7 +51,7 @@ export const blob = pgTable(
       'blob_scope_reference_ck',
       sql`(${t.scope} IN ('run','input') AND ${t.runId} IS NOT NULL)
           OR (${t.scope} = 'character' AND ${t.characterId} IS NOT NULL)
-          OR (${t.scope} = 'asset')`,
+          OR (${t.scope}::text IN ('asset','assistant'))`,
     ),
     index('blob_gc_idx')
       .on(t.scope, t.gcEligibleAt)

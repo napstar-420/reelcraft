@@ -1,18 +1,53 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Put } from '@nestjs/common';
 import {
+  CreateAssistantAttachmentDto,
   CreateAssistantSessionDto,
   DecideApprovalDto,
   DecidePlanDto,
+  RequestAssistantAttachmentUploadDto,
   StartAssistantTurnDto,
   UpdateAssistantSessionDto,
   UpdateAssistantSettingsDto,
 } from '@reelcraft/shared';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { AssistantService } from './assistant.service';
+import { AttachmentService } from './attachments/attachment.service';
+import { Owner } from '../common/owner.decorator';
 
 @Controller()
 export class AssistantController {
-  constructor(private readonly assistant: AssistantService) {}
+  constructor(
+    private readonly assistant: AssistantService,
+    private readonly attachments: AttachmentService,
+  ) {}
+
+  @Post('assistant/attachments/upload')
+  requestAttachmentUpload(
+    @Owner() ownerId: string,
+    @Body(new ZodValidationPipe(RequestAssistantAttachmentUploadDto))
+    dto: RequestAssistantAttachmentUploadDto,
+  ) {
+    return this.attachments.requestUpload(ownerId, dto.ext);
+  }
+
+  @Post('assistant/attachments')
+  createAttachment(
+    @Owner() ownerId: string,
+    @Body(new ZodValidationPipe(CreateAssistantAttachmentDto)) dto: CreateAssistantAttachmentDto,
+  ) {
+    return this.attachments.create(ownerId, dto);
+  }
+
+  @Get('assistant/attachments/:id')
+  attachment(@Param('id') id: string) {
+    return this.attachments.get(id);
+  }
+
+  @Delete('assistant/attachments/:id')
+  @HttpCode(204)
+  async deleteAttachment(@Owner() ownerId: string, @Param('id') id: string) {
+    await this.attachments.deleteUnsent(ownerId, id);
+  }
 
   @Get('assistant/providers')
   providers() {

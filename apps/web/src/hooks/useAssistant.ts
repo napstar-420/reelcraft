@@ -232,6 +232,7 @@ export function useAssistant({
     mutationFn: async (input: {
       text?: string;
       answer?: { questionItemId: string; answers: AssistantAnswers };
+      attachments?: string[];
     }) => {
       if (!model) throw new Error('No assistant model is available.');
       const sessionId = activeSessionId ?? (await createSession.mutateAsync()).id;
@@ -240,6 +241,7 @@ export function useAssistant({
       return api.startAssistantTurn(sessionId, {
         ...(input.text ? { text: input.text } : {}),
         ...(input.answer ? { answer: input.answer } : {}),
+        ...(input.attachments?.length ? { attachments: input.attachments } : {}),
         context,
         // the editor's draft only when the user is looking at that blueprint
         ...(editor && editor.blueprintId === context.blueprintId ? { editorDraft: editor } : {}),
@@ -337,7 +339,8 @@ export function useAssistant({
     selectSession: (id: string) => pick(id),
     newChat: () => pick(null),
     deleteChat: (id: string) => deleteSession.mutate(id),
-    send: (text: string) => sendTurn.mutate({ text }),
+    send: (text: string, attachments: string[] = [], onSent?: () => void) =>
+      sendTurn.mutate({ text, attachments }, { onSuccess: () => onSent?.() }),
     answer: (questionItemId: string, answers: AssistantAnswers) =>
       sendTurn.mutate({ answer: { questionItemId, answers } }),
     interrupt: () => interrupt.mutate(),

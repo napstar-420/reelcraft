@@ -151,13 +151,13 @@ describe('get_run_memory', () => {
   });
 });
 
-describe('listen_to_audio', () => {
+describe('listen', () => {
   it('transcribes a stage for free with VoiceStudio, without asking', async () => {
     const confirm = vi.fn();
     const d = deps();
     const out = await runTool(
-      'listen_to_audio',
-      { runId: 'r1', stageKey: 'voice' },
+      'listen',
+      { source: { runId: 'r1', stageKey: 'voice' } },
       newTurnContext({ mode: 'manual', confirm }),
       d,
     );
@@ -182,15 +182,15 @@ describe('listen_to_audio', () => {
     });
     const asked: ApprovalRequest[] = [];
     await runTool(
-      'listen_to_audio',
-      { runId: 'r1' },
+      'listen',
+      { source: { runId: 'r1' } },
       newTurnContext({ mode: 'manual', confirm: async (r) => (asked.push(r), { answer: 'yes' }) }),
       paid,
     );
     expect(asked[0]).toMatchObject({ kind: 'action', title: expect.stringContaining('Deepgram') });
     expect(paid.review.listen).toHaveBeenCalledWith('b-final', 'deepgram');
     expect(
-      await runTool('listen_to_audio', { runId: 'r1' }, newTurnContext({ mode: 'plan' }), paid),
+      await runTool('listen', { source: { runId: 'r1' } }, newTurnContext({ mode: 'plan' }), paid),
     ).toMatchObject({ ok: false, error: expect.stringContaining('Plan mode') });
   });
 
@@ -200,27 +200,29 @@ describe('listen_to_audio', () => {
       available: false,
       reason: 'Start VoiceStudio.',
     });
-    expect(await runTool('listen_to_audio', { runId: 'r1' }, newTurnContext(), d)).toMatchObject({
-      ok: false,
-      error: 'Start VoiceStudio.',
-    });
+    expect(await runTool('listen', { source: { runId: 'r1' } }, newTurnContext(), d)).toMatchObject(
+      {
+        ok: false,
+        error: 'Start VoiceStudio.',
+      },
+    );
   });
 });
 
-describe('view_asset', () => {
+describe('view_media (library sources)', () => {
   it('shows a library image and a Character reference, and refuses a blob that is not one', async () => {
     const d = deps();
     const c = newTurnContext();
-    expect(await runTool('view_asset', { assetId: 'a1' }, c, d)).toMatchObject({
+    expect(await runTool('view_media', { source: { assetId: 'a1' } }, c, d)).toMatchObject({
       ok: true,
       images: [{ base64: 'I' }],
     });
-    expect(d.media.imageFromBlob).toHaveBeenCalledWith('b-logo', 'Logo');
-    expect(await runTool('view_asset', { characterId: 'c1', blobId: 'b-ref' }, c, d)).toMatchObject(
-      { ok: true },
-    );
+    expect(d.media.imageFromBlob).toHaveBeenCalledWith('b-logo', 'the asset "Logo"');
     expect(
-      await runTool('view_asset', { characterId: 'c1', blobId: 'b-other' }, c, d),
+      await runTool('view_media', { source: { characterId: 'c1', blobId: 'b-ref' } }, c, d),
+    ).toMatchObject({ ok: true });
+    expect(
+      await runTool('view_media', { source: { characterId: 'c1', blobId: 'b-other' } }, c, d),
     ).toMatchObject({ ok: false });
     expect(c.imagesShown).toBe(2);
   });

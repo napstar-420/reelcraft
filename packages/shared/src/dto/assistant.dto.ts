@@ -147,6 +147,78 @@ export const AssistantItemType = z.enum([
 ]);
 export type AssistantItemType = z.infer<typeof AssistantItemType>;
 
+/** A file the user gave the assistant in a chat (uploaded, or imported from a link). */
+export const AssistantAttachmentKind = z.enum(['image', 'video', 'audio', 'file']);
+export type AssistantAttachmentKind = z.infer<typeof AssistantAttachmentKind>;
+
+export const AssistantAttachmentDto = z.object({
+  id: z.string(),
+  /** Shown with `/api/blobs/:blobId`. */
+  blobId: z.string(),
+  name: z.string(),
+  kind: AssistantAttachmentKind,
+  mime: z.string(),
+  bytes: z.number().int(),
+  width: z.number().int().nullable(),
+  height: z.number().int().nullable(),
+  durationSec: z.number().nullable(),
+  source: z.enum(['upload', 'link']),
+  sourceUrl: z.string().nullable(),
+  /** The chat it was sent in; null until sent. */
+  sessionId: z.string().nullable(),
+  createdAt: z.string(),
+});
+export type AssistantAttachmentDto = z.infer<typeof AssistantAttachmentDto>;
+
+/** What a message keeps about each file it carried. */
+export const AssistantAttachmentRef = AssistantAttachmentDto.pick({
+  id: true,
+  blobId: true,
+  name: true,
+  kind: true,
+  mime: true,
+  width: true,
+  height: true,
+  durationSec: true,
+  source: true,
+  sourceUrl: true,
+});
+export type AssistantAttachmentRef = z.infer<typeof AssistantAttachmentRef>;
+
+export const RequestAssistantAttachmentUploadDto = z.object({
+  ext: z
+    .string()
+    .trim()
+    .regex(/^[A-Za-z0-9]{1,10}$/, 'A file extension such as png or mp4'),
+});
+export type RequestAssistantAttachmentUploadDto = z.infer<
+  typeof RequestAssistantAttachmentUploadDto
+>;
+
+export const RequestAssistantAttachmentUploadResultDto = z.object({
+  blobId: z.string(),
+  objectKey: z.string(),
+  uploadUrl: z.string(),
+});
+export type RequestAssistantAttachmentUploadResultDto = z.infer<
+  typeof RequestAssistantAttachmentUploadResultDto
+>;
+
+export const CreateAssistantAttachmentDto = z.object({
+  blobId: z.string().min(1),
+  objectKey: z.string().min(1),
+  /** Omitted for very large files the browser doesn't hash. */
+  sha256: z
+    .string()
+    .regex(/^[a-f0-9]{64}$/)
+    .optional(),
+  name: z.string().trim().min(1).max(200),
+});
+export type CreateAssistantAttachmentDto = z.infer<typeof CreateAssistantAttachmentDto>;
+
+/** The most files one message can carry. */
+export const MAX_ATTACHMENTS_PER_MESSAGE = 10;
+
 export const UserMessagePayload = z.object({
   text: z.string(),
   /** Where the user was when they sent it. */
@@ -156,6 +228,8 @@ export const UserMessagePayload = z.object({
   mode: AssistantMode,
   /** `wake`: written by Reelcraft when a watched run changed, not typed by the user. */
   source: z.enum(['user', 'wake']).optional(),
+  /** Files sent with the message. */
+  attachments: z.array(AssistantAttachmentRef).optional(),
 });
 export type UserMessagePayload = z.infer<typeof UserMessagePayload>;
 
@@ -283,9 +357,11 @@ export const StartAssistantTurnDto = z
       .optional(),
     model: z.string().min(1),
     effort: z.string().min(1).optional(),
+    /** Attachment ids (uploaded first with `POST assistant/attachments`) sent with the message. */
+    attachments: z.array(z.string().min(1)).max(MAX_ATTACHMENTS_PER_MESSAGE).optional(),
   })
-  .refine((v) => Boolean(v.text) || v.answer !== undefined, {
-    message: 'Send text or an answer.',
+  .refine((v) => Boolean(v.text) || v.answer !== undefined || Boolean(v.attachments?.length), {
+    message: 'Send text, files or an answer.',
   });
 export type StartAssistantTurnDto = z.infer<typeof StartAssistantTurnDto>;
 

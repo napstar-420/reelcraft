@@ -228,7 +228,7 @@ describe('CodexAssistantAgent.runTurn', () => {
       turnId: 'turn-1',
       callId: 'c1',
       namespace: null,
-      tool: 'view_stage_media',
+      tool: 'view_media',
       arguments: {},
     });
     // Codex drops images inside a dynamic tool result: the result stays text
@@ -314,6 +314,23 @@ describe('CodexAssistantAgent.runTurn', () => {
       { type: 'usage', inputTokens: 100, outputTokens: 10 },
       { type: 'usage', inputTokens: 150, outputTokens: 15 },
     ]);
+  });
+
+  it('sends attached pictures with the message as image inputs', async () => {
+    const { agent, fakes } = await started();
+    const fake = fakes[0]!;
+    const done = agent.runTurn(
+      turnArgs({ images: [{ mime: 'image/jpeg', base64: 'QUJD' }] }) as never,
+    );
+    await tick();
+    expect(fake.requests('turn/start')[0]!.params).toMatchObject({
+      input: [
+        { type: 'text', text: 'hello' },
+        { type: 'image', url: 'data:image/jpeg;base64,QUJD' },
+      ],
+    });
+    fake.notify('turn/completed', completed());
+    await done;
   });
 
   it('reports a tool that failed to Codex as unsuccessful', async () => {

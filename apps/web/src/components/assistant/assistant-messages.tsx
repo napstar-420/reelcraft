@@ -1,9 +1,15 @@
 import Markdown, { type Components } from 'react-markdown';
 import { Activity, AlertCircle, Wrench } from 'lucide-react';
-import type { AssistantItemDto, ToolCallPayload, TurnStatusPayload } from '@reelcraft/shared';
+import type {
+  AssistantAttachmentRef,
+  AssistantItemDto,
+  ToolCallPayload,
+  TurnStatusPayload,
+} from '@reelcraft/shared';
 import type { AssistantController } from '@/hooks/useAssistant';
 import { ApprovalCard, ChangeCard, LegacyProposalCard, PlanCard, RunCard } from './assistant-cards';
 import { QuestionCard } from './question-card';
+import { MessageAttachments } from './attachment-chips';
 import { describeToolCall, payloadOf, toRows, wakeHeadline, type ChatRow } from './assistant.logic';
 
 const MARKDOWN: Components = {
@@ -51,12 +57,19 @@ function ToolsRow({ items }: { items: AssistantItemDto[] }) {
 
 function Row({ row, assistant }: { row: ChatRow; assistant: AssistantController }) {
   switch (row.kind) {
-    case 'user':
+    case 'user': {
+      const payload = payloadOf<{ text: string; attachments?: AssistantAttachmentRef[] }>(row.item);
       return (
-        <div className="ml-8 self-end rounded-[12px_12px_4px_12px] bg-surface-3 px-3 py-2.5 text-[13px] leading-relaxed whitespace-pre-wrap">
-          {payloadOf<{ text: string }>(row.item).text}
+        <div className="ml-8 flex flex-col items-end self-end">
+          <MessageAttachments attachments={payload.attachments ?? []} />
+          {payload.text && (
+            <div className="rounded-[12px_12px_4px_12px] bg-surface-3 px-3 py-2.5 text-[13px] leading-relaxed whitespace-pre-wrap">
+              {payload.text}
+            </div>
+          )}
         </div>
       );
+    }
     case 'wake':
       return (
         <p className="flex items-start gap-1.5 rounded-[10px] bg-surface-2 px-3 py-2 text-xs text-muted-foreground">

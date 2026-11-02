@@ -11,6 +11,7 @@ import { presentPlan } from './present-plan';
 import { BLUEPRINT_TOOLS } from './blueprint-tools';
 import { CATALOG_TOOLS } from './catalog-tools';
 import { DOCS_TOOLS } from './docs-tools';
+import { MEDIA_TOOLS } from './media-tools';
 import { zodIssues } from './draft-checks';
 import { READ_TOOLS } from './read-tools';
 import { RUN_TOOLS } from './run-tools';
@@ -23,6 +24,7 @@ export const ASSISTANT_TOOLS: ReadonlyArray<AssistantTool<never>> = [
   ...BLUEPRINT_TOOLS,
   ...RUN_TOOLS,
   ...REVIEW_TOOLS,
+  ...MEDIA_TOOLS,
   ...WRITE_TOOLS,
   ...MANAGE_TOOLS,
   ...ACTION_TOOLS,

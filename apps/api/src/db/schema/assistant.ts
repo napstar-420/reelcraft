@@ -1,5 +1,6 @@
 import { index, integer, jsonb, pgTable, text, timestamptz, uniqueIndex } from './pg-helpers';
 import { run } from './run';
+import { blob } from './blob';
 /** A chat between the user and the assistant, bound to one provider session (Codex thread). It
  * is not tied to a blueprint: one chat can work across channels, blueprints and runs. The
  * provider keeps the model's context; the items below are what the chat shows. */
@@ -62,4 +63,25 @@ export const assistantWatch = pgTable(
     index('assistant_watch_run_idx').on(t.runId),
     index('assistant_watch_session_idx').on(t.sessionId),
   ],
+);
+
+/** A file the user gave the assistant: uploaded in the chat or imported from a link. It belongs to
+ * the chat (null until the message that carries it is sent) and is deleted with it; the assistant
+ * copies it into a channel's Library, a Character or a run input when asked. */
+export const assistantAttachment = pgTable(
+  'assistant_attachment',
+  {
+    id: text('id').primaryKey(), // unique attachment identifier
+    ownerId: text('owner_id').notNull().default('local'), // who uploaded it
+    sessionId: text('session_id').references(() => assistantSession.id), // the chat it was sent in; null until sent
+    blobId: text('blob_id')
+      .notNull()
+      .references(() => blob.id), // the stored file (scope 'assistant')
+    name: text('name').notNull(), // file name as uploaded, or the page title of a link
+    kind: text('kind').notNull(), // image | video | audio | file
+    source: text('source').notNull().default('upload'), // upload | link
+    sourceUrl: text('source_url'), // the link it was imported from
+    createdAt: timestamptz('created_at').notNull().defaultNow(), // when it was uploaded
+  },
+  (t) => [index('assistant_attachment_session_idx').on(t.sessionId)],
 );
