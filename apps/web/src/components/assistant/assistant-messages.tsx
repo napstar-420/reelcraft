@@ -11,6 +11,7 @@ import { ApprovalCard, ChangeCard, LegacyProposalCard, PlanCard, RunCard } from 
 import { QuestionCard } from './question-card';
 import { MessageAttachments } from './attachment-chips';
 import { BreakdownCard } from './breakdown-card';
+import { GoalCard } from './goal-card';
 import { describeToolCall, payloadOf, toRows, wakeHeadline, type ChatRow } from './assistant.logic';
 
 const MARKDOWN: Components = {
@@ -97,6 +98,8 @@ function Row({ row, assistant }: { row: ChatRow; assistant: AssistantController 
       return <PlanCard item={row.item} assistant={assistant} />;
     case 'breakdown':
       return <BreakdownCard item={row.item} />;
+    case 'goal':
+      return <GoalCard item={row.item} />;
     case 'legacy':
       return <LegacyProposalCard item={row.item} />;
     case 'run':

@@ -187,6 +187,8 @@ const startRun: AssistantTool<z.infer<typeof StartRunInput>> = {
           .join(', ')}. Pass them in inputs.`,
       };
     }
+    const overGoal = await deps.goals.refusal(ctx.sessionId, blueprint.id);
+    if (overGoal) return { ok: false, error: overGoal };
     const refused = await confirmChange(ctx, {
       tool: 'start_run',
       kind: 'action',
@@ -241,6 +243,7 @@ const startRun: AssistantTool<z.infer<typeof StartRunInput>> = {
       await deps.cancellation.cancel(created.id).catch(() => undefined);
       throw error;
     }
+    await deps.goals.recordAttempt(ctx.sessionId, blueprint.id, created.id);
     const watching = await autoWatch(ctx, deps, created.id);
     return {
       ok: true,
@@ -315,6 +318,12 @@ const runStages: AssistantTool<z.infer<typeof RunStagesInput>> = {
       scope: input.scope === 'only' ? 'stage' : input.scope === 'up_to' ? 'through' : 'descendants',
     });
     if (plan.blockedReason) return { ok: false, error: plan.blockedReason };
+    const overGoal = await deps.goals.refusal(
+      ctx.sessionId,
+      insight.blueprintId,
+      plan.estimatedRerunUsd,
+    );
+    if (overGoal) return { ok: false, error: overGoal };
     const refused = await confirmChange(ctx, {
       tool: 'run_stages',
       kind: 'action',
@@ -333,6 +342,7 @@ const runStages: AssistantTool<z.infer<typeof RunStagesInput>> = {
       ...plan.request,
       previewToken: plan.previewToken,
     });
+    await deps.goals.recordAttempt(ctx.sessionId, insight.blueprintId, input.runId);
     const watching = await autoWatch(ctx, deps, input.runId);
     return {
       ok: true,
@@ -383,6 +393,15 @@ const retryStage: AssistantTool<z.infer<typeof RetryInput>> = {
       items,
     );
     const affected = [...new Set(preview.affected.map((a) => a.stageKey))];
+    const insight = await deps.runs.get(input.runId);
+    if (insight) {
+      const overGoal = await deps.goals.refusal(
+        ctx.sessionId,
+        insight.blueprintId,
+        preview.estimatedRerunUsd,
+      );
+      if (overGoal) return { ok: false, error: overGoal };
+    }
     const refused = await confirmChange(ctx, {
       tool: 'retry_stage',
       kind: 'action',
@@ -405,6 +424,7 @@ const retryStage: AssistantTool<z.infer<typeof RetryInput>> = {
       'dependents',
       items,
     );
+    if (insight) await deps.goals.recordAttempt(ctx.sessionId, insight.blueprintId, input.runId);
     const watching = await autoWatch(ctx, deps, input.runId);
     return {
       ok: true,

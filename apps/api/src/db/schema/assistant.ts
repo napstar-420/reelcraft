@@ -1,4 +1,13 @@
-import { index, integer, jsonb, pgTable, text, timestamptz, uniqueIndex } from './pg-helpers';
+import {
+  index,
+  integer,
+  jsonb,
+  numeric,
+  pgTable,
+  text,
+  timestamptz,
+  uniqueIndex,
+} from './pg-helpers';
 import { run } from './run';
 import { blob } from './blob';
 import { channel } from './channel';
@@ -138,5 +147,34 @@ export const assistantMemoryDoc = pgTable(
     index('assistant_memory_doc_session_idx').on(t.sessionId),
     index('assistant_memory_doc_channel_idx').on(t.channelId),
     index('assistant_memory_doc_blueprint_idx').on(t.blueprintId),
+  ],
+);
+
+/** "Keep going until this is good": a goal the assistant works toward by re-running and fixing a
+ * blueprint, within a number of runs and a spending limit it can't go past. Deleted with its chat,
+ * its blueprint or its channel. */
+export const assistantGoal = pgTable(
+  'assistant_goal',
+  {
+    id: text('id').primaryKey(), // unique goal identifier
+    sessionId: text('session_id')
+      .notNull()
+      .references(() => assistantSession.id), // the chat working on it
+    blueprintId: text('blueprint_id')
+      .notNull()
+      .references(() => blueprint.id), // the blueprint being improved
+    goal: text('goal').notNull(), // what "good" means, in the user's words
+    maxRuns: integer('max_runs').notNull(), // the most runs (or re-runs) it may start
+    maxSpendUsd: numeric('max_spend_usd', { precision: 12, scale: 4 }).notNull(), // the most it may spend (toUsd/fromUsd)
+    runIds: jsonb('run_ids').$type<string[]>().notNull().default([]), // runs made for it, in order
+    attempts: integer('attempts').notNull().default(0), // runs and re-runs started for it
+    state: text('state').notNull().default('active'), // active | met | stopped | limit
+    summary: text('summary'), // the final report
+    createdAt: timestamptz('created_at').notNull().defaultNow(), // when it was set
+    endedAt: timestamptz('ended_at'), // when it ended
+  },
+  (t) => [
+    index('assistant_goal_session_idx').on(t.sessionId),
+    index('assistant_goal_blueprint_idx').on(t.blueprintId),
   ],
 );

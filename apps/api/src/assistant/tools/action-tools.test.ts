@@ -92,6 +92,7 @@ function deps(over: Partial<Record<keyof ToolDeps, unknown>> = {}): ToolDeps {
     },
     blueprintChanged: vi.fn(),
     watches: { watch: vi.fn(async () => []), unwatch: vi.fn(async () => []) },
+    goals: { refusal: vi.fn(async () => null), recordAttempt: vi.fn(async () => undefined) },
     ...over,
   } as unknown as ToolDeps;
 }

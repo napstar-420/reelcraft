@@ -20,6 +20,7 @@ import { FileCopyService } from './files/file-copy.service';
 import { LinkImportService } from './files/link-import.service';
 import { BrowserService } from './browser/browser.service';
 import { AssistantMemoryService } from './memory/assistant-memory.service';
+import { GoalService } from './goals/goal.service';
 import { SettingsModule } from '../settings/settings.module';
 import { QcModule } from '../qc/qc.module';
 import { StorageModule } from '../storage/storage.module';
@@ -60,6 +61,7 @@ import { CodexNeoRegistrar } from '../provider/codex/codex-neo-registrar';
     LinkImportService,
     BrowserService,
     AssistantMemoryService,
+    GoalService,
     // The order is the default: a new chat starts on the first available agent.
     {
       provide: ASSISTANT_AGENTS,

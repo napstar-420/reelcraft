@@ -9,6 +9,7 @@ import type {
   ConfigLayer,
   PlanPayload,
   BreakdownPayload,
+  GoalPayload,
   ValidationIssue,
 } from '@reelcraft/shared';
 import type { ToolImage } from '../agent/assistant-agent.interface';
@@ -36,6 +37,7 @@ import type { FileCopyService } from '../files/file-copy.service';
 import type { LinkImportService } from '../files/link-import.service';
 import type { BrowserService } from '../browser/browser.service';
 import type { AssistantMemoryService } from '../memory/assistant-memory.service';
+import type { GoalService } from '../goals/goal.service';
 import type { RunInputService } from '../../run/run-input.service';
 import type { VoiceStudioAdapter } from '../../provider/voicestudio/voicestudio.adapter';
 import type { SchemaValidatorService } from '../../json-schema/schema-validator.service';
@@ -145,6 +147,7 @@ export interface ToolDeps {
     AssistantMemoryService,
     'listNotes' | 'getNote' | 'createNote' | 'deleteNote' | 'search' | 'upsertDoc'
   >;
+  goals: Pick<GoalService, 'create' | 'active' | 'refusal' | 'recordAttempt' | 'finish'>;
   /** The user's browser (BrowserOS Neo). */
   browser: Pick<
     BrowserService,
@@ -181,7 +184,8 @@ export type ToolItem =
   | { type: 'change'; payload: ChangePayload }
   | { type: 'question'; payload: AskUserInput }
   | { type: 'plan'; payload: Omit<PlanPayload, 'decision' | 'feedback'> }
-  | { type: 'breakdown'; payload: BreakdownPayload };
+  | { type: 'breakdown'; payload: BreakdownPayload }
+  | { type: 'goal'; payload: GoalPayload };
 
 export type ToolOutcome =
   | { ok: true; result: unknown; item?: ToolItem; images?: ToolImage[] }

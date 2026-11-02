@@ -57,6 +57,7 @@ import { FileCopyService } from './files/file-copy.service';
 import { LinkImportService } from './files/link-import.service';
 import { BrowserService } from './browser/browser.service';
 import { AssistantMemoryService } from './memory/assistant-memory.service';
+import { GoalService } from './goals/goal.service';
 import { RunInputService } from '../run/run-input.service';
 import { VoiceStudioAdapter } from '../provider/voicestudio/voicestudio.adapter';
 import { describeAttachment } from './attachments/attachment.logic';
@@ -160,6 +161,7 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
     links: LinkImportService,
     private readonly browser: BrowserService,
     private readonly knowledge: AssistantMemoryService,
+    private readonly goals: GoalService,
   ) {
     this.toolDeps = {
       blueprints,
@@ -190,6 +192,7 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
       links,
       browser,
       knowledge,
+      goals,
       engineLayer: () => engineDefaults(config),
       blueprintChanged: (blueprintId) => this.events.publish({ type: 'blueprint', blueprintId }),
     };
@@ -387,6 +390,7 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
       await this.watches.forgetSession(tx, id);
       await this.attachments.deleteForSession(tx, id);
       await this.knowledge.deleteForSession(tx, id);
+      await this.goals.deleteForSession(tx, id);
       await tx.delete(assistantItem).where(eq(assistantItem.sessionId, id));
       await tx.delete(assistantSession).where(eq(assistantSession.id, id));
     });
@@ -705,7 +709,7 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
         const state =
           outcome.item.type === 'change'
             ? 'applied'
-            : outcome.item.type === 'breakdown'
+            : outcome.item.type === 'breakdown' || outcome.item.type === 'goal'
               ? 'saved'
               : 'pending';
         const created = await this.createItem(
@@ -896,9 +900,12 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
       model = (models.find((m) => m.isDefault) ?? models[0])?.modelId ?? null;
     }
     if (!model) return;
+    // a goal the chat is working toward is part of what the update asks it to judge
+    const goals = await this.goals.statusLines(sessionId).catch(() => []);
+    const withGoals = goals.length ? `${text}\n\n${goals.join('\n')}` : text;
     await this.startTurn(
       sessionId,
-      { text, model, ...(session.effort && { effort: session.effort }) },
+      { text: withGoals, model, ...(session.effort && { effort: session.effort }) },
       'wake',
     ).catch((error: unknown) => {
       this.logger.warn({ err: error, sessionId }, 'assistant could not be woken');

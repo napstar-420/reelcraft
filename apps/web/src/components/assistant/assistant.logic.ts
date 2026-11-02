@@ -121,6 +121,7 @@ export type ChatRow =
   | { kind: 'approval'; item: AssistantItemDto }
   | { kind: 'plan'; item: AssistantItemDto }
   | { kind: 'breakdown'; item: AssistantItemDto }
+  | { kind: 'goal'; item: AssistantItemDto }
   | { kind: 'legacy'; item: AssistantItemDto }
   /** A run the assistant started or set going again: shown with its live state. */
   | { kind: 'run'; id: string; runId: string; action: string }
@@ -170,6 +171,7 @@ export function toRows(items: AssistantItemDto[]): ChatRow[] {
       case 'approval':
       case 'plan':
       case 'breakdown':
+      case 'goal':
         rows.push({ kind: item.type, item });
         break;
       case 'proposal':
@@ -290,6 +292,12 @@ export function describeToolCall(call: ToolCallPayload, state: string | null): s
         return 'Changed a Character';
       case 'delete_character':
         return 'Deleted a Character';
+      case 'set_goal':
+        return 'Set a goal';
+      case 'finish_goal':
+        return 'Finished the goal';
+      case 'compare_runs':
+        return 'Compared two runs';
       case 'remember':
         return 'Saved a note';
       case 'forget':

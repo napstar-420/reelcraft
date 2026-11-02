@@ -19,6 +19,7 @@ import {
   assistantWatch,
   assistantMemoryDoc,
   assistantNote,
+  assistantGoal,
   blob,
   blueprint,
   blueprintVersion,
@@ -93,12 +94,28 @@ async function seedWatch(testDb: TestDb, sessionId: string, runId: string): Prom
 
 /** The assistant's memories about a blueprint and its channel, and a channel note. */
 async function seedMemories(testDb: TestDb, channelId: string, blueprintId: string) {
-  const ids = { note: ulid(), channelDoc: ulid(), blueprintDoc: ulid() };
+  const ids = { note: ulid(), channelDoc: ulid(), blueprintDoc: ulid(), goal: ulid() };
   await testDb.db.insert(assistantNote).values({
     id: ids.note,
     scope: 'channel',
     channelId,
     text: 'Always 9:16',
+  });
+  const sessionId = ulid();
+  await testDb.db.insert(assistantSession).values({
+    id: sessionId,
+    providerId: 'fake',
+    externalSessionId: `ext-${sessionId}`,
+    appVersion: '0.0.0',
+    toolsHash: 'hash',
+  });
+  await testDb.db.insert(assistantGoal).values({
+    id: ids.goal,
+    sessionId,
+    blueprintId,
+    goal: 'Shorter',
+    maxRuns: 2,
+    maxSpendUsd: '1.0000',
   });
   await testDb.db.insert(assistantMemoryDoc).values([
     { id: ids.channelDoc, kind: 'chat', channelId, title: 'A chat', body: 'about the channel' },
@@ -301,6 +318,9 @@ describe('channel delete cascade (e2e)', () => {
     expect(
       await testDb.db.select().from(assistantNote).where(eq(assistantNote.id, memories.note)),
     ).toHaveLength(1);
+    expect(
+      await testDb.db.select().from(assistantGoal).where(eq(assistantGoal.id, memories.goal)),
+    ).toHaveLength(0);
 
     await expect(blueprints.getBlueprint(blueprintId)).rejects.toThrow(/not found/);
     expect(

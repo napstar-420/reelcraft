@@ -330,6 +330,13 @@
       "when": 1793593316177,
       "tag": "0046_assistant_memory",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1793594164559,
+      "tag": "0047_assistant_goal",
+      "breakpoints": true
     }
   ]
 }

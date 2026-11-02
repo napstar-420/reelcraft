@@ -160,6 +160,8 @@ export const AssistantItemType = z.enum([
   'turn_status',
   /** A reference video broken into its parts (save_breakdown). */
   'breakdown',
+  /** The report of a goal the assistant worked toward (finish_goal). */
+  'goal',
   /** Chats from before the assistant could write: kept for display only. */
   'proposal',
 ]);
@@ -263,6 +265,25 @@ export const BreakdownPayload = z.object({
   breakdown: VideoBreakdown,
 });
 export type BreakdownPayload = z.infer<typeof BreakdownPayload>;
+
+/** A goal the assistant finished: whether it was met, and every run made for it. */
+export const GoalPayload = z.object({
+  goalId: z.string(),
+  blueprintId: z.string(),
+  blueprintName: z.string(),
+  goal: z.string(),
+  /** met; limit: the runs or money ran out; stopped: ended without meeting it. */
+  state: z.enum(['met', 'limit', 'stopped']),
+  summary: z.string(),
+  runs: z.array(
+    z.object({ runId: z.string(), state: z.string(), spentUsd: z.number(), free: z.boolean() }),
+  ),
+  attempts: z.number().int(),
+  maxRuns: z.number().int(),
+  spentUsd: z.number(),
+  maxSpendUsd: z.number(),
+});
+export type GoalPayload = z.infer<typeof GoalPayload>;
 
 export const AgentMessagePayload = z.object({ text: z.string() });
 export type AgentMessagePayload = z.infer<typeof AgentMessagePayload>;

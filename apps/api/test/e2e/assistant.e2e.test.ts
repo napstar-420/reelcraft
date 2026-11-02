@@ -12,6 +12,7 @@ import { BlueprintService } from '../../src/blueprint/blueprint.service';
 import { CharacterService } from '../../src/channel/character.service';
 import { AssetService } from '../../src/channel/asset.service';
 import { AssistantService } from '../../src/assistant/assistant.service';
+import { GoalService } from '../../src/assistant/goals/goal.service';
 import { FakeAssistantAgent, type FakeStep } from '../../src/assistant/agent/fake-assistant.agent';
 import { exampleScript } from '../../src/assistant/guide';
 import { STORAGE_ADAPTER, type StorageAdapter } from '../../src/storage/storage.adapter';
@@ -527,6 +528,64 @@ describe('assistant (e2e)', () => {
       .where(eq(runWakeup.runId, started.runId));
     expect(wakeups.map((w) => w.eventName)).toContain('run/started');
     expect(ofType(session, 'tool_call').every((c) => c.state === 'completed')).toBe(true);
+  });
+
+  it('works toward a goal within its limits and reports it on a Goal card', async () => {
+    const sid = await newSession('auto');
+    const bpId = blueprintId;
+    await http.app.get(BlueprintService).createVersion(bpId, exampleScript());
+    let goalId = '';
+    const runIds: string[] = [];
+    useScript([
+      [
+        {
+          call: 'set_goal',
+          args: { blueprintId: bpId, goal: 'A script under 120 words', maxRuns: 1, maxSpendUsd: 1 },
+          expect: (r) => {
+            expect(r.ok).toBe(true);
+            goalId = (JSON.parse(r.text) as { goalId: string }).goalId;
+          },
+        },
+        {
+          call: 'start_run',
+          args: { blueprintId: bpId, free: true, inputs: { topic: 'otters' } },
+          expect: (r) => {
+            expect(r.ok).toBe(true);
+            runIds.push((JSON.parse(r.text) as { runId: string }).runId);
+          },
+        },
+        {
+          // the second run would go past the goal's one run
+          call: 'start_run',
+          args: { blueprintId: bpId, free: true, inputs: { topic: 'otters' } },
+          expect: (r) => {
+            expect(r.ok).toBe(false);
+            expect(r.text).toContain('used all 1 runs');
+          },
+        },
+        {
+          call: 'finish_goal',
+          args: () => ({ goalId, met: false, summary: 'One free run; the limit is reached.' }),
+          expect: (r) => expect(r.ok).toBe(true),
+        },
+        { say: 'Done.' },
+      ],
+    ]);
+    await turn(sid, { text: 'Get the script under 120 words, one try' });
+    const session = await waitIdle(sid);
+    const [card] = ofType(session, 'goal');
+    expect(card).toMatchObject({
+      state: 'saved',
+      payload: {
+        goalId,
+        state: 'limit',
+        attempts: 1,
+        maxRuns: 1,
+        runs: [{ runId: runIds[0], free: true }],
+      },
+    });
+    // a finished goal no longer limits runs
+    expect(await http.app.get(GoalService).refusal(sid, bpId)).toBeNull();
   });
 
   it('watches a run and wakes up when it fails, until the wake limit', async () => {

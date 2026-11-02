@@ -11,6 +11,7 @@ import {
   channel,
   character,
   run,
+  assistantGoal,
   assistantMemoryDoc,
   assistantNote,
 } from '../db/schema/index';
@@ -193,6 +194,9 @@ export class ChannelService {
             blueprintIds.length ? inArray(assistantMemoryDoc.blueprintId, blueprintIds) : undefined,
           ),
         );
+      if (blueprintIds.length) {
+        await tx.delete(assistantGoal).where(inArray(assistantGoal.blueprintId, blueprintIds));
+      }
       // Runs and everything under them; their files are queued for the
       // storage cleanup sweep (`blob.gc` deletes them after the retention period).
       const runCounts = await deleteRunsCascade(tx, runIds, 'channel_deleted');
