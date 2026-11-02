@@ -26,54 +26,36 @@ export const MODALITIES: string[] = [...Modality.options];
 /** The stage's own keys, one entry per `StageDef` field. Nested values (refs, config, output,
  * checks, qc…) stay plain objects: the Zod parse and the validator are the authority on those. */
 export function stageJsonSchema(n: NarrowedEnums): JsonObject {
+  // Field meanings are in the guide's "stage-fields" topic: the schema stays short because every
+  // draft tool sends it.
+  const list = { type: 'array', items: { type: 'string' } };
   const properties: Record<string, JsonObject> = {
-    key: str('Unique stage id, e.g. "script". Never reuse a key.'),
-    label: str('Name shown on the canvas.'),
-    group: str(
-      'Optional phase name, e.g. "Voice". The run page boxes stages with the same phase together.',
-    ),
-    capability: str('Stage type. Look it up with get_capability first.', {
-      enum: n.capabilityKeys,
-    }),
-    instructions: freeObject(
-      '{ system?: string, template: string } — the prompt; {{ name }} fills values.',
-    ),
-    config: freeObject("The capability's own settings (see its configSchema)."),
-    slots: freeObject('slot name → Ref (where the slot gets its value).'),
-    context: freeObject('context key → Ref (extra values for the prompt).'),
-    attach: {
-      type: 'array',
-      items: { type: 'string' },
-      description: 'Context keys sent to the model as files.',
-    },
-    writes: freeObject('memory key → path into this stage output ("$" = whole output).'),
-    output: freeObject('{ kind, … }: data (with schema), text, timeline, media.*, file.subtitles.'),
-    iterate: freeObject(
-      'Run once per item of a list: { over: Ref, itemAlias, itemRetryLimit, maxItems?, concurrency? } (concurrency: items run at once; not with prevItem or item approval).',
-    ),
-    checks: { type: 'array', items: { type: 'object' }, description: 'Builtin or script checks.' },
+    key: str('Unique, never reused'),
+    label: str(),
+    group: str('Phase name'),
+    capability: str('Stage type (get_capability first)', { enum: n.capabilityKeys }),
+    instructions: freeObject('{system?, template}'),
+    config: { type: 'object' },
+    slots: freeObject('slot → Ref'),
+    context: freeObject('key → Ref'),
+    attach: list,
+    writes: freeObject('memory key → path'),
+    output: freeObject('{kind, schema?}'),
+    iterate: freeObject('{over, itemAlias, itemRetryLimit, maxItems?, concurrency?}'),
+    checks: { type: 'array', items: { type: 'object' } },
     checkMaxAttempts: { type: 'integer', minimum: 1 },
-    qc: freeObject('AI quality control: { criteria, threshold, model, includeInputs, … }.'),
-    retryLimit: { type: 'integer', minimum: 0, description: 'Retries after a crash only.' },
-    approval: freeObject('Human approval: { mode: "stage"|"item", onReject? }.'),
-    budget: freeObject('{ stageCapUsd?, qcCapUsd? }.'),
-    model: freeObject('{ provider, modelId, version?, params }; omit to use the default.'),
-    disabled: {
-      type: 'boolean',
-      description:
-        'Skip blueprint execution and block descendant output consumption. Explicit stage-only actions remain possible.',
-    },
-    enabledWhen: freeObject('{ input, equals }: run only when a run input has this value.'),
-    dependsOn: {
-      type: 'array',
-      items: { type: 'string' },
-      description:
-        'Keys of the stages this one waits for (each must come earlier in the graph). Leave it out to wait for the previous stage; [] starts as soon as the stages its bindings read are done.',
-    },
+    qc: { type: 'object' },
+    retryLimit: { type: 'integer', minimum: 0 },
+    approval: freeObject('{mode: stage|item, onReject?}'),
+    budget: freeObject('{stageCapUsd?, qcCapUsd?}'),
+    model: freeObject('{provider, modelId, version?, params}'),
+    disabled: { type: 'boolean' },
+    enabledWhen: freeObject('{input, equals}'),
+    dependsOn: list,
   };
   const shape = StageDef.shape as Record<string, { isOptional(): boolean }>;
   const required = Object.keys(shape).filter((k) => !shape[k]!.isOptional());
-  return obj(properties, required);
+  return obj(properties, required, 'A stage (fields: read_guide "stage-fields").');
 }
 
 export function draftJsonSchema(n: NarrowedEnums): JsonObject {
@@ -83,9 +65,7 @@ export function draftJsonSchema(n: NarrowedEnums): JsonObject {
       inputs: { type: 'array', items: { type: 'object' }, description: 'What a run asks for.' },
       roles: { type: 'array', items: { type: 'object' }, maxItems: 1 },
       defaults: freeObject('Blueprint defaults layer (models, retries, caps, format).'),
-      presentation: freeObject(
-        'Presentation only: positions by stage key {x,y}; branchNames by first stage key. Does not change execution.',
-      ),
+      presentation: freeObject('Canvas positions and branch names only'),
       execution: obj({ concurrentBranches: { type: 'integer', minimum: 1 } }, [
         'concurrentBranches',
       ]),

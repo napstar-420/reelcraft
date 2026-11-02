@@ -15,6 +15,9 @@ export const TimelineEditorSessionDto = z.object({
   styles: z.array(TimelineStyle),
   checkResults: z.array(z.unknown()).default([]),
   readOnly: z.boolean(),
+  /** wait: a Human Timeline Edit stage waiting for you (Submit continues the run); output: a
+   * finished Compose Timeline stage (Save and re-render replaces its timeline). */
+  source: z.enum(['wait', 'output']).default('wait'),
 });
 export type TimelineEditorSessionDto = z.infer<typeof TimelineEditorSessionDto>;
 
@@ -27,7 +30,18 @@ export type SaveTimelineDraftDto = z.infer<typeof SaveTimelineDraftDto>;
 
 export const SubmitTimelineDraftDto = z.object({
   draftRevision: z.number().int().nonnegative(),
+  /** For a finished Compose Timeline stage: the token from the first call, which returned what
+   * re-renders and what it costs. */
+  previewToken: z.string().min(1).optional(),
 });
+
+/** What saving an edited output re-makes, before it is confirmed with the preview token. */
+export const TimelineOutputPreviewDto = z.object({
+  previewToken: z.string(),
+  affectedStageKeys: z.array(z.string()),
+  estimatedRerunUsd: z.number(),
+});
+export type TimelineOutputPreviewDto = z.infer<typeof TimelineOutputPreviewDto>;
 export type SubmitTimelineDraftDto = z.infer<typeof SubmitTimelineDraftDto>;
 
 /** A draft to check without saving it. Any value is accepted so that a draft that does not parse

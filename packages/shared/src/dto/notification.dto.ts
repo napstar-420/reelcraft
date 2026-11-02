@@ -12,13 +12,20 @@ export const NotificationKind = z.enum([
   'completed',
   'cancelled',
   'reminder',
+  /** The assistant is waiting for you (an approval, a question or a plan) and no page shows it. */
+  'assistant_needs_you',
+  /** The assistant finished dealing with a run update while no page showed the chat. */
+  'assistant_done',
 ]);
 export type NotificationKind = z.infer<typeof NotificationKind>;
 
 export const NotificationDto = z.object({
   id: z.string(),
   kind: NotificationKind,
-  runId: z.string(),
+  /** Null for an assistant notification. */
+  runId: z.string().nullable(),
+  /** The assistant chat it is about, if any. */
+  sessionId: z.string().nullable(),
   stageKey: z.string().nullable(),
   title: z.string(),
   body: z.string(),

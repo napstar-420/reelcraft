@@ -10,8 +10,11 @@ import type { AssistantMode } from '@reelcraft/shared';
 /** One scripted step of a fake turn. */
 export type FakeStep =
   | { say: string }
+  /** `args` may be a function, for ids only known once earlier steps have run. */
   | { call: string; args: unknown; expect?: (result: ToolResult) => void }
   | { fail: string }
+  /** Report tokens used so far in the turn, like a real provider. */
+  | { usage: { inputTokens: number; outputTokens: number } }
   /** Wait until released or until the turn is interrupted (then throws `interrupted`). */
   | { hold: Promise<void> };
 
@@ -19,9 +22,16 @@ export type FakeStep =
 export class FakeAssistantAgent implements AssistantAgent {
   readonly providerId = 'fake';
   readonly sessions = new Map<string, { instructions: string; tools: AssistantToolDef[] }>();
-  readonly turns: Array<{ text: string; model: string; mode: AssistantMode }> = [];
+  readonly turns: Array<{
+    text: string;
+    model: string;
+    mode: AssistantMode;
+    images: number;
+  }> = [];
   deleted: string[] = [];
   private nextSession = 1;
+  /** How many hand-offs it wrote. */
+  summaries = 0;
   private turnIndex = 0;
 
   constructor(private script: FakeStep[][] = []) {}
@@ -50,8 +60,21 @@ export class FakeAssistantAgent implements AssistantAgent {
     return id;
   }
 
+  /** What the fake writes when a chat moves to a fresh session (it doesn't use a scripted turn). */
+  summary = 'The user and the assistant worked on a blueprint.';
+
   async runTurn(options: Parameters<AssistantAgent['runTurn']>[0]): Promise<void> {
-    this.turns.push({ text: options.text, model: options.model, mode: options.mode });
+    if (options.text.includes('This chat is moving to a fresh session')) {
+      this.summaries += 1;
+      options.handlers.onEvent({ type: 'message', itemKey: 'summary', text: this.summary });
+      return;
+    }
+    this.turns.push({
+      text: options.text,
+      model: options.model,
+      mode: options.mode,
+      images: options.images?.length ?? 0,
+    });
     const steps = this.script[this.turnIndex++] ?? [];
     let n = 0;
     for (const step of steps) {
@@ -61,8 +84,11 @@ export class FakeAssistantAgent implements AssistantAgent {
         options.handlers.onEvent({ type: 'message.delta', itemKey: `m${n}`, text: step.say });
         options.handlers.onEvent({ type: 'message', itemKey: `m${n}`, text: step.say });
       } else if ('call' in step) {
-        const result = await options.handlers.callTool(step.call, step.args);
+        const args = typeof step.args === 'function' ? (step.args as () => unknown)() : step.args;
+        const result = await options.handlers.callTool(step.call, args);
         step.expect?.(result);
+      } else if ('usage' in step) {
+        options.handlers.onEvent({ type: 'usage', ...step.usage });
       } else if ('hold' in step) {
         const aborted = new Promise<'aborted'>((resolve) =>
           options.signal.addEventListener('abort', () => resolve('aborted'), { once: true }),

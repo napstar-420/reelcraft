@@ -250,7 +250,7 @@ describe('get_stage', () => {
     });
     const json = text(await runTool('get_stage', { runId: 'r1', stageKey: 'images' }, ctx(), d));
     expect(json).not.toContain('secret-blob');
-    expect(json).toContain('view_stage_media');
+    expect(json).toContain('view_media');
   });
 
   it('lists the stage keys for an unknown stage, and refuses a foreign run', async () => {
@@ -293,7 +293,7 @@ describe('get_stage', () => {
   });
 });
 
-describe('view_stage_media', () => {
+describe('view_media (run sources)', () => {
   const imageTarget = (itemIndex: number): MediaTarget => ({
     itemIndex,
     artifactId: `a${itemIndex}`,
@@ -309,7 +309,7 @@ describe('view_stage_media', () => {
       media: vi.fn(async () => ({ found: true as const, stageKey: 'images', targets })),
     });
     const c = ctx();
-    const out = await runTool('view_stage_media', { runId: 'r1', stageKey: 'images' }, c, d);
+    const out = await runTool('view_media', { source: { runId: 'r1', stageKey: 'images' } }, c, d);
     expect(out.ok && out.images).toHaveLength(IMAGES_PER_CALL);
     expect(out).toMatchObject({
       ok: true,
@@ -334,13 +334,13 @@ describe('view_stage_media', () => {
     const c = ctx();
     c.imagesShown = IMAGES_PER_TURN;
     expect(
-      await runTool('view_stage_media', { runId: 'r1', stageKey: 'images' }, c, d),
+      await runTool('view_media', { source: { runId: 'r1', stageKey: 'images' } }, c, d),
     ).toMatchObject({
       ok: false,
       error: expect.stringContaining(String(IMAGES_PER_TURN)),
     });
     c.imagesShown = IMAGES_PER_TURN - 1;
-    const out = await runTool('view_stage_media', { runId: 'r1', stageKey: 'images' }, c, d);
+    const out = await runTool('view_media', { source: { runId: 'r1', stageKey: 'images' } }, c, d);
     expect(out.ok && out.images).toHaveLength(1);
   });
 
@@ -366,8 +366,8 @@ describe('view_stage_media', () => {
       { framesOfVideo: vi.fn(async () => frames) },
     );
     const single = await runTool(
-      'view_stage_media',
-      { runId: 'r1', stageKey: 'v', at: [0.5, 3] },
+      'view_media',
+      { source: { runId: 'r1', stageKey: 'v' }, at: [0.5, 3] },
       ctx(),
       one,
     );
@@ -385,7 +385,12 @@ describe('view_stage_media', () => {
       },
       { framesOfVideo: vi.fn(async () => frames) },
     );
-    const several = await runTool('view_stage_media', { runId: 'r1', stageKey: 'v' }, ctx(), many);
+    const several = await runTool(
+      'view_media',
+      { source: { runId: 'r1', stageKey: 'v' } },
+      ctx(),
+      many,
+    );
     expect(several.ok && several.images).toHaveLength(2);
     expect(several).toMatchObject({ result: { notShown: [{ kind: 'media.audio' }] } });
   });
@@ -393,7 +398,7 @@ describe('view_stage_media', () => {
   it('shows the final video as a contact sheet when no stage is named', async () => {
     const d = deps();
     const c = ctx();
-    const out = await runTool('view_stage_media', { runId: 'r1', frames: 4 }, c, d);
+    const out = await runTool('view_media', { source: { runId: 'r1' }, frames: 4 }, c, d);
     expect(out).toMatchObject({ ok: true, images: [{ base64: 'SHEET' }] });
     expect(d.review.contactSheet).toHaveBeenCalledWith('fv', { count: 4, at: undefined });
     expect(c.imagesShown).toBe(1);
@@ -404,20 +409,20 @@ describe('view_stage_media', () => {
       media: vi.fn(async () => ({ found: true as const, stageKey: 's', targets: [] })),
     });
     expect(
-      await runTool('view_stage_media', { runId: 'r1', stageKey: 's' }, ctx(), empty),
+      await runTool('view_media', { source: { runId: 'r1', stageKey: 's' } }, ctx(), empty),
     ).toMatchObject({
       ok: true,
       result: { shown: [] },
     });
     const none = deps({ media: vi.fn(async () => null) });
     expect(
-      await runTool('view_stage_media', { runId: 'x', stageKey: 's' }, ctx(), none),
+      await runTool('view_media', { source: { runId: 'x', stageKey: 's' } }, ctx(), none),
     ).toMatchObject({ ok: false });
     const stages = deps({
       media: vi.fn(async () => ({ found: false as const, stageKeys: ['a'] })),
     });
     expect(
-      await runTool('view_stage_media', { runId: 'r1', stageKey: 's' }, ctx(), stages),
+      await runTool('view_media', { source: { runId: 'r1', stageKey: 's' } }, ctx(), stages),
     ).toMatchObject({
       ok: false,
       error: expect.stringContaining('Stages: a'),

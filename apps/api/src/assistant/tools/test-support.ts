@@ -46,7 +46,7 @@ export function realCapabilities(): Array<{ key: string; impl: CapabilityImpl }>
     new ImageGenerateCapability(providers),
     new VideoGenerateCapability(providers),
     new AudioSpeechCapability(providers),
-    new MediaAnalyzeCapability(providers),
+    new MediaAnalyzeCapability(providers, {} as never),
     new VideoConcatCapability(stub),
     new TimelineRenderCapability(stub, stub, styles),
     new BrowserAutomateCapability(providers),

@@ -10,7 +10,8 @@ export interface StorageAdapter {
   put(key: string, body: Buffer | Readable, meta: { mime: string }): Promise<PutResult>;
   getStream(key: string, range?: ByteRange): Promise<Readable>;
   stat(key: string): Promise<{ bytes: number; etag: string; mime: string }>;
-  copy(srcKey: string, destKey: string): Promise<PutResult>;
+  /** `mime` replaces the copy's content type (the source's is kept otherwise). */
+  copy(srcKey: string, destKey: string, opts?: { mime?: string }): Promise<PutResult>;
   delete(keys: string[]): Promise<void>;
   /** Browser-facing by default, so the URL may be relative to this app's
    * origin (see `S3_BROWSER_PATH_PREFIX`). Pass `external` when a third

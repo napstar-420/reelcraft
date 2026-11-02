@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useAssistantUi } from '@/components/assistant/assistant-context';
+import { AssistantNotes } from '@/components/assistant/assistant-notes';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
@@ -15,6 +16,7 @@ import {
 import type { ChannelDto } from '@reelcraft/shared';
 import { cn } from 'cn';
 import { api } from '../api/client';
+import { apiErrorMessage } from '@/lib/api-error-message';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -209,7 +211,21 @@ function ChannelDetail({ channelId }: { channelId: string }) {
       );
       void queryClient.invalidateQueries({ queryKey: ['channels'] });
       navigate('/channels');
-      toast.success(`Channel "${target.name}" deleted`);
+      toast.success(`Moved "${target.name}" to the trash`, {
+        action: {
+          label: 'Undo',
+          onClick: () =>
+            void api.restoreChannel(target.id).then(
+              () => {
+                for (const queryKey of [['channels'], ['trash'], ['channel', target.id]]) {
+                  void queryClient.invalidateQueries({ queryKey });
+                }
+              },
+              (error: unknown) =>
+                toast.error(apiErrorMessage(error, 'Could not restore the channel.')),
+            ),
+        },
+      });
     },
     onError,
   });
@@ -273,6 +289,9 @@ function ChannelDetail({ channelId }: { channelId: string }) {
           <TabsTrigger value="characters" className="h-10 flex-none px-3">
             Characters <span className="text-faint">{c.counts.characters}</span>
           </TabsTrigger>
+          <TabsTrigger value="notes" className="h-10 flex-none px-3">
+            Assistant notes
+          </TabsTrigger>
         </TabsList>
         <TabsContent value="blueprints" className="flex flex-col gap-4 pt-4">
           <div className="flex flex-wrap justify-end gap-2">
@@ -303,6 +322,9 @@ function ChannelDetail({ channelId }: { channelId: string }) {
         </TabsContent>
         <TabsContent value="characters" className="pt-4">
           <CharactersTab channelId={channelId} />
+        </TabsContent>
+        <TabsContent value="notes" className="pt-4">
+          <AssistantNotes channelId={channelId} />
         </TabsContent>
       </Tabs>
 
@@ -347,7 +369,7 @@ function ChannelDetail({ channelId }: { channelId: string }) {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete {deleteTarget?.name} for good?</AlertDialogTitle>
+            <AlertDialogTitle>Delete {deleteTarget?.name}?</AlertDialogTitle>
             <AlertDialogDescription>
               This deletes{' '}
               <strong className="font-semibold text-foreground">
@@ -355,8 +377,9 @@ function ChannelDetail({ channelId }: { channelId: string }) {
                 {deleteTarget?.counts.assets} library files and {deleteTarget?.counts.characters}{' '}
                 characters
               </strong>
-              . It can&apos;t be undone. If you only want it out of the way, archive it instead.
-              Type <strong>{deleteTarget?.name}</strong> to confirm.
+              . It moves to the trash: you can restore it from Settings › Trash for 30 days, then it
+              is deleted for good. If you only want it out of the way, archive it instead. Type{' '}
+              <strong>{deleteTarget?.name}</strong> to confirm.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <Input
@@ -389,7 +412,7 @@ function ChannelDetail({ channelId }: { channelId: string }) {
               }
               onClick={() => deleteTarget && deleteChannel.mutate(deleteTarget)}
             >
-              Delete permanently
+              Move to trash
             </Button>
           </AlertDialogFooter>
         </AlertDialogContent>

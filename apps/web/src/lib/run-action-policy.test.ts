@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { canAnswerWaits, isRunActionAllowed, RUN_ACTION_ALLOWED_STATES } from './run-action-policy';
+import {
+  canAnswerWaits,
+  canEditVideo,
+  isRunActionAllowed,
+  RUN_ACTION_ALLOWED_STATES,
+} from './run-action-policy';
 
 /** Mirrors `apps/api/src/run/run-action-policy.ts`'s `RUN_ACTION_ALLOWED_STATES`
  * for the actions this UI cares about. This test is the drift detector: if
@@ -94,5 +99,17 @@ describe('isRunActionAllowed', () => {
     expect(canAnswerWaits('RUNNING')).toBe(false);
     expect(canAnswerWaits('PAUSING')).toBe(false);
     expect(canAnswerWaits('COMPLETED')).toBe(false);
+  });
+});
+
+describe('canEditVideo', () => {
+  const compose = { capability: 'timeline.compose', outputArtifactId: 'a1' };
+  it("opens a stopped run's current Compose Timeline output only", () => {
+    expect(canEditVideo('COMPLETED', compose)).toBe(true);
+    expect(canEditVideo('FAILED', compose)).toBe(true);
+    expect(canEditVideo('RUNNING', compose)).toBe(false);
+    expect(canEditVideo('COMPLETED', { ...compose, outputStale: true })).toBe(false);
+    expect(canEditVideo('COMPLETED', { ...compose, outputArtifactId: null })).toBe(false);
+    expect(canEditVideo('COMPLETED', { ...compose, capability: 'timeline.render' })).toBe(false);
   });
 });

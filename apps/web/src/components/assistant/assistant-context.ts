@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect } from 'react';
 import type { AssistantPageContext } from '@reelcraft/shared';
-import type { AssistantController, EditorDraft } from '@/hooks/useAssistant';
+import type { AssistantController, EditorDraft, TurnHooks } from '@/hooks/useAssistant';
 
 /** What a page adds to "this" beyond its URL (the run page's selected stage), with a label. */
 export type PageDetail = { stageKey?: string; label?: string };
@@ -26,6 +26,8 @@ export interface AssistantUi {
   clearPrefill: () => void;
   setPageDetail: (detail: PageDetail | null) => void;
   setEditorDraft: (draft: EditorDraft | null) => void;
+  /** The open page's hooks around each message (see TurnHooks). */
+  setTurnHooks: (hooks: TurnHooks | null) => void;
 }
 
 export const AssistantUiContext = createContext<AssistantUi | null>(null);
@@ -47,4 +49,15 @@ export function useAssistantPageDetail(detail: PageDetail | null): void {
     );
     return () => setPageDetail(null);
   }, [stageKey, label, setPageDetail]);
+}
+
+/** Registers the page's hooks around each message while it is mounted. Pass stable callbacks that
+ * read refs, so they see the latest state without re-registering. */
+export function useAssistantTurnHooks(hooks: TurnHooks): void {
+  const { setTurnHooks } = useAssistantUi();
+  const { context, beforeSend } = hooks;
+  useEffect(() => {
+    setTurnHooks({ ...(context && { context }), ...(beforeSend && { beforeSend }) });
+    return () => setTurnHooks(null);
+  }, [context, beforeSend, setTurnHooks]);
 }

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { CreateBlueprintVersionDto, UpdateBlueprintDto } from './blueprint.dto';
 import { ValidationIssue } from '../provider';
+import { VideoBreakdown } from '../video-breakdown';
 
 /** How much the assistant does on its own, like Claude Code's modes:
  * - `manual`: reads freely; every change or action waits for the user's Yes on an approval card.
@@ -19,6 +20,8 @@ export const AssistantPage = z.enum([
   'channels',
   'channel',
   'settings',
+  /** The timeline editor of a run stage. */
+  'timeline',
   'other',
 ]);
 export type AssistantPage = z.infer<typeof AssistantPage>;
@@ -29,6 +32,12 @@ export const AssistantPageContext = z.object({
   blueprintId: z.string().min(1).max(64).optional(),
   runId: z.string().min(1).max(64).optional(),
   stageKey: z.string().min(1).max(120).optional(),
+  /** Timeline editor: the items selected, as get_timeline addresses them, and the playhead. */
+  selection: z
+    .array(z.object({ trackId: z.string().min(1).max(80), index: z.number().int().min(0) }))
+    .max(20)
+    .optional(),
+  playheadSec: z.number().finite().min(0).optional(),
 });
 export type AssistantPageContext = z.infer<typeof AssistantPageContext>;
 
@@ -94,14 +103,70 @@ export const MetadataChangePayload = z.object({
 });
 export type MetadataChangePayload = z.infer<typeof MetadataChangePayload>;
 
+/** A note the assistant saved (remember) or removed (forget). */
+export const NoteChangePayload = z.object({
+  kind: z.literal('note'),
+  action: z.enum(['added', 'removed']),
+  note: z.object({
+    id: z.string(),
+    scope: z.enum(['global', 'channel']),
+    channelId: z.string().nullable(),
+    channelName: z.string().nullable(),
+    text: z.string(),
+  }),
+});
+export type NoteChangePayload = z.infer<typeof NoteChangePayload>;
+
+/** A channel or blueprint the assistant moved to the trash (Undo restores it). */
+export const TrashChangePayload = z.object({
+  kind: z.literal('trash'),
+  target: z.enum(['channel', 'blueprint']),
+  id: z.string(),
+  name: z.string(),
+});
+export type TrashChangePayload = z.infer<typeof TrashChangePayload>;
+
+/** A channel or blueprint the assistant archived or unarchived (Undo switches it back). */
+export const ArchiveChangePayload = z.object({
+  kind: z.literal('archive'),
+  target: z.enum(['channel', 'blueprint']),
+  id: z.string(),
+  name: z.string(),
+  /** The state it was set to. */
+  archived: z.boolean(),
+});
+export type ArchiveChangePayload = z.infer<typeof ArchiveChangePayload>;
+
+/** An edit the assistant made to a timeline editor draft (Undo puts `before` back while the draft is
+ * still at `draftRevision`). */
+export const TimelineChangePayload = z.object({
+  kind: z.literal('timeline'),
+  runId: z.string(),
+  stageKey: z.string(),
+  stageLabel: z.string(),
+  summary: z.string(),
+  /** One line per op, in order. */
+  changes: z.array(z.string()),
+  /** The timeline before the edit. */
+  before: z.unknown(),
+  /** The draft's revision after the edit. */
+  draftRevision: z.number().int(),
+});
+export type TimelineChangePayload = z.infer<typeof TimelineChangePayload>;
+
 export const ChangePayload = z.discriminatedUnion('kind', [
   DraftChangePayload,
+  TimelineChangePayload,
   MetadataChangePayload,
+  NoteChangePayload,
+  TrashChangePayload,
+  ArchiveChangePayload,
 ]);
 export type ChangePayload = z.infer<typeof ChangePayload>;
 
 /** Manual mode: what the assistant wants to do, waiting for the user's decision. */
-export const ApprovalAnswer = z.enum(['yes', 'yes_auto', 'no']);
+/** yes_turn: yes to this and every other change in the rest of the turn (deletes still ask). */
+export const ApprovalAnswer = z.enum(['yes', 'yes_auto', 'yes_turn', 'no']);
 export type ApprovalAnswer = z.infer<typeof ApprovalAnswer>;
 
 export const ApprovalPayload = z.object({
@@ -142,10 +207,88 @@ export const AssistantItemType = z.enum([
   'plan',
   'question',
   'turn_status',
+  /** A reference video broken into its parts (save_breakdown). */
+  'breakdown',
+  /** The report of a goal the assistant worked toward (finish_goal). */
+  'goal',
+  /** The chat continued in a fresh session from a summary (it got long, or Reelcraft changed). */
+  'context_reset',
   /** Chats from before the assistant could write: kept for display only. */
   'proposal',
 ]);
 export type AssistantItemType = z.infer<typeof AssistantItemType>;
+
+/** A file the user gave the assistant in a chat (uploaded, or imported from a link). */
+export const AssistantAttachmentKind = z.enum(['image', 'video', 'audio', 'file']);
+export type AssistantAttachmentKind = z.infer<typeof AssistantAttachmentKind>;
+
+export const AssistantAttachmentDto = z.object({
+  id: z.string(),
+  /** Shown with `/api/blobs/:blobId`. */
+  blobId: z.string(),
+  name: z.string(),
+  kind: AssistantAttachmentKind,
+  mime: z.string(),
+  bytes: z.number().int(),
+  width: z.number().int().nullable(),
+  height: z.number().int().nullable(),
+  durationSec: z.number().nullable(),
+  source: z.enum(['upload', 'link']),
+  sourceUrl: z.string().nullable(),
+  /** The chat it was sent in; null until sent. */
+  sessionId: z.string().nullable(),
+  createdAt: z.string(),
+});
+export type AssistantAttachmentDto = z.infer<typeof AssistantAttachmentDto>;
+
+/** What a message keeps about each file it carried. */
+export const AssistantAttachmentRef = AssistantAttachmentDto.pick({
+  id: true,
+  blobId: true,
+  name: true,
+  kind: true,
+  mime: true,
+  width: true,
+  height: true,
+  durationSec: true,
+  source: true,
+  sourceUrl: true,
+});
+export type AssistantAttachmentRef = z.infer<typeof AssistantAttachmentRef>;
+
+export const RequestAssistantAttachmentUploadDto = z.object({
+  ext: z
+    .string()
+    .trim()
+    .regex(/^[A-Za-z0-9]{1,10}$/, 'A file extension such as png or mp4'),
+});
+export type RequestAssistantAttachmentUploadDto = z.infer<
+  typeof RequestAssistantAttachmentUploadDto
+>;
+
+export const RequestAssistantAttachmentUploadResultDto = z.object({
+  blobId: z.string(),
+  objectKey: z.string(),
+  uploadUrl: z.string(),
+});
+export type RequestAssistantAttachmentUploadResultDto = z.infer<
+  typeof RequestAssistantAttachmentUploadResultDto
+>;
+
+export const CreateAssistantAttachmentDto = z.object({
+  blobId: z.string().min(1),
+  objectKey: z.string().min(1),
+  /** Omitted for very large files the browser doesn't hash. */
+  sha256: z
+    .string()
+    .regex(/^[a-f0-9]{64}$/)
+    .optional(),
+  name: z.string().trim().min(1).max(200),
+});
+export type CreateAssistantAttachmentDto = z.infer<typeof CreateAssistantAttachmentDto>;
+
+/** The most files one message can carry. */
+export const MAX_ATTACHMENTS_PER_MESSAGE = 10;
 
 export const UserMessagePayload = z.object({
   text: z.string(),
@@ -156,8 +299,64 @@ export const UserMessagePayload = z.object({
   mode: AssistantMode,
   /** `wake`: written by Reelcraft when a watched run changed, not typed by the user. */
   source: z.enum(['user', 'wake']).optional(),
+  /** Files sent with the message. */
+  attachments: z.array(AssistantAttachmentRef).optional(),
 });
 export type UserMessagePayload = z.infer<typeof UserMessagePayload>;
+
+/** A breakdown the assistant saved: the video it describes (to play it in the card) and the parts. */
+export const BreakdownPayload = z.object({
+  source: z.object({
+    label: z.string(),
+    blobId: z.string(),
+    attachmentId: z.string().optional(),
+    assetId: z.string().optional(),
+    runId: z.string().optional(),
+  }),
+  breakdown: VideoBreakdown,
+});
+export type BreakdownPayload = z.infer<typeof BreakdownPayload>;
+
+/** A goal the assistant finished: whether it was met, and every run made for it. */
+export const GoalPayload = z.object({
+  goalId: z.string(),
+  blueprintId: z.string(),
+  blueprintName: z.string(),
+  goal: z.string(),
+  /** met; limit: the runs or money ran out; stopped: ended without meeting it. */
+  state: z.enum(['met', 'limit', 'stopped']),
+  summary: z.string(),
+  runs: z.array(
+    z.object({ runId: z.string(), state: z.string(), spentUsd: z.number(), free: z.boolean() }),
+  ),
+  attempts: z.number().int(),
+  maxRuns: z.number().int(),
+  spentUsd: z.number(),
+  maxSpendUsd: z.number(),
+});
+export type GoalPayload = z.infer<typeof GoalPayload>;
+
+/** Where a long or outdated chat moved to a fresh session, with the summary it started from. */
+export const ContextResetPayload = z.object({
+  reason: z.enum(['long', 'updated']),
+  summary: z.string(),
+  /** assistant: written by the old session; fallback: the conversation's own words. */
+  by: z.enum(['assistant', 'fallback']),
+});
+export type ContextResetPayload = z.infer<typeof ContextResetPayload>;
+
+/** What a chat has used: tokens of the plan it runs on, and the money its runs spent. */
+export const AssistantUsageDto = z.object({
+  inputTokens: z.number().int(),
+  outputTokens: z.number().int(),
+  turns: z.number().int(),
+  /** Tokens the latest turn read: how full the conversation is. */
+  lastInputTokens: z.number().int().nullable(),
+  /** Runs the chat started or set going again, and what they spent so far. */
+  runs: z.number().int(),
+  runSpendUsd: z.number(),
+});
+export type AssistantUsageDto = z.infer<typeof AssistantUsageDto>;
 
 export const AgentMessagePayload = z.object({ text: z.string() });
 export type AgentMessagePayload = z.infer<typeof AgentMessagePayload>;
@@ -235,6 +434,7 @@ export const AssistantSessionDetailDto = AssistantSessionDto.extend({
   items: z.array(AssistantItemDto),
   /** The runs this chat is watching now. */
   watches: z.array(AssistantWatchDto),
+  usage: AssistantUsageDto,
 });
 export type AssistantSessionDetailDto = z.infer<typeof AssistantSessionDetailDto>;
 
@@ -283,9 +483,11 @@ export const StartAssistantTurnDto = z
       .optional(),
     model: z.string().min(1),
     effort: z.string().min(1).optional(),
+    /** Attachment ids (uploaded first with `POST assistant/attachments`) sent with the message. */
+    attachments: z.array(z.string().min(1)).max(MAX_ATTACHMENTS_PER_MESSAGE).optional(),
   })
-  .refine((v) => Boolean(v.text) || v.answer !== undefined, {
-    message: 'Send text or an answer.',
+  .refine((v) => Boolean(v.text) || v.answer !== undefined || Boolean(v.attachments?.length), {
+    message: 'Send text, files or an answer.',
   });
 export type StartAssistantTurnDto = z.infer<typeof StartAssistantTurnDto>;
 
@@ -332,3 +534,65 @@ export type AssistantSettingsDto = z.infer<typeof AssistantSettingsDto>;
 
 export const UpdateAssistantSettingsDto = AssistantSettingsDto.partial();
 export type UpdateAssistantSettingsDto = z.infer<typeof UpdateAssistantSettingsDto>;
+
+// ---- memory ------------------------------------------------------------------------------
+
+/** The most notes per scope (global, or one channel), and the longest note. */
+export const MAX_ASSISTANT_NOTES = 50;
+export const MAX_ASSISTANT_NOTE_CHARS = 500;
+
+export const AssistantNoteScope = z.enum(['global', 'channel']);
+export type AssistantNoteScope = z.infer<typeof AssistantNoteScope>;
+
+/** Something the assistant always knows: global, or for one channel. */
+export const AssistantNoteDto = z.object({
+  id: z.string(),
+  scope: AssistantNoteScope,
+  channelId: z.string().nullable(),
+  text: z.string(),
+  source: z.enum(['user', 'assistant']),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+export type AssistantNoteDto = z.infer<typeof AssistantNoteDto>;
+
+export const CreateAssistantNoteDto = z
+  .object({
+    scope: AssistantNoteScope,
+    channelId: z.string().min(1).optional(),
+    text: z.string().trim().min(1).max(MAX_ASSISTANT_NOTE_CHARS),
+  })
+  .refine((v) => (v.scope === 'channel') === Boolean(v.channelId), {
+    message: 'A channel note needs channelId; a global note has none.',
+  });
+export type CreateAssistantNoteDto = z.infer<typeof CreateAssistantNoteDto>;
+
+export const UpdateAssistantNoteDto = z.object({
+  text: z.string().trim().min(1).max(MAX_ASSISTANT_NOTE_CHARS),
+});
+export type UpdateAssistantNoteDto = z.infer<typeof UpdateAssistantNoteDto>;
+
+/** Something the assistant changed or did (a tool call that does more than read), for the
+ * Activity list. */
+export const AssistantActivityDto = z.object({
+  id: z.string(),
+  sessionId: z.string(),
+  chatTitle: z.string().nullable(),
+  tool: z.string(),
+  args: z.unknown(),
+  ok: z.boolean(),
+  createdAt: z.string(),
+});
+export type AssistantActivityDto = z.infer<typeof AssistantActivityDto>;
+
+/** `GET assistant/activity`: the page before a time (an item's `createdAt`), at most 100. */
+export const AssistantActivityQueryDto = z.object({
+  before: z
+    .string()
+    .refine((v) => !Number.isNaN(Date.parse(v)), 'before must be a date and time')
+    // canonical ISO, which Postgres always accepts ("1" parses in JS as a year; SQL rejects it)
+    .transform((v) => new Date(v).toISOString())
+    .optional(),
+  limit: z.coerce.number().int().min(1).max(100).optional(),
+});
+export type AssistantActivityQueryDto = z.infer<typeof AssistantActivityQueryDto>;

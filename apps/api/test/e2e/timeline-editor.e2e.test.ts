@@ -3,7 +3,8 @@ import { and, eq, isNull } from 'drizzle-orm';
 import type { StageDef, TimelineEditorSessionDto } from '@reelcraft/shared';
 import { BlueprintService } from '../../src/blueprint/blueprint.service';
 import { ChannelService } from '../../src/channel/channel.service';
-import { artifact, humanWait, run } from '../../src/db/schema';
+import { artifact, humanWait, run, stageExecution } from '../../src/db/schema';
+import { ArtifactService } from '../../src/artifact/artifact.service';
 import { StageRunnerService } from '../../src/orchestration/stage-runner.service';
 import { RunService } from '../../src/run/run.service';
 import { buildHttpTestApp, type HttpTestApp } from '../support/build-http-test-app';
@@ -177,5 +178,138 @@ describe('timeline editor HTTP workflow (e2e)', () => {
         .from(humanWait)
         .where(and(eq(humanWait.runId, created.id), isNull(humanWait.resolvedAt))),
     ).toHaveLength(0);
+  });
+
+  it('edits a finished Compose Timeline output: draft, preview of what re-renders, then replace it', async () => {
+    const channels = http.app.get(ChannelService);
+    const blueprints = http.app.get(BlueprintService);
+    const runs = http.app.get(RunService);
+    const artifacts = http.app.get(ArtifactService);
+    const channel = await channels.create('local', {
+      name: `Compose edit ${Date.now()}`,
+      theme: {},
+      defaults: {},
+    });
+    const blueprintId = await blueprints.ensureBlueprint(channel.id, 'Compose edit');
+    const compose: StageDef = {
+      key: 'compose',
+      label: 'Compose',
+      capability: 'timeline.compose',
+      config: { aspectRatio: '9:16' },
+      slots: { plan: { from: 'const', value: { layers: [] } } },
+      context: {},
+      output: { kind: 'timeline' },
+      checks: [],
+      retryLimit: 0,
+    };
+    const version = await blueprints.createVersion(blueprintId, {
+      graph: [compose],
+      inputs: [],
+      roles: [],
+      defaults: {},
+      budget: { runCapUsd: 1 },
+    });
+    const created = await runs.create({
+      channelId: channel.id,
+      blueprintVersionId: version.id,
+      inputs: {},
+      roleBindings: {},
+      rerunStageKeys: [],
+      budgetCapUsd: 1,
+    });
+    const execution = created.stageExecutions[0]!;
+    // the stage made its timeline and the run completed
+    const outputId = await artifacts.recordAttemptArtifact({
+      runId: created.id,
+      producerStageKey: 'compose',
+      kind: 'timeline',
+      data: emptyTimeline,
+      reproLevel: 'exact',
+      costUsd: 0,
+    } as never);
+    await testDb.db.update(artifact).set({ stale: false }).where(eq(artifact.id, outputId));
+    await testDb.db
+      .update(stageExecution)
+      .set({ state: 'passed', outputArtifactId: outputId, endedAt: new Date().toISOString() })
+      .where(eq(stageExecution.id, execution.id));
+    await testDb.db
+      .update(run)
+      .set({ state: 'COMPLETED', endedAt: new Date().toISOString() })
+      .where(eq(run.id, created.id));
+
+    const base = `${http.baseUrl}/runs/${created.id}/stages/compose/timeline-editor`;
+    const session = (await (await fetch(base)).json()) as TimelineEditorSessionDto;
+    expect(session).toMatchObject({ source: 'output', readOnly: false, draftRevision: 0 });
+    const edited = structuredClone(session.timeline);
+    edited.tracks.push({
+      id: 'titles',
+      type: 'overlay',
+      items: [
+        {
+          type: 'text',
+          text: 'Added later',
+          startSec: 0,
+          durationSec: 2,
+          styleId: 'text.title',
+          position: 'center',
+        },
+      ],
+    });
+    const saved = await fetch(`${base}/draft`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ draftRevision: 0, timeline: edited }),
+    });
+    expect(await saved.json()).toEqual({ draftRevision: 1 });
+
+    const preview = await fetch(`${base}/submit`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ draftRevision: 1 }),
+    });
+    const previewBody = (await preview.json()) as {
+      previewToken: string;
+      affectedStageKeys: string[];
+    };
+    expect(previewBody.previewToken).toBeTruthy();
+    expect(previewBody.affectedStageKeys).toContain('compose');
+
+    const applied = await fetch(`${base}/submit`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ draftRevision: 1, previewToken: previewBody.previewToken }),
+    });
+    expect(await applied.json()).toMatchObject({ accepted: true });
+    const [current] = await testDb.db
+      .select()
+      .from(artifact)
+      .where(
+        and(
+          eq(artifact.runId, created.id),
+          eq(artifact.producerStageKey, 'compose'),
+          eq(artifact.stale, false),
+        ),
+      );
+    expect(current).toMatchObject({ userAuthored: true });
+    expect(JSON.stringify(current!.data)).toContain('Added later');
+
+    // The stage's output is now newer than the draft: an editor still open on the old draft can't
+    // save or submit over it, and reopening starts from the new output.
+    const stale = await fetch(`${base}/draft`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ draftRevision: 1, timeline: session.timeline }),
+    });
+    expect(stale.status).toBe(409);
+    expect(await stale.json()).toMatchObject({ code: 'timeline_base_changed' });
+    const staleSubmit = await fetch(`${base}/submit`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ draftRevision: 1 }),
+    });
+    expect(await staleSubmit.json()).toMatchObject({ code: 'timeline_base_changed' });
+    const reopened = (await (await fetch(base)).json()) as TimelineEditorSessionDto;
+    expect(reopened.draftRevision).toBe(2);
+    expect(JSON.stringify(reopened.timeline)).toContain('Added later');
   });
 });

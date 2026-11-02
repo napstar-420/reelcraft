@@ -96,5 +96,14 @@ export function describeRunNotification(
         body: `${stage} has waited ${ctx.hours ?? 24} hours. ${runName}`,
         url: waitUrl(),
       };
+    case 'assistant_needs_you':
+    case 'assistant_done':
+      // written by notifyAssistant with the chat's own words, never for a run
+      return { title: 'The assistant', body: runName, url: runUrl };
   }
+}
+
+/** The link that opens an assistant chat on any page. */
+export function assistantChatUrl(sessionId: string): string {
+  return `/?chat=${encodeURIComponent(sessionId)}`;
 }

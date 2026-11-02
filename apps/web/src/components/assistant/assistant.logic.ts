@@ -56,11 +56,18 @@ export function nextMode(mode: AssistantMode): AssistantMode {
  * ended refreshes the lists the assistant may have changed. */
 export function invalidationsFor(item: AssistantItemDto): Array<readonly unknown[]> {
   if (item.type === 'change') {
-    const { blueprintId } = payloadOf<ChangePayload>(item);
+    const change = payloadOf<ChangePayload>(item);
+    if (change.kind === 'note') return [['assistant-notes']];
+    // an open timeline editor follows the live timeline event instead
+    if (change.kind === 'timeline') return [['run', change.runId]];
+    if (change.kind === 'trash' || change.kind === 'archive') {
+      return [['channels'], ['blueprints'], ['channel'], ['blueprint'], ['trash']];
+    }
+    const { blueprintId } = change;
     return [['blueprint', blueprintId], ['blueprint-versions', blueprintId], ['blueprints']];
   }
   if (item.type === 'turn_status' && item.state !== 'running') {
-    return [['blueprints'], ['channels'], ['runs']];
+    return [['blueprints'], ['channels'], ['runs'], ['assets'], ['characters'], ['character']];
   }
   return [];
 }
@@ -118,6 +125,9 @@ export type ChatRow =
   | { kind: 'change'; item: AssistantItemDto }
   | { kind: 'approval'; item: AssistantItemDto }
   | { kind: 'plan'; item: AssistantItemDto }
+  | { kind: 'breakdown'; item: AssistantItemDto }
+  | { kind: 'goal'; item: AssistantItemDto }
+  | { kind: 'reset'; item: AssistantItemDto }
   | { kind: 'legacy'; item: AssistantItemDto }
   /** A run the assistant started or set going again: shown with its live state. */
   | { kind: 'run'; id: string; runId: string; action: string }
@@ -166,7 +176,12 @@ export function toRows(items: AssistantItemDto[]): ChatRow[] {
       case 'change':
       case 'approval':
       case 'plan':
+      case 'breakdown':
+      case 'goal':
         rows.push({ kind: item.type, item });
+        break;
+      case 'context_reset':
+        rows.push({ kind: 'reset', item });
         break;
       case 'proposal':
         rows.push({ kind: 'legacy', item });
@@ -218,16 +233,14 @@ export function describeToolCall(call: ToolCallPayload, state: string | null): s
         return 'Read a run';
       case 'get_stage':
         return `Looked at stage ${stage ?? ''}`.trim();
-      case 'view_stage_media':
-        return stage ? `Looked at what ${stage} made` : 'Watched the final video';
+      case 'view_media':
+        return mediaLabel('Looked at', 'Watched', args);
       case 'get_attempt':
         return `Read a try of ${stage ?? 'a stage'} in full`;
       case 'get_run_memory':
         return 'Read what the stages passed on';
-      case 'listen_to_audio':
-        return stage ? `Listened to ${stage}` : 'Listened to the final video';
-      case 'view_asset':
-        return 'Looked at a library picture';
+      case 'listen':
+        return mediaLabel('Listened to', 'Listened to', args);
       case 'list_capabilities':
         return 'Listed the stage types';
       case 'get_capability':
@@ -256,6 +269,64 @@ export function describeToolCall(call: ToolCallPayload, state: string | null): s
         return 'Started watching a run';
       case 'unwatch_run':
         return 'Stopped watching a run';
+      case 'analyze_video':
+        return 'Broke the video down into shots';
+      case 'save_breakdown':
+        return 'Wrote the breakdown';
+      case 'compare_media':
+        return 'Compared the two videos';
+      case 'import_from_link':
+        return `Downloaded a file from ${hostOf(str(args.url))}`;
+      case 'browser_open':
+        return `Opened ${hostOf(str(args.url))} in the browser`;
+      case 'browser_look':
+        return 'Looked at the page';
+      case 'browser_act':
+        return args.action === 'type'
+          ? `Typed into ${str(args.target) ?? 'a field'}`
+          : args.action === 'press'
+            ? `Pressed ${str(args.value) ?? 'a key'}`
+            : `Clicked ${str(args.target) ?? 'something'}`;
+      case 'browser_media':
+        return 'Listed the videos on the page';
+      case 'browser_close':
+        return 'Closed a tab';
+      case 'save_to_library':
+        return `Saved ${str(args.name) ?? 'a file'} to the Library`;
+      case 'delete_asset':
+        return 'Deleted a Library file';
+      case 'create_character':
+        return `Created the Character ${str(args.name) ?? ''}`.trim();
+      case 'update_character':
+        return 'Changed a Character';
+      case 'delete_character':
+        return 'Deleted a Character';
+      case 'set_goal':
+        return 'Set a goal';
+      case 'finish_goal':
+        return 'Finished the goal';
+      case 'compare_runs':
+        return 'Compared two runs';
+      case 'get_timeline':
+        return 'Read the timeline';
+      case 'edit_timeline':
+        return str(args.summary)
+          ? `Edited the timeline: ${str(args.summary)}`
+          : 'Edited the timeline';
+      case 'preview_timeline':
+        return 'Rendered a draft of the timeline';
+      case 'submit_timeline':
+        return 'Sent the timeline on';
+      case 'remember':
+        return 'Saved a note';
+      case 'forget':
+        return 'Removed a note';
+      case 'list_notes':
+        return 'Read the notes';
+      case 'recall':
+        return `Searched past chats for “${str(args.query) ?? ''}”`;
+      case 'make_voice':
+        return `Made the voice ${str(args.name) ?? ''}`.trim();
       case 'create_channel':
         return `Created the channel ${str(args.name) ?? ''}`.trim();
       case 'update_channel':
@@ -312,4 +383,24 @@ export function questionOf(item: AssistantItemDto): QuestionPayload {
 export function wakeHeadline(text: string): string {
   const first = text.split('\n')[0] ?? '';
   return first.replace(/^\[Run update:[^\]]*\]\s*/, '');
+}
+
+/** "Looked at what images made", "Watched the final video", "Looked at an attached file"… */
+function mediaLabel(verb: string, videoVerb: string, args: Record<string, unknown>): string {
+  const source =
+    args.source && typeof args.source === 'object' ? (args.source as Record<string, unknown>) : {};
+  if (typeof source.attachmentId === 'string') return `${verb} an attached file`;
+  if (typeof source.assetId === 'string') return `${verb} a Library file`;
+  if (typeof source.characterId === 'string') return `${verb} a Character picture`;
+  if (typeof source.stageKey === 'string') return `${verb} what ${source.stageKey} made`;
+  return `${videoVerb} the final video`;
+}
+
+function hostOf(url: string | null | undefined): string {
+  if (!url) return 'a link';
+  try {
+    return new URL(url).hostname.replace(/^www\./, '');
+  } catch {
+    return 'a link';
+  }
 }

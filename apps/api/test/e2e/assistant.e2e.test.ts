@@ -1,3 +1,7 @@
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { io, type Socket } from 'socket.io-client';
@@ -5,13 +9,20 @@ import type { AssistantItemDto, AssistantSessionDetailDto } from '@reelcraft/sha
 import { ulid } from '../../src/common/ulid';
 import { ChannelService } from '../../src/channel/channel.service';
 import { BlueprintService } from '../../src/blueprint/blueprint.service';
+import { CharacterService } from '../../src/channel/character.service';
+import { AssetService } from '../../src/channel/asset.service';
 import { AssistantService } from '../../src/assistant/assistant.service';
+import { GoalService } from '../../src/assistant/goals/goal.service';
 import { FakeAssistantAgent, type FakeStep } from '../../src/assistant/agent/fake-assistant.agent';
 import { exampleScript } from '../../src/assistant/guide';
-import { STORAGE_ADAPTER } from '../../src/storage/storage.adapter';
-import { LiveEvents } from '../../src/live/live-events';
+import { STORAGE_ADAPTER, type StorageAdapter } from '../../src/storage/storage.adapter';
+import { LiveEvents, type LiveEvent } from '../../src/live/live-events';
+import { ArtifactService } from '../../src/artifact/artifact.service';
+import { RunService } from '../../src/run/run.service';
+import { TimelineEditorService } from '../../src/run/timeline-editor.service';
 import {
   artifact,
+  assistantAttachment,
   assistantItem,
   assistantSession,
   blob,
@@ -351,6 +362,76 @@ describe('assistant (e2e)', () => {
     ).toBe(409);
   });
 
+  it('notifies when the assistant needs you and no page shows the chat, and lists its activity', async () => {
+    const notificationsOf = (sid: string) =>
+      testDb.db.select().from(notification).where(eq(notification.sessionId, sid));
+
+    // nobody is watching: the approval card is announced
+    const away = await newSession('manual');
+    useScript([
+      [
+        {
+          call: 'propose_draft',
+          args: { blueprintId, draft: exampleScript(), summary: 'Adds a script stage' },
+        },
+        { say: 'Written.' },
+      ],
+    ]);
+    await turn(away, { text: 'go' });
+    const card = await pendingApproval(away);
+    await new Promise((r) => setTimeout(r, 100));
+    const sent = await notificationsOf(away);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({
+      kind: 'assistant_needs_you',
+      runId: null,
+      title: 'The assistant needs your OK',
+      url: `/?chat=${away}`,
+    });
+    await call(`/assistant/sessions/${away}/approvals/${card.id}`, {
+      method: 'POST',
+      body: { answer: 'yes' },
+    });
+    await waitIdle(away);
+
+    // what it did shows in the activity list, with its chat
+    const activity =
+      await call<Array<{ sessionId: string; tool: string; ok: boolean }>>('/assistant/activity');
+    expect(activity.body[0]).toMatchObject({ sessionId: away, tool: 'propose_draft', ok: true });
+    expect(activity.body.some((a) => a.tool === 'get_blueprint')).toBe(false);
+    expect((await call('/assistant/activity?limit=abc')).status).toBe(400);
+    expect((await call('/assistant/activity?before=yesterday')).status).toBe(400);
+    // a value JS reads as a date but SQL wouldn't ("1" is a year) still works
+    expect((await call('/assistant/activity?before=1')).status).toBe(200);
+    expect((await call<unknown[]>('/assistant/activity?limit=1')).body).toHaveLength(1);
+
+    // a page shows the chat: no notification
+    const here = await newSession('manual');
+    const socket = await connectSocket();
+    expect(await watchChat(socket, here)).toBe(true);
+    useScript([
+      [
+        {
+          call: 'propose_draft',
+          args: { blueprintId, draft: exampleScript(), summary: 'Again' },
+        },
+      ],
+    ]);
+    await turn(here, { text: 'go' });
+    const hereCard = await pendingApproval(here);
+    await new Promise((r) => setTimeout(r, 100));
+    expect(await notificationsOf(here)).toHaveLength(0);
+    await call(`/assistant/sessions/${here}/approvals/${hereCard.id}`, {
+      method: 'POST',
+      body: { answer: 'no' },
+    });
+    await waitIdle(here);
+
+    // deleting the chat deletes its notifications
+    expect((await call(`/assistant/sessions/${away}`, { method: 'DELETE' })).status).toBe(204);
+    expect(await notificationsOf(away)).toHaveLength(0);
+  });
+
   it('Manual: No with feedback reaches the model, and Yes + Auto switches the chat to Auto', async () => {
     const sid = await newSession('manual');
     let refused = '';
@@ -388,6 +469,46 @@ describe('assistant (e2e)', () => {
     expect(ofType(session, 'approval').map((a) => a.state)).toEqual(['denied', 'approved']);
     expect((await http.app.get(BlueprintService).getBlueprint(blueprintId)).name).toBe(
       'Ocean facts',
+    );
+  });
+
+  it('Manual: "Yes to everything this turn" lets the next changes through, but a delete still asks', async () => {
+    const sid = await newSession('manual');
+    const bpId = blueprintId;
+    useScript([
+      [
+        {
+          call: 'propose_draft',
+          args: { blueprintId: bpId, draft: exampleScript(), summary: 'Script' },
+        },
+        {
+          call: 'update_metadata',
+          args: { blueprintId: bpId, description: 'A short script reel', summary: 'Describe it' },
+          expect: (r) => expect(r.ok).toBe(true),
+        },
+        { call: 'delete_blueprint', args: { blueprintId: bpId } },
+        { say: 'Done.' },
+      ],
+    ]);
+    await turn(sid, { text: 'go' });
+    const first = await pendingApproval(sid);
+    await call(`/assistant/sessions/${sid}/approvals/${first.id}`, {
+      method: 'POST',
+      body: { answer: 'yes_turn' },
+    });
+    // the metadata change went through without a card; the delete waits
+    const deleteCard = await pendingApproval(sid);
+    expect(deleteCard.payload).toMatchObject({ tool: 'delete_blueprint', kind: 'destroy' });
+    const session = await getSession(sid);
+    expect(ofType(session, 'approval')).toHaveLength(2);
+    await call(`/assistant/sessions/${sid}/approvals/${deleteCard.id}`, {
+      method: 'POST',
+      body: { answer: 'no' },
+    });
+    const done = await waitIdle(sid);
+    expect(ofType(done, 'approval')[0]).toMatchObject({ payload: { answer: 'yes_turn' } });
+    expect((await http.app.get(BlueprintService).getBlueprint(bpId)).description).toBe(
+      'A short script reel',
     );
   });
 
@@ -522,6 +643,91 @@ describe('assistant (e2e)', () => {
     expect(ofType(session, 'tool_call').every((c) => c.state === 'completed')).toBe(true);
   });
 
+  it('works toward a goal within its limits and reports it on a Goal card', async () => {
+    const sid = await newSession('auto');
+    const bpId = blueprintId;
+    await http.app.get(BlueprintService).createVersion(bpId, exampleScript());
+    let goalId = '';
+    const runIds: string[] = [];
+    useScript([
+      [
+        {
+          call: 'set_goal',
+          args: { blueprintId: bpId, goal: 'A script under 120 words', maxRuns: 1, maxSpendUsd: 1 },
+          expect: (r) => {
+            expect(r.ok).toBe(true);
+            goalId = (JSON.parse(r.text) as { goalId: string }).goalId;
+          },
+        },
+        {
+          call: 'start_run',
+          args: { blueprintId: bpId, free: true, inputs: { topic: 'otters' } },
+          expect: (r) => {
+            expect(r.ok).toBe(true);
+            runIds.push((JSON.parse(r.text) as { runId: string }).runId);
+          },
+        },
+        {
+          // the second run would go past the goal's one run
+          call: 'start_run',
+          args: { blueprintId: bpId, free: true, inputs: { topic: 'otters' } },
+          expect: (r) => {
+            expect(r.ok).toBe(false);
+            expect(r.text).toContain('used all 1 runs');
+          },
+        },
+        {
+          call: 'finish_goal',
+          args: () => ({ goalId, met: false, summary: 'One free run; the limit is reached.' }),
+          expect: (r) => expect(r.ok).toBe(true),
+        },
+        { say: 'Done.' },
+      ],
+    ]);
+    await turn(sid, { text: 'Get the script under 120 words, one try' });
+    const session = await waitIdle(sid);
+    const [card] = ofType(session, 'goal');
+    expect(card).toMatchObject({
+      state: 'saved',
+      payload: {
+        goalId,
+        state: 'limit',
+        attempts: 1,
+        maxRuns: 1,
+        runs: [{ runId: runIds[0], free: true }],
+      },
+    });
+    // a finished goal no longer limits runs
+    expect(await http.app.get(GoalService).refusal(sid, bpId)).toBeNull();
+  });
+
+  it('counts what a run can spend against the goal, and always allows free runs', async () => {
+    const goals = http.app.get(GoalService);
+    const sid = await newSession('auto');
+    await goals.create({
+      sessionId: sid,
+      blueprintId,
+      goal: 'Free tries only',
+      maxRuns: 3,
+      maxSpendUsd: 0,
+    });
+    expect(await goals.refusal(sid, blueprintId, 0)).toBeNull();
+    expect(await goals.refusal(sid, blueprintId, 5)).toContain('Only free test runs are left');
+    const other = await newSession('auto');
+    await goals.create({
+      sessionId: other,
+      blueprintId,
+      goal: 'Up to a dollar',
+      maxRuns: 3,
+      maxSpendUsd: 1,
+    });
+    expect(await goals.refusal(other, blueprintId, 0.5)).toBeNull();
+    expect(await goals.refusal(other, blueprintId, 20)).toContain('at most $1.00');
+    expect(await goals.refusal(other, blueprintId, Number.POSITIVE_INFINITY)).toContain(
+      'no budget',
+    );
+  });
+
   it('watches a run and wakes up when it fails, until the wake limit', async () => {
     const settings = await call<{ defaultMode: string; maxWakesPerRun: number }>(
       '/assistant/settings',
@@ -577,6 +783,7 @@ describe('assistant (e2e)', () => {
         id: 'n',
         kind: 'failed',
         runId,
+        sessionId: null,
         stageKey: 'script',
         title: 'Daily short failed',
         body: 'Write the script failed its checks',
@@ -876,13 +1083,13 @@ describe('assistant (e2e)', () => {
           { call: 'get_run', args: { runId: otherRuns.failedRun }, expect: note('foreign') },
           { call: 'get_run', args: { runId: 'no-such-run' }, expect: note('missing') },
           {
-            call: 'view_stage_media',
-            args: { runId: canvasRun, stageKey: 'script' },
+            call: 'view_media',
+            args: { source: { runId: canvasRun, stageKey: 'script' } },
             expect: note('media'),
           },
           {
-            call: 'view_stage_media',
-            args: { runId: otherRuns.canvasRun, stageKey: 'script' },
+            call: 'view_media',
+            args: { source: { runId: otherRuns.canvasRun, stageKey: 'script' } },
             expect: note('foreignMedia'),
           },
         ],
@@ -942,13 +1149,459 @@ describe('assistant (e2e)', () => {
       expect(seen.media!.ok).toBe(true);
       expect(seen.media!.images).toHaveLength(2);
       const mediaCall = ofType(finished, 'tool_call').find(
-        (i) => (i.payload as { tool?: string }).tool === 'view_stage_media',
+        (i) => (i.payload as { tool?: string }).tool === 'view_media',
       );
       expect(JSON.stringify(mediaCall!.payload)).not.toMatch(/AAAA|base64/);
       expect(mediaCall!.payload).toMatchObject({
         images: [{ mime: expect.any(String) }, { mime: expect.any(String) }],
       });
     });
+  });
+
+  describe('attachments', () => {
+    let dir: string;
+    beforeAll(() => {
+      dir = mkdtempSync(join(tmpdir(), 'assistant-attach-'));
+      const ff = (args: string[]) => execFileSync('ffmpeg', ['-v', 'error', '-y', ...args]);
+      ff(['-f', 'lavfi', '-i', 'color=c=red:s=64x48', '-frames:v', '1', join(dir, 'face.png')]);
+      ff([
+        '-f',
+        'lavfi',
+        '-i',
+        'color=c=blue:s=108x192:d=2',
+        '-f',
+        'lavfi',
+        '-i',
+        'sine=frequency=440:duration=2',
+        '-shortest',
+        '-pix_fmt',
+        'yuv420p',
+        join(dir, 'ref.mp4'),
+      ]);
+    });
+    afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+    beforeAll(() => {
+      // three shots (red 1.5 s, blue 2 s, green 1 s) with a tone, for analyze_video
+      execFileSync('ffmpeg', [
+        '-v',
+        'error',
+        '-y',
+        '-f',
+        'lavfi',
+        '-i',
+        'color=c=red:s=108x192:d=1.5',
+        '-f',
+        'lavfi',
+        '-i',
+        'color=c=blue:s=108x192:d=2',
+        '-f',
+        'lavfi',
+        '-i',
+        'color=c=green:s=108x192:d=1',
+        '-f',
+        'lavfi',
+        '-i',
+        'sine=frequency=440:duration=4.5',
+        '-filter_complex',
+        '[0][1][2]concat=n=3:v=1:a=0[v]',
+        '-map',
+        '[v]',
+        '-map',
+        '3:a',
+        '-pix_fmt',
+        'yuv420p',
+        '-shortest',
+        join(dir, 'cuts.mp4'),
+      ]);
+    });
+
+    async function attach(file: string, mime: string) {
+      const ext = file.split('.').pop()!;
+      const upload = await call<{ blobId: string; objectKey: string; uploadUrl: string }>(
+        '/assistant/attachments/upload',
+        { method: 'POST', body: { ext } },
+      );
+      expect(upload.status).toBe(201);
+      await http.app
+        .get<StorageAdapter>(STORAGE_ADAPTER)
+        .put(upload.body.objectKey, readFileSync(join(dir, file)), { mime });
+      return call<{ id: string; kind: string; width: number | null; durationSec: number | null }>(
+        '/assistant/attachments',
+        {
+          method: 'POST',
+          body: {
+            blobId: upload.body.blobId,
+            objectKey: upload.body.objectKey,
+            sha256: 'a'.repeat(64),
+            name: file,
+          },
+        },
+      );
+    }
+
+    it('uploads files, sends them with a message, shows pictures to the model and lets it look at a video', async () => {
+      const picture = await attach('face.png', 'image/png');
+      expect(picture.status).toBe(201);
+      expect(picture.body).toMatchObject({ kind: 'image', width: 64 });
+      const video = await attach('ref.mp4', 'video/mp4');
+      expect(video.body).toMatchObject({ kind: 'video', width: 108 });
+      expect(video.body.durationSec).toBeGreaterThan(1.5);
+
+      const sid = await newSession('auto');
+      useScript([
+        [
+          {
+            call: 'view_media',
+            args: { source: { attachmentId: video.body.id }, frames: 2 },
+            expect: (r) => expect(r.ok).toBe(true),
+          },
+          { say: 'A red face and a blue video.' },
+        ],
+      ]);
+      const started = await turn(sid, { attachments: [picture.body.id, video.body.id] });
+      expect(started.status).toBe(202);
+      const session = await waitIdle(sid);
+
+      expect(agent.turns[0]!.images).toBe(1);
+      expect(agent.turns[0]!.text).toContain(`attachmentId ${video.body.id}`);
+      expect(agent.turns[0]!.text).toContain('The pictures are shown with this message');
+      const message = ofType(session, 'user_message')[0]!;
+      expect(message.payload).toMatchObject({
+        text: '',
+        attachments: [
+          { id: picture.body.id, kind: 'image' },
+          { id: video.body.id, kind: 'video' },
+        ],
+      });
+      expect(session.title).toBe('face.png, ref.mp4');
+
+      // a sent file can't be removed on its own, or sent in another chat
+      const removed = await call(`/assistant/attachments/${picture.body.id}`, { method: 'DELETE' });
+      expect(removed.status).toBe(400);
+      const other = await newSession('auto');
+      useScript([[{ say: 'ok' }]]);
+      expect((await turn(other, { attachments: [picture.body.id] })).status).toBe(400);
+
+      // deleting the chat deletes its files
+      expect((await call(`/assistant/sessions/${sid}`, { method: 'DELETE' })).status).toBe(204);
+      const left = await testDb.db
+        .select()
+        .from(assistantAttachment)
+        .where(eq(assistantAttachment.id, picture.body.id));
+      expect(left).toHaveLength(0);
+      const blobs = await testDb.db.select().from(blob).where(eq(blob.id, video.body.id));
+      expect(blobs).toHaveLength(0);
+    });
+
+    it('turns an attached picture into a Character and a Library asset, and starts a run with it as a file input', async () => {
+      const picture = await attach('face.png', 'image/png');
+      const sid = await newSession('auto');
+      const bpId = blueprintId;
+      const draft = exampleScript();
+      draft.inputs = [
+        ...(draft.inputs ?? []),
+        {
+          key: 'photo',
+          label: 'Photo',
+          required: true,
+          accepts: { kind: 'media.image', cardinality: 'one' },
+        } as never,
+      ];
+      await http.app.get(BlueprintService).createVersion(bpId, draft);
+      let characterId = '';
+      let assetId = '';
+      let runId = '';
+      useScript([
+        [
+          {
+            call: 'create_character',
+            args: {
+              channelId,
+              name: `Mia ${Date.now()}`,
+              description: 'Red hair, green coat',
+              references: [{ source: { attachmentId: picture.body.id }, view: 'front' }],
+            },
+            expect: (r) => {
+              expect(r.ok).toBe(true);
+              const result = JSON.parse(r.text) as { characterId: string; ready: boolean };
+              expect(result.ready).toBe(true);
+              characterId = result.characterId;
+            },
+          },
+          {
+            call: 'save_to_library',
+            args: {
+              channelId,
+              source: { attachmentId: picture.body.id },
+              name: `Logo ${Date.now()}`,
+            },
+            expect: (r) => {
+              expect(r.ok).toBe(true);
+              const result = JSON.parse(r.text) as { assetId: string; kind: string };
+              expect(result.kind).toBe('media.image');
+              assetId = result.assetId;
+            },
+          },
+          {
+            call: 'start_run',
+            // the asset id is only known once save_to_library has run
+            args: () => ({
+              blueprintId: bpId,
+              free: true,
+              inputs: { topic: 'otters' },
+              files: { photo: [{ assetId }] },
+            }),
+            expect: (r) => {
+              expect(r.ok).toBe(true);
+              runId = (JSON.parse(r.text) as { runId: string }).runId;
+            },
+          },
+          { say: 'Done.' },
+        ],
+      ]);
+      await turn(sid, { text: 'Make her a Character, save the picture, and run it' });
+      const session = await waitIdle(sid);
+      const calls = ofType(session, 'tool_call').map(
+        (i) => i.payload as { tool: string; ok?: boolean },
+      );
+      expect(calls.map((c) => [c.tool, c.ok])).toEqual([
+        ['create_character', true],
+        ['save_to_library', true],
+        ['start_run', true],
+      ]);
+      const character = await http.app.get(CharacterService).get(characterId);
+      expect(character.readiness).toBe('ready');
+      expect((character.referenceSet as unknown[]).length).toBe(1);
+      const asset = await http.app.get(AssetService).get(assetId);
+      expect(asset.kind).toBe('media.image');
+      const inputBlobs = await testDb.db.select().from(blob).where(eq(blob.runId, runId));
+      expect(inputBlobs.some((b) => b.scope === 'input')).toBe(true);
+    });
+
+    it('analyses an attached video into its shots and saves a breakdown card', async () => {
+      const video = await attach('cuts.mp4', 'video/mp4');
+      expect(video.status).toBe(201);
+      const sid = await newSession('plan');
+      let shots: Array<{ startSec: number; endSec: number }> = [];
+      useScript([
+        [
+          {
+            call: 'analyze_video',
+            args: { source: { attachmentId: video.body.id } },
+            expect: (r) => {
+              expect(r.ok).toBe(true);
+              const result = JSON.parse(r.text) as {
+                format: { aspectRatio: string };
+                shots: Array<{ startSec: number; endSec: number }>;
+              };
+              expect(result.format.aspectRatio).toBe('9:16');
+              shots = result.shots;
+              expect(shots).toHaveLength(3);
+              expect(r.images?.length).toBe(1);
+            },
+          },
+          {
+            call: 'save_breakdown',
+            args: () => ({
+              source: { attachmentId: video.body.id },
+              breakdown: {
+                title: 'Three colours',
+                summary: 'Three flat colour shots with a tone.',
+                format: { aspectRatio: '9:16', durationSec: 4.5 },
+                shots: shots.map((s, i) => ({
+                  index: i,
+                  startSec: s.startSec,
+                  endSec: s.endSec,
+                  visual: ['Red', 'Blue', 'Green'][i]!,
+                  make: 'text_only',
+                })),
+                narration: { present: false },
+                captions: { present: false },
+                music: { present: true, description: 'a steady tone' },
+                pacing: { shots: 3, averageShotSec: 1.5 },
+              },
+            }),
+            expect: (r) => expect(r.ok).toBe(true),
+          },
+          { say: 'Here is the breakdown.' },
+        ],
+      ]);
+      await turn(sid, { text: 'Break this down', attachments: [video.body.id] });
+      const session = await waitIdle(sid);
+      const [card] = ofType(session, 'breakdown');
+      expect(card).toMatchObject({
+        state: 'saved',
+        payload: {
+          source: { attachmentId: video.body.id },
+          breakdown: {
+            title: 'Three colours',
+            shots: [{ visual: 'Red' }, { visual: 'Blue' }, { visual: 'Green' }],
+          },
+        },
+      });
+    });
+
+    it('refuses a file it cannot read, a wrong key, and lets an unsent file be removed', async () => {
+      const upload = await call<{ blobId: string; objectKey: string }>(
+        '/assistant/attachments/upload',
+        { method: 'POST', body: { ext: 'mp4' } },
+      );
+      await http.app
+        .get<StorageAdapter>(STORAGE_ADAPTER)
+        .put(upload.body.objectKey, Buffer.from('not a video'), { mime: 'video/mp4' });
+      const broken = await call<{ message: string }>('/assistant/attachments', {
+        method: 'POST',
+        body: {
+          blobId: upload.body.blobId,
+          objectKey: upload.body.objectKey,
+          sha256: 'b'.repeat(64),
+          name: 'x.mp4',
+        },
+      });
+      expect(broken.status).toBe(400);
+      expect(broken.body.message).toContain("couldn't be read");
+
+      const wrongKey = await call('/assistant/attachments', {
+        method: 'POST',
+        body: {
+          blobId: 'B1',
+          objectKey: 'someone/else.png',
+          sha256: 'c'.repeat(64),
+          name: 'x.png',
+        },
+      });
+      expect(wrongKey.status).toBe(400);
+
+      const picture = await attach('face.png', 'image/png');
+      expect(
+        (await call(`/assistant/attachments/${picture.body.id}`, { method: 'DELETE' })).status,
+      ).toBe(204);
+      expect((await call(`/assistant/attachments/${picture.body.id}`)).status).toBe(404);
+    });
+  });
+
+  it('remembers a note, gives it with later messages, undoes it, and recalls earlier chats', async () => {
+    const sid = await newSession('auto');
+    let noteItem = '';
+    useScript([
+      [
+        {
+          call: 'remember',
+          args: { scope: 'channel', channelId, text: 'Videos for this channel are always 9:16' },
+          expect: (r) => expect(r.ok).toBe(true),
+        },
+        { say: 'Saved: always 9:16 for this channel.' },
+      ],
+      [{ say: 'Noted.' }],
+    ]);
+    await turn(sid, {
+      text: 'Remember that this channel is always vertical, about otter documentaries',
+      context: { page: 'channel', channelId },
+    });
+    let session = await waitIdle(sid);
+    const [change] = ofType(session, 'change');
+    expect(change).toMatchObject({
+      state: 'applied',
+      payload: { kind: 'note', action: 'added', note: { scope: 'channel', channelId } },
+    });
+    noteItem = change!.id;
+
+    await turn(sid, { text: 'Make the next one', context: { page: 'channel', channelId } });
+    session = await waitIdle(sid);
+    expect(agent.turns[1]!.text).toContain('<notes>');
+    expect(agent.turns[1]!.text).toContain('Videos for this channel are always 9:16');
+
+    // the notes API shows it, Undo removes it
+    const listed = await call<Array<{ text: string }>>(`/assistant/notes?channelId=${channelId}`);
+    expect(listed.body.map((n) => n.text)).toContain('Videos for this channel are always 9:16');
+    expect(
+      (await call(`/assistant/sessions/${sid}/changes/${noteItem}/undo`, { method: 'POST' }))
+        .status,
+    ).toBe(201);
+    const after = await call<Array<{ text: string }>>(`/assistant/notes?channelId=${channelId}`);
+    expect(after.body.map((n) => n.text)).not.toContain('Videos for this channel are always 9:16');
+
+    // a later chat can find what this one said
+    const other = await newSession('auto');
+    useScript([
+      [
+        {
+          call: 'recall',
+          args: { query: 'otter documentaries' },
+          expect: (r) => {
+            const result = JSON.parse(r.text) as {
+              results: Array<{ kind: string; sessionId: string; snippet: string }>;
+            };
+            expect(result.results[0]).toMatchObject({ kind: 'chat', sessionId: sid });
+            expect(result.results[0]!.snippet).toContain('«otter»');
+          },
+        },
+        { say: 'Found it.' },
+      ],
+    ]);
+    await turn(other, { text: 'What did we say about otters?' });
+    const found = await waitIdle(other);
+    expect(ofType(found, 'tool_call')[0]!.payload).toMatchObject({ tool: 'recall', ok: true });
+
+    // global notes through the API
+    const created = await call<{ id: string }>('/assistant/notes', {
+      method: 'POST',
+      body: { scope: 'global', text: 'Keep runs under $2' },
+    });
+    expect(created.status).toBe(201);
+    expect(
+      (
+        await call(`/assistant/notes/${created.body.id}`, {
+          method: 'PATCH',
+          body: { text: 'Keep runs under $3' },
+        })
+      ).status,
+    ).toBe(200);
+    expect(
+      (await call('/assistant/notes', { method: 'POST', body: { scope: 'channel', text: 'x' } }))
+        .status,
+    ).toBe(400);
+    expect((await call(`/assistant/notes/${created.body.id}`, { method: 'DELETE' })).status).toBe(
+      204,
+    );
+  });
+
+  it('reports usage, and continues a long chat in a fresh session from a summary', async () => {
+    const sid = await newSession('auto');
+    const before = agent.summaries;
+    useScript([
+      [{ usage: { inputTokens: 200_000, outputTokens: 900 } }, { say: 'That was a lot.' }],
+      [{ say: 'Carrying on.' }],
+    ]);
+    await turn(sid, { text: 'first' });
+    let session = await waitIdle(sid);
+    expect(session.usage).toMatchObject({
+      inputTokens: 200_000,
+      outputTokens: 900,
+      turns: 1,
+      lastInputTokens: 200_000,
+    });
+    const [oldSession] = await testDb.db
+      .select({ ext: assistantSession.externalSessionId })
+      .from(assistantSession)
+      .where(eq(assistantSession.id, sid));
+
+    await turn(sid, { text: 'second' });
+    session = await waitIdle(sid);
+    expect(agent.summaries).toBe(before + 1);
+    const [reset] = ofType(session, 'context_reset');
+    expect(reset).toMatchObject({
+      payload: { reason: 'long', by: 'assistant', summary: agent.summary },
+    });
+    expect(agent.turns.at(-1)!.text).toContain('<earlier_conversation_summary>');
+    expect(agent.turns.at(-1)!.text).toContain('second');
+    const [newSessionRow] = await testDb.db
+      .select({ ext: assistantSession.externalSessionId })
+      .from(assistantSession)
+      .where(eq(assistantSession.id, sid));
+    expect(newSessionRow!.ext).not.toBe(oldSession!.ext);
+    expect(agent.deleted).toContain(oldSession!.ext);
   });
 
   it('asks questions, then continues with the answers as the next turn', async () => {
@@ -1019,6 +1672,32 @@ describe('assistant (e2e)', () => {
     await turn(sid, { text: 'actually do something else' });
     const session = await waitIdle(sid);
     expect(ofType(session, 'question')[0]!.state).toBe('dismissed');
+  });
+
+  it('keeps a question open when the message with its answer is refused', async () => {
+    const ask = {
+      call: 'ask_user',
+      args: {
+        questions: [
+          { id: 'q', header: 'Q', question: 'Which?', options: [{ label: 'A' }, { label: 'B' }] },
+        ],
+      },
+    };
+    useScript([[ask], [{ say: 'ok' }]]);
+    const sid = await newSession();
+    await turn(sid, { text: 'start' });
+    const question = ofType(await waitIdle(sid), 'question')[0]!;
+    const refused = await turn(sid, {
+      answer: { questionItemId: question.id, answers: { q: 'A' } },
+      attachments: ['01NOSUCHATTACHMENT0000000'],
+    });
+    expect(refused.status).toBe(400);
+    const after = await getSession(sid);
+    expect(ofType(after, 'question')[0]!.state).toBe('pending');
+    expect(
+      (await turn(sid, { answer: { questionItemId: question.id, answers: { q: 'A' } } })).status,
+    ).toBe(202);
+    expect(ofType(await waitIdle(sid), 'question')[0]!.state).toBe('answered');
   });
 
   it('rejects an answer to a question that is not pending', async () => {
@@ -1171,5 +1850,135 @@ describe('assistant (e2e)', () => {
       payload: { model: 'm', error: expect.stringContaining('Interrupted') },
     });
     expect(ofType(session, 'tool_call')[0]!.state).toBe('failed');
+  });
+  it('edits a finished video in the timeline, undoes it, then saves it and re-renders', async () => {
+    // a completed run whose Compose Timeline stage made an (empty) timeline
+    const blueprints = http.app.get(BlueprintService);
+    const composeBlueprint = await blueprints.ensureBlueprint(channelId, `Compose ${Date.now()}`);
+    const version = await blueprints.createVersion(composeBlueprint, {
+      graph: [
+        {
+          key: 'compose',
+          label: 'Compose',
+          capability: 'timeline.compose',
+          config: { aspectRatio: '9:16' },
+          slots: { plan: { from: 'const', value: { layers: [] } } },
+          context: {},
+          output: { kind: 'timeline' },
+          checks: [],
+          retryLimit: 0,
+        },
+      ],
+      inputs: [],
+      roles: [],
+      defaults: {},
+      budget: { runCapUsd: 1 },
+    });
+    const created = await http.app.get(RunService).create({
+      channelId,
+      blueprintVersionId: version.id,
+      inputs: {},
+      roleBindings: {},
+      rerunStageKeys: [],
+      budgetCapUsd: 1,
+    });
+    const outputId = await http.app.get(ArtifactService).recordAttemptArtifact({
+      runId: created.id,
+      producerStageKey: 'compose',
+      kind: 'timeline',
+      data: {
+        version: 1,
+        canvas: { width: 1080, height: 1920, fps: 30, background: '#000' },
+        tracks: [{ id: 'video-main', type: 'video', items: [] }],
+      },
+      reproLevel: 'exact',
+      costUsd: 0,
+    } as never);
+    await testDb.db.update(artifact).set({ stale: false }).where(eq(artifact.id, outputId));
+    await testDb.db
+      .update(stageExecution)
+      .set({ state: 'passed', outputArtifactId: outputId, endedAt: new Date().toISOString() })
+      .where(eq(stageExecution.id, created.stageExecutions[0]!.id));
+    await testDb.db
+      .update(run)
+      .set({ state: 'COMPLETED', endedAt: new Date().toISOString() })
+      .where(eq(run.id, created.id));
+
+    const events: LiveEvent[] = [];
+    const subscription = http.app
+      .get(LiveEvents)
+      .all()
+      .subscribe((event) => {
+        if (event.type === 'timeline') events.push(event);
+      });
+    const where = { runId: created.id, stageKey: 'compose' };
+    const addTitle = {
+      call: 'edit_timeline',
+      args: {
+        ...where,
+        summary: 'Add a title',
+        ops: [
+          { op: 'add_track', id: 'titles', type: 'overlay' },
+          {
+            op: 'add_item',
+            trackId: 'titles',
+            item: {
+              type: 'text',
+              text: 'Hello',
+              startSec: 0,
+              durationSec: 2,
+              styleId: 'text.title',
+              position: 'center',
+            },
+          },
+        ],
+      },
+    };
+    try {
+      const sid = await newSession();
+      useScript([
+        [{ call: 'get_timeline', args: where }, addTitle],
+        [addTitle, { call: 'submit_timeline', args: where }],
+      ]);
+      await turn(sid, {
+        text: 'add a title to the video',
+        context: { page: 'timeline', ...where },
+      });
+      const first = await waitIdle(sid);
+      const calls = ofType(first, 'tool_call');
+      expect(calls.map((c) => c.state)).toEqual(['completed', 'completed']);
+      const change = ofType(first, 'change')[0]!;
+      expect(change.payload).toMatchObject({ kind: 'timeline', draftRevision: 1 });
+      const editor = http.app.get(TimelineEditorService);
+      expect((await editor.session(created.id, 'compose')).timeline.tracks).toHaveLength(2);
+      expect(events.at(-1)).toMatchObject({ type: 'timeline', draftRevision: 1 });
+
+      // Undo puts the draft back
+      await call(`/assistant/sessions/${sid}/changes/${change.id}/undo`, { method: 'POST' });
+      const undone = await editor.session(created.id, 'compose');
+      expect(undone.timeline.tracks).toHaveLength(1);
+      expect(events.at(-1)).toMatchObject({ draftRevision: undone.draftRevision });
+
+      // then the edit again, and saved to the video: the stage gets a new timeline
+      await turn(sid, { text: 'add it and re-render' });
+      const second = await waitIdle(sid);
+      expect(
+        ofType(second, 'tool_call')
+          .slice(-2)
+          .map((c) => c.state),
+      ).toEqual(['completed', 'completed']);
+      const [execution] = await testDb.db
+        .select({ outputArtifactId: stageExecution.outputArtifactId })
+        .from(stageExecution)
+        .where(eq(stageExecution.id, created.stageExecutions[0]!.id));
+      expect(execution!.outputArtifactId).not.toBe(outputId);
+      const [old] = await testDb.db
+        .select({ stale: artifact.stale })
+        .from(artifact)
+        .where(eq(artifact.id, outputId));
+      expect(old!.stale).toBe(true);
+    } finally {
+      subscription.unsubscribe();
+    }
   });
 });

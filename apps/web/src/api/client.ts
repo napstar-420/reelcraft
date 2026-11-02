@@ -1,4 +1,11 @@
 import type {
+  TrashDto,
+  AssistantActivityDto,
+  AssistantNoteDto,
+  CreateAssistantNoteDto,
+  AssistantAttachmentDto,
+  CreateAssistantAttachmentDto,
+  RequestAssistantAttachmentUploadResultDto,
   MotionCheckResultDto,
   MotionPreviewDto,
   MotionSource,
@@ -70,6 +77,7 @@ import type {
   SaveTimelineDraftDto,
   TimelineCheckResponseDto,
   TimelineEditorSessionDto,
+  TimelineOutputPreviewDto,
   TimelinePreviewResponseDto,
   CheckDef,
   JsonSchema,
@@ -573,11 +581,21 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ timeline }),
     }),
-  submitTimelineDraft: (runId: string, stageKey: string, draftRevision: number) =>
-    request(`/runs/${runId}/stages/${stageKey}/timeline-editor/submit`, {
-      method: 'POST',
-      body: JSON.stringify({ draftRevision }),
-    }),
+  /** A waiting edit: submits it. A finished video's timeline: without `previewToken`, returns what
+   * saving it re-makes and costs; with it, saves and re-renders. */
+  submitTimelineDraft: (
+    runId: string,
+    stageKey: string,
+    draftRevision: number,
+    previewToken?: string,
+  ) =>
+    request<TimelineOutputPreviewDto | Record<string, unknown>>(
+      `/runs/${runId}/stages/${stageKey}/timeline-editor/submit`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ draftRevision, ...(previewToken && { previewToken }) }),
+      },
+    ),
   createRun: (dto: CreateRunDto) =>
     request<RunDetailDto>('/runs', { method: 'POST', body: JSON.stringify(dto) }),
   requestRunInputUpload: (runId: string, inputKey: string, ext: string) =>
@@ -770,6 +788,44 @@ export const api = {
     }),
   deleteAssistantSession: (sessionId: string) =>
     request<void>(`/assistant/sessions/${sessionId}`, { method: 'DELETE' }),
+  listTrash: () => request<TrashDto>('/trash'),
+  restoreChannel: (id: string) =>
+    request<unknown>(`/trash/channels/${id}/restore`, { method: 'POST' }),
+  restoreBlueprint: (id: string) =>
+    request<unknown>(`/trash/blueprints/${id}/restore`, { method: 'POST' }),
+  deleteChannelForGood: (id: string) =>
+    request<void>(`/trash/channels/${id}`, { method: 'DELETE' }),
+  deleteBlueprintForGood: (id: string) =>
+    request<void>(`/trash/blueprints/${id}`, { method: 'DELETE' }),
+  listAssistantActivity: (before?: string) =>
+    request<AssistantActivityDto[]>(
+      `/assistant/activity${before ? `?before=${encodeURIComponent(before)}` : ''}`,
+    ),
+  listAssistantNotes: (channelId?: string) =>
+    request<AssistantNoteDto[]>(
+      `/assistant/notes${channelId ? `?channelId=${encodeURIComponent(channelId)}` : ''}`,
+    ),
+  createAssistantNote: (dto: CreateAssistantNoteDto) =>
+    request<AssistantNoteDto>('/assistant/notes', { method: 'POST', body: JSON.stringify(dto) }),
+  updateAssistantNote: (id: string, text: string) =>
+    request<AssistantNoteDto>(`/assistant/notes/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ text }),
+    }),
+  deleteAssistantNote: (id: string) =>
+    request<void>(`/assistant/notes/${id}`, { method: 'DELETE' }),
+  requestAssistantAttachmentUpload: (ext: string) =>
+    request<RequestAssistantAttachmentUploadResultDto>('/assistant/attachments/upload', {
+      method: 'POST',
+      body: JSON.stringify({ ext }),
+    }),
+  createAssistantAttachment: (dto: CreateAssistantAttachmentDto) =>
+    request<AssistantAttachmentDto>('/assistant/attachments', {
+      method: 'POST',
+      body: JSON.stringify(dto),
+    }),
+  deleteAssistantAttachment: (id: string) =>
+    request<void>(`/assistant/attachments/${id}`, { method: 'DELETE' }),
   startAssistantTurn: (sessionId: string, dto: StartAssistantTurnDto) =>
     request<{ turnId: string }>(`/assistant/sessions/${sessionId}/turns`, {
       method: 'POST',

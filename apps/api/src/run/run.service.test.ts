@@ -248,13 +248,13 @@ describe('RunService.list', () => {
     expect(result.total).toBe(1);
   });
 
-  it('skips the where clause entirely when dry and draft runs are included and no other filters are set', async () => {
+  it('always hides runs of trashed blueprints and channels, even with no other filter', async () => {
     const { rowChain, countChain, service } = makeListService([baseRow], [{ count: 1 }]);
 
     await service.list({ includeDryRuns: true, includeDrafts: true, limit: 20, offset: 0 });
 
-    expect(rowChain.where).not.toHaveBeenCalled();
-    expect(countChain.where).not.toHaveBeenCalled();
+    expect(rowChain.where).toHaveBeenCalledTimes(1);
+    expect(countChain.where).toHaveBeenCalledTimes(1);
   });
 
   it.each(['channelId', 'blueprintId', 'state'] as const)(

@@ -36,9 +36,23 @@ import {
   runMemory,
   stageAttempt,
   stageExecution,
+  timelineDraft,
 } from '../db/schema';
 import { ConfigResolverService } from '../run-config/config-resolver.service';
 import { HumanActionService } from './human-action.service';
+import { ArtifactEditService } from './artifact-edit.service';
+import { ulid } from '../common/ulid';
+
+/** Where the editor's draft lives: on the wait of a Human Timeline Edit stage, or (for a finished
+ * Compose Timeline stage) in `timeline_draft`, started from the stage's current output. */
+type DraftSource =
+  | { kind: 'wait'; wait: typeof humanWait.$inferSelect }
+  | {
+      kind: 'output';
+      row: typeof timelineDraft.$inferSelect | null;
+      outputArtifactId: string;
+      outputTimeline: Timeline;
+    };
 
 type Context = {
   run: typeof run.$inferSelect;
@@ -46,8 +60,34 @@ type Context = {
   graph: StageDef[];
   stage: StageDef;
   execution: typeof stageExecution.$inferSelect;
-  wait: typeof humanWait.$inferSelect;
+  source: DraftSource;
 };
+
+/** Run states in which a finished run's timeline output can be edited (as `ArtifactEditService`). */
+const OUTPUT_EDITABLE_STATES = [
+  'PAUSED_BUDGET',
+  'PAUSED_APPROVAL',
+  'PAUSED_INPUT',
+  'PAUSED_QUOTA',
+  'FAILED',
+  'COMPLETED',
+];
+
+function draftOf(context: Context): unknown {
+  return context.source.kind === 'wait' ? context.source.wait.draft : context.source.row?.draft;
+}
+
+function revisionOf(context: Context): number {
+  return context.source.kind === 'wait'
+    ? context.source.wait.draftRevision
+    : (context.source.row?.draftRevision ?? 0);
+}
+
+function isClosed(context: Context): boolean {
+  return context.source.kind === 'wait'
+    ? context.source.wait.resolvedAt !== null || !canAnswer(context.run.state)
+    : !OUTPUT_EDITABLE_STATES.includes(context.run.state);
+}
 
 type SourceRow = {
   assetId?: string | undefined;
@@ -81,18 +121,46 @@ export class TimelineEditorService {
     private readonly memory: MemoryService,
     private readonly configResolver: ConfigResolverService,
     private readonly timelineChecks: TimelineCheckService,
+    private readonly artifactEdits: ArtifactEditService,
   ) {}
 
   async session(runId: string, stageKey: string) {
     let context = await this.loadContext(runId, stageKey);
     const authorized = await this.authorizedSources(context);
-    if (!context.wait.draft) {
+    if (context.source.kind === 'wait' && !context.source.wait.draft) {
       const initial =
         authorized.sourceTimeline ?? this.initialTimeline(context, authorized.resources);
       await this.db
         .update(humanWait)
         .set({ draft: initial, draftUpdatedAt: new Date().toISOString() })
-        .where(and(eq(humanWait.id, context.wait.id), isNull(humanWait.draft)));
+        .where(and(eq(humanWait.id, context.source.wait.id), isNull(humanWait.draft)));
+      context = await this.loadContext(runId, stageKey);
+    }
+    if (
+      context.source.kind === 'output' &&
+      context.source.row?.baseArtifactId !== context.source.outputArtifactId
+    ) {
+      // no draft yet, or the stage made a newer timeline since: start from its output
+      const { row, outputArtifactId, outputTimeline } = context.source;
+      await this.db
+        .insert(timelineDraft)
+        .values({
+          id: ulid(),
+          runId,
+          stageKey,
+          baseArtifactId: outputArtifactId,
+          draft: outputTimeline,
+          draftRevision: row ? row.draftRevision + 1 : 0,
+        })
+        .onConflictDoUpdate({
+          target: [timelineDraft.runId, timelineDraft.stageKey],
+          set: {
+            baseArtifactId: outputArtifactId,
+            draft: outputTimeline,
+            draftRevision: (row?.draftRevision ?? 0) + 1,
+            updatedAt: new Date().toISOString(),
+          },
+        });
       context = await this.loadContext(runId, stageKey);
     }
     const [latestAttempt] = await this.db
@@ -106,26 +174,27 @@ export class TimelineEditorService {
       stageKey,
       stageLabel: context.stage.label,
       runRevision: context.run.revision,
-      draftRevision: context.wait.draftRevision,
-      timeline: Timeline.parse(context.wait.draft),
+      draftRevision: revisionOf(context),
+      timeline: Timeline.parse(draftOf(context)),
       resources: authorized.resources,
       timingMaps: authorized.timingMaps,
       styles: this.styles.list(),
       checkResults: latestAttempt?.checkResults ?? [],
-      readOnly: context.wait.resolvedAt !== null || !canAnswer(context.run.state),
+      readOnly: isClosed(context),
+      source: context.source.kind,
     };
   }
 
   /** The saved draft, with who owns the run, for renders made from it. */
   async savedDraft(runId: string, stageKey: string) {
     const context = await this.loadContext(runId, stageKey);
-    const parsed = Timeline.safeParse(context.wait.draft);
+    const parsed = Timeline.safeParse(draftOf(context));
     if (!parsed.success) throw new ConflictException('There is no saved draft to render yet');
     return {
       ownerId: context.ownerId,
       channelId: context.run.channelId,
       timeline: parsed.data,
-      draftRevision: context.wait.draftRevision,
+      draftRevision: revisionOf(context),
     };
   }
 
@@ -169,28 +238,48 @@ export class TimelineEditorService {
     this.requireEditable(context);
     const authorized = await this.authorizedSources(context);
     this.validateTimelineReferences(input.timeline, authorized.allowedHandles);
-    const nextRevision = context.wait.draftRevision + 1;
-    const condition = input.force
-      ? and(eq(humanWait.id, context.wait.id), isNull(humanWait.resolvedAt))
-      : and(
-          eq(humanWait.id, context.wait.id),
-          eq(humanWait.draftRevision, input.draftRevision),
-          isNull(humanWait.resolvedAt),
-        );
-    const rows = await this.db
-      .update(humanWait)
-      .set({
-        draft: input.timeline,
-        draftRevision: nextRevision,
-        draftUpdatedAt: new Date().toISOString(),
-      })
-      .where(condition)
-      .returning({ draftRevision: humanWait.draftRevision });
+    const nextRevision = revisionOf(context) + 1;
+    let rows: Array<{ draftRevision: number }>;
+    if (context.source.kind === 'wait') {
+      const wait = context.source.wait;
+      const condition = input.force
+        ? and(eq(humanWait.id, wait.id), isNull(humanWait.resolvedAt))
+        : and(
+            eq(humanWait.id, wait.id),
+            eq(humanWait.draftRevision, input.draftRevision),
+            isNull(humanWait.resolvedAt),
+          );
+      rows = await this.db
+        .update(humanWait)
+        .set({
+          draft: input.timeline,
+          draftRevision: nextRevision,
+          draftUpdatedAt: new Date().toISOString(),
+        })
+        .where(condition)
+        .returning({ draftRevision: humanWait.draftRevision });
+    } else {
+      const draft = context.source.row;
+      if (!draft) throw new ConflictException('Open the editor first');
+      this.requireCurrentBase(context);
+      const condition = input.force
+        ? eq(timelineDraft.id, draft.id)
+        : and(eq(timelineDraft.id, draft.id), eq(timelineDraft.draftRevision, input.draftRevision));
+      rows = await this.db
+        .update(timelineDraft)
+        .set({
+          draft: input.timeline,
+          draftRevision: nextRevision,
+          updatedAt: new Date().toISOString(),
+        })
+        .where(condition)
+        .returning({ draftRevision: timelineDraft.draftRevision });
+    }
     if (rows.length === 0) {
       const latest = await this.loadContext(runId, stageKey);
       throw new ConflictException({
         code: 'timeline_draft_conflict',
-        draftRevision: latest.wait.draftRevision,
+        draftRevision: revisionOf(latest),
       });
     }
     this.logger.debug(
@@ -200,24 +289,54 @@ export class TimelineEditorService {
     return { draftRevision: rows[0]!.draftRevision };
   }
 
-  async submit(runId: string, stageKey: string, draftRevision: number) {
+  /** A waiting Human Timeline Edit stage: submits the draft and the run carries on. A finished
+   * Compose Timeline stage: without `previewToken`, returns what saving it re-makes and costs;
+   * with it, replaces the stage's timeline and re-renders what follows. */
+  async submit(runId: string, stageKey: string, draftRevision: number, previewToken?: string) {
     const context = await this.loadContext(runId, stageKey);
     this.requireEditable(context);
-    if (context.wait.draftRevision !== draftRevision) {
+    if (revisionOf(context) !== draftRevision) {
       throw new ConflictException({
         code: 'timeline_draft_conflict',
-        draftRevision: context.wait.draftRevision,
+        draftRevision: revisionOf(context),
       });
     }
-    const timeline = Timeline.parse(context.wait.draft);
+    const timeline = Timeline.parse(draftOf(context));
     const authorized = await this.authorizedSources(context);
     this.validateTimelineReferences(timeline, authorized.allowedHandles);
+    if (context.source.kind === 'output') {
+      this.requireCurrentBase(context);
+      return this.artifactEdits.edit(runId, stageKey, {
+        value: timeline,
+        // the output this draft was made from: if the stage has made a newer one, the edit refuses
+        sourceArtifactId: context.source.row!.baseArtifactId,
+        ...(previewToken && { previewToken }),
+      });
+    }
     return this.humanActions.submitInput(runId, stageKey, timeline, draftRevision);
   }
 
+  /** A draft of a Compose Timeline output must still be based on the stage's current output:
+   * if the stage made a newer timeline since (a re-run), saving it would overwrite that one. */
+  private requireCurrentBase(context: Context) {
+    if (context.source.kind !== 'output') return;
+    const { row, outputArtifactId } = context.source;
+    if (!row || row.baseArtifactId !== outputArtifactId) {
+      throw new ConflictException({
+        code: 'timeline_base_changed',
+        message:
+          'The stage made a newer timeline since this draft was started. Reopen the editor to edit the new one.',
+      });
+    }
+  }
+
   private requireEditable(context: Context) {
-    if (context.wait.resolvedAt || !canAnswer(context.run.state)) {
-      throw new ConflictException('The timeline editor is no longer active');
+    if (isClosed(context)) {
+      throw new ConflictException(
+        context.source.kind === 'wait'
+          ? 'The timeline editor is no longer active'
+          : 'This run is still going: edit its video once it has stopped.',
+      );
     }
   }
 
@@ -336,6 +455,10 @@ export class TimelineEditorService {
           ...(row.probe !== null && row.probe !== undefined ? { probe: row.probe } : {}),
         });
       }
+    }
+    // a finished Compose Timeline stage edits its own output: everything on it is allowed
+    if (!sourceTimeline && context.source.kind === 'output') {
+      sourceTimeline = context.source.outputTimeline;
     }
     if (sourceTimeline) {
       for (const track of sourceTimeline.tracks) {
@@ -607,7 +730,10 @@ export class TimelineEditorService {
     if (!row) throw new NotFoundException(`Run ${runId} not found`);
     const graph = StageDef.array().parse(row.graph);
     const stage = graph.find((candidate) => candidate.key === stageKey);
-    if (!stage || stage.capability !== 'human.timeline_edit') {
+    if (
+      !stage ||
+      (stage.capability !== 'human.timeline_edit' && stage.capability !== 'timeline.compose')
+    ) {
       throw new NotFoundException(`Timeline editor stage ${stageKey} not found`);
     }
     const [execution] = await this.db
@@ -616,6 +742,38 @@ export class TimelineEditorService {
       .where(and(eq(stageExecution.runId, runId), eq(stageExecution.stageKey, stageKey)))
       .limit(1);
     if (!execution) throw new NotFoundException(`Stage execution ${stageKey} not found`);
+    if (stage.capability === 'timeline.compose') {
+      const outputArtifactId = execution.outputArtifactId;
+      const [output] = outputArtifactId
+        ? await this.db
+            .select({ data: artifact.data })
+            .from(artifact)
+            .where(and(eq(artifact.id, outputArtifactId), eq(artifact.stale, false)))
+            .limit(1)
+        : [];
+      const parsed = Timeline.safeParse(output?.data);
+      if (!outputArtifactId || !parsed.success) {
+        throw new ConflictException('This stage has not made its timeline yet');
+      }
+      const [draftRow] = await this.db
+        .select()
+        .from(timelineDraft)
+        .where(and(eq(timelineDraft.runId, runId), eq(timelineDraft.stageKey, stageKey)))
+        .limit(1);
+      return {
+        run: row.run,
+        ownerId: row.ownerId,
+        graph,
+        stage,
+        execution,
+        source: {
+          kind: 'output',
+          row: draftRow ?? null,
+          outputArtifactId,
+          outputTimeline: parsed.data,
+        },
+      };
+    }
     const [wait] = await this.db
       .select()
       .from(humanWait)
@@ -623,7 +781,14 @@ export class TimelineEditorService {
       .orderBy(desc(humanWait.waitingSince))
       .limit(1);
     if (!wait) throw new ConflictException('The timeline editor has not opened yet');
-    return { run: row.run, ownerId: row.ownerId, graph, stage, execution, wait };
+    return {
+      run: row.run,
+      ownerId: row.ownerId,
+      graph,
+      stage,
+      execution,
+      source: { kind: 'wait', wait },
+    };
   }
 }
 

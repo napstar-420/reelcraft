@@ -15,9 +15,16 @@ import { MediaReviewService } from './review/media-review.service';
 import { AssistantWatchService } from './watch/assistant-watch.service';
 import { AssistantSettingsService } from './watch/assistant-settings.service';
 import { UserGuideService } from './user-guide/user-guide.service';
+import { AttachmentService } from './attachments/attachment.service';
+import { FileCopyService } from './files/file-copy.service';
+import { LinkImportService } from './files/link-import.service';
+import { BrowserService } from './browser/browser.service';
+import { AssistantMemoryService } from './memory/assistant-memory.service';
+import { GoalService } from './goals/goal.service';
 import { SettingsModule } from '../settings/settings.module';
 import { QcModule } from '../qc/qc.module';
 import { StorageModule } from '../storage/storage.module';
+import { NotificationModule } from '../notification/notification.module';
 import { ASSISTANT_AGENTS } from './agent/assistant-agent.interface';
 import { CodexAssistantAgent } from './agent/codex-assistant.agent';
 import { ClaudeAssistantAgent } from './agent/claude-assistant.agent';
@@ -42,6 +49,7 @@ import { CodexNeoRegistrar } from '../provider/codex/codex-neo-registrar';
     QcModule,
     StorageModule,
     SettingsModule,
+    NotificationModule,
   ],
   controllers: [AssistantController],
   providers: [
@@ -50,6 +58,12 @@ import { CodexNeoRegistrar } from '../provider/codex/codex-neo-registrar';
     AssistantWatchService,
     AssistantSettingsService,
     UserGuideService,
+    AttachmentService,
+    FileCopyService,
+    LinkImportService,
+    BrowserService,
+    AssistantMemoryService,
+    GoalService,
     // The order is the default: a new chat starts on the first available agent.
     {
       provide: ASSISTANT_AGENTS,

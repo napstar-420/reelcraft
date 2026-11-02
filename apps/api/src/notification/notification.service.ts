@@ -18,7 +18,11 @@ import {
   stageItem,
 } from '../db/schema/index';
 import { LiveEvents } from '../live/live-events';
-import { describeRunNotification, type NotificationTextContext } from './notification-text';
+import {
+  assistantChatUrl,
+  describeRunNotification,
+  type NotificationTextContext,
+} from './notification-text';
 import { PushService } from './push.service';
 
 /** Both the connection and a transaction (or savepoint) satisfy this. */
@@ -51,6 +55,7 @@ function toDto(row: typeof notification.$inferSelect): NotificationDto {
     id: row.id,
     kind: row.kind as NotificationKind,
     runId: row.runId,
+    sessionId: row.sessionId,
     stageKey: row.stageKey,
     title: row.title,
     body: row.body,
@@ -128,6 +133,41 @@ export class NotificationService {
       this.logger.warn({ err }, 'notification not delivered');
     }
     void this.push.send(sent).catch((err: unknown) => this.logger.warn({ err }, 'push not sent'));
+  }
+
+  /** Tells the user about an assistant chat (it needs them, or it finished a run update), once
+   * per `dedupeKey`. */
+  async notifyAssistant(input: {
+    sessionId: string;
+    kind: Extract<NotificationKind, 'assistant_needs_you' | 'assistant_done'>;
+    title: string;
+    body: string;
+    dedupeKey: string;
+    recipientId?: string;
+  }): Promise<void> {
+    const [row] = await this.db
+      .insert(notification)
+      .values({
+        id: ulid(),
+        recipientId: input.recipientId ?? 'local',
+        kind: input.kind,
+        runId: null,
+        sessionId: input.sessionId,
+        stageKey: null,
+        title: input.title.slice(0, 120),
+        body: input.body.slice(0, 240),
+        url: assistantChatUrl(input.sessionId),
+        dedupeKey: input.dedupeKey,
+        createdAt: new Date().toISOString(),
+      })
+      .onConflictDoNothing({ target: notification.dedupeKey })
+      .returning();
+    if (row) this.deliver({ recipientId: row.recipientId, notification: toDto(row) });
+  }
+
+  /** Removes a deleted chat's notifications (inside its delete). */
+  async deleteForSession(tx: Tx, sessionId: string): Promise<void> {
+    await tx.delete(notification).where(eq(notification.sessionId, sessionId));
   }
 
   /** Insert and announce, for callers outside a transaction. */

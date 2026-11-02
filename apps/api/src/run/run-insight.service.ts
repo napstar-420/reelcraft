@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
 import {
   artifact,
@@ -7,6 +7,7 @@ import {
   blob,
   blueprint,
   blueprintVersion,
+  channel,
   ledgerEntry,
   run,
   stageAttempt,
@@ -188,12 +189,16 @@ export class RunInsightService {
       filter.channelId ? eq(run.channelId, filter.channelId) : undefined,
       filter.states?.length ? inArray(run.state, filter.states) : undefined,
       filter.includeDryRuns === false ? eq(run.dryRun, false) : undefined,
+      // runs of a trashed blueprint or channel are hidden with it
+      isNull(blueprint.deletedAt),
+      isNull(channel.deletedAt),
     );
     const rows = await this.db
       .select({ run, version: blueprintVersion, blueprintName: blueprint.name })
       .from(run)
       .innerJoin(blueprintVersion, eq(run.blueprintVersionId, blueprintVersion.id))
       .innerJoin(blueprint, eq(blueprintVersion.blueprintId, blueprint.id))
+      .innerJoin(channel, eq(blueprint.channelId, channel.id))
       .where(where)
       .orderBy(desc(run.startedAt))
       .limit(filter.limit);
@@ -201,6 +206,8 @@ export class RunInsightService {
       .select({ total: sql<number>`count(*)::int` })
       .from(run)
       .innerJoin(blueprintVersion, eq(run.blueprintVersionId, blueprintVersion.id))
+      .innerJoin(blueprint, eq(blueprintVersion.blueprintId, blueprint.id))
+      .innerJoin(channel, eq(blueprint.channelId, channel.id))
       .where(where);
     return { runs: rows.map((r) => this.brief(r.run, r.version, r.blueprintName)), total };
   }

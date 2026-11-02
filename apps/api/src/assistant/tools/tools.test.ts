@@ -7,7 +7,16 @@ import { SchemaValidatorService } from '../../json-schema/schema-validator.servi
 import { ConfigResolverService } from '../../run-config/config-resolver.service';
 import { StyleRegistry } from '../../capability/style.registry';
 import { exampleScenesToImages, exampleScript } from '../guide';
-import { ASSISTANT_TOOLS, buildNarrowedEnums, buildToolDefs, runTool, toolsHash } from './registry';
+import {
+  ASSISTANT_TOOLS,
+  FULL_TOOLS,
+  buildNarrowedEnums,
+  buildToolDefs,
+  fullToolDef,
+  runTool,
+  toolsHash,
+} from './registry';
+import { TOOL_SUMMARIES } from './summaries';
 import { realCapabilityRegistry } from './test-support';
 import { newTurnContext, type ToolDeps } from './types';
 import { UserGuideService } from '../user-guide/user-guide.service';
@@ -16,6 +25,8 @@ const capabilities = realCapabilityRegistry();
 const styles = new StyleRegistry();
 const narrowed = buildNarrowedEnums({ capabilities, styles });
 const defs = buildToolDefs(narrowed);
+/** What describe_tools returns for each tool. */
+const fullDefs = ASSISTANT_TOOLS.map((tool) => fullToolDef(tool, narrowed));
 
 const ajv = new Ajv({ strict: true, allErrors: true, allowUnionTypes: true });
 
@@ -129,6 +140,17 @@ function makeDeps(overrides: Partial<ToolDeps> = {}): ToolDeps {
     review: {} as never,
     watches: {} as never,
     userGuide: new UserGuideService(),
+    attachments: {} as never,
+    files: {} as never,
+    runInputs: {} as never,
+    voices: {} as never,
+    links: {} as never,
+    browser: {} as never,
+    knowledge: { upsertDoc: async () => 'doc' } as never,
+    goals: { refusal: async () => null, recordAttempt: async () => undefined } as never,
+    timelines: {} as never,
+    timelinePreviews: {} as never,
+    timelineChanged: vi.fn(),
     ...overrides,
   };
 }
@@ -142,14 +164,30 @@ describe('tool registry', () => {
     expect(names.sort()).toEqual(
       [
         'approve_stage',
+        'analyze_video',
         'archive_blueprint',
         'archive_channel',
         'ask_user',
+        'browser_act',
+        'browser_close',
+        'browser_look',
+        'browser_media',
+        'browser_open',
+        'compare_media',
+        'compare_runs',
         'cancel_run',
+        'edit_timeline',
+        'get_timeline',
+        'preview_timeline',
+        'submit_timeline',
         'create_blueprint',
         'create_channel',
+        'create_character',
+        'delete_asset',
         'delete_blueprint',
+        'delete_character',
         'delete_channel',
+        'describe_tools',
         'diff_drafts',
         'pause_run',
         'provide_input',
@@ -159,13 +197,19 @@ describe('tool registry', () => {
         'resume_run',
         'retry_stage',
         'run_stages',
+        'save_breakdown',
+        'save_to_library',
         'save_version',
         'search_docs',
         'set_concurrency',
+        'set_goal',
         'start_run',
         'unwatch_run',
         'update_channel',
+        'update_character',
         'edit_draft',
+        'finish_goal',
+        'forget',
         'get_blueprint',
         'get_capability',
         'get_channel',
@@ -176,21 +220,25 @@ describe('tool registry', () => {
         'get_stage',
         'get_stages',
         'get_version',
+        'import_from_link',
         'list_blueprints',
         'list_capabilities',
         'list_channels',
         'list_checks',
         'list_models',
+        'list_notes',
         'list_runs',
         'list_styles',
-        'listen_to_audio',
+        'make_voice',
+        'listen',
         'present_plan',
         'propose_draft',
         'read_guide',
+        'recall',
+        'remember',
         'update_metadata',
         'validate_draft',
-        'view_asset',
-        'view_stage_media',
+        'view_media',
         'watch_run',
       ].sort(),
     );
@@ -203,18 +251,24 @@ describe('tool registry', () => {
       'archive_channel',
       'create_blueprint',
       'create_channel',
+      'create_character',
       'edit_draft',
+      'edit_timeline',
+      'forget',
       'propose_draft',
+      'remember',
       'restore_version',
+      'save_to_library',
       'save_version',
       'update_channel',
+      'update_character',
       'update_metadata',
     ]);
     expect(
       ASSISTANT_TOOLS.filter((t) => t.kind === 'destroy')
         .map((t) => t.name)
         .sort(),
-    ).toEqual(['delete_blueprint', 'delete_channel']);
+    ).toEqual(['delete_asset', 'delete_blueprint', 'delete_channel', 'delete_character']);
     expect(
       ASSISTANT_TOOLS.filter((t) => t.kind === 'interact')
         .map((t) => t.name)
@@ -222,32 +276,84 @@ describe('tool registry', () => {
     ).toEqual(['ask_user', 'present_plan']);
   });
 
+  it('sends most tools as a name and a line (they go with every request)', () => {
+    const total = defs.reduce((sum, d) => sum + JSON.stringify(d).length, 0);
+    expect(total).toBeLessThan(24_000);
+    for (const d of defs) {
+      expect(JSON.stringify(d).length, d.name).toBeLessThan(FULL_TOOLS.has(d.name) ? 4_500 : 400);
+      if (!FULL_TOOLS.has(d.name)) expect(d.inputSchema).toEqual({ type: 'object' });
+    }
+    // every tool has its own line, and the line is short
+    expect(Object.keys(TOOL_SUMMARIES).sort()).toEqual(ASSISTANT_TOOLS.map((t) => t.name).sort());
+    for (const [name, line] of Object.entries(TOOL_SUMMARIES)) {
+      expect(line.length, name).toBeLessThanOrEqual(110);
+    }
+    // the short form names the arguments, optional ones marked
+    expect(defs.find((d) => d.name === 'get_timeline')!.description).toMatch(
+      /Args: runId, stageKey, items\?\.$/,
+    );
+  });
+
+  it('keeps each tool in full small too (describe_tools returns these)', () => {
+    // the stage schema is in the tools that write a draft, not in validate_draft
+    const validate = JSON.stringify(fullDefs.find((d) => d.name === 'validate_draft'));
+    expect(validate.length).toBeLessThan(1_200);
+    for (const d of fullDefs) expect(JSON.stringify(d).length, d.name).toBeLessThan(4_500);
+  });
+
   it('narrows enums to the live registries', () => {
     expect(narrowed.capabilityKeys).toContain('text.generate');
     expect(narrowed.capabilityKeys).toContain('publish.stub');
     expect(narrowed.checkKeys).toContain('word_count');
     expect(narrowed.styleIds).toContain('caption.bold_pop');
-    const capSchema = defs.find((d) => d.name === 'get_capability')!.inputSchema as {
+    const capSchema = fullDefs.find((d) => d.name === 'get_capability')!.inputSchema as {
       properties: { key: { enum: string[] } };
     };
     expect(capSchema.properties.key.enum).toEqual(narrowed.capabilityKeys);
   });
 
-  it('hashes the tool set, changing when a capability appears', () => {
+  it('hashes the tool set sent, which a new capability no longer changes', () => {
     const a = toolsHash(defs);
     expect(toolsHash(buildToolDefs(narrowed))).toBe(a);
+    // the live enums are in describe_tools, so an open chat keeps working when one appears
     const more = buildToolDefs({
       ...narrowed,
       capabilityKeys: [...narrowed.capabilityKeys, 'new.thing'],
     });
-    expect(toolsHash(more)).not.toBe(a);
+    expect(toolsHash(more)).toBe(a);
+    expect(toolsHash(defs.slice(1))).not.toBe(a);
+  });
+
+  it('describe_tools gives tools in full, with the live enums', async () => {
+    const out = await runTool(
+      'describe_tools',
+      { names: ['get_capability', 'edit_timeline', 'nope'] },
+      ctx(),
+      makeDeps(),
+    );
+    expect(out.ok).toBe(true);
+    const result = (out as { result: { tools: Array<Record<string, unknown>>; unknown: string[] } })
+      .result;
+    expect(result.tools.map((t) => t.name)).toEqual(['get_capability', 'edit_timeline']);
+    expect(result.tools[1]).toMatchObject({ kind: 'change', description: expect.any(String) });
+    expect(JSON.stringify(result.tools[0]!.inputSchema)).toContain('text.generate');
+    expect(result.unknown).toEqual(['nope']);
+    expect(await runTool('describe_tools', { names: ['nope'] }, ctx(), makeDeps())).toMatchObject({
+      ok: false,
+    });
   });
 
   it('returns {ok:false} for an unknown tool and for invalid input', async () => {
     const deps = makeDeps();
     expect(await runTool('nope', {}, ctx(), deps)).toMatchObject({ ok: false });
     const bad = await runTool('update_metadata', { blueprintId: 'bp1', name: 'x' }, ctx(), deps);
-    expect(bad).toMatchObject({ ok: false, error: 'Invalid input for update_metadata.' });
+    // the model only had the tool's line, so a refused call brings the tool in full
+    expect(bad).toMatchObject({
+      ok: false,
+      error: 'Invalid input for update_metadata.',
+      usage: { name: 'update_metadata', inputSchema: { type: 'object' } },
+    });
+    expect(JSON.stringify((bad as { usage: unknown }).usage)).toContain('blueprintId');
   });
 
   it('turns a throwing handler into {ok:false}', async () => {
@@ -292,14 +398,107 @@ describe('JSON Schemas stay in sync with the Zod inputs (drift guard)', () => {
     },
     get_run: { runId: 'r1' },
     get_stage: { runId: 'r1', stageKey: 'script', itemIndex: 0, full: true, includePrompt: true },
-    view_stage_media: { runId: 'r1', stageKey: 'images', itemIndex: 0, frames: 4, at: [1.5] },
+    view_media: { source: { runId: 'r1', stageKey: 'images', itemIndex: 0 }, frames: 4, at: [1.5] },
     get_attempt: { runId: 'r1', stageKey: 'script', attemptNo: 2, itemIndex: 0 },
     get_run_memory: { runId: 'r1', key: 'scenes' },
-    listen_to_audio: { runId: 'r1', stageKey: 'voice', itemIndex: 0 },
-    view_asset: { characterId: 'c1', blobId: 'b1' },
+    listen: { source: { attachmentId: 'att1' } },
     watch_run: { runId: 'r1' },
     unwatch_run: { runId: 'r1' },
     search_docs: { query: 'raise budget', limit: 3 },
+    save_to_library: {
+      channelId: 'ch1',
+      source: { attachmentId: 'a1' },
+      name: 'Logo',
+      kind: 'media.image',
+      tags: ['brand'],
+    },
+    delete_asset: { assetId: 'as1' },
+    create_character: {
+      channelId: 'ch1',
+      name: 'Mia',
+      description: 'Red hair, green coat',
+      references: [{ source: { attachmentId: 'a1' }, view: 'front', caption: 'smiling' }],
+    },
+    update_character: {
+      characterId: 'c1',
+      name: 'Mia B',
+      description: 'd',
+      addReferences: [{ source: { assetId: 'as1' }, view: 'profile' }],
+      removeReferences: ['b1'],
+      primary: 'new:0',
+    },
+    delete_character: { characterId: 'c1' },
+    import_from_link: { url: 'https://example.com/a.mp4' },
+    browser_open: { url: 'https://example.com' },
+    browser_look: { pageId: 3, scroll: 'down' },
+    browser_act: { pageId: 3, action: 'type', target: 'Search', value: 'otters' },
+    browser_media: { pageId: 3 },
+    browser_close: { pageId: 3 },
+    set_goal: {
+      blueprintId: 'bp1',
+      goal: 'Under 30 seconds',
+      maxRuns: 3,
+      maxSpendUsd: 2,
+      runId: 'r1',
+    },
+    finish_goal: { goalId: 'g1', met: true, summary: 'Shortened the script twice.' },
+    compare_runs: { a: 'r1', b: 'r2', frames: 4 },
+    describe_tools: { names: ['get_run', 'edit_timeline'] },
+    get_timeline: { runId: 'r1', stageKey: 'compose', items: [{ trackId: 'video', index: 0 }] },
+    edit_timeline: {
+      runId: 'r1',
+      stageKey: 'compose',
+      summary: 'Shorter intro',
+      ops: [{ op: 'shift', trackId: 'video', fromSec: 4, bySec: -1 }],
+    },
+    preview_timeline: { runId: 'r1', stageKey: 'compose' },
+    submit_timeline: { runId: 'r1', stageKey: 'compose' },
+    remember: { scope: 'channel', channelId: 'ch1', text: 'Always 9:16' },
+    forget: { noteId: 'n1' },
+    list_notes: { channelId: 'ch1' },
+    recall: { query: 'space reel', channelId: 'ch1', kind: 'breakdown', limit: 3 },
+    analyze_video: { source: { attachmentId: 'a1' }, transcribe: false },
+    compare_media: { a: { attachmentId: 'a1' }, b: { runId: 'r1' }, frames: 4 },
+    save_breakdown: {
+      source: { attachmentId: 'a1' },
+      breakdown: {
+        title: 'Space facts reel',
+        summary: 'A fast reel.',
+        format: { aspectRatio: '9:16', width: 1080, height: 1920, fps: 30, durationSec: 10 },
+        sections: [{ label: 'Hook', startSec: 0, endSec: 2, purpose: 'Grab attention' }],
+        shots: [
+          { index: 0, startSec: 0, endSec: 4, visual: 'Earth from orbit', make: 'generate_image' },
+          {
+            index: 1,
+            startSec: 4,
+            endSec: 10,
+            visual: 'Title card',
+            make: 'text_only',
+            onScreenText: 'WOW',
+            camera: 'static',
+            transition: 'cut',
+          },
+        ],
+        narration: {
+          present: true,
+          script: 'Did you know…',
+          voice: 'calm male',
+          wordsPerMinute: 160,
+        },
+        captions: { present: true, style: 'bold yellow' },
+        music: { present: true, description: 'synth', energy: 'builds' },
+        soundEffects: [{ atSec: 4, description: 'whoosh' }],
+        textStyle: 'white sans',
+        pacing: { shots: 2, averageShotSec: 5 },
+      },
+    },
+    make_voice: {
+      source: { attachmentId: 'a1' },
+      name: 'Host',
+      channelId: 'ch1',
+      transcript: 'hi',
+      language: 'en',
+    },
     read_guide: { topic: 'limits' },
     validate_draft: { blueprintId: 'bp1', draft: exampleScript() },
     propose_draft: {
@@ -377,14 +576,14 @@ describe('JSON Schemas stay in sync with the Zod inputs (drift guard)', () => {
   });
 
   it('rejects an unknown capability key in the draft schema', () => {
-    const schema = defs.find((d) => d.name === 'propose_draft')!.inputSchema;
+    const schema = fullDefs.find((d) => d.name === 'propose_draft')!.inputSchema;
     const draft = exampleScript();
     draft.graph[0]!.capability = 'made.up';
     expect(ajv.compile(schema)({ draft, summary: 's' })).toBe(false);
   });
 
   it('lists exactly the StageDef fields, and requires the non-optional ones', () => {
-    const draftSchema = defs.find((d) => d.name === 'validate_draft')!.inputSchema as {
+    const draftSchema = fullDefs.find((d) => d.name === 'propose_draft')!.inputSchema as {
       properties: {
         draft: { properties: { graph: { items: { properties: object; required: string[] } } } };
       };
@@ -398,7 +597,7 @@ describe('JSON Schemas stay in sync with the Zod inputs (drift guard)', () => {
   });
 
   it('lists exactly the draft fields', () => {
-    const draftSchema = defs.find((d) => d.name === 'validate_draft')!.inputSchema as {
+    const draftSchema = fullDefs.find((d) => d.name === 'propose_draft')!.inputSchema as {
       properties: { draft: { properties: object } };
     };
     expect(Object.keys(draftSchema.properties.draft.properties).sort()).toEqual(
@@ -1083,6 +1282,245 @@ describe('search_docs', () => {
     const plan = { ...ctx(), mode: 'plan' as const };
     expect(await runTool('search_docs', { query: 'budget' }, plan, makeDeps())).toMatchObject({
       ok: true,
+    });
+  });
+});
+
+describe('media sources: attachments', () => {
+  const image = {
+    blobId: 'b-img',
+    objectKey: 'k',
+    mime: 'image/png',
+    kind: 'image' as const,
+    name: 'face.png',
+    probe: null,
+  };
+  const video = {
+    blobId: 'b-vid',
+    objectKey: 'k2',
+    mime: 'video/mp4',
+    kind: 'video' as const,
+    name: 'ref.mp4',
+    probe: {
+      container: 'mp4',
+      durationSec: 20,
+      streams: [{ type: 'video', codec: 'h264', width: 1080, height: 1920 }],
+    },
+  };
+  const withFiles = () =>
+    makeDeps({
+      attachments: {
+        file: vi.fn(async (id: string) => {
+          if (id === 'att-img') return image;
+          if (id === 'att-vid') return video;
+          throw new Error('missing');
+        }),
+        get: vi.fn(),
+      } as never,
+      media: {
+        imageFromBlob: vi.fn(async () => ({ mime: 'image/jpeg', base64: 'AAA', label: 'x' })),
+        framesOfVideo: vi.fn(),
+      } as never,
+      review: {
+        contactSheet: vi.fn(async () => ({
+          mime: 'image/jpeg' as const,
+          base64: 'BBB',
+          times: [0, 10],
+          columns: 2,
+          durationSec: 20,
+        })),
+        transcriber: vi.fn(async () => ({ available: true, by: 'voicestudio', paid: false })),
+        listen: vi.fn(async () => ({
+          by: 'voicestudio',
+          costUsd: 0,
+          durationSec: 20,
+          transcript: 'hello there',
+          lines: [{ atSec: 0, text: 'hello there' }],
+          stats: { meanVolumeDb: -20, maxVolumeDb: -3, silences: [] },
+        })),
+      } as never,
+    });
+
+  it('shows an attached picture and an attached video as a contact sheet', async () => {
+    const d = withFiles();
+    const c = ctx();
+    const pic = await runTool('view_media', { source: { attachmentId: 'att-img' } }, c, d);
+    expect(pic).toMatchObject({ ok: true, images: [{ base64: 'AAA' }] });
+    const vid = await runTool(
+      'view_media',
+      { source: { attachmentId: 'att-vid' }, at: [1, 5] },
+      c,
+      d,
+    );
+    expect(vid).toMatchObject({
+      ok: true,
+      result: { kind: 'video', size: '1080x1920', durationSec: 20 },
+      images: [{ base64: 'BBB' }],
+    });
+    expect(d.review.contactSheet).toHaveBeenCalledWith('b-vid', { count: undefined, at: [1, 5] });
+    expect(c.imagesShown).toBe(2);
+  });
+
+  it('listens to an attached video and refuses to listen to a picture', async () => {
+    const d = withFiles();
+    const heard = await runTool('listen', { source: { attachmentId: 'att-vid' } }, ctx(), d);
+    expect(heard).toMatchObject({ ok: true, result: { heard: 'the attached file "ref.mp4"' } });
+    const pic = await runTool('listen', { source: { attachmentId: 'att-img' } }, ctx(), d);
+    expect(pic).toMatchObject({ ok: false });
+    expect((pic as { error: string }).error).toContain('needs audio or video');
+  });
+
+  it('refuses a source that names two things, or none', async () => {
+    const d = withFiles();
+    expect(
+      await runTool('view_media', { source: { attachmentId: 'a', assetId: 'b' } }, ctx(), d),
+    ).toMatchObject({ ok: false });
+    expect(await runTool('view_media', { source: {} }, ctx(), d)).toMatchObject({ ok: false });
+    expect(await runTool('view_media', { source: { stageKey: 'x' } }, ctx(), d)).toMatchObject({
+      ok: false,
+    });
+  });
+});
+
+describe('links and the browser', () => {
+  const view = {
+    title: 'Otters',
+    url: 'https://example.com/otters',
+    text: 'All about otters',
+    textLength: 16,
+    links: [{ text: 'Video', href: 'https://example.com/v' }],
+    scrollY: 0,
+    pageHeight: 2000,
+    viewportHeight: 800,
+    screenshot: 'SHOT',
+  };
+  const browserDeps = (over: Record<string, unknown> = {}) => {
+    const owned = new Set<number>();
+    return makeDeps({
+      browser: {
+        unavailableReason: vi.fn(async () => null),
+        ownsPage: (_s: string, id: number) => owned.has(id),
+        openTabs: () => [...owned],
+        open: vi.fn(async () => {
+          owned.add(7);
+          return { pageId: 7, view };
+        }),
+        look: vi.fn(async () => view),
+        act: vi.fn(async () => ({ done: true })),
+        media: vi.fn(async () => ({
+          pageUrl: view.url,
+          videos: ['https://cdn/x.mp4'],
+          audios: [],
+          images: [],
+        })),
+        close: vi.fn(async () => undefined),
+        ...over,
+      } as never,
+      links: {
+        import: vi.fn(async () => ({
+          id: 'att9',
+          name: 'clip.mp4',
+          kind: 'video',
+          mime: 'video/mp4',
+          width: 1080,
+          height: 1920,
+          durationSec: 12,
+        })),
+      } as never,
+    });
+  };
+
+  it('opens a page with its text, links and a screenshot, and only drives its own tabs', async () => {
+    const d = browserDeps();
+    const c = ctx();
+    const opened = await runTool('browser_open', { url: 'https://example.com/otters' }, c, d);
+    expect(opened).toMatchObject({
+      ok: true,
+      result: { pageId: 7, title: 'Otters', links: [{ text: 'Video' }] },
+      images: [{ base64: 'SHOT' }],
+    });
+    expect(c.imagesShown).toBe(1);
+    expect(await runTool('browser_look', { pageId: 7, scroll: 'down' }, c, d)).toMatchObject({
+      ok: true,
+    });
+    expect(d.browser.look).toHaveBeenCalledWith(7, 'down');
+    const foreign = await runTool('browser_look', { pageId: 99 }, c, d);
+    expect(foreign).toMatchObject({ ok: false });
+    expect((foreign as { error: string }).error).toContain('not a tab this chat opened');
+    expect(await runTool('browser_media', { pageId: 7 }, c, d)).toMatchObject({
+      ok: true,
+      result: { videos: ['https://cdn/x.mp4'] },
+    });
+  });
+
+  it('does not open this machine or the local network in the browser', async () => {
+    const d = browserDeps();
+    for (const url of [
+      'http://192.168.1.1/apply.cgi',
+      'http://localhost:3000/',
+      'http://[::ffff:7f00:1]/',
+    ]) {
+      expect(await runTool('browser_open', { url }, ctx(), d), url).toMatchObject({
+        ok: false,
+        error: expect.stringMatching(/local network/),
+      });
+    }
+    expect(d.browser.open).not.toHaveBeenCalled();
+  });
+
+  it('says when the browser is not connected', async () => {
+    const d = browserDeps({ unavailableReason: vi.fn(async () => 'Neo is off') });
+    expect(await runTool('browser_open', { url: 'https://example.com' }, ctx(), d)).toMatchObject({
+      ok: false,
+      error: 'Neo is off',
+    });
+  });
+
+  it('asks before acting in the browser in Manual mode, and checks the action', async () => {
+    const d = browserDeps();
+    await runTool('browser_open', { url: 'https://example.com' }, ctx(), d);
+    const asked: string[] = [];
+    const manual = newTurnContext({
+      mode: 'manual',
+      confirm: async (r) => (asked.push(r.title), { answer: 'yes' }),
+    });
+    const out = await runTool(
+      'browser_act',
+      { pageId: 7, action: 'type', target: 'Search', value: 'otters' },
+      manual,
+      d,
+    );
+    expect(out).toMatchObject({ ok: true });
+    expect(asked).toEqual(['Type into "Search" in the browser']);
+    expect(d.browser.act).toHaveBeenCalledWith(7, 'type', 'Search', 'otters');
+    expect(
+      await runTool('browser_act', { pageId: 7, action: 'press', value: 'F13' }, ctx(), d),
+    ).toMatchObject({ ok: false });
+    expect(await runTool('browser_act', { pageId: 7, action: 'click' }, ctx(), d)).toMatchObject({
+      ok: false,
+    });
+    expect(
+      await runTool(
+        'browser_act',
+        { pageId: 7, action: 'type', target: 'x', value: 'y' },
+        newTurnContext({ mode: 'plan' }),
+        d,
+      ),
+    ).toMatchObject({ ok: false });
+  });
+
+  it('imports a link into this chat', async () => {
+    const d = browserDeps();
+    const c = { ...ctx(), sessionId: 'chat-1' };
+    const out = await runTool('import_from_link', { url: 'https://example.com/clip.mp4' }, c, d);
+    expect(out).toMatchObject({
+      ok: true,
+      result: { attachmentId: 'att9', kind: 'video', size: '1080x1920', durationSec: 12 },
+    });
+    expect(d.links.import).toHaveBeenCalledWith({
+      ownerId: 'local',
+      sessionId: 'chat-1',
+      url: 'https://example.com/clip.mp4',
     });
   });
 });

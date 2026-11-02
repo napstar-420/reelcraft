@@ -73,6 +73,8 @@ export interface AssistantAgent {
     /** Refreshed every turn (date, app version, blueprint name). */
     instructions: string;
     mode: AssistantMode;
+    /** Pictures the user attached to this message, sent with its text. */
+    images?: ToolImage[] | undefined;
     handlers: AssistantTurnHandlers;
     signal: AbortSignal;
   }): Promise<void>;

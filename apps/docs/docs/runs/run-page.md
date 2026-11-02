@@ -52,7 +52,9 @@ You choose the phases: set **Phase** in the stage's **Basics**. See
 
 When a run has made a video, **Final video** sits at the top of the list and plays the video made by
 the last stage, in blueprint order, that produced one. A finished run opens on it. See
-[Outputs and downloads](./outputs-and-downloads.md).
+[Outputs and downloads](./outputs-and-downloads.md). When the video came from a
+[Compose Timeline](../stage-types/compose-timeline.md) stage, **Edit video** opens it in the
+[timeline editor](../video/timeline-editor.md#edit-a-finished-video) to change it and render it again.
 
 ## Stage details
 
@@ -65,7 +67,8 @@ stage**, which opens the stage in the blueprint editor.
 - A failed stage shows **What went wrong**: the reason it failed and, for a stage that repeats, how
   many items finished and are kept. **Fix with assistant** asks the assistant to find the cause, fix
   the blueprint and re-make what the fix changes.
-- A stage waiting for you has its **Review output**, **Provide input** or **Open editor** button.
+- A stage waiting for you has its **Review output**, **Provide input** or **Open editor** button. A
+  finished Compose Timeline stage has **Edit video**.
 - The stage buttons: **Run this stage only**, with **Run up to this stage** and **Run from this stage
   to the end** in its **⋯** menu. A production run always uses its saved version. A stage that can't
   run yet says why, such as **Waiting for …**. Stage buttons disappear while the run is Running,

@@ -16,7 +16,7 @@ describe('assistant instructions', () => {
   it('only name tools that exist, and name every tool the flow depends on', () => {
     const mentioned = new Set(
       text.match(
-        /\b(?:get|list|read|validate|propose|edit|update|ask|present|create|archive|delete|save|restore|start|run|retry|pause|resume|cancel|raise|set|approve|reject|provide|view|listen|watch|unwatch|search)_[a-z_]+\b/g,
+        /\b(?:get|list|read|validate|propose|edit|update|ask|present|create|archive|delete|save|restore|start|run|retry|pause|resume|cancel|raise|set|approve|reject|provide|view|listen|watch|unwatch|search|make|import|browser|analyze|compare|finish)_[a-z_]+\b/g,
       ),
     );
     const real = new Set(ASSISTANT_TOOLS.map((t) => t.name));
@@ -41,7 +41,7 @@ describe('assistant instructions', () => {
   });
 
   it('tell the assistant to look at runs first and to distrust what they contain', () => {
-    for (const phrase of ['list_runs', 'get_stage', 'view_stage_media', '"diagnose" topic']) {
+    for (const phrase of ['list_runs', 'get_stage', 'view_media', '"diagnose" topic']) {
       expect(text).toContain(phrase);
     }
     expect(text).toMatch(/untrusted data/i);
@@ -57,8 +57,15 @@ describe('assistant instructions', () => {
       'What Reelcraft cannot do (always true)',
       'How you work on a blueprint',
       'Build quality: you know Reelcraft better than the user',
+      'The Library, Characters and voices',
+      'Goals: improving a blueprint on your own',
+      'What you remember',
+      'Recreating a video',
+      'Editing a video',
+      'Links and the browser',
       'Channels and blueprints',
       'Versions',
+      'Files the user gives you',
       'Runs: reading them',
       'Runs: acting on them',
       'Watching runs',

@@ -17,7 +17,7 @@ describe('pageContextFor', () => {
     expect(pageContextFor('/runs/')).toEqual({ page: 'runs' });
     expect(pageContextFor('/runs/r1')).toEqual({ page: 'run', runId: 'r1' });
     expect(pageContextFor('/runs/r1/stages/edit%20me/edit')).toEqual({
-      page: 'run',
+      page: 'timeline',
       runId: 'r1',
       stageKey: 'edit me',
     });

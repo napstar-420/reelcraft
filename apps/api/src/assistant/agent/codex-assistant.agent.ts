@@ -222,7 +222,13 @@ export class CodexAssistantAgent implements AssistantAgent {
           environments: [],
           model: options.model,
           ...(options.effort && { effort: options.effort }),
-          input: [{ type: 'text', text: options.text }],
+          input: [
+            { type: 'text', text: options.text },
+            ...(options.images ?? []).map((image) => ({
+              type: 'image',
+              url: `data:${image.mime};base64,${image.base64}`,
+            })),
+          ],
         },
         30_000,
       );

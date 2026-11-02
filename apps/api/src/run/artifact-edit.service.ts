@@ -7,7 +7,7 @@ import {
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { and, desc, eq, sql } from 'drizzle-orm';
-import { StageDef } from '@reelcraft/shared';
+import { StageDef, Timeline } from '@reelcraft/shared';
 import { ArtifactService } from '../artifact/artifact.service';
 import { MemoryService } from '../artifact/memory.service';
 import { ulid } from '../common/ulid';
@@ -188,6 +188,16 @@ export class ArtifactEditService {
       if (violations.length > 0)
         throw new UnprocessableEntityException({ code: 'schema_invalid', violations });
       return value;
+    }
+    if (stage.output.kind === 'timeline') {
+      const parsed = Timeline.safeParse(value);
+      if (!parsed.success) {
+        throw new UnprocessableEntityException({
+          code: 'timeline_invalid',
+          message: parsed.error.issues[0]?.message ?? 'Not a timeline',
+        });
+      }
+      return parsed.data;
     }
     throw new UnprocessableEntityException('Media artifact edits are not available until Phase 5');
   }

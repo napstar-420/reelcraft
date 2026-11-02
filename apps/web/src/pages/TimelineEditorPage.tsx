@@ -5,6 +5,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import type {
   Timeline,
+  TimelineOutputPreviewDto,
   TimelineItem,
   TimelineResource,
   TimelineStyle,
@@ -12,6 +13,21 @@ import type {
 } from '@reelcraft/shared';
 import { timelineDurationSec } from '@reelcraft/timeline-composition';
 import { Button } from '../components/ui/button';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '../components/ui/alert-dialog';
+import {
+  useAssistantPageDetail,
+  useAssistantTurnHooks,
+} from '../components/assistant/assistant-context';
+import { socket } from '../lib/socket';
 import { ChecksIndicator } from '../components/timeline-editor/checks-indicator';
 import { DraftRenderDialog } from '../components/timeline-editor/draft-render-dialog';
 import { EditorHeader, type SaveState } from '../components/timeline-editor/editor-header';
@@ -44,6 +60,7 @@ import { isTypingTarget, shortcutFor, type ShortcutAction } from './timeline-edi
 import {
   appendResource,
   describeSubmitError,
+  incomingDraftAction,
   type ItemTiming,
   type SubmitErrorView,
 } from './timeline-editor.logic';
@@ -67,6 +84,16 @@ export function TimelineEditorPage() {
   const [loadError, setLoadError] = useState<string>();
   const [submitError, setSubmitError] = useState<SubmitErrorView>();
   const [submitting, setSubmitting] = useState(false);
+  /** wait: a Human Timeline Edit stage; output: a finished Compose Timeline (saving re-renders). */
+  const [source, setSource] = useState<'wait' | 'output'>('wait');
+  /** What saving a finished video re-makes and costs, waiting for the person's OK. */
+  const [rerender, setRerender] = useState<TimelineOutputPreviewDto>();
+  /** The assistant saved a newer draft while this editor had edits of its own. */
+  const [incoming, setIncoming] = useState<number>();
+  // read inside `flush`: while the assistant's version waits for a choice, nothing autosaves
+  // (it would save over it with an old revision and only get a conflict)
+  const incomingRef = useRef<number>();
+  incomingRef.current = incoming;
   const playerRef = useRef<PlayerRef>(null);
   const timelineRef = useRef<Timeline>();
   const savedRef = useRef<Timeline>();
@@ -100,6 +127,8 @@ export function TimelineEditorPage() {
       setStyles(session.styles);
       setStageLabel(session.stageLabel);
       setReadOnly(session.readOnly);
+      setSource(session.source);
+      setIncoming(undefined);
       setSelection(undefined);
       setSave(session.readOnly ? 'readonly' : 'saved');
     } catch (error) {
@@ -134,17 +163,19 @@ export function TimelineEditorPage() {
       return;
     }
     savingRef.current = false;
-    if (timelineRef.current !== savedRef.current) void flush();
+    if (timelineRef.current !== savedRef.current && incomingRef.current === undefined) void flush();
   }, [runId, stageKey]);
 
   useEffect(() => {
     if (!timeline || readOnly || save === 'conflict' || timeline === savedRef.current) return;
+    // Load its version / Keep mine is open: Keep mine saves, Load replaces the edits
+    if (incoming !== undefined) return;
     window.clearTimeout(saveTimer.current);
     setSave((current) => (current === 'saving' ? current : 'saving'));
     saveTimer.current = window.setTimeout(() => void flush(), 450);
     return () => window.clearTimeout(saveTimer.current);
     // `save` is deliberately left out: a failed save must wait for the next change, not loop.
-  }, [timeline, readOnly, flush]);
+  }, [timeline, readOnly, flush, incoming]);
 
   // Waits until every change is saved, for things that must act on the saved draft.
   const settleSave = useCallback(async () => {
@@ -154,6 +185,77 @@ export function TimelineEditorPage() {
     if (timelineRef.current !== savedRef.current) throw new Error('The draft could not be saved.');
   }, [flush]);
   const draftRender = useDraftRender(runId, stageKey, settleSave);
+
+  // The assistant edits the saved draft: save first, and tell it what is selected and where the
+  // playhead is, so "this clip" and "here" mean what the person is looking at.
+  const selectionRef = useRef<Selection>();
+  selectionRef.current = selection;
+  const readOnlyRef = useRef(readOnly);
+  readOnlyRef.current = readOnly;
+  const assistantContext = useCallback(() => {
+    const current = timelineRef.current;
+    const sel = selectionRef.current;
+    const trackId = sel && current?.tracks[sel.trackIndex]?.id;
+    const fpsNow = current?.canvas.fps ?? 30;
+    const frame = playerRef.current?.getCurrentFrame();
+    return {
+      ...(trackId && sel && { selection: [{ trackId, index: sel.itemIndex }] }),
+      ...(frame !== undefined && { playheadSec: Math.round((frame / fpsNow) * 100) / 100 }),
+    };
+  }, []);
+  const saveBeforeTurn = useCallback(async () => {
+    if (!readOnlyRef.current) await settleSave();
+  }, [settleSave]);
+  useAssistantTurnHooks({ context: assistantContext, beforeSend: saveBeforeTurn });
+  useAssistantPageDetail(stageLabel ? { stageKey, label: stageLabel } : null);
+
+  // A draft the assistant saved: taken in as one undo step when this editor has nothing unsaved,
+  // otherwise the person chooses which version to keep.
+  const adoptLatest = useCallback(async () => {
+    const session = await api.getTimelineEditor(runId, stageKey);
+    savedRef.current = session.timeline;
+    revisionRef.current = session.draftRevision;
+    setSavedRevision(session.draftRevision);
+    setIncoming(undefined);
+    setSelection(undefined);
+    setSave(session.readOnly ? 'readonly' : 'saved');
+    dispatch({ type: 'adopt', timeline: session.timeline });
+  }, [runId, stageKey]);
+  useEffect(() => {
+    const onTimeline = (event: { runId: string; stageKey: string; draftRevision: number }) => {
+      if (event.runId !== runId || event.stageKey !== stageKey) return;
+      const action = incomingDraftAction({
+        incomingRevision: event.draftRevision,
+        savedRevision: revisionRef.current,
+        unsavedEdits: savingRef.current || timelineRef.current !== savedRef.current,
+      });
+      if (action === 'ignore') return;
+      if (action === 'ask') {
+        window.clearTimeout(saveTimer.current);
+        setIncoming(event.draftRevision);
+        return;
+      }
+      void adoptLatest()
+        .then(() =>
+          toast.info('The assistant changed the timeline', {
+            description: 'Undo (⌘Z) takes it back.',
+          }),
+        )
+        .catch(() => setIncoming(event.draftRevision));
+    };
+    socket.on('timeline:updated', onTimeline);
+    return () => {
+      socket.off('timeline:updated', onTimeline);
+    };
+  }, [runId, stageKey, adoptLatest]);
+  // Keep mine: save this editor's version over the assistant's.
+  const keepMine = () => {
+    if (incoming === undefined) return;
+    revisionRef.current = incoming;
+    setSavedRevision(incoming);
+    setIncoming(undefined);
+    void flush();
+  };
   const { results: checkResults, checking } = useTimelineChecks(
     runId,
     stageKey,
@@ -322,14 +424,26 @@ export function TimelineEditorPage() {
     if (item.type !== 'captions') seekSec(item.startSec);
   };
 
-  const submit = async () => {
+  const submit = async (previewToken?: string) => {
     if (!timeline) return;
     window.clearTimeout(saveTimer.current);
     setSubmitting(true);
     setSubmitError(undefined);
     try {
       await settleSave();
-      await api.submitTimelineDraft(runId, stageKey, revisionRef.current);
+      const result = await api.submitTimelineDraft(
+        runId,
+        stageKey,
+        revisionRef.current,
+        previewToken,
+      );
+      if (source === 'output' && !previewToken) {
+        // first ask what saving re-makes and costs; the person confirms in the dialog
+        setRerender(result as TimelineOutputPreviewDto);
+        return;
+      }
+      setRerender(undefined);
+      if (source === 'output') toast.success('Saved. The video is being re-rendered.');
       navigate(`/runs/${runId}`);
     } catch (error) {
       setSubmitError(describeSubmitError(error));
@@ -451,7 +565,10 @@ export function TimelineEditorPage() {
         save={save}
         canUndo={!readOnly && state.past.length > 0}
         canRedo={!readOnly && state.future.length > 0}
-        canSubmit={!readOnly && save !== 'conflict'}
+        canSubmit={!readOnly && save !== 'conflict' && incoming === undefined}
+        submitLabel={
+          source === 'output' ? { short: 'Re-render', long: 'Save and re-render' } : undefined
+        }
         submitting={submitting}
         onUndo={undo}
         onRedo={redo}
@@ -488,6 +605,53 @@ export function TimelineEditorPage() {
           </Button>
         </div>
       ) : null}
+      {incoming !== undefined ? (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center justify-between gap-3 border-b border-wait/40 bg-wait-soft px-4 py-2 text-sm text-wait"
+        >
+          <span>The assistant changed this timeline while you were editing it.</span>
+          <span className="flex gap-2">
+            <Button size="sm" variant="outline" onClick={() => void adoptLatest()}>
+              Load its version
+            </Button>
+            <Button size="sm" variant="ghost" onClick={keepMine}>
+              Keep mine
+            </Button>
+          </span>
+        </div>
+      ) : null}
+      <AlertDialog
+        open={!!rerender}
+        onOpenChange={(open) => {
+          if (!open) setRerender(undefined);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Save and re-render the video?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This replaces the timeline of {stageLabel ?? 'this stage'}
+              {rerender?.affectedStageKeys.some((key) => key !== stageKey)
+                ? ` and makes the stages after it again (${rerender.affectedStageKeys
+                    .filter((key) => key !== stageKey)
+                    .join(', ')})`
+                : ''}
+              , for about ${(rerender?.estimatedRerunUsd ?? 0).toFixed(2)}. The old timeline stays
+              in the stage&apos;s attempts.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={submitting}
+              onClick={() => rerender && void submit(rerender.previewToken)}
+            >
+              Save and re-render
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       {submitError ? (
         <div
           role="alert"

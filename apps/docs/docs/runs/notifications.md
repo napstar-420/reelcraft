@@ -21,18 +21,20 @@ The list is kept by Reelcraft, not by your browser, so it is the same in every t
 
 ## What you're told about
 
-| Notification                       | When                                                                                                   |
-| ---------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| **Run started**                    | A run begins working                                                                                   |
-| **Approval needed**                | A stage is waiting for you to review its output. See [When a run needs you](./when-a-run-needs-you.md) |
-| **Input needed**                   | A run is waiting for a form, or **Timeline edit needed** for the timeline editor                       |
-| **Paused: budget reached**         | A run hit a budget limit. See [Budget and costs](./budget-and-costs.md)                                |
-| **Paused: provider quota reached** | A provider is out of quota. The run resumes by itself when it resets                                   |
-| **Run resumed**                    | A run that was waiting for quota continued by itself                                                   |
-| **Run failed**                     | A run stopped with an error. It names the stage and the reason                                         |
-| **Run completed**                  | A run finished                                                                                         |
-| **Run cancelled**                  | A run was cancelled                                                                                    |
-| **Still waiting for you**          | A run has waited for you for 24 hours, and again at 48 hours                                           |
+| Notification                       | When                                                                                                                                              |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Run started**                    | A run begins working                                                                                                                              |
+| **Approval needed**                | A stage is waiting for you to review its output. See [When a run needs you](./when-a-run-needs-you.md)                                            |
+| **Input needed**                   | A run is waiting for a form, or **Timeline edit needed** for the timeline editor                                                                  |
+| **Paused: budget reached**         | A run hit a budget limit. See [Budget and costs](./budget-and-costs.md)                                                                           |
+| **Paused: provider quota reached** | A provider is out of quota. The run resumes by itself when it resets                                                                              |
+| **Run resumed**                    | A run that was waiting for quota continued by itself                                                                                              |
+| **Run failed**                     | A run stopped with an error. It names the stage and the reason                                                                                    |
+| **Run completed**                  | A run finished                                                                                                                                    |
+| **Run cancelled**                  | A run was cancelled                                                                                                                               |
+| **Still waiting for you**          | A run has waited for you for 24 hours, and again at 48 hours                                                                                      |
+| **The assistant needs you**        | The [assistant](../blueprints/assistant.md) is waiting for your OK, an answer or a decision on a plan, and no open Reelcraft page shows that chat |
+| **The assistant dealt with a run** | The assistant finished handling a run update it was watching, while no open page showed the chat. Off by default                                  |
 
 [Dry runs](./dry-runs.md) never send notifications. [Canvas runs](./canvas-runs.md) do, and say
 **(canvas run)** after the blueprint's name.
@@ -44,7 +46,8 @@ While you're looking at Reelcraft, a notification also appears as a pop-up in th
 
 To choose which ones pop up, go to **Settings** and find **Notifications**. Switch off any you don't
 want. The choice is saved in this browser only. The bell always keeps every notification, so turning one
-off here never loses it. **Run cancelled** is off by default, since you usually just did it yourself.
+off here never loses it. **Run cancelled** is off by default, since you usually just did it yourself, and so is **The assistant
+dealt with a run**. Selecting an assistant notification opens its chat.
 
 ## Browser notifications
 

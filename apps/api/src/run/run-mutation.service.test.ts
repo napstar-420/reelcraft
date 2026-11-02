@@ -3,14 +3,20 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { RunActionPolicy } from './run-action-policy';
 import { RunMutationService } from './run-mutation.service';
 
-function queryResult<T>(rows: T[]) {
+/** The locked run select (`.for('update')`) and, after it, the trash check (`.limit(1)`). */
+function queryResult<T>(rows: T[], owner: Record<string, unknown> = {}) {
   const query = {
     from: vi.fn(),
     where: vi.fn(),
+    innerJoin: vi.fn(),
     for: vi.fn().mockResolvedValue(rows),
+    limit: vi
+      .fn()
+      .mockResolvedValue([{ blueprintDeletedAt: null, channelDeletedAt: null, ...owner }]),
   };
   query.from.mockReturnValue(query);
   query.where.mockReturnValue(query);
+  query.innerJoin.mockReturnValue(query);
   return query;
 }
 
@@ -68,6 +74,30 @@ describe('RunMutationService', () => {
       wakeupId: expect.any(String),
     });
     expect(events.publish).toHaveBeenCalledWith({ type: 'run', runId: 'run-1' });
+  });
+
+  it('refuses to wake a run whose blueprint is in the trash, but lets it be cancelled', async () => {
+    const lockedRun = { id: 'run-1', state: 'FAILED', revision: 4, blueprintVersionId: 'v1' };
+    const selectQuery = queryResult([lockedRun], { blueprintDeletedAt: '2026-11-01' });
+    const returning = vi.fn().mockResolvedValue([{ revision: 5 }]);
+    const tx = {
+      select: vi.fn().mockReturnValue(selectQuery),
+      update: vi.fn().mockReturnValue({
+        set: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ returning }) }),
+      }),
+      insert: vi.fn().mockReturnValue({ values: vi.fn().mockResolvedValue(undefined) }),
+    };
+    const db = {
+      transaction: vi.fn(async (callback: (arg: typeof tx) => unknown) => callback(tx)),
+    };
+    const service = new RunMutationService(db as never, new RunActionPolicy(), events as never);
+    const mutate = vi.fn().mockResolvedValue(null);
+    await expect(service.withLockedRun('run-1', 'resume', ['FAILED'], mutate)).rejects.toThrow(
+      /in the trash/,
+    );
+    expect(mutate).not.toHaveBeenCalled();
+    await service.withLockedRun('run-1', 'cancel', ['FAILED'], mutate, 'run/cancelled');
+    expect(mutate).toHaveBeenCalledTimes(1);
   });
 
   it('does not invoke the mutation or write a wakeup when policy rejects the state', async () => {

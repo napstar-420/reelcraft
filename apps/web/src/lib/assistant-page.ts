@@ -24,7 +24,7 @@ export function pageContextFor(pathname: string, search = ''): AssistantPageCont
     } catch {
       // a malformed escape: keep the raw segment rather than crash the page
     }
-    return { page: 'run', runId: match[1]!, stageKey };
+    return { page: 'timeline', runId: match[1]!, stageKey };
   }
   if ((match = path.match(/^\/runs\/([^/]+)$/))) {
     return { page: 'run', runId: match[1]!, ...(stageParam && { stageKey: stageParam }) };

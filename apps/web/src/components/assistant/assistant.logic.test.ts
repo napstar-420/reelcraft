@@ -218,4 +218,17 @@ describe('describeToolCall', () => {
       'Ran voice again…',
     );
   });
+
+  it('says what a media tool looked at or listened to', () => {
+    const view = (source: Record<string, unknown>) =>
+      describeToolCall({ tool: 'view_media', args: { source } }, 'completed');
+    expect(view({ attachmentId: 'a' })).toBe('Looked at an attached file');
+    expect(view({ assetId: 'a' })).toBe('Looked at a Library file');
+    expect(view({ characterId: 'c', blobId: 'b' })).toBe('Looked at a Character picture');
+    expect(view({ runId: 'r', stageKey: 'images' })).toBe('Looked at what images made');
+    expect(view({ runId: 'r' })).toBe('Watched the final video');
+    expect(
+      describeToolCall({ tool: 'listen', args: { source: { runId: 'r' } } }, 'completed'),
+    ).toBe('Listened to the final video');
+  });
 });

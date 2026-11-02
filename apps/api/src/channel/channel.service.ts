@@ -1,5 +1,5 @@
 import { ConflictException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import type { CreateChannelDto, ListChannelsQueryDto, UpdateChannelDto } from '@reelcraft/shared';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
 import {
@@ -11,6 +11,9 @@ import {
   channel,
   character,
   run,
+  assistantGoal,
+  assistantMemoryDoc,
+  assistantNote,
 } from '../db/schema/index';
 import { ulid } from '../common/ulid';
 import { queueStorageOrphans } from '../artifact/storage-orphans';
@@ -73,7 +76,11 @@ export class ChannelService {
 
   async list(query: ListChannelsQueryDto) {
     const base = this.db.select({ channel, ...this.countsSelection() }).from(channel);
-    const rows = await (query.includeArchived ? base : base.where(eq(channel.archived, false)));
+    const rows = await base.where(
+      query.includeArchived
+        ? isNull(channel.deletedAt)
+        : and(eq(channel.archived, false), isNull(channel.deletedAt)),
+    );
     return rows.map((r) =>
       this.toView(r.channel, {
         blueprints: r.blueprints,
@@ -84,13 +91,16 @@ export class ChannelService {
     );
   }
 
-  async get(id: string) {
+  /** A channel in the trash is not found unless `includeTrashed`. */
+  async get(id: string, opts: { includeTrashed?: boolean } = {}) {
     const [row] = await this.db
       .select({ channel, ...this.countsSelection() })
       .from(channel)
       .where(eq(channel.id, id))
       .limit(1);
-    if (!row) throw new NotFoundException(`Channel ${id} not found`);
+    if (!row || (row.channel.deletedAt && !opts.includeTrashed)) {
+      throw new NotFoundException(`Channel ${id} not found`);
+    }
     return this.toView(row.channel, {
       blueprints: row.blueprints,
       characters: row.characters,
@@ -139,8 +149,58 @@ export class ChannelService {
    * channel itself. Every deleted blob's file is queued in `storage_orphan`
    * for the `blob.gc` sweep.
    */
-  async delete(id: string): Promise<void> {
+  /** Moves a channel to the trash: hidden everywhere, restorable for 30 days, then deleted for
+   * good (`TrashService`). Refused while a run is in progress, like a delete. */
+  async trash(id: string): Promise<void> {
     await this.get(id);
+    await this.assertNoOpenRuns(id);
+    await this.db
+      .update(channel)
+      .set({ deletedAt: new Date().toISOString() })
+      .where(eq(channel.id, id));
+    this.logger.log({ channelId: id }, 'channel moved to the trash');
+  }
+
+  async restore(id: string) {
+    await this.get(id, { includeTrashed: true });
+    await this.db.update(channel).set({ deletedAt: null }).where(eq(channel.id, id));
+    this.logger.log({ channelId: id }, 'channel restored from the trash');
+    return this.get(id);
+  }
+
+  /** Channels in the trash, newest first. */
+  async listTrashed() {
+    const rows = await this.db
+      .select({ channel, ...this.countsSelection() })
+      .from(channel)
+      .where(isNotNull(channel.deletedAt))
+      .orderBy(desc(channel.deletedAt));
+    return rows.map((r) =>
+      this.toView(r.channel, {
+        blueprints: r.blueprints,
+        characters: r.characters,
+        assets: r.assets,
+        runs: r.runs,
+      }),
+    );
+  }
+
+  private async assertNoOpenRuns(id: string): Promise<void> {
+    const open = await this.db
+      .select({ id: run.id })
+      .from(run)
+      .where(and(eq(run.channelId, id), isNull(run.endedAt)));
+    if (open.length > 0) {
+      throw new ConflictException(
+        `Channel ${id} has ${open.length} run(s) still in progress; cancel or wait for them to finish first.`,
+      );
+    }
+  }
+
+  /** Deletes a channel for good. `onlyTrashedBefore` is for the purge job: the channel is locked
+   * and, if it was restored (or trashed again) since it was picked, it is left alone. */
+  async delete(id: string, opts: { onlyTrashedBefore?: string } = {}): Promise<boolean> {
+    await this.get(id, { includeTrashed: true });
 
     const openRuns = await this.db
       .select({ id: run.id })
@@ -158,6 +218,14 @@ export class ChannelService {
 
     const startedAt = Date.now();
     const counts = await this.db.transaction(async (tx) => {
+      if (opts.onlyTrashedBefore !== undefined) {
+        const [locked] = await tx
+          .select({ deletedAt: channel.deletedAt })
+          .from(channel)
+          .where(eq(channel.id, id))
+          .for('update');
+        if (!locked?.deletedAt || locked.deletedAt >= opts.onlyTrashedBefore) return null;
+      }
       const runIds = (await tx.select({ id: run.id }).from(run).where(eq(run.channelId, id))).map(
         (r) => r.id,
       );
@@ -181,6 +249,19 @@ export class ChannelService {
       ).map((a) => a.blobId);
 
       await tx.delete(asset).where(eq(asset.channelId, id));
+      // The assistant's notes and memories about this channel and its blueprints.
+      await tx.delete(assistantNote).where(eq(assistantNote.channelId, id));
+      await tx
+        .delete(assistantMemoryDoc)
+        .where(
+          or(
+            eq(assistantMemoryDoc.channelId, id),
+            blueprintIds.length ? inArray(assistantMemoryDoc.blueprintId, blueprintIds) : undefined,
+          ),
+        );
+      if (blueprintIds.length) {
+        await tx.delete(assistantGoal).where(inArray(assistantGoal.blueprintId, blueprintIds));
+      }
       // Runs and everything under them; their files are queued for the
       // storage cleanup sweep (`blob.gc` deletes them after the retention period).
       const runCounts = await deleteRunsCascade(tx, runIds, 'channel_deleted');
@@ -226,9 +307,14 @@ export class ChannelService {
         assetCount: assetBlobIds.length,
       };
     });
+    if (!counts) {
+      this.logger.log({ channelId: id }, 'channel left alone: it left the trash meanwhile');
+      return false;
+    }
     this.logger.log(
       { channelId: id, ...counts, durationMs: Date.now() - startedAt },
       'channel deleted',
     );
+    return true;
   }
 }

@@ -8,6 +8,8 @@ import type {
   CreateBlueprintVersionDto,
   ConfigLayer,
   PlanPayload,
+  BreakdownPayload,
+  GoalPayload,
   ValidationIssue,
 } from '@reelcraft/shared';
 import type { ToolImage } from '../agent/assistant-agent.interface';
@@ -30,7 +32,17 @@ import type { InvalidationService } from '../../run/invalidation.service';
 import type { MediaReviewService } from '../review/media-review.service';
 import type { AssistantWatchService } from '../watch/assistant-watch.service';
 import type { UserGuideService } from '../user-guide/user-guide.service';
+import type { AttachmentService } from '../attachments/attachment.service';
+import type { FileCopyService } from '../files/file-copy.service';
+import type { LinkImportService } from '../files/link-import.service';
+import type { BrowserService } from '../browser/browser.service';
+import type { AssistantMemoryService } from '../memory/assistant-memory.service';
+import type { GoalService } from '../goals/goal.service';
+import type { RunInputService } from '../../run/run-input.service';
+import type { VoiceStudioAdapter } from '../../provider/voicestudio/voicestudio.adapter';
 import type { SchemaValidatorService } from '../../json-schema/schema-validator.service';
+import type { TimelineEditorService } from '../../run/timeline-editor.service';
+import type { TimelinePreviewService } from '../../run/timeline-preview.service';
 
 /** What a tool wants to do, shown to the user on an approval card in Manual mode. */
 export interface ApprovalRequest {
@@ -70,8 +82,10 @@ export interface TurnContext {
   questionAsked: boolean;
   /** `present_plan` ends the turn too. */
   planPresented: boolean;
-  /** Pictures `view_stage_media` has shown so far this turn (there is a per-turn limit). */
+  /** Pictures `view_media` has shown so far this turn (there is a per-turn limit). */
   imagesShown: number;
+  /** The user said yes to every change for the rest of this turn (deletes still ask). */
+  preApproved: boolean;
   /** Asks the user before a change. Auto mode says yes at once; Manual waits for the card. */
   confirm(request: ApprovalRequest): Promise<ApprovalDecision>;
 }
@@ -92,6 +106,7 @@ export function newTurnContext(
     questionAsked: false,
     planPresented: false,
     imagesShown: 0,
+    preApproved: false,
     confirm: options.confirm ?? (async () => ({ answer: 'yes' })),
   };
 }
@@ -109,13 +124,45 @@ export interface ToolDeps {
     | 'createBlueprint'
     | 'createVersion'
     | 'delete'
+    | 'trash'
+    | 'restore'
   >;
   capabilities: Pick<CapabilityRegistry, 'list' | 'get'>;
   providers: Pick<ProviderRegistry, 'list' | 'get'>;
   styles: Pick<StyleRegistry, 'list'>;
-  channels: Pick<ChannelService, 'get' | 'list' | 'create' | 'update' | 'setArchived' | 'delete'>;
-  assets: Pick<AssetService, 'list' | 'get'>;
-  characters: Pick<CharacterService, 'list' | 'get'>;
+  channels: Pick<
+    ChannelService,
+    'get' | 'list' | 'create' | 'update' | 'setArchived' | 'delete' | 'trash' | 'restore'
+  >;
+  assets: Pick<AssetService, 'list' | 'get' | 'create' | 'delete'>;
+  characters: Pick<
+    CharacterService,
+    | 'list'
+    | 'get'
+    | 'create'
+    | 'update'
+    | 'delete'
+    | 'confirmReference'
+    | 'deleteReference'
+    | 'setPrimary'
+  >;
+  /** Copies a stored file to a new key (attachments into the Library, a Character, a run). */
+  files: Pick<FileCopyService, 'copy' | 'copyInto' | 'discard'>;
+  runInputs: Pick<RunInputService, 'attachMediaInput'>;
+  voices: Pick<VoiceStudioAdapter, 'cloneFromAsset'>;
+  /** Downloads a link into the chat (import_from_link). */
+  links: Pick<LinkImportService, 'import'>;
+  /** Notes and searchable past work (remember, forget, recall). */
+  knowledge: Pick<
+    AssistantMemoryService,
+    'listNotes' | 'getNote' | 'createNote' | 'deleteNote' | 'search' | 'upsertDoc'
+  >;
+  goals: Pick<GoalService, 'create' | 'active' | 'refusal' | 'recordAttempt' | 'finish'>;
+  /** The user's browser (BrowserOS Neo). */
+  browser: Pick<
+    BrowserService,
+    'unavailableReason' | 'ownsPage' | 'openTabs' | 'open' | 'look' | 'act' | 'media' | 'close'
+  >;
   schemas: Pick<SchemaValidatorService, 'validate'>;
   runs: Pick<RunInsightService, 'list' | 'get' | 'stage' | 'media'>;
   runControl: Pick<
@@ -128,14 +175,21 @@ export interface ToolDeps {
   stagePlans: Pick<RunStagePlanService, 'preview' | 'confirm'>;
   attempts: Pick<RunService, 'listStageAttempts' | 'stageAttemptDetail' | 'listStageEvents'>;
   memory: Pick<InvalidationService, 'listMemory'>;
-  review: Pick<MediaReviewService, 'contactSheet' | 'transcriber' | 'listen'>;
+  review: Pick<MediaReviewService, 'contactSheet' | 'transcriber' | 'listen' | 'analyze' | 'facts'>;
   watches: Pick<AssistantWatchService, 'watch' | 'unwatch'>;
+  /** Files the user attached to chats. */
+  attachments: Pick<AttachmentService, 'file' | 'get'>;
   /** Reelcraft's user guide (search_docs). */
   userGuide: Pick<UserGuideService, 'search' | 'page' | 'pages'>;
   media: Pick<MediaPreviewService, 'imageFromBlob' | 'framesOfVideo'>;
   configResolver: Pick<ConfigResolverService, 'resolveRunConfig'>;
   /** Reelcraft's built-in bottom config layer. */
   engineLayer: () => ConfigLayer;
+  /** Timeline editor drafts: a waiting Human Timeline Edit stage, or a finished Compose Timeline. */
+  timelines: Pick<TimelineEditorService, 'session' | 'save' | 'check' | 'submit'>;
+  timelinePreviews: Pick<TimelinePreviewService, 'start' | 'current' | 'latestVideo'>;
+  /** Tells an open timeline editor the assistant saved its draft. */
+  timelineChanged: (runId: string, stageKey: string, draftRevision: number) => void;
   /** Tells open pages a blueprint changed (the editor reloads its draft). */
   blueprintChanged: (blueprintId: string) => void;
 }
@@ -144,11 +198,19 @@ export interface ToolDeps {
 export type ToolItem =
   | { type: 'change'; payload: ChangePayload }
   | { type: 'question'; payload: AskUserInput }
-  | { type: 'plan'; payload: Omit<PlanPayload, 'decision' | 'feedback'> };
+  | { type: 'plan'; payload: Omit<PlanPayload, 'decision' | 'feedback'> }
+  | { type: 'breakdown'; payload: BreakdownPayload }
+  | { type: 'goal'; payload: GoalPayload };
 
 export type ToolOutcome =
   | { ok: true; result: unknown; item?: ToolItem; images?: ToolImage[] }
-  | { ok: false; error: string; issues?: ValidationIssue[] };
+  | {
+      ok: false;
+      error: string;
+      issues?: ValidationIssue[];
+      /** A refused call's tool in full (description and schema), so the model can call it right. */
+      usage?: unknown;
+    };
 
 /** Values the tool schemas are narrowed to. Only registries that change with an app release;
  * model, asset and Character ids change during a session and are checked by the validator. */

@@ -117,12 +117,20 @@ export class RunService {
     if (!version.runnable)
       throw new Error(`BlueprintVersion ${dto.blueprintVersionId} failed validation`);
     const [versionBlueprint] = await this.db
-      .select({ channelId: blueprint.channelId })
+      .select({
+        channelId: blueprint.channelId,
+        deletedAt: blueprint.deletedAt,
+        channelDeletedAt: channel.deletedAt,
+      })
       .from(blueprint)
+      .innerJoin(channel, eq(channel.id, blueprint.channelId))
       .where(eq(blueprint.id, version.blueprintId))
       .limit(1);
     if (!versionBlueprint || versionBlueprint.channelId !== dto.channelId) {
       throw new ConflictException('Blueprint version does not belong to the requested channel');
+    }
+    if (versionBlueprint.deletedAt || versionBlueprint.channelDeletedAt) {
+      throw new ConflictException('This blueprint is in the trash: restore it to run it.');
     }
 
     const [channelRow] = await this.db
@@ -687,11 +695,13 @@ export class RunService {
     budgetCapUsd = 1,
   ) {
     const [blueprintRow] = await this.db
-      .select({ channelId: blueprint.channelId })
+      .select({ channelId: blueprint.channelId, deletedAt: blueprint.deletedAt })
       .from(blueprint)
       .where(eq(blueprint.id, blueprintId))
       .limit(1);
-    if (!blueprintRow) throw new NotFoundException(`Blueprint ${blueprintId} not found`);
+    if (!blueprintRow || blueprintRow.deletedAt) {
+      throw new NotFoundException(`Blueprint ${blueprintId} not found`);
+    }
 
     const [versionRow] = await this.db
       .select({ id: blueprintVersion.id })
@@ -1685,6 +1695,9 @@ export class RunService {
       query.channelId ? eq(run.channelId, query.channelId) : undefined,
       query.state ? eq(run.state, query.state) : undefined,
       query.blueprintId ? eq(blueprintVersion.blueprintId, query.blueprintId) : undefined,
+      // runs of a trashed blueprint or channel are hidden with it
+      isNull(blueprint.deletedAt),
+      isNull(channel.deletedAt),
     ].filter((condition): condition is NonNullable<typeof condition> => condition !== undefined);
     const where = conditions.length ? and(...conditions) : undefined;
 
@@ -1721,7 +1734,9 @@ export class RunService {
     const countQuery = this.db
       .select({ count: sql<number>`count(*)::int` })
       .from(run)
-      .innerJoin(blueprintVersion, eq(blueprintVersion.id, run.blueprintVersionId));
+      .innerJoin(channel, eq(channel.id, run.channelId))
+      .innerJoin(blueprintVersion, eq(blueprintVersion.id, run.blueprintVersionId))
+      .innerJoin(blueprint, eq(blueprint.id, blueprintVersion.blueprintId));
 
     const [rows, countRows] = await Promise.all([
       (where ? baseQuery.where(where) : baseQuery)

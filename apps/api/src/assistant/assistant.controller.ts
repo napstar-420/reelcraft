@@ -1,18 +1,102 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Put } from '@nestjs/common';
 import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Param,
+  Patch,
+  Post,
+  Put,
+  Query,
+} from '@nestjs/common';
+import {
+  AssistantActivityQueryDto,
+  CreateAssistantAttachmentDto,
+  CreateAssistantNoteDto,
+  UpdateAssistantNoteDto,
   CreateAssistantSessionDto,
   DecideApprovalDto,
   DecidePlanDto,
+  RequestAssistantAttachmentUploadDto,
   StartAssistantTurnDto,
   UpdateAssistantSessionDto,
   UpdateAssistantSettingsDto,
 } from '@reelcraft/shared';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { AssistantService } from './assistant.service';
+import { AttachmentService } from './attachments/attachment.service';
+import { AssistantMemoryService } from './memory/assistant-memory.service';
+import { Owner } from '../common/owner.decorator';
 
 @Controller()
 export class AssistantController {
-  constructor(private readonly assistant: AssistantService) {}
+  constructor(
+    private readonly assistant: AssistantService,
+    private readonly attachments: AttachmentService,
+    private readonly memory: AssistantMemoryService,
+  ) {}
+
+  @Get('assistant/activity')
+  activity(
+    @Query(new ZodValidationPipe(AssistantActivityQueryDto)) query: AssistantActivityQueryDto,
+  ) {
+    return this.assistant.activity(query);
+  }
+
+  @Get('assistant/notes')
+  notes(@Query('channelId') channelId?: string) {
+    return channelId
+      ? this.memory.listNotes({ scope: 'channel', channelId })
+      : this.memory.listNotes({ scope: 'global' });
+  }
+
+  @Post('assistant/notes')
+  createNote(@Body(new ZodValidationPipe(CreateAssistantNoteDto)) dto: CreateAssistantNoteDto) {
+    return this.memory.createNote({ ...dto, source: 'user' });
+  }
+
+  @Patch('assistant/notes/:id')
+  updateNote(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(UpdateAssistantNoteDto)) dto: UpdateAssistantNoteDto,
+  ) {
+    return this.memory.updateNote(id, dto.text);
+  }
+
+  @Delete('assistant/notes/:id')
+  @HttpCode(204)
+  async deleteNote(@Param('id') id: string) {
+    await this.memory.deleteNote(id);
+  }
+
+  @Post('assistant/attachments/upload')
+  requestAttachmentUpload(
+    @Owner() ownerId: string,
+    @Body(new ZodValidationPipe(RequestAssistantAttachmentUploadDto))
+    dto: RequestAssistantAttachmentUploadDto,
+  ) {
+    return this.attachments.requestUpload(ownerId, dto.ext);
+  }
+
+  @Post('assistant/attachments')
+  createAttachment(
+    @Owner() ownerId: string,
+    @Body(new ZodValidationPipe(CreateAssistantAttachmentDto)) dto: CreateAssistantAttachmentDto,
+  ) {
+    return this.attachments.create(ownerId, dto);
+  }
+
+  @Get('assistant/attachments/:id')
+  attachment(@Param('id') id: string) {
+    return this.attachments.get(id);
+  }
+
+  @Delete('assistant/attachments/:id')
+  @HttpCode(204)
+  async deleteAttachment(@Owner() ownerId: string, @Param('id') id: string) {
+    await this.attachments.deleteUnsent(ownerId, id);
+  }
 
   @Get('assistant/providers')
   providers() {

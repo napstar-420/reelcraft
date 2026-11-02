@@ -8,6 +8,7 @@ import type { SettingsDto } from '@reelcraft/shared';
 import { api } from '@/api/client';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Input } from '@/components/ui/input';
+import { AssistantNotes } from '@/components/assistant/assistant-notes';
 import { MODES } from '@/components/assistant/assistant.logic';
 import { ASSISTANT_SETTINGS_KEY } from '@/hooks/useAssistant';
 import { AboutCard } from '@/components/settings/about-card';
@@ -17,6 +18,7 @@ import { ClaudeCard } from '@/components/settings/claude-card';
 import { CodexCard } from '@/components/settings/codex-card';
 import { IdentityCard } from '@/components/settings/identity-card';
 import { NotificationsCard } from '@/components/settings/notifications-card';
+import { TrashCard } from '@/components/settings/trash-card';
 import { QwenTtsCard } from '@/components/settings/qwen-tts-card';
 import { VoiceStudioCard } from '@/components/settings/voice-studio-card';
 import { ProviderKeysCard } from '@/components/settings/provider-keys-card';
@@ -44,6 +46,7 @@ const SECTIONS: Section[] = [
         <ClaudeCard />
         <CodexCard />
         <AssistantDefaults />
+        <AssistantNotes />
       </>
     ),
   },
@@ -84,6 +87,12 @@ const SECTIONS: Section[] = [
     label: 'Notifications',
     description: 'When Reelcraft tells you a run needs you or has finished.',
     render: () => <NotificationsCard />,
+  },
+  {
+    id: 'trash',
+    label: 'Trash',
+    description: 'Deleted channels and blueprints, restorable for 30 days.',
+    render: () => <TrashCard />,
   },
   {
     id: 'packages',

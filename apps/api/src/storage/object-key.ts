@@ -29,6 +29,10 @@ export const objectKey = {
   characterRef: (ownerId: string, characterId: string, blobId: string): string =>
     `${ownerId}/characters/${characterId}/refs/${blobId}.png`,
 
+  /** A file attached to an assistant chat (`blob.scope = 'assistant'`). */
+  assistantAttachment: (ownerId: string, blobId: string, ext: string): string =>
+    `${ownerId}/assistant/attachments/${blobId}.${ext}`,
+
   /** A `.reelpack` the browser uploaded for import; queued for cleanup once
    * the import ends. */
   packageUpload: (ownerId: string, uploadId: string): string =>

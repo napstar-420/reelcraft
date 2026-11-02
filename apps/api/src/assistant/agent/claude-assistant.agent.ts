@@ -11,6 +11,7 @@ import {
   type AssistantModel,
   type AssistantToolDef,
   type AssistantTurnHandlers,
+  type ToolImage,
   APPROVAL_WAIT_MS,
 } from './assistant-agent.interface';
 import { AssistantToolServer, type ToolEndpoint } from './assistant-tool-server';
@@ -64,9 +65,12 @@ export function buildAssistantClaudeArgs(input: {
   effort?: string | undefined;
   instructions: string;
   endpoint: Pick<ToolEndpoint, 'url' | 'token'>;
+  /** The message comes as one stream-json line on stdin (it carries pictures). */
+  streamInput?: boolean;
 }): string[] {
   return [
     '-p',
+    ...(input.streamInput ? ['--input-format', 'stream-json'] : []),
     '--output-format',
     'stream-json',
     '--verbose',
@@ -256,6 +260,7 @@ export class ClaudeAssistantAgent implements AssistantAgent {
         effort: options.effort,
         instructions: options.instructions,
         endpoint,
+        streamInput: Boolean(options.images?.length),
       }),
       { cwd: this.workDir },
     );
@@ -412,7 +417,7 @@ export class ClaudeAssistantAgent implements AssistantAgent {
         void saving.then(() => settle(final));
       });
       child.stdin.on('error', () => undefined);
-      child.stdin.end(text);
+      child.stdin.end(options.images?.length ? userMessageLine(text, options.images) : text);
     });
   }
 
@@ -460,4 +465,21 @@ function resultError(result: ResultEvent): string {
     if (errors.length > 0) return errors.join('; ');
   }
   return `Claude stopped (${result.subtype ?? 'error'}).`;
+}
+
+/** One user message with pictures, for `--input-format stream-json`. */
+export function userMessageLine(text: string, images: ToolImage[]): string {
+  return `${JSON.stringify({
+    type: 'user',
+    message: {
+      role: 'user',
+      content: [
+        { type: 'text', text },
+        ...images.map((image) => ({
+          type: 'image',
+          source: { type: 'base64', media_type: image.mime, data: image.base64 },
+        })),
+      ],
+    },
+  })}\n`;
 }

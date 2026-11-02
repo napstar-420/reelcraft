@@ -71,4 +71,16 @@ describe('editorReducer', () => {
     expect(state.past).toHaveLength(MAX_HISTORY);
     expect(editorReducer(state, { type: 'load', timeline: at(9) }).past).toHaveLength(0);
   });
+
+  it('takes in a version saved elsewhere as one step that undo takes back', () => {
+    let state = editorReducer(loaded(), { type: 'edit', timeline: at(2), now: 0, coalesce: 'a' });
+    state = editorReducer(state, { type: 'adopt', timeline: at(3) });
+    expect(state.timeline).toEqual(at(3));
+    expect(state.future).toHaveLength(0);
+    // an edit right after, with the same key, is its own step
+    state = editorReducer(state, { type: 'edit', timeline: at(4), now: 10, coalesce: 'a' });
+    state = editorReducer(state, { type: 'undo' });
+    state = editorReducer(state, { type: 'undo' });
+    expect(state.timeline).toEqual(at(2));
+  });
 });

@@ -93,6 +93,17 @@ export class TimelinePreviewService {
     return this.toDto(await this.get(latest.id));
   }
 
+  /** The video of the latest finished render of this stage, for tools that look at it. */
+  async latestVideo(
+    runId: string,
+    stageKey: string,
+  ): Promise<{ blobId: string; draftRevision: number } | null> {
+    const latest = await this.current(runId, stageKey);
+    if (latest?.state !== 'done') return null;
+    const row = await this.get(latest.id);
+    return row.blobId ? { blobId: row.blobId, draftRevision: row.draftRevision } : null;
+  }
+
   /** Stops a render that is still running. */
   async cancel(runId: string, stageKey: string): Promise<TimelinePreviewRenderDto | null> {
     const rows = await this.db

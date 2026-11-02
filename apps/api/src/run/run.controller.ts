@@ -336,7 +336,7 @@ export class RunController {
     @Param('key') key: string,
     @Body(new ZodValidationPipe(SubmitTimelineDraftDto)) dto: SubmitTimelineDraftDto,
   ) {
-    return this.timelineEditor.submit(id, key, dto.draftRevision);
+    return this.timelineEditor.submit(id, key, dto.draftRevision, dto.previewToken);
   }
 
   @Post(':id/stages/:key/motion/check')

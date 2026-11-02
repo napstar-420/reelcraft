@@ -17,6 +17,9 @@ import {
   assistantItem,
   assistantSession,
   assistantWatch,
+  assistantMemoryDoc,
+  assistantNote,
+  assistantGoal,
   blob,
   blueprint,
   blueprintVersion,
@@ -29,6 +32,7 @@ import {
   stageEvent,
   stageExecution,
   storageOrphan,
+  timelineDraft,
   timelinePreviewRender,
 } from '../../src/db/schema/index';
 import { buildTestApp, type TestApp } from '../support/build-app';
@@ -82,11 +86,51 @@ async function seedDraftRender(testDb: TestDb, runId: string): Promise<void> {
     state: 'done',
     blobId,
   });
+  // a draft of a finished Compose Timeline's video, being edited
+  await testDb.db.insert(timelineDraft).values({
+    id: ulid(),
+    runId,
+    stageKey: 'compose',
+    baseArtifactId: 'artifact',
+    draft: { version: 1, canvas: { width: 1080, height: 1920, fps: 30 }, tracks: [] },
+  });
 }
 
 /** A chat watching a run, so the cascade has a watch to delete with the run. */
 async function seedWatch(testDb: TestDb, sessionId: string, runId: string): Promise<void> {
   await testDb.db.insert(assistantWatch).values({ id: ulid(), sessionId, runId });
+}
+
+/** The assistant's memories about a blueprint and its channel, and a channel note. */
+async function seedMemories(testDb: TestDb, channelId: string, blueprintId: string) {
+  const ids = { note: ulid(), channelDoc: ulid(), blueprintDoc: ulid(), goal: ulid() };
+  await testDb.db.insert(assistantNote).values({
+    id: ids.note,
+    scope: 'channel',
+    channelId,
+    text: 'Always 9:16',
+  });
+  const sessionId = ulid();
+  await testDb.db.insert(assistantSession).values({
+    id: sessionId,
+    providerId: 'fake',
+    externalSessionId: `ext-${sessionId}`,
+    appVersion: '0.0.0',
+    toolsHash: 'hash',
+  });
+  await testDb.db.insert(assistantGoal).values({
+    id: ids.goal,
+    sessionId,
+    blueprintId,
+    goal: 'Shorter',
+    maxRuns: 2,
+    maxSpendUsd: '1.0000',
+  });
+  await testDb.db.insert(assistantMemoryDoc).values([
+    { id: ids.channelDoc, kind: 'chat', channelId, title: 'A chat', body: 'about the channel' },
+    { id: ids.blueprintDoc, kind: 'breakdown', blueprintId, title: 'A breakdown', body: 'shots' },
+  ]);
+  return ids;
 }
 
 /** A chat with one item, to check deleting its blueprint leaves the chat alone. */
@@ -236,6 +280,7 @@ describe('channel delete cascade (e2e)', () => {
       contentHash: 'hash',
     });
     const chatId = await seedAssistantChat(testDb, blueprintId);
+    const memories = await seedMemories(testDb, channel.id, blueprintId);
 
     // An open (created, not finished) run blocks the delete.
     const open = await runs.create({
@@ -272,6 +317,19 @@ describe('channel delete cascade (e2e)', () => {
     expect((await blueprints.update(blueprintId, { archived: false })).archived).toBe(false);
 
     await blueprints.delete(blueprintId);
+    // a memory about the deleted blueprint goes with it; the channel's note and memory stay
+    expect(
+      await testDb.db
+        .select()
+        .from(assistantMemoryDoc)
+        .where(eq(assistantMemoryDoc.id, memories.blueprintDoc)),
+    ).toHaveLength(0);
+    expect(
+      await testDb.db.select().from(assistantNote).where(eq(assistantNote.id, memories.note)),
+    ).toHaveLength(1);
+    expect(
+      await testDb.db.select().from(assistantGoal).where(eq(assistantGoal.id, memories.goal)),
+    ).toHaveLength(0);
 
     await expect(blueprints.getBlueprint(blueprintId)).rejects.toThrow(/not found/);
     expect(
@@ -310,6 +368,9 @@ describe('channel delete cascade (e2e)', () => {
         .select()
         .from(timelinePreviewRender)
         .where(eq(timelinePreviewRender.runId, dryRun.id)),
+    ).toHaveLength(0);
+    expect(
+      await testDb.db.select().from(timelineDraft).where(eq(timelineDraft.runId, dryRun.id)),
     ).toHaveLength(0);
     const queued = await testDb.db
       .select({ objectKey: storageOrphan.objectKey })
@@ -353,6 +414,7 @@ describe('channel delete cascade (e2e)', () => {
       contentHash: 'hash',
     });
     const chatId = await seedAssistantChat(testDb, blueprintId);
+    const memories = await seedMemories(testDb, channel.id, blueprintId);
 
     const createdCharacter = await characters.create(channel.id, {
       name: 'Cascade Character',
@@ -422,6 +484,15 @@ describe('channel delete cascade (e2e)', () => {
     expect(runBlobKeys.length).toBeGreaterThan(0);
 
     await channels.delete(channel.id);
+    expect(
+      await testDb.db.select().from(assistantNote).where(eq(assistantNote.id, memories.note)),
+    ).toHaveLength(0);
+    expect(
+      await testDb.db
+        .select()
+        .from(assistantMemoryDoc)
+        .where(inArray(assistantMemoryDoc.id, [memories.channelDoc, memories.blueprintDoc])),
+    ).toHaveLength(0);
 
     await expect(channels.get(channel.id)).rejects.toThrow();
 
@@ -467,6 +538,9 @@ describe('channel delete cascade (e2e)', () => {
         .select()
         .from(timelinePreviewRender)
         .where(eq(timelinePreviewRender.runId, dryRun.id)),
+    ).toHaveLength(0);
+    expect(
+      await testDb.db.select().from(timelineDraft).where(eq(timelineDraft.runId, dryRun.id)),
     ).toHaveLength(0);
     const executionsAfter = await testDb.db
       .select()

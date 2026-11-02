@@ -8,7 +8,8 @@ its **MCP server**. Reelcraft uses it to:
 
 - make text and images with **your ChatGPT plan**, in a ChatGPT tab you're signed in to;
 - give **Codex** and **Claude** a browser for browser tasks;
-- help you sign in when you [connect Codex](./codex.md) or [connect Claude](./claude-code.md).
+- help you sign in when you [connect Codex](./codex.md) or [connect Claude](./claude-code.md);
+- let the [assistant](./blueprints/assistant.md) open and read web pages for you.
 
 Neo is optional. Skip this page if you don't use ChatGPT, Codex or Claude with Reelcraft.
 

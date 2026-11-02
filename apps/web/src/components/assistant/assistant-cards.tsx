@@ -57,6 +57,119 @@ export function ChangeCard({
 }) {
   const change = payloadOf<ChangePayload>(item);
   const undone = item.state === 'undone';
+  if (change.kind === 'trash' || change.kind === 'archive') {
+    const what = change.target === 'channel' ? 'channel' : 'blueprint';
+    const label =
+      change.kind === 'trash'
+        ? `Moved the ${what} “${change.name}” to the trash`
+        : `${change.archived ? 'Archived' : 'Unarchived'} the ${what} “${change.name}”`;
+    return (
+      <Card icon={<Check className="size-3.5 text-ok" />} label={label}>
+        {change.kind === 'trash' && (
+          <p className={cn('text-[13px] text-muted-foreground', undone && 'line-through')}>
+            It can be restored from Settings › Trash for 30 days.
+          </p>
+        )}
+        <div className="mt-2 flex items-center gap-2">
+          {undone ? (
+            <span className="text-xs text-muted-foreground">
+              {change.kind === 'trash' ? 'Restored' : 'Undone'}
+            </span>
+          ) : (
+            <Button
+              size="xs"
+              variant="ghost"
+              disabled={assistant.undoing === item.id}
+              onClick={() => assistant.undoChange(item)}
+            >
+              <Undo2 /> {change.kind === 'trash' ? 'Restore' : 'Undo'}
+            </Button>
+          )}
+        </div>
+      </Card>
+    );
+  }
+  if (change.kind === 'timeline') {
+    return (
+      <Card
+        icon={<Check className="size-3.5 text-ok" />}
+        label={`Edited the timeline of “${change.stageLabel}”`}
+      >
+        <p className={cn('mb-1 text-[13px]', undone && 'text-muted-foreground line-through')}>
+          {change.summary}
+        </p>
+        {change.changes.length > 1 && (
+          <ul className="mb-1 list-disc pl-4 text-xs text-muted-foreground">
+            {change.changes.slice(0, 8).map((line, i) => (
+              <li key={i}>{line}</li>
+            ))}
+          </ul>
+        )}
+        <div className="mt-2 flex items-center gap-2">
+          <Button asChild size="xs" variant="outline">
+            <Link to={`/runs/${change.runId}/stages/${encodeURIComponent(change.stageKey)}/edit`}>
+              Open editor
+            </Link>
+          </Button>
+          {undone ? (
+            <span className="text-xs text-muted-foreground">Undone</span>
+          ) : (
+            <Button
+              size="xs"
+              variant="ghost"
+              disabled={assistant.undoing === item.id}
+              onClick={() => assistant.undoChange(item)}
+            >
+              <Undo2 /> Undo
+            </Button>
+          )}
+        </div>
+      </Card>
+    );
+  }
+  if (change.kind === 'note') {
+    return (
+      <Card
+        icon={<Check className="size-3.5 text-ok" />}
+        label={
+          change.action === 'added'
+            ? change.note.channelName
+              ? `Remembered for “${change.note.channelName}”`
+              : 'Remembered everywhere'
+            : 'Forgot a note'
+        }
+      >
+        <p className={cn('text-[13px]', undone && 'text-muted-foreground line-through')}>
+          {change.note.text}
+        </p>
+        <div className="mt-2 flex items-center gap-2">
+          <Button asChild size="xs" variant="outline">
+            <Link
+              to={
+                change.note.channelId
+                  ? `/channels/${change.note.channelId}?tab=notes`
+                  : '/settings/assistant'
+              }
+            >
+              See notes
+            </Link>
+          </Button>
+          {undone ? (
+            <span className="text-xs text-muted-foreground">Undone</span>
+          ) : (
+            <Button
+              size="xs"
+              variant="ghost"
+              disabled={assistant.undoing === item.id}
+              onClick={() => assistant.undoChange(item)}
+            >
+              <Undo2 /> Undo
+            </Button>
+          )}
+        </div>
+      </Card>
+    );
+  }
   return (
     <Card icon={<Check className="size-3.5 text-ok" />} label={`Changed “${change.blueprintName}”`}>
       <p className={cn('mb-1.5 text-[13px]', undone && 'text-muted-foreground line-through')}>
@@ -152,6 +265,17 @@ export function ApprovalCard({
             >
               Yes, and switch to Auto
             </Button>
+            {approval.kind !== 'destroy' && (
+              <Button
+                size="xs"
+                variant="outline"
+                disabled={assistant.deciding}
+                title="Say yes to this and the rest of the changes it makes in this answer (deletes still ask)"
+                onClick={() => assistant.decideApproval(item, 'yes_turn')}
+              >
+                Yes to everything this turn
+              </Button>
+            )}
             <Button
               size="xs"
               variant="ghost"
@@ -185,7 +309,11 @@ export function ApprovalCard({
       ) : (
         <p className="mt-2 text-xs text-muted-foreground">
           {APPROVAL_STATES[item.state ?? ''] ?? ''}
-          {approval.answer === 'yes_auto' ? ', and switched to Auto' : ''}
+          {approval.answer === 'yes_auto'
+            ? ', and switched to Auto'
+            : approval.answer === 'yes_turn'
+              ? ', and to everything else this turn'
+              : ''}
           {approval.feedback ? `: “${approval.feedback}”` : ''}
         </p>
       )}

@@ -40,6 +40,8 @@ function deps(over: Partial<Record<keyof ToolDeps, unknown>> = {}): ToolDeps {
       update: vi.fn(async () => ({})),
       setArchived: vi.fn(async () => ({})),
       delete: vi.fn(async () => undefined),
+      trash: vi.fn(async () => undefined),
+      restore: vi.fn(async () => ({})),
     },
     runs: {
       get: vi.fn(async () => ({
@@ -92,6 +94,7 @@ function deps(over: Partial<Record<keyof ToolDeps, unknown>> = {}): ToolDeps {
     },
     blueprintChanged: vi.fn(),
     watches: { watch: vi.fn(async () => []), unwatch: vi.fn(async () => []) },
+    goals: { refusal: vi.fn(async () => null), recordAttempt: vi.fn(async () => undefined) },
     ...over,
   } as unknown as ToolDeps;
 }
@@ -158,6 +161,104 @@ describe('start_run', () => {
     expect(asked[0]!.costUsd).toBe(3);
   });
 
+  it('fills file inputs from attachments: checks the kind, copies each file, attaches it, then starts', async () => {
+    const withFile = {
+      ...saved,
+      inputs: [
+        {
+          key: 'photo',
+          label: 'Photo',
+          required: true,
+          accepts: { kind: 'media.image', cardinality: 'one' },
+        },
+      ],
+    };
+    const files = {
+      'att-img': {
+        blobId: 'b-img',
+        objectKey: 'k',
+        mime: 'image/png',
+        kind: 'image',
+        name: 'me.png',
+        probe: null,
+      },
+      'att-vid': {
+        blobId: 'b-vid',
+        objectKey: 'k2',
+        mime: 'video/mp4',
+        kind: 'video',
+        name: 'v.mp4',
+        probe: null,
+      },
+    } as Record<string, unknown>;
+    const d = deps({
+      attachments: {
+        file: vi.fn(async (id: string) => {
+          if (!files[id]) throw new Error('missing');
+          return files[id];
+        }),
+      },
+      files: {
+        copy: vi.fn(async (_blob: string, keyFor: (id: string, ext: string) => string) => ({
+          blobId: 'nb1',
+          objectKey: keyFor('nb1', 'png'),
+          sha256: 'h',
+          mime: 'image/png',
+          ext: 'png',
+        })),
+      },
+      runInputs: { attachMediaInput: vi.fn(async () => undefined) },
+    });
+    (d.channels.get as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: 'ch1',
+      ownerId: 'local',
+      name: 'S',
+    });
+    (d.blueprints.listVersions as ReturnType<typeof vi.fn>).mockResolvedValue([withFile]);
+
+    const wrongKind = await runTool(
+      'start_run',
+      { blueprintId: 'bp1', free: true, files: { photo: [{ attachmentId: 'att-vid' }] } },
+      newTurnContext(),
+      d,
+    );
+    expect(wrongKind).toMatchObject({ ok: false, error: expect.stringContaining('photo:') });
+    const tooMany = await runTool(
+      'start_run',
+      {
+        blueprintId: 'bp1',
+        free: true,
+        files: { photo: [{ attachmentId: 'att-img' }, { attachmentId: 'att-img' }] },
+      },
+      newTurnContext(),
+      d,
+    );
+    expect(tooMany).toMatchObject({ ok: false, error: expect.stringContaining('takes one file') });
+    const unknown = await runTool(
+      'start_run',
+      { blueprintId: 'bp1', free: true, files: { logo: [{ attachmentId: 'att-img' }] } },
+      newTurnContext(),
+      d,
+    );
+    expect(unknown).toMatchObject({
+      ok: false,
+      error: expect.stringContaining('not a file input'),
+    });
+    expect(d.runControl.create).not.toHaveBeenCalled();
+
+    const out = await runTool(
+      'start_run',
+      { blueprintId: 'bp1', free: true, files: { photo: [{ attachmentId: 'att-img' }] } },
+      newTurnContext(),
+      d,
+    );
+    expect(out).toMatchObject({ ok: true, result: { status: 'started' } });
+    expect(d.runInputs.attachMediaInput).toHaveBeenCalledWith('run-new', 'photo', [
+      { blobId: 'nb1', objectKey: 'local/ch1/run-new/inputs/nb1.png', sha256: 'h' },
+    ]);
+    expect(d.runControl.start).toHaveBeenCalledWith('run-new');
+  });
+
   it('refuses a blueprint that needs a file input, and stops a run that would not start', async () => {
     const withFile = {
       ...saved,
@@ -176,7 +277,7 @@ describe('start_run', () => {
       await runTool('start_run', { blueprintId: 'bp1', free: true }, newTurnContext(), d),
     ).toMatchObject({
       ok: false,
-      error: expect.stringContaining('only the user can add'),
+      error: expect.stringContaining('These file inputs are required: photo (media.image)'),
     });
     expect(d.runControl.create).not.toHaveBeenCalled();
 
@@ -352,15 +453,23 @@ describe('reviews and run controls', () => {
 });
 
 describe('channels, blueprints and versions', () => {
-  it('says what a channel delete takes with it', async () => {
+  it('says what a channel delete takes with it, and moves it to the trash (Undo restores it)', async () => {
     const d = deps();
     const { ctx, asked } = manual();
-    await runTool('delete_channel', { channelId: 'ch1' }, ctx, d);
+    const out = await runTool('delete_channel', { channelId: 'ch1' }, ctx, d);
     expect(asked[0]).toMatchObject({
       kind: 'destroy',
-      details: expect.arrayContaining([expect.stringContaining('2 blueprints, 9 runs')]),
+      details: expect.arrayContaining([
+        expect.stringContaining('2 blueprints, 9 runs'),
+        expect.stringContaining('Settings › Trash'),
+      ]),
     });
-    expect(d.channels.delete).toHaveBeenCalledWith('ch1');
+    expect(d.channels.trash).toHaveBeenCalledWith('ch1');
+    expect(d.channels.delete).not.toHaveBeenCalled();
+    expect(out).toMatchObject({
+      ok: true,
+      item: { type: 'change', payload: { kind: 'trash', target: 'channel', id: 'ch1' } },
+    });
   });
 
   it('creates a channel and a blueprint', async () => {

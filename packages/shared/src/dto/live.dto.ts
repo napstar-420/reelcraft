@@ -10,6 +10,8 @@ import type { NotificationDto } from './notification.dto';
 export interface ServerToClientEvents {
   'run:updated': (payload: { runId: string }) => void;
   'stage:updated': (payload: { runId: string; stageKey: string }) => void;
+  /** The assistant saved a timeline editor draft: an open editor loads it. */
+  'timeline:updated': (payload: { runId: string; stageKey: string; draftRevision: number }) => void;
   /** A blueprint's details, working draft or versions changed. */
   'blueprint:updated': (payload: { blueprintId: string }) => void;
   /** A notification was recorded for this user. */
