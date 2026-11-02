@@ -204,7 +204,13 @@ export type ToolItem =
 
 export type ToolOutcome =
   | { ok: true; result: unknown; item?: ToolItem; images?: ToolImage[] }
-  | { ok: false; error: string; issues?: ValidationIssue[] };
+  | {
+      ok: false;
+      error: string;
+      issues?: ValidationIssue[];
+      /** A refused call's tool in full (description and schema), so the model can call it right. */
+      usage?: unknown;
+    };
 
 /** Values the tool schemas are narrowed to. Only registries that change with an app release;
  * model, asset and Character ids change during a session and are checked by the validator. */

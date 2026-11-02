@@ -770,7 +770,11 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
       }
       const forModel = outcome.ok
         ? { ...(isRecord(outcome.result) ? outcome.result : { result: outcome.result }), ...extra }
-        : { error: outcome.error, ...(outcome.issues && { issues: outcome.issues }) };
+        : {
+            error: outcome.error,
+            ...(outcome.issues && { issues: outcome.issues }),
+            ...(outcome.usage !== undefined && { usage: outcome.usage }),
+          };
       const images = outcome.ok ? outcome.images : undefined;
       await this.updateItem(callItem.id, {
         state: outcome.ok ? 'completed' : 'failed',
@@ -778,7 +782,10 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
           tool,
           args,
           ok: outcome.ok,
-          result: truncateForDisplay(forModel),
+          // a refused call's tool usage goes to the model only
+          result: truncateForDisplay(
+            'usage' in forModel ? { ...forModel, usage: 'the tool in full' } : forModel,
+          ),
           // the pictures go to the model only: the transcript keeps their count and size
           ...(images?.length && {
             images: images.map((image) => ({

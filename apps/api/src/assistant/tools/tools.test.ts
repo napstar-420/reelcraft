@@ -7,7 +7,16 @@ import { SchemaValidatorService } from '../../json-schema/schema-validator.servi
 import { ConfigResolverService } from '../../run-config/config-resolver.service';
 import { StyleRegistry } from '../../capability/style.registry';
 import { exampleScenesToImages, exampleScript } from '../guide';
-import { ASSISTANT_TOOLS, buildNarrowedEnums, buildToolDefs, runTool, toolsHash } from './registry';
+import {
+  ASSISTANT_TOOLS,
+  FULL_TOOLS,
+  buildNarrowedEnums,
+  buildToolDefs,
+  fullToolDef,
+  runTool,
+  toolsHash,
+} from './registry';
+import { TOOL_SUMMARIES } from './summaries';
 import { realCapabilityRegistry } from './test-support';
 import { newTurnContext, type ToolDeps } from './types';
 import { UserGuideService } from '../user-guide/user-guide.service';
@@ -16,6 +25,8 @@ const capabilities = realCapabilityRegistry();
 const styles = new StyleRegistry();
 const narrowed = buildNarrowedEnums({ capabilities, styles });
 const defs = buildToolDefs(narrowed);
+/** What describe_tools returns for each tool. */
+const fullDefs = ASSISTANT_TOOLS.map((tool) => fullToolDef(tool, narrowed));
 
 const ajv = new Ajv({ strict: true, allErrors: true, allowUnionTypes: true });
 
@@ -176,6 +187,7 @@ describe('tool registry', () => {
         'delete_blueprint',
         'delete_character',
         'delete_channel',
+        'describe_tools',
         'diff_drafts',
         'pause_run',
         'provide_input',
@@ -264,13 +276,29 @@ describe('tool registry', () => {
     ).toEqual(['ask_user', 'present_plan']);
   });
 
-  it('keeps the tool definitions small (they are sent with every chat)', () => {
+  it('sends most tools as a name and a line (they go with every request)', () => {
     const total = defs.reduce((sum, d) => sum + JSON.stringify(d).length, 0);
-    expect(total).toBeLessThan(68_000);
-    // the stage schema is sent by the tools that write a draft, not by validate_draft
-    const validate = JSON.stringify(defs.find((d) => d.name === 'validate_draft'));
+    expect(total).toBeLessThan(24_000);
+    for (const d of defs) {
+      expect(JSON.stringify(d).length, d.name).toBeLessThan(FULL_TOOLS.has(d.name) ? 4_500 : 400);
+      if (!FULL_TOOLS.has(d.name)) expect(d.inputSchema).toEqual({ type: 'object' });
+    }
+    // every tool has its own line, and the line is short
+    expect(Object.keys(TOOL_SUMMARIES).sort()).toEqual(ASSISTANT_TOOLS.map((t) => t.name).sort());
+    for (const [name, line] of Object.entries(TOOL_SUMMARIES)) {
+      expect(line.length, name).toBeLessThanOrEqual(110);
+    }
+    // the short form names the arguments, optional ones marked
+    expect(defs.find((d) => d.name === 'get_timeline')!.description).toMatch(
+      /Args: runId, stageKey, items\?\.$/,
+    );
+  });
+
+  it('keeps each tool in full small too (describe_tools returns these)', () => {
+    // the stage schema is in the tools that write a draft, not in validate_draft
+    const validate = JSON.stringify(fullDefs.find((d) => d.name === 'validate_draft'));
     expect(validate.length).toBeLessThan(1_200);
-    for (const d of defs) expect(JSON.stringify(d).length, d.name).toBeLessThan(4_500);
+    for (const d of fullDefs) expect(JSON.stringify(d).length, d.name).toBeLessThan(4_500);
   });
 
   it('narrows enums to the live registries', () => {
@@ -278,27 +306,54 @@ describe('tool registry', () => {
     expect(narrowed.capabilityKeys).toContain('publish.stub');
     expect(narrowed.checkKeys).toContain('word_count');
     expect(narrowed.styleIds).toContain('caption.bold_pop');
-    const capSchema = defs.find((d) => d.name === 'get_capability')!.inputSchema as {
+    const capSchema = fullDefs.find((d) => d.name === 'get_capability')!.inputSchema as {
       properties: { key: { enum: string[] } };
     };
     expect(capSchema.properties.key.enum).toEqual(narrowed.capabilityKeys);
   });
 
-  it('hashes the tool set, changing when a capability appears', () => {
+  it('hashes the tool set sent, which a new capability no longer changes', () => {
     const a = toolsHash(defs);
     expect(toolsHash(buildToolDefs(narrowed))).toBe(a);
+    // the live enums are in describe_tools, so an open chat keeps working when one appears
     const more = buildToolDefs({
       ...narrowed,
       capabilityKeys: [...narrowed.capabilityKeys, 'new.thing'],
     });
-    expect(toolsHash(more)).not.toBe(a);
+    expect(toolsHash(more)).toBe(a);
+    expect(toolsHash(defs.slice(1))).not.toBe(a);
+  });
+
+  it('describe_tools gives tools in full, with the live enums', async () => {
+    const out = await runTool(
+      'describe_tools',
+      { names: ['get_capability', 'edit_timeline', 'nope'] },
+      ctx(),
+      makeDeps(),
+    );
+    expect(out.ok).toBe(true);
+    const result = (out as { result: { tools: Array<Record<string, unknown>>; unknown: string[] } })
+      .result;
+    expect(result.tools.map((t) => t.name)).toEqual(['get_capability', 'edit_timeline']);
+    expect(result.tools[1]).toMatchObject({ kind: 'change', description: expect.any(String) });
+    expect(JSON.stringify(result.tools[0]!.inputSchema)).toContain('text.generate');
+    expect(result.unknown).toEqual(['nope']);
+    expect(await runTool('describe_tools', { names: ['nope'] }, ctx(), makeDeps())).toMatchObject({
+      ok: false,
+    });
   });
 
   it('returns {ok:false} for an unknown tool and for invalid input', async () => {
     const deps = makeDeps();
     expect(await runTool('nope', {}, ctx(), deps)).toMatchObject({ ok: false });
     const bad = await runTool('update_metadata', { blueprintId: 'bp1', name: 'x' }, ctx(), deps);
-    expect(bad).toMatchObject({ ok: false, error: 'Invalid input for update_metadata.' });
+    // the model only had the tool's line, so a refused call brings the tool in full
+    expect(bad).toMatchObject({
+      ok: false,
+      error: 'Invalid input for update_metadata.',
+      usage: { name: 'update_metadata', inputSchema: { type: 'object' } },
+    });
+    expect(JSON.stringify((bad as { usage: unknown }).usage)).toContain('blueprintId');
   });
 
   it('turns a throwing handler into {ok:false}', async () => {
@@ -388,6 +443,7 @@ describe('JSON Schemas stay in sync with the Zod inputs (drift guard)', () => {
     },
     finish_goal: { goalId: 'g1', met: true, summary: 'Shortened the script twice.' },
     compare_runs: { a: 'r1', b: 'r2', frames: 4 },
+    describe_tools: { names: ['get_run', 'edit_timeline'] },
     get_timeline: { runId: 'r1', stageKey: 'compose', items: [{ trackId: 'video', index: 0 }] },
     edit_timeline: {
       runId: 'r1',
@@ -520,14 +576,14 @@ describe('JSON Schemas stay in sync with the Zod inputs (drift guard)', () => {
   });
 
   it('rejects an unknown capability key in the draft schema', () => {
-    const schema = defs.find((d) => d.name === 'propose_draft')!.inputSchema;
+    const schema = fullDefs.find((d) => d.name === 'propose_draft')!.inputSchema;
     const draft = exampleScript();
     draft.graph[0]!.capability = 'made.up';
     expect(ajv.compile(schema)({ draft, summary: 's' })).toBe(false);
   });
 
   it('lists exactly the StageDef fields, and requires the non-optional ones', () => {
-    const draftSchema = defs.find((d) => d.name === 'propose_draft')!.inputSchema as {
+    const draftSchema = fullDefs.find((d) => d.name === 'propose_draft')!.inputSchema as {
       properties: {
         draft: { properties: { graph: { items: { properties: object; required: string[] } } } };
       };
@@ -541,7 +597,7 @@ describe('JSON Schemas stay in sync with the Zod inputs (drift guard)', () => {
   });
 
   it('lists exactly the draft fields', () => {
-    const draftSchema = defs.find((d) => d.name === 'propose_draft')!.inputSchema as {
+    const draftSchema = fullDefs.find((d) => d.name === 'propose_draft')!.inputSchema as {
       properties: { draft: { properties: object } };
     };
     expect(Object.keys(draftSchema.properties.draft.properties).sort()).toEqual(
