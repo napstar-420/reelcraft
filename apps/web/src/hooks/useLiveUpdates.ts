@@ -38,6 +38,8 @@ export function useLiveUpdates(): void {
       batcher.add(queryKeysFor({ type: 'run', runId }));
     const onStage = ({ runId, stageKey }: { runId: string; stageKey: string }) =>
       batcher.add(queryKeysFor({ type: 'stage', runId, stageKey }));
+    const onBlueprint = ({ blueprintId }: { blueprintId: string }) =>
+      batcher.add(queryKeysFor({ type: 'blueprint', blueprintId }));
     const onNotificationsChanged = () =>
       void queryClient.invalidateQueries({ queryKey: NOTIFICATIONS_KEY });
     const onNotification = (n: NotificationDto) => {
@@ -68,6 +70,7 @@ export function useLiveUpdates(): void {
     socket.on('connect', onConnect);
     socket.on('run:updated', onRun);
     socket.on('stage:updated', onStage);
+    socket.on('blueprint:updated', onBlueprint);
     socket.on('notification:created', onNotification);
     socket.on('notifications:changed', onNotificationsChanged);
     // `connect` fired before this effect ran if the socket was already up.
@@ -78,6 +81,7 @@ export function useLiveUpdates(): void {
       socket.off('connect', onConnect);
       socket.off('run:updated', onRun);
       socket.off('stage:updated', onStage);
+      socket.off('blueprint:updated', onBlueprint);
       socket.off('notification:created', onNotification);
       socket.off('notifications:changed', onNotificationsChanged);
       batcher.dispose();

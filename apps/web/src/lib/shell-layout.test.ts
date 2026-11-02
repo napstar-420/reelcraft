@@ -21,15 +21,15 @@ describe('shellLayoutForPath', () => {
       expect(shellLayoutForPath(path).frame).toBe('page');
   });
 
-  it('hides the floating assistant button where the assistant is already on screen', () => {
-    expect(shellLayoutForPath('/').askButton).toBe(false);
-    expect(shellLayoutForPath('/blueprints/abc/build').askButton).toBe(false);
-    expect(shellLayoutForPath('/runs/r1').askButton).toBe(false);
-  });
-
-  it('shows it everywhere else, the timeline editor included', () => {
-    expect(shellLayoutForPath('/blueprints').askButton).toBe(true);
-    expect(shellLayoutForPath('/runs/r1/stages/s1/edit').askButton).toBe(true);
-    expect(shellLayoutForPath('/settings').askButton).toBe(true);
+  it('docks the assistant on every page but Home, where it is the page', () => {
+    expect(shellLayoutForPath('/').assistant).toBe('page');
+    for (const path of [
+      '/blueprints',
+      '/blueprints/abc/build',
+      '/runs/r1',
+      '/settings',
+      '/runs/r1/stages/s1/edit',
+    ])
+      expect(shellLayoutForPath(path).assistant).toBe('dock');
   });
 });

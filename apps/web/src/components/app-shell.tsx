@@ -1,19 +1,29 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
 import { AppRail } from '@/components/shell/app-rail';
-import { AskAssistantButton } from '@/components/shell/ask-assistant-button';
 import { CommandPalette } from '@/components/shell/command-palette';
 import { CommandPaletteContext } from '@/components/shell/command-palette-context';
+import { AssistantDock } from '@/components/assistant/assistant-dock';
+import { AssistantProvider } from '@/components/assistant/assistant-provider';
+import { useAssistantUi } from '@/components/assistant/assistant-context';
 import { useRunBuckets } from '@/hooks/useRunBuckets';
 import { shellLayoutForPath } from '@/lib/shell-layout';
 
-/** The frame around every page: the icon rail, Cmd+K search, Cmd+J for the assistant, and the
- * floating assistant button where the assistant is not already on screen. */
+/** The frame around every page: the icon rail, Cmd+K search, and the assistant: docked on the
+ * right of every page (Cmd+J), or the page itself on Home. */
 export function AppShell({ children }: { children: React.ReactNode }) {
+  return (
+    <AssistantProvider>
+      <ShellFrame>{children}</ShellFrame>
+    </AssistantProvider>
+  );
+}
+
+function ShellFrame({ children }: { children: React.ReactNode }) {
   const location = useLocation();
-  const navigate = useNavigate();
   const layout = shellLayoutForPath(location.pathname);
   const { needsYou } = useRunBuckets();
+  const { dockOpen, setDockOpen, openAssistant } = useAssistantUi();
   const [palette, setPalette] = useState<{ open: boolean; query: string }>({
     open: false,
     query: '',
@@ -28,14 +38,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       if (key === 'k') {
         event.preventDefault();
         setPalette((p) => ({ open: !p.open, query: '' }));
-      } else if (key === 'j' && layout.askButton) {
+      } else if (key === 'j') {
         event.preventDefault();
-        navigate('/?focus=assistant');
+        if (layout.assistant === 'dock' && dockOpen) setDockOpen(false);
+        else openAssistant();
       }
     }
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [layout.askButton, navigate]);
+  }, [layout.assistant, dockOpen, setDockOpen, openAssistant]);
 
   return (
     <CommandPaletteContext.Provider value={paletteApi}>
@@ -54,8 +65,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         >
           {children}
         </main>
+        {layout.assistant === 'dock' ? <AssistantDock /> : null}
       </div>
-      {layout.askButton ? <AskAssistantButton /> : null}
       <CommandPalette
         open={palette.open}
         initialQuery={palette.query}

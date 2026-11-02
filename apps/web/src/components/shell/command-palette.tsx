@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
+import { useAssistantUi } from '@/components/assistant/assistant-context';
 import { Dialog as DialogPrimitive } from 'radix-ui';
 import { Activity, ArrowRight, FolderClosed, Layers, Search, Sparkles } from 'lucide-react';
 import { cn } from 'cn';
@@ -50,6 +51,7 @@ export function CommandPalette({
   onOpenChange: (open: boolean) => void;
 }) {
   const navigate = useNavigate();
+  const { ask } = useAssistantUi();
   const [query, setQuery] = useState('');
   const [active, setActive] = useState(0);
   const list = useRef<HTMLDivElement>(null);
@@ -110,7 +112,7 @@ export function CommandPalette({
     if (!row) return;
     onOpenChange(false);
     if (row.kind === 'ask') {
-      navigate(`/?ask=${encodeURIComponent(query.trim())}`);
+      ask(query.trim());
     } else if (row.item.to.startsWith('http')) {
       window.open(row.item.to, '_blank', 'noreferrer');
     } else {

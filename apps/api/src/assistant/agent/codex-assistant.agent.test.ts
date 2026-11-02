@@ -136,7 +136,7 @@ const turnArgs = (overrides: Record<string, unknown> = {}) => ({
   model: 'gpt-x',
   effort: 'low',
   instructions: 'be helpful',
-  applyMode: 'manual' as const,
+  mode: 'manual' as const,
   signal: new AbortController().signal,
   handlers: { callTool: vi.fn(async () => ({ ok: true, text: '{}' })), onEvent: vi.fn() },
   ...overrides,

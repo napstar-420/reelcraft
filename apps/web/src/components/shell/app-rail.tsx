@@ -1,10 +1,19 @@
-import { Activity, FolderClosed, Home, Layers, Search, SlidersHorizontal } from 'lucide-react';
+import {
+  Activity,
+  FolderClosed,
+  Home,
+  Layers,
+  Search,
+  SlidersHorizontal,
+  Sparkles,
+} from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { cn } from 'cn';
 import { NotificationBell } from '@/components/notifications/notification-bell';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { UpdateIndicator } from '@/components/update/update-indicator';
 import { useCommandPalette } from './command-palette-context';
+import { useAssistantUi } from '@/components/assistant/assistant-context';
 
 const NAV = [
   { to: '/', label: 'Home', icon: Home, match: (p: string) => p === '/' },
@@ -30,6 +39,14 @@ const ITEM =
 export function AppRail({ needsYou }: { needsYou: number }) {
   const { pathname } = useLocation();
   const palette = useCommandPalette();
+  const { assistant, dockOpen, setDockOpen, openAssistant } = useAssistantUi();
+  const assistantLabel = assistant.waiting
+    ? 'Assistant, needs you (Cmd J)'
+    : assistant.running
+      ? 'Assistant, working (Cmd J)'
+      : assistant.watches.length
+        ? `Assistant, watching ${assistant.watches.length} run${assistant.watches.length === 1 ? '' : 's'} (Cmd J)`
+        : 'Assistant (Cmd J)';
   return (
     <nav
       aria-label="Main"
@@ -63,6 +80,28 @@ export function AppRail({ needsYou }: { needsYou: number }) {
         );
       })}
       <span className="flex-1" />
+      {pathname !== '/' ? (
+        <RailTip label={assistantLabel}>
+          <button
+            type="button"
+            aria-label={assistantLabel}
+            aria-pressed={dockOpen}
+            className={cn(ITEM, dockOpen && 'text-acc')}
+            onClick={() => (dockOpen ? setDockOpen(false) : openAssistant())}
+          >
+            <Sparkles className="size-[18px]" />
+            {assistant.waiting || assistant.running || assistant.watches.length ? (
+              <span
+                className={cn(
+                  'absolute top-2 right-2 size-2 rounded-full ring-2 ring-card',
+                  assistant.waiting ? 'bg-wait' : 'bg-acc',
+                  assistant.running && !assistant.waiting && 'animate-pulse',
+                )}
+              />
+            ) : null}
+          </button>
+        </RailTip>
+      ) : null}
       <UpdateIndicator />
       <NotificationBell />
       <RailTip label="Search (Cmd K)">

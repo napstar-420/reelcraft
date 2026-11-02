@@ -16,6 +16,7 @@ import {
   asset,
   assistantItem,
   assistantSession,
+  assistantWatch,
   blob,
   blueprint,
   blueprintVersion,
@@ -83,7 +84,12 @@ async function seedDraftRender(testDb: TestDb, runId: string): Promise<void> {
   });
 }
 
-/** A chat with one item, so the cascade has assistant rows to delete. */
+/** A chat watching a run, so the cascade has a watch to delete with the run. */
+async function seedWatch(testDb: TestDb, sessionId: string, runId: string): Promise<void> {
+  await testDb.db.insert(assistantWatch).values({ id: ulid(), sessionId, runId });
+}
+
+/** A chat with one item, to check deleting its blueprint leaves the chat alone. */
 async function seedAssistantChat(testDb: TestDb, blueprintId: string): Promise<string> {
   const sessionId = ulid();
   await testDb.db.insert(assistantSession).values({
@@ -250,6 +256,7 @@ describe('channel delete cascade (e2e)', () => {
     const { error } = await runThroughRealPipeline(dryRun.id, dryRun.stageExecutions);
     expect(error).toBeUndefined();
     await seedNotification(testDb, dryRun.id);
+    await seedWatch(testDb, chatId, dryRun.id);
     await seedDraftRender(testDb, dryRun.id);
     await addRunFile(dryRun.id);
     const runBlobKeys = (
@@ -273,9 +280,10 @@ describe('channel delete cascade (e2e)', () => {
         .from(packageImport)
         .where(eq(packageImport.blueprintId, blueprintId)),
     ).toHaveLength(0);
+    // chats are not tied to a blueprint: they outlive it (their tools answer "not found")
     const chatRowsAfter = await assistantRowsFor(testDb, chatId, blueprintId);
-    expect(chatRowsAfter.items).toHaveLength(0);
-    expect(chatRowsAfter.sessions).toHaveLength(0);
+    expect(chatRowsAfter.items).toHaveLength(1);
+    expect(chatRowsAfter.sessions).toHaveLength(1);
     expect(
       await testDb.db
         .select()
@@ -293,6 +301,9 @@ describe('channel delete cascade (e2e)', () => {
     ).toHaveLength(0);
     expect(
       await testDb.db.select().from(notification).where(eq(notification.runId, dryRun.id)),
+    ).toHaveLength(0);
+    expect(
+      await testDb.db.select().from(assistantWatch).where(eq(assistantWatch.runId, dryRun.id)),
     ).toHaveLength(0);
     expect(
       await testDb.db
@@ -399,6 +410,7 @@ describe('channel delete cascade (e2e)', () => {
     expect(assetBlobBefore).toHaveLength(1);
 
     await seedNotification(testDb, dryRun.id);
+    await seedWatch(testDb, chatId, dryRun.id);
     await seedDraftRender(testDb, dryRun.id);
     await addRunFile(dryRun.id);
     const runBlobKeys = (
@@ -438,13 +450,17 @@ describe('channel delete cascade (e2e)', () => {
         .from(packageImport)
         .where(eq(packageImport.blueprintId, blueprintId)),
     ).toHaveLength(0);
+    // chats are not tied to a blueprint: they outlive it (their tools answer "not found")
     const chatRowsAfter = await assistantRowsFor(testDb, chatId, blueprintId);
-    expect(chatRowsAfter.items).toHaveLength(0);
-    expect(chatRowsAfter.sessions).toHaveLength(0);
+    expect(chatRowsAfter.items).toHaveLength(1);
+    expect(chatRowsAfter.sessions).toHaveLength(1);
     const [runRowAfter] = await testDb.db.select().from(run).where(eq(run.id, dryRun.id));
     expect(runRowAfter).toBeUndefined();
     expect(
       await testDb.db.select().from(notification).where(eq(notification.runId, dryRun.id)),
+    ).toHaveLength(0);
+    expect(
+      await testDb.db.select().from(assistantWatch).where(eq(assistantWatch.runId, dryRun.id)),
     ).toHaveLength(0);
     expect(
       await testDb.db

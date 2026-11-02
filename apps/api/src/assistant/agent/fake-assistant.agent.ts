@@ -5,7 +5,7 @@ import {
   type AssistantToolDef,
   type ToolResult,
 } from './assistant-agent.interface';
-import type { AssistantApplyMode } from '@reelcraft/shared';
+import type { AssistantMode } from '@reelcraft/shared';
 
 /** One scripted step of a fake turn. */
 export type FakeStep =
@@ -19,7 +19,7 @@ export type FakeStep =
 export class FakeAssistantAgent implements AssistantAgent {
   readonly providerId = 'fake';
   readonly sessions = new Map<string, { instructions: string; tools: AssistantToolDef[] }>();
-  readonly turns: Array<{ text: string; model: string; applyMode: AssistantApplyMode }> = [];
+  readonly turns: Array<{ text: string; model: string; mode: AssistantMode }> = [];
   deleted: string[] = [];
   private nextSession = 1;
   private turnIndex = 0;
@@ -51,7 +51,7 @@ export class FakeAssistantAgent implements AssistantAgent {
   }
 
   async runTurn(options: Parameters<AssistantAgent['runTurn']>[0]): Promise<void> {
-    this.turns.push({ text: options.text, model: options.model, applyMode: options.applyMode });
+    this.turns.push({ text: options.text, model: options.model, mode: options.mode });
     const steps = this.script[this.turnIndex++] ?? [];
     let n = 0;
     for (const step of steps) {

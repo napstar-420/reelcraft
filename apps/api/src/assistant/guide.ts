@@ -34,7 +34,7 @@ export const GUIDE: Record<string, GuideSection> = {
 - Stage \`key\`s must be unique. Pick short descriptive keys such as \`script\`, \`scenes\`, \`images\`, \`voice\`. Once saved, runs refer to a stage by its key, so don't rename keys of existing stages without a reason.
 - \`propose_draft\` and \`validate_draft\` take the COMPLETE draft (every stage, inputs, roles, defaults, budget, execution and presentation when present): a draft there is not a patch. \`edit_draft\` is the patch form: a list of edits to the current draft, which keeps everything it doesn't touch (use it for changes to an existing blueprint).
 - Top-level draft fields are graph, inputs, roles, defaults, budget, execution and presentation. Preserve execution and presentation from the current draft when proposing unrelated edits. Only the stage fields in the tool schema exist. Invented fields are rejected.
-- Saving a version is the user's job. You propose a draft; the user (or auto-apply) puts it on the canvas.
+- \`edit_draft\` and \`propose_draft\` write the blueprint's unsaved draft: the editor shows it at once and the user can Undo. It is not a saved version.
 - Keep the user's existing stages unless they ask to change them: start from the draft that \`get_blueprint\` returns (an outline plus \`get_stages\` when it is large) and change it with \`edit_draft\`.
 - The usual end-to-end shape: plan scenes (\`text.generate\`, data) → write script (\`text.generate\`) → make visuals per scene (\`image.generate\`/\`video.generate\` with iterate) → voice-over (\`audio.speech\`) → word timings (\`media.analyze\`) → assemble (\`timeline.render\` or \`video.concat\`) → human approval. The last stage that makes a video is the run's final video, so end the graph with it.`,
   },
@@ -181,7 +181,7 @@ Every stage a model writes needs at least one check, a qc or an approval (propos
     title: 'Run inputs, roles and budget',
     body: `**inputs**: what a run asks for. \`{ key, label, required, accepts }\` where \`accepts\` is \`{kind:'text'}\`, \`{kind:'data', schema}\`, or \`{kind:'media.image'|'media.video'|'media.audio', cardinality:'one'|'many'}\`. Keys are unique. Bind a stage to one with \`{from:'input', inputKey}\`. Use inputs for what changes run to run (topic, tone, a photo); put constants in the prompt.
 
-**roles**: at most ONE. \`{ key, label, required, characterId?, referenceBlobIds? }\`. It selects a channel Character (take the id from \`get_channel_resources\`; the Character must be ready, with usable references, and in this channel) and at least one of its reference images. Bind it with \`{from:'role', roleKey}\` to a many-cardinality image \`references\` slot. A declared role that no stage binds only gets a warning. You can't create Characters.
+**roles**: at most ONE. \`{ key, label, required, characterId?, referenceBlobIds? }\`. It selects a channel Character (take the id from \`get_channel\`; the Character must be ready, with usable references, and in this channel) and at least one of its reference images. Bind it with \`{from:'role', roleKey}\` to a many-cardinality image \`references\` slot. A declared role that no stage binds only gets a warning. You can't create Characters.
 
 **budget**: \`{ runCapUsd }\`, the usual spending limit for a run (the run dialog starts from it). Choose a sensible cap for the paid stages (an all-fake or all-free blueprint can use a small cap).`,
   },
@@ -230,7 +230,7 @@ QC block shape: \`{ criteria, threshold, model: { provider, modelId, params }, i
 
   diagnose: {
     title: 'Using run results to improve the blueprint',
-    body: `Use this when the user asks why something failed, why a run was expensive or slow, whether a result is good, or says the output is not what they wanted. You can read this blueprint's runs and what they made; you cannot start, retry, approve or cancel anything.
+    body: `Use this when the user asks why something failed, why a run was expensive or slow, whether a result is good, or says the output is not what they wanted. You can read every run and what it made.
 
 **Get the evidence first.** \`list_runs\` to find the run, \`get_run\` for the stage-by-stage picture (state, model, how each attempt ended, cost split, failure), \`get_stage\` for the stage that matters (failed checks, QC critique, the error or rejection note, the output including the one that was rejected), \`view_stage_media\` to look at images and video frames. Quote what you found (stage, attempt, the message) before proposing a fix, and fix only what the evidence points to.
 
@@ -364,26 +364,26 @@ When a request mixes shapes (a story with a few real clips, a voice-over plus mu
     title: 'Defaults and how settings are merged',
     body: `A stage's settings come from four layers, later wins: Reelcraft's built-in defaults (no retries, at most the install's iterate limit, polling every 5 s for 120 s), the channel's \`defaults\`, the blueprint's \`defaults\`, then the stage's own fields (\`model\`, \`retryLimit\`, \`qc\`, \`budget\`, \`iterate\`…). \`get_effective_config\` shows the result and each layer: use it instead of reasoning about it.
 
-- Models: \`defaults.models\` maps a kind of work (\`text\`, \`image\`, \`video\`, \`audio\`, \`media\`, \`browser\`, \`compute\`, \`human\`, \`publish\`) to a model. For a stage, the default for ITS kind replaces any general \`model\` default; the stage's own \`model\` pin beats both. Set \`defaults.models\` once in the blueprint for the kinds you use; pin a stage only to differ. The channel may already set some: \`get_channel_resources\` shows its defaults, and a blueprint default overrides the channel's.
+- Models: \`defaults.models\` maps a kind of work (\`text\`, \`image\`, \`video\`, \`audio\`, \`media\`, \`browser\`, \`compute\`, \`human\`, \`publish\`) to a model. For a stage, the default for ITS kind replaces any general \`model\` default; the stage's own \`model\` pin beats both. Set \`defaults.models\` once in the blueprint for the kinds you use; pin a stage only to differ. The channel may already set some: \`get_channel\` shows its defaults, and a blueprint default overrides the channel's.
 - The QC judge's model is always explicit on the stage (\`qc.model\`); it does not use defaults.
 - \`defaults.budget\` (\`runCapUsd\`, \`stageCapUsd\`) caps spending: \`budget.runCapUsd\` on the blueprint is the cap a run starts with; the user can change it in the Run dialog.
 - \`defaults.retryLimit\` is for crashes only (provider error, timeout), not for rejected output.
 - \`defaults.format\` (aspectRatio, resolution, fps, targetDurationSec) is what pictures and the render should follow; keep prompts and the timeline consistent with it.
-- A value on the channel that you would change is the user's to change: you can only propose blueprint \`defaults\`.`,
+- Prefer blueprint \`defaults\`. Change the channel's defaults (\`update_channel\`) only when the user asks: every blueprint in the channel inherits them.`,
   },
 
   versions: {
     title: 'Versions, the draft and going back',
-    body: `- The canvas holds a working **draft** that autosaves. It is not a version. Only the user's **Save** creates a saved version, numbered \`major.minor\` (1.0, then 1.1, 1.2…; the Save menu can start a new major, 2.0). Runs refer to the saved version they ran (a run of unsaved canvas edits uses a hidden "canvas draft" snapshot).
+    body: `- The canvas holds a working **draft** that autosaves. It is not a version. **Save** (or \`save_version\`) creates a saved version, numbered \`major.minor\` (1.0, then 1.1, 1.2…; the Save menu can start a new major, 2.0). Runs refer to the saved version they ran (a run of unsaved canvas edits uses a hidden "canvas draft" snapshot).
 - \`get_blueprint\` lists the saved versions (label, which is current, run counts) and says whether the draft differs from the latest save (\`draftDiffersFromLatest\`). \`get_version\` reads one (an outline plus \`get_stages\` with its label, when it is large). \`diff_drafts\` compares any two (\`current\` is the draft on the canvas now).
-- **Going back**: there is no restore button for you. Read the old version with \`get_version\`, propose a draft that brings back what the user wants (the whole version, or only some stages or settings, keeping the rest of the current draft), and tell them to Save to keep it. Say what you brought back and what you left alone.
+- **Going back**: \`restore_version\` puts a whole older version back as the draft. To bring back only some stages or settings, read the old version with \`get_version\` and change the current draft with \`edit_draft\`. Either way, \`save_version\` keeps it. Say what you brought back and what you left alone.
 - "What changed since the last save / between 1.1 and 1.3?": \`diff_drafts\`, then explain in the user's terms (stage labels, settings), not field names.
 - Versions have no notes, changelog or author: do not invent them. The package and sharing features exist in the app, but you cannot export, import or sign anything.`,
   },
 
   execution: {
     title: 'Execution controls, continuation and stale outputs',
-    body: `The canvas and run page use the same selected run, backend eligibility, controls and confirmations. The assistant can explain these actions and inspect evidence; it cannot execute them.
+    body: `The canvas and run page use the same selected run, backend eligibility, controls and confirmations. You can do them too, and each shows you its plan and cost first: \`run_stages\` (scope only = Run stage, up_to = Run through stage, from_here = Rebuild descendants), \`retry_stage\`, \`pause_run\`, \`resume_run\`, \`cancel_run\`, \`set_concurrency\`.
 
 - **Run stage** runs only the selected stage when prerequisites and inputs are ready. Never suggest that it will automatically run prerequisites. **Run through stage** explicitly includes required unfinished prerequisites; **Rebuild descendants** explicitly expands downstream.
 - **Continue stage** preserves compatible passed items and saved approval/input candidates, executing only unfinished work in the same run. Six passed items out of fourteen means eight unfinished items, including non-contiguous progress. Continue uses persisted item identity and dependencies against the pinned snapshot, not a numeric starting offset or equal item count.
@@ -407,15 +407,15 @@ ${renderTroubleshooting()}`,
     title: "The app's words, and where they live in the draft",
     body: `Talk to the user in the app's own words and tell them where to look.
 
-- **Canvas**: the graph of stages. **Add stage**, **Memory links** (shows which stages pass values through run memory: \`writes\` and \`{from:'memory'}\`). Drag nodes freely; **Format canvas**, **Fit workflow**, **Focus selected**, **Undo** and **Redo** change presentation. **Create branch** adds a dependency branch without replacing existing connections. Name branches above their first node. Connect handles or use keyboard dependency selectors; cycles and self-connections are rejected. Removing a binding-derived edge requires editing its binding. Memory links are hidden by default. The resizable dock has **Stage**, **Details**, **Run**, **Blueprint** and **Assistant** views.
+- **Blueprint editor**: the **Stages** / **Graph** switch at the top. Stages lists every stage on the left, grouped by phase, with **Inputs, voices and budget** and **Test runs** above them; the selected stage opens in the middle. Graph shows the stages as connected cards (**Tidy up**, **Fit**, **Focus**). **Add stage** (key A). **Memory links** shows which stages pass values through run memory (\`writes\` and \`{from:'memory'}\`). **Create branch** adds a dependency branch without replacing existing connections; cycles and self-connections are rejected; removing a binding-derived edge requires editing its binding.
+- **Assistant**: docked on the right of every page (Cmd+J) and the page itself on Home: the same chat everywhere, told what the user is looking at. Modes **Manual** (asks on a card before each change), **Auto** and **Plan**; changes to a blueprint can be undone from the chat.
 - **Stage** tab sections: **Basics** (key, label, stage type, Instructions: \`instructions.system\` / \`template\`), **Data (slots, context)**, **Output & memory writes** (\`output\`, \`writes\`), **Checks & Quality control** (\`checks\`, \`qc\`, \`checkMaxAttempts\`), **Model** (\`model\` pin), **Execution (retry, budget)** (\`retryLimit\`, \`budget\`), **Flow control** (\`iterate\`, \`enabledWhen\` as "Enabled when", \`approval\`).
 - **Details**: shared **Output**, **Attempts**, **Inputs & dependencies** and **Memory** workspace on canvas and run page. Search numerically ordered items and trace current accepted, rejected, reused, stale and historical outputs to recorded attempts, prompts, inputs, source artifacts, checks/QC, duration and cost. Missing legacy provenance says **Not recorded**; do not infer it. Full messages and debug logs expand on demand. Memory groups by producing stage, base key and numeric item, with search/type filters and version history.
 - **Stage dependencies**: **Runs after**, **Reads from**, **Used by** link connected stages. **Run** shows a compact dependency overview with branches, joins and blockers. Cards summarize model/provider, input sources, output type, duration, cost, progress and the responsible failure/blocker; hover or focus for details.
 - **Blueprint** tab: name, description, tags, inputs (run inputs), the Character role, defaults and budget. Presentation stores shared positions and branch names by stable stage key, retained through drafts, versions, duplication and package round trips; preserve it in proposals.
-- **Save** creates a version (its menu can start a new major); **Versions** lists them; the toolbar badge **Runnable** with a warning count comes from the validator. **Run** opens the run dialog (**Live run** or **Dry run**, budget cap, inputs, **Run up to** to stop after a stage). A **Dry run** uses the free fake provider.
-- **Assistant** tab: **Auto-apply** (proposals go straight to the canvas, with **Undo**), **Apply** (manual mode), **Start new chat**, the model and effort pickers.
+- **Save** creates a version (its menu can start a new major); **History** lists them; the toolbar's **Ready to run** (with a warning count) comes from the validator. **Run** opens the run dialog (**Real run** or **Free test run**, **Budget limit**, inputs, **Run up to** to stop after a stage). A **Free test run** uses the free fake provider. **Test run** in the editor runs the unsaved draft.
 - Stage types by label: Generate Text, Generate Image, Generate Video, Generate Video with Flow, Generate Speech, Generate Sound Effect, Generate Music, Analyze Media, Concatenate Video, Render Timeline, Export Subtitles, Human Input, Human Timeline Edit, Automate Browser, Compose Timeline, Prepare Drawings, Preview Drawings, Write Scene, Render Scene, Generate Motion Graphic, Render Motion Graphic, Cut Out Background, Publish (Stub). \`list_capabilities\` has the exact labels.
-- **Approve** / **Reject** (with a note) are the user's actions on a paused run; you cannot do them.`,
+- **Approve** / **Reject** (with a note) on a stage waiting for review: \`approve_stage\` and \`reject_stage\` do the same.`,
   },
 
   limits: {
@@ -427,13 +427,13 @@ ${renderTroubleshooting()}`,
 - **Branching**: the only conditional is \`enabledWhen\` (a run input equals a value). No if/else, loops over stages, or computed conditions.
 - **Iterate** over a many-cardinality media set, or use \`groupKey\` (ignored); \`iterate.over\` must be an array from memory or a whole-output array from prev.
 - **QC on video output or on \`human.input\`** (use approval); QC \`includeTranscript\` outside audio.
-- **More than one role**, or creating Characters, uploading or editing assets, changing channel defaults, provider keys or Settings: you can only reference what exists. Tell the user to add it in the app.
-- **Running, dry-running, saving or approving**: you only propose drafts and metadata changes; the user saves and runs.
+- **More than one role**, or creating Characters, uploading or editing assets, provider keys or Settings: you can only reference what exists. Tell the user to add it in the app.
+- **Run inputs that are files** (images, audio, video): only the user can add them, on the run page.
 - **JSON schemas beyond the small subset** (\`$ref\`, \`oneOf\`, \`anyOf\`, \`allOf\`, \`additionalProperties\`, …).
 - **Template logic**: \`{{ }}\` only inserts values: no conditions, loops, formulas, and no \`{{ item }}\`.
 - **\`prev\` on the first stage**, \`prevItem\` or \`item\` outside an iterating stage, a memory key written by two stages that can run at the same time (make one \`dependsOn\` the other).
 - **Anything about a model, style, check, asset or capability that the tools don't list.** Don't guess and don't use training knowledge about what Reelcraft "probably" has: look it up, and if it isn't there, it doesn't exist in this install.
-- **Starting, retrying, approving or cancelling runs**, and anything on the web. You can read this blueprint's runs and what they made (\`list_runs\`, \`get_run\`, \`get_stage\`, \`view_stage_media\`), not other blueprints' runs, and you can't play audio or watch video (frames only).
+- **Anything on the web**, and watching a video as motion or hearing its sound: you see frames (view_stage_media) and read a transcript with loudness and silences (listen_to_audio).
 - Anything you did not read with a tool: you only know what the tools return.`,
   },
 

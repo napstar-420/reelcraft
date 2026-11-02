@@ -71,6 +71,12 @@ const runControlProviders = [
     ...runControlProviders,
   ],
   controllers: [RunController],
-  exports: [RunService, RunInsightService, RunInputService, ...runControlProviders],
+  exports: [
+    RunService,
+    RunStagePlanService,
+    RunInsightService,
+    RunInputService,
+    ...runControlProviders,
+  ],
 })
 export class RunModule {}

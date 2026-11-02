@@ -23,7 +23,7 @@ describe('FakeAssistantAgent', () => {
       text: 't',
       model: 'm',
       instructions: 'i',
-      applyMode: 'manual' as const,
+      mode: 'manual' as const,
       handlers: handlers(calls),
       signal: new AbortController().signal,
     };
@@ -42,7 +42,7 @@ describe('FakeAssistantAgent', () => {
         text: 't',
         model: 'm',
         instructions: 'i',
-        applyMode: 'auto',
+        mode: 'auto',
         handlers: handlers([]),
         signal: controller.signal,
       }),

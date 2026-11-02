@@ -5,6 +5,8 @@ import type { AssistantStreamEvent, NotificationDto } from '@reelcraft/shared';
 export type LiveEvent =
   | { type: 'run'; runId: string }
   | { type: 'stage'; runId: string; stageKey: string }
+  /** A blueprint's details, working draft or versions changed (e.g. the assistant edited it). */
+  | { type: 'blueprint'; blueprintId: string }
   /** A notification row was committed for this user. */
   | { type: 'notification'; recipientId: string; notification: NotificationDto }
   /** Read state changed; other tabs refetch the list. */

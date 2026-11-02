@@ -84,12 +84,21 @@ export class DeepgramAdapter implements ProviderAdapter {
     mime: string,
     options: { modelId?: string; pricePerMinuteUsd?: number } = {},
   ): Promise<ReturnType<typeof normalize> & { costUsd: number; raw: unknown }> {
-    const apiKey = await this.keys.get(this.id);
-    if (!apiKey) throw new Error('Deepgram: no API key configured');
     const chunks: Buffer[] = [];
     for await (const chunk of await this.storage.getStream(objectKey)) {
       chunks.push(Buffer.from(chunk as Buffer));
     }
+    return this.transcribeBuffer(Buffer.concat(chunks), mime, options);
+  }
+
+  /** Transcribes audio already in memory (e.g. a video's soundtrack, extracted). */
+  async transcribeBuffer(
+    audio: Buffer,
+    mime: string,
+    options: { modelId?: string; pricePerMinuteUsd?: number } = {},
+  ): Promise<ReturnType<typeof normalize> & { costUsd: number; raw: unknown }> {
+    const apiKey = await this.keys.get(this.id);
+    if (!apiKey) throw new Error('Deepgram: no API key configured');
     const modelId = options.modelId ?? 'nova-3';
     const startedAt = Date.now();
     const response = await fetch(
@@ -97,7 +106,7 @@ export class DeepgramAdapter implements ProviderAdapter {
       {
         method: 'POST',
         headers: { Authorization: `Token ${apiKey}`, 'Content-Type': mime },
-        body: Buffer.concat(chunks),
+        body: new Uint8Array(audio),
       },
     );
     if (!response.ok) {

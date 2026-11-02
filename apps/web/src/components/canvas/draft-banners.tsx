@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { AlertTriangle, History } from 'lucide-react';
+import { AlertTriangle, History, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 function Banner({
@@ -101,6 +101,35 @@ export function SavedElsewhereBanner({
       {hasEdits
         ? ` Your unsaved edits are on an older version: keep them to save over ${version}, or discard them and load ${version}.`
         : ''}
+    </Banner>
+  );
+}
+
+/** The assistant (or another tab) changed this blueprint while the page had edits it had not
+ * sent yet: take its version, or keep editing (the next autosave replaces it). */
+export function AssistantChangedBanner({
+  onReload,
+  onKeepMine,
+}: {
+  onReload: () => void;
+  onKeepMine: () => void;
+}) {
+  return (
+    <Banner
+      icon={<Sparkles className="size-4 shrink-0 text-acc" />}
+      actions={
+        <>
+          <Button size="sm" onClick={onReload}>
+            Load its version
+          </Button>
+          <Button size="sm" variant="outline" onClick={onKeepMine}>
+            Keep mine
+          </Button>
+        </>
+      }
+    >
+      The assistant changed this blueprint while you were editing. Load its version (Undo brings
+      yours back), or keep yours and it replaces the assistant&apos;s change.
     </Banner>
   );
 }

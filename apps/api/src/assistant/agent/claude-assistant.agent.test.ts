@@ -71,7 +71,7 @@ async function fixture() {
       model: 'sonnet',
       effort: 'low',
       instructions: 'Be helpful',
-      applyMode: 'manual',
+      mode: 'manual',
       signal,
       handlers: { callTool: vi.fn(), onEvent: (event) => events.push(event) },
     });
@@ -278,7 +278,7 @@ describe('ClaudeAssistantAgent', () => {
         text: 'hi',
         model: 'sonnet',
         instructions: '',
-        applyMode: 'manual',
+        mode: 'manual',
         signal: new AbortController().signal,
         handlers: { callTool: vi.fn(), onEvent: vi.fn() },
       }),

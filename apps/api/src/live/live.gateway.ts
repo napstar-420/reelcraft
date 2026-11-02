@@ -123,6 +123,15 @@ export class LiveGateway
       this.server.to(userRoom(event.recipientId)).emit('notifications:changed');
       return;
     }
+    if (event.type === 'blueprint') {
+      const owner = await this.ownerOfBlueprint(event.blueprintId);
+      if (owner !== undefined) {
+        this.server
+          .to(userRoom(owner))
+          .emit('blueprint:updated', { blueprintId: event.blueprintId });
+      }
+      return;
+    }
     const owner = await this.ownerOf(event.runId);
     if (owner === undefined) return;
     const room = this.server.to(userRoom(owner));
@@ -138,11 +147,19 @@ export class LiveGateway
 
   private async ownerOfSession(sessionId: string): Promise<string | undefined> {
     const [row] = await this.db
-      .select({ ownerId: channel.ownerId })
+      .select({ ownerId: assistantSession.ownerId })
       .from(assistantSession)
-      .innerJoin(blueprint, eq(assistantSession.blueprintId, blueprint.id))
-      .innerJoin(channel, eq(blueprint.channelId, channel.id))
       .where(eq(assistantSession.id, sessionId))
+      .limit(1);
+    return row?.ownerId;
+  }
+
+  private async ownerOfBlueprint(blueprintId: string): Promise<string | undefined> {
+    const [row] = await this.db
+      .select({ ownerId: channel.ownerId })
+      .from(blueprint)
+      .innerJoin(channel, eq(blueprint.channelId, channel.id))
+      .where(eq(blueprint.id, blueprintId))
       .limit(1);
     return row?.ownerId;
   }

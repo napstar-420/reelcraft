@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { useQueries } from '@tanstack/react-query';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { formatDistanceToNow } from 'date-fns';
 import { AlertTriangle, ChevronRight, Clock, Loader2, Sparkles, Wallet } from 'lucide-react';
 import type { RunDetailDto, RunSummaryDto } from '@reelcraft/shared';
@@ -8,7 +8,8 @@ import { cn } from 'cn';
 import { api } from '@/api/client';
 import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/components/ui/status-badge';
-import { askInBlueprint, fixFailedStagePrompt } from '@/lib/assistant-handoff';
+import { fixFailedStagePrompt } from '@/lib/assistant-prompts';
+import { useAssistantUi } from '@/components/assistant/assistant-context';
 import { formatElapsed, formatUsd } from '@/lib/format-elapsed';
 import { runHandle, runStateSentence } from '@/lib/run-buckets';
 import { runStateTone } from '@/lib/status';
@@ -42,7 +43,7 @@ export function AttentionRow({
   summary: RunSummaryDto;
   detail: { run: RunDetailDto; view: RunView } | undefined;
 }) {
-  const navigate = useNavigate();
+  const { ask } = useAssistantUi();
   const view = detail?.view;
   const failed = view?.failed[0];
   const waiting = view?.waiting[0];
@@ -83,17 +84,18 @@ export function AttentionRow({
           <Button
             size="sm"
             variant="accent"
-            onClick={() => {
-              const handoff = askInBlueprint(
-                summary.blueprintId,
+            onClick={() =>
+              ask(
                 fixFailedStagePrompt({
+                  runId: summary.id,
                   runHandle: runHandle(summary.id),
+                  blueprintName: summary.blueprintName,
+                  stageKey: failed.key,
                   stageLabel: failed.label,
                   reason,
                 }),
-              );
-              navigate(handoff.to, { state: handoff.state });
-            }}
+              )
+            }
           >
             <Sparkles /> Fix with assistant
           </Button>

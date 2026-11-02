@@ -14,11 +14,10 @@ different inputs each time.
 
 The quickest way is to describe the video to the assistant:
 
-1. On **Home**, type what you want in **What are we making today?**, for example "A 45-second
-   history short from a topic: script, voice-over, one image per scene, captions".
-2. Pick the channel, and leave **New blueprint** selected.
-3. Select **Send**. Reelcraft creates the blueprint, opens it and hands your message to its
-   assistant, which proposes the stages. See [The assistant](./assistant.md).
+1. On **Home**, tell the assistant what you want, for example "A 45-second history short from a
+   topic, in my History Shorts channel: script, voice-over, one image per scene, captions".
+2. Press **Enter**. The assistant creates the blueprint and builds its stages (in **Manual** mode it
+   asks you first). See [The assistant](./assistant.md).
 
 To start from an empty blueprint instead:
 
@@ -73,8 +72,10 @@ The default view reads like a document.
 - **Setup**: **Runs after**, **Stage turned on**, and the stage's settings. See [Stages](./stages.md);
 - **Last test run**, once a test run has reached it: its output, attempts, inputs and memory.
 
-**On the right**, the assistant stays open while you work. Hide it with the panel button in its
-header; it then waits as an **Assistant** button in the bottom right corner.
+**On the right**, the assistant stays open while you work, and knows which stage you have open.
+Hide it with the panel button in its header or **Cmd J**; it then waits as an **Assistant** button
+in the bottom right corner. When it changes the blueprint, the editor shows the change straight
+away (if you were in the middle of an edit, it asks: **Load its version** or **Keep mine**).
 
 ### Graph view
 
@@ -100,7 +101,7 @@ view.
 
 Select **Add stage** at the bottom of the outline (or at the top left of the graph), or press **A**,
 and pick a stage type from the list, such as **Generate Text**. Type to search. The right side says
-what the highlighted type does. **Describe it instead** hands the stage to the assistant. In Stages
+what the highlighted type does. **Describe it instead** opens the assistant with "Add a stage after …" in its message box. In Stages
 view a new stage goes after the selected one. See [Stage types](../stage-types/index.md) for what each
 one does.
 

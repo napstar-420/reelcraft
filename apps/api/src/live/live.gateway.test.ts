@@ -7,10 +7,10 @@ function setup(ownerRows: Array<{ ownerId: string }>, clients = 1) {
   const to = vi.fn(() => ({ emit }));
   const limit = vi.fn(async () => ownerRows);
   const where = () => ({ limit });
-  // run -> channel is one join, session -> blueprint -> channel is two
+  // a chat's owner is on the chat itself; run -> channel and blueprint -> channel are one join
   const db = {
     select: () => ({
-      from: () => ({ innerJoin: () => ({ where, innerJoin: () => ({ where }) }) }),
+      from: () => ({ where, innerJoin: () => ({ where }) }),
     }),
   };
   const events = new LiveEvents();
@@ -25,6 +25,13 @@ describe('LiveGateway.route', () => {
     await gateway.route({ type: 'run', runId: 'r1' });
     expect(to).toHaveBeenCalledWith('user:local');
     expect(emit).toHaveBeenCalledWith('run:updated', { runId: 'r1' });
+  });
+
+  it('emits blueprint updates to the owner room', async () => {
+    const { gateway, to, emit } = setup([{ ownerId: 'local' }]);
+    await gateway.route({ type: 'blueprint', blueprintId: 'bp1' });
+    expect(to).toHaveBeenCalledWith('user:local');
+    expect(emit).toHaveBeenCalledWith('blueprint:updated', { blueprintId: 'bp1' });
   });
 
   it('emits stage updates with the stage key', async () => {

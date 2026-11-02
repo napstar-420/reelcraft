@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
+import { useAssistantUi } from '@/components/assistant/assistant-context';
 import { Layers, Plus, Search, Sparkles } from 'lucide-react';
 import { cn } from 'cn';
 import { Button } from '@/components/ui/button';
@@ -42,6 +43,8 @@ export function FilterChip({
 
 /** Every blueprint in every channel, one click from anywhere. */
 export function BlueprintsPage() {
+  const { openAssistant } = useAssistantUi();
+  const describePrompt = 'Make me a new blueprint: ';
   const [params, setParams] = useSearchParams();
   const channelFilter = params.get('channel');
   const [query, setQuery] = useState('');
@@ -103,10 +106,8 @@ export function BlueprintsPage() {
                 <Plus /> Blank blueprint
               </Link>
             </Button>
-            <Button variant="accent" asChild>
-              <Link to="/?focus=assistant">
-                <Sparkles /> Describe a new one
-              </Link>
+            <Button variant="accent" onClick={() => openAssistant({ prefill: describePrompt })}>
+              <Sparkles /> Describe a new one
             </Button>
           </>
         }
@@ -169,7 +170,7 @@ export function BlueprintsPage() {
             blueprints={shown}
             channelNames={channelFilter ? undefined : channelNames}
             status={status}
-            describeTo="/?focus=assistant"
+            onDescribe={() => openAssistant({ prefill: describePrompt })}
           />
         </>
       )}

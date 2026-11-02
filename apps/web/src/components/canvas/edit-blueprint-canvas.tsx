@@ -2,7 +2,7 @@ import { connectStages, disconnectStages, explicitGraph } from '@/pages/dag-edit
 import { TestRunControls, withoutStageActions } from './test-run-controls';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Lock } from 'lucide-react';
 import { api, ApiError } from '@/api/client';
@@ -11,7 +11,6 @@ import { stableStringify } from '@/lib/stable-stringify';
 import { formatBlueprintVersion } from '@/lib/format-blueprint-version';
 import { useCanvasRun } from '@/hooks/useCanvasRun';
 import { useCanvasRunActions } from '@/hooks/useCanvasRunActions';
-import { useAssistant } from '@/hooks/useAssistant';
 import { inheritedDefaults } from '@/components/defaults/defaults-editor.logic';
 import {
   AlertDialog,
@@ -45,9 +44,8 @@ import type {
   ValidationIssue,
   VersionBump,
 } from '@reelcraft/shared';
-import { AssistantPanel } from './assistant/assistant-panel';
 import { BlueprintSettingsPanel } from './BlueprintSettingsPanel';
-import { AssistantDock, loadDockOpen, saveDockOpen } from '@/components/assistant/assistant-dock';
+import { useAssistantPageDetail, useAssistantUi } from '@/components/assistant/assistant-context';
 import { AddStageDialog } from './add-stage-dialog';
 import { StageOutline, type OutlineFocus } from './stage-outline';
 import {
@@ -61,10 +59,9 @@ import { StageDetailsWorkspace } from '@/components/runs/stage-details-workspace
 import { CanvasRunSheets } from './canvas-run-sheets';
 import { CanvasToolbar } from './canvas-toolbar';
 import { CanvasWorkspace } from './canvas-workspace';
-import { OrphanDraftBanner, SavedElsewhereBanner } from './draft-banners';
+import { AssistantChangedBanner, OrphanDraftBanner, SavedElsewhereBanner } from './draft-banners';
 import { RunTab } from './run-tab';
 import { stageSummary } from './stage-summary.logic';
-import { handoffMessage } from '@/lib/assistant-handoff';
 import { StageExecutionControls } from '@/components/runs/execution-controls';
 import { Link } from 'react-router-dom';
 import { createStage } from './stage-factory.logic';
@@ -167,11 +164,7 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
   const view = searchParams.get('view') === 'graph' ? 'graph' : 'stages';
   /** What the middle of the page shows in Stages view. */
   const [panel, setPanel] = useState<'stage' | 'settings' | 'tests'>('stage');
-  const [dockOpen, setDockOpenState] = useState(() => loadDockOpen('blueprint'));
-  const setDockOpen = (open: boolean) => {
-    setDockOpenState(open);
-    saveDockOpen('blueprint', open);
-  };
+  const { openAssistant, setEditorDraft } = useAssistantUi();
   const [addOpen, setAddOpen] = useState(false);
   const [adding, setAdding] = useState(false);
   const setView = useCallback(
@@ -197,6 +190,11 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
   const [savedDraft, setSavedDraft] = useState<BlueprintDraft>(emptyDraft);
   const [runSnapshot, setRunSnapshot] = useState<{ id: string; contentKey: string } | null>(null);
   const serverHasWorkingDraft = useRef(false);
+  /** The draft content the server holds (its working draft, or the save when it has none), as
+   * far as this page knows: local edits differ from it until autosave sends them. */
+  const syncedKey = useRef('');
+  /** A change the assistant (or another tab) wrote while this page had edits not yet sent. */
+  const [incoming, setIncoming] = useState<BlueprintDraft | null>(null);
   /** An older saved version opened read-only from the Versions menu. */
   const [viewing, setViewing] = useState<BlueprintVersionDto | null>(null);
   const [confirmRestore, setConfirmRestore] = useState(false);
@@ -280,7 +278,9 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
       });
     }
     serverHasWorkingDraft.current = pick.draft === 'working';
-    setDraft(pick.draft === 'working' && working ? draftOf(working) : saved);
+    const loaded = pick.draft === 'working' && working ? draftOf(working) : saved;
+    syncedKey.current = stableStringify(loaded);
+    setDraft(loaded);
     if (pick.orphan) setOrphan({ draft: draftOf(pick.orphan), baseVersionId: workingBaseId });
   }, [
     draft,
@@ -302,6 +302,7 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
     async (next: BlueprintDraft) => {
       const applied = draftOf(next);
       setDraft(applied);
+      syncedKey.current = stableStringify(applied);
       serverHasWorkingDraft.current = true;
       try {
         await api.setWorkingDraft(blueprintId, applied, baseRef.current);
@@ -314,12 +315,32 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
     },
     [blueprintId, cacheWorkingDraft, draftWriteRefused],
   );
-  const assistant = useAssistant({
-    blueprintId,
-    draft,
-    replaceDraft,
-    disabled: viewing !== null,
-  });
+  // The assistant reads this page's draft (it can hold edits not yet autosaved) with each message.
+  useEffect(() => {
+    setEditorDraft(draft && !viewing ? { blueprintId, draft } : null);
+  }, [draft, viewing, blueprintId, setEditorDraft]);
+  useEffect(() => () => setEditorDraft(null), [setEditorDraft]);
+
+  // The assistant writes its changes to the server's working draft; live updates refetch the
+  // blueprint. Take its draft when this page has nothing unsent, else ask (Reload / Keep mine).
+  useEffect(() => {
+    const meta = blueprintMeta.data;
+    if (!draft || !meta?.workingDraft || viewing) return;
+    if (meta.workingDraftBaseVersionId !== baseRef.current) return;
+    const server = draftOf(meta.workingDraft as BlueprintDraft);
+    const serverKey = stableStringify(server);
+    if (serverKey === draftKey || serverKey === syncedKey.current) return;
+    if (draftKey === syncedKey.current) {
+      undoStack.current.push(draft);
+      redoStack.current = [];
+      syncedKey.current = serverKey;
+      serverHasWorkingDraft.current = true;
+      setDraft(server);
+    } else {
+      setIncoming(server);
+    }
+    // only a new server copy matters, not every local keystroke
+  }, [blueprintMeta.data]);
 
   /** Test runs always run a draft snapshot of the canvas, saved or not, so they never
    * count as production runs. Reuses the snapshot while the canvas content is unchanged. */
@@ -422,6 +443,7 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
   useEffect(() => {
     if (!draft || autosavePaused) return;
     const timer = window.setTimeout(() => {
+      syncedKey.current = draftKey;
       if (isDirty) {
         serverHasWorkingDraft.current = true;
         cacheWorkingDraft(draft, baseId);
@@ -575,33 +597,12 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
     );
   }, [stageParam, draft, setSearchParams]);
 
-  // A message handed over from Home, a run or a failure arrives in navigation state, which only
-  // the app can set: send it once the assistant is ready, then clear it so going back or
-  // reloading doesn't send it again.
-  const location = useLocation();
-  const navigate = useNavigate();
-  const handoff = handoffMessage(location.state);
-  const askSent = useRef(false);
-  useEffect(() => {
-    if (!handoff || askSent.current || !draft || viewing) return;
-    if (!assistant.model || assistant.unavailableReason || assistant.running) return;
-    askSent.current = true;
-    setDockOpen(true);
-    assistant.send(handoff);
-    navigate(
-      { pathname: location.pathname, search: location.search },
-      { replace: true, state: null },
-    );
-  }, [handoff, draft, viewing, assistant.model, assistant.unavailableReason, assistant.running]);
-
   // A `?ask=` in the URL comes from outside the app (a link anyone can write), so it only fills in
   // the assistant's message box: nothing is sent until the user presses Send.
   const askParam = searchParams.get('ask');
-  const [askPrefill, setAskPrefill] = useState<string | null>(null);
   useEffect(() => {
     if (!askParam) return;
-    setAskPrefill(askParam);
-    setDockOpen(true);
+    openAssistant({ prefill: askParam });
     setSearchParams(
       (params) => {
         params.delete('ask');
@@ -609,7 +610,7 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
       },
       { replace: true },
     );
-  }, [askParam, setSearchParams]);
+  }, [askParam, openAssistant, setSearchParams]);
 
   // `A` adds a stage from anywhere in Stages view (the graph has its own).
   useEffect(() => {
@@ -629,6 +630,17 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [view, viewing]);
+
+  // the assistant hears which stage is open (before the loading return: hooks run every render)
+  const openStageDef =
+    panel === 'stage' && selectedStageKey
+      ? (viewing ? draftOf(viewing) : draft)?.graph.find((st) => st.key === selectedStageKey)
+      : undefined;
+  useAssistantPageDetail(
+    openStageDef
+      ? { stageKey: openStageDef.key, label: openStageDef.label || openStageDef.key }
+      : null,
+  );
 
   if (versions.isLoading || !draft) {
     return <p className="p-6 text-sm text-muted-foreground">Loading…</p>;
@@ -813,6 +825,18 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
           busy={orphanBusy}
           onOpen={() => void openOrphan()}
           onDiscard={() => void discardOrphan()}
+        />
+      )}
+      {incoming && !elsewhere && (
+        <AssistantChangedBanner
+          onReload={() => {
+            undoStack.current.push(draft ?? incoming);
+            syncedKey.current = stableStringify(incoming);
+            serverHasWorkingDraft.current = true;
+            setDraft(incoming);
+            setIncoming(null);
+          }}
+          onKeepMine={() => setIncoming(null)}
         />
       )}
       {elsewhere && (
@@ -1105,28 +1129,6 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
             </div>
           )}
         </main>
-
-        <AssistantDock
-          open={dockOpen}
-          onOpenChange={setDockOpen}
-          badge={
-            assistant.running ? (
-              <span className="inline-flex h-5 items-center gap-1.5 rounded-full bg-acc-soft px-2 text-xs font-medium text-acc">
-                <span className="size-1.5 animate-pulse rounded-full bg-current" /> Working
-              </span>
-            ) : null
-          }
-        >
-          <AssistantPanel
-            assistant={assistant}
-            prefill={askPrefill}
-            stageLabel={
-              view === 'stages' && panel === 'stage' && selectedIndex >= 0
-                ? shown.graph[selectedIndex]!.label || selectedKey
-                : null
-            }
-          />
-        </AssistantDock>
       </div>
 
       <AddStageDialog
@@ -1145,8 +1147,7 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
         }}
         onDescribe={() => {
           setAddOpen(false);
-          setDockOpen(true);
-          window.setTimeout(() => document.getElementById('assistant-message')?.focus(), 50);
+          openAssistant({ prefill: `Add a stage ${insertLabel}: ` });
         }}
       />
 

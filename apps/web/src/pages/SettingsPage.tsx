@@ -1,12 +1,15 @@
 import { Link, Navigate, useParams } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { useTheme } from 'next-themes';
 import { Monitor, Moon, Sun } from 'lucide-react';
 import { cn } from 'cn';
 import type { SettingsDto } from '@reelcraft/shared';
 import { api } from '@/api/client';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Switch } from '@/components/ui/switch';
+import { Input } from '@/components/ui/input';
+import { MODES } from '@/components/assistant/assistant.logic';
+import { ASSISTANT_SETTINGS_KEY } from '@/hooks/useAssistant';
 import { AboutCard } from '@/components/settings/about-card';
 import { BlenderCard } from '@/components/settings/blender-card';
 import { BrowserOsCard } from '@/components/settings/browser-os-card';
@@ -35,12 +38,12 @@ const SECTIONS: Section[] = [
     id: 'assistant',
     label: 'Assistant',
     description:
-      'The assistant runs on your own Codex or Claude account. Connect one to build and change blueprints by chatting.',
+      'The assistant runs on your own Codex or Claude account. Connect one to make, change, run and review everything by chatting.',
     render: () => (
       <>
         <ClaudeCard />
         <CodexCard />
-        <AssistantPermissions />
+        <AssistantDefaults />
       </>
     ),
   },
@@ -171,35 +174,84 @@ export function SettingsPage() {
   );
 }
 
-/** What the assistant will be able to do without asking. Each arrives with the tool behind it;
- * until then the switches are off and the assistant asks first. */
-function AssistantPermissions() {
-  const rows = [
-    'Start runs of a blueprint',
-    'Retry a failed stage after fixing it',
-    'Approve its own review stages',
-    'Publish finished videos',
-  ];
+const MODE_DETAILS: Record<string, string> = {
+  manual: 'It asks you on a card before every change or action.',
+  auto: 'It changes and runs things without asking. Each run still stops at its own budget.',
+  plan: 'It only reads and investigates, then shows you a plan to approve.',
+};
+
+/** The mode new chats start in, and how often a watched run may wake the assistant. */
+function AssistantDefaults() {
+  const queryClient = useQueryClient();
+  const settings = useQuery({
+    queryKey: ASSISTANT_SETTINGS_KEY,
+    queryFn: api.getAssistantSettings,
+  });
+  const save = useMutation({
+    mutationFn: api.updateAssistantSettings,
+    onSuccess: (next) => {
+      queryClient.setQueryData(ASSISTANT_SETTINGS_KEY, next);
+      toast.success('Saved');
+    },
+    onError: (error) => toast.error(apiErrorMessage(error, 'Could not save.')),
+  });
+  if (!settings.data) return <Skeleton className="h-48 w-full" />;
+  const { defaultMode, maxWakesPerRun } = settings.data;
   return (
     <section className="overflow-hidden rounded-[14px] border bg-card">
-      <div className="px-[18px] pt-4 pb-1.5">
-        <h3 className="text-[15px] font-semibold">What it may do without asking</h3>
+      <div className="px-[18px] pt-4 pb-3">
+        <h3 className="text-[15px] font-semibold">How new chats start</h3>
         <p className="mt-1 text-[13px] text-muted-foreground">
-          Each of these arrives as the assistant learns the skill. Until then it asks you first.
+          You can switch the mode of any chat in its message box (Shift+Tab).
         </p>
       </div>
-      {rows.map((label) => (
-        <div
-          key={label}
-          className="flex items-center gap-3.5 border-t px-[18px] py-3.5 first-of-type:border-t-0"
-        >
-          <span className="flex-1 text-sm">{label}</span>
-          <span className="inline-flex h-[22px] items-center rounded-full bg-surface-3 px-2.5 text-xs text-muted-foreground">
-            Coming later
+      <div
+        role="radiogroup"
+        aria-label="Default mode"
+        className="grid gap-2.5 px-[18px] pb-4 sm:grid-cols-3"
+      >
+        {MODES.map((m) => (
+          <button
+            key={m.id}
+            type="button"
+            role="radio"
+            aria-checked={defaultMode === m.id}
+            disabled={save.isPending}
+            onClick={() => save.mutate({ defaultMode: m.id })}
+            className={cn(
+              'flex flex-col gap-1 rounded-xl border border-line-strong px-3.5 py-3 text-left',
+              defaultMode === m.id && 'border-foreground ring-1 ring-foreground',
+            )}
+          >
+            <span className="text-sm font-medium">{m.label}</span>
+            <span className="text-xs text-muted-foreground">{MODE_DETAILS[m.id]}</span>
+          </button>
+        ))}
+      </div>
+      <div className="flex flex-wrap items-center gap-3.5 border-t px-[18px] py-3.5">
+        <label htmlFor="max-wakes" className="min-w-60 flex-1">
+          <span className="block text-sm">Wake-ups per run</span>
+          <span className="block text-xs text-muted-foreground">
+            The assistant watches the runs it starts. Each time one fails, needs you or ends, it
+            wakes up to deal with it, at most this many times per run.
           </span>
-          <Switch disabled checked={false} aria-label={label} />
-        </div>
-      ))}
+        </label>
+        <Input
+          id="max-wakes"
+          type="number"
+          min={1}
+          max={20}
+          defaultValue={maxWakesPerRun}
+          key={maxWakesPerRun}
+          className="w-20"
+          onBlur={(e) => {
+            const value = Number(e.target.value);
+            if (Number.isInteger(value) && value >= 1 && value <= 20 && value !== maxWakesPerRun) {
+              save.mutate({ maxWakesPerRun: value });
+            }
+          }}
+        />
+      </div>
     </section>
   );
 }
