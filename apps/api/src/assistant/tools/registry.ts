@@ -14,6 +14,7 @@ import { DOCS_TOOLS } from './docs-tools';
 import { MEDIA_TOOLS } from './media-tools';
 import { LIBRARY_TOOLS } from './library-tools';
 import { WEB_TOOLS } from './web-tools';
+import { BREAKDOWN_TOOLS } from './breakdown-tools';
 import { zodIssues } from './draft-checks';
 import { READ_TOOLS } from './read-tools';
 import { RUN_TOOLS } from './run-tools';
@@ -27,6 +28,7 @@ export const ASSISTANT_TOOLS: ReadonlyArray<AssistantTool<never>> = [
   ...RUN_TOOLS,
   ...REVIEW_TOOLS,
   ...MEDIA_TOOLS,
+  ...BREAKDOWN_TOOLS,
   ...WRITE_TOOLS,
   ...MANAGE_TOOLS,
   ...LIBRARY_TOOLS,

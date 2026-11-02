@@ -23,3 +23,4 @@ export * from './scene-source';
 export * from './dto/index';
 export * from './stage-freshness';
 export * from './cutout-pixels';
+export * from './video-breakdown';

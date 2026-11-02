@@ -93,4 +93,36 @@ describe.skipIf(!hasFfmpeg)('MediaReviewService (real ffmpeg)', () => {
     expect(heard!.stats.maxVolumeDb).not.toBeNull();
     expect(heard!.stats.silences.at(-1)!.startSec).toBeGreaterThan(1.5);
   });
+
+  it('analyses a video: format, shots with their words, loudness, keyframe sheets', async () => {
+    const transcribe = vi.fn(async () => ({
+      transcript: 'one two three four five',
+      durationSec: 4,
+      words: [
+        { text: 'one', startSec: 0.1, endSec: 0.4 },
+        { text: 'two', startSec: 0.5, endSec: 0.8 },
+        { text: 'three', startSec: 0.9, endSec: 1.2 },
+        { text: 'four', startSec: 1.3, endSec: 1.6 },
+        { text: 'five', startSec: 1.7, endSec: 1.9 },
+      ],
+      costUsd: 0,
+      by: 'voicestudio' as const,
+    }));
+    const analysis = await service(transcribe).analyze('b1', 'voicestudio');
+    expect(analysis).toMatchObject({ width: 320, height: 180, fps: 10, hasAudio: true });
+    expect(analysis!.durationSec).toBeCloseTo(4, 0);
+    expect(analysis!.shots.length).toBeGreaterThanOrEqual(1);
+    expect(analysis!.shots[0]!.words).toContain('one');
+    expect(analysis!.sheets[0]!.shots[0]).toBe(0);
+    expect(analysis!.loudnessPerSecond.length).toBe(4);
+    expect(analysis!.transcript).toMatchObject({ by: 'voicestudio', wordsPerMinute: 167 });
+
+    const silent = await service().analyze('b1', null);
+    expect(silent!.transcript).toBeNull();
+    expect(silent!.shots[0]!.words).toBeNull();
+
+    const facts = await service().facts('b1');
+    expect(facts).toMatchObject({ width: 320, hasAudio: true });
+    expect(facts!.shots).toBeGreaterThanOrEqual(1);
+  });
 });

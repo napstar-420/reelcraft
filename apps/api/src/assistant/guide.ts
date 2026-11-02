@@ -181,7 +181,7 @@ Every stage a model writes needs at least one check, a qc or an approval (propos
     title: 'Run inputs, roles and budget',
     body: `**inputs**: what a run asks for. \`{ key, label, required, accepts }\` where \`accepts\` is \`{kind:'text'}\`, \`{kind:'data', schema}\`, or \`{kind:'media.image'|'media.video'|'media.audio', cardinality:'one'|'many'}\`. Keys are unique. Bind a stage to one with \`{from:'input', inputKey}\`. Use inputs for what changes run to run (topic, tone, a photo); put constants in the prompt.
 
-**roles**: at most ONE. \`{ key, label, required, characterId?, referenceBlobIds? }\`. It selects a channel Character (take the id from \`get_channel\`; the Character must be ready, with usable references, and in this channel) and at least one of its reference images. Bind it with \`{from:'role', roleKey}\` to a many-cardinality image \`references\` slot. A declared role that no stage binds only gets a warning. You can't create Characters.
+**roles**: at most ONE. \`{ key, label, required, characterId?, referenceBlobIds? }\`. It selects a channel Character (take the id from \`get_channel\`; the Character must be ready, with usable references, and in this channel) and at least one of its reference images. Bind it with \`{from:'role', roleKey}\` to a many-cardinality image \`references\` slot. A declared role that no stage binds only gets a warning. To use a Character that doesn't exist yet, create it with create_character from a picture the user attached (or one a run made).
 
 **budget**: \`{ runCapUsd }\`, the usual spending limit for a run (the run dialog starts from it). Choose a sensible cap for the paid stages (an all-fake or all-free blueprint can use a small cap).`,
   },
@@ -321,6 +321,36 @@ ${JSON.stringify(recipeMotionGraphics(), null, 2)}
 \`\`\`
 
 When a request mixes shapes (a story with a few real clips, a voice-over plus music), combine the stages; keep each rule from the quality topic. Always bind run inputs for what changes per run (topic, tone, a photo) and put constants in the prompts.`,
+  },
+
+  recreate: {
+    title: 'Recreating a video from a reference',
+    body: `When the user gives a video and asks for "one like this", rebuild its structure and style from generic stages. There is no "recreate" stage and no template per style: the breakdown is the plan, the blueprint is ordinary stages.
+
+**1. Analyse.** \`analyze_video\` on the source gives the format, every shot with its times and words, the transcript and pace, loudness (music under the voice?) and keyframe sheets. Describe each shot from the sheets: subject, setting, framing, camera movement, on-screen text, colour and style, the transition into it. Look closer with \`view_media {at:[…]}\` at shots the sheets don't make clear (a moving shot needs 2-3 frames to tell a zoom from a pan).
+
+**2. Breakdown.** \`save_breakdown\` with the shots (use analyze_video's times), sections (hook, setup, beats, payoff, call to action), narration (script, voice traits, words per minute), captions style, music (energy, where it builds or drops), sound effects with times, text style and pacing. For each shot choose how it will be made (\`make\`):
+- \`generate_image\`: a still picture (with \`motion\` on the timeline for a Ken Burns move): the cheapest, most reliable choice.
+- \`generate_video\`: real motion that matters (a person walking, liquid pouring).
+- \`motion_graphic\`: animated text, charts, icons, lower thirds, number counters (motion.generate, then motion.render).
+- \`library_asset\`: a logo, product shot or recurring clip the user has (or attached: save_to_library).
+- \`reference_frame\`: a frame of the reference used as a style reference (save the keyframe to the Library, bind it in a \`references\` slot), never as the final picture.
+- \`text_only\`: a title card on a colour or blurred background (text on the timeline).
+In Manual or Plan mode, stop and ask the user whether the breakdown is right before building.
+
+**3. Blueprint.** Start from the closest recipe ("recipes" topic) and shape it to the breakdown:
+- Format: the timeline's \`aspectRatio\` and \`fps\` from the analysis (9:16 for a vertical reel).
+- Inputs: \`topic\` (what the new video is about) plus an optional \`script\` input with \`enabledWhen\` so a given script skips writing one; this is how the first run reproduces the reference closely.
+- Script: a \`text.generate\` stage that writes the same structure as the reference (same sections, the same number of beats, the same length in words: words per minute × duration), with the hook style described in its system prompt. A word_count check keeps it on length.
+- Shots: one stage returns the shot list (data schema: shot visual, on-screen text, duration), ONE image (or video) stage iterates over it with the shared visual style in its system prompt and the reference frames as \`references\`; motion graphics from \`motion.generate\` for the shots that need them.
+- Voice: \`audio.speech\` with a voice that matches (gender, age, energy; a VoiceStudio voice if the user wants a particular one), then \`media.analyze\` for word timings.
+- Music and sound: \`audio.music\` described with the reference's genre, tempo and energy (or a Library track), \`audio.sfx\` for the effects at their cues (whooshes on transitions, pops on text).
+- Edit: the layout stage plans a timeline that mirrors the reference's pacing (shot lengths, cut on the beat of the narration, transitions, text placement, caption style from list_styles with overrides that match font, colour and highlighting), then \`timeline.compose\` and \`timeline.render\`.
+- Quality: QC on the script (hook, structure, length), QC per picture against the shot description and style, approval on the final video.
+
+**4. First run and comparison.** Save a version, start a run with the reference's transcript as \`script\` (the user's own topic when they gave one), watch it, then \`compare_media\` (a: the reference, b: the run's final video): length, shot count and average shot length, loudness, and frames at the same moments side by side. Say how close it is and what differs (pacing, style, voice, music), and fix the blueprint for what differs, not the one run.
+
+Never copy the reference's words, characters, logos or footage into a new video unless the user owns them; take the structure and style.`,
   },
 
   prompting: {

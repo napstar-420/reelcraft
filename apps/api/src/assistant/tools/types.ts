@@ -8,6 +8,7 @@ import type {
   CreateBlueprintVersionDto,
   ConfigLayer,
   PlanPayload,
+  BreakdownPayload,
   ValidationIssue,
 } from '@reelcraft/shared';
 import type { ToolImage } from '../agent/assistant-agent.interface';
@@ -155,7 +156,7 @@ export interface ToolDeps {
   stagePlans: Pick<RunStagePlanService, 'preview' | 'confirm'>;
   attempts: Pick<RunService, 'listStageAttempts' | 'stageAttemptDetail' | 'listStageEvents'>;
   memory: Pick<InvalidationService, 'listMemory'>;
-  review: Pick<MediaReviewService, 'contactSheet' | 'transcriber' | 'listen'>;
+  review: Pick<MediaReviewService, 'contactSheet' | 'transcriber' | 'listen' | 'analyze' | 'facts'>;
   watches: Pick<AssistantWatchService, 'watch' | 'unwatch'>;
   /** Files the user attached to chats. */
   attachments: Pick<AttachmentService, 'file' | 'get'>;
@@ -173,7 +174,8 @@ export interface ToolDeps {
 export type ToolItem =
   | { type: 'change'; payload: ChangePayload }
   | { type: 'question'; payload: AskUserInput }
-  | { type: 'plan'; payload: Omit<PlanPayload, 'decision' | 'feedback'> };
+  | { type: 'plan'; payload: Omit<PlanPayload, 'decision' | 'feedback'> }
+  | { type: 'breakdown'; payload: BreakdownPayload };
 
 export type ToolOutcome =
   | { ok: true; result: unknown; item?: ToolItem; images?: ToolImage[] }

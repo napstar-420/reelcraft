@@ -698,7 +698,12 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
       const outcome = await runTool(tool, args, ctx, this.toolDeps);
       let extra: Record<string, unknown> = {};
       if (outcome.ok && outcome.item) {
-        const state = outcome.item.type === 'change' ? 'applied' : 'pending';
+        const state =
+          outcome.item.type === 'change'
+            ? 'applied'
+            : outcome.item.type === 'breakdown'
+              ? 'saved'
+              : 'pending';
         const created = await this.createItem(
           session.id,
           turnId,

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { CreateBlueprintVersionDto, UpdateBlueprintDto } from './blueprint.dto';
 import { ValidationIssue } from '../provider';
+import { VideoBreakdown } from '../video-breakdown';
 
 /** How much the assistant does on its own, like Claude Code's modes:
  * - `manual`: reads freely; every change or action waits for the user's Yes on an approval card.
@@ -142,6 +143,8 @@ export const AssistantItemType = z.enum([
   'plan',
   'question',
   'turn_status',
+  /** A reference video broken into its parts (save_breakdown). */
+  'breakdown',
   /** Chats from before the assistant could write: kept for display only. */
   'proposal',
 ]);
@@ -232,6 +235,19 @@ export const UserMessagePayload = z.object({
   attachments: z.array(AssistantAttachmentRef).optional(),
 });
 export type UserMessagePayload = z.infer<typeof UserMessagePayload>;
+
+/** A breakdown the assistant saved: the video it describes (to play it in the card) and the parts. */
+export const BreakdownPayload = z.object({
+  source: z.object({
+    label: z.string(),
+    blobId: z.string(),
+    attachmentId: z.string().optional(),
+    assetId: z.string().optional(),
+    runId: z.string().optional(),
+  }),
+  breakdown: VideoBreakdown,
+});
+export type BreakdownPayload = z.infer<typeof BreakdownPayload>;
 
 export const AgentMessagePayload = z.object({ text: z.string() });
 export type AgentMessagePayload = z.infer<typeof AgentMessagePayload>;

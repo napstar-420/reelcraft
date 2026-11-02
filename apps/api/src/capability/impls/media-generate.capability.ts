@@ -15,12 +15,14 @@ import { Capability } from '../capability.decorator';
 import type { CapabilityImpl, ExecCtx, ExecResult, ImageListOutput } from '../capability.interface';
 import { unwrapText } from '../../common/unwrap-text';
 import { ProviderRegistry } from '../../provider/provider.registry';
+import { WorkspaceService } from '../../storage/workspace.service';
+import { detectShots } from '../../media-analysis/media-analysis';
 
 interface MediaConfig {
   provider: string;
   modelId: string;
   params?: Record<string, unknown>;
-  operation?: 'probe' | 'transcribe_align';
+  operation?: 'probe' | 'transcribe_align' | 'shots';
   /** Generate Image only: how many images one run makes (`media.image_list`). */
   count?: number;
   /** Generate Image only: what to do when fewer images come back than asked for. */
@@ -387,13 +389,16 @@ export class MediaAnalyzeCapability extends ProviderMediaCapability {
     properties: {
       operation: {
         type: 'string',
-        enum: ['transcribe_align', 'probe'],
+        enum: ['transcribe_align', 'probe', 'shots'],
         description:
-          'Transcribe align: speech to text with word timings, using VoiceStudio (free, on your computer) or Deepgram (paid). Probe: reads the duration and streams locally (free). Defaults to Transcribe align.',
+          "Transcribe align: speech to text with word timings, using VoiceStudio (free, on your computer) or Deepgram (paid). Probe: reads the duration and streams locally (free). Shots: finds where a video cuts to a new shot, with each shot's start and end (free, local). Defaults to Transcribe align.",
       },
     },
   };
-  constructor(providers: ProviderRegistry) {
+  constructor(
+    providers: ProviderRegistry,
+    private readonly workspaces: WorkspaceService,
+  ) {
     super(providers);
   }
   slots(): SlotDef[] {
@@ -407,7 +412,7 @@ export class MediaAnalyzeCapability extends ProviderMediaCapability {
     ];
   }
   async estimateCost(ctx: ExecCtx<MediaConfig>): Promise<CostEstimate> {
-    if (ctx.config.operation === 'probe')
+    if (ctx.config.operation === 'probe' || ctx.config.operation === 'shots')
       return { expectedUsd: 0, ceilingUsd: 0, basis: 'configured_ceiling' };
     return super.estimateCost(ctx);
   }
@@ -421,6 +426,24 @@ export class MediaAnalyzeCapability extends ProviderMediaCapability {
         payload: { probe },
       };
     }
+    if (ctx.config.operation === 'shots') {
+      const source = ctx.slots.source as
+        { sourceKey?: string; kind?: string; probe?: { durationSec?: number } } | undefined;
+      if (!source?.sourceKey) throw new Error('Shots needs a video in the source slot');
+      if (source.kind && source.kind !== 'media.video') {
+        throw new Error('Shots needs a video, not audio');
+      }
+      const durationSec = source.probe?.durationSec;
+      if (!durationSec) throw new Error('The source video has no stored length');
+      const found = await this.workspaces.withWorkspace(ctx.idempotencyKey, async (ws) =>
+        detectShots(await ws.pull(source.sourceKey!), durationSec),
+      );
+      return {
+        providerId: 'media-local',
+        externalId: ctx.idempotencyKey,
+        payload: { output: { durationSec, shots: found.shots } },
+      };
+    }
     return super.submit(ctx);
   }
   async poll(handle: JobHandle): Promise<JobStatus> {
@@ -430,7 +453,10 @@ export class MediaAnalyzeCapability extends ProviderMediaCapability {
   async fetch(handle: JobHandle, ctx: ExecCtx<MediaConfig>): Promise<ExecResult<unknown>> {
     if (handle.providerId === 'media-local')
       return {
-        output: (handle.payload as { probe: unknown }).probe,
+        output: (() => {
+          const payload = handle.payload as { probe?: unknown; output?: unknown };
+          return payload.output ?? payload.probe;
+        })(),
         costUsd: 0,
         repro: { level: 'exact' },
       };
