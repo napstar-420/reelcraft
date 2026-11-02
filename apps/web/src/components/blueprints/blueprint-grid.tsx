@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Archive,
   ArchiveRestore,
@@ -154,19 +154,15 @@ function BlueprintCard({
   onArchive: () => void;
   onDelete: () => void;
 }) {
-  const versions = useQuery({
-    queryKey: ['blueprint-versions', blueprint.id],
-    queryFn: () => api.listBlueprintVersions(blueprint.id),
-    enabled: !!blueprint.currentVersionId,
-    staleTime: 60_000,
-  });
-  const latest = versions.data?.[0];
-  const graph = blueprint.workingDraft?.graph ?? latest?.graph ?? [];
-  const flow = blueprintFlow(graph);
+  // Unsaved edits win; otherwise the list's summary of the current saved version.
+  const latest = blueprint.latestVersion;
+  const draftGraph = blueprint.workingDraft?.graph;
+  const stageCount = draftGraph ? draftGraph.length : (latest?.stageCount ?? 0);
+  const flow = draftGraph ? blueprintFlow(draftGraph) : (latest?.phases ?? []);
   const meta = [
     channelName,
     latest ? formatBlueprintVersion(latest) : 'not saved yet',
-    graph.length ? `${graph.length} stage${graph.length === 1 ? '' : 's'}` : null,
+    stageCount ? `${stageCount} stage${stageCount === 1 ? '' : 's'}` : null,
   ].filter(Boolean);
   const to = `/blueprints/${blueprint.id}/build`;
 
@@ -205,7 +201,7 @@ function BlueprintCard({
       </div>
       <p className="line-clamp-2 min-h-10 text-[13px] text-muted-foreground">
         {blueprint.description ||
-          (graph.length
+          (stageCount
             ? 'No description yet.'
             : 'Empty: add stages, or describe it to the assistant.')}
       </p>

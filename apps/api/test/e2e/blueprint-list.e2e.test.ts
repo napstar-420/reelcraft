@@ -4,6 +4,7 @@ import { ulid } from '../../src/common/ulid';
 import { artifact, blueprintVersion, run } from '../../src/db/schema/index';
 import { ChannelService } from '../../src/channel/channel.service';
 import { BlueprintController } from '../../src/blueprint/blueprint.controller';
+import { BlueprintService } from '../../src/blueprint/blueprint.service';
 import { buildTestApp, type TestApp } from '../support/build-app';
 import { createTestDb, type TestDb } from '../support/test-db';
 
@@ -134,6 +135,7 @@ describe('blueprint list run stats (e2e)', () => {
     const [listed] = await controller.list(testChannel.id);
     expect(listed?.runCount).toBe(0);
     expect(listed?.latestPosterBlobId).toBeNull();
+    expect(listed?.latestVersion).toBeNull();
 
     const fetched = await controller.getBlueprint(blueprintId);
     expect(fetched.runCount).toBe(0);
@@ -158,5 +160,41 @@ describe('blueprint list run stats (e2e)', () => {
     const fetched = await controller.getBlueprint(blueprintId);
     expect(fetched.runCount).toBe(1);
     expect(fetched.latestPosterBlobId).toBeNull();
+  });
+
+  it('summarises the current saved version as latestVersion, not an older one', async () => {
+    const channels = testApp.app.get(ChannelService);
+    const controller = testApp.app.get(BlueprintController);
+    const blueprints = testApp.app.get(BlueprintService);
+    const testChannel = await channels.create('local', {
+      name: `Blueprint List Version Channel ${Date.now()}-${Math.random()}`,
+      theme: {},
+      defaults: {},
+    });
+    const { blueprintId } = await controller.create({
+      channelId: testChannel.id,
+      name: 'Versioned Blueprint',
+    });
+    const version = (graph: StageDef[]) => ({
+      graph,
+      inputs: [],
+      roles: [],
+      defaults: {},
+      budget: { runCapUsd: 10 },
+    });
+    await blueprints.createVersion(blueprintId, version([stage('only')]));
+    await blueprints.createVersion(
+      blueprintId,
+      version([
+        { ...stage('script'), label: '1 · Script', group: 'Writing' },
+        { ...stage('voice'), group: 'Voice' },
+        { ...stage('polish'), group: 'Writing' },
+      ]),
+    );
+
+    const expected = { major: 1, minor: 1, stageCount: 3, phases: ['Writing', 'Voice'] };
+    const [listed] = await controller.list(testChannel.id);
+    expect(listed?.latestVersion).toEqual(expected);
+    expect((await controller.getBlueprint(blueprintId)).latestVersion).toEqual(expected);
   });
 });

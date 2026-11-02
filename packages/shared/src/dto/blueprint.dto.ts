@@ -64,6 +64,16 @@ export const CreateBlueprintVersionDto = z.object({
 });
 export type CreateBlueprintVersionDto = z.infer<typeof CreateBlueprintVersionDto>;
 
+/** What a blueprint card shows of the current saved version, so a list of blueprints doesn't
+ * need every version's full graph. `phases` is `blueprintPhases(graph)`. */
+export const BlueprintVersionSummary = z.object({
+  major: z.number().int(),
+  minor: z.number().int(),
+  stageCount: z.number().int().nonnegative(),
+  phases: z.array(z.string()),
+});
+export type BlueprintVersionSummary = z.infer<typeof BlueprintVersionSummary>;
+
 export const BlueprintDto = z.object({
   id: z.string(),
   channelId: z.string(),
@@ -80,6 +90,8 @@ export const BlueprintDto = z.object({
   workingDraftBaseVersionId: z.string().nullable(),
   runCount: z.number(),
   latestPosterBlobId: z.string().nullable(),
+  /** The current saved version (`currentVersionId`); `null` before the first save. */
+  latestVersion: BlueprintVersionSummary.nullable(),
 });
 export type BlueprintDto = z.infer<typeof BlueprintDto>;
 

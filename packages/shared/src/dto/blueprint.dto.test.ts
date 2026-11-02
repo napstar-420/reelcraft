@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { CreateVersionQueryDto, UpdateBlueprintDto } from './blueprint.dto';
+import {
+  BlueprintDto,
+  BlueprintVersionSummary,
+  CreateVersionQueryDto,
+  UpdateBlueprintDto,
+} from './blueprint.dto';
 
 describe('blueprint version numbering', () => {
   it('defaults a save to a minor bump and rejects unknown bumps', () => {
@@ -47,5 +52,40 @@ describe('UpdateBlueprintDto', () => {
   it('rejects an empty-string tag', () => {
     expect(() => UpdateBlueprintDto.parse({ tags: [''] })).toThrow();
     expect(() => UpdateBlueprintDto.parse({ tags: ['   '] })).toThrow();
+  });
+});
+
+describe('BlueprintDto.latestVersion', () => {
+  const base = {
+    id: 'b1',
+    channelId: 'c1',
+    name: 'Short story',
+    description: null,
+    tags: [],
+    currentVersionId: 'v1',
+    archived: false,
+    workingDraft: null,
+    workingDraftBaseVersionId: null,
+    runCount: 0,
+    latestPosterBlobId: null,
+  };
+
+  it('accepts a summary of the current version, or null before the first save', () => {
+    const latestVersion = { major: 1, minor: 2, stageCount: 3, phases: ['Script', 'Voice'] };
+    expect(BlueprintDto.parse({ ...base, latestVersion }).latestVersion).toEqual(latestVersion);
+    expect(BlueprintDto.parse({ ...base, latestVersion: null }).latestVersion).toBeNull();
+  });
+
+  it('requires the field and rejects a malformed summary', () => {
+    expect(() => BlueprintDto.parse(base)).toThrow();
+    expect(() =>
+      BlueprintDto.parse({
+        ...base,
+        latestVersion: { major: 1, minor: 0, stageCount: -1, phases: [] },
+      }),
+    ).toThrow();
+    expect(BlueprintVersionSummary.safeParse({ major: 1, minor: 0, stageCount: 0 }).success).toBe(
+      false,
+    );
   });
 });

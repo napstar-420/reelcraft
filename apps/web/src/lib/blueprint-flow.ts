@@ -2,7 +2,9 @@ import type { StageDef } from '@reelcraft/shared';
 import { stageDisplayName } from './stage-display-name';
 
 /** The short "Script › Voice › Visuals" line for a blueprint: its phases (stage groups) in order,
- * or, for a blueprint without phases, its first few stage names. */
+ * or, for a blueprint without phases, its first few stage names. Mirrors `blueprintPhases()` in
+ * `@reelcraft/shared`, which fills `BlueprintDto.latestVersion.phases`; the card uses this one only
+ * for unsaved drafts (web can't import runtime values from shared). Keep the two in step. */
 export function blueprintFlow(
   graph: Pick<StageDef, 'label' | 'key' | 'group'>[],
   max = 5,
