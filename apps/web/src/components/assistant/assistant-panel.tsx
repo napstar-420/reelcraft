@@ -64,7 +64,7 @@ const MODE_HELP: Record<AssistantMode, string> = {
 /** The assistant's chat, the same everywhere: the dock on every page and Home. */
 export function AssistantPanel({ variant = 'dock' }: { variant?: 'dock' | 'page' }) {
   const ui = useAssistantUi();
-  const { assistant, contextLabel, includeContext, setIncludeContext, prefill } = ui;
+  const { assistant, contextLabel, includeContext, setIncludeContext, prefill, clearPrefill } = ui;
   const [text, setText] = useState('');
   const files = useChatAttachments();
   const [dragging, setDragging] = useState(false);
@@ -76,8 +76,10 @@ export function AssistantPanel({ variant = 'dock' }: { variant?: 'dock' | 'page'
   const question = pendingQuestion(items);
 
   useEffect(() => {
-    if (prefill) setText(prefill.text);
-  }, [prefill]);
+    if (!prefill) return;
+    setText(prefill.text);
+    clearPrefill();
+  }, [prefill, clearPrefill]);
 
   // follow new content while the user is at the bottom
   useEffect(() => {

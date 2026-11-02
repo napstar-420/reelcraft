@@ -18,7 +18,13 @@ export function pageContextFor(pathname: string, search = ''): AssistantPageCont
   }
   if (path === '/runs') return { page: 'runs' };
   if ((match = path.match(/^\/runs\/([^/]+)\/stages\/([^/]+)\/edit$/))) {
-    return { page: 'timeline', runId: match[1]!, stageKey: decodeURIComponent(match[2]!) };
+    let stageKey = match[2]!;
+    try {
+      stageKey = decodeURIComponent(stageKey);
+    } catch {
+      // a malformed escape: keep the raw segment rather than crash the page
+    }
+    return { page: 'timeline', runId: match[1]!, stageKey };
   }
   if ((match = path.match(/^\/runs\/([^/]+)$/))) {
     return { page: 'run', runId: match[1]!, ...(stageParam && { stageKey: stageParam }) };

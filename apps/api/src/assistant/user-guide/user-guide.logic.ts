@@ -93,13 +93,20 @@ export function parseGuidePage(path: string, raw: string): GuidePage {
   const sections: GuideSection[] = [];
   let current: GuideSection = { heading: null, anchor: null, text: '' };
   let lines: string[] = [];
-  let fenced = false;
+  // the open code fence: it closes only on the same character, at least as long, with nothing after
+  let fence: { char: string; len: number } | null = null;
   const flush = () => {
     current.text = tidy(lines);
     if (current.heading !== null || current.text) sections.push(current);
   };
   for (const line of body.split(/\r?\n/)) {
-    if (/^\s*(```|~~~)/.test(line)) fenced = !fenced;
+    const marker = /^\s*(`{3,}|~{3,})(.*)$/.exec(line);
+    if (marker) {
+      const run = marker[1]!;
+      if (!fence) fence = { char: run[0]!, len: run.length };
+      else if (run[0] === fence.char && run.length >= fence.len && !marker[2]!.trim()) fence = null;
+    }
+    const fenced = fence !== null;
     const heading = fenced ? null : /^(#{2,4})\s+(.+?)\s*$/.exec(line);
     if (heading) {
       flush();

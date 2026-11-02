@@ -191,6 +191,39 @@ describe('blueprint draft versions (e2e)', () => {
       });
     });
 
+    it('refuses a write or save made from a working draft the editor has since autosaved over', async () => {
+      const { blueprintId, blueprints } = await setup();
+      const v1 = await blueprints.createVersion(blueprintId, content('v1'));
+      // what the assistant read before its approval card...
+      const read = (await blueprints.getBlueprint(blueprintId)).workingDraft;
+      expect(read).toBeNull();
+      // ...then the editor autosaved while the card waited
+      await blueprints.setWorkingDraft(blueprintId, content('editor'), v1.id);
+      await expect(
+        blueprints.setWorkingDraft(blueprintId, content('assistant'), v1.id, {
+          expectedWorkingDraft: read,
+        }),
+      ).rejects.toMatchObject(conflict(v1.id));
+      await expect(
+        blueprints.createVersion(blueprintId, content('assistant'), {
+          expectedCurrent: v1.id,
+          expectedWorkingDraft: read,
+        }),
+      ).rejects.toMatchObject(conflict(v1.id));
+      expect((await blueprints.getBlueprint(blueprintId)).workingDraft).toEqual(content('editor'));
+
+      // read again, the same writes go through
+      const fresh = (await blueprints.getBlueprint(blueprintId)).workingDraft;
+      await blueprints.setWorkingDraft(blueprintId, content('assistant'), v1.id, {
+        expectedWorkingDraft: fresh,
+      });
+      const saved = await blueprints.createVersion(blueprintId, content('assistant'), {
+        expectedCurrent: v1.id,
+        expectedWorkingDraft: content('assistant'),
+      });
+      expect((await blueprints.getBlueprint(blueprintId)).currentVersionId).toBe(saved.id);
+    });
+
     it('is a 404 for a blueprint that does not exist', async () => {
       const { blueprints } = await setup();
       await expect(blueprints.setWorkingDraft('nope', content('x'), null)).rejects.toMatchObject({

@@ -88,7 +88,9 @@ describe.skipIf(!hasFfmpeg)('MediaReviewService (real ffmpeg)', () => {
       by: 'voicestudio' as const,
     }));
     const heard = await service(transcribe).listen('b1', 'voicestudio');
-    expect(transcribe).toHaveBeenCalledWith(expect.any(Buffer), 'audio/mp4', 'voicestudio');
+    expect(transcribe).toHaveBeenCalledWith(expect.any(Buffer), 'audio/mp4', 'voicestudio', {
+      fallback: false,
+    });
     expect(heard).toMatchObject({ by: 'voicestudio', lines: [{ atSec: 0.1, text: 'beep' }] });
     expect(heard!.stats.maxVolumeDb).not.toBeNull();
     expect(heard!.stats.silences.at(-1)!.startSec).toBeGreaterThan(1.5);

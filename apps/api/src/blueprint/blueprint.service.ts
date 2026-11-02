@@ -1,4 +1,5 @@
 import { ConflictException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { isDeepStrictEqual } from 'node:util';
 import { and, desc, eq, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm';
 import type {
   ConfigLayer,
@@ -318,7 +319,9 @@ export class BlueprintService {
    *
    * `expectedCurrent` is the saved version the caller's edits are based on (`null`:
    * none yet); a save from a tab that missed a newer one is refused with 409
-   * `blueprint_changed`. Omitted: no check. */
+   * `blueprint_changed`. Omitted: no check. `expectedWorkingDraft` is the autosaved working
+   * draft the caller read (`null`: none); if the editor autosaved since, the save is refused
+   * the same way, so it can't keep a stale copy over newer edits. Omitted: no check. */
   async createVersion(
     blueprintId: string,
     dto: CreateBlueprintVersionDto,
@@ -327,12 +330,14 @@ export class BlueprintService {
       bump = 'minor',
       tx,
       expectedCurrent,
+      expectedWorkingDraft,
       keepWorkingDraft = false,
     }: {
       draft?: boolean;
       bump?: VersionBump;
       tx?: Tx | undefined;
       expectedCurrent?: string | null | undefined;
+      expectedWorkingDraft?: unknown;
       keepWorkingDraft?: boolean;
     } = {},
   ) {
@@ -357,16 +362,23 @@ export class BlueprintService {
 
     const id = ulid();
     const write = async (w: Tx) => {
-      if (!draft && expectedCurrent !== undefined) {
+      if (!draft && (expectedCurrent !== undefined || expectedWorkingDraft !== undefined)) {
         // Locked, so a concurrent save either finishes first (and this one is refused)
         // or waits for this one.
         const [row] = await w
-          .select({ currentVersionId: blueprint.currentVersionId })
+          .select({
+            currentVersionId: blueprint.currentVersionId,
+            workingDraft: blueprint.workingDraft,
+          })
           .from(blueprint)
           .where(eq(blueprint.id, blueprintId))
           .for('update');
         if (!row) throw new NotFoundException(`Blueprint ${blueprintId} not found`);
-        if (row.currentVersionId !== expectedCurrent) {
+        if (
+          (expectedCurrent !== undefined && row.currentVersionId !== expectedCurrent) ||
+          (expectedWorkingDraft !== undefined &&
+            !isDeepStrictEqual(row.workingDraft, expectedWorkingDraft))
+        ) {
           throw blueprintChanged(row.currentVersionId);
         }
       }
@@ -498,11 +510,15 @@ export class BlueprintService {
   /** Stores (or, with `null`, clears) the canvas's unsaved copy, but only while
    * `baseVersionId` (the saved version the caller edited; `null`: none yet) is still
    * the blueprint's current one. A stale tab, or an Undo that outlived a save, would
-   * otherwise put an old graph back over the newer save: 409 `blueprint_changed`. */
+   * otherwise put an old graph back over the newer save: 409 `blueprint_changed`.
+   * `expectedWorkingDraft` (the working draft the caller read; `null`: none) also refuses
+   * when the editor autosaved since, so a write that waited (an approval) can't drop those
+   * edits. Omitted: no check. */
   async setWorkingDraft(
     id: string,
     workingDraft: CreateBlueprintVersionDto | null,
     baseVersionId: string | null,
+    { expectedWorkingDraft }: { expectedWorkingDraft?: unknown } = {},
   ) {
     const updated = await this.db
       .update(blueprint)
@@ -511,6 +527,11 @@ export class BlueprintService {
         and(
           eq(blueprint.id, id),
           sql`${blueprint.currentVersionId} is not distinct from ${baseVersionId}`,
+          expectedWorkingDraft === undefined
+            ? undefined
+            : sql`${blueprint.workingDraft} is not distinct from ${
+                expectedWorkingDraft === null ? null : JSON.stringify(expectedWorkingDraft)
+              }::jsonb`,
         ),
       )
       .returning({ id: blueprint.id });

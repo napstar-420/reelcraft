@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { ConfigLayer, type CreateBlueprintVersionDto } from '@reelcraft/shared';
-import { currentDraft } from './current-draft';
+import { currentDraft, guardedDraftWrite } from './current-draft';
 import { confirmChange, turnEnded } from './gate';
 import { freeObject, obj, str } from './json-schemas';
 import type { AssistantTool, ToolDeps } from './types';
@@ -331,10 +331,16 @@ const saveVersion: AssistantTool<z.infer<typeof SaveVersionInput>> = {
       details: [input.reason],
     });
     if (refused) return refused;
-    const saved = await deps.blueprints.createVersion(input.blueprintId, draft, {
-      bump: input.bump ?? 'minor',
-      expectedCurrent: blueprint.currentVersionId,
-    });
+    const written = await guardedDraftWrite(ctx, input.blueprintId, () =>
+      deps.blueprints.createVersion(input.blueprintId, draft, {
+        bump: input.bump ?? 'minor',
+        expectedCurrent: blueprint.currentVersionId,
+        // read before the approval: edits autosaved while it waited are not saved over
+        expectedWorkingDraft: blueprint.workingDraft,
+      }),
+    );
+    if (written.refused) return written.refused;
+    const saved = written.value;
     if (ctx.editorDraft?.blueprintId === input.blueprintId) ctx.editorDraft = null;
     deps.blueprintChanged(input.blueprintId);
     return {
@@ -400,7 +406,12 @@ const restoreVersion: AssistantTool<z.infer<typeof RestoreVersionInput>> = {
       change,
     });
     if (refused) return refused;
-    await deps.blueprints.setWorkingDraft(input.blueprintId, after, blueprint.currentVersionId);
+    const written = await guardedDraftWrite(ctx, input.blueprintId, () =>
+      deps.blueprints.setWorkingDraft(input.blueprintId, after, blueprint.currentVersionId, {
+        expectedWorkingDraft: blueprint.workingDraft,
+      }),
+    );
+    if (written.refused) return written.refused;
     if (ctx.editorDraft?.blueprintId === input.blueprintId) ctx.editorDraft = null;
     deps.blueprintChanged(input.blueprintId);
     return {

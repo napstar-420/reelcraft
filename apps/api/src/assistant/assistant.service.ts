@@ -252,6 +252,8 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
       .update(assistantSession)
       .set({ status: 'idle' })
       .where(eq(assistantSession.status, 'running'));
+    // only now may a watched run wake a chat
+    this.watches.start();
   }
 
   onModuleDestroy(): void {
@@ -637,12 +639,15 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
           state: 'answered',
           payload: { ...payload, answers: dto.answer!.answers },
         });
-      } else {
+      } else if (source === 'user') {
         await this.updateItem(question.id, { state: 'dismissed' });
       }
     }
-    // a plan decided through decidePlan is no longer pending here; anything else moved on
-    for (const plan of plans) await this.updateItem(plan.id, { state: 'dismissed' });
+    // a plan decided through decidePlan is no longer pending here; anything else moved on.
+    // A run update waking the chat is not the user moving on: their cards stay open.
+    if (source === 'user') {
+      for (const plan of plans) await this.updateItem(plan.id, { state: 'dismissed' });
+    }
 
     const attachments = await this.attachments.claim(
       session.ownerId,
@@ -1249,6 +1254,11 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
       ...(request.change && { change: request.change }),
     };
     const item = await this.createItem(sessionId, turnId, 'approval', 'pending', payload);
+    // the turn ended while the card was being written: its abort listener would never fire
+    if (signal.aborted) {
+      await this.updateItem(item.id, { state: 'expired' }).catch(this.logQueueError);
+      return { answer: 'expired' };
+    }
     this.notifyIfAway(
       sessionId,
       'assistant_needs_you',

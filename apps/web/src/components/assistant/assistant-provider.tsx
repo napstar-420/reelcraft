@@ -61,13 +61,19 @@ export function AssistantProvider({ children }: { children: React.ReactNode }) {
     },
     [setDockOpen],
   );
-  const { send } = assistant;
+  const clearPrefill = useCallback(() => setPrefill(null), []);
+  const { send, running } = assistant;
   const ask = useCallback(
     (text: string) => {
+      // a turn is going: the server would refuse a second one, so keep the text for the user
+      if (running) {
+        openAssistant({ prefill: text });
+        return;
+      }
       setDockOpen(true);
       send(text);
     },
-    [setDockOpen, send],
+    [setDockOpen, send, running, openAssistant],
   );
 
   // `?chat=<id>` (a notification's link) opens that chat on whatever page this is
@@ -112,6 +118,7 @@ export function AssistantProvider({ children }: { children: React.ReactNode }) {
     openAssistant,
     ask,
     prefill,
+    clearPrefill,
     setPageDetail,
     setEditorDraft,
     setTurnHooks,

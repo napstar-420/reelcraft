@@ -1,5 +1,31 @@
+import { ConflictException } from '@nestjs/common';
 import type { CreateBlueprintVersionDto } from '@reelcraft/shared';
-import type { TurnContext, ToolDeps } from './types';
+import type { TurnContext, ToolDeps, ToolOutcome } from './types';
+
+/** Runs a write to a blueprint's draft or versions that is guarded by what the tool read (the
+ * saved version and the autosaved working draft). When either changed meanwhile, e.g. the
+ * editor autosaved while an approval card waited, nothing is written and the model is told to
+ * read again. Returns that refusal, or the write's result. */
+export async function guardedDraftWrite<T>(
+  ctx: TurnContext,
+  blueprintId: string,
+  write: () => Promise<T>,
+): Promise<{ value: T; refused?: undefined } | { refused: ToolOutcome }> {
+  try {
+    return { value: await write() };
+  } catch (error) {
+    if (!(error instanceof ConflictException)) throw error;
+    // the editor's copy sent with the turn is older than what the server holds now
+    if (ctx.editorDraft?.blueprintId === blueprintId) ctx.editorDraft = null;
+    return {
+      refused: {
+        ok: false,
+        error:
+          'This blueprint changed meanwhile (a new version was saved, or it was edited in the editor), so nothing was written. Read it again with get_blueprint and redo the change.',
+      },
+    };
+  }
+}
 
 export const EMPTY_DRAFT: CreateBlueprintVersionDto = {
   graph: [],

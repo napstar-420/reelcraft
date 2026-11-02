@@ -491,6 +491,7 @@ describe('channels, blueprints and versions', () => {
     expect(d.blueprints.createVersion).toHaveBeenCalledWith('bp1', expect.any(Object), {
       bump: 'minor',
       expectedCurrent: 'v2',
+      expectedWorkingDraft: null,
     });
     expect(out).toMatchObject({ ok: true, result: { version: '1.2', runnable: true } });
     expect(d.blueprintChanged).toHaveBeenCalledWith('bp1');
@@ -505,7 +506,9 @@ describe('channels, blueprints and versions', () => {
       d,
     );
     expect(out).toMatchObject({ ok: true, item: { type: 'change', payload: { kind: 'draft' } } });
-    expect(d.blueprints.setWorkingDraft).toHaveBeenCalledWith('bp1', expect.any(Object), 'v2');
+    expect(d.blueprints.setWorkingDraft).toHaveBeenCalledWith('bp1', expect.any(Object), 'v2', {
+      expectedWorkingDraft: null,
+    });
     expect(
       await runTool('restore_version', { blueprintId: 'bp1', version: '9.9' }, newTurnContext(), d),
     ).toMatchObject({

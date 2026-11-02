@@ -63,6 +63,16 @@ describe('parseGuidePage', () => {
     expect(page.sections[1]!.text).toContain('# not a heading');
   });
 
+  it('closes a code fence only on a matching marker', () => {
+    const fence = '````';
+    const sections = (body: string) =>
+      parseGuidePage('a.md', body).sections.map((section) => section.heading);
+    // a shorter or different marker, or one with text after it, stays inside the code
+    expect(sections(`${fence}\n\`\`\`\n## in code\n${fence}\n## After`)).toEqual([null, 'After']);
+    expect(sections('```\n~~~\n## in code\n```\n## After')).toEqual([null, 'After']);
+    expect(sections('```\n```bash\n## in code\n```\n## After')).toEqual([null, 'After']);
+  });
+
   it('turns MDX markup into plain Markdown', () => {
     const text = page.sections.map((s) => s.text).join('\n');
     expect(text).not.toContain('import Tabs');

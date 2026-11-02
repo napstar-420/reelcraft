@@ -22,6 +22,8 @@ export interface AssistantUi {
   ask: (text: string) => void;
   /** Text waiting to go into the message box. */
   prefill: { text: string; nonce: number } | null;
+  /** Called by the message box once it has taken the prefill, so it isn't applied again. */
+  clearPrefill: () => void;
   setPageDetail: (detail: PageDetail | null) => void;
   setEditorDraft: (draft: EditorDraft | null) => void;
   /** The open page's hooks around each message (see TurnHooks). */
