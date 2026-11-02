@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import type { AssistantPageContext } from '@reelcraft/shared';
@@ -64,6 +64,23 @@ export function AssistantProvider({ children }: { children: React.ReactNode }) {
     },
     [setDockOpen, send],
   );
+
+  // `?chat=<id>` (a notification's link) opens that chat on whatever page this is
+  const navigate = useNavigate();
+  const { selectSession } = assistant;
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const chat = params.get('chat');
+    if (!chat) return;
+    selectSession(chat);
+    setDockOpen(true);
+    params.delete('chat');
+    const search = params.toString();
+    navigate(
+      { pathname: location.pathname, search: search ? `?${search}` : '' },
+      { replace: true },
+    );
+  }, [location.search, location.pathname, selectSession, setDockOpen, navigate]);
 
   // an approval card the user can't see: say so, with a way to it
   const wasWaiting = useRef(false);

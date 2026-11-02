@@ -179,7 +179,9 @@ watching one. Each run can wake the assistant only so many times (5 unless you c
 **Wake-ups per run** in **Settings › Assistant**), and it stops watching a run when the run ends.
 
 When the assistant is waiting for your answer and the chat is hidden, a message says **The assistant
-needs your OK**, and the **Assistant** button shows a dot.
+needs your OK**, and the **Assistant** button shows a dot. When no Reelcraft page shows the chat at all, you get a **The assistant needs you**
+[notification](../runs/notifications.md) instead, and, if you turn it on, one when it has finished
+dealing with a run update. Selecting the notification opens the chat.
 
 ## Questions
 
@@ -193,7 +195,8 @@ Your chats are kept, so you can come back to one later. At the top of the chat:
 
 - **New chat** (the speech bubble with **+**): start fresh. Do this when a chat gets long or the
   assistant loses track.
-- **Chat history** (the clock): pick an earlier chat, or **Delete this chat**.
+- **Chat history** (the clock): pick an earlier chat, **Delete this chat**, or open **Activity in all
+  chats**: everything the assistant changed or did, newest first, each with a link to its chat.
 
 Select **Stop** (the square) to interrupt the assistant while it works.
 

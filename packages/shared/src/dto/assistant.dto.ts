@@ -497,3 +497,16 @@ export const UpdateAssistantNoteDto = z.object({
   text: z.string().trim().min(1).max(MAX_ASSISTANT_NOTE_CHARS),
 });
 export type UpdateAssistantNoteDto = z.infer<typeof UpdateAssistantNoteDto>;
+
+/** Something the assistant changed or did (a tool call that does more than read), for the
+ * Activity list. */
+export const AssistantActivityDto = z.object({
+  id: z.string(),
+  sessionId: z.string(),
+  chatTitle: z.string().nullable(),
+  tool: z.string(),
+  args: z.unknown(),
+  ok: z.boolean(),
+  createdAt: z.string(),
+});
+export type AssistantActivityDto = z.infer<typeof AssistantActivityDto>;

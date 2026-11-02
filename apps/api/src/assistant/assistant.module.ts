@@ -24,6 +24,7 @@ import { GoalService } from './goals/goal.service';
 import { SettingsModule } from '../settings/settings.module';
 import { QcModule } from '../qc/qc.module';
 import { StorageModule } from '../storage/storage.module';
+import { NotificationModule } from '../notification/notification.module';
 import { ASSISTANT_AGENTS } from './agent/assistant-agent.interface';
 import { CodexAssistantAgent } from './agent/codex-assistant.agent';
 import { ClaudeAssistantAgent } from './agent/claude-assistant.agent';
@@ -48,6 +49,7 @@ import { CodexNeoRegistrar } from '../provider/codex/codex-neo-registrar';
     QcModule,
     StorageModule,
     SettingsModule,
+    NotificationModule,
   ],
   controllers: [AssistantController],
   providers: [

@@ -359,6 +359,71 @@ describe('assistant (e2e)', () => {
     ).toBe(409);
   });
 
+  it('notifies when the assistant needs you and no page shows the chat, and lists its activity', async () => {
+    const notificationsOf = (sid: string) =>
+      testDb.db.select().from(notification).where(eq(notification.sessionId, sid));
+
+    // nobody is watching: the approval card is announced
+    const away = await newSession('manual');
+    useScript([
+      [
+        {
+          call: 'propose_draft',
+          args: { blueprintId, draft: exampleScript(), summary: 'Adds a script stage' },
+        },
+        { say: 'Written.' },
+      ],
+    ]);
+    await turn(away, { text: 'go' });
+    const card = await pendingApproval(away);
+    await new Promise((r) => setTimeout(r, 100));
+    const sent = await notificationsOf(away);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({
+      kind: 'assistant_needs_you',
+      runId: null,
+      title: 'The assistant needs your OK',
+      url: `/?chat=${away}`,
+    });
+    await call(`/assistant/sessions/${away}/approvals/${card.id}`, {
+      method: 'POST',
+      body: { answer: 'yes' },
+    });
+    await waitIdle(away);
+
+    // what it did shows in the activity list, with its chat
+    const activity =
+      await call<Array<{ sessionId: string; tool: string; ok: boolean }>>('/assistant/activity');
+    expect(activity.body[0]).toMatchObject({ sessionId: away, tool: 'propose_draft', ok: true });
+    expect(activity.body.some((a) => a.tool === 'get_blueprint')).toBe(false);
+
+    // a page shows the chat: no notification
+    const here = await newSession('manual');
+    const socket = await connectSocket();
+    expect(await watchChat(socket, here)).toBe(true);
+    useScript([
+      [
+        {
+          call: 'propose_draft',
+          args: { blueprintId, draft: exampleScript(), summary: 'Again' },
+        },
+      ],
+    ]);
+    await turn(here, { text: 'go' });
+    const hereCard = await pendingApproval(here);
+    await new Promise((r) => setTimeout(r, 100));
+    expect(await notificationsOf(here)).toHaveLength(0);
+    await call(`/assistant/sessions/${here}/approvals/${hereCard.id}`, {
+      method: 'POST',
+      body: { answer: 'no' },
+    });
+    await waitIdle(here);
+
+    // deleting the chat deletes its notifications
+    expect((await call(`/assistant/sessions/${away}`, { method: 'DELETE' })).status).toBe(204);
+    expect(await notificationsOf(away)).toHaveLength(0);
+  });
+
   it('Manual: No with feedback reaches the model, and Yes + Auto switches the chat to Auto', async () => {
     const sid = await newSession('manual');
     let refused = '';
@@ -643,6 +708,7 @@ describe('assistant (e2e)', () => {
         id: 'n',
         kind: 'failed',
         runId,
+        sessionId: null,
         stageKey: 'script',
         title: 'Daily short failed',
         body: 'Write the script failed its checks',

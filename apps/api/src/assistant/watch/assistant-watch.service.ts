@@ -121,17 +121,18 @@ export class AssistantWatchService implements OnModuleInit, OnModuleDestroy {
   private async handle(
     note: Pick<NotificationDto, 'runId' | 'kind' | 'title' | 'body' | 'createdAt'>,
   ): Promise<void> {
-    if (!WAKE_KINDS.has(note.kind)) return;
+    if (!WAKE_KINDS.has(note.kind) || !note.runId) return;
+    const runId = note.runId;
     const watches = await this.db
       .select()
       .from(assistantWatch)
-      .where(and(eq(assistantWatch.runId, note.runId), isNull(assistantWatch.endedAt)));
-    for (const watch of watches) await this.wakeOne(watch, note);
+      .where(and(eq(assistantWatch.runId, runId), isNull(assistantWatch.endedAt)));
+    for (const watch of watches) await this.wakeOne(watch, { ...note, runId });
   }
 
   private async wakeOne(
     watch: WatchRow,
-    note: Pick<NotificationDto, 'runId' | 'kind' | 'title' | 'body' | 'createdAt'>,
+    note: Pick<NotificationDto, 'kind' | 'title' | 'body' | 'createdAt'> & { runId: string },
   ): Promise<void> {
     if (watch.lastNotifiedAt && note.createdAt <= watch.lastNotifiedAt) return;
     const { maxWakesPerRun } = await this.settings.get();

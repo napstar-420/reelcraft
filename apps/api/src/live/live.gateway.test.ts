@@ -1,3 +1,4 @@
+import { LivePresence } from './live-presence';
 import { describe, expect, it, vi } from 'vitest';
 import { LiveEvents } from './live-events';
 import { LiveGateway } from './live.gateway';
@@ -14,7 +15,7 @@ function setup(ownerRows: Array<{ ownerId: string }>, clients = 1) {
     }),
   };
   const events = new LiveEvents();
-  const gateway = new LiveGateway(db as never, events);
+  const gateway = new LiveGateway(db as never, events, new LivePresence());
   gateway.server = { to, engine: { clientsCount: clients } } as never;
   return { gateway, events, to, emit, limit };
 }

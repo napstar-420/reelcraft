@@ -36,6 +36,14 @@ export class AssistantController {
     private readonly memory: AssistantMemoryService,
   ) {}
 
+  @Get('assistant/activity')
+  activity(@Query('before') before?: string, @Query('limit') limit?: string) {
+    return this.assistant.activity({
+      before: before && !Number.isNaN(Date.parse(before)) ? before : undefined,
+      limit: limit ? Number(limit) : undefined,
+    });
+  }
+
   @Get('assistant/notes')
   notes(@Query('channelId') channelId?: string) {
     return channelId

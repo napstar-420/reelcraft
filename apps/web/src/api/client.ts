@@ -1,4 +1,5 @@
 import type {
+  AssistantActivityDto,
   AssistantNoteDto,
   CreateAssistantNoteDto,
   AssistantAttachmentDto,
@@ -775,6 +776,10 @@ export const api = {
     }),
   deleteAssistantSession: (sessionId: string) =>
     request<void>(`/assistant/sessions/${sessionId}`, { method: 'DELETE' }),
+  listAssistantActivity: (before?: string) =>
+    request<AssistantActivityDto[]>(
+      `/assistant/activity${before ? `?before=${encodeURIComponent(before)}` : ''}`,
+    ),
   listAssistantNotes: (channelId?: string) =>
     request<AssistantNoteDto[]>(
       `/assistant/notes${channelId ? `?channelId=${encodeURIComponent(channelId)}` : ''}`,

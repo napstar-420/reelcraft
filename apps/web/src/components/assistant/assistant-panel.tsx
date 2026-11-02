@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
+  Activity,
   ArrowUp,
   Eye,
   History,
@@ -38,6 +39,7 @@ import { useAssistantUi } from './assistant-context';
 import { PendingAttachmentChips } from './attachment-chips';
 import { ACCEPT, filesFrom } from './attachments.logic';
 import { useChatAttachments } from './use-chat-attachments';
+import { ActivityDialog } from './activity-dialog';
 
 const EXAMPLES: Record<'subject' | 'none', string[]> = {
   none: [
@@ -65,6 +67,7 @@ export function AssistantPanel({ variant = 'dock' }: { variant?: 'dock' | 'page'
   const [text, setText] = useState('');
   const files = useChatAttachments();
   const [dragging, setDragging] = useState(false);
+  const [activityOpen, setActivityOpen] = useState(false);
   const picker = useRef<HTMLInputElement>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
@@ -191,6 +194,10 @@ export function AssistantPanel({ variant = 'dock' }: { variant?: 'dock' | 'page'
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-64">
+            <DropdownMenuItem onSelect={() => setActivityOpen(true)}>
+              <Activity /> Activity in all chats
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
             {session && (
               <DropdownMenuItem
                 variant="destructive"
@@ -468,6 +475,11 @@ export function AssistantPanel({ variant = 'dock' }: { variant?: 'dock' | 'page'
           </div>
         </div>
       </div>
+      <ActivityDialog
+        open={activityOpen}
+        onOpenChange={setActivityOpen}
+        onOpenChat={assistant.selectSession}
+      />
     </div>
   );
 }

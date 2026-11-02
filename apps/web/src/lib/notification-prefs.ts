@@ -35,6 +35,16 @@ export const NOTIFICATION_KIND_INFO: Record<
     hint: 'A run that was waiting for provider quota continued by itself.',
     defaultOn: true,
   },
+  assistant_needs_you: {
+    label: 'The assistant needs you',
+    hint: 'It is waiting for your OK, an answer or a plan decision, and no open page shows the chat.',
+    defaultOn: true,
+  },
+  assistant_done: {
+    label: 'The assistant dealt with a run',
+    hint: 'It finished handling a run update while no open page showed the chat.',
+    defaultOn: false,
+  },
   reminder: {
     label: 'Still waiting for you',
     hint: 'A reminder after a run has waited for you for 24 and 48 hours.',

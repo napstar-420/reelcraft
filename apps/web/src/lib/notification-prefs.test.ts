@@ -23,9 +23,9 @@ function fakeStorage(initial?: string) {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('isKindEnabled', () => {
-  it('defaults every kind on except cancelled', () => {
+  it('defaults every kind on except cancelled and the assistant finishing a run update', () => {
     const off = NOTIFICATION_KINDS.filter((kind) => !isKindEnabled({}, kind));
-    expect(off).toEqual(['cancelled']);
+    expect(off.sort()).toEqual(['assistant_done', 'cancelled']);
   });
 
   it('lets the user override either way', () => {
@@ -37,7 +37,8 @@ describe('isKindEnabled', () => {
 
 describe('enabledKinds', () => {
   it('lists what interrupts this browser', () => {
-    expect(enabledKinds({})).toHaveLength(NOTIFICATION_KINDS.length - 1);
+    expect(enabledKinds({})).toHaveLength(NOTIFICATION_KINDS.length - 2);
+    expect(enabledKinds({})).toContain('assistant_needs_you');
     expect(enabledKinds({})).not.toContain('cancelled');
     const some = enabledKinds({ kinds: { failed: false, cancelled: true } });
     expect(some).not.toContain('failed');

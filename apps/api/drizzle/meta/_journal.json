@@ -337,6 +337,13 @@
       "when": 1793594164559,
       "tag": "0047_assistant_goal",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1793594733293,
+      "tag": "0048_notification_assistant",
+      "breakpoints": true
     }
   ]
 }

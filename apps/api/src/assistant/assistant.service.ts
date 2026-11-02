@@ -8,7 +8,7 @@ import {
   type OnModuleDestroy,
   type OnModuleInit,
 } from '@nestjs/common';
-import { and, asc, desc, eq, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, lt, sql } from 'drizzle-orm';
 import type {
   ApprovalPayload,
   AssistantItemDto,
@@ -58,6 +58,8 @@ import { LinkImportService } from './files/link-import.service';
 import { BrowserService } from './browser/browser.service';
 import { AssistantMemoryService } from './memory/assistant-memory.service';
 import { GoalService } from './goals/goal.service';
+import { NotificationService } from '../notification/notification.service';
+import { LivePresence } from '../live/live-presence';
 import { RunInputService } from '../run/run-input.service';
 import { VoiceStudioAdapter } from '../provider/voicestudio/voicestudio.adapter';
 import { describeAttachment } from './attachments/attachment.logic';
@@ -76,7 +78,13 @@ import {
 } from './agent/assistant-agent.interface';
 import { IMAGES_PER_TURN } from './tools/run-tools';
 import { answersToText, buildInstructions, contextNote } from './instructions';
-import { buildNarrowedEnums, buildToolDefs, runTool, toolsHash } from './tools/registry';
+import {
+  ASSISTANT_TOOLS,
+  buildNarrowedEnums,
+  buildToolDefs,
+  runTool,
+  toolsHash,
+} from './tools/registry';
 import {
   newTurnContext,
   type ApprovalDecision,
@@ -162,6 +170,8 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
     private readonly browser: BrowserService,
     private readonly knowledge: AssistantMemoryService,
     private readonly goals: GoalService,
+    private readonly notifications: NotificationService,
+    private readonly presence: LivePresence,
   ) {
     this.toolDeps = {
       blueprints,
@@ -391,6 +401,7 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
       await this.attachments.deleteForSession(tx, id);
       await this.knowledge.deleteForSession(tx, id);
       await this.goals.deleteForSession(tx, id);
+      await this.notifications.deleteForSession(tx, id);
       await tx.delete(assistantItem).where(eq(assistantItem.sessionId, id));
       await tx.delete(assistantSession).where(eq(assistantSession.id, id));
     });
@@ -636,7 +647,7 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
         ? {}
         : { title: titleFrom(text || attachments.map((a) => a.name).join(', ')) }),
     });
-    return { session, agent, turnId, text, statusItem, attachments };
+    return { session, agent, turnId, text, statusItem, attachments, source };
   }
 
   private async runTurn(
@@ -644,7 +655,7 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
     dto: StartAssistantTurnDto,
     controller: AbortController,
   ): Promise<void> {
-    const { session, agent, turnId, text, statusItem, attachments } = prepared;
+    const { session, agent, turnId, text, statusItem, attachments, source } = prepared;
     const timer = new TurnTimer(TURN_TIMEOUT_MS, () => {
       timedOut = true;
       controller.abort();
@@ -720,6 +731,20 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
           outcome.item.payload,
         );
         extra = { [`${outcome.item.type}Id`]: created.id };
+        if (outcome.item.type === 'question' || outcome.item.type === 'plan') {
+          this.notifyIfAway(
+            session.id,
+            'assistant_needs_you',
+            outcome.item.type === 'question'
+              ? 'The assistant has a question'
+              : 'The assistant has a plan for you',
+            outcome.item.type === 'plan'
+              ? (outcome.item.payload as { title: string }).title
+              : ((outcome.item.payload as { questions: Array<{ question: string }> }).questions[0]
+                  ?.question ?? 'It is waiting for your answer.'),
+            created.id,
+          );
+        }
       }
       const forModel = outcome.ok
         ? { ...(isRecord(outcome.result) ? outcome.result : { result: outcome.result }), ...extra }
@@ -811,18 +836,40 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
       // the chat (or its blueprint) was deleted while the turn ran
       this.logger.warn({ err: persistError, sessionId: session.id }, 'turn result not stored');
     }
+    if (source === 'wake' && finalState === 'completed') {
+      const reply = await this.lastReply(session.id, turnId);
+      this.notifyIfAway(
+        session.id,
+        'assistant_done',
+        `The assistant dealt with a run update`,
+        reply || 'Open the chat to see what it did.',
+        turnId,
+      );
+    }
     await this.rememberTurn(session.id, turnId, text, dto.context).catch((memoryError: unknown) =>
       this.logger.warn({ err: memoryError, sessionId: session.id }, 'turn not remembered'),
     );
   }
 
-  /** Adds what was said in a turn to the chat's memory, for recall in later chats. */
-  private async rememberTurn(
+  /** Sends a notification when no open page shows the chat (once per item or turn). Never waits
+   * and never fails the turn. */
+  private notifyIfAway(
     sessionId: string,
-    turnId: string,
-    userText: string,
-    context: AssistantPageContext | undefined,
-  ): Promise<void> {
+    kind: 'assistant_needs_you' | 'assistant_done',
+    title: string,
+    body: string,
+    key: string,
+  ): void {
+    if (this.presence.watching(sessionId)) return;
+    void this.notifications
+      .notifyAssistant({ sessionId, kind, title, body, dedupeKey: `assistant:${kind}:${key}` })
+      .catch((error: unknown) =>
+        this.logger.warn({ err: error, sessionId }, 'assistant notification not sent'),
+      );
+  }
+
+  /** The assistant's words in a turn, joined (empty when it said nothing). */
+  private async lastReply(sessionId: string, turnId: string): Promise<string> {
     const replies = await this.db
       .select({ payload: assistantItem.payload })
       .from(assistantItem)
@@ -834,10 +881,20 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
         ),
       )
       .orderBy(asc(assistantItem.seq));
-    const reply = replies
+    return replies
       .map((r) => (r.payload as { text?: string }).text ?? '')
       .filter(Boolean)
       .join('\n');
+  }
+
+  /** Adds what was said in a turn to the chat's memory, for recall in later chats. */
+  private async rememberTurn(
+    sessionId: string,
+    turnId: string,
+    userText: string,
+    context: AssistantPageContext | undefined,
+  ): Promise<void> {
+    const reply = await this.lastReply(sessionId, turnId);
     if (!userText.trim() && !reply) return;
     const [row] = await this.db
       .select({ title: assistantSession.title })
@@ -878,6 +935,49 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
     const controller = this.active.get(sessionId);
     if (!controller) throw new ConflictException('No turn is running in this chat.');
     controller.abort();
+  }
+
+  // ---- activity --------------------------------------------------------------------------
+
+  /** What the assistant changed or did, across every chat, newest first: one row per tool call
+   * that is not only reading. `before` is the `createdAt` of the last row of the previous page. */
+  async activity(input: { before?: string | undefined; limit?: number | undefined }) {
+    const limit = Math.min(Math.max(input.limit ?? 50, 1), 100);
+    const acting = ASSISTANT_TOOLS.filter((t) => t.kind !== 'read' && t.kind !== 'interact').map(
+      (t) => t.name,
+    );
+    const rows = await this.db
+      .select({
+        id: assistantItem.id,
+        sessionId: assistantItem.sessionId,
+        state: assistantItem.state,
+        payload: assistantItem.payload,
+        createdAt: assistantItem.createdAt,
+        title: assistantSession.title,
+      })
+      .from(assistantItem)
+      .innerJoin(assistantSession, eq(assistantSession.id, assistantItem.sessionId))
+      .where(
+        and(
+          eq(assistantItem.type, 'tool_call'),
+          inArray(sql<string>`${assistantItem.payload}->>'tool'`, acting),
+          input.before ? lt(assistantItem.createdAt, input.before) : undefined,
+        ),
+      )
+      .orderBy(desc(assistantItem.createdAt))
+      .limit(limit);
+    return rows.map((row) => {
+      const payload = row.payload as { tool: string; args?: unknown; ok?: boolean };
+      return {
+        id: row.id,
+        sessionId: row.sessionId,
+        chatTitle: row.title,
+        tool: payload.tool,
+        args: payload.args ?? null,
+        ok: payload.ok ?? row.state === 'completed',
+        createdAt: new Date(row.createdAt).toISOString(),
+      };
+    });
   }
 
   // ---- run watches -----------------------------------------------------------------------
@@ -952,6 +1052,13 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
       ...(request.change && { change: request.change }),
     };
     const item = await this.createItem(sessionId, turnId, 'approval', 'pending', payload);
+    this.notifyIfAway(
+      sessionId,
+      'assistant_needs_you',
+      'The assistant needs your OK',
+      request.title,
+      item.id,
+    );
     timer.pause();
     try {
       return await new Promise<ApprovalDecision>((resolve) => {

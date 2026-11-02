@@ -17,6 +17,7 @@ import { DRIZZLE, type Db } from '../db/drizzle.provider';
 import { assistantSession, blueprint, channel, run } from '../db/schema/index';
 import { LiveEvents, type LiveEvent } from './live-events';
 import { assistantRoom, resolveSocketUser, userRoom } from './resolve-socket-user';
+import { LivePresence } from './live-presence';
 import { sameOriginOnly } from './same-origin';
 
 type LiveServer = Server<ClientToServerEvents, ServerToClientEvents>;
@@ -48,9 +49,15 @@ export class LiveGateway
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly events: LiveEvents,
+    private readonly presence: LivePresence,
   ) {}
 
   afterInit(): void {
+    // the default (in-memory) adapter's room map: which sockets are in each room
+    const rooms = (
+      this.server as unknown as { sockets?: { adapter?: { rooms?: Map<string, Set<string>> } } }
+    ).sockets?.adapter?.rooms;
+    if (rooms) this.presence.attach(rooms);
     // A throw inside an RxJS subscriber is rethrown asynchronously and would
     // crash the process, so the handler never lets a rejection escape.
     this.subscription = this.events.all().subscribe((event) => {
