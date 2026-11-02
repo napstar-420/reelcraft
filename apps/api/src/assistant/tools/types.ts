@@ -82,6 +82,8 @@ export interface TurnContext {
   planPresented: boolean;
   /** Pictures `view_media` has shown so far this turn (there is a per-turn limit). */
   imagesShown: number;
+  /** The user said yes to every change for the rest of this turn (deletes still ask). */
+  preApproved: boolean;
   /** Asks the user before a change. Auto mode says yes at once; Manual waits for the card. */
   confirm(request: ApprovalRequest): Promise<ApprovalDecision>;
 }
@@ -102,6 +104,7 @@ export function newTurnContext(
     questionAsked: false,
     planPresented: false,
     imagesShown: 0,
+    preApproved: false,
     confirm: options.confirm ?? (async () => ({ answer: 'yes' })),
   };
 }
@@ -119,11 +122,16 @@ export interface ToolDeps {
     | 'createBlueprint'
     | 'createVersion'
     | 'delete'
+    | 'trash'
+    | 'restore'
   >;
   capabilities: Pick<CapabilityRegistry, 'list' | 'get'>;
   providers: Pick<ProviderRegistry, 'list' | 'get'>;
   styles: Pick<StyleRegistry, 'list'>;
-  channels: Pick<ChannelService, 'get' | 'list' | 'create' | 'update' | 'setArchived' | 'delete'>;
+  channels: Pick<
+    ChannelService,
+    'get' | 'list' | 'create' | 'update' | 'setArchived' | 'delete' | 'trash' | 'restore'
+  >;
   assets: Pick<AssetService, 'list' | 'get' | 'create' | 'delete'>;
   characters: Pick<
     CharacterService,

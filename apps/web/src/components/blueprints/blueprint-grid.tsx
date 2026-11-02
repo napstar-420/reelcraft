@@ -302,7 +302,12 @@ export function BlueprintGrid({
       setDeleteTarget(null);
       setDeleteConfirmText('');
       refresh(target);
-      toast.success(`Blueprint "${target.name}" deleted`);
+      toast.success(`Moved "${target.name}" to the trash`, {
+        action: {
+          label: 'Undo',
+          onClick: () => void api.restoreBlueprint(target.id).then(() => refresh(target)),
+        },
+      });
     },
     onError: (error) => toast.error(apiErrorMessage(error, 'Could not delete the blueprint.')),
   });
@@ -355,10 +360,11 @@ export function BlueprintGrid({
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete {deleteTarget?.name} for good?</AlertDialogTitle>
+            <AlertDialogTitle>Delete {deleteTarget?.name}?</AlertDialogTitle>
             <AlertDialogDescription>
               This deletes the blueprint, every saved version and every run made from it, including
-              their outputs. It can&apos;t be undone. If you only want it out of the way, archive it
+              their outputs. It moves to the trash: you can restore it from Settings › Trash for 30
+              days, then it is deleted for good. If you only want it out of the way, archive it
               instead. Type <strong>{deleteTarget?.name}</strong> to confirm.
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -390,7 +396,7 @@ export function BlueprintGrid({
               }
               onClick={() => deleteTarget && remove.mutate(deleteTarget)}
             >
-              Delete permanently
+              Move to trash
             </Button>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -58,6 +58,9 @@ export function invalidationsFor(item: AssistantItemDto): Array<readonly unknown
   if (item.type === 'change') {
     const change = payloadOf<ChangePayload>(item);
     if (change.kind === 'note') return [['assistant-notes']];
+    if (change.kind === 'trash' || change.kind === 'archive') {
+      return [['channels'], ['blueprints'], ['channel'], ['blueprint'], ['trash']];
+    }
     const { blueprintId } = change;
     return [['blueprint', blueprintId], ['blueprint-versions', blueprintId], ['blueprints']];
   }

@@ -49,3 +49,33 @@ export const ChannelDto = z.object({
   counts: ChannelCountsDto,
 });
 export type ChannelDto = z.infer<typeof ChannelDto>;
+
+/** Channels and blueprints in the trash, restorable until `purgeAt`. */
+export const TrashDto = z.object({
+  days: z.number().int(),
+  channels: z.array(
+    z.object({
+      id: z.string(),
+      name: z.string(),
+      counts: z.object({
+        blueprints: z.number().int(),
+        characters: z.number().int(),
+        assets: z.number().int(),
+        runs: z.number().int(),
+      }),
+      deletedAt: z.string().nullable(),
+      purgeAt: z.string().nullable(),
+    }),
+  ),
+  blueprints: z.array(
+    z.object({
+      id: z.string(),
+      name: z.string(),
+      channelId: z.string(),
+      channelName: z.string(),
+      deletedAt: z.string().nullable(),
+      purgeAt: z.string().nullable(),
+    }),
+  ),
+});
+export type TrashDto = z.infer<typeof TrashDto>;

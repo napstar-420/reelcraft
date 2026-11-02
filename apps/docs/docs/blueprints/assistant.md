@@ -56,6 +56,8 @@ Tab** in the message field switches between them.
   shows a card with exactly what it will do and waits for you:
   - **Yes** does it.
   - **Yes, and switch to Auto** does it and lets the assistant carry on without asking in this chat.
+  - **Yes to everything this turn** does it, and everything else it changes in this answer, without
+    more cards. A delete still asks.
   - **No, do this instead…** lets you say what you want instead (or nothing). Nothing is done.
 
   A card shows a blueprint change as the stages added, removed and changed, and a run action with
@@ -93,7 +95,8 @@ another run made.
 **The Library, characters and voices.** From a file you attached, or a picture or sound a run made,
 it can save an asset to a channel's **Library**, create a character (or add pictures to one, or
 choose its main picture), and make a [VoiceStudio](../voice-studio.md) voice from a clear recording.
-It can also delete assets and characters when you ask. It can't make a character from a description
+It can also delete assets and characters when you ask. A channel or blueprint it deletes goes to
+the trash (**Settings › Trash**), and the chat shows **Restore**. It can't make a character from a description
 alone: give it a picture, or ask it to make one with a run first.
 
 **Reviewing what runs made.** It can read every run: which stage failed and why, what each cost,

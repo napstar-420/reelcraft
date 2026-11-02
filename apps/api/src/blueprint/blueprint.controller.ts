@@ -56,9 +56,10 @@ export class BlueprintController {
     return this.blueprints.update(id, dto);
   }
 
+  /** Moves the blueprint to the trash (Settings › Trash restores it for 30 days). */
   @Delete(':id')
   async remove(@Param('id') id: string) {
-    await this.blueprints.delete(id);
+    await this.blueprints.trash(id);
   }
 
   @Post(':id/versions')

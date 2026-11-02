@@ -210,7 +210,15 @@ function ChannelDetail({ channelId }: { channelId: string }) {
       );
       void queryClient.invalidateQueries({ queryKey: ['channels'] });
       navigate('/channels');
-      toast.success(`Channel "${target.name}" deleted`);
+      toast.success(`Moved "${target.name}" to the trash`, {
+        action: {
+          label: 'Undo',
+          onClick: () =>
+            void api
+              .restoreChannel(target.id)
+              .then(() => queryClient.invalidateQueries({ queryKey: ['channels'] })),
+        },
+      });
     },
     onError,
   });
@@ -354,7 +362,7 @@ function ChannelDetail({ channelId }: { channelId: string }) {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete {deleteTarget?.name} for good?</AlertDialogTitle>
+            <AlertDialogTitle>Delete {deleteTarget?.name}?</AlertDialogTitle>
             <AlertDialogDescription>
               This deletes{' '}
               <strong className="font-semibold text-foreground">
@@ -362,8 +370,9 @@ function ChannelDetail({ channelId }: { channelId: string }) {
                 {deleteTarget?.counts.assets} library files and {deleteTarget?.counts.characters}{' '}
                 characters
               </strong>
-              . It can&apos;t be undone. If you only want it out of the way, archive it instead.
-              Type <strong>{deleteTarget?.name}</strong> to confirm.
+              . It moves to the trash: you can restore it from Settings › Trash for 30 days, then it
+              is deleted for good. If you only want it out of the way, archive it instead. Type{' '}
+              <strong>{deleteTarget?.name}</strong> to confirm.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <Input
@@ -396,7 +405,7 @@ function ChannelDetail({ channelId }: { channelId: string }) {
               }
               onClick={() => deleteTarget && deleteChannel.mutate(deleteTarget)}
             >
-              Delete permanently
+              Move to trash
             </Button>
           </AlertDialogFooter>
         </AlertDialogContent>

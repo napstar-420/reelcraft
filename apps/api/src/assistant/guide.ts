@@ -323,6 +323,24 @@ ${JSON.stringify(recipeMotionGraphics(), null, 2)}
 When a request mixes shapes (a story with a few real clips, a voice-over plus music), combine the stages; keep each rule from the quality topic. Always bind run inputs for what changes per run (topic, tone, a photo) and put constants in the prompts.`,
   },
 
+  'stage-fields': {
+    title: 'What each stage field means',
+    body: `A stage in a draft (propose_draft, edit_draft, validate_draft):
+- \`key\`: unique id such as "script"; never reuse one. \`label\`: the name on the canvas. \`group\`: optional phase name ("Voice"): the run page boxes stages with the same phase together.
+- \`capability\`: the stage type; look it up with get_capability first (its slots, config schema and allowed outputs).
+- \`instructions\`: \`{ system?, template }\`, the prompt; \`{{ name }}\` fills a value from \`context\` or the iterated item.
+- \`config\`: the capability's own settings (its configSchema). \`model\`: \`{ provider, modelId, version?, params }\`; omit to use the defaults (get_effective_config shows what applies).
+- \`slots\`: slot name → Ref, where each slot gets its value. \`context\`: extra values for the prompt, key → Ref. \`attach\`: context keys sent to the model as files. (The "refs" topic lists every Ref.)
+- \`writes\`: memory key → path into this stage's output ("$" = the whole output), for later stages to read.
+- \`output\`: \`{ kind, … }\`: data (with its schema), text, timeline, media.*, file.subtitles ("outputs" topic).
+- \`iterate\`: run once per item of a list: \`{ over: Ref, itemAlias, itemRetryLimit, maxItems?, concurrency? }\`; concurrency is how many items run at once (not with prevItem or item approval) ("iterate" topic).
+- \`checks\` and \`checkMaxAttempts\`: builtin or script checks, and how many tries they get. \`qc\`: AI quality control \`{ criteria, threshold, model, includeInputs, … }\` ("checks-qc" topic).
+- \`retryLimit\`: retries after a crash only. \`approval\`: a person approves \`{ mode: "stage"|"item", onReject? }\`. \`budget\`: \`{ stageCapUsd?, qcCapUsd? }\`.
+- \`disabled\`: skipped by runs, and stages after it can't use its output (an explicit run of just this stage still works). \`enabledWhen\`: \`{ input, equals }\`, run only when a run input has that value.
+- \`dependsOn\`: keys of the stages it waits for (each earlier in the graph). Left out: it waits for the previous stage; \`[]\`: it starts as soon as the stages its bindings read are done ("execution" topic).
+A draft also has \`inputs\`, \`roles\` (at most one), \`defaults\` (the blueprint's config layer), \`presentation\` (canvas positions and branch names only), \`execution\` \`{ concurrentBranches }\` and \`budget\` \`{ runCapUsd }\`.`,
+  },
+
   recreate: {
     title: 'Recreating a video from a reference',
     body: `When the user gives a video and asks for "one like this", rebuild its structure and style from generic stages. There is no "recreate" stage and no template per style: the breakdown is the plan, the blueprint is ordinary stages.

@@ -62,15 +62,26 @@ menu.
 
 ## Delete a channel
 
-Deleting a channel permanently removes it and **everything in it**: every blueprint and version,
+Deleting a channel moves it, and **everything in it**, to the trash: every blueprint and version,
 every run and its outputs, every character and every asset, and what the assistant remembers about
-it. It can't be undone.
+it.
 
 1. Open **More** on the channel page, or **⋯** on its card, and select **Delete**.
 2. Type the channel's name exactly as shown.
-3. Select **Delete permanently**.
+3. Select **Move to trash**.
 
-You return to the Channels list, with a message saying the channel was deleted.
+You return to the Channels list, with a message saying the channel moved to the trash. Select **Undo**
+in that message to bring it straight back.
+
+### The trash
+
+**Settings › Trash** lists the channels and blueprints you deleted in the last 30 days:
+
+- **Restore** brings one back as it was. A blueprint whose name was taken meanwhile comes back as
+  "… (restored)".
+- The bin button deletes one **for good**, with everything in it. This can't be undone.
+
+After 30 days, Reelcraft deletes them for good by itself.
 
 :::note Runs in progress block a delete
 

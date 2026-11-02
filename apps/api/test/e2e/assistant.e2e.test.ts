@@ -464,6 +464,46 @@ describe('assistant (e2e)', () => {
     );
   });
 
+  it('Manual: "Yes to everything this turn" lets the next changes through, but a delete still asks', async () => {
+    const sid = await newSession('manual');
+    const bpId = blueprintId;
+    useScript([
+      [
+        {
+          call: 'propose_draft',
+          args: { blueprintId: bpId, draft: exampleScript(), summary: 'Script' },
+        },
+        {
+          call: 'update_metadata',
+          args: { blueprintId: bpId, description: 'A short script reel', summary: 'Describe it' },
+          expect: (r) => expect(r.ok).toBe(true),
+        },
+        { call: 'delete_blueprint', args: { blueprintId: bpId } },
+        { say: 'Done.' },
+      ],
+    ]);
+    await turn(sid, { text: 'go' });
+    const first = await pendingApproval(sid);
+    await call(`/assistant/sessions/${sid}/approvals/${first.id}`, {
+      method: 'POST',
+      body: { answer: 'yes_turn' },
+    });
+    // the metadata change went through without a card; the delete waits
+    const deleteCard = await pendingApproval(sid);
+    expect(deleteCard.payload).toMatchObject({ tool: 'delete_blueprint', kind: 'destroy' });
+    const session = await getSession(sid);
+    expect(ofType(session, 'approval')).toHaveLength(2);
+    await call(`/assistant/sessions/${sid}/approvals/${deleteCard.id}`, {
+      method: 'POST',
+      body: { answer: 'no' },
+    });
+    const done = await waitIdle(sid);
+    expect(ofType(done, 'approval')[0]).toMatchObject({ payload: { answer: 'yes_turn' } });
+    expect((await http.app.get(BlueprintService).getBlueprint(bpId)).description).toBe(
+      'A short script reel',
+    );
+  });
+
   it('Manual: stopping the turn expires a waiting card', async () => {
     const sid = await newSession('manual');
     useScript([

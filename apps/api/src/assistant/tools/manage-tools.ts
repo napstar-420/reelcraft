@@ -115,7 +115,20 @@ const archiveChannel: AssistantTool<z.infer<typeof ArchiveChannelInput>> = {
     });
     if (refused) return refused;
     await deps.channels.setArchived(input.channelId, input.archived);
-    return { ok: true, result: { status: input.archived ? 'archived' : 'unarchived' } };
+    return {
+      ok: true,
+      result: { status: input.archived ? 'archived' : 'unarchived' },
+      item: {
+        type: 'change',
+        payload: {
+          kind: 'archive',
+          target: 'channel',
+          id: current.id,
+          name: current.name,
+          archived: input.archived,
+        },
+      },
+    };
   },
 };
 
@@ -125,7 +138,7 @@ const deleteChannel: AssistantTool<z.infer<typeof DeleteChannelInput>> = {
   name: 'delete_channel',
   kind: 'destroy',
   description:
-    'Delete a channel for good, with ALL its blueprints, runs, videos, assets and Characters. It cannot be undone; prefer archive_channel unless the user clearly wants it gone. Refused while one of its runs is still going.',
+    'Delete a channel with ALL its blueprints, runs, videos, assets and Characters: it moves to the trash, where the user can restore it for 30 days (or Undo in the chat), then it is gone for good. Prefer archive_channel unless the user clearly wants it gone. Refused while one of its runs is still going.',
   input: DeleteChannelInput,
   jsonSchema: () => obj({ channelId: CHANNEL_ID }, ['channelId']),
   async handler(ctx, deps, input) {
@@ -134,15 +147,22 @@ const deleteChannel: AssistantTool<z.infer<typeof DeleteChannelInput>> = {
     const refused = await confirmChange(ctx, {
       tool: 'delete_channel',
       kind: 'destroy',
-      title: `Delete the channel "${current.name}" for good`,
+      title: `Delete the channel "${current.name}"`,
       details: [
         `${c.blueprints} blueprints, ${c.runs} runs, ${c.assets} assets and ${c.characters} Characters go with it`,
-        'This cannot be undone',
+        'It can be restored from Settings › Trash for 30 days',
       ],
     });
     if (refused) return refused;
-    await deps.channels.delete(input.channelId);
-    return { ok: true, result: { status: 'deleted' } };
+    await deps.channels.trash(input.channelId);
+    return {
+      ok: true,
+      result: { status: 'moved to the trash', restorableForDays: 30 },
+      item: {
+        type: 'change',
+        payload: { kind: 'trash', target: 'channel', id: current.id, name: current.name },
+      },
+    };
   },
 };
 
@@ -220,7 +240,20 @@ const archiveBlueprint: AssistantTool<z.infer<typeof ArchiveBlueprintInput>> = {
     if (refused) return refused;
     await deps.blueprints.update(input.blueprintId, { archived: input.archived });
     deps.blueprintChanged(input.blueprintId);
-    return { ok: true, result: { status: input.archived ? 'archived' : 'unarchived' } };
+    return {
+      ok: true,
+      result: { status: input.archived ? 'archived' : 'unarchived' },
+      item: {
+        type: 'change',
+        payload: {
+          kind: 'archive',
+          target: 'blueprint',
+          id: current.id,
+          name: current.name,
+          archived: input.archived,
+        },
+      },
+    };
   },
 };
 
@@ -230,7 +263,7 @@ const deleteBlueprint: AssistantTool<z.infer<typeof DeleteBlueprintInput>> = {
   name: 'delete_blueprint',
   kind: 'destroy',
   description:
-    'Delete a blueprint for good, with all its versions, runs and videos. It cannot be undone; prefer archive_blueprint unless the user clearly wants it gone. Refused while one of its runs is still going.',
+    'Delete a blueprint with all its versions, runs and videos: it moves to the trash, where the user can restore it for 30 days (or Undo in the chat), then it is gone for good. Prefer archive_blueprint unless the user clearly wants it gone. Refused while one of its runs is still going.',
   input: DeleteBlueprintInput,
   jsonSchema: () => obj({ blueprintId: BLUEPRINT_ID }, ['blueprintId']),
   async handler(ctx, deps, input) {
@@ -238,12 +271,22 @@ const deleteBlueprint: AssistantTool<z.infer<typeof DeleteBlueprintInput>> = {
     const refused = await confirmChange(ctx, {
       tool: 'delete_blueprint',
       kind: 'destroy',
-      title: `Delete the blueprint "${current.name}" for good`,
-      details: [`Its versions and ${current.runCount} runs go with it`, 'This cannot be undone'],
+      title: `Delete the blueprint "${current.name}"`,
+      details: [
+        `Its versions and ${current.runCount} runs go with it`,
+        'It can be restored from Settings › Trash for 30 days',
+      ],
     });
     if (refused) return refused;
-    await deps.blueprints.delete(input.blueprintId);
-    return { ok: true, result: { status: 'deleted' } };
+    await deps.blueprints.trash(input.blueprintId);
+    return {
+      ok: true,
+      result: { status: 'moved to the trash', restorableForDays: 30 },
+      item: {
+        type: 'change',
+        payload: { kind: 'trash', target: 'blueprint', id: current.id, name: current.name },
+      },
+    };
   },
 };
 

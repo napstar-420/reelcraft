@@ -256,6 +256,15 @@ describe('tool registry', () => {
     ).toEqual(['ask_user', 'present_plan']);
   });
 
+  it('keeps the tool definitions small (they are sent with every chat)', () => {
+    const total = defs.reduce((sum, d) => sum + JSON.stringify(d).length, 0);
+    expect(total).toBeLessThan(68_000);
+    // the stage schema is sent by the tools that write a draft, not by validate_draft
+    const validate = JSON.stringify(defs.find((d) => d.name === 'validate_draft'));
+    expect(validate.length).toBeLessThan(1_200);
+    for (const d of defs) expect(JSON.stringify(d).length, d.name).toBeLessThan(4_500);
+  });
+
   it('narrows enums to the live registries', () => {
     expect(narrowed.capabilityKeys).toContain('text.generate');
     expect(narrowed.capabilityKeys).toContain('publish.stub');
@@ -501,7 +510,7 @@ describe('JSON Schemas stay in sync with the Zod inputs (drift guard)', () => {
   });
 
   it('lists exactly the StageDef fields, and requires the non-optional ones', () => {
-    const draftSchema = defs.find((d) => d.name === 'validate_draft')!.inputSchema as {
+    const draftSchema = defs.find((d) => d.name === 'propose_draft')!.inputSchema as {
       properties: {
         draft: { properties: { graph: { items: { properties: object; required: string[] } } } };
       };
@@ -515,7 +524,7 @@ describe('JSON Schemas stay in sync with the Zod inputs (drift guard)', () => {
   });
 
   it('lists exactly the draft fields', () => {
-    const draftSchema = defs.find((d) => d.name === 'validate_draft')!.inputSchema as {
+    const draftSchema = defs.find((d) => d.name === 'propose_draft')!.inputSchema as {
       properties: { draft: { properties: object } };
     };
     expect(Object.keys(draftSchema.properties.draft.properties).sort()).toEqual(

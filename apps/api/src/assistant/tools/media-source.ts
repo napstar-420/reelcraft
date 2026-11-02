@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { obj, str } from './json-schemas';
+import { obj } from './json-schemas';
 import type { JsonObject, ToolDeps } from './types';
 
 /** Where a picture, video or sound is: a file attached to the chat, a library asset, a Character's
@@ -43,18 +43,19 @@ export const MediaSource = z
 export type MediaSource = z.infer<typeof MediaSource>;
 
 export function mediaSourceJson(description: string): JsonObject {
+  const id = { type: 'string' };
   return obj(
     {
-      attachmentId: str('A file the user attached to the chat.'),
-      assetId: str("An asset in a channel's Library (get_channel)."),
-      characterId: str('A Character (get_channel); with blobId, one of its reference images.'),
-      blobId: str("One of that Character's reference blobIds."),
-      runId: str('A run; with stageKey for what a stage made, or alone for its final video.'),
-      stageKey: str('A stage key of that run.'),
-      itemIndex: { type: 'integer', minimum: 0, description: 'One item of an iterating stage.' },
+      attachmentId: id,
+      assetId: id,
+      characterId: id,
+      blobId: id,
+      runId: id,
+      stageKey: id,
+      itemIndex: { type: 'integer', minimum: 0 },
     },
     [],
-    description,
+    `${description} One of: {attachmentId} a file attached to the chat; {assetId} a Library asset; {characterId, blobId} a Character's picture; {runId, stageKey?, itemIndex?} what a run's stage made, or its final video without stageKey.`,
   );
 }
 

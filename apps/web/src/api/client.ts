@@ -1,4 +1,5 @@
 import type {
+  TrashDto,
   AssistantActivityDto,
   AssistantNoteDto,
   CreateAssistantNoteDto,
@@ -776,6 +777,15 @@ export const api = {
     }),
   deleteAssistantSession: (sessionId: string) =>
     request<void>(`/assistant/sessions/${sessionId}`, { method: 'DELETE' }),
+  listTrash: () => request<TrashDto>('/trash'),
+  restoreChannel: (id: string) =>
+    request<unknown>(`/trash/channels/${id}/restore`, { method: 'POST' }),
+  restoreBlueprint: (id: string) =>
+    request<unknown>(`/trash/blueprints/${id}/restore`, { method: 'POST' }),
+  deleteChannelForGood: (id: string) =>
+    request<void>(`/trash/channels/${id}`, { method: 'DELETE' }),
+  deleteBlueprintForGood: (id: string) =>
+    request<void>(`/trash/blueprints/${id}`, { method: 'DELETE' }),
   listAssistantActivity: (before?: string) =>
     request<AssistantActivityDto[]>(
       `/assistant/activity${before ? `?before=${encodeURIComponent(before)}` : ''}`,

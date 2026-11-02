@@ -1,5 +1,5 @@
 import { ConflictException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import type { CreateChannelDto, ListChannelsQueryDto, UpdateChannelDto } from '@reelcraft/shared';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
 import {
@@ -76,7 +76,11 @@ export class ChannelService {
 
   async list(query: ListChannelsQueryDto) {
     const base = this.db.select({ channel, ...this.countsSelection() }).from(channel);
-    const rows = await (query.includeArchived ? base : base.where(eq(channel.archived, false)));
+    const rows = await base.where(
+      query.includeArchived
+        ? isNull(channel.deletedAt)
+        : and(eq(channel.archived, false), isNull(channel.deletedAt)),
+    );
     return rows.map((r) =>
       this.toView(r.channel, {
         blueprints: r.blueprints,
@@ -87,13 +91,16 @@ export class ChannelService {
     );
   }
 
-  async get(id: string) {
+  /** A channel in the trash is not found unless `includeTrashed`. */
+  async get(id: string, opts: { includeTrashed?: boolean } = {}) {
     const [row] = await this.db
       .select({ channel, ...this.countsSelection() })
       .from(channel)
       .where(eq(channel.id, id))
       .limit(1);
-    if (!row) throw new NotFoundException(`Channel ${id} not found`);
+    if (!row || (row.channel.deletedAt && !opts.includeTrashed)) {
+      throw new NotFoundException(`Channel ${id} not found`);
+    }
     return this.toView(row.channel, {
       blueprints: row.blueprints,
       characters: row.characters,
@@ -142,8 +149,56 @@ export class ChannelService {
    * channel itself. Every deleted blob's file is queued in `storage_orphan`
    * for the `blob.gc` sweep.
    */
-  async delete(id: string): Promise<void> {
+  /** Moves a channel to the trash: hidden everywhere, restorable for 30 days, then deleted for
+   * good (`TrashService`). Refused while a run is in progress, like a delete. */
+  async trash(id: string): Promise<void> {
     await this.get(id);
+    await this.assertNoOpenRuns(id);
+    await this.db
+      .update(channel)
+      .set({ deletedAt: new Date().toISOString() })
+      .where(eq(channel.id, id));
+    this.logger.log({ channelId: id }, 'channel moved to the trash');
+  }
+
+  async restore(id: string) {
+    await this.get(id, { includeTrashed: true });
+    await this.db.update(channel).set({ deletedAt: null }).where(eq(channel.id, id));
+    this.logger.log({ channelId: id }, 'channel restored from the trash');
+    return this.get(id);
+  }
+
+  /** Channels in the trash, newest first. */
+  async listTrashed() {
+    const rows = await this.db
+      .select({ channel, ...this.countsSelection() })
+      .from(channel)
+      .where(isNotNull(channel.deletedAt))
+      .orderBy(desc(channel.deletedAt));
+    return rows.map((r) =>
+      this.toView(r.channel, {
+        blueprints: r.blueprints,
+        characters: r.characters,
+        assets: r.assets,
+        runs: r.runs,
+      }),
+    );
+  }
+
+  private async assertNoOpenRuns(id: string): Promise<void> {
+    const open = await this.db
+      .select({ id: run.id })
+      .from(run)
+      .where(and(eq(run.channelId, id), isNull(run.endedAt)));
+    if (open.length > 0) {
+      throw new ConflictException(
+        `Channel ${id} has ${open.length} run(s) still in progress; cancel or wait for them to finish first.`,
+      );
+    }
+  }
+
+  async delete(id: string): Promise<void> {
+    await this.get(id, { includeTrashed: true });
 
     const openRuns = await this.db
       .select({ id: run.id })

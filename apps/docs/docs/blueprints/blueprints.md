@@ -189,12 +189,14 @@ as they are, and you can still open it.
 
 ## Delete a blueprint
 
-Deleting a blueprint permanently removes it, every saved version, and every run made from it,
-including their outputs. It can't be undone.
+Deleting a blueprint moves it, every saved version and every run made from it to the trash, where
+you can restore it for 30 days ([the trash](../channels/channels.md#the-trash)). After that it is
+deleted for good.
 
 1. Open **⋯** on the blueprint's card and select **Delete**.
 2. Type the blueprint's name exactly as shown.
-3. Select **Delete permanently**. (**Archive instead** hides it without deleting anything.)
+3. Select **Move to trash**. (**Archive instead** hides it without deleting anything.) **Undo** in
+   the message that follows brings it straight back.
 
 You can't delete a blueprint while any of its runs is still going, including paused runs and runs
 waiting for you. Finish or cancel them first.

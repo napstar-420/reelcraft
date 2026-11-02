@@ -8,7 +8,7 @@ import { baselineDraft, currentDraft } from './current-draft';
 import { sameDraft } from './draft-diff';
 import { draftView } from './draft-view';
 import { memoryFlow } from './memory-flow';
-import { draftJsonSchema, MODALITIES, obj, str } from './json-schemas';
+import { freeObject, MODALITIES, obj, str } from './json-schemas';
 import type { AssistantTool } from './types';
 
 const NoInput = z.object({});
@@ -367,24 +367,27 @@ const readGuideTool: AssistantTool<z.infer<typeof ReadGuideInput>> = {
   },
 };
 
-const DraftInput = z.object({ blueprintId: z.string().min(1), draft: z.unknown() });
+const DraftInput = z.object({ blueprintId: z.string().min(1), draft: z.unknown().optional() });
 
 const validateDraft: AssistantTool<z.infer<typeof DraftInput>> = {
   name: 'validate_draft',
   kind: 'read',
   description:
-    'Validate a complete draft for a blueprint with the real blueprint validator WITHOUT writing it. Returns the errors and warnings, including the assistant quality rules (messages starting "quality:") that propose_draft enforces. Use it while building; use propose_draft when it has no errors.',
+    'Validate a draft with the real blueprint validator WITHOUT writing it: a complete draft you are building (the same shape as propose_draft), or, without draft, the blueprint\'s current draft. Returns the errors and warnings, including the assistant quality rules (messages starting "quality:") that propose_draft and edit_draft enforce.',
   input: DraftInput,
-  jsonSchema: (n) =>
+  jsonSchema: () =>
     obj(
       {
         blueprintId: str('The blueprint the draft is for (its channel resolves assets).'),
-        draft: draftJsonSchema(n),
+        draft: freeObject('A complete draft, as for propose_draft; omit for the current draft.'),
       },
-      ['blueprintId', 'draft'],
+      ['blueprintId'],
     ),
   async handler(ctx, deps, input) {
-    const parsed = parseDraft(input.draft);
+    const parsed =
+      input.draft === undefined
+        ? ({ ok: true, draft: (await currentDraft(ctx, deps, input.blueprintId)).draft } as const)
+        : parseDraft(input.draft);
     if (!parsed.ok)
       return { ok: false, error: 'The draft has the wrong shape.', issues: parsed.issues };
     const validation = await deps.blueprints.validateOnly(input.blueprintId, parsed.draft);

@@ -40,6 +40,8 @@ function deps(over: Partial<Record<keyof ToolDeps, unknown>> = {}): ToolDeps {
       update: vi.fn(async () => ({})),
       setArchived: vi.fn(async () => ({})),
       delete: vi.fn(async () => undefined),
+      trash: vi.fn(async () => undefined),
+      restore: vi.fn(async () => ({})),
     },
     runs: {
       get: vi.fn(async () => ({
@@ -451,15 +453,23 @@ describe('reviews and run controls', () => {
 });
 
 describe('channels, blueprints and versions', () => {
-  it('says what a channel delete takes with it', async () => {
+  it('says what a channel delete takes with it, and moves it to the trash (Undo restores it)', async () => {
     const d = deps();
     const { ctx, asked } = manual();
-    await runTool('delete_channel', { channelId: 'ch1' }, ctx, d);
+    const out = await runTool('delete_channel', { channelId: 'ch1' }, ctx, d);
     expect(asked[0]).toMatchObject({
       kind: 'destroy',
-      details: expect.arrayContaining([expect.stringContaining('2 blueprints, 9 runs')]),
+      details: expect.arrayContaining([
+        expect.stringContaining('2 blueprints, 9 runs'),
+        expect.stringContaining('Settings › Trash'),
+      ]),
     });
-    expect(d.channels.delete).toHaveBeenCalledWith('ch1');
+    expect(d.channels.trash).toHaveBeenCalledWith('ch1');
+    expect(d.channels.delete).not.toHaveBeenCalled();
+    expect(out).toMatchObject({
+      ok: true,
+      item: { type: 'change', payload: { kind: 'trash', target: 'channel', id: 'ch1' } },
+    });
   });
 
   it('creates a channel and a blueprint', async () => {

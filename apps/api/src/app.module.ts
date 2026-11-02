@@ -12,6 +12,7 @@ import { UpdateModule } from './update/update.module';
 import { PackageModule } from './package/package.module';
 import { SettingsPageModule } from './settings/settings-page.module';
 import { AssistantModule } from './assistant/assistant.module';
+import { TrashModule } from './trash/trash.module';
 import { LiveModule } from './live/live.module';
 import { NotificationModule } from './notification/notification.module';
 import { BlenderModule } from './blender/blender.module';
@@ -32,6 +33,7 @@ import { BlenderModule } from './blender/blender.module';
     BlenderModule,
     PackageModule,
     AssistantModule,
+    TrashModule,
     LiveModule,
     NotificationModule,
   ],

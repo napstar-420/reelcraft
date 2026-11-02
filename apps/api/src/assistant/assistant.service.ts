@@ -1221,6 +1221,7 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
     signal: AbortSignal,
   ): Promise<ApprovalDecision> {
     if (ctx.mode === 'auto') return { answer: 'yes' };
+    if (ctx.preApproved && request.kind !== 'destroy') return { answer: 'yes' };
     if (signal.aborted) return { answer: 'expired' };
     const payload: ApprovalPayload = {
       tool: request.tool,
@@ -1289,6 +1290,10 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
       },
     });
     if (dto.answer === 'yes_auto') await this.updateSession(sessionId, { mode: 'auto' });
+    if (dto.answer === 'yes_turn') {
+      const ctx = this.turnContexts.get(sessionId);
+      if (ctx) ctx.preApproved = true;
+    }
     pending.resolve(
       dto.answer === 'no' ? { answer: 'no', feedback: dto.feedback } : { answer: dto.answer },
     );
@@ -1352,6 +1357,20 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
           text: change.note.text,
           source: 'assistant',
         });
+      }
+      return this.updateItem(itemId, { state: 'undone' });
+    }
+    if (change.kind === 'trash' || change.kind === 'archive') {
+      if (change.kind === 'trash') {
+        if (change.target === 'channel') await this.toolDeps.channels.restore(change.id);
+        else await this.blueprints.restore(change.id);
+      } else if (change.target === 'channel') {
+        await this.toolDeps.channels.setArchived(change.id, !change.archived);
+      } else {
+        await this.blueprints.update(change.id, { archived: !change.archived });
+      }
+      if (change.target === 'blueprint') {
+        this.events.publish({ type: 'blueprint', blueprintId: change.id });
       }
       return this.updateItem(itemId, { state: 'undone' });
     }

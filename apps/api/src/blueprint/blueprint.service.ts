@@ -1,5 +1,5 @@
 import { ConflictException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { and, desc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm';
 import type {
   ConfigLayer,
   CreateBlueprintVersionDto,
@@ -80,6 +80,7 @@ export class BlueprintService {
         and(
           eq(blueprint.channelId, channelId),
           eq(blueprint.name, name),
+          isNull(blueprint.deletedAt),
           ...(exceptId ? [ne(blueprint.id, exceptId)] : []),
         ),
       )
@@ -101,7 +102,13 @@ export class BlueprintService {
     const [existing] = await this.db
       .select()
       .from(blueprint)
-      .where(and(eq(blueprint.channelId, channelId), eq(blueprint.name, name)))
+      .where(
+        and(
+          eq(blueprint.channelId, channelId),
+          eq(blueprint.name, name),
+          isNull(blueprint.deletedAt),
+        ),
+      )
       .limit(1);
     if (existing) return existing.id;
 
@@ -147,7 +154,7 @@ export class BlueprintService {
     const rows = await this.db
       .select({ blueprint, ...this.runStatsSelection() })
       .from(blueprint)
-      .where(eq(blueprint.channelId, channelId));
+      .where(and(eq(blueprint.channelId, channelId), isNull(blueprint.deletedAt)));
     return rows.map((r) => ({
       ...r.blueprint,
       runCount: r.runCount,
@@ -168,8 +175,75 @@ export class BlueprintService {
   /** Permanently deletes a blueprint with all its versions and runs (and
    * any blueprint-scoped characters). Refuses while one of its runs is still
    * in progress. Files are queued for the storage cleanup sweep. */
-  async delete(id: string): Promise<void> {
+  /** Moves a blueprint to the trash (restorable for 30 days). Refused while a run of it is in
+   * progress, like a delete. */
+  async trash(id: string): Promise<void> {
     await this.getBlueprint(id);
+    const versionIds = (
+      await this.db
+        .select({ id: blueprintVersion.id })
+        .from(blueprintVersion)
+        .where(eq(blueprintVersion.blueprintId, id))
+    ).map((v) => v.id);
+    if (versionIds.length) {
+      const open = await this.db
+        .select({ id: run.id })
+        .from(run)
+        .where(and(inArray(run.blueprintVersionId, versionIds), isNull(run.endedAt)));
+      if (open.length) {
+        throw new ConflictException(
+          `This blueprint has ${open.length} run(s) still in progress; cancel them or wait for them to finish first.`,
+        );
+      }
+    }
+    await this.db
+      .update(blueprint)
+      .set({ deletedAt: new Date().toISOString() })
+      .where(eq(blueprint.id, id));
+    this.logger.log({ blueprintId: id }, 'blueprint moved to the trash');
+  }
+
+  /** Brings a blueprint back. Its channel must not be in the trash; a name taken meanwhile gets
+   * " (restored)". */
+  async restore(id: string) {
+    const current = await this.getBlueprint(id, { includeTrashed: true });
+    const [ch] = await this.db
+      .select({ deletedAt: channel.deletedAt })
+      .from(channel)
+      .where(eq(channel.id, current.channelId))
+      .limit(1);
+    if (ch?.deletedAt) {
+      throw new ConflictException('Its channel is in the trash: restore the channel first.');
+    }
+    let name = current.name;
+    const taken = await this.assertNameFree(current.channelId, name, id).then(
+      () => false,
+      () => true,
+    );
+    if (taken) name = `${current.name} (restored)`.slice(0, 120);
+    await this.db.update(blueprint).set({ deletedAt: null, name }).where(eq(blueprint.id, id));
+    this.logger.log({ blueprintId: id }, 'blueprint restored from the trash');
+    return this.getBlueprint(id);
+  }
+
+  /** Blueprints in the trash on their own (not with their channel), newest first. */
+  async listTrashed() {
+    return this.db
+      .select({
+        id: blueprint.id,
+        name: blueprint.name,
+        channelId: blueprint.channelId,
+        channelName: channel.name,
+        deletedAt: blueprint.deletedAt,
+      })
+      .from(blueprint)
+      .innerJoin(channel, eq(channel.id, blueprint.channelId))
+      .where(and(isNotNull(blueprint.deletedAt), isNull(channel.deletedAt)))
+      .orderBy(desc(blueprint.deletedAt));
+  }
+
+  async delete(id: string): Promise<void> {
+    await this.getBlueprint(id, { includeTrashed: true });
     const versionIds = (
       await this.db
         .select({ id: blueprintVersion.id })
@@ -219,13 +293,18 @@ export class BlueprintService {
     this.logger.log({ blueprintId: id, runCount: runRows.length }, 'blueprint deleted');
   }
 
-  async getBlueprint(id: string) {
+  /** A blueprint in the trash (or in a channel in the trash) is not found unless
+   * `includeTrashed`. */
+  async getBlueprint(id: string, opts: { includeTrashed?: boolean } = {}) {
     const [row] = await this.db
-      .select({ blueprint, ...this.runStatsSelection() })
+      .select({ blueprint, ...this.runStatsSelection(), channelDeletedAt: channel.deletedAt })
       .from(blueprint)
+      .innerJoin(channel, eq(channel.id, blueprint.channelId))
       .where(eq(blueprint.id, id))
       .limit(1);
-    if (!row) throw new NotFoundException(`Blueprint ${id} not found`);
+    if (!row || ((row.blueprint.deletedAt || row.channelDeletedAt) && !opts.includeTrashed)) {
+      throw new NotFoundException(`Blueprint ${id} not found`);
+    }
     return { ...row.blueprint, runCount: row.runCount, latestPosterBlobId: row.latestPosterBlobId };
   }
 

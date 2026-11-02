@@ -109,15 +109,38 @@ export const NoteChangePayload = z.object({
 });
 export type NoteChangePayload = z.infer<typeof NoteChangePayload>;
 
+/** A channel or blueprint the assistant moved to the trash (Undo restores it). */
+export const TrashChangePayload = z.object({
+  kind: z.literal('trash'),
+  target: z.enum(['channel', 'blueprint']),
+  id: z.string(),
+  name: z.string(),
+});
+export type TrashChangePayload = z.infer<typeof TrashChangePayload>;
+
+/** A channel or blueprint the assistant archived or unarchived (Undo switches it back). */
+export const ArchiveChangePayload = z.object({
+  kind: z.literal('archive'),
+  target: z.enum(['channel', 'blueprint']),
+  id: z.string(),
+  name: z.string(),
+  /** The state it was set to. */
+  archived: z.boolean(),
+});
+export type ArchiveChangePayload = z.infer<typeof ArchiveChangePayload>;
+
 export const ChangePayload = z.discriminatedUnion('kind', [
   DraftChangePayload,
   MetadataChangePayload,
   NoteChangePayload,
+  TrashChangePayload,
+  ArchiveChangePayload,
 ]);
 export type ChangePayload = z.infer<typeof ChangePayload>;
 
 /** Manual mode: what the assistant wants to do, waiting for the user's decision. */
-export const ApprovalAnswer = z.enum(['yes', 'yes_auto', 'no']);
+/** yes_turn: yes to this and every other change in the rest of the turn (deletes still ask). */
+export const ApprovalAnswer = z.enum(['yes', 'yes_auto', 'yes_turn', 'no']);
 export type ApprovalAnswer = z.infer<typeof ApprovalAnswer>;
 
 export const ApprovalPayload = z.object({

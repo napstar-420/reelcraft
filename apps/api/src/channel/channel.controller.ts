@@ -49,8 +49,9 @@ export class ChannelController {
     return this.channels.setArchived(id, dto.archived);
   }
 
+  /** Moves the channel to the trash (Settings › Trash restores it for 30 days). */
   @Delete(':id')
   delete(@Param('id') id: string) {
-    return this.channels.delete(id);
+    return this.channels.trash(id);
   }
 }

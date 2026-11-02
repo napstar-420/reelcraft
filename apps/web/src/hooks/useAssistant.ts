@@ -310,7 +310,11 @@ export function useAssistant({
     onSuccess: (updated) => {
       store(updated);
       const change = payloadOf<ChangePayload>(updated);
-      toast.success(change.kind === 'note' ? 'Undone' : `Undone: ${change.summary}`);
+      toast.success(
+        change.kind === 'draft' || change.kind === 'metadata'
+          ? `Undone: ${change.summary}`
+          : 'Undone',
+      );
       for (const key of invalidationsFor(updated)) {
         void queryClient.invalidateQueries({ queryKey: key });
       }
