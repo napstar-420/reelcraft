@@ -17,6 +17,7 @@ import {
   character,
   channel,
   run,
+  assistantMemoryDoc,
 } from '../db/schema/index';
 import { deleteRunsCascade } from '../run/run-cascade';
 import { queueStorageOrphans } from '../artifact/storage-orphans';
@@ -207,6 +208,7 @@ export class BlueprintService {
         );
         await tx.delete(character).where(inArray(character.id, characterIds));
       }
+      await tx.delete(assistantMemoryDoc).where(eq(assistantMemoryDoc.blueprintId, id));
       await tx.update(blueprint).set({ currentVersionId: null }).where(eq(blueprint.id, id));
       await tx.delete(packageImport).where(eq(packageImport.blueprintId, id));
       await tx.delete(blueprintVersion).where(eq(blueprintVersion.blueprintId, id));

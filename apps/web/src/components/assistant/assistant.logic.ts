@@ -56,7 +56,9 @@ export function nextMode(mode: AssistantMode): AssistantMode {
  * ended refreshes the lists the assistant may have changed. */
 export function invalidationsFor(item: AssistantItemDto): Array<readonly unknown[]> {
   if (item.type === 'change') {
-    const { blueprintId } = payloadOf<ChangePayload>(item);
+    const change = payloadOf<ChangePayload>(item);
+    if (change.kind === 'note') return [['assistant-notes']];
+    const { blueprintId } = change;
     return [['blueprint', blueprintId], ['blueprint-versions', blueprintId], ['blueprints']];
   }
   if (item.type === 'turn_status' && item.state !== 'running') {
@@ -288,6 +290,14 @@ export function describeToolCall(call: ToolCallPayload, state: string | null): s
         return 'Changed a Character';
       case 'delete_character':
         return 'Deleted a Character';
+      case 'remember':
+        return 'Saved a note';
+      case 'forget':
+        return 'Removed a note';
+      case 'list_notes':
+        return 'Read the notes';
+      case 'recall':
+        return `Searched past chats for “${str(args.query) ?? ''}”`;
       case 'make_voice':
         return `Made the voice ${str(args.name) ?? ''}`.trim();
       case 'create_channel':

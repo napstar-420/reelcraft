@@ -11,6 +11,8 @@ import {
   channel,
   character,
   run,
+  assistantMemoryDoc,
+  assistantNote,
 } from '../db/schema/index';
 import { ulid } from '../common/ulid';
 import { queueStorageOrphans } from '../artifact/storage-orphans';
@@ -181,6 +183,16 @@ export class ChannelService {
       ).map((a) => a.blobId);
 
       await tx.delete(asset).where(eq(asset.channelId, id));
+      // The assistant's notes and memories about this channel and its blueprints.
+      await tx.delete(assistantNote).where(eq(assistantNote.channelId, id));
+      await tx
+        .delete(assistantMemoryDoc)
+        .where(
+          or(
+            eq(assistantMemoryDoc.channelId, id),
+            blueprintIds.length ? inArray(assistantMemoryDoc.blueprintId, blueprintIds) : undefined,
+          ),
+        );
       // Runs and everything under them; their files are queued for the
       // storage cleanup sweep (`blob.gc` deletes them after the retention period).
       const runCounts = await deleteRunsCascade(tx, runIds, 'channel_deleted');

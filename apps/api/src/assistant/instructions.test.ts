@@ -58,6 +58,7 @@ describe('assistant instructions', () => {
       'How you work on a blueprint',
       'Build quality: you know Reelcraft better than the user',
       'The Library, Characters and voices',
+      'What you remember',
       'Recreating a video',
       'Links and the browser',
       'Channels and blueprints',

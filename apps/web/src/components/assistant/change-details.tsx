@@ -30,6 +30,7 @@ export function ChangeDetails({
   change: ChangePayload;
   open?: boolean;
 }) {
+  if (change.kind === 'note') return null;
   const [open, setOpen] = useState(initiallyOpen);
   if (change.kind === 'metadata') {
     const { changes, previous } = change;

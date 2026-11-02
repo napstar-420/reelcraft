@@ -67,6 +67,7 @@ function deps(over: Partial<Record<keyof ToolDeps, unknown>> = {}): ToolDeps {
         durationSec: 10,
       })),
     },
+    knowledge: { upsertDoc: vi.fn(async () => 'doc') },
     ...over,
   } as unknown as ToolDeps;
 }

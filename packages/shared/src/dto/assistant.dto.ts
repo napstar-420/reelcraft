@@ -95,9 +95,24 @@ export const MetadataChangePayload = z.object({
 });
 export type MetadataChangePayload = z.infer<typeof MetadataChangePayload>;
 
+/** A note the assistant saved (remember) or removed (forget). */
+export const NoteChangePayload = z.object({
+  kind: z.literal('note'),
+  action: z.enum(['added', 'removed']),
+  note: z.object({
+    id: z.string(),
+    scope: z.enum(['global', 'channel']),
+    channelId: z.string().nullable(),
+    channelName: z.string().nullable(),
+    text: z.string(),
+  }),
+});
+export type NoteChangePayload = z.infer<typeof NoteChangePayload>;
+
 export const ChangePayload = z.discriminatedUnion('kind', [
   DraftChangePayload,
   MetadataChangePayload,
+  NoteChangePayload,
 ]);
 export type ChangePayload = z.infer<typeof ChangePayload>;
 
@@ -424,3 +439,40 @@ export type AssistantSettingsDto = z.infer<typeof AssistantSettingsDto>;
 
 export const UpdateAssistantSettingsDto = AssistantSettingsDto.partial();
 export type UpdateAssistantSettingsDto = z.infer<typeof UpdateAssistantSettingsDto>;
+
+// ---- memory ------------------------------------------------------------------------------
+
+/** The most notes per scope (global, or one channel), and the longest note. */
+export const MAX_ASSISTANT_NOTES = 50;
+export const MAX_ASSISTANT_NOTE_CHARS = 500;
+
+export const AssistantNoteScope = z.enum(['global', 'channel']);
+export type AssistantNoteScope = z.infer<typeof AssistantNoteScope>;
+
+/** Something the assistant always knows: global, or for one channel. */
+export const AssistantNoteDto = z.object({
+  id: z.string(),
+  scope: AssistantNoteScope,
+  channelId: z.string().nullable(),
+  text: z.string(),
+  source: z.enum(['user', 'assistant']),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+export type AssistantNoteDto = z.infer<typeof AssistantNoteDto>;
+
+export const CreateAssistantNoteDto = z
+  .object({
+    scope: AssistantNoteScope,
+    channelId: z.string().min(1).optional(),
+    text: z.string().trim().min(1).max(MAX_ASSISTANT_NOTE_CHARS),
+  })
+  .refine((v) => (v.scope === 'channel') === Boolean(v.channelId), {
+    message: 'A channel note needs channelId; a global note has none.',
+  });
+export type CreateAssistantNoteDto = z.infer<typeof CreateAssistantNoteDto>;
+
+export const UpdateAssistantNoteDto = z.object({
+  text: z.string().trim().min(1).max(MAX_ASSISTANT_NOTE_CHARS),
+});
+export type UpdateAssistantNoteDto = z.infer<typeof UpdateAssistantNoteDto>;

@@ -31,12 +31,13 @@ open, so you can fix it and try again.
 
 Select a channel's card to open its page. Its tabs show how many of each item it has:
 
-| Tab            | What's there                                                                     |
-| -------------- | -------------------------------------------------------------------------------- |
-| **Blueprints** | The recipes for your videos. See [Blueprints](../blueprints/blueprints.md).      |
-| **Characters** | People or mascots that appear in your videos. See [Characters](./characters.md). |
-| **Assets**     | Images, video and audio you upload to reuse. See [Assets](./assets.md).          |
-| **Runs**       | Every run of this channel's blueprints. See [Runs list](../runs/runs-list.md).   |
+| Tab                 | What's there                                                                                     |
+| ------------------- | ------------------------------------------------------------------------------------------------ |
+| **Blueprints**      | The recipes for your videos. See [Blueprints](../blueprints/blueprints.md).                      |
+| **Characters**      | People or mascots that appear in your videos. See [Characters](./characters.md).                 |
+| **Assets**          | Images, video and audio you upload to reuse. See [Assets](./assets.md).                          |
+| **Runs**            | Every run of this channel's blueprints. See [Runs list](../runs/runs-list.md).                   |
+| **Assistant notes** | What the [assistant](../blueprints/assistant.md#what-it-remembers) remembers about this channel. |
 
 ![A channel's page, with the Blueprints, Characters, Assets and Runs tabs](/img/usage/channel-page.png)
 
@@ -62,7 +63,8 @@ menu.
 ## Delete a channel
 
 Deleting a channel permanently removes it and **everything in it**: every blueprint and version,
-every run and its outputs, every character and every asset. It can't be undone.
+every run and its outputs, every character and every asset, and what the assistant remembers about
+it. It can't be undone.
 
 1. Open **More** on the channel page, or **⋯** on its card, and select **Delete**.
 2. Type the channel's name exactly as shown.

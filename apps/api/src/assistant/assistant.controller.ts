@@ -1,6 +1,19 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Put } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Param,
+  Patch,
+  Post,
+  Put,
+  Query,
+} from '@nestjs/common';
 import {
   CreateAssistantAttachmentDto,
+  CreateAssistantNoteDto,
+  UpdateAssistantNoteDto,
   CreateAssistantSessionDto,
   DecideApprovalDto,
   DecidePlanDto,
@@ -12,6 +25,7 @@ import {
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { AssistantService } from './assistant.service';
 import { AttachmentService } from './attachments/attachment.service';
+import { AssistantMemoryService } from './memory/assistant-memory.service';
 import { Owner } from '../common/owner.decorator';
 
 @Controller()
@@ -19,7 +33,34 @@ export class AssistantController {
   constructor(
     private readonly assistant: AssistantService,
     private readonly attachments: AttachmentService,
+    private readonly memory: AssistantMemoryService,
   ) {}
+
+  @Get('assistant/notes')
+  notes(@Query('channelId') channelId?: string) {
+    return channelId
+      ? this.memory.listNotes({ scope: 'channel', channelId })
+      : this.memory.listNotes({ scope: 'global' });
+  }
+
+  @Post('assistant/notes')
+  createNote(@Body(new ZodValidationPipe(CreateAssistantNoteDto)) dto: CreateAssistantNoteDto) {
+    return this.memory.createNote({ ...dto, source: 'user' });
+  }
+
+  @Patch('assistant/notes/:id')
+  updateNote(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(UpdateAssistantNoteDto)) dto: UpdateAssistantNoteDto,
+  ) {
+    return this.memory.updateNote(id, dto.text);
+  }
+
+  @Delete('assistant/notes/:id')
+  @HttpCode(204)
+  async deleteNote(@Param('id') id: string) {
+    await this.memory.deleteNote(id);
+  }
 
   @Post('assistant/attachments/upload')
   requestAttachmentUpload(

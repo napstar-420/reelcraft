@@ -57,6 +57,47 @@ export function ChangeCard({
 }) {
   const change = payloadOf<ChangePayload>(item);
   const undone = item.state === 'undone';
+  if (change.kind === 'note') {
+    return (
+      <Card
+        icon={<Check className="size-3.5 text-ok" />}
+        label={
+          change.action === 'added'
+            ? change.note.channelName
+              ? `Remembered for “${change.note.channelName}”`
+              : 'Remembered everywhere'
+            : 'Forgot a note'
+        }
+      >
+        <p className={cn('text-[13px]', undone && 'text-muted-foreground line-through')}>
+          {change.note.text}
+        </p>
+        <div className="mt-2 flex items-center gap-2">
+          <Button asChild size="xs" variant="outline">
+            <Link
+              to={
+                change.note.channelId ? `/channels/${change.note.channelId}` : '/settings/assistant'
+              }
+            >
+              See notes
+            </Link>
+          </Button>
+          {undone ? (
+            <span className="text-xs text-muted-foreground">Undone</span>
+          ) : (
+            <Button
+              size="xs"
+              variant="ghost"
+              disabled={assistant.undoing === item.id}
+              onClick={() => assistant.undoChange(item)}
+            >
+              <Undo2 /> Undo
+            </Button>
+          )}
+        </div>
+      </Card>
+    );
+  }
   return (
     <Card icon={<Check className="size-3.5 text-ok" />} label={`Changed “${change.blueprintName}”`}>
       <p className={cn('mb-1.5 text-[13px]', undone && 'text-muted-foreground line-through')}>

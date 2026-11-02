@@ -8,6 +8,7 @@ import type { SettingsDto } from '@reelcraft/shared';
 import { api } from '@/api/client';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Input } from '@/components/ui/input';
+import { AssistantNotes } from '@/components/assistant/assistant-notes';
 import { MODES } from '@/components/assistant/assistant.logic';
 import { ASSISTANT_SETTINGS_KEY } from '@/hooks/useAssistant';
 import { AboutCard } from '@/components/settings/about-card';
@@ -44,6 +45,7 @@ const SECTIONS: Section[] = [
         <ClaudeCard />
         <CodexCard />
         <AssistantDefaults />
+        <AssistantNotes />
       </>
     ),
   },

@@ -56,6 +56,7 @@ import { AttachmentService } from './attachments/attachment.service';
 import { FileCopyService } from './files/file-copy.service';
 import { LinkImportService } from './files/link-import.service';
 import { BrowserService } from './browser/browser.service';
+import { AssistantMemoryService } from './memory/assistant-memory.service';
 import { RunInputService } from '../run/run-input.service';
 import { VoiceStudioAdapter } from '../provider/voicestudio/voicestudio.adapter';
 import { describeAttachment } from './attachments/attachment.logic';
@@ -158,6 +159,7 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
     voices: VoiceStudioAdapter,
     links: LinkImportService,
     private readonly browser: BrowserService,
+    private readonly knowledge: AssistantMemoryService,
   ) {
     this.toolDeps = {
       blueprints,
@@ -187,6 +189,7 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
       voices,
       links,
       browser,
+      knowledge,
       engineLayer: () => engineDefaults(config),
       blueprintChanged: (blueprintId) => this.events.publish({ type: 'blueprint', blueprintId }),
     };
@@ -383,6 +386,7 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
     await this.db.transaction(async (tx) => {
       await this.watches.forgetSession(tx, id);
       await this.attachments.deleteForSession(tx, id);
+      await this.knowledge.deleteForSession(tx, id);
       await tx.delete(assistantItem).where(eq(assistantItem.sessionId, id));
       await tx.delete(assistantSession).where(eq(assistantSession.id, id));
     });
@@ -740,10 +744,12 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
     let error: string | undefined;
     try {
       const where = await this.describeContext(dto.context);
+      const channelId = await this.contextChannel(dto.context);
+      const notes = await this.knowledge.notesBlock(channelId).catch(() => null);
       const images = await this.attachedImages(attachments, ctx);
       await agent.runTurn({
         sessionId: session.externalSessionId,
-        text: `${text}${attachmentsNote(attachments, images.length)}\n\n${contextNote(ctx.mode, where)}`,
+        text: `${text}${attachmentsNote(attachments, images.length)}\n\n${contextNote(ctx.mode, where)}${notes ? `\n<notes>\nWhat the user asked you to remember (follow these; forget removes one):\n${notes}\n</notes>` : ''}`,
         ...(images.length && { images }),
         model: dto.model,
         effort: dto.effort,
@@ -801,6 +807,62 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
       // the chat (or its blueprint) was deleted while the turn ran
       this.logger.warn({ err: persistError, sessionId: session.id }, 'turn result not stored');
     }
+    await this.rememberTurn(session.id, turnId, text, dto.context).catch((memoryError: unknown) =>
+      this.logger.warn({ err: memoryError, sessionId: session.id }, 'turn not remembered'),
+    );
+  }
+
+  /** Adds what was said in a turn to the chat's memory, for recall in later chats. */
+  private async rememberTurn(
+    sessionId: string,
+    turnId: string,
+    userText: string,
+    context: AssistantPageContext | undefined,
+  ): Promise<void> {
+    const replies = await this.db
+      .select({ payload: assistantItem.payload })
+      .from(assistantItem)
+      .where(
+        and(
+          eq(assistantItem.sessionId, sessionId),
+          eq(assistantItem.turnId, turnId),
+          eq(assistantItem.type, 'agent_message'),
+        ),
+      )
+      .orderBy(asc(assistantItem.seq));
+    const reply = replies
+      .map((r) => (r.payload as { text?: string }).text ?? '')
+      .filter(Boolean)
+      .join('\n');
+    if (!userText.trim() && !reply) return;
+    const [row] = await this.db
+      .select({ title: assistantSession.title })
+      .from(assistantSession)
+      .where(eq(assistantSession.id, sessionId))
+      .limit(1);
+    if (!row) return;
+    await this.knowledge.appendChat({
+      sessionId,
+      title: row.title ?? 'Chat',
+      entry: `User: ${userText.slice(0, 2000)}\nAssistant: ${reply.slice(0, 4000)}`,
+      channelId: await this.contextChannel(context),
+      blueprintId: context?.blueprintId ?? null,
+    });
+  }
+
+  /** The channel a page is about: its own, its blueprint's or its run's. */
+  private async contextChannel(context: AssistantPageContext | undefined): Promise<string | null> {
+    if (!context) return null;
+    if (context.channelId) return context.channelId;
+    if (context.blueprintId) {
+      const blueprint = await this.blueprints.getBlueprint(context.blueprintId).catch(() => null);
+      if (blueprint) return blueprint.channelId;
+    }
+    if (context.runId) {
+      const run = await this.toolDeps.runControl.get(context.runId).catch(() => null);
+      if (run) return (run as { channelId?: string }).channelId ?? null;
+    }
+    return null;
   }
 
   private readonly logQueueError = (error: unknown): void => {
@@ -987,6 +1049,19 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
     const row = await this.requireItem(sessionId, itemId, 'change');
     if (row.state === 'undone') return this.toItemDto(row);
     const change = row.payload as ChangePayload;
+    if (change.kind === 'note') {
+      if (change.action === 'added') await this.knowledge.deleteNote(change.note.id);
+      else {
+        await this.knowledge.createNote({
+          id: change.note.id,
+          scope: change.note.scope,
+          channelId: change.note.channelId,
+          text: change.note.text,
+          source: 'assistant',
+        });
+      }
+      return this.updateItem(itemId, { state: 'undone' });
+    }
     const blueprint = await this.blueprints.getBlueprint(change.blueprintId);
     if (change.kind === 'draft') {
       const working =

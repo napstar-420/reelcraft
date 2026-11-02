@@ -140,6 +140,26 @@ and answers with a link to the page.
 When you ask for something Reelcraft can't do, it says so instead of faking it. For example,
 Reelcraft can't publish a video to a platform.
 
+## What it remembers
+
+Each chat starts fresh, but the assistant keeps **notes** between chats: your preferences, your
+corrections, and things that went wrong and why. Tell it to remember something ("always make these
+9:16", "my host is Mia, not Maya") and it saves a note. The chat shows **Remembered for "…"** with
+**Undo**. Notes for a channel apply whenever a chat is about that channel; other notes apply in
+every chat.
+
+You can read, edit, add and remove notes yourself:
+
+- notes for every chat: **Settings › Assistant**, under **What the assistant remembers**;
+- a channel's notes: the channel's **Assistant notes** tab.
+
+Notes the assistant saved show a sparkle. Each note can be up to 500 characters, with up to 50 notes
+for every chat and 50 for each channel.
+
+The assistant can also search your earlier chats, video breakdowns and goal reports when you refer
+to past work ("make it like the space reel last week"). A chat's memory is deleted with the chat,
+and a channel's notes and memories are deleted with the channel.
+
 ## Watching runs
 
 The assistant watches the runs it starts or sets going again. When one fails, waits for a review or

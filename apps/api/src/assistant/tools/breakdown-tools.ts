@@ -159,10 +159,30 @@ const saveBreakdown: AssistantTool<z.infer<typeof SaveBreakdownInput>> = {
       },
       ['source', 'breakdown'],
     ),
-  async handler(_ctx, deps, input): Promise<ToolOutcome> {
+  async handler(ctx, deps, input): Promise<ToolOutcome> {
     const resolved = await resolveMedia(deps, input.source, ['video']);
     if (!resolved.ok) return resolved;
     const { source } = input;
+    const b = input.breakdown;
+    await deps.knowledge
+      .upsertDoc({
+        kind: 'breakdown',
+        sessionId: ctx.sessionId,
+        title: b.title,
+        body: [
+          b.summary,
+          `${b.format.aspectRatio}, ${b.format.durationSec}s, ${b.pacing.shots} shots`,
+          ...b.sections.map((s) => `${s.label}: ${s.purpose}`),
+          ...b.shots.map((s) => [s.visual, s.onScreenText, s.camera].filter(Boolean).join(' · ')),
+          b.narration.voice ?? '',
+          b.narration.script ?? '',
+          b.music.description ?? '',
+          b.captions.style ?? '',
+        ]
+          .filter(Boolean)
+          .join('\n'),
+      })
+      .catch(() => undefined);
     return {
       ok: true,
       result: {

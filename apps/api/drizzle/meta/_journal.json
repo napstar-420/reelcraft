@@ -323,6 +323,13 @@
       "when": 1793578329573,
       "tag": "0045_assistant_attachments",
       "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1793593316177,
+      "tag": "0046_assistant_memory",
+      "breakpoints": true
     }
   ]
 }

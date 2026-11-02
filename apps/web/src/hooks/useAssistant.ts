@@ -310,7 +310,10 @@ export function useAssistant({
     onSuccess: (updated) => {
       store(updated);
       const change = payloadOf<ChangePayload>(updated);
-      toast.success(`Undone: ${change.summary}`);
+      toast.success(change.kind === 'note' ? 'Undone' : `Undone: ${change.summary}`);
+      for (const key of invalidationsFor(updated)) {
+        void queryClient.invalidateQueries({ queryKey: key });
+      }
     },
     onError: (error) => toast.error(apiErrorMessage(error, 'Could not undo this change.')),
   });

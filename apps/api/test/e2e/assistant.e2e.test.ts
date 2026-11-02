@@ -1281,6 +1281,92 @@ describe('assistant (e2e)', () => {
     });
   });
 
+  it('remembers a note, gives it with later messages, undoes it, and recalls earlier chats', async () => {
+    const sid = await newSession('auto');
+    let noteItem = '';
+    useScript([
+      [
+        {
+          call: 'remember',
+          args: { scope: 'channel', channelId, text: 'Videos for this channel are always 9:16' },
+          expect: (r) => expect(r.ok).toBe(true),
+        },
+        { say: 'Saved: always 9:16 for this channel.' },
+      ],
+      [{ say: 'Noted.' }],
+    ]);
+    await turn(sid, {
+      text: 'Remember that this channel is always vertical, about otter documentaries',
+      context: { page: 'channel', channelId },
+    });
+    let session = await waitIdle(sid);
+    const [change] = ofType(session, 'change');
+    expect(change).toMatchObject({
+      state: 'applied',
+      payload: { kind: 'note', action: 'added', note: { scope: 'channel', channelId } },
+    });
+    noteItem = change!.id;
+
+    await turn(sid, { text: 'Make the next one', context: { page: 'channel', channelId } });
+    session = await waitIdle(sid);
+    expect(agent.turns[1]!.text).toContain('<notes>');
+    expect(agent.turns[1]!.text).toContain('Videos for this channel are always 9:16');
+
+    // the notes API shows it, Undo removes it
+    const listed = await call<Array<{ text: string }>>(`/assistant/notes?channelId=${channelId}`);
+    expect(listed.body.map((n) => n.text)).toContain('Videos for this channel are always 9:16');
+    expect(
+      (await call(`/assistant/sessions/${sid}/changes/${noteItem}/undo`, { method: 'POST' }))
+        .status,
+    ).toBe(201);
+    const after = await call<Array<{ text: string }>>(`/assistant/notes?channelId=${channelId}`);
+    expect(after.body.map((n) => n.text)).not.toContain('Videos for this channel are always 9:16');
+
+    // a later chat can find what this one said
+    const other = await newSession('auto');
+    useScript([
+      [
+        {
+          call: 'recall',
+          args: { query: 'otter documentaries' },
+          expect: (r) => {
+            const result = JSON.parse(r.text) as {
+              results: Array<{ kind: string; sessionId: string; snippet: string }>;
+            };
+            expect(result.results[0]).toMatchObject({ kind: 'chat', sessionId: sid });
+            expect(result.results[0]!.snippet).toContain('«otter»');
+          },
+        },
+        { say: 'Found it.' },
+      ],
+    ]);
+    await turn(other, { text: 'What did we say about otters?' });
+    const found = await waitIdle(other);
+    expect(ofType(found, 'tool_call')[0]!.payload).toMatchObject({ tool: 'recall', ok: true });
+
+    // global notes through the API
+    const created = await call<{ id: string }>('/assistant/notes', {
+      method: 'POST',
+      body: { scope: 'global', text: 'Keep runs under $2' },
+    });
+    expect(created.status).toBe(201);
+    expect(
+      (
+        await call(`/assistant/notes/${created.body.id}`, {
+          method: 'PATCH',
+          body: { text: 'Keep runs under $3' },
+        })
+      ).status,
+    ).toBe(200);
+    expect(
+      (await call('/assistant/notes', { method: 'POST', body: { scope: 'channel', text: 'x' } }))
+        .status,
+    ).toBe(400);
+    expect((await call(`/assistant/notes/${created.body.id}`, { method: 'DELETE' })).status).toBe(
+      204,
+    );
+  });
+
   it('asks questions, then continues with the answers as the next turn', async () => {
     let writeAfterAsk: unknown;
     useScript([

@@ -17,6 +17,8 @@ import {
   assistantItem,
   assistantSession,
   assistantWatch,
+  assistantMemoryDoc,
+  assistantNote,
   blob,
   blueprint,
   blueprintVersion,
@@ -87,6 +89,22 @@ async function seedDraftRender(testDb: TestDb, runId: string): Promise<void> {
 /** A chat watching a run, so the cascade has a watch to delete with the run. */
 async function seedWatch(testDb: TestDb, sessionId: string, runId: string): Promise<void> {
   await testDb.db.insert(assistantWatch).values({ id: ulid(), sessionId, runId });
+}
+
+/** The assistant's memories about a blueprint and its channel, and a channel note. */
+async function seedMemories(testDb: TestDb, channelId: string, blueprintId: string) {
+  const ids = { note: ulid(), channelDoc: ulid(), blueprintDoc: ulid() };
+  await testDb.db.insert(assistantNote).values({
+    id: ids.note,
+    scope: 'channel',
+    channelId,
+    text: 'Always 9:16',
+  });
+  await testDb.db.insert(assistantMemoryDoc).values([
+    { id: ids.channelDoc, kind: 'chat', channelId, title: 'A chat', body: 'about the channel' },
+    { id: ids.blueprintDoc, kind: 'breakdown', blueprintId, title: 'A breakdown', body: 'shots' },
+  ]);
+  return ids;
 }
 
 /** A chat with one item, to check deleting its blueprint leaves the chat alone. */
@@ -236,6 +254,7 @@ describe('channel delete cascade (e2e)', () => {
       contentHash: 'hash',
     });
     const chatId = await seedAssistantChat(testDb, blueprintId);
+    const memories = await seedMemories(testDb, channel.id, blueprintId);
 
     // An open (created, not finished) run blocks the delete.
     const open = await runs.create({
@@ -272,6 +291,16 @@ describe('channel delete cascade (e2e)', () => {
     expect((await blueprints.update(blueprintId, { archived: false })).archived).toBe(false);
 
     await blueprints.delete(blueprintId);
+    // a memory about the deleted blueprint goes with it; the channel's note and memory stay
+    expect(
+      await testDb.db
+        .select()
+        .from(assistantMemoryDoc)
+        .where(eq(assistantMemoryDoc.id, memories.blueprintDoc)),
+    ).toHaveLength(0);
+    expect(
+      await testDb.db.select().from(assistantNote).where(eq(assistantNote.id, memories.note)),
+    ).toHaveLength(1);
 
     await expect(blueprints.getBlueprint(blueprintId)).rejects.toThrow(/not found/);
     expect(
@@ -353,6 +382,7 @@ describe('channel delete cascade (e2e)', () => {
       contentHash: 'hash',
     });
     const chatId = await seedAssistantChat(testDb, blueprintId);
+    const memories = await seedMemories(testDb, channel.id, blueprintId);
 
     const createdCharacter = await characters.create(channel.id, {
       name: 'Cascade Character',
@@ -422,6 +452,15 @@ describe('channel delete cascade (e2e)', () => {
     expect(runBlobKeys.length).toBeGreaterThan(0);
 
     await channels.delete(channel.id);
+    expect(
+      await testDb.db.select().from(assistantNote).where(eq(assistantNote.id, memories.note)),
+    ).toHaveLength(0);
+    expect(
+      await testDb.db
+        .select()
+        .from(assistantMemoryDoc)
+        .where(inArray(assistantMemoryDoc.id, [memories.channelDoc, memories.blueprintDoc])),
+    ).toHaveLength(0);
 
     await expect(channels.get(channel.id)).rejects.toThrow();
 

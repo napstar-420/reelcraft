@@ -1,4 +1,6 @@
 import type {
+  AssistantNoteDto,
+  CreateAssistantNoteDto,
   AssistantAttachmentDto,
   CreateAssistantAttachmentDto,
   RequestAssistantAttachmentUploadResultDto,
@@ -773,6 +775,19 @@ export const api = {
     }),
   deleteAssistantSession: (sessionId: string) =>
     request<void>(`/assistant/sessions/${sessionId}`, { method: 'DELETE' }),
+  listAssistantNotes: (channelId?: string) =>
+    request<AssistantNoteDto[]>(
+      `/assistant/notes${channelId ? `?channelId=${encodeURIComponent(channelId)}` : ''}`,
+    ),
+  createAssistantNote: (dto: CreateAssistantNoteDto) =>
+    request<AssistantNoteDto>('/assistant/notes', { method: 'POST', body: JSON.stringify(dto) }),
+  updateAssistantNote: (id: string, text: string) =>
+    request<AssistantNoteDto>(`/assistant/notes/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ text }),
+    }),
+  deleteAssistantNote: (id: string) =>
+    request<void>(`/assistant/notes/${id}`, { method: 'DELETE' }),
   requestAssistantAttachmentUpload: (ext: string) =>
     request<RequestAssistantAttachmentUploadResultDto>('/assistant/attachments/upload', {
       method: 'POST',
