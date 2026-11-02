@@ -10,7 +10,7 @@ creates a version. See [Versions](../blueprints/versions.md).
 Production runs of a saved version start from the blueprints page and never show on the canvas. See
 [Starting a run](./starting-a-run.md).
 
-![Canvas toolbar, stage cards and Run tab showing six saved Motion Planning items](/img/usage/unified-canvas-runs.png)
+![The Test runs panel on the canvas: the latest test run, its stages and its output](/img/usage/unified-canvas-runs.png)
 
 ## The run buttons
 

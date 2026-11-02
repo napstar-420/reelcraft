@@ -27,6 +27,8 @@ The assistant knows what you're looking at. The box above the message field show
 "this stage" in your message mean that one. Select **✕** on it to send a message about nothing in
 particular.
 
+![The assistant on a run page, with the run and stage it is looking at](/img/usage/assistant-dock.png)
+
 Type your message and press **Enter** (**Shift + Enter** starts a new line). Messages can contain up
 to 64,000 characters.
 
