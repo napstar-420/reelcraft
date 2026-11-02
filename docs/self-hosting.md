@@ -77,6 +77,10 @@ the release-please PR for 0.3.0 (Settings and the guide's in-app links) is #51.
   is needed, and stops it after 10 idle minutes. The service exits when its stdin closes, so it never outlives
   the API. `/data/qwen-tts` is left out of the documented backups. A saved service address (or `QWEN_TTS_URL`)
   turns all of this off: Reelcraft then only talks to a service the user runs.
+- **Links for the assistant**: the image has a pinned standalone `yt-dlp` (`YT_DLP_VERSION`, checked against
+  the release's `SHA2-256SUMS`). `import_from_link` uses it for video pages and a plain HTTP download for
+  direct file links, after refusing private, loopback and link-local addresses. An app bundle on an older
+  image without `yt-dlp` still imports direct file links and says page links need a newer image.
 - **VoiceStudio** (ADR 0018): a voice app the user installs and runs; the image has nothing of it. The API
   reaches it at the saved address, else `VOICESTUDIO_URL`, else `http://host.docker.internal:3900` inside the
   container (`/.dockerenv`) and `http://127.0.0.1:3900` outside, sending `VOICESTUDIO_API_KEY` (or the key saved

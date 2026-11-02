@@ -133,6 +133,8 @@ function makeDeps(overrides: Partial<ToolDeps> = {}): ToolDeps {
     files: {} as never,
     runInputs: {} as never,
     voices: {} as never,
+    links: {} as never,
+    browser: {} as never,
     ...overrides,
   };
 }
@@ -149,6 +151,11 @@ describe('tool registry', () => {
         'archive_blueprint',
         'archive_channel',
         'ask_user',
+        'browser_act',
+        'browser_close',
+        'browser_look',
+        'browser_media',
+        'browser_open',
         'cancel_run',
         'create_blueprint',
         'create_channel',
@@ -185,6 +192,7 @@ describe('tool registry', () => {
         'get_stage',
         'get_stages',
         'get_version',
+        'import_from_link',
         'list_blueprints',
         'list_capabilities',
         'list_channels',
@@ -334,6 +342,12 @@ describe('JSON Schemas stay in sync with the Zod inputs (drift guard)', () => {
       primary: 'new:0',
     },
     delete_character: { characterId: 'c1' },
+    import_from_link: { url: 'https://example.com/a.mp4' },
+    browser_open: { url: 'https://example.com' },
+    browser_look: { pageId: 3, scroll: 'down' },
+    browser_act: { pageId: 3, action: 'type', target: 'Search', value: 'otters' },
+    browser_media: { pageId: 3 },
+    browser_close: { pageId: 3 },
     make_voice: {
       source: { attachmentId: 'a1' },
       name: 'Host',
@@ -1219,6 +1233,134 @@ describe('media sources: attachments', () => {
     expect(await runTool('view_media', { source: {} }, ctx(), d)).toMatchObject({ ok: false });
     expect(await runTool('view_media', { source: { stageKey: 'x' } }, ctx(), d)).toMatchObject({
       ok: false,
+    });
+  });
+});
+
+describe('links and the browser', () => {
+  const view = {
+    title: 'Otters',
+    url: 'https://example.com/otters',
+    text: 'All about otters',
+    textLength: 16,
+    links: [{ text: 'Video', href: 'https://example.com/v' }],
+    scrollY: 0,
+    pageHeight: 2000,
+    viewportHeight: 800,
+    screenshot: 'SHOT',
+  };
+  const browserDeps = (over: Record<string, unknown> = {}) => {
+    const owned = new Set<number>();
+    return makeDeps({
+      browser: {
+        unavailableReason: vi.fn(async () => null),
+        ownsPage: (_s: string, id: number) => owned.has(id),
+        openTabs: () => [...owned],
+        open: vi.fn(async () => {
+          owned.add(7);
+          return { pageId: 7, view };
+        }),
+        look: vi.fn(async () => view),
+        act: vi.fn(async () => ({ done: true })),
+        media: vi.fn(async () => ({
+          pageUrl: view.url,
+          videos: ['https://cdn/x.mp4'],
+          audios: [],
+          images: [],
+        })),
+        close: vi.fn(async () => undefined),
+        ...over,
+      } as never,
+      links: {
+        import: vi.fn(async () => ({
+          id: 'att9',
+          name: 'clip.mp4',
+          kind: 'video',
+          mime: 'video/mp4',
+          width: 1080,
+          height: 1920,
+          durationSec: 12,
+        })),
+      } as never,
+    });
+  };
+
+  it('opens a page with its text, links and a screenshot, and only drives its own tabs', async () => {
+    const d = browserDeps();
+    const c = ctx();
+    const opened = await runTool('browser_open', { url: 'https://example.com/otters' }, c, d);
+    expect(opened).toMatchObject({
+      ok: true,
+      result: { pageId: 7, title: 'Otters', links: [{ text: 'Video' }] },
+      images: [{ base64: 'SHOT' }],
+    });
+    expect(c.imagesShown).toBe(1);
+    expect(await runTool('browser_look', { pageId: 7, scroll: 'down' }, c, d)).toMatchObject({
+      ok: true,
+    });
+    expect(d.browser.look).toHaveBeenCalledWith(7, 'down');
+    const foreign = await runTool('browser_look', { pageId: 99 }, c, d);
+    expect(foreign).toMatchObject({ ok: false });
+    expect((foreign as { error: string }).error).toContain('not a tab this chat opened');
+    expect(await runTool('browser_media', { pageId: 7 }, c, d)).toMatchObject({
+      ok: true,
+      result: { videos: ['https://cdn/x.mp4'] },
+    });
+  });
+
+  it('says when the browser is not connected', async () => {
+    const d = browserDeps({ unavailableReason: vi.fn(async () => 'Neo is off') });
+    expect(await runTool('browser_open', { url: 'https://example.com' }, ctx(), d)).toMatchObject({
+      ok: false,
+      error: 'Neo is off',
+    });
+  });
+
+  it('asks before acting in the browser in Manual mode, and checks the action', async () => {
+    const d = browserDeps();
+    await runTool('browser_open', { url: 'https://example.com' }, ctx(), d);
+    const asked: string[] = [];
+    const manual = newTurnContext({
+      mode: 'manual',
+      confirm: async (r) => (asked.push(r.title), { answer: 'yes' }),
+    });
+    const out = await runTool(
+      'browser_act',
+      { pageId: 7, action: 'type', target: 'Search', value: 'otters' },
+      manual,
+      d,
+    );
+    expect(out).toMatchObject({ ok: true });
+    expect(asked).toEqual(['Type into "Search" in the browser']);
+    expect(d.browser.act).toHaveBeenCalledWith(7, 'type', 'Search', 'otters');
+    expect(
+      await runTool('browser_act', { pageId: 7, action: 'press', value: 'F13' }, ctx(), d),
+    ).toMatchObject({ ok: false });
+    expect(await runTool('browser_act', { pageId: 7, action: 'click' }, ctx(), d)).toMatchObject({
+      ok: false,
+    });
+    expect(
+      await runTool(
+        'browser_act',
+        { pageId: 7, action: 'type', target: 'x', value: 'y' },
+        newTurnContext({ mode: 'plan' }),
+        d,
+      ),
+    ).toMatchObject({ ok: false });
+  });
+
+  it('imports a link into this chat', async () => {
+    const d = browserDeps();
+    const c = { ...ctx(), sessionId: 'chat-1' };
+    const out = await runTool('import_from_link', { url: 'https://example.com/clip.mp4' }, c, d);
+    expect(out).toMatchObject({
+      ok: true,
+      result: { attachmentId: 'att9', kind: 'video', size: '1080x1920', durationSec: 12 },
+    });
+    expect(d.links.import).toHaveBeenCalledWith({
+      ownerId: 'local',
+      sessionId: 'chat-1',
+      url: 'https://example.com/clip.mp4',
     });
   });
 });

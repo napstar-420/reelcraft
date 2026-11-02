@@ -59,6 +59,8 @@ ARG S6_OVERLAY_VERSION=3.2.1.0
 ARG CODEX_VERSION=0.160.0
 # Claude Code: the `claude` CLI behind the Claude provider and assistant.
 ARG CLAUDE_CODE_VERSION=2.1.286
+# yt-dlp: downloads a video from a link for the assistant (import_from_link).
+ARG YT_DLP_VERSION=2026.08.19
 ARG REELCRAFT_VERSION=dev
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -89,6 +91,19 @@ RUN case "${TARGETARCH:-amd64}" in \
  && base="https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}" \
  && curl -fsSL "${base}/s6-overlay-noarch.tar.xz" | tar -C / -Jxp \
  && curl -fsSL "${base}/s6-overlay-${s6arch}.tar.xz" | tar -C / -Jxp
+
+# The standalone yt-dlp build (no Python needed), checked against the release's own checksums.
+RUN case "${TARGETARCH:-amd64}" in \
+      amd64) asset=yt-dlp_linux ;; \
+      arm64) asset=yt-dlp_linux_aarch64 ;; \
+      *) echo "unsupported arch ${TARGETARCH}" >&2; exit 1 ;; \
+    esac \
+ && base="https://github.com/yt-dlp/yt-dlp/releases/download/${YT_DLP_VERSION}" \
+ && curl -fsSL -o /usr/local/bin/yt-dlp "${base}/${asset}" \
+ && curl -fsSL "${base}/SHA2-256SUMS" | awk -v a="${asset}" '$2 == a { print $1 "  /usr/local/bin/yt-dlp" }' > /tmp/yt-dlp.sha256 \
+ && test -s /tmp/yt-dlp.sha256 && sha256sum -c /tmp/yt-dlp.sha256 && rm /tmp/yt-dlp.sha256 \
+ && chmod 0755 /usr/local/bin/yt-dlp \
+ && yt-dlp --version
 
 RUN npm install -g "@openai/codex@${CODEX_VERSION}" "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
  && npm cache clean --force

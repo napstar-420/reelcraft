@@ -117,6 +117,8 @@ export class AttachmentService implements OnModuleInit, OnModuleDestroy {
     sha256: string;
     source: 'upload' | 'link';
     sourceUrl: string | null;
+    /** The chat it already belongs to (an import the assistant made); null for an upload. */
+    sessionId?: string | null;
   }): Promise<AssistantAttachmentDto> {
     const ext = extOf(input.key);
     const mime = attachmentMime(input.mime, ext);
@@ -160,6 +162,7 @@ export class AttachmentService implements OnModuleInit, OnModuleDestroy {
         kind,
         source: input.source,
         sourceUrl: input.sourceUrl,
+        sessionId: input.sessionId ?? null,
       });
     });
     return this.get(id);

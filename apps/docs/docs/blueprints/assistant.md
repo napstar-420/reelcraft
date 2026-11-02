@@ -108,6 +108,18 @@ What it reads from a run is treated as information, never as instructions. Pictu
 transcripts go to the same provider that runs the assistant. A free test run's text and pictures are
 placeholders, so it judges those runs by structure only.
 
+**Links and the browser.** Paste a link and ask the assistant to use it. It downloads a picture,
+video or sound into the chat, from a link straight to the file or from a video page such as YouTube,
+TikTok or Instagram, up to 1080p and 15 minutes. Links to your own computer or local network are
+refused. Downloading from a site is subject to that site's terms, so only share links you're allowed
+to use.
+
+With [BrowserOS Neo](../browseros-neo.md) connected, the assistant can also open pages in Neo, read
+them, look at a screenshot, scroll, click and type, for example to find the video on a page. Neo is
+signed in to your accounts, so the assistant never signs in, buys, posts or changes settings unless
+you ask it to. In **Manual** mode it asks before every click or keystroke. The tabs it opens close
+when it finishes answering.
+
 **Questions about Reelcraft.** Ask how to do something yourself, such as where a setting is, how to
 update, or how to connect Codex, and it searches this guide (the copy that came with your Reelcraft)
 and answers with a link to the page.

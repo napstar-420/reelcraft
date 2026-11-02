@@ -54,6 +54,8 @@ import { AssistantWatchService } from './watch/assistant-watch.service';
 import { UserGuideService } from './user-guide/user-guide.service';
 import { AttachmentService } from './attachments/attachment.service';
 import { FileCopyService } from './files/file-copy.service';
+import { LinkImportService } from './files/link-import.service';
+import { BrowserService } from './browser/browser.service';
 import { RunInputService } from '../run/run-input.service';
 import { VoiceStudioAdapter } from '../provider/voicestudio/voicestudio.adapter';
 import { describeAttachment } from './attachments/attachment.logic';
@@ -154,6 +156,8 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
     files: FileCopyService,
     runInputs: RunInputService,
     voices: VoiceStudioAdapter,
+    links: LinkImportService,
+    private readonly browser: BrowserService,
   ) {
     this.toolDeps = {
       blueprints,
@@ -181,6 +185,8 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
       files,
       runInputs,
       voices,
+      links,
+      browser,
       engineLayer: () => engineDefaults(config),
       blueprintChanged: (blueprintId) => this.events.publish({ type: 'blueprint', blueprintId }),
     };
@@ -763,6 +769,8 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
     } finally {
       timer.stop();
       this.expireApprovals(session.id);
+      // tabs the assistant opened don't outlive its turn
+      void this.browser.closeAll(session.id);
       await queue.catch(this.logQueueError);
       this.active.delete(session.id);
       this.turnContexts.delete(session.id);

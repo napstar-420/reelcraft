@@ -13,6 +13,7 @@ import { CATALOG_TOOLS } from './catalog-tools';
 import { DOCS_TOOLS } from './docs-tools';
 import { MEDIA_TOOLS } from './media-tools';
 import { LIBRARY_TOOLS } from './library-tools';
+import { WEB_TOOLS } from './web-tools';
 import { zodIssues } from './draft-checks';
 import { READ_TOOLS } from './read-tools';
 import { RUN_TOOLS } from './run-tools';
@@ -32,6 +33,7 @@ export const ASSISTANT_TOOLS: ReadonlyArray<AssistantTool<never>> = [
   ...ACTION_TOOLS,
   ...WATCH_TOOLS,
   ...DOCS_TOOLS,
+  ...WEB_TOOLS,
   askUser as unknown as AssistantTool<never>,
   presentPlan as unknown as AssistantTool<never>,
 ];

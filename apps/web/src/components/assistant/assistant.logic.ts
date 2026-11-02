@@ -254,6 +254,22 @@ export function describeToolCall(call: ToolCallPayload, state: string | null): s
         return 'Started watching a run';
       case 'unwatch_run':
         return 'Stopped watching a run';
+      case 'import_from_link':
+        return `Downloaded a file from ${hostOf(str(args.url))}`;
+      case 'browser_open':
+        return `Opened ${hostOf(str(args.url))} in the browser`;
+      case 'browser_look':
+        return 'Looked at the page';
+      case 'browser_act':
+        return args.action === 'type'
+          ? `Typed into ${str(args.target) ?? 'a field'}`
+          : args.action === 'press'
+            ? `Pressed ${str(args.value) ?? 'a key'}`
+            : `Clicked ${str(args.target) ?? 'something'}`;
+      case 'browser_media':
+        return 'Listed the videos on the page';
+      case 'browser_close':
+        return 'Closed a tab';
       case 'save_to_library':
         return `Saved ${str(args.name) ?? 'a file'} to the Library`;
       case 'delete_asset':
@@ -333,4 +349,13 @@ function mediaLabel(verb: string, videoVerb: string, args: Record<string, unknow
   if (typeof source.characterId === 'string') return `${verb} a Character picture`;
   if (typeof source.stageKey === 'string') return `${verb} what ${source.stageKey} made`;
   return `${videoVerb} the final video`;
+}
+
+function hostOf(url: string | null | undefined): string {
+  if (!url) return 'a link';
+  try {
+    return new URL(url).hostname.replace(/^www\./, '');
+  } catch {
+    return 'a link';
+  }
 }

@@ -59,6 +59,7 @@ curl -fsS "${base}/" | grep -q '<div id="root">' || fail "web app index not serv
 step "checking the agent CLIs run as the API user"
 docker exec -u reelcraft "$name" codex --version >/dev/null || fail "codex is missing from the image"
 docker exec -u reelcraft "$name" claude --version >/dev/null || fail "claude is missing from the image"
+docker exec -u reelcraft "$name" yt-dlp --version >/dev/null || fail "yt-dlp is missing from the image"
 [ "$(docker exec "$name" stat -c %U /data/claude)" = reelcraft ] || fail "/data/claude is not owned by reelcraft"
 
 step "checking uv and the Qwen3-TTS setup"

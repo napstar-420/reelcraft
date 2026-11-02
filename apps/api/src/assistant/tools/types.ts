@@ -32,6 +32,8 @@ import type { AssistantWatchService } from '../watch/assistant-watch.service';
 import type { UserGuideService } from '../user-guide/user-guide.service';
 import type { AttachmentService } from '../attachments/attachment.service';
 import type { FileCopyService } from '../files/file-copy.service';
+import type { LinkImportService } from '../files/link-import.service';
+import type { BrowserService } from '../browser/browser.service';
 import type { RunInputService } from '../../run/run-input.service';
 import type { VoiceStudioAdapter } from '../../provider/voicestudio/voicestudio.adapter';
 import type { SchemaValidatorService } from '../../json-schema/schema-validator.service';
@@ -134,6 +136,13 @@ export interface ToolDeps {
   files: Pick<FileCopyService, 'copy'>;
   runInputs: Pick<RunInputService, 'attachMediaInput'>;
   voices: Pick<VoiceStudioAdapter, 'cloneFromAsset'>;
+  /** Downloads a link into the chat (import_from_link). */
+  links: Pick<LinkImportService, 'import'>;
+  /** The user's browser (BrowserOS Neo). */
+  browser: Pick<
+    BrowserService,
+    'unavailableReason' | 'ownsPage' | 'openTabs' | 'open' | 'look' | 'act' | 'media' | 'close'
+  >;
   schemas: Pick<SchemaValidatorService, 'validate'>;
   runs: Pick<RunInsightService, 'list' | 'get' | 'stage' | 'media'>;
   runControl: Pick<

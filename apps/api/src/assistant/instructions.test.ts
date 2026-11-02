@@ -16,7 +16,7 @@ describe('assistant instructions', () => {
   it('only name tools that exist, and name every tool the flow depends on', () => {
     const mentioned = new Set(
       text.match(
-        /\b(?:get|list|read|validate|propose|edit|update|ask|present|create|archive|delete|save|restore|start|run|retry|pause|resume|cancel|raise|set|approve|reject|provide|view|listen|watch|unwatch|search|make)_[a-z_]+\b/g,
+        /\b(?:get|list|read|validate|propose|edit|update|ask|present|create|archive|delete|save|restore|start|run|retry|pause|resume|cancel|raise|set|approve|reject|provide|view|listen|watch|unwatch|search|make|import|browser)_[a-z_]+\b/g,
       ),
     );
     const real = new Set(ASSISTANT_TOOLS.map((t) => t.name));
@@ -58,6 +58,7 @@ describe('assistant instructions', () => {
       'How you work on a blueprint',
       'Build quality: you know Reelcraft better than the user',
       'The Library, Characters and voices',
+      'Links and the browser',
       'Channels and blueprints',
       'Versions',
       'Files the user gives you',
