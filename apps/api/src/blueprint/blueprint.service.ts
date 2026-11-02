@@ -23,6 +23,7 @@ import { deleteAssistantCascade } from '../assistant/assistant-cascade';
 import { queueStorageOrphans } from '../artifact/storage-orphans';
 import { ulid } from '../common/ulid';
 import { blueprintChanged } from './blueprint-changed';
+import { summarizeCurrentVersion, type CurrentVersionColumns } from './blueprint-summary';
 import { BlueprintValidatorService } from './blueprint-validator.service';
 import { collectAssetIds, roleRefsOf } from './collect-asset-refs';
 import {
@@ -44,6 +45,20 @@ import { modalityForCapability } from '../capability/modality-for-capability';
 import { stageReferenceLimit } from '../common/reference-limit';
 import type { ModelInfo } from '../provider/provider-adapter.interface';
 import { validateSpeechStages } from '../provider/speech/validate-speech-stages';
+
+function toBlueprintDto(row: {
+  blueprint: typeof blueprint.$inferSelect;
+  runCount: number;
+  latestPosterBlobId: string | null;
+  current: CurrentVersionColumns | null;
+}) {
+  return {
+    ...row.blueprint,
+    runCount: row.runCount,
+    latestPosterBlobId: row.latestPosterBlobId,
+    latestVersion: summarizeCurrentVersion(row.current),
+  };
+}
 
 @Injectable()
 export class BlueprintService {
@@ -142,16 +157,26 @@ export class BlueprintService {
     };
   }
 
-  async listByChannel(channelId: string) {
-    const rows = await this.db
-      .select({ blueprint, ...this.runStatsSelection() })
+  /** Blueprint rows with their run stats and the current version's number and graph (one
+   * version per blueprint, for `latestVersion`; the version list stays on its own endpoint). */
+  private selectBlueprints() {
+    return this.db
+      .select({
+        blueprint,
+        ...this.runStatsSelection(),
+        current: {
+          major: blueprintVersion.major,
+          minor: blueprintVersion.minor,
+          graph: blueprintVersion.graph,
+        },
+      })
       .from(blueprint)
-      .where(eq(blueprint.channelId, channelId));
-    return rows.map((r) => ({
-      ...r.blueprint,
-      runCount: r.runCount,
-      latestPosterBlobId: r.latestPosterBlobId,
-    }));
+      .leftJoin(blueprintVersion, eq(blueprintVersion.id, blueprint.currentVersionId));
+  }
+
+  async listByChannel(channelId: string) {
+    const rows = await this.selectBlueprints().where(eq(blueprint.channelId, channelId));
+    return rows.map(toBlueprintDto);
   }
 
   async update(id: string, dto: UpdateBlueprintDto) {
@@ -218,13 +243,9 @@ export class BlueprintService {
   }
 
   async getBlueprint(id: string) {
-    const [row] = await this.db
-      .select({ blueprint, ...this.runStatsSelection() })
-      .from(blueprint)
-      .where(eq(blueprint.id, id))
-      .limit(1);
+    const [row] = await this.selectBlueprints().where(eq(blueprint.id, id)).limit(1);
     if (!row) throw new NotFoundException(`Blueprint ${id} not found`);
-    return { ...row.blueprint, runCount: row.runCount, latestPosterBlobId: row.latestPosterBlobId };
+    return toBlueprintDto(row);
   }
 
   /** Saves are numbered major.minor: the first is 1.0, a save bumps minor,
