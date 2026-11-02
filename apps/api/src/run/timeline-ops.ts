@@ -80,6 +80,47 @@ function startOf(item: Item): number {
   return item.startSec ?? 0;
 }
 
+type Keyframe = NonNullable<Extract<Item, { type: 'media' }>['keyframes']>[number];
+const KEYFRAME_VALUES = ['x', 'y', 'scale', 'rotate', 'opacity'] as const;
+
+/** Keyframes of an item split `offset` seconds in: the first part keeps those before the cut and
+ * ends on the blended values at the cut; the second starts from those values and keeps the rest,
+ * moved to its own start. Values are blended linearly (an eased key is close, not exact). */
+export function splitKeyframes(keys: Keyframe[], offset: number): [Keyframe[], Keyframe[]] {
+  const sorted = [...keys].sort((a, b) => a.atSec - b.atSec);
+  const atCut: Keyframe = { atSec: 0 };
+  for (const name of KEYFRAME_VALUES) {
+    const withValue = sorted.filter((k) => k[name] !== undefined);
+    const prev = withValue.filter((k) => k.atSec <= offset).pop();
+    const next = withValue.find((k) => k.atSec > offset);
+    let value: number | undefined;
+    if (prev && next) {
+      const t = (offset - prev.atSec) / (next.atSec - prev.atSec);
+      value = prev[name]! + (next[name]! - prev[name]!) * t;
+    } else value = (prev ?? next)?.[name];
+    if (value !== undefined) atCut[name] = Math.round(value * 1000) / 1000;
+  }
+  const before = sorted.filter((k) => k.atSec < offset);
+  const after = sorted
+    .filter((k) => k.atSec > offset)
+    .map((k) => ({ ...k, atSec: round(k.atSec - offset) }));
+  return [
+    [...before, { ...atCut, atSec: round(offset) }],
+    [atCut, ...after],
+  ];
+}
+
+/** `${id}-2`, `${id}-3`… whichever no item in the timeline uses yet. */
+function freeId(draft: Draft, id: string): string {
+  const used = new Set(
+    draft.tracks.flatMap((t) =>
+      t.items.map((i) => ('id' in i ? (i as { id?: string }).id : undefined)),
+    ),
+  );
+  const stem = id.replace(/-\d+$/, '');
+  for (let n = 2; ; n++) if (!used.has(`${stem}-${n}`)) return `${stem}-${n}`;
+}
+
 function sortTrack(items: Item[]): Item[] {
   return items
     .map((item, i) => ({ item, i }))
@@ -172,6 +213,12 @@ function applyOne(draft: Draft, op: TimelineOp): string {
       if (item.type === 'captions') {
         throw new TimelineOpError('Captions cannot be split; change their pages instead.');
       }
+      if (item.type === 'graphic' || item.type === 'motion') {
+        // its drawing or motion plays over its whole length: the second part would start over
+        throw new TimelineOpError(
+          `A ${item.type} item plays its animation over its whole length, so splitting it would restart it. Shorten it with update_item (durationSec) or add another item instead.`,
+        );
+      }
       const duration = itemDurationSec(item);
       if (duration === undefined) {
         throw new TimelineOpError(
@@ -187,10 +234,18 @@ function applyOne(draft: Draft, op: TimelineOp): string {
       }
       const first = { ...item, durationSec: round(offset) } as Item;
       const second = { ...item, startSec: round(op.atSec), durationSec: round(duration - offset) };
-      if ('id' in second && second.id) (second as { id?: string }).id = `${second.id}-b`;
+      if ('id' in second && second.id) (second as { id?: string }).id = freeId(draft, second.id);
       if (item.type === 'media') {
         const media = second as Extract<Item, { type: 'media' }>;
         media.trimInSec = round((item.trimInSec ?? 0) + offset);
+        if (item.keyframes?.length) {
+          // keyframe times are from the item's own start: each part carries on where it was
+          const [before, after] = splitKeyframes(item.keyframes, offset);
+          (first as Extract<Item, { type: 'media' }>).keyframes = before;
+          media.keyframes = after;
+        }
+        // the second part is already on screen: it doesn't arrive again
+        delete media.anim;
         // the cut is a plain cut: the first part doesn't leave and the second doesn't arrive
         delete (first as Extract<Item, { type: 'media' }>).transitionOut;
         delete (first as Extract<Item, { type: 'media' }>).fadeOutSec;

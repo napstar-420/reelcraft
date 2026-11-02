@@ -322,6 +322,16 @@ const submitTimeline: AssistantTool<z.infer<typeof SubmitInput>> = {
       input.stageKey,
       session.draftRevision,
     )) as { previewToken: string; affectedStageKeys: string[]; estimatedRerunUsd: number };
+    // a re-render costs money, so it counts against the chat's goal like any re-run
+    const insight = await deps.runs.get(input.runId);
+    if (insight) {
+      const overGoal = await deps.goals.refusal(
+        ctx.sessionId,
+        insight.blueprintId,
+        preview.estimatedRerunUsd,
+      );
+      if (overGoal) return fail(overGoal);
+    }
     const refused = await confirmChange(ctx, {
       tool: 'submit_timeline',
       kind: 'action',
@@ -339,6 +349,7 @@ const submitTimeline: AssistantTool<z.infer<typeof SubmitInput>> = {
       session.draftRevision,
       preview.previewToken,
     );
+    if (insight) await deps.goals.recordAttempt(ctx.sessionId, insight.blueprintId, input.runId);
     const watching = await autoWatch(ctx, deps, input.runId);
     return {
       ok: true,

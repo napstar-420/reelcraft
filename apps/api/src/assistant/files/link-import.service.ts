@@ -10,7 +10,7 @@ import { promisify } from 'node:util';
 import { BadRequestException, Inject, Injectable, Logger } from '@nestjs/common';
 import type { AssistantAttachmentDto } from '@reelcraft/shared';
 import { ulid } from '../../common/ulid';
-import { unsafeUrlReason } from '../../common/safe-fetch';
+import { pinnedFetch, startSafeProxy, unsafeUrlReason } from '../../common/safe-fetch';
 import { STORAGE_ADAPTER, type StorageAdapter } from '../../storage/storage.adapter';
 import { objectKey } from '../../storage/object-key';
 import { AttachmentService } from '../attachments/attachment.service';
@@ -46,6 +46,16 @@ const defaultYtDlp: YtDlp = async (args, opts) =>
 
 const MEDIA_TYPE = /^(image|video|audio)\//;
 
+/** Only formats fetched over HTTP (plain files, HLS, DASH), so the download goes through the safe
+ * proxy; RTMP/RTSP/MMS would connect directly. */
+const HTTP_ONLY = "[protocol~='^(https?|m3u8|http_dash_segments)']";
+const FORMAT = [
+  `bv*[height<=1080][ext=mp4]${HTTP_ONLY}+ba[ext=m4a]${HTTP_ONLY}`,
+  `b[height<=1080][ext=mp4]${HTTP_ONLY}`,
+  `bv*[height<=1080]${HTTP_ONLY}+ba${HTTP_ONLY}`,
+  `b${HTTP_ONLY}`,
+].join('/');
+
 /** Downloads a picture, video or sound from a link into a chat attachment: a direct file over
  * HTTP, a video page (YouTube, TikTok, Instagram…) through yt-dlp. Never fetches an address on
  * this machine or the local network. */
@@ -53,7 +63,12 @@ const MEDIA_TYPE = /^(image|video|audio)\//;
 export class LinkImportService {
   private readonly logger = new Logger(LinkImportService.name);
   private ytDlp: YtDlp = defaultYtDlp;
-  private fetchImpl: typeof fetch = (...args) => fetch(...args);
+  /** Connects only to the address that passed the check (no DNS rebinding). */
+  private fetchImpl: typeof fetch = (input, init) =>
+    pinnedFetch(String(input), {
+      signal: init?.signal ?? undefined,
+      headers: init?.headers as Record<string, string> | undefined,
+    });
   private resolveHost: ((host: string) => Promise<string[]>) | undefined;
 
   constructor(
@@ -154,16 +169,23 @@ export class LinkImportService {
       );
     }
     let info: { title?: string } = {};
+    // yt-dlp follows redirects and embedded media links on its own, so every request it makes goes
+    // through a local proxy that only connects to public addresses.
+    const proxy = await startSafeProxy();
     try {
       const { stdout } = await this.ytDlp(
         [
           '--ignore-config',
+          '--proxy',
+          proxy.url,
+          '--downloader',
+          'native',
           '--no-playlist',
           '--no-progress',
           '--no-cache-dir',
           '--no-mtime',
           '-f',
-          'bv*[height<=1080][ext=mp4]+ba[ext=m4a]/b[height<=1080][ext=mp4]/bv*[height<=1080]+ba/b',
+          FORMAT,
           '--merge-output-format',
           'mp4',
           '--max-filesize',
@@ -184,6 +206,8 @@ export class LinkImportService {
       const message = ytDlpError(error);
       this.logger.warn({ url, err: message }, 'yt-dlp could not download a link');
       throw new BadRequestException(message);
+    } finally {
+      await proxy.close();
     }
     const files = (await readdir(dir)).filter(
       (f) => f.startsWith('media.') && !f.endsWith('.part'),

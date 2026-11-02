@@ -141,14 +141,16 @@ to use.
 With [BrowserOS Neo](../browseros-neo.md) connected, the assistant can also open pages in Neo, read
 them, look at a screenshot, scroll, click and type, for example to find the video on a page. Neo is
 signed in to your accounts, so the assistant never signs in, buys, posts or changes settings unless
-you ask it to. In **Manual** mode it asks before every click or keystroke. The tabs it opens close
-when it finishes answering.
+you ask it to. In **Manual** mode it asks before every click or keystroke. It won't open pages on
+your own computer or local network, such as your router. The tabs it opens close when it finishes
+answering.
 
 **Goals.** Ask for a result rather than one change, such as "keep going until the voice-over is
 under 30 seconds, at most 3 tries or $5", and the assistant works toward it on its own: it runs the
 blueprint, reviews what the run made, fixes the blueprint and runs it again. Each run or re-run
 counts toward the limits you gave (3 runs when you name none), and Reelcraft won't let it go past
-them. When the goal is met or the limits are used up, a **Goal** card shows the outcome, what it
+them: a real run needs a budget that fits in what's left, re-rendering an edited video counts too,
+and free test runs are always allowed. When the goal is met or the limits are used up, a **Goal** card shows the outcome, what it
 tried and every run with its cost. It can also compare two runs side by side, stage by stage.
 
 **Questions about Reelcraft.** Ask how to do something yourself, such as where a setting is, how to

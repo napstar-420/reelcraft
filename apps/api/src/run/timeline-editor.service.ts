@@ -261,6 +261,7 @@ export class TimelineEditorService {
     } else {
       const draft = context.source.row;
       if (!draft) throw new ConflictException('Open the editor first');
+      this.requireCurrentBase(context);
       const condition = input.force
         ? eq(timelineDraft.id, draft.id)
         : and(eq(timelineDraft.id, draft.id), eq(timelineDraft.draftRevision, input.draftRevision));
@@ -304,13 +305,29 @@ export class TimelineEditorService {
     const authorized = await this.authorizedSources(context);
     this.validateTimelineReferences(timeline, authorized.allowedHandles);
     if (context.source.kind === 'output') {
+      this.requireCurrentBase(context);
       return this.artifactEdits.edit(runId, stageKey, {
         value: timeline,
-        sourceArtifactId: context.source.outputArtifactId,
+        // the output this draft was made from: if the stage has made a newer one, the edit refuses
+        sourceArtifactId: context.source.row!.baseArtifactId,
         ...(previewToken && { previewToken }),
       });
     }
     return this.humanActions.submitInput(runId, stageKey, timeline, draftRevision);
+  }
+
+  /** A draft of a Compose Timeline output must still be based on the stage's current output:
+   * if the stage made a newer timeline since (a re-run), saving it would overwrite that one. */
+  private requireCurrentBase(context: Context) {
+    if (context.source.kind !== 'output') return;
+    const { row, outputArtifactId } = context.source;
+    if (!row || row.baseArtifactId !== outputArtifactId) {
+      throw new ConflictException({
+        code: 'timeline_base_changed',
+        message:
+          'The stage made a newer timeline since this draft was started. Reopen the editor to edit the new one.',
+      });
+    }
   }
 
   private requireEditable(context: Context) {

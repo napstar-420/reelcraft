@@ -292,5 +292,24 @@ describe('timeline editor HTTP workflow (e2e)', () => {
       );
     expect(current).toMatchObject({ userAuthored: true });
     expect(JSON.stringify(current!.data)).toContain('Added later');
+
+    // The stage's output is now newer than the draft: an editor still open on the old draft can't
+    // save or submit over it, and reopening starts from the new output.
+    const stale = await fetch(`${base}/draft`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ draftRevision: 1, timeline: session.timeline }),
+    });
+    expect(stale.status).toBe(409);
+    expect(await stale.json()).toMatchObject({ code: 'timeline_base_changed' });
+    const staleSubmit = await fetch(`${base}/submit`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ draftRevision: 1 }),
+    });
+    expect(await staleSubmit.json()).toMatchObject({ code: 'timeline_base_changed' });
+    const reopened = (await (await fetch(base)).json()) as TimelineEditorSessionDto;
+    expect(reopened.draftRevision).toBe(2);
+    expect(JSON.stringify(reopened.timeline)).toContain('Added later');
   });
 });

@@ -1,11 +1,15 @@
-import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import type { RunState } from '@reelcraft/shared';
 import { eq, sql } from 'drizzle-orm';
 import { ulid } from '../common/ulid';
 import { LiveEvents } from '../live/live-events';
 import { DRIZZLE, type Db, type Tx } from '../db/drizzle.provider';
-import { run, runWakeup } from '../db/schema/index';
+import { blueprint, blueprintVersion, channel, run, runWakeup } from '../db/schema/index';
 import { RunActionPolicy, type RunAction } from './run-action-policy';
+
+/** What a run of a trashed blueprint or channel may still do: stop. Anything that makes it work
+ * (and spend) again needs the blueprint restored first. */
+const ALLOWED_IN_TRASH: readonly RunAction[] = ['pause', 'cancel'];
 
 export interface LockedRunMutationResult<T> {
   value: T;
@@ -64,6 +68,7 @@ export class RunMutationService {
 
       const sourceState = lockedRun.state as RunState;
       this.policy.assertAllowed(sourceState, action, allowedStates);
+      if (!ALLOWED_IN_TRASH.includes(action)) await this.assertNotTrashed(tx, lockedRun);
 
       const value = await callback(tx, lockedRun);
       const [updated] = await tx
@@ -102,5 +107,21 @@ export class RunMutationService {
     // mutation and the revision bump have committed either way.
     this.events.publish({ type: 'run', runId });
     return result;
+  }
+
+  private async assertNotTrashed(tx: Tx, lockedRun: typeof run.$inferSelect): Promise<void> {
+    const [owner] = await tx
+      .select({ blueprintDeletedAt: blueprint.deletedAt, channelDeletedAt: channel.deletedAt })
+      .from(blueprintVersion)
+      .innerJoin(blueprint, eq(blueprint.id, blueprintVersion.blueprintId))
+      .innerJoin(channel, eq(channel.id, blueprint.channelId))
+      .where(eq(blueprintVersion.id, lockedRun.blueprintVersionId))
+      .limit(1);
+    if (owner?.blueprintDeletedAt || owner?.channelDeletedAt) {
+      throw new ConflictException({
+        code: 'run_in_trash',
+        message: `This run's ${owner.channelDeletedAt ? 'channel' : 'blueprint'} is in the trash: restore it to work on the run.`,
+      });
+    }
   }
 }

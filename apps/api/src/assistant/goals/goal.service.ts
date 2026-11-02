@@ -73,15 +73,24 @@ export class GoalService {
     return row ? this.status(row) : null;
   }
 
-  /** Why another run for this blueprint would go past the chat's goal, or null when it may run. */
-  async refusal(sessionId: string, blueprintId: string, extraCostUsd = 0): Promise<string | null> {
+  /** Why another run for this blueprint would go past the chat's goal, or null when it may run.
+   * `costUsd` is the most the new run can spend: 0 for a free run, its budget for a real one, and
+   * Infinity for a real run with no budget (which a goal with a spending limit can't allow). */
+  async refusal(sessionId: string, blueprintId: string, costUsd = 0): Promise<string | null> {
     const goal = await this.active(sessionId, blueprintId);
     if (!goal) return null;
     if (goal.attempts >= goal.maxRuns) {
       return `The goal "${goal.goal}" has used all ${goal.maxRuns} runs it was given. Call finish_goal with what you got, or ask the user for more runs (a new goal).`;
     }
-    if (goal.spentUsd + extraCostUsd >= goal.maxSpendUsd) {
-      return `The goal "${goal.goal}" has spent ${usd(goal.spentUsd)} of its ${usd(goal.maxSpendUsd)}. Call finish_goal, or ask the user for a bigger limit (a new goal).`;
+    if (costUsd <= 0) return null; // free runs never go past a spending limit
+    const left = Math.max(0, goal.maxSpendUsd - goal.spentUsd);
+    if (left <= 0) {
+      return `The goal "${goal.goal}" has spent ${usd(goal.spentUsd)} of its ${usd(goal.maxSpendUsd)}. Only free test runs are left: call finish_goal, or ask the user for a bigger limit (a new goal).`;
+    }
+    if (costUsd > left + 1e-9) {
+      return Number.isFinite(costUsd)
+        ? `This could spend up to ${usd(costUsd)}, but the goal "${goal.goal}" has ${usd(left)} left of its ${usd(goal.maxSpendUsd)}. Use a budget of at most ${usd(left)}, a free test run, or ask the user for a bigger limit.`
+        : `A real run with no budget could spend more than the ${usd(left)} the goal "${goal.goal}" has left. Pass budgetUsd of at most ${usd(left)}, or use a free test run.`;
     }
     return null;
   }

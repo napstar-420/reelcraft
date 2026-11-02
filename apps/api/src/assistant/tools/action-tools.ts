@@ -187,7 +187,11 @@ const startRun: AssistantTool<z.infer<typeof StartRunInput>> = {
           .join(', ')}. Pass them in inputs.`,
       };
     }
-    const overGoal = await deps.goals.refusal(ctx.sessionId, blueprint.id);
+    const overGoal = await deps.goals.refusal(
+      ctx.sessionId,
+      blueprint.id,
+      input.free ? 0 : budget > 0 ? budget : Number.POSITIVE_INFINITY,
+    );
     if (overGoal) return { ok: false, error: overGoal };
     const refused = await confirmChange(ctx, {
       tool: 'start_run',
@@ -229,14 +233,20 @@ const startRun: AssistantTool<z.infer<typeof StartRunInput>> = {
         ? (await deps.channels.get(blueprint.channelId)).ownerId
         : '';
       for (const file of fileInputs.files) {
-        const blobs = [];
-        for (const blobId of file.blobIds) {
-          const copy = await deps.files.copy(blobId, (newId, ext) =>
-            objectKey.input(ownerId, blueprint.channelId, created.id, newId, ext),
-          );
-          blobs.push({ blobId: copy.blobId, objectKey: copy.objectKey, sha256: copy.sha256 });
+        const blobs: Array<{ blobId: string; objectKey: string; sha256: string }> = [];
+        try {
+          for (const blobId of file.blobIds) {
+            const copy = await deps.files.copy(blobId, (newId, ext) =>
+              objectKey.input(ownerId, blueprint.channelId, created.id, newId, ext),
+            );
+            blobs.push({ blobId: copy.blobId, objectKey: copy.objectKey, sha256: copy.sha256 });
+          }
+          await deps.runInputs.attachMediaInput(created.id, file.key, blobs);
+        } catch (error) {
+          // the run's input rows never pointed at these copies: queue them for the sweep
+          await deps.files.discard(blobs.map((b) => b.objectKey)).catch(() => undefined);
+          throw error;
         }
-        await deps.runInputs.attachMediaInput(created.id, file.key, blobs);
       }
       await deps.runControl.start(created.id);
     } catch (error) {

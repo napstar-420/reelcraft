@@ -84,6 +84,9 @@ describe('LinkImportService', () => {
       ]),
     );
     expect(args[args.indexOf('--match-filter') + 1]).toBe('duration <= 900 & !is_live');
+    // every request yt-dlp makes goes through the local proxy that refuses private addresses
+    expect(args[args.indexOf('--proxy') + 1]).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/);
+    expect(args[args.indexOf('-f') + 1]).toContain("protocol~='^(https?|m3u8|http_dash_segments)'");
     expect(attachments.store).toHaveBeenCalledWith(
       expect.objectContaining({ name: 'Otters  a b story.mp4', mime: 'video/mp4', bytes: 5 }),
     );

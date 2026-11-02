@@ -3,8 +3,12 @@ import { eq } from 'drizzle-orm';
 import { ChannelService } from '../../src/channel/channel.service';
 import { BlueprintService } from '../../src/blueprint/blueprint.service';
 import { TrashService } from '../../src/trash/trash.service';
+import { RunService } from '../../src/run/run.service';
+import { RunInsightService } from '../../src/run/run-insight.service';
+import { RunMutationService } from '../../src/run/run-mutation.service';
+import { RUN_ACTION_ALLOWED_STATES } from '../../src/run/run-action-policy';
 import { exampleScript } from '../../src/assistant/guide';
-import { blueprint, channel } from '../../src/db/schema/index';
+import { blueprint, channel, run } from '../../src/db/schema/index';
 import { buildHttpTestApp, type HttpTestApp } from '../support/build-http-test-app';
 import { createTestDb, type TestDb } from '../support/test-db';
 
@@ -42,8 +46,8 @@ describe('trash (e2e)', () => {
       defaults: {},
     });
     const bpId = await http.app.get(BlueprintService).ensureBlueprint(ch.id, 'Doomed reel');
-    await http.app.get(BlueprintService).createVersion(bpId, exampleScript());
-    return { channelId: ch.id, blueprintId: bpId };
+    const version = await http.app.get(BlueprintService).createVersion(bpId, exampleScript());
+    return { channelId: ch.id, blueprintId: bpId, versionId: version.id };
   }
 
   it('trashes a blueprint, hides it, lists it in the trash and restores it', async () => {
@@ -90,6 +94,52 @@ describe('trash (e2e)', () => {
     expect(
       await testDb.db.select().from(blueprint).where(eq(blueprint.id, blueprintId)),
     ).toHaveLength(0);
+  });
+
+  it("hides a trashed blueprint's finished runs and refuses to work on them", async () => {
+    const { channelId, blueprintId, versionId } = await seed('Trash runs');
+    const runs = http.app.get(RunService);
+    const created = await runs.create(
+      {
+        channelId,
+        blueprintVersionId: versionId,
+        inputs: { topic: 'otters' },
+        roleBindings: {},
+        budgetCapUsd: 0,
+        rerunStageKeys: [],
+        dryRun: true,
+      },
+      { dryRun: true },
+    );
+    const listedIds = async () => ({
+      page: (await runs.list({ includeDryRuns: true, channelId } as never)).items.map(
+        (r: { id: string }) => r.id,
+      ),
+      assistant: (await http.app.get(RunInsightService).list({ channelId, limit: 20 })).runs.map(
+        (r) => r.runId,
+      ),
+    });
+    expect(await listedIds()).toEqual({ page: [created.id], assistant: [created.id] });
+
+    // a blueprint with a run in progress can't be trashed, so the run has finished
+    await testDb.db
+      .update(run)
+      .set({ state: 'COMPLETED', endedAt: new Date().toISOString() })
+      .where(eq(run.id, created.id));
+    const mutations = http.app.get(RunMutationService);
+    const editOutput = () =>
+      mutations.withLockedRun(
+        created.id,
+        'edit_artifact',
+        RUN_ACTION_ALLOWED_STATES.edit_artifact,
+        async () => 0,
+      );
+    await expect(editOutput()).resolves.toMatchObject({ value: 0 });
+
+    expect((await call(`/blueprints/${blueprintId}`, 'DELETE')).status).toBeLessThan(300);
+    expect(await listedIds()).toEqual({ page: [], assistant: [] });
+    // re-running, retrying or re-rendering would spend money on something in the trash
+    await expect(editOutput()).rejects.toMatchObject({ response: { code: 'run_in_trash' } });
   });
 
   it('purges what has been in the trash for more than 30 days', async () => {

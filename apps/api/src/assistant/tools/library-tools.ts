@@ -35,35 +35,39 @@ async function saveToLibrary(
   file: { blobId: string; mime: string },
 ): Promise<ToolOutcome & { assetId?: string }> {
   const channel = await deps.channels.get(input.channelId);
-  const copy = await deps.files.copy(file.blobId, (blobId, ext) =>
-    objectKey.asset(channel.ownerId, channel.id, blobId, ext),
-  );
-  const kind = input.kind ?? assetKindFor(copy.mime, copy.ext);
-  if (!kind) {
-    return fail(
-      `A ${copy.mime || copy.ext} file isn't a Library kind: pass kind (${AssetKind.options.join(', ')}).`,
-    );
-  }
-  const created = await deps.assets.create(channel.id, {
-    name: input.name,
-    kind,
-    blobId: copy.blobId,
-    objectKey: copy.objectKey,
-    sha256: copy.sha256,
-    tags: input.tags ?? [],
-  });
-  return {
-    ok: true,
-    assetId: created.id,
-    result: {
-      status: 'saved',
-      assetId: created.id,
-      channelId: channel.id,
-      name: created.name,
-      kind: created.kind,
-      note: 'A stage can use it now: bind it with {from:"asset", assetId} or pick it in the Library.',
+  return deps.files.copyInto(
+    file.blobId,
+    (blobId, ext) => objectKey.asset(channel.ownerId, channel.id, blobId, ext),
+    async (copy): Promise<ToolOutcome & { assetId?: string }> => {
+      const kind = input.kind ?? assetKindFor(copy.mime, copy.ext);
+      if (!kind) {
+        return fail(
+          `A ${copy.mime || copy.ext} file isn't a Library kind: pass kind (${AssetKind.options.join(', ')}).`,
+        );
+      }
+      const created = await deps.assets.create(channel.id, {
+        name: input.name,
+        kind,
+        blobId: copy.blobId,
+        objectKey: copy.objectKey,
+        sha256: copy.sha256,
+        tags: input.tags ?? [],
+      });
+      return {
+        ok: true,
+        assetId: created.id,
+        result: {
+          status: 'saved',
+          assetId: created.id,
+          channelId: channel.id,
+          name: created.name,
+          kind: created.kind,
+          note: 'A stage can use it now: bind it with {from:"asset", assetId} or pick it in the Library.',
+        },
+      };
     },
-  };
+    (outcome) => outcome.ok,
+  );
 }
 
 const saveToLibraryTool: AssistantTool<z.infer<typeof SaveInput>> = {
@@ -152,17 +156,21 @@ async function addReferences(
   const character = await deps.characters.get(characterId);
   const added: string[] = [];
   for (const ref of refs) {
-    const copy = await deps.files.copy(ref.blobId, (blobId) =>
-      objectKey.characterRef(character.ownerId, character.id, blobId),
+    const blobId = await deps.files.copyInto(
+      ref.blobId,
+      (newId) => objectKey.characterRef(character.ownerId, character.id, newId),
+      async (copy) => {
+        await deps.characters.confirmReference(character.id, {
+          blobId: copy.blobId,
+          objectKey: copy.objectKey,
+          sha256: copy.sha256,
+          view: ref.view,
+          ...(ref.caption && { caption: ref.caption }),
+        });
+        return copy.blobId;
+      },
     );
-    await deps.characters.confirmReference(character.id, {
-      blobId: copy.blobId,
-      objectKey: copy.objectKey,
-      sha256: copy.sha256,
-      view: ref.view,
-      ...(ref.caption && { caption: ref.caption }),
-    });
-    added.push(copy.blobId);
+    added.push(blobId);
   }
   return added;
 }

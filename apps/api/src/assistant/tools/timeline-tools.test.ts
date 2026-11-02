@@ -56,7 +56,18 @@ function deps(over: { source?: 'wait' | 'output'; readOnly?: boolean; failing?: 
     timelines,
     timelineChanged: vi.fn(),
     watches: { watch: vi.fn(async () => []) },
-  } as unknown as ToolDeps & { timelines: typeof timelines };
+    runs: { get: vi.fn(async () => ({ blueprintId: 'bp1' })) },
+    goals: {
+      refusal: vi.fn(async (): Promise<string | null> => null),
+      recordAttempt: vi.fn(async () => undefined),
+    },
+  } as unknown as ToolDeps & {
+    timelines: typeof timelines;
+    goals: {
+      refusal: ReturnType<typeof vi.fn>;
+      recordAttempt: ReturnType<typeof vi.fn>;
+    };
+  };
 }
 
 const ok = (out: Awaited<ReturnType<typeof runTool>>) => {
@@ -165,6 +176,22 @@ describe('timeline tools', () => {
     );
     expect(d.timelines.submit).toHaveBeenLastCalledWith('r1', 'compose', 3, 'tok');
     expect(out.result).toMatchObject({ rerunning: ['render'], watching: true });
+    // the re-render counts against the chat's goal like any re-run
+    expect(d.goals.refusal).toHaveBeenCalledWith(expect.any(String), 'bp1', 0.02);
+    expect(d.goals.recordAttempt).toHaveBeenCalledWith(expect.any(String), 'bp1', 'r1');
+  });
+
+  it('submit_timeline refuses a re-render past the goal and changes nothing', async () => {
+    const d = deps();
+    d.goals.refusal.mockResolvedValueOnce('The goal has $0.01 left');
+    const out = await runTool(
+      'submit_timeline',
+      { runId: 'r1', stageKey: 'compose' },
+      newTurnContext(),
+      d,
+    );
+    expect(out).toMatchObject({ ok: false, error: 'The goal has $0.01 left' });
+    expect(d.timelines.submit).toHaveBeenCalledTimes(1); // only the cost preview
   });
 
   it('submit_timeline on a waiting edit submits it', async () => {

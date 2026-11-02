@@ -81,7 +81,9 @@ in that message to bring it straight back.
   "… (restored)".
 - The bin button deletes one **for good**, with everything in it. This can't be undone.
 
-After 30 days, Reelcraft deletes them for good by itself.
+While something is in the trash, its runs are hidden from **Runs** and can't be continued, retried or
+re-rendered; restore it to work on them again. After 30 days, Reelcraft deletes them for good by
+itself.
 
 :::note Runs in progress block a delete
 

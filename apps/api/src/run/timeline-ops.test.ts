@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Timeline } from '@reelcraft/shared';
+import { Timeline, type TimelineItem } from '@reelcraft/shared';
 import {
   TimelineOp,
   TimelineOpError,
@@ -114,6 +114,70 @@ describe('applyTimelineOps', () => {
     expect(items).toHaveLength(3);
     expect(items[1]).toMatchObject({ startSec: 4, durationSec: 2.5, trimInSec: 1 });
     expect(items[2]).toMatchObject({ startSec: 6.5, durationSec: 3.5, trimInSec: 3.5 });
+  });
+
+  it('splits keyframed motion so the second part carries on, with ids that stay unique', () => {
+    const start = base();
+    start.tracks[0]!.items[0] = {
+      ...(start.tracks[0]!.items[0] as Extract<TimelineItem, { type: 'media' }>),
+      id: 'a',
+      startSec: 0,
+      durationSec: 4,
+      x: 0,
+      y: 0,
+      w: 100,
+      h: 100,
+      keyframes: [
+        { atSec: 0, scale: 1 },
+        { atSec: 4, scale: 2 },
+      ],
+    } as TimelineItem;
+    const { timeline } = apply(
+      [
+        { op: 'split', at: { trackId: 'video', index: 0 }, atSec: 2 },
+        { op: 'split', at: { trackId: 'video', index: 0 }, atSec: 1 },
+      ],
+      start,
+    );
+    const items = timeline.tracks[0]!.items as Array<Extract<TimelineItem, { type: 'media' }>>;
+    expect(items.map((i) => i.id)).toEqual(['a', 'a-3', 'a-2', undefined]);
+    // 0-1 s: 1 → 1.25; 1-2 s: 1.25 → 1.5; 2-4 s: 1.5 → 2, each from its own start
+    expect(items[0]!.keyframes).toEqual([
+      { atSec: 0, scale: 1 },
+      { atSec: 1, scale: 1.25 },
+    ]);
+    expect(items[1]!.keyframes).toEqual([
+      { atSec: 0, scale: 1.25 },
+      { atSec: 1, scale: 1.5 },
+    ]);
+    expect(items[2]!.keyframes).toEqual([
+      { atSec: 0, scale: 1.5 },
+      { atSec: 2, scale: 2 },
+    ]);
+  });
+
+  it('refuses to split a drawn graphic or motion item', () => {
+    const start = base();
+    start.tracks.push({
+      id: 'draw',
+      type: 'overlay',
+      items: [
+        {
+          type: 'graphic',
+          startSec: 0,
+          durationSec: 4,
+          x: 0,
+          y: 0,
+          w: 10,
+          h: 10,
+          content: { kind: 'text', text: 'Hi' },
+          anim: { in: 'draw' },
+        } as never,
+      ],
+    });
+    expect(() =>
+      apply([{ op: 'split', at: { trackId: 'draw', index: 0 }, atSec: 2 }], start),
+    ).toThrow(/restart it/);
   });
 
   it('refuses a split outside the item', () => {

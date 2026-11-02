@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { localUrlReason } from '../../common/safe-fetch';
 import { PRESSABLE_KEYS } from '../browser/browser-scripts';
 import { confirmChange } from './gate';
 import { obj, str } from './json-schemas';
@@ -116,6 +117,10 @@ const browserOpen: AssistantTool<z.infer<typeof OpenInput>> = {
     obj({ url: str('The page to open (http or https)', { maxLength: 2000 }) }, ['url']),
   async handler(ctx, deps, input) {
     if (!/^https?:\/\//i.test(input.url)) return { ok: false, error: 'Only http and https pages.' };
+    // The browser is signed in and on the user's network: don't let a page's text steer it to the
+    // router, localhost services or other machines on the LAN.
+    const local = await localUrlReason(input.url);
+    if (local) return { ok: false, error: local };
     const problem = await browserProblem(deps);
     if (problem) return problem;
     const opened = await deps.browser.open(ctx.sessionId, input.url);

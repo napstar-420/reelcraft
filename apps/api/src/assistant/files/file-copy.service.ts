@@ -4,6 +4,7 @@ import { DRIZZLE, type Db } from '../../db/drizzle.provider';
 import { blob } from '../../db/schema/index';
 import { ulid } from '../../common/ulid';
 import { STORAGE_ADAPTER, type StorageAdapter } from '../../storage/storage.adapter';
+import { queueStorageOrphans } from '../../artifact/storage-orphans';
 import { extOf } from '../attachments/attachment.logic';
 
 /** Copies a stored file to a new key, so the assistant can turn an attachment (or anything a run
@@ -29,5 +30,31 @@ export class FileCopyService {
     const objectKey = keyFor(blobId, ext);
     await this.storage.copy(source.objectKey, objectKey, { mime: source.mime });
     return { blobId, objectKey, sha256: source.sha256, mime: source.mime, ext };
+  }
+
+  /** `copy`, then `use` the copy (create the asset, reference or input that owns it). If `use`
+   * throws, or `kept(result)` says no, nothing owns the copy: it's queued for the `blob.gc` sweep
+   * so a failed save doesn't leave a full-size file in the bucket for good. */
+  async copyInto<T>(
+    sourceBlobId: string,
+    keyFor: (blobId: string, ext: string) => string,
+    use: (copy: Awaited<ReturnType<FileCopyService['copy']>>) => Promise<T>,
+    kept: (result: T) => boolean = () => true,
+  ): Promise<T> {
+    const copy = await this.copy(sourceBlobId, keyFor);
+    let result: T;
+    try {
+      result = await use(copy);
+    } catch (error) {
+      await this.discard([copy.objectKey]);
+      throw error;
+    }
+    if (!kept(result)) await this.discard([copy.objectKey]);
+    return result;
+  }
+
+  /** Queues copies nothing ended up owning for deletion. */
+  async discard(objectKeys: string[]): Promise<void> {
+    if (objectKeys.length) await queueStorageOrphans(this.db, objectKeys, 'upload_rejected');
   }
 }

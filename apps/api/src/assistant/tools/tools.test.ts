@@ -1453,6 +1453,21 @@ describe('links and the browser', () => {
     });
   });
 
+  it('does not open this machine or the local network in the browser', async () => {
+    const d = browserDeps();
+    for (const url of [
+      'http://192.168.1.1/apply.cgi',
+      'http://localhost:3000/',
+      'http://[::ffff:7f00:1]/',
+    ]) {
+      expect(await runTool('browser_open', { url }, ctx(), d), url).toMatchObject({
+        ok: false,
+        error: expect.stringMatching(/local network/),
+      });
+    }
+    expect(d.browser.open).not.toHaveBeenCalled();
+  });
+
   it('says when the browser is not connected', async () => {
     const d = browserDeps({ unavailableReason: vi.fn(async () => 'Neo is off') });
     expect(await runTool('browser_open', { url: 'https://example.com' }, ctx(), d)).toMatchObject({

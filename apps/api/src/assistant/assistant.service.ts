@@ -631,6 +631,14 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
       text = text ? `${answerText}\n\n${text}` : answerText;
     }
 
+    // Check the attachments before closing any cards: a refused attachment (expired, or from
+    // another chat) must leave the user's question and plan cards answerable.
+    const attachments = await this.attachments.claim(
+      session.ownerId,
+      sessionId,
+      dto.attachments ?? [],
+    );
+
     const turnId = ulid();
     for (const question of pending) {
       const payload = question.payload as QuestionPayload;
@@ -649,11 +657,6 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
       for (const plan of plans) await this.updateItem(plan.id, { state: 'dismissed' });
     }
 
-    const attachments = await this.attachments.claim(
-      session.ownerId,
-      sessionId,
-      dto.attachments ?? [],
-    );
     await this.createItem(sessionId, turnId, 'user_message', null, {
       text,
       ...(attachments.length && { attachments }),

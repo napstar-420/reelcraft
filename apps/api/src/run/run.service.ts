@@ -1695,6 +1695,9 @@ export class RunService {
       query.channelId ? eq(run.channelId, query.channelId) : undefined,
       query.state ? eq(run.state, query.state) : undefined,
       query.blueprintId ? eq(blueprintVersion.blueprintId, query.blueprintId) : undefined,
+      // runs of a trashed blueprint or channel are hidden with it
+      isNull(blueprint.deletedAt),
+      isNull(channel.deletedAt),
     ].filter((condition): condition is NonNullable<typeof condition> => condition !== undefined);
     const where = conditions.length ? and(...conditions) : undefined;
 
@@ -1731,7 +1734,9 @@ export class RunService {
     const countQuery = this.db
       .select({ count: sql<number>`count(*)::int` })
       .from(run)
-      .innerJoin(blueprintVersion, eq(blueprintVersion.id, run.blueprintVersionId));
+      .innerJoin(channel, eq(channel.id, run.channelId))
+      .innerJoin(blueprintVersion, eq(blueprintVersion.id, run.blueprintVersionId))
+      .innerJoin(blueprint, eq(blueprint.id, blueprintVersion.blueprintId));
 
     const [rows, countRows] = await Promise.all([
       (where ? baseQuery.where(where) : baseQuery)

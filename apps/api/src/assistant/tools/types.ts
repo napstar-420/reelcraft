@@ -147,7 +147,7 @@ export interface ToolDeps {
     | 'setPrimary'
   >;
   /** Copies a stored file to a new key (attachments into the Library, a Character, a run). */
-  files: Pick<FileCopyService, 'copy'>;
+  files: Pick<FileCopyService, 'copy' | 'copyInto' | 'discard'>;
   runInputs: Pick<RunInputService, 'attachMediaInput'>;
   voices: Pick<VoiceStudioAdapter, 'cloneFromAsset'>;
   /** Downloads a link into the chat (import_from_link). */

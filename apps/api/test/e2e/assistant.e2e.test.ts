@@ -696,6 +696,33 @@ describe('assistant (e2e)', () => {
     expect(await http.app.get(GoalService).refusal(sid, bpId)).toBeNull();
   });
 
+  it('counts what a run can spend against the goal, and always allows free runs', async () => {
+    const goals = http.app.get(GoalService);
+    const sid = await newSession('auto');
+    await goals.create({
+      sessionId: sid,
+      blueprintId,
+      goal: 'Free tries only',
+      maxRuns: 3,
+      maxSpendUsd: 0,
+    });
+    expect(await goals.refusal(sid, blueprintId, 0)).toBeNull();
+    expect(await goals.refusal(sid, blueprintId, 5)).toContain('Only free test runs are left');
+    const other = await newSession('auto');
+    await goals.create({
+      sessionId: other,
+      blueprintId,
+      goal: 'Up to a dollar',
+      maxRuns: 3,
+      maxSpendUsd: 1,
+    });
+    expect(await goals.refusal(other, blueprintId, 0.5)).toBeNull();
+    expect(await goals.refusal(other, blueprintId, 20)).toContain('at most $1.00');
+    expect(await goals.refusal(other, blueprintId, Number.POSITIVE_INFINITY)).toContain(
+      'no budget',
+    );
+  });
+
   it('watches a run and wakes up when it fails, until the wake limit', async () => {
     const settings = await call<{ defaultMode: string; maxWakesPerRun: number }>(
       '/assistant/settings',
@@ -1640,6 +1667,32 @@ describe('assistant (e2e)', () => {
     await turn(sid, { text: 'actually do something else' });
     const session = await waitIdle(sid);
     expect(ofType(session, 'question')[0]!.state).toBe('dismissed');
+  });
+
+  it('keeps a question open when the message with its answer is refused', async () => {
+    const ask = {
+      call: 'ask_user',
+      args: {
+        questions: [
+          { id: 'q', header: 'Q', question: 'Which?', options: [{ label: 'A' }, { label: 'B' }] },
+        ],
+      },
+    };
+    useScript([[ask], [{ say: 'ok' }]]);
+    const sid = await newSession();
+    await turn(sid, { text: 'start' });
+    const question = ofType(await waitIdle(sid), 'question')[0]!;
+    const refused = await turn(sid, {
+      answer: { questionItemId: question.id, answers: { q: 'A' } },
+      attachments: ['01NOSUCHATTACHMENT0000000'],
+    });
+    expect(refused.status).toBe(400);
+    const after = await getSession(sid);
+    expect(ofType(after, 'question')[0]!.state).toBe('pending');
+    expect(
+      (await turn(sid, { answer: { questionItemId: question.id, answers: { q: 'A' } } })).status,
+    ).toBe(202);
+    expect(ofType(await waitIdle(sid), 'question')[0]!.state).toBe('answered');
   });
 
   it('rejects an answer to a question that is not pending', async () => {
