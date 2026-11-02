@@ -187,7 +187,10 @@ export class MediaReviewService {
         300_000,
       );
       const stats = parseAudioStats(report.stderr, durationSec ?? undefined);
-      const heard = await this.audio.transcribeBuffer(await readFile(audioFile), 'audio/mp4', by);
+      // a free VoiceStudio listen was not approved to spend: no silent switch to paid Deepgram
+      const heard = await this.audio.transcribeBuffer(await readFile(audioFile), 'audio/mp4', by, {
+        fallback: by !== 'voicestudio',
+      });
       this.logger.log({ blobId, mime, by: heard.by, costUsd: heard.costUsd }, 'assistant listened');
       return {
         by: heard.by,

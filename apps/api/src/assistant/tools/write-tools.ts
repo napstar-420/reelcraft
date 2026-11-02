@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { BlueprintMetadataChanges, type CreateBlueprintVersionDto } from '@reelcraft/shared';
 import { ConflictException } from '@nestjs/common';
-import { baselineDraft, currentDraft } from './current-draft';
+import { baselineDraft, currentDraft, guardedDraftWrite } from './current-draft';
 import { confirmChange, turnEnded } from './gate';
 import { applyDraftOps, DRAFT_FIELDS, DRAFT_OPS, DraftOp } from './draft-ops';
 import { qualityIssues } from './quality-checks';
@@ -162,18 +162,13 @@ async function submitDraft(
     change,
   });
   if (refused) return refused;
-  try {
-    await deps.blueprints.setWorkingDraft(blueprintId, draft, blueprint.currentVersionId);
-  } catch (error) {
-    if (error instanceof ConflictException) {
-      return {
-        ok: false,
-        error:
-          'Someone saved a new version of this blueprint meanwhile, so nothing was written. Read it again with get_blueprint and redo the change.',
-      };
-    }
-    throw error;
-  }
+  const written = await guardedDraftWrite(ctx, blueprintId, () =>
+    deps.blueprints.setWorkingDraft(blueprintId, draft, blueprint.currentVersionId, {
+      // read before the approval: edits the editor autosaved while it waited are not overwritten
+      expectedWorkingDraft: blueprint.workingDraft,
+    }),
+  );
+  if (written.refused) return written.refused;
   // From now on the server holds the newest draft, not the editor's copy.
   if (ctx.editorDraft?.blueprintId === blueprintId) ctx.editorDraft = null;
   deps.blueprintChanged(blueprintId);

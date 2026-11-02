@@ -818,6 +818,7 @@ describe('write tools', () => {
       'bp1',
       expect.objectContaining({ graph: [expect.objectContaining({ key: 'script' })] }),
       'v2',
+      { expectedWorkingDraft: null },
     );
     expect(deps.blueprintChanged).toHaveBeenCalledWith('bp1');
     expect(c.baselines.has('bp1')).toBe(true);

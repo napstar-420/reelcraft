@@ -31,8 +31,13 @@ export class AssistantWatchService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(AssistantWatchService.name);
   private subscription: Subscription | undefined;
   private wakeHandler: WakeHandler | undefined;
-  /** Watches being handled, so a burst of notifications for one run is handled in order. */
-  private chain: Promise<void> = Promise.resolve();
+  /** Lets the queue run once AssistantService has finished its boot recovery (`start`). */
+  private markStarted: () => void = () => {};
+  /** Watches being handled, so a burst of notifications for one run is handled in order. Held
+   * until `start`, so a wake can't begin a turn that the boot recovery then marks interrupted. */
+  private chain: Promise<void> = new Promise<void>((resolve) => {
+    this.markStarted = resolve;
+  });
 
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
@@ -50,6 +55,11 @@ export class AssistantWatchService implements OnModuleInit, OnModuleDestroy {
       this.enqueue(() => this.handle(event.notification));
     });
     this.enqueue(() => this.replay());
+  }
+
+  /** Called by AssistantService once its own boot recovery is done. */
+  start(): void {
+    this.markStarted();
   }
 
   onModuleDestroy(): void {

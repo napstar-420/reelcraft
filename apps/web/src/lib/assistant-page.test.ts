@@ -21,6 +21,8 @@ describe('pageContextFor', () => {
       runId: 'r1',
       stageKey: 'edit me',
     });
+    // a malformed escape keeps the raw segment instead of throwing
+    expect(pageContextFor('/runs/r1/stages/%E0%A4%A/edit')).toMatchObject({ stageKey: '%E0%A4%A' });
     expect(pageContextFor('/channels/c1')).toEqual({ page: 'channel', channelId: 'c1' });
     expect(pageContextFor('/settings/providers')).toEqual({ page: 'settings' });
     expect(pageContextFor('/editor')).toEqual({ page: 'other' });

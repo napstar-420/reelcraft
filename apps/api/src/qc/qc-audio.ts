@@ -112,11 +112,12 @@ export class QcAudioService {
   }
 
   /** Transcribes audio in memory with word timings. VoiceStudio falls back to Deepgram like
-   * `transcribe` does. */
+   * `transcribe` does, unless `fallback` is off (a caller that promised the free path). */
   async transcribeBuffer(
     audio: Buffer,
     mime: string,
     by: QcTranscriber,
+    { fallback = true }: { fallback?: boolean } = {},
   ): Promise<{
     transcript: string;
     durationSec: number;
@@ -133,7 +134,7 @@ export class QcAudioService {
       const { timing } = await this.voiceStudio.transcribe(audio, mime);
       return { ...timing, costUsd: 0, by: 'voicestudio' };
     } catch (error) {
-      if (!(await this.keys.get('deepgram'))) throw error;
+      if (!fallback || !(await this.keys.get('deepgram'))) throw error;
       return viaDeepgram();
     }
   }
