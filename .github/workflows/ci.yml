@@ -49,6 +49,9 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+      # the assistant's media tests probe, cut and analyse real files
+      - name: Install FFmpeg
+        run: sudo apt-get update -q && sudo apt-get install -yq --no-install-recommends ffmpeg
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @reelcraft/shared build
       - run: pnpm --filter @reelcraft/api run test:e2e --shard=${{ matrix.shard }}/2

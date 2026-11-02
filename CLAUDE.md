@@ -70,7 +70,7 @@ Reelcraft is a generic video creator. Build small, reusable blocks that combine 
 - Place unit tests beside source as `*.test.ts`; place API E2E tests in `apps/api/test/e2e/*.e2e.test.ts`.
 - API unit tests use Vitest with SWC to preserve Nest decorator metadata. E2E tests require `TEST_DATABASE_URL`/Postgres.
 - The pre-commit hook (`.husky/pre-commit`, installed by `pnpm install`) runs lint and Prettier on staged files, the shared build, root/API typechecks, shared/API unit tests and `pnpm test:release`; CI does not repeat them. CI runs only the API E2E tests (two shards against Postgres) and the image build, smoke and update tests. Don't skip the hook with `--no-verify`.
-- FFmpeg/ffprobe and Chrome/Chromium are required only for local media/render acceptance scripts, not normal CI.
+- FFmpeg/ffprobe are required by the API E2E suite (the assistant's media tests; CI installs them) and by the local media/render acceptance scripts. Chrome/Chromium is needed only by those acceptance scripts.
 
 ## Git
 
