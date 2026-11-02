@@ -15,6 +15,9 @@ Characters belong to one channel. Open a channel and select the **Characters** t
 2. Enter a **Name** and a **Description**, such as its appearance and personality.
 3. Select **Create**.
 
+You can also attach photos to the [assistant](../blueprints/assistant.md) and ask it to make a
+character from them, or to add them to one.
+
 The new character is a **Draft** until it has at least one reference image. Then it becomes
 **Ready**. Only Ready characters can be used in a run.
 

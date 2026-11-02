@@ -74,13 +74,14 @@ export class S3StorageAdapter implements StorageAdapter {
     };
   }
 
-  async copy(srcKey: string, destKey: string): Promise<PutResult> {
+  async copy(srcKey: string, destKey: string, opts?: { mime?: string }): Promise<PutResult> {
     const res = await this.logged('copy', { storageKey: destKey, sourceKey: srcKey }, () =>
       this.client.send(
         new CopyObjectCommand({
           Bucket: this.bucket,
           Key: destKey,
           CopySource: `${this.bucket}/${srcKey}`,
+          ...(opts?.mime && { MetadataDirective: 'REPLACE', ContentType: opts.mime }),
         }),
       ),
     );

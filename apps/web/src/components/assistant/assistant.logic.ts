@@ -60,7 +60,7 @@ export function invalidationsFor(item: AssistantItemDto): Array<readonly unknown
     return [['blueprint', blueprintId], ['blueprint-versions', blueprintId], ['blueprints']];
   }
   if (item.type === 'turn_status' && item.state !== 'running') {
-    return [['blueprints'], ['channels'], ['runs']];
+    return [['blueprints'], ['channels'], ['runs'], ['assets'], ['characters'], ['character']];
   }
   return [];
 }
@@ -254,6 +254,18 @@ export function describeToolCall(call: ToolCallPayload, state: string | null): s
         return 'Started watching a run';
       case 'unwatch_run':
         return 'Stopped watching a run';
+      case 'save_to_library':
+        return `Saved ${str(args.name) ?? 'a file'} to the Library`;
+      case 'delete_asset':
+        return 'Deleted a Library file';
+      case 'create_character':
+        return `Created the Character ${str(args.name) ?? ''}`.trim();
+      case 'update_character':
+        return 'Changed a Character';
+      case 'delete_character':
+        return 'Deleted a Character';
+      case 'make_voice':
+        return `Made the voice ${str(args.name) ?? ''}`.trim();
       case 'create_channel':
         return `Created the channel ${str(args.name) ?? ''}`.trim();
       case 'update_channel':

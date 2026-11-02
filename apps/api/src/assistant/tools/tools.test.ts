@@ -130,6 +130,9 @@ function makeDeps(overrides: Partial<ToolDeps> = {}): ToolDeps {
     watches: {} as never,
     userGuide: new UserGuideService(),
     attachments: {} as never,
+    files: {} as never,
+    runInputs: {} as never,
+    voices: {} as never,
     ...overrides,
   };
 }
@@ -149,7 +152,10 @@ describe('tool registry', () => {
         'cancel_run',
         'create_blueprint',
         'create_channel',
+        'create_character',
+        'delete_asset',
         'delete_blueprint',
+        'delete_character',
         'delete_channel',
         'diff_drafts',
         'pause_run',
@@ -160,12 +166,14 @@ describe('tool registry', () => {
         'resume_run',
         'retry_stage',
         'run_stages',
+        'save_to_library',
         'save_version',
         'search_docs',
         'set_concurrency',
         'start_run',
         'unwatch_run',
         'update_channel',
+        'update_character',
         'edit_draft',
         'get_blueprint',
         'get_capability',
@@ -184,6 +192,7 @@ describe('tool registry', () => {
         'list_models',
         'list_runs',
         'list_styles',
+        'make_voice',
         'listen',
         'present_plan',
         'propose_draft',
@@ -203,18 +212,21 @@ describe('tool registry', () => {
       'archive_channel',
       'create_blueprint',
       'create_channel',
+      'create_character',
       'edit_draft',
       'propose_draft',
       'restore_version',
+      'save_to_library',
       'save_version',
       'update_channel',
+      'update_character',
       'update_metadata',
     ]);
     expect(
       ASSISTANT_TOOLS.filter((t) => t.kind === 'destroy')
         .map((t) => t.name)
         .sort(),
-    ).toEqual(['delete_blueprint', 'delete_channel']);
+    ).toEqual(['delete_asset', 'delete_blueprint', 'delete_channel', 'delete_character']);
     expect(
       ASSISTANT_TOOLS.filter((t) => t.kind === 'interact')
         .map((t) => t.name)
@@ -299,6 +311,36 @@ describe('JSON Schemas stay in sync with the Zod inputs (drift guard)', () => {
     watch_run: { runId: 'r1' },
     unwatch_run: { runId: 'r1' },
     search_docs: { query: 'raise budget', limit: 3 },
+    save_to_library: {
+      channelId: 'ch1',
+      source: { attachmentId: 'a1' },
+      name: 'Logo',
+      kind: 'media.image',
+      tags: ['brand'],
+    },
+    delete_asset: { assetId: 'as1' },
+    create_character: {
+      channelId: 'ch1',
+      name: 'Mia',
+      description: 'Red hair, green coat',
+      references: [{ source: { attachmentId: 'a1' }, view: 'front', caption: 'smiling' }],
+    },
+    update_character: {
+      characterId: 'c1',
+      name: 'Mia B',
+      description: 'd',
+      addReferences: [{ source: { assetId: 'as1' }, view: 'profile' }],
+      removeReferences: ['b1'],
+      primary: 'new:0',
+    },
+    delete_character: { characterId: 'c1' },
+    make_voice: {
+      source: { attachmentId: 'a1' },
+      name: 'Host',
+      channelId: 'ch1',
+      transcript: 'hi',
+      language: 'en',
+    },
     read_guide: { topic: 'limits' },
     validate_draft: { blueprintId: 'bp1', draft: exampleScript() },
     propose_draft: {

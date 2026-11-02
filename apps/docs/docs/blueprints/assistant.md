@@ -86,8 +86,15 @@ instead: **Load its version** or **Keep mine**.
 **Runs.** It can start a **Free test run** or a real run, re-make stages of a run after fixing them
 (only that stage, up to it, or from it to the end), retry a failed stage, pause, continue and stop a
 run, raise its budget, approve or reject a stage waiting for review, and fill in a stage waiting for
-input. A run it starts appears in the chat with its live status. Run inputs that are files (images,
-audio, video) can only be added by you, on the run.
+input. A run it starts appears in the chat with its live status. For run inputs that are files
+(images, audio, video), it uses files you attached, files from the channel's **Library**, or what
+another run made.
+
+**The Library, characters and voices.** From a file you attached, or a picture or sound a run made,
+it can save an asset to a channel's **Library**, create a character (or add pictures to one, or
+choose its main picture), and make a [VoiceStudio](../voice-studio.md) voice from a clear recording.
+It can also delete assets and characters when you ask. It can't make a character from a description
+alone: give it a picture, or ask it to make one with a run first.
 
 **Reviewing what runs made.** It can read every run: which stage failed and why, what each cost,
 the exact prompt each try sent and what it received, which check or quality control rejected an
@@ -106,8 +113,7 @@ update, or how to connect Codex, and it searches this guide (the copy that came 
 and answers with a link to the page.
 
 When you ask for something Reelcraft can't do, it says so instead of faking it. For example,
-Reelcraft can't publish a video to a platform, and the assistant can't create characters or upload
-assets for you.
+Reelcraft can't publish a video to a platform.
 
 ## Watching runs
 

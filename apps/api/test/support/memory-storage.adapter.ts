@@ -42,9 +42,9 @@ export class MemoryStorageAdapter implements StorageAdapter {
     return { bytes: object.body.byteLength, etag: hashOf(object.body), mime: object.mime };
   }
 
-  async copy(srcKey: string, destKey: string): Promise<PutResult> {
+  async copy(srcKey: string, destKey: string, opts?: { mime?: string }): Promise<PutResult> {
     const object = this.requireObject(srcKey);
-    this.objects.set(destKey, { ...object });
+    this.objects.set(destKey, { ...object, ...(opts?.mime && { mime: opts.mime }) });
     return { key: destKey, etag: hashOf(object.body), bytes: object.body.byteLength };
   }
 

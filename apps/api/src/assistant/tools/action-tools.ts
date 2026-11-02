@@ -5,6 +5,8 @@ import { confirmChange, turnEnded } from './gate';
 import { freeObject, obj, str } from './json-schemas';
 import type { AssistantTool, ToolDeps, ToolOutcome, TurnContext } from './types';
 import { autoWatch } from './watch-tools';
+import { MediaSource, mediaSourceJson, resolveMedia, type MediaKind } from './media-source';
+import { objectKey } from '../../storage/object-key';
 
 const RUN_ID = str('A run id (from list_runs, a result or the context).', { minLength: 1 });
 const STAGE_KEY = str('A stage key of that run (from get_run).', { minLength: 1 });
@@ -62,6 +64,66 @@ async function resolveVersion(
   };
 }
 
+// ---- file inputs -------------------------------------------------------------------------
+
+const FILE_KIND: Record<string, MediaKind> = {
+  'media.image': 'image',
+  'media.image_list': 'image',
+  'media.video': 'video',
+  'media.video_list': 'video',
+  'media.audio': 'audio',
+};
+
+/** Checks every file input before the run is created: each required one is given, each file is
+ * the right kind, and a single-file input gets one file. */
+async function resolveFileInputs(
+  deps: ToolDeps,
+  defs: NonNullable<CreateBlueprintVersionDto['inputs']>,
+  files: Record<string, MediaSource[]>,
+): Promise<
+  | { ok: true; files: Array<{ key: string; blobIds: string[]; labels: string[] }> }
+  | { ok: false; error: string }
+> {
+  const mediaDefs = defs.filter((def) => def.accepts.kind.startsWith('media.'));
+  const unknown = Object.keys(files).filter((key) => !mediaDefs.some((d) => d.key === key));
+  if (unknown.length) {
+    return {
+      ok: false,
+      error: `${unknown.join(', ')} ${unknown.length > 1 ? 'are not file inputs' : 'is not a file input'} of this blueprint. File inputs: ${mediaDefs.map((d) => `${d.key} (${d.accepts.kind})`).join(', ') || 'none'}.`,
+    };
+  }
+  const missing = mediaDefs.filter((def) => def.required && !files[def.key]?.length);
+  if (missing.length) {
+    return {
+      ok: false,
+      error: `These file inputs are required: ${missing.map((d) => `${d.key} (${d.accepts.kind})`).join(', ')}. Pass them in files (a file the user attached, a Library asset, or what a run made), or ask the user for one.`,
+    };
+  }
+  const out: Array<{ key: string; blobIds: string[]; labels: string[] }> = [];
+  for (const def of mediaDefs) {
+    const sources = files[def.key];
+    if (!sources?.length) continue;
+    if ('cardinality' in def.accepts && def.accepts.cardinality === 'one' && sources.length > 1) {
+      return { ok: false, error: `${def.key} takes one file, not ${sources.length}.` };
+    }
+    const wanted = FILE_KIND[def.accepts.kind];
+    const blobIds: string[] = [];
+    const labels: string[] = [];
+    for (const source of sources) {
+      const resolved = await resolveMedia(
+        deps,
+        source,
+        wanted ? [wanted] : ['image', 'video', 'audio'],
+      );
+      if (!resolved.ok) return { ok: false, error: `${def.key}: ${resolved.error}` };
+      blobIds.push(resolved.file.blobId);
+      labels.push(resolved.file.label);
+    }
+    out.push({ key: def.key, blobIds, labels });
+  }
+  return { ok: true, files: out };
+}
+
 // ---- start_run ---------------------------------------------------------------------------
 
 const StartRunInput = z.object({
@@ -71,13 +133,14 @@ const StartRunInput = z.object({
   inputs: z.record(z.string(), z.unknown()).optional(),
   budgetUsd: z.number().min(0).max(1000).optional(),
   untilStageKey: z.string().min(1).optional(),
+  files: z.record(z.string(), z.array(MediaSource).min(1).max(20)).optional(),
 });
 
 const startRun: AssistantTool<z.infer<typeof StartRunInput>> = {
   name: 'start_run',
   kind: 'action',
   description:
-    'Start a run of a blueprint. free=true is a free test run: every model is replaced by the fake provider, so it costs nothing and checks the wiring, but its text, pictures, scores and costs are placeholders. free=false is a real run with the real providers: it costs money, up to its budget. version: "saved" (default), a label, or "draft" (your unsaved changes). inputs: the run inputs by key (see get_blueprint; files such as images or audio can only be added by the user on the run page). budgetUsd: the most the run may spend (default: the blueprint\'s budget). untilStageKey: stop after that stage. Returns the run id.',
+    'Start a run of a blueprint. free=true is a free test run: every model is replaced by the fake provider, so it costs nothing and checks the wiring, but its text, pictures, scores and costs are placeholders. free=false is a real run with the real providers: it costs money, up to its budget. version: "saved" (default), a label, or "draft" (your unsaved changes). inputs: the run inputs by key (see get_blueprint). files: run inputs that are files (pictures, video, audio), by input key, each a list of sources: files the user attached ({attachmentId}), Library assets, or what another run made. budgetUsd: the most the run may spend (default: the blueprint\'s budget). untilStageKey: stop after that stage. Returns the run id.',
   input: StartRunInput,
   jsonSchema: () =>
     obj(
@@ -88,6 +151,16 @@ const startRun: AssistantTool<z.infer<typeof StartRunInput>> = {
         inputs: freeObject('Run input key → value.'),
         budgetUsd: { type: 'number', minimum: 0, maximum: 1000, description: 'Spending cap.' },
         untilStageKey: str('Stop after this stage.'),
+        files: {
+          type: 'object',
+          description: 'File inputs: input key → list of sources.',
+          additionalProperties: {
+            type: 'array',
+            minItems: 1,
+            maxItems: 20,
+            items: mediaSourceJson('A file.'),
+          },
+        },
       },
       ['blueprintId', 'free'],
     ),
@@ -100,18 +173,12 @@ const startRun: AssistantTool<z.infer<typeof StartRunInput>> = {
     const budget = input.budgetUsd ?? version.draft.budget?.runCapUsd ?? 0;
     const inputs = input.inputs ?? {};
     const defs = version.draft.inputs ?? [];
-    const files = defs.filter((def) => def.required && def.accepts.kind.startsWith('media.'));
-    if (files.length) {
-      return {
-        ok: false,
-        error: `This blueprint needs files as run inputs (${files
-          .map((d) => d.label || d.key)
-          .join(
-            ', ',
-          )}), which only the user can add: ask them to start the run from the blueprint (Run) so they can upload them.`,
-      };
-    }
-    const missing = defs.filter((def) => def.required && inputs[def.key] === undefined);
+    const fileInputs = await resolveFileInputs(deps, defs, input.files ?? {});
+    if (!fileInputs.ok) return { ok: false, error: fileInputs.error };
+    const missing = defs.filter(
+      (def) =>
+        def.required && !def.accepts.kind.startsWith('media.') && inputs[def.key] === undefined,
+    );
     if (missing.length) {
       return {
         ok: false,
@@ -136,6 +203,7 @@ const startRun: AssistantTool<z.infer<typeof StartRunInput>> = {
           ([k, v]) =>
             `${k}: ${String(typeof v === 'string' ? v : JSON.stringify(v)).slice(0, 120)}`,
         ),
+        ...fileInputs.files.map((f) => `${f.key}: ${f.labels.join(', ')}`),
         ...(input.untilStageKey ? [`Stops after ${input.untilStageKey}`] : []),
       ],
       costUsd: input.free ? 0 : budget > 0 ? budget : null,
@@ -155,6 +223,19 @@ const startRun: AssistantTool<z.infer<typeof StartRunInput>> = {
       { dryRun: input.free },
     );
     try {
+      const ownerId = fileInputs.files.length
+        ? (await deps.channels.get(blueprint.channelId)).ownerId
+        : '';
+      for (const file of fileInputs.files) {
+        const blobs = [];
+        for (const blobId of file.blobIds) {
+          const copy = await deps.files.copy(blobId, (newId, ext) =>
+            objectKey.input(ownerId, blueprint.channelId, created.id, newId, ext),
+          );
+          blobs.push({ blobId: copy.blobId, objectKey: copy.objectKey, sha256: copy.sha256 });
+        }
+        await deps.runInputs.attachMediaInput(created.id, file.key, blobs);
+      }
       await deps.runControl.start(created.id);
     } catch (error) {
       await deps.cancellation.cancel(created.id).catch(() => undefined);

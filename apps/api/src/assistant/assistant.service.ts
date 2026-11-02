@@ -53,6 +53,9 @@ import { MediaReviewService } from './review/media-review.service';
 import { AssistantWatchService } from './watch/assistant-watch.service';
 import { UserGuideService } from './user-guide/user-guide.service';
 import { AttachmentService } from './attachments/attachment.service';
+import { FileCopyService } from './files/file-copy.service';
+import { RunInputService } from '../run/run-input.service';
+import { VoiceStudioAdapter } from '../provider/voicestudio/voicestudio.adapter';
 import { describeAttachment } from './attachments/attachment.logic';
 import { AssistantSettingsService } from './watch/assistant-settings.service';
 import { MediaPreviewService } from '../artifact/media-preview.service';
@@ -148,6 +151,9 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
     private readonly assistantSettings: AssistantSettingsService,
     userGuide: UserGuideService,
     private readonly attachments: AttachmentService,
+    files: FileCopyService,
+    runInputs: RunInputService,
+    voices: VoiceStudioAdapter,
   ) {
     this.toolDeps = {
       blueprints,
@@ -172,6 +178,9 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
       watches,
       userGuide,
       attachments,
+      files,
+      runInputs,
+      voices,
       engineLayer: () => engineDefaults(config),
       blueprintChanged: (blueprintId) => this.events.publish({ type: 'blueprint', blueprintId }),
     };

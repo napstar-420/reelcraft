@@ -9,6 +9,8 @@ import type { AssistantItemDto, AssistantSessionDetailDto } from '@reelcraft/sha
 import { ulid } from '../../src/common/ulid';
 import { ChannelService } from '../../src/channel/channel.service';
 import { BlueprintService } from '../../src/blueprint/blueprint.service';
+import { CharacterService } from '../../src/channel/character.service';
+import { AssetService } from '../../src/channel/asset.service';
 import { AssistantService } from '../../src/assistant/assistant.service';
 import { FakeAssistantAgent, type FakeStep } from '../../src/assistant/agent/fake-assistant.agent';
 import { exampleScript } from '../../src/assistant/guide';
@@ -1055,6 +1057,91 @@ describe('assistant (e2e)', () => {
       expect(left).toHaveLength(0);
       const blobs = await testDb.db.select().from(blob).where(eq(blob.id, video.body.id));
       expect(blobs).toHaveLength(0);
+    });
+
+    it('turns an attached picture into a Character and a Library asset, and starts a run with it as a file input', async () => {
+      const picture = await attach('face.png', 'image/png');
+      const sid = await newSession('auto');
+      const bpId = blueprintId;
+      const draft = exampleScript();
+      draft.inputs = [
+        ...(draft.inputs ?? []),
+        {
+          key: 'photo',
+          label: 'Photo',
+          required: true,
+          accepts: { kind: 'media.image', cardinality: 'one' },
+        } as never,
+      ];
+      await http.app.get(BlueprintService).createVersion(bpId, draft);
+      let characterId = '';
+      let assetId = '';
+      let runId = '';
+      useScript([
+        [
+          {
+            call: 'create_character',
+            args: {
+              channelId,
+              name: `Mia ${Date.now()}`,
+              description: 'Red hair, green coat',
+              references: [{ source: { attachmentId: picture.body.id }, view: 'front' }],
+            },
+            expect: (r) => {
+              expect(r.ok).toBe(true);
+              const result = JSON.parse(r.text) as { characterId: string; ready: boolean };
+              expect(result.ready).toBe(true);
+              characterId = result.characterId;
+            },
+          },
+          {
+            call: 'save_to_library',
+            args: {
+              channelId,
+              source: { attachmentId: picture.body.id },
+              name: `Logo ${Date.now()}`,
+            },
+            expect: (r) => {
+              expect(r.ok).toBe(true);
+              const result = JSON.parse(r.text) as { assetId: string; kind: string };
+              expect(result.kind).toBe('media.image');
+              assetId = result.assetId;
+            },
+          },
+          {
+            call: 'start_run',
+            // the asset id is only known once save_to_library has run
+            args: () => ({
+              blueprintId: bpId,
+              free: true,
+              inputs: { topic: 'otters' },
+              files: { photo: [{ assetId }] },
+            }),
+            expect: (r) => {
+              expect(r.ok).toBe(true);
+              runId = (JSON.parse(r.text) as { runId: string }).runId;
+            },
+          },
+          { say: 'Done.' },
+        ],
+      ]);
+      await turn(sid, { text: 'Make her a Character, save the picture, and run it' });
+      const session = await waitIdle(sid);
+      const calls = ofType(session, 'tool_call').map(
+        (i) => i.payload as { tool: string; ok?: boolean },
+      );
+      expect(calls.map((c) => [c.tool, c.ok])).toEqual([
+        ['create_character', true],
+        ['save_to_library', true],
+        ['start_run', true],
+      ]);
+      const character = await http.app.get(CharacterService).get(characterId);
+      expect(character.readiness).toBe('ready');
+      expect((character.referenceSet as unknown[]).length).toBe(1);
+      const asset = await http.app.get(AssetService).get(assetId);
+      expect(asset.kind).toBe('media.image');
+      const inputBlobs = await testDb.db.select().from(blob).where(eq(blob.runId, runId));
+      expect(inputBlobs.some((b) => b.scope === 'input')).toBe(true);
     });
 
     it('refuses a file it cannot read, a wrong key, and lets an unsent file be removed', async () => {

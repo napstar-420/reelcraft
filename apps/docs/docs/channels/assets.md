@@ -16,6 +16,9 @@ set of drawings. Open a channel and select the **Assets** tab.
 5. Under **File**, drop a file onto the box, or select it to choose one.
 6. Select **Create**. A bar shows the upload's progress.
 
+You can also attach a file to the [assistant](../blueprints/assistant.md) and ask it to save the
+file to the Library.
+
 If the name is already taken in the channel, the dialog says **An asset named "…" already exists in
 this channel** and keeps your file, so you can change the name and try again.
 

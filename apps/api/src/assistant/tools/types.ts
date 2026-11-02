@@ -31,6 +31,9 @@ import type { MediaReviewService } from '../review/media-review.service';
 import type { AssistantWatchService } from '../watch/assistant-watch.service';
 import type { UserGuideService } from '../user-guide/user-guide.service';
 import type { AttachmentService } from '../attachments/attachment.service';
+import type { FileCopyService } from '../files/file-copy.service';
+import type { RunInputService } from '../../run/run-input.service';
+import type { VoiceStudioAdapter } from '../../provider/voicestudio/voicestudio.adapter';
 import type { SchemaValidatorService } from '../../json-schema/schema-validator.service';
 
 /** What a tool wants to do, shown to the user on an approval card in Manual mode. */
@@ -115,8 +118,22 @@ export interface ToolDeps {
   providers: Pick<ProviderRegistry, 'list' | 'get'>;
   styles: Pick<StyleRegistry, 'list'>;
   channels: Pick<ChannelService, 'get' | 'list' | 'create' | 'update' | 'setArchived' | 'delete'>;
-  assets: Pick<AssetService, 'list' | 'get'>;
-  characters: Pick<CharacterService, 'list' | 'get'>;
+  assets: Pick<AssetService, 'list' | 'get' | 'create' | 'delete'>;
+  characters: Pick<
+    CharacterService,
+    | 'list'
+    | 'get'
+    | 'create'
+    | 'update'
+    | 'delete'
+    | 'confirmReference'
+    | 'deleteReference'
+    | 'setPrimary'
+  >;
+  /** Copies a stored file to a new key (attachments into the Library, a Character, a run). */
+  files: Pick<FileCopyService, 'copy'>;
+  runInputs: Pick<RunInputService, 'attachMediaInput'>;
+  voices: Pick<VoiceStudioAdapter, 'cloneFromAsset'>;
   schemas: Pick<SchemaValidatorService, 'validate'>;
   runs: Pick<RunInsightService, 'list' | 'get' | 'stage' | 'media'>;
   runControl: Pick<

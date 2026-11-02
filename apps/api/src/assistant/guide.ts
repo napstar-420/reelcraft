@@ -427,7 +427,7 @@ ${renderTroubleshooting()}`,
 - **Branching**: the only conditional is \`enabledWhen\` (a run input equals a value). No if/else, loops over stages, or computed conditions.
 - **Iterate** over a many-cardinality media set, or use \`groupKey\` (ignored); \`iterate.over\` must be an array from memory or a whole-output array from prev.
 - **QC on video output or on \`human.input\`** (use approval); QC \`includeTranscript\` outside audio.
-- **More than one role**, or creating Characters, uploading or editing assets, provider keys or Settings: you can only reference what exists. Tell the user to add it in the app.
+- **More than one role**, provider keys or Settings: tell the user to change them in the app. Characters, Library assets and voices can only be made from a file you have (one the user attached, or what a run made): you can't draw a Character from a description alone.
 - **Run inputs that are files** (images, audio, video): only the user can add them, on the run page.
 - **JSON schemas beyond the small subset** (\`$ref\`, \`oneOf\`, \`anyOf\`, \`allOf\`, \`additionalProperties\`, …).
 - **Template logic**: \`{{ }}\` only inserts values: no conditions, loops, formulas, and no \`{{ item }}\`.

@@ -16,6 +16,7 @@ import { AssistantWatchService } from './watch/assistant-watch.service';
 import { AssistantSettingsService } from './watch/assistant-settings.service';
 import { UserGuideService } from './user-guide/user-guide.service';
 import { AttachmentService } from './attachments/attachment.service';
+import { FileCopyService } from './files/file-copy.service';
 import { SettingsModule } from '../settings/settings.module';
 import { QcModule } from '../qc/qc.module';
 import { StorageModule } from '../storage/storage.module';
@@ -52,6 +53,7 @@ import { CodexNeoRegistrar } from '../provider/codex/codex-neo-registrar';
     AssistantSettingsService,
     UserGuideService,
     AttachmentService,
+    FileCopyService,
     // The order is the default: a new chat starts on the first available agent.
     {
       provide: ASSISTANT_AGENTS,

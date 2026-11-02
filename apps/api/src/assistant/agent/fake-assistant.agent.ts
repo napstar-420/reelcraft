@@ -10,6 +10,7 @@ import type { AssistantMode } from '@reelcraft/shared';
 /** One scripted step of a fake turn. */
 export type FakeStep =
   | { say: string }
+  /** `args` may be a function, for ids only known once earlier steps have run. */
   | { call: string; args: unknown; expect?: (result: ToolResult) => void }
   | { fail: string }
   /** Wait until released or until the turn is interrupted (then throws `interrupted`). */
@@ -71,7 +72,8 @@ export class FakeAssistantAgent implements AssistantAgent {
         options.handlers.onEvent({ type: 'message.delta', itemKey: `m${n}`, text: step.say });
         options.handlers.onEvent({ type: 'message', itemKey: `m${n}`, text: step.say });
       } else if ('call' in step) {
-        const result = await options.handlers.callTool(step.call, step.args);
+        const args = typeof step.args === 'function' ? (step.args as () => unknown)() : step.args;
+        const result = await options.handlers.callTool(step.call, args);
         step.expect?.(result);
       } else if ('hold' in step) {
         const aborted = new Promise<'aborted'>((resolve) =>
