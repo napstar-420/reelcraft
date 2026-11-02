@@ -26,7 +26,7 @@ Changing tabs or expanding the panel preserves the selected item and attempt. **
 same backend eligibility and confirmation rules on both surfaces. A disabled stage's stored outputs
 remain inspectable, but are unavailable to descendants until the stage is enabled again.
 
-![Shared stage details, item progress, and attempt provenance](/img/usage/dag-stage-details.jpg)
+![A stage's Attempts tab, showing what the attempt received](/img/usage/dag-stage-details.jpg)
 
 How each kind of output looks:
 

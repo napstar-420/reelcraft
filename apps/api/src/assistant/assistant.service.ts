@@ -813,13 +813,11 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
       const channelId = await this.contextChannel(dto.context);
       const notes = await this.knowledge.notesBlock(channelId).catch(() => null);
       const images = await this.attachedImages(attachments, ctx);
-      // a long or outdated chat continues in a fresh session, from a summary
+      // a chat whose tools are out of date continues in a fresh session, from a summary; a long
+      // chat is left to Codex or Claude, which manage their own context
       let externalSessionId = session.externalSessionId;
       let message = text;
-      const reason = carryOverReason({
-        stale: this.toSessionDto(session).stale,
-        lastInputTokens: await this.lastInputTokens(session.id, turnId),
-      });
+      const reason = carryOverReason({ stale: this.toSessionDto(session).stale });
       if (reason) {
         const carried = await this.carryOver(
           session,
