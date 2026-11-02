@@ -25,6 +25,7 @@ import { WorkspaceService } from '../../storage/workspace.service';
 import { MediaProbeService } from '../../artifact/media-probe.service';
 import { queueStorageOrphans } from '../../artifact/storage-orphans';
 import {
+  ATTACHMENT_LIMITS,
   attachmentKind,
   attachmentMime,
   attachmentProblem,
@@ -123,8 +124,18 @@ export class AttachmentService implements OnModuleInit, OnModuleDestroy {
     const ext = extOf(input.key);
     const mime = attachmentMime(input.mime, ext);
     const kind = attachmentKind(mime, ext);
+    const refuse = async (problem: string): Promise<never> => {
+      await queueStorageOrphans(this.db, [input.key], 'upload_rejected');
+      throw new BadRequestException({ code: 'attachment_rejected', message: problem });
+    };
+    // too big or empty: refuse before copying the file to disk to probe it
+    if (input.bytes > ATTACHMENT_LIMITS[kind] || input.bytes === 0) {
+      await refuse(
+        attachmentProblem({ kind, bytes: input.bytes, durationSec: null, probed: true })!,
+      );
+    }
     let probe: Probe | undefined;
-    if (kind !== 'file' && input.bytes > 0) {
+    if (kind !== 'file') {
       probe = await this.workspaces
         .withWorkspace(input.blobId, async (ws) => this.probes.probe(await ws.pull(input.key)))
         .catch(() => undefined);
@@ -136,10 +147,7 @@ export class AttachmentService implements OnModuleInit, OnModuleDestroy {
       durationSec: facts.durationSec,
       probed: probe !== undefined,
     });
-    if (problem) {
-      await queueStorageOrphans(this.db, [input.key], 'upload_rejected');
-      throw new BadRequestException({ code: 'attachment_rejected', message: problem });
-    }
+    if (problem) await refuse(problem);
     const id = ulid();
     await this.db.transaction(async (tx) => {
       await tx.insert(blob).values({

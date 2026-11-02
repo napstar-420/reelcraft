@@ -108,6 +108,44 @@ describe('LinkImportService', () => {
     expect(ytDlpError({ killed: true })).toMatch(/longer than 10 minutes/);
   });
 
+  it('gives the file itself longer than the 30 s allowed for the answer to start', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const { svc, attachments } = service();
+      let signal: AbortSignal | undefined;
+      let finish: () => void = () => {};
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('ab'));
+          finish = () => {
+            controller.enqueue(new TextEncoder().encode('c'));
+            controller.close();
+          };
+        },
+      });
+      svc.useForTests({
+        resolve: PUBLIC,
+        fetch: vi.fn(async (_url: string, init: { signal: AbortSignal }) => {
+          signal = init.signal;
+          return new Response(body, { status: 200, headers: { 'content-type': 'video/mp4' } });
+        }) as never,
+      });
+      const done = svc.import({
+        ownerId: 'local',
+        sessionId: 's1',
+        url: 'https://cdn.example/a.mp4',
+      });
+      while (!signal) await new Promise((r) => setImmediate(r)); // the request has started
+      await vi.advanceTimersByTimeAsync(90_000); // a 90 s download
+      expect(signal?.aborted).toBe(false);
+      finish();
+      await done;
+      expect(attachments.store).toHaveBeenCalledWith(expect.objectContaining({ bytes: 3 }));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('refuses a file larger than 1 GB from its declared length', async () => {
     const { svc } = service();
     svc.useForTests({

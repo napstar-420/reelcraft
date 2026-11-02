@@ -118,6 +118,10 @@ describe.skipIf(!hasFfmpeg)('MediaReviewService (real ffmpeg)', () => {
     expect(analysis!.sheets[0]!.shots[0]).toBe(0);
     expect(analysis!.loudnessPerSecond.length).toBe(4);
     expect(analysis!.transcript).toMatchObject({ by: 'voicestudio', wordsPerMinute: 167 });
+    // free VoiceStudio was chosen: no silent switch to paid Deepgram if it fails
+    expect(transcribe).toHaveBeenCalledWith(expect.anything(), 'audio/mp4', 'voicestudio', {
+      fallback: false,
+    });
 
     const silent = await service().analyze('b1', null);
     expect(silent!.transcript).toBeNull();

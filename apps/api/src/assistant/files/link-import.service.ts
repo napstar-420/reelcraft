@@ -108,13 +108,19 @@ export class LinkImportService {
   private async downloadDirect(url: string, dir: string): Promise<Downloaded | null> {
     let current = url;
     for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+      // 30 s for the answer to start, then up to 10 minutes for the file itself: one signal for
+      // the whole fetch would cut off any download longer than the first limit
+      const controller = new AbortController();
+      const headersTimer = setTimeout(() => controller.abort(), HEADERS_TIMEOUT_MS);
       const response = await this.fetchImpl(current, {
         redirect: 'manual',
-        signal: AbortSignal.timeout(HEADERS_TIMEOUT_MS),
+        signal: controller.signal,
         headers: { 'user-agent': 'Mozilla/5.0 (Reelcraft link import)' },
-      }).catch((error: unknown) => {
-        throw new BadRequestException(`The link could not be opened: ${String(error)}`);
-      });
+      })
+        .catch((error: unknown) => {
+          throw new BadRequestException(`The link could not be opened: ${String(error)}`);
+        })
+        .finally(() => clearTimeout(headersTimer));
       if (response.status >= 300 && response.status < 400) {
         const next = response.headers.get('location');
         await response.body?.cancel();
@@ -149,9 +155,17 @@ export class LinkImportService {
         if (bytes > MAX_DOWNLOAD_BYTES)
           limited.destroy(new Error('That file is larger than 1 GB.'));
       });
-      await pipeline(limited, createWriteStream(file)).catch((error: unknown) => {
-        throw new BadRequestException(error instanceof Error ? error.message : String(error));
-      });
+      const downloadTimer = setTimeout(
+        () =>
+          controller.abort(new Error('The download took longer than 10 minutes and was stopped.')),
+        DOWNLOAD_TIMEOUT_MS,
+      );
+      await pipeline(limited, createWriteStream(file))
+        .catch((error: unknown) => {
+          const reason = controller.signal.aborted ? controller.signal.reason : error;
+          throw new BadRequestException(reason instanceof Error ? reason.message : String(reason));
+        })
+        .finally(() => clearTimeout(downloadTimer));
       return { file, name: nameFromUrl(current, finalExt), mime: type, ext: finalExt || 'bin' };
     }
     throw new BadRequestException('The link redirects too many times.');

@@ -146,7 +146,9 @@ export function ChangeCard({
           <Button asChild size="xs" variant="outline">
             <Link
               to={
-                change.note.channelId ? `/channels/${change.note.channelId}` : '/settings/assistant'
+                change.note.channelId
+                  ? `/channels/${change.note.channelId}?tab=notes`
+                  : '/settings/assistant'
               }
             >
               See notes

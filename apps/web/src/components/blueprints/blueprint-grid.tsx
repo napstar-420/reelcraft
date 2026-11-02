@@ -305,7 +305,15 @@ export function BlueprintGrid({
       toast.success(`Moved "${target.name}" to the trash`, {
         action: {
           label: 'Undo',
-          onClick: () => void api.restoreBlueprint(target.id).then(() => refresh(target)),
+          onClick: () =>
+            void api.restoreBlueprint(target.id).then(
+              () => {
+                refresh(target);
+                void queryClient.invalidateQueries({ queryKey: ['trash'] });
+              },
+              (error: unknown) =>
+                toast.error(apiErrorMessage(error, 'Could not restore the blueprint.')),
+            ),
         },
       });
     },

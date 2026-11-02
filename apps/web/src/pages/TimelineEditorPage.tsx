@@ -90,6 +90,10 @@ export function TimelineEditorPage() {
   const [rerender, setRerender] = useState<TimelineOutputPreviewDto>();
   /** The assistant saved a newer draft while this editor had edits of its own. */
   const [incoming, setIncoming] = useState<number>();
+  // read inside `flush`: while the assistant's version waits for a choice, nothing autosaves
+  // (it would save over it with an old revision and only get a conflict)
+  const incomingRef = useRef<number>();
+  incomingRef.current = incoming;
   const playerRef = useRef<PlayerRef>(null);
   const timelineRef = useRef<Timeline>();
   const savedRef = useRef<Timeline>();
@@ -159,17 +163,19 @@ export function TimelineEditorPage() {
       return;
     }
     savingRef.current = false;
-    if (timelineRef.current !== savedRef.current) void flush();
+    if (timelineRef.current !== savedRef.current && incomingRef.current === undefined) void flush();
   }, [runId, stageKey]);
 
   useEffect(() => {
     if (!timeline || readOnly || save === 'conflict' || timeline === savedRef.current) return;
+    // Load its version / Keep mine is open: Keep mine saves, Load replaces the edits
+    if (incoming !== undefined) return;
     window.clearTimeout(saveTimer.current);
     setSave((current) => (current === 'saving' ? current : 'saving'));
     saveTimer.current = window.setTimeout(() => void flush(), 450);
     return () => window.clearTimeout(saveTimer.current);
     // `save` is deliberately left out: a failed save must wait for the next change, not loop.
-  }, [timeline, readOnly, flush]);
+  }, [timeline, readOnly, flush, incoming]);
 
   // Waits until every change is saved, for things that must act on the saved draft.
   const settleSave = useCallback(async () => {

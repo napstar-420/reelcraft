@@ -229,10 +229,12 @@ export class MediaReviewService {
       let transcript: VideoAnalysis['transcript'] = null;
       let words: Array<{ text: string; startSec: number; endSec: number }> = [];
       if (by && facts.hasAudio) {
+        // as for listen: a free VoiceStudio transcript never turns into a paid Deepgram one
         const heard = await this.audio.transcribeBuffer(
           await readFile(await this.extractSound(file)),
           'audio/mp4',
           by,
+          { fallback: by !== 'voicestudio' },
         );
         words = heard.words;
         transcript = {

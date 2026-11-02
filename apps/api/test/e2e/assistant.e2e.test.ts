@@ -399,6 +399,9 @@ describe('assistant (e2e)', () => {
       await call<Array<{ sessionId: string; tool: string; ok: boolean }>>('/assistant/activity');
     expect(activity.body[0]).toMatchObject({ sessionId: away, tool: 'propose_draft', ok: true });
     expect(activity.body.some((a) => a.tool === 'get_blueprint')).toBe(false);
+    expect((await call('/assistant/activity?limit=abc')).status).toBe(400);
+    expect((await call('/assistant/activity?before=yesterday')).status).toBe(400);
+    expect((await call<unknown[]>('/assistant/activity?limit=1')).body).toHaveLength(1);
 
     // a page shows the chat: no notification
     const here = await newSession('manual');

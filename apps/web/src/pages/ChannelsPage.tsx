@@ -16,6 +16,7 @@ import {
 import type { ChannelDto } from '@reelcraft/shared';
 import { cn } from 'cn';
 import { api } from '../api/client';
+import { apiErrorMessage } from '@/lib/api-error-message';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -214,9 +215,15 @@ function ChannelDetail({ channelId }: { channelId: string }) {
         action: {
           label: 'Undo',
           onClick: () =>
-            void api
-              .restoreChannel(target.id)
-              .then(() => queryClient.invalidateQueries({ queryKey: ['channels'] })),
+            void api.restoreChannel(target.id).then(
+              () => {
+                for (const queryKey of [['channels'], ['trash'], ['channel', target.id]]) {
+                  void queryClient.invalidateQueries({ queryKey });
+                }
+              },
+              (error: unknown) =>
+                toast.error(apiErrorMessage(error, 'Could not restore the channel.')),
+            ),
         },
       });
     },

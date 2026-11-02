@@ -584,3 +584,13 @@ export const AssistantActivityDto = z.object({
   createdAt: z.string(),
 });
 export type AssistantActivityDto = z.infer<typeof AssistantActivityDto>;
+
+/** `GET assistant/activity`: the page before a time (an item's `createdAt`), at most 100. */
+export const AssistantActivityQueryDto = z.object({
+  before: z
+    .string()
+    .refine((v) => !Number.isNaN(Date.parse(v)), 'before must be a date and time')
+    .optional(),
+  limit: z.coerce.number().int().min(1).max(100).optional(),
+});
+export type AssistantActivityQueryDto = z.infer<typeof AssistantActivityQueryDto>;

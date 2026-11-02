@@ -11,6 +11,7 @@ import {
   Query,
 } from '@nestjs/common';
 import {
+  AssistantActivityQueryDto,
   CreateAssistantAttachmentDto,
   CreateAssistantNoteDto,
   UpdateAssistantNoteDto,
@@ -37,11 +38,10 @@ export class AssistantController {
   ) {}
 
   @Get('assistant/activity')
-  activity(@Query('before') before?: string, @Query('limit') limit?: string) {
-    return this.assistant.activity({
-      before: before && !Number.isNaN(Date.parse(before)) ? before : undefined,
-      limit: limit ? Number(limit) : undefined,
-    });
+  activity(
+    @Query(new ZodValidationPipe(AssistantActivityQueryDto)) query: AssistantActivityQueryDto,
+  ) {
+    return this.assistant.activity(query);
   }
 
   @Get('assistant/notes')
