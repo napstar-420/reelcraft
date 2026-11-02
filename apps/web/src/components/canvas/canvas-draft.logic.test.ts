@@ -27,6 +27,7 @@ const blueprint: BlueprintDto = {
   workingDraftBaseVersionId: 'v0',
   runCount: 2,
   latestPosterBlobId: null,
+  latestVersion: { major: 1, minor: 0, stageCount: 0, phases: [] },
 };
 
 describe('withWorkingDraft', () => {
