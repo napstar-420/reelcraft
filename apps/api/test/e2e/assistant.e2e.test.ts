@@ -981,6 +981,41 @@ describe('assistant (e2e)', () => {
     });
     afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
+    beforeAll(() => {
+      // three shots (red 1.5 s, blue 2 s, green 1 s) with a tone, for analyze_video
+      execFileSync('ffmpeg', [
+        '-v',
+        'error',
+        '-y',
+        '-f',
+        'lavfi',
+        '-i',
+        'color=c=red:s=108x192:d=1.5',
+        '-f',
+        'lavfi',
+        '-i',
+        'color=c=blue:s=108x192:d=2',
+        '-f',
+        'lavfi',
+        '-i',
+        'color=c=green:s=108x192:d=1',
+        '-f',
+        'lavfi',
+        '-i',
+        'sine=frequency=440:duration=4.5',
+        '-filter_complex',
+        '[0][1][2]concat=n=3:v=1:a=0[v]',
+        '-map',
+        '[v]',
+        '-map',
+        '3:a',
+        '-pix_fmt',
+        'yuv420p',
+        '-shortest',
+        join(dir, 'cuts.mp4'),
+      ]);
+    });
+
     async function attach(file: string, mime: string) {
       const ext = file.split('.').pop()!;
       const upload = await call<{ blobId: string; objectKey: string; uploadUrl: string }>(
@@ -1142,6 +1177,69 @@ describe('assistant (e2e)', () => {
       expect(asset.kind).toBe('media.image');
       const inputBlobs = await testDb.db.select().from(blob).where(eq(blob.runId, runId));
       expect(inputBlobs.some((b) => b.scope === 'input')).toBe(true);
+    });
+
+    it('analyses an attached video into its shots and saves a breakdown card', async () => {
+      const video = await attach('cuts.mp4', 'video/mp4');
+      expect(video.status).toBe(201);
+      const sid = await newSession('plan');
+      let shots: Array<{ startSec: number; endSec: number }> = [];
+      useScript([
+        [
+          {
+            call: 'analyze_video',
+            args: { source: { attachmentId: video.body.id } },
+            expect: (r) => {
+              expect(r.ok).toBe(true);
+              const result = JSON.parse(r.text) as {
+                format: { aspectRatio: string };
+                shots: Array<{ startSec: number; endSec: number }>;
+              };
+              expect(result.format.aspectRatio).toBe('9:16');
+              shots = result.shots;
+              expect(shots).toHaveLength(3);
+              expect(r.images?.length).toBe(1);
+            },
+          },
+          {
+            call: 'save_breakdown',
+            args: () => ({
+              source: { attachmentId: video.body.id },
+              breakdown: {
+                title: 'Three colours',
+                summary: 'Three flat colour shots with a tone.',
+                format: { aspectRatio: '9:16', durationSec: 4.5 },
+                shots: shots.map((s, i) => ({
+                  index: i,
+                  startSec: s.startSec,
+                  endSec: s.endSec,
+                  visual: ['Red', 'Blue', 'Green'][i]!,
+                  make: 'text_only',
+                })),
+                narration: { present: false },
+                captions: { present: false },
+                music: { present: true, description: 'a steady tone' },
+                pacing: { shots: 3, averageShotSec: 1.5 },
+              },
+            }),
+            expect: (r) => expect(r.ok).toBe(true),
+          },
+          { say: 'Here is the breakdown.' },
+        ],
+      ]);
+      await turn(sid, { text: 'Break this down', attachments: [video.body.id] });
+      const session = await waitIdle(sid);
+      const [card] = ofType(session, 'breakdown');
+      expect(card).toMatchObject({
+        state: 'saved',
+        payload: {
+          source: { attachmentId: video.body.id },
+          breakdown: {
+            title: 'Three colours',
+            shots: [{ visual: 'Red' }, { visual: 'Blue' }, { visual: 'Green' }],
+          },
+        },
+      });
     });
 
     it('refuses a file it cannot read, a wrong key, and lets an unsent file be removed', async () => {

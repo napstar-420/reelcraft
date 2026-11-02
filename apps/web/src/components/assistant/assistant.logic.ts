@@ -118,6 +118,7 @@ export type ChatRow =
   | { kind: 'change'; item: AssistantItemDto }
   | { kind: 'approval'; item: AssistantItemDto }
   | { kind: 'plan'; item: AssistantItemDto }
+  | { kind: 'breakdown'; item: AssistantItemDto }
   | { kind: 'legacy'; item: AssistantItemDto }
   /** A run the assistant started or set going again: shown with its live state. */
   | { kind: 'run'; id: string; runId: string; action: string }
@@ -166,6 +167,7 @@ export function toRows(items: AssistantItemDto[]): ChatRow[] {
       case 'change':
       case 'approval':
       case 'plan':
+      case 'breakdown':
         rows.push({ kind: item.type, item });
         break;
       case 'proposal':
@@ -254,6 +256,12 @@ export function describeToolCall(call: ToolCallPayload, state: string | null): s
         return 'Started watching a run';
       case 'unwatch_run':
         return 'Stopped watching a run';
+      case 'analyze_video':
+        return 'Broke the video down into shots';
+      case 'save_breakdown':
+        return 'Wrote the breakdown';
+      case 'compare_media':
+        return 'Compared the two videos';
       case 'import_from_link':
         return `Downloaded a file from ${hostOf(str(args.url))}`;
       case 'browser_open':

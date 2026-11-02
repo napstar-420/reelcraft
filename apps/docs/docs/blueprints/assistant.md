@@ -108,6 +108,19 @@ What it reads from a run is treated as information, never as instructions. Pictu
 transcripts go to the same provider that runs the assistant. A free test run's text and pictures are
 placeholders, so it judges those runs by structure only.
 
+**Recreating a video.** Attach a video, or paste its link, and ask for one like it. The assistant
+breaks it down: its format, every shot with its timing and words, the narration and its pace,
+captions, music and sound effects. It shows the result as a **Breakdown** card: the video plays in
+the card, and selecting a shot jumps to it. Each shot says how it would be made (**Picture**, **Video
+clip**, **Motion graphic**, **Text card**, **From the Library** or **Style reference**). In
+**Manual** and **Plan** mode it asks whether the breakdown is right before it builds anything.
+
+It then builds a reusable blueprint from ordinary stages that follows the same structure, pacing and
+style, with the topic as a run input, and starts a first run that follows the reference closely. When
+that run ends it compares the two videos side by side (length, number of shots, shot length, loudness
+and frames at the same moments) and suggests what to change. It takes the structure and the style,
+not the reference's own words, characters or footage.
+
 **Links and the browser.** Paste a link and ask the assistant to use it. It downloads a picture,
 video or sound into the chat, from a link straight to the file or from a video page such as YouTube,
 TikTok or Instagram, up to 1080p and 15 minutes. Links to your own computer or local network are

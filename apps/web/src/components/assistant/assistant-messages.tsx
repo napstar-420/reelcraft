@@ -10,6 +10,7 @@ import type { AssistantController } from '@/hooks/useAssistant';
 import { ApprovalCard, ChangeCard, LegacyProposalCard, PlanCard, RunCard } from './assistant-cards';
 import { QuestionCard } from './question-card';
 import { MessageAttachments } from './attachment-chips';
+import { BreakdownCard } from './breakdown-card';
 import { describeToolCall, payloadOf, toRows, wakeHeadline, type ChatRow } from './assistant.logic';
 
 const MARKDOWN: Components = {
@@ -94,6 +95,8 @@ function Row({ row, assistant }: { row: ChatRow; assistant: AssistantController 
       return <ApprovalCard item={row.item} assistant={assistant} />;
     case 'plan':
       return <PlanCard item={row.item} assistant={assistant} />;
+    case 'breakdown':
+      return <BreakdownCard item={row.item} />;
     case 'legacy':
       return <LegacyProposalCard item={row.item} />;
     case 'run':
