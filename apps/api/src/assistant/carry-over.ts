@@ -1,27 +1,19 @@
-/** Long and outdated chats continue in a fresh provider session that starts from a summary. */
-
-/** A turn that read more than this many tokens makes the next message start fresh. */
-export const CARRY_OVER_INPUT_TOKENS = 150_000;
+/** A chat whose tools are out of date continues in a fresh provider session that starts from a
+ * summary. A long chat never does: Codex and Claude manage their own context, and Reelcraft only
+ * records usage. */
 
 /** The most characters of a summary carried into the new session. */
 export const SUMMARY_CHARS = 8_000;
 
-export type CarryOverReason = 'long' | 'updated';
+export type CarryOverReason = 'updated';
 
 /** Why the next message should start a fresh session, or null when it can continue as it is. */
-export function carryOverReason(input: {
-  stale: boolean;
-  lastInputTokens: number | null;
-}): CarryOverReason | null {
-  if (input.stale) return 'updated';
-  if (input.lastInputTokens !== null && input.lastInputTokens > CARRY_OVER_INPUT_TOKENS) {
-    return 'long';
-  }
-  return null;
+export function carryOverReason(input: { stale: boolean }): CarryOverReason | null {
+  return input.stale ? 'updated' : null;
 }
 
 /** What the old session is asked for: a hand-off for the model that continues the chat. */
-export const SUMMARY_PROMPT = `<reelcraft_context>This chat is moving to a fresh session (it got long, or Reelcraft was updated). Do not call any tool. Write a hand-off for the assistant that continues it, in at most 600 words:
+export const SUMMARY_PROMPT = `<reelcraft_context>This chat is moving to a fresh session (Reelcraft was updated). Do not call any tool. Write a hand-off for the assistant that continues it, in at most 600 words:
 - what the user wants overall, and their preferences and decisions so far;
 - what you did: blueprints, versions, runs, files and ids involved (keep every id exactly);
 - what is in progress or waiting (runs being watched, goals, questions, approvals);

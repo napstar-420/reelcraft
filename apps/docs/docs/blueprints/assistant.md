@@ -216,13 +216,14 @@ Your chats are kept, so you can come back to one later. At the top of the chat:
 Select **Stop** (the square) to interrupt the assistant while it works.
 
 **Usage** (the gauge) shows what the chat has used: the tokens it read and wrote, how many answers,
-the runs it started with what they spent, and how full the conversation is.
+the runs it started with what they spent, and how much the last answer read. Reelcraft only
+shows this: it never shortens or resets a long chat. Codex and Claude manage their own context.
 
-When a conversation gets very long, or after you update Reelcraft, your next message continues the
-chat in a fresh session. The assistant first writes a summary of the chat so far, and the fresh
-session starts from it, using the new version's tools after an update. The chat shows a divider
-(**The chat got long: continued in a fresh session**); select it to read the summary. Nothing in the
-chat is lost. Start a new chat instead whenever you change subject.
+After you update Reelcraft, a chat whose tools are out of date continues in a fresh session on your
+next message. The assistant first writes a summary of the chat so far, and the fresh session starts
+from it, using the new version's tools. The chat shows a divider; select it to read the summary.
+Nothing in the chat is lost. A long chat is never reset like this. Start a new chat whenever you
+change subject.
 
 ## Good to know
 
