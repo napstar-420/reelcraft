@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.15.0](https://github.com/napstar-420/reelcraft/compare/v0.14.0...v0.15.0) (2026-11-02)
+
+
+### Features
+
+* assistant v3 — attachments, links and browser, recreating videos, memory, goals, timeline editing ([#224](https://github.com/napstar-420/reelcraft/issues/224)) ([52d40cd](https://github.com/napstar-420/reelcraft/commit/52d40cdb5c67e932cae10d5d6216869cd9ea086b))
+* one assistant across the app that builds, runs, reviews and watches ([#218](https://github.com/napstar-420/reelcraft/issues/218)) ([fe73cad](https://github.com/napstar-420/reelcraft/commit/fe73cad885be8cf0e015afaf7927767274736a4e))
+
+
+### Performance
+
+* **web:** summarise the current version on BlueprintDto instead of per-card version lists ([#220](https://github.com/napstar-420/reelcraft/issues/220)) ([c1ac26e](https://github.com/napstar-420/reelcraft/commit/c1ac26eb99870c96af6f98fac2fd819164c47370))
+
 ## [0.14.0](https://github.com/napstar-420/reelcraft/compare/v0.13.0...v0.14.0) (2026-11-01)
 
 
