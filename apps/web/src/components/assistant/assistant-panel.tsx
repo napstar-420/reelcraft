@@ -40,6 +40,7 @@ import { PendingAttachmentChips } from './attachment-chips';
 import { ACCEPT, filesFrom } from './attachments.logic';
 import { useChatAttachments } from './use-chat-attachments';
 import { ActivityDialog } from './activity-dialog';
+import { UsagePopover } from './usage-popover';
 
 const EXAMPLES: Record<'subject' | 'none', string[]> = {
   none: [
@@ -181,6 +182,7 @@ export function AssistantPanel({ variant = 'dock' }: { variant?: 'dock' | 'page'
         >
           <MessageSquarePlus />
         </Button>
+        <UsagePopover usage={assistant.usage} />
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
@@ -228,7 +230,8 @@ export function AssistantPanel({ variant = 'dock' }: { variant?: 'dock' | 'page'
       {session?.stale && (
         <div className="flex shrink-0 items-center gap-2 border-b bg-wait-soft px-3 py-2 text-xs">
           <span className="flex-1">
-            Reelcraft was updated since this chat started. Start a new chat to use the latest tools.
+            Reelcraft was updated since this chat started. Your next message continues it in a fresh
+            session with the latest tools, starting from a summary.
           </span>
           <Button type="button" size="xs" variant="outline" onClick={assistant.newChat}>
             Start new chat

@@ -162,6 +162,8 @@ export const AssistantItemType = z.enum([
   'breakdown',
   /** The report of a goal the assistant worked toward (finish_goal). */
   'goal',
+  /** The chat continued in a fresh session from a summary (it got long, or Reelcraft changed). */
+  'context_reset',
   /** Chats from before the assistant could write: kept for display only. */
   'proposal',
 ]);
@@ -285,6 +287,28 @@ export const GoalPayload = z.object({
 });
 export type GoalPayload = z.infer<typeof GoalPayload>;
 
+/** Where a long or outdated chat moved to a fresh session, with the summary it started from. */
+export const ContextResetPayload = z.object({
+  reason: z.enum(['long', 'updated']),
+  summary: z.string(),
+  /** assistant: written by the old session; fallback: the conversation's own words. */
+  by: z.enum(['assistant', 'fallback']),
+});
+export type ContextResetPayload = z.infer<typeof ContextResetPayload>;
+
+/** What a chat has used: tokens of the plan it runs on, and the money its runs spent. */
+export const AssistantUsageDto = z.object({
+  inputTokens: z.number().int(),
+  outputTokens: z.number().int(),
+  turns: z.number().int(),
+  /** Tokens the latest turn read: how full the conversation is. */
+  lastInputTokens: z.number().int().nullable(),
+  /** Runs the chat started or set going again, and what they spent so far. */
+  runs: z.number().int(),
+  runSpendUsd: z.number(),
+});
+export type AssistantUsageDto = z.infer<typeof AssistantUsageDto>;
+
 export const AgentMessagePayload = z.object({ text: z.string() });
 export type AgentMessagePayload = z.infer<typeof AgentMessagePayload>;
 
@@ -361,6 +385,7 @@ export const AssistantSessionDetailDto = AssistantSessionDto.extend({
   items: z.array(AssistantItemDto),
   /** The runs this chat is watching now. */
   watches: z.array(AssistantWatchDto),
+  usage: AssistantUsageDto,
 });
 export type AssistantSessionDetailDto = z.infer<typeof AssistantSessionDetailDto>;
 

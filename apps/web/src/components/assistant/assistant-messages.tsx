@@ -100,6 +100,23 @@ function Row({ row, assistant }: { row: ChatRow; assistant: AssistantController 
       return <BreakdownCard item={row.item} />;
     case 'goal':
       return <GoalCard item={row.item} />;
+    case 'reset': {
+      const reset = payloadOf<{ reason: 'long' | 'updated'; summary: string }>(row.item);
+      return (
+        <details className="group text-xs text-muted-foreground">
+          <summary className="flex cursor-pointer items-center gap-2 select-none">
+            <span className="h-px flex-1 bg-border" />
+            {reset.reason === 'long'
+              ? 'The chat got long: continued in a fresh session'
+              : 'Reelcraft was updated: continued in a fresh session'}
+            <span className="h-px flex-1 bg-border" />
+          </summary>
+          <p className="mt-2 rounded-lg bg-surface-2 p-2.5 leading-relaxed whitespace-pre-wrap">
+            {reset.summary}
+          </p>
+        </details>
+      );
+    }
     case 'legacy':
       return <LegacyProposalCard item={row.item} />;
     case 'run':

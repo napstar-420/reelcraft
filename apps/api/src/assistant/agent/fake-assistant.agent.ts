@@ -13,6 +13,8 @@ export type FakeStep =
   /** `args` may be a function, for ids only known once earlier steps have run. */
   | { call: string; args: unknown; expect?: (result: ToolResult) => void }
   | { fail: string }
+  /** Report tokens used so far in the turn, like a real provider. */
+  | { usage: { inputTokens: number; outputTokens: number } }
   /** Wait until released or until the turn is interrupted (then throws `interrupted`). */
   | { hold: Promise<void> };
 
@@ -28,6 +30,8 @@ export class FakeAssistantAgent implements AssistantAgent {
   }> = [];
   deleted: string[] = [];
   private nextSession = 1;
+  /** How many hand-offs it wrote. */
+  summaries = 0;
   private turnIndex = 0;
 
   constructor(private script: FakeStep[][] = []) {}
@@ -56,7 +60,15 @@ export class FakeAssistantAgent implements AssistantAgent {
     return id;
   }
 
+  /** What the fake writes when a chat moves to a fresh session (it doesn't use a scripted turn). */
+  summary = 'The user and the assistant worked on a blueprint.';
+
   async runTurn(options: Parameters<AssistantAgent['runTurn']>[0]): Promise<void> {
+    if (options.text.includes('This chat is moving to a fresh session')) {
+      this.summaries += 1;
+      options.handlers.onEvent({ type: 'message', itemKey: 'summary', text: this.summary });
+      return;
+    }
     this.turns.push({
       text: options.text,
       model: options.model,
@@ -75,6 +87,8 @@ export class FakeAssistantAgent implements AssistantAgent {
         const args = typeof step.args === 'function' ? (step.args as () => unknown)() : step.args;
         const result = await options.handlers.callTool(step.call, args);
         step.expect?.(result);
+      } else if ('usage' in step) {
+        options.handlers.onEvent({ type: 'usage', ...step.usage });
       } else if ('hold' in step) {
         const aborted = new Promise<'aborted'>((resolve) =>
           options.signal.addEventListener('abort', () => resolve('aborted'), { once: true }),

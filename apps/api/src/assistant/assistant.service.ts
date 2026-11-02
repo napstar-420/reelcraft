@@ -14,6 +14,7 @@ import type {
   AssistantItemDto,
   AssistantAttachmentRef,
   AssistantMode,
+  AssistantUsageDto,
   AssistantPageContext,
   AssistantProviderDto,
   AssistantSessionDetailDto,
@@ -31,7 +32,7 @@ import type {
   UpdateAssistantSettingsDto,
 } from '@reelcraft/shared';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
-import { assistantItem, assistantSession } from '../db/schema/index';
+import { assistantItem, assistantSession, run } from '../db/schema/index';
 import { ulid } from '../common/ulid';
 import { EngineConfig } from '../config/engine-config';
 import { BlueprintService } from '../blueprint/blueprint.service';
@@ -95,12 +96,22 @@ import {
 import { sameDraft } from './tools/draft-diff';
 import { titleFrom, truncateForDisplay } from './display';
 import { TurnTimer } from './turn-timer';
+import {
+  SUMMARY_PROMPT,
+  carryOverReason,
+  fallbackSummary,
+  withSummary,
+  type CarryOverReason,
+} from './carry-over';
+import { toUsd } from '../common/money';
 
 type SessionRow = typeof assistantSession.$inferSelect;
 type ItemRow = typeof assistantItem.$inferSelect;
 
 /** A turn that runs longer than this is stopped and marked failed. */
 export const TURN_TIMEOUT_MS = 20 * 60 * 1000;
+/** The longest a chat may take to write its hand-off before the conversation's own words stand in. */
+export const SUMMARY_TIMEOUT_MS = 2 * 60 * 1000;
 
 const PROVIDER_LABELS: Record<string, string> = {
   codex: 'Codex',
@@ -368,6 +379,7 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
       ...this.toSessionDto(row),
       items: items.map((item) => this.toItemDto(item)),
       watches: await this.watches.list(id),
+      usage: await this.usage(id),
     };
   }
 
@@ -776,9 +788,28 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
       const channelId = await this.contextChannel(dto.context);
       const notes = await this.knowledge.notesBlock(channelId).catch(() => null);
       const images = await this.attachedImages(attachments, ctx);
+      // a long or outdated chat continues in a fresh session, from a summary
+      let externalSessionId = session.externalSessionId;
+      let message = text;
+      const reason = carryOverReason({
+        stale: this.toSessionDto(session).stale,
+        lastInputTokens: await this.lastInputTokens(session.id, turnId),
+      });
+      if (reason) {
+        const carried = await this.carryOver(
+          session,
+          agent,
+          reason,
+          turnId,
+          dto,
+          controller.signal,
+        );
+        externalSessionId = carried.externalSessionId;
+        message = withSummary(carried.summary, text);
+      }
       await agent.runTurn({
-        sessionId: session.externalSessionId,
-        text: `${text}${attachmentsNote(attachments, images.length)}\n\n${contextNote(ctx.mode, where)}${notes ? `\n<notes>\nWhat the user asked you to remember (follow these; forget removes one):\n${notes}\n</notes>` : ''}`,
+        sessionId: externalSessionId,
+        text: `${message}${attachmentsNote(attachments, images.length)}\n\n${contextNote(ctx.mode, where)}${notes ? `\n<notes>\nWhat the user asked you to remember (follow these; forget removes one):\n${notes}\n</notes>` : ''}`,
         ...(images.length && { images }),
         model: dto.model,
         effort: dto.effort,
@@ -849,6 +880,154 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
     await this.rememberTurn(session.id, turnId, text, dto.context).catch((memoryError: unknown) =>
       this.logger.warn({ err: memoryError, sessionId: session.id }, 'turn not remembered'),
     );
+  }
+
+  // ---- usage and carrying chats over ------------------------------------------------------
+
+  /** Tokens a chat used and what the runs it started spent. */
+  async usage(sessionId: string): Promise<AssistantUsageDto> {
+    const [tokens] = await this.db
+      .select({
+        input: sql<string>`coalesce(sum((${assistantItem.payload}->'usage'->>'inputTokens')::bigint), 0)::text`,
+        output: sql<string>`coalesce(sum((${assistantItem.payload}->'usage'->>'outputTokens')::bigint), 0)::text`,
+        turns: sql<number>`count(*) filter (where ${assistantItem.payload} ? 'usage')::int`,
+      })
+      .from(assistantItem)
+      .where(and(eq(assistantItem.sessionId, sessionId), eq(assistantItem.type, 'turn_status')));
+    const runRows = await this.db
+      .selectDistinct({
+        runId: sql<string>`coalesce(${assistantItem.payload}->'result'->>'runId', ${assistantItem.payload}->'args'->>'runId')`,
+      })
+      .from(assistantItem)
+      .where(
+        and(
+          eq(assistantItem.sessionId, sessionId),
+          eq(assistantItem.type, 'tool_call'),
+          inArray(sql<string>`${assistantItem.payload}->>'tool'`, [
+            'start_run',
+            'run_stages',
+            'retry_stage',
+            'resume_run',
+          ]),
+          sql`(${assistantItem.payload}->>'ok')::boolean is true`,
+        ),
+      );
+    const runIds = runRows.map((r) => r.runId).filter((id): id is string => Boolean(id));
+    let spent = 0;
+    if (runIds.length) {
+      const [sum] = await this.db
+        .select({ total: sql<string>`coalesce(sum(${run.spentUsd}), 0)::text` })
+        .from(run)
+        .where(inArray(run.id, runIds));
+      spent = toUsd(sum?.total ?? '0');
+    }
+    return {
+      inputTokens: Number(tokens?.input ?? 0),
+      outputTokens: Number(tokens?.output ?? 0),
+      turns: tokens?.turns ?? 0,
+      lastInputTokens: await this.lastInputTokens(sessionId, null),
+      runs: runIds.length,
+      runSpendUsd: Math.round(spent * 10000) / 10000,
+    };
+  }
+
+  /** Tokens the latest finished turn read (before `exceptTurn`), or null. */
+  private async lastInputTokens(
+    sessionId: string,
+    exceptTurn: string | null,
+  ): Promise<number | null> {
+    const [row] = await this.db
+      .select({ input: sql<string | null>`${assistantItem.payload}->'usage'->>'inputTokens'` })
+      .from(assistantItem)
+      .where(
+        and(
+          eq(assistantItem.sessionId, sessionId),
+          eq(assistantItem.type, 'turn_status'),
+          sql`${assistantItem.payload} ? 'usage'`,
+          exceptTurn ? sql`${assistantItem.turnId} <> ${exceptTurn}` : undefined,
+        ),
+      )
+      .orderBy(desc(assistantItem.seq))
+      .limit(1);
+    return row?.input ? Number(row.input) : null;
+  }
+
+  /** Moves a chat to a fresh provider session: the old one writes a hand-off (or, if it can't,
+   * the conversation's own words stand in), the new one starts with the current tools. */
+  private async carryOver(
+    session: SessionRow,
+    agent: AssistantAgent,
+    reason: CarryOverReason,
+    turnId: string,
+    dto: StartAssistantTurnDto,
+    signal: AbortSignal,
+  ): Promise<{ externalSessionId: string; summary: string }> {
+    let summary = '';
+    let by: 'assistant' | 'fallback' = 'assistant';
+    try {
+      const parts = new Map<string, string>();
+      const timeout = AbortSignal.timeout(SUMMARY_TIMEOUT_MS);
+      await agent.runTurn({
+        sessionId: session.externalSessionId,
+        text: SUMMARY_PROMPT,
+        model: dto.model,
+        effort: dto.effort,
+        instructions: this.instructions(),
+        mode: 'plan',
+        signal: AbortSignal.any([signal, timeout]),
+        handlers: {
+          callTool: async () => ({ ok: false, text: 'No tools now: write the hand-off.' }),
+          onEvent: (event) => {
+            if (event.type === 'message') parts.set(event.itemKey, event.text);
+          },
+        },
+      });
+      summary = [...parts.values()].join('\n').trim();
+    } catch (error) {
+      if (signal.aborted) throw error;
+      this.logger.warn({ err: error, sessionId: session.id }, 'chat could not summarise itself');
+    }
+    if (!summary) {
+      by = 'fallback';
+      const rows = await this.db
+        .select({ type: assistantItem.type, payload: assistantItem.payload })
+        .from(assistantItem)
+        .where(
+          and(
+            eq(assistantItem.sessionId, session.id),
+            inArray(assistantItem.type, ['user_message', 'agent_message']),
+            sql`${assistantItem.turnId} <> ${turnId}`,
+          ),
+        )
+        .orderBy(asc(assistantItem.seq));
+      summary = fallbackSummary(
+        rows.map((r) => ({
+          role: r.type === 'user_message' ? 'user' : 'assistant',
+          text: (r.payload as { text?: string }).text ?? '',
+        })),
+      );
+    }
+    const tools = buildToolDefs(
+      buildNarrowedEnums({ capabilities: this.capabilities, styles: this.styles }),
+    );
+    const externalSessionId = await agent.startSession({
+      instructions: this.instructions(),
+      tools,
+    });
+    await this.db
+      .update(assistantSession)
+      .set({ externalSessionId, toolsHash: toolsHash(tools), appVersion: this.config.version })
+      .where(eq(assistantSession.id, session.id));
+    void agent.deleteSession(session.externalSessionId).catch(() => undefined);
+    await this.createItem(session.id, turnId, 'context_reset', null, { reason, summary, by });
+    const [updated] = await this.db
+      .select()
+      .from(assistantSession)
+      .where(eq(assistantSession.id, session.id))
+      .limit(1);
+    if (updated) this.publish(session.id, { type: 'session', session: this.toSessionDto(updated) });
+    this.logger.log({ sessionId: session.id, reason, by }, 'chat continued in a fresh session');
+    return { externalSessionId, summary };
   }
 
   /** Sends a notification when no open page shows the chat (once per item or turn). Never waits

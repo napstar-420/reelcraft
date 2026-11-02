@@ -1492,6 +1492,43 @@ describe('assistant (e2e)', () => {
     );
   });
 
+  it('reports usage, and continues a long chat in a fresh session from a summary', async () => {
+    const sid = await newSession('auto');
+    const before = agent.summaries;
+    useScript([
+      [{ usage: { inputTokens: 200_000, outputTokens: 900 } }, { say: 'That was a lot.' }],
+      [{ say: 'Carrying on.' }],
+    ]);
+    await turn(sid, { text: 'first' });
+    let session = await waitIdle(sid);
+    expect(session.usage).toMatchObject({
+      inputTokens: 200_000,
+      outputTokens: 900,
+      turns: 1,
+      lastInputTokens: 200_000,
+    });
+    const [oldSession] = await testDb.db
+      .select({ ext: assistantSession.externalSessionId })
+      .from(assistantSession)
+      .where(eq(assistantSession.id, sid));
+
+    await turn(sid, { text: 'second' });
+    session = await waitIdle(sid);
+    expect(agent.summaries).toBe(before + 1);
+    const [reset] = ofType(session, 'context_reset');
+    expect(reset).toMatchObject({
+      payload: { reason: 'long', by: 'assistant', summary: agent.summary },
+    });
+    expect(agent.turns.at(-1)!.text).toContain('<earlier_conversation_summary>');
+    expect(agent.turns.at(-1)!.text).toContain('second');
+    const [newSessionRow] = await testDb.db
+      .select({ ext: assistantSession.externalSessionId })
+      .from(assistantSession)
+      .where(eq(assistantSession.id, sid));
+    expect(newSessionRow!.ext).not.toBe(oldSession!.ext);
+    expect(agent.deleted).toContain(oldSession!.ext);
+  });
+
   it('asks questions, then continues with the answers as the next turn', async () => {
     let writeAfterAsk: unknown;
     useScript([

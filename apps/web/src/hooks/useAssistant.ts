@@ -326,6 +326,7 @@ export function useAssistant({
     providersLoading: providers.isLoading,
     sessions: sessions.data ?? [],
     session: session as AssistantSessionDto | undefined,
+    usage: detail.data?.usage ?? null,
     items,
     loading: !!activeSessionId && detail.isLoading,
     // choices

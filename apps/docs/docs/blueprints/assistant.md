@@ -200,15 +200,22 @@ Your chats are kept, so you can come back to one later. At the top of the chat:
 
 Select **Stop** (the square) to interrupt the assistant while it works.
 
-After you update Reelcraft, a chat started before the update shows **Reelcraft was updated since this
-chat started**. Select **Start new chat** so the assistant uses the new version's tools.
+**Usage** (the gauge) shows what the chat has used: the tokens it read and wrote, how many answers,
+the runs it started with what they spent, and how full the conversation is.
+
+When a conversation gets very long, or after you update Reelcraft, your next message continues the
+chat in a fresh session. The assistant first writes a summary of the chat so far, and the fresh
+session starts from it, using the new version's tools after an update. The chat shows a divider
+(**The chat got long: continued in a fresh session**); select it to read the summary. Nothing in the
+chat is lost. Start a new chat instead whenever you change subject.
 
 ## Good to know
 
 - The assistant sees what its tools read (your channels, blueprints, runs and what they made) and
   your conversation. That goes to Codex or Claude, under your ChatGPT or Claude plan's terms. Your
   provider keys and settings never do.
-- Usage counts against your ChatGPT or Claude plan, and a long chat uses more of it than a short one.
+- Usage counts against your ChatGPT or Claude plan, and a long chat uses more of it than a short one
+  (see **Usage** at the top of the chat).
   Real runs it starts are paid by your provider keys, like runs you start.
 - If a request fails with a message from Codex or Claude, such as a model that isn't available to
   your account, pick another **Model** and send it again.
