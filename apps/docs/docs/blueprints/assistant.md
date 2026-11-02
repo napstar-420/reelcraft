@@ -124,6 +124,14 @@ that run ends it compares the two videos side by side (length, number of shots, 
 and frames at the same moments) and suggests what to change. It takes the structure and the style,
 not the reference's own words, characters or footage.
 
+**Editing a video.** It can change a finished video made by a
+[Compose Timeline](../stage-types/compose-timeline.md) stage, or a timeline waiting for you in a
+[Human Timeline Edit](../stage-types/human-timeline-edit.md) stage: trim, split, move or remove clips,
+add titles and tracks, change captions, volume and transitions. It renders a quick draft and looks at
+it before telling you it's done. Each change appears in the chat with **Open editor** and **Undo**,
+and in the [timeline editor](../video/timeline-editor.md#the-assistant-in-the-editor) if you have it
+open. It only re-renders the video when you ask, after saying what that costs.
+
 **Links and the browser.** Paste a link and ask the assistant to use it. It downloads a picture,
 video or sound into the chat, from a link straight to the file or from a video page such as YouTube,
 TikTok or Instagram, up to 1080p and 15 minutes. Links to your own computer or local network are

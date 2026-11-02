@@ -17,6 +17,7 @@ import { WEB_TOOLS } from './web-tools';
 import { BREAKDOWN_TOOLS } from './breakdown-tools';
 import { MEMORY_TOOLS } from './memory-tools';
 import { GOAL_TOOLS } from './goal-tools';
+import { TIMELINE_TOOLS } from './timeline-tools';
 import { zodIssues } from './draft-checks';
 import { READ_TOOLS } from './read-tools';
 import { RUN_TOOLS } from './run-tools';
@@ -40,6 +41,7 @@ export const ASSISTANT_TOOLS: ReadonlyArray<AssistantTool<never>> = [
   ...WEB_TOOLS,
   ...MEMORY_TOOLS,
   ...GOAL_TOOLS,
+  ...TIMELINE_TOOLS,
   askUser as unknown as AssistantTool<never>,
   presentPlan as unknown as AssistantTool<never>,
 ];

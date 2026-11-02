@@ -129,7 +129,7 @@ const CompareRunsInput = z.object({
 const compareRuns: AssistantTool<z.infer<typeof CompareRunsInput>> = {
   name: 'compare_runs',
   kind: 'read',
-  description: `Compare two runs (usually of the same blueprint, before and after a fix): state, cost and time of each, and stage by stage how each ended, its attempts, cost and model, with the stages that differ marked; plus their final videos side by side (length, shots, loudness, frames at the same moments) when both have one.${UNTRUSTED_TAIL}`,
+  description: `Compare two runs (e.g. before and after a fix): state, cost and time, and stage by stage how each ended, attempts, cost and model, marking stages that differ; plus their final videos side by side when both have one.${UNTRUSTED_TAIL}`,
   input: CompareRunsInput,
   jsonSchema: () =>
     obj(

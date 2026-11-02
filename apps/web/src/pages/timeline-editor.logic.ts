@@ -200,3 +200,14 @@ export function clampFades(
     ...(fadeOut > 0 && { fadeOutSec: round(fadeOut) }),
   };
 }
+
+/** What the editor does when the assistant saved a newer draft: nothing if it already has that
+ * revision, take it in when it has no edits of its own waiting, otherwise ask which to keep. */
+export function incomingDraftAction(input: {
+  incomingRevision: number;
+  savedRevision: number;
+  unsavedEdits: boolean;
+}): 'ignore' | 'adopt' | 'ask' {
+  if (input.incomingRevision <= input.savedRevision) return 'ignore';
+  return input.unsavedEdits ? 'ask' : 'adopt';
+}

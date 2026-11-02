@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { Brain, Loader2, Play } from 'lucide-react';
+import { Brain, Clapperboard, Loader2, Play } from 'lucide-react';
 import { cn } from 'cn';
 import { api } from '@/api/client';
 import { useRunExecutionActions } from '@/hooks/useRunExecutionActions';
@@ -22,7 +22,7 @@ import { buildRunView } from '@/components/runs/run-phases.logic';
 import { focusStage, runNow } from '@/components/runs/run-now.logic';
 import { useAssistantPageDetail } from '@/components/assistant/assistant-context';
 import { runStateTone, toneTextClassName } from '@/lib/status';
-import { isRunActionAllowed } from '@/lib/run-action-policy';
+import { canEditVideo, isRunActionAllowed } from '@/lib/run-action-policy';
 import { quotaPauseMessage } from '@/lib/quota-pause';
 import { formatCapUsd } from '@/lib/format-cap';
 import { formatElapsed, formatUsd } from '@/lib/format-elapsed';
@@ -123,6 +123,10 @@ export function RunPage() {
   const selectedKey =
     validPick ?? (run.state === 'COMPLETED' && run.finalVideo ? RESULT_KEY : focusStage(view)?.key);
   const selectedStage = view.stages.find((s) => s.key === selectedKey);
+  // the last Compose Timeline stage whose video can be edited
+  const editableCompose = [...run.stageExecutions]
+    .reverse()
+    .find((se) => canEditVideo(run.state, se));
   const now = runNow(run, view);
   const counted = view.stages.filter((s) => s.state !== 'skipped');
   const done = counted.filter((s) => s.state === 'done').length;
@@ -283,7 +287,18 @@ export function RunPage() {
           {selectedKey === RESULT_KEY && run.finalVideo ? (
             <div className="mx-auto flex max-w-[820px] flex-col gap-4 px-6 pt-5 pb-10">
               <p className="text-xs text-faint">The finished video</p>
-              <h2 className="text-[22px] font-semibold tracking-[-0.015em]">Final video</h2>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <h2 className="text-[22px] font-semibold tracking-[-0.015em]">Final video</h2>
+                {editableCompose ? (
+                  <Button size="sm" variant="outline" asChild>
+                    <Link
+                      to={`/runs/${run.id}/stages/${encodeURIComponent(editableCompose.stageKey)}/edit`}
+                    >
+                      <Clapperboard /> Edit video
+                    </Link>
+                  </Button>
+                ) : null}
+              </div>
               <video
                 controls
                 className="max-h-[70vh] w-full rounded-[14px] border bg-black"

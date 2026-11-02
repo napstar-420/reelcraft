@@ -13,6 +13,8 @@ export type EditorState = {
 export type EditorAction =
   | { type: 'load'; timeline: Timeline }
   | { type: 'edit'; timeline: Timeline; now: number; coalesce?: string }
+  /** A version saved somewhere else (the assistant), taken in as one step you can undo. */
+  | { type: 'adopt'; timeline: Timeline }
   | { type: 'undo' }
   | { type: 'redo' };
 
@@ -44,6 +46,16 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
         future: [],
         coalesceKey: action.coalesce,
         coalescedAt: action.now,
+      };
+    }
+    case 'adopt': {
+      if (!state.timeline) return { ...initialEditorState, timeline: action.timeline };
+      return {
+        timeline: action.timeline,
+        past: [...state.past, state.timeline].slice(-MAX_HISTORY),
+        future: [],
+        coalesceKey: undefined,
+        coalescedAt: 0,
       };
     }
     case 'undo': {

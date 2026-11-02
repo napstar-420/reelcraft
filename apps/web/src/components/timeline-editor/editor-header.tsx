@@ -87,7 +87,10 @@ export function EditorHeader({
   onSubmit,
   checks,
   render,
+  submitLabel,
 }: {
+  /** The submit button's words, short and long; left out, "Use this timeline and continue". */
+  submitLabel?: { short: string; long: string } | undefined;
   runId: string;
   title: string;
   save: SaveState;
@@ -177,8 +180,10 @@ export function EditorHeader({
             'Submitting…'
           ) : (
             <>
-              <span className="sm:hidden">Use timeline</span>
-              <span className="max-sm:hidden">Use this timeline and continue</span>
+              <span className="sm:hidden">{submitLabel?.short ?? 'Use timeline'}</span>
+              <span className="max-sm:hidden">
+                {submitLabel?.long ?? 'Use this timeline and continue'}
+              </span>
             </>
           )}
         </Button>

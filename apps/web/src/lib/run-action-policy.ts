@@ -67,3 +67,17 @@ export function canApproveWaits(state: string): boolean {
 export function isRunActionAllowed(action: RunAction, state: RunState): boolean {
   return (RUN_ACTION_ALLOWED_STATES[action] as readonly RunState[]).includes(state);
 }
+
+/** Whether a stage's video can be opened in the timeline editor: a Compose Timeline stage with a
+ * current timeline, on a run that has stopped (the same states as editing any output). */
+export function canEditVideo(
+  runState: RunState,
+  stage: { capability: string; outputArtifactId: string | null; outputStale?: boolean | undefined },
+): boolean {
+  return (
+    stage.capability === 'timeline.compose' &&
+    stage.outputArtifactId !== null &&
+    !stage.outputStale &&
+    (RUN_ACTION_ALLOWED_STATES.retry as readonly string[]).includes(runState)
+  );
+}

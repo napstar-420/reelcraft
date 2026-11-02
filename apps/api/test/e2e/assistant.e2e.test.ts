@@ -16,7 +16,10 @@ import { GoalService } from '../../src/assistant/goals/goal.service';
 import { FakeAssistantAgent, type FakeStep } from '../../src/assistant/agent/fake-assistant.agent';
 import { exampleScript } from '../../src/assistant/guide';
 import { STORAGE_ADAPTER, type StorageAdapter } from '../../src/storage/storage.adapter';
-import { LiveEvents } from '../../src/live/live-events';
+import { LiveEvents, type LiveEvent } from '../../src/live/live-events';
+import { ArtifactService } from '../../src/artifact/artifact.service';
+import { RunService } from '../../src/run/run.service';
+import { TimelineEditorService } from '../../src/run/timeline-editor.service';
 import {
   artifact,
   assistantAttachment,
@@ -1789,5 +1792,135 @@ describe('assistant (e2e)', () => {
       payload: { model: 'm', error: expect.stringContaining('Interrupted') },
     });
     expect(ofType(session, 'tool_call')[0]!.state).toBe('failed');
+  });
+  it('edits a finished video in the timeline, undoes it, then saves it and re-renders', async () => {
+    // a completed run whose Compose Timeline stage made an (empty) timeline
+    const blueprints = http.app.get(BlueprintService);
+    const composeBlueprint = await blueprints.ensureBlueprint(channelId, `Compose ${Date.now()}`);
+    const version = await blueprints.createVersion(composeBlueprint, {
+      graph: [
+        {
+          key: 'compose',
+          label: 'Compose',
+          capability: 'timeline.compose',
+          config: { aspectRatio: '9:16' },
+          slots: { plan: { from: 'const', value: { layers: [] } } },
+          context: {},
+          output: { kind: 'timeline' },
+          checks: [],
+          retryLimit: 0,
+        },
+      ],
+      inputs: [],
+      roles: [],
+      defaults: {},
+      budget: { runCapUsd: 1 },
+    });
+    const created = await http.app.get(RunService).create({
+      channelId,
+      blueprintVersionId: version.id,
+      inputs: {},
+      roleBindings: {},
+      rerunStageKeys: [],
+      budgetCapUsd: 1,
+    });
+    const outputId = await http.app.get(ArtifactService).recordAttemptArtifact({
+      runId: created.id,
+      producerStageKey: 'compose',
+      kind: 'timeline',
+      data: {
+        version: 1,
+        canvas: { width: 1080, height: 1920, fps: 30, background: '#000' },
+        tracks: [{ id: 'video-main', type: 'video', items: [] }],
+      },
+      reproLevel: 'exact',
+      costUsd: 0,
+    } as never);
+    await testDb.db.update(artifact).set({ stale: false }).where(eq(artifact.id, outputId));
+    await testDb.db
+      .update(stageExecution)
+      .set({ state: 'passed', outputArtifactId: outputId, endedAt: new Date().toISOString() })
+      .where(eq(stageExecution.id, created.stageExecutions[0]!.id));
+    await testDb.db
+      .update(run)
+      .set({ state: 'COMPLETED', endedAt: new Date().toISOString() })
+      .where(eq(run.id, created.id));
+
+    const events: LiveEvent[] = [];
+    const subscription = http.app
+      .get(LiveEvents)
+      .all()
+      .subscribe((event) => {
+        if (event.type === 'timeline') events.push(event);
+      });
+    const where = { runId: created.id, stageKey: 'compose' };
+    const addTitle = {
+      call: 'edit_timeline',
+      args: {
+        ...where,
+        summary: 'Add a title',
+        ops: [
+          { op: 'add_track', id: 'titles', type: 'overlay' },
+          {
+            op: 'add_item',
+            trackId: 'titles',
+            item: {
+              type: 'text',
+              text: 'Hello',
+              startSec: 0,
+              durationSec: 2,
+              styleId: 'text.title',
+              position: 'center',
+            },
+          },
+        ],
+      },
+    };
+    try {
+      const sid = await newSession();
+      useScript([
+        [{ call: 'get_timeline', args: where }, addTitle],
+        [addTitle, { call: 'submit_timeline', args: where }],
+      ]);
+      await turn(sid, {
+        text: 'add a title to the video',
+        context: { page: 'timeline', ...where },
+      });
+      const first = await waitIdle(sid);
+      const calls = ofType(first, 'tool_call');
+      expect(calls.map((c) => c.state)).toEqual(['completed', 'completed']);
+      const change = ofType(first, 'change')[0]!;
+      expect(change.payload).toMatchObject({ kind: 'timeline', draftRevision: 1 });
+      const editor = http.app.get(TimelineEditorService);
+      expect((await editor.session(created.id, 'compose')).timeline.tracks).toHaveLength(2);
+      expect(events.at(-1)).toMatchObject({ type: 'timeline', draftRevision: 1 });
+
+      // Undo puts the draft back
+      await call(`/assistant/sessions/${sid}/changes/${change.id}/undo`, { method: 'POST' });
+      const undone = await editor.session(created.id, 'compose');
+      expect(undone.timeline.tracks).toHaveLength(1);
+      expect(events.at(-1)).toMatchObject({ draftRevision: undone.draftRevision });
+
+      // then the edit again, and saved to the video: the stage gets a new timeline
+      await turn(sid, { text: 'add it and re-render' });
+      const second = await waitIdle(sid);
+      expect(
+        ofType(second, 'tool_call')
+          .slice(-2)
+          .map((c) => c.state),
+      ).toEqual(['completed', 'completed']);
+      const [execution] = await testDb.db
+        .select({ outputArtifactId: stageExecution.outputArtifactId })
+        .from(stageExecution)
+        .where(eq(stageExecution.id, created.stageExecutions[0]!.id));
+      expect(execution!.outputArtifactId).not.toBe(outputId);
+      const [old] = await testDb.db
+        .select({ stale: artifact.stale })
+        .from(artifact)
+        .where(eq(artifact.id, outputId));
+      expect(old!.stale).toBe(true);
+    } finally {
+      subscription.unsubscribe();
+    }
   });
 });

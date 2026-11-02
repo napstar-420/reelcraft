@@ -89,6 +89,44 @@ export function ChangeCard({
       </Card>
     );
   }
+  if (change.kind === 'timeline') {
+    return (
+      <Card
+        icon={<Check className="size-3.5 text-ok" />}
+        label={`Edited the timeline of “${change.stageLabel}”`}
+      >
+        <p className={cn('mb-1 text-[13px]', undone && 'text-muted-foreground line-through')}>
+          {change.summary}
+        </p>
+        {change.changes.length > 1 && (
+          <ul className="mb-1 list-disc pl-4 text-xs text-muted-foreground">
+            {change.changes.slice(0, 8).map((line, i) => (
+              <li key={i}>{line}</li>
+            ))}
+          </ul>
+        )}
+        <div className="mt-2 flex items-center gap-2">
+          <Button asChild size="xs" variant="outline">
+            <Link to={`/runs/${change.runId}/stages/${encodeURIComponent(change.stageKey)}/edit`}>
+              Open editor
+            </Link>
+          </Button>
+          {undone ? (
+            <span className="text-xs text-muted-foreground">Undone</span>
+          ) : (
+            <Button
+              size="xs"
+              variant="ghost"
+              disabled={assistant.undoing === item.id}
+              onClick={() => assistant.undoChange(item)}
+            >
+              <Undo2 /> Undo
+            </Button>
+          )}
+        </div>
+      </Card>
+    );
+  }
   if (change.kind === 'note') {
     return (
       <Card

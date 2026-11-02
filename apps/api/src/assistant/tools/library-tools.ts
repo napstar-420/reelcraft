@@ -69,7 +69,7 @@ async function saveToLibrary(
 const saveToLibraryTool: AssistantTool<z.infer<typeof SaveInput>> = {
   name: 'save_to_library',
   kind: 'change',
-  description: `Save a file into a channel's Library as an asset, so blueprints can use it: a file the user attached ({attachmentId}), something a run made ({runId, stageKey, itemIndex?}) or a Character reference. name must be unique in the channel. kind is worked out from the file (picture, video, sound, drawing, font, 3D model); pass it only to override. Ask which channel when it isn't clear.`,
+  description: `Save a file (attached, made by a run, or a Character reference) into a channel's Library as an asset blueprints can use. name: unique in the channel. kind is worked out from the file; pass it only to override. Ask which channel when it isn't clear.`,
   input: SaveInput,
   jsonSchema: () =>
     obj(

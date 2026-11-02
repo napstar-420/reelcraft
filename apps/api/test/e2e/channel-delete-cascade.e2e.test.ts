@@ -32,6 +32,7 @@ import {
   stageEvent,
   stageExecution,
   storageOrphan,
+  timelineDraft,
   timelinePreviewRender,
 } from '../../src/db/schema/index';
 import { buildTestApp, type TestApp } from '../support/build-app';
@@ -84,6 +85,14 @@ async function seedDraftRender(testDb: TestDb, runId: string): Promise<void> {
     draftRevision: 0,
     state: 'done',
     blobId,
+  });
+  // a draft of a finished Compose Timeline's video, being edited
+  await testDb.db.insert(timelineDraft).values({
+    id: ulid(),
+    runId,
+    stageKey: 'compose',
+    baseArtifactId: 'artifact',
+    draft: { version: 1, canvas: { width: 1080, height: 1920, fps: 30 }, tracks: [] },
   });
 }
 
@@ -360,6 +369,9 @@ describe('channel delete cascade (e2e)', () => {
         .from(timelinePreviewRender)
         .where(eq(timelinePreviewRender.runId, dryRun.id)),
     ).toHaveLength(0);
+    expect(
+      await testDb.db.select().from(timelineDraft).where(eq(timelineDraft.runId, dryRun.id)),
+    ).toHaveLength(0);
     const queued = await testDb.db
       .select({ objectKey: storageOrphan.objectKey })
       .from(storageOrphan)
@@ -526,6 +538,9 @@ describe('channel delete cascade (e2e)', () => {
         .select()
         .from(timelinePreviewRender)
         .where(eq(timelinePreviewRender.runId, dryRun.id)),
+    ).toHaveLength(0);
+    expect(
+      await testDb.db.select().from(timelineDraft).where(eq(timelineDraft.runId, dryRun.id)),
     ).toHaveLength(0);
     const executionsAfter = await testDb.db
       .select()

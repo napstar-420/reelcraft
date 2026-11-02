@@ -41,6 +41,8 @@ import type { GoalService } from '../goals/goal.service';
 import type { RunInputService } from '../../run/run-input.service';
 import type { VoiceStudioAdapter } from '../../provider/voicestudio/voicestudio.adapter';
 import type { SchemaValidatorService } from '../../json-schema/schema-validator.service';
+import type { TimelineEditorService } from '../../run/timeline-editor.service';
+import type { TimelinePreviewService } from '../../run/timeline-preview.service';
 
 /** What a tool wants to do, shown to the user on an approval card in Manual mode. */
 export interface ApprovalRequest {
@@ -183,6 +185,11 @@ export interface ToolDeps {
   configResolver: Pick<ConfigResolverService, 'resolveRunConfig'>;
   /** Reelcraft's built-in bottom config layer. */
   engineLayer: () => ConfigLayer;
+  /** Timeline editor drafts: a waiting Human Timeline Edit stage, or a finished Compose Timeline. */
+  timelines: Pick<TimelineEditorService, 'session' | 'save' | 'check' | 'submit'>;
+  timelinePreviews: Pick<TimelinePreviewService, 'start' | 'current' | 'latestVideo'>;
+  /** Tells an open timeline editor the assistant saved its draft. */
+  timelineChanged: (runId: string, stageKey: string, draftRevision: number) => void;
   /** Tells open pages a blueprint changed (the editor reloads its draft). */
   blueprintChanged: (blueprintId: string) => void;
 }

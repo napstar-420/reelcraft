@@ -143,7 +143,13 @@ export class LiveGateway
     if (owner === undefined) return;
     const room = this.server.to(userRoom(owner));
     if (event.type === 'run') room.emit('run:updated', { runId: event.runId });
-    else room.emit('stage:updated', { runId: event.runId, stageKey: event.stageKey });
+    else if (event.type === 'timeline') {
+      room.emit('timeline:updated', {
+        runId: event.runId,
+        stageKey: event.stageKey,
+        draftRevision: event.draftRevision,
+      });
+    } else room.emit('stage:updated', { runId: event.runId, stageKey: event.stageKey });
   }
 
   private nextSeq(key: string): number {

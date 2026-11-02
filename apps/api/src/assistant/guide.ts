@@ -341,6 +341,21 @@ When a request mixes shapes (a story with a few real clips, a voice-over plus mu
 A draft also has \`inputs\`, \`roles\` (at most one), \`defaults\` (the blueprint's config layer), \`presentation\` (canvas positions and branch names only), \`execution\` \`{ concurrentBranches }\` and \`budget\` \`{ runCapUsd }\`.`,
   },
 
+  timeline: {
+    title: 'Editing a timeline',
+    body: `A timeline is the video as data: a \`canvas\` \`{width, height, fps, background?}\` and \`tracks\`, each \`{id, type: video|audio|overlay|captions, duckUnder?, items}\`. The render draws tracks in order (later on top); an audio track with \`duckUnder\` gets quieter while that track plays (music under a voice-over).
+
+**Items** (every time is in seconds from the start of the video):
+- \`media\` (video, audio or overlay track): \`handle\` (a file from get_timeline's \`files\`), \`startSec\`, \`durationSec?\` (left out: the file's own length), \`trimInSec?\` (where in the file to start), \`fit?\` cover|contain|fill, \`overflow?\` trim|loop|freeze|speed (when the file is shorter than the item), \`volume?\` 0-2, \`fadeInSec?\`/\`fadeOutSec?\`, \`motion?\` {type: ken_burns|zoom_in|pan, intensity?}, \`transitionIn?\`/\`transitionOut?\` {type: cut|crossfade|slide|wipe, durationSec}, \`reveal?\` {type: wipe_lr|circle|marker}. Placed as a box instead of filling the frame: all of \`x, y, w, h\` (frame pixels), \`rotate?\`, \`z?\`, \`anim?\` (pop|fade|slide|none).
+- \`text\` (overlay): \`text\`, \`startSec\`, \`durationSec\`, \`styleId\` (one of get_timeline's styles), \`position\` top|center|bottom or {x, y}.
+- \`captions\` (captions track): \`timingHandle\` (a file with word timings, from \`wordTimings\`), \`styleId\`, \`startSec?\`, \`style?\` {wordsPerPage, highlightStyle none|color|pill|underline|grow, highlightColor, color, fontSize, uppercase, position}, \`pages?\` (words grouped by hand, each word with its own times; set only to fix a word or move a break).
+- \`graphic\` (overlay): drawn items: \`x, y, w, h\`, \`content\` {kind: text|shape|paths|connector, …}, \`anim\`. \`motion\` (overlay): a Remotion motion graphic with its own code; change those with the stage that made them.
+
+**Edits** (edit_timeline): address an item by \`{trackId, index}\` from get_timeline; indexes count from 0 in time order and change after an add, remove, move or split earlier in the same call. \`update_item\` merges \`set\` into the item (\`unset\` removes fields); an item never changes type. \`split\` cuts a clip in two at a time inside it (the second part continues the picture). \`shift\` moves every item on a track from a time on (close a gap: negative \`bySec\`; make room: positive). To shorten a clip and close the gap after it, update its \`durationSec\`, then shift the rest of the track by the difference. Keep the voice-over and the captions in step: captions follow the words, so move pictures to the voice, not the voice to the pictures.
+
+**Checks.** An edit that would break a check (gaps on the video track, items past the end, wrong aspect…) is refused; failing checks that were already there are listed. After editing, \`preview_timeline\` renders a quick draft and shows frames; \`view_media\`/\`listen\` with \`{runId, stageKey, preview: true}\` look closer. \`submit_timeline\` is the last step, only when the user wants it.`,
+  },
+
   recreate: {
     title: 'Recreating a video from a reference',
     body: `When the user gives a video and asks for "one like this", rebuild its structure and style from generic stages. There is no "recreate" stage and no template per style: the breakdown is the plan, the blueprint is ordinary stages.

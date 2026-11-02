@@ -31,6 +31,7 @@ import type {
   UpdateAssistantSessionDto,
   UpdateAssistantSettingsDto,
 } from '@reelcraft/shared';
+import { Timeline } from '@reelcraft/shared';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
 import { assistantItem, assistantSession, run } from '../db/schema/index';
 import { ulid } from '../common/ulid';
@@ -62,6 +63,8 @@ import { GoalService } from './goals/goal.service';
 import { NotificationService } from '../notification/notification.service';
 import { LivePresence } from '../live/live-presence';
 import { RunInputService } from '../run/run-input.service';
+import { TimelineEditorService } from '../run/timeline-editor.service';
+import { TimelinePreviewService } from '../run/timeline-preview.service';
 import { VoiceStudioAdapter } from '../provider/voicestudio/voicestudio.adapter';
 import { describeAttachment } from './attachments/attachment.logic';
 import { AssistantSettingsService } from './watch/assistant-settings.service';
@@ -183,6 +186,8 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
     private readonly goals: GoalService,
     private readonly notifications: NotificationService,
     private readonly presence: LivePresence,
+    private readonly timelines: TimelineEditorService,
+    timelinePreviews: TimelinePreviewService,
   ) {
     this.toolDeps = {
       blueprints,
@@ -214,6 +219,10 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
       browser,
       knowledge,
       goals,
+      timelines,
+      timelinePreviews,
+      timelineChanged: (runId, stageKey, draftRevision) =>
+        this.events.publish({ type: 'timeline', runId, stageKey, draftRevision }),
       engineLayer: () => engineDefaults(config),
       blueprintChanged: (blueprintId) => this.events.publish({ type: 'blueprint', blueprintId }),
     };
@@ -529,6 +538,7 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
             ? run.stages.find((s) => s.key === context.stageKey)
             : undefined;
           if (stage) parts.push(`its stage "${stage.label}" (stageKey ${stage.key})`);
+          if (stage && context.page === 'timeline') parts.push(timelineEditorNote(context));
         }
       } else if (context.blueprintId) {
         const blueprint = await this.blueprints.getBlueprint(context.blueprintId);
@@ -1360,6 +1370,25 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
       }
       return this.updateItem(itemId, { state: 'undone' });
     }
+    if (change.kind === 'timeline') {
+      const session = await this.timelines.session(change.runId, change.stageKey);
+      if (session.draftRevision !== change.draftRevision) {
+        throw new ConflictException(
+          'The timeline has changed since, so this can no longer be undone here. Use Undo in the editor, or ask the assistant.',
+        );
+      }
+      const saved = await this.timelines.save(change.runId, change.stageKey, {
+        draftRevision: change.draftRevision,
+        timeline: Timeline.parse(change.before),
+      });
+      this.events.publish({
+        type: 'timeline',
+        runId: change.runId,
+        stageKey: change.stageKey,
+        draftRevision: saved.draftRevision,
+      });
+      return this.updateItem(itemId, { state: 'undone' });
+    }
     if (change.kind === 'trash' || change.kind === 'archive') {
       if (change.kind === 'trash') {
         if (change.target === 'channel') await this.toolDeps.channels.restore(change.id);
@@ -1413,6 +1442,22 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
     if (!row || row.type !== type) throw new NotFoundException('Item not found');
     return row;
   }
+}
+
+/** What the user is looking at in the timeline editor, so "this clip" and "here" mean something. */
+export function timelineEditorNote(context: AssistantPageContext): string {
+  const bits = [
+    'open in the timeline editor (read it with get_timeline, change it with edit_timeline)',
+  ];
+  if (context.playheadSec !== undefined) {
+    bits.push(`the playhead ("here", "now") is at ${Math.round(context.playheadSec * 100) / 100}s`);
+  }
+  if (context.selection?.length) {
+    bits.push(
+      `selected ("this", "these"): ${context.selection.map((s) => `${s.trackId} item ${s.index}`).join(', ')}`,
+    );
+  }
+  return bits.join('; ');
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

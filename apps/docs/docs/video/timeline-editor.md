@@ -3,10 +3,16 @@ title: Timeline editor
 description: Arrange pictures, audio, titles and captions by hand, with a preview, a zoomable timeline, split and trim, editable captions, problem checks and a draft render.
 ---
 
-The timeline editor opens from a [Human Timeline Edit](../stage-types/human-timeline-edit.md) stage. When
-the run pauses for it, select **Open editor** on the stage, on the run page or on the stage's card in the
-[blueprint canvas](../blueprints/blueprints.md). The editor is titled with the stage's name and **Timeline
-editor** beneath it. **Run** takes you back.
+The timeline editor opens in two ways:
+
+- From a [Human Timeline Edit](../stage-types/human-timeline-edit.md) stage. When the run pauses for it,
+  select **Open editor** on the stage, on the run page or on the stage's card in the
+  [blueprint canvas](../blueprints/blueprints.md).
+- From a finished video. When a [Compose Timeline](../stage-types/compose-timeline.md) stage has made its
+  timeline and the run has stopped (finished, failed or paused), select **Edit video** on the run's
+  **Final video** or on the Compose Timeline stage. See [Edit a finished video](#edit-a-finished-video).
+  The editor is titled with the stage's name and **Timeline
+  editor** beneath it. **Run** takes you back.
 
 It is always dark, whatever theme the rest of Reelcraft uses, and has four areas: the **Media** panel on
 the left, the preview and its controls in the middle, the **Inspector** on the right, and the timeline
@@ -22,7 +28,8 @@ per letter.
   something else.
 - **Out of date**: the draft was changed somewhere else, such as another tab. A bar says so, with
   **Reload**, which continues from the newer version.
-- **Read only**: the run isn't waiting for this stage any more.
+- **Read only**: the run isn't waiting for this stage any more, or (for a finished video) the run is going
+  again.
 
 Next to the save state, the editor checks your draft as you work and says **No problems** or, for example,
 **1 problem**. Select it to see what is wrong in plain words, and **Show** to jump to the clip. The clips
@@ -212,6 +219,18 @@ is quick, and watch it before you submit. Any changes not yet saved are saved fi
 Each editor keeps only its latest draft, and a draft is deleted with its run. It's free: it renders inside
 Reelcraft. The final video is made by the [Render Timeline](../stage-types/render-timeline.md) stage.
 
+## The assistant in the editor
+
+The [assistant](../blueprints/assistant.md) works alongside you here. It knows which clip you have selected
+and where the playhead is, so you can ask "make this clip two seconds shorter", "add a title here" or "put
+the music under the whole video". It makes the change in small steps, checks it, and can render a draft to
+look at it before you decide. Your unsaved changes are saved before it reads the timeline.
+
+When it changes the timeline, the editor shows the change straight away, as one step: **Undo** takes it
+back. If you were in the middle of an edit, a bar asks instead: **Load its version** or **Keep mine**. Its
+changes are also in the chat, each with **Open editor** and **Undo**. It only submits the timeline, or
+saves a finished video, when you ask it to.
+
 ## Use this timeline and continue
 
 When you're done, select **Use this timeline and continue**. Reelcraft runs the [timeline checks](./timeline-checks.md)
@@ -220,3 +239,14 @@ again:
 - If they pass, the run continues.
 - If they don't, a red box lists what's wrong, for example _timeline.coverage: primary video track has gaps_,
   and you stay in the editor to fix it.
+
+## Edit a finished video
+
+A video made by a [Compose Timeline](../stage-types/compose-timeline.md) stage opens in the same editor,
+starting from the timeline the stage made. Your edits are a draft: the video doesn't change until you save
+it. Instead of **Use this timeline and continue**, the button reads **Save and re-render**. It asks first,
+saying which stages will be made again (the render after it) and about what that costs. **Save and
+re-render** replaces the stage's timeline (the old one stays in its **Attempts**) and makes the video again;
+you go back to the run page to watch it.
+
+If the stage makes a new timeline later (for example you re-run it), the editor starts again from that one.

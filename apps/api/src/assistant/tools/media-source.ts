@@ -14,6 +14,8 @@ export const MediaSource = z
     runId: z.string().min(1).optional(),
     stageKey: z.string().min(1).optional(),
     itemIndex: z.number().int().min(0).optional(),
+    /** With runId and stageKey: the latest draft render of that stage's timeline editor. */
+    preview: z.literal(true).optional(),
   })
   .strict()
   .superRefine((v, ctx) => {
@@ -39,6 +41,9 @@ export const MediaSource = z
     if ((v.stageKey !== undefined || v.itemIndex !== undefined) && v.runId === undefined) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'stageKey and itemIndex need runId.' });
     }
+    if (v.preview && (v.runId === undefined || v.stageKey === undefined)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'preview needs runId and stageKey.' });
+    }
   });
 export type MediaSource = z.infer<typeof MediaSource>;
 
@@ -53,9 +58,10 @@ export function mediaSourceJson(description: string): JsonObject {
       runId: id,
       stageKey: id,
       itemIndex: { type: 'integer', minimum: 0 },
+      preview: { type: 'boolean', enum: [true] },
     },
     [],
-    `${description} One of: {attachmentId} a file attached to the chat; {assetId} a Library asset; {characterId, blobId} a Character's picture; {runId, stageKey?, itemIndex?} what a run's stage made, or its final video without stageKey.`,
+    `${description} One of: {attachmentId} (chat file); {assetId} (Library); {characterId, blobId}; {runId, stageKey?, itemIndex?} (no stageKey: final video); {runId, stageKey, preview: true} (timeline draft render).`,
   );
 }
 
@@ -108,7 +114,10 @@ function facts(probe: unknown): Pick<MediaFile, 'durationSec' | 'width' | 'heigh
 /** One stored file for a source. A run stage with several items needs `itemIndex` unless only one
  * of them is media of the wanted kinds. */
 export async function resolveMedia(
-  deps: Pick<ToolDeps, 'attachments' | 'assets' | 'characters' | 'runs' | 'runControl'>,
+  deps: Pick<
+    ToolDeps,
+    'attachments' | 'assets' | 'characters' | 'runs' | 'runControl' | 'timelinePreviews'
+  >,
   source: MediaSource,
   wanted: MediaKind[] = ['image', 'video', 'audio'],
 ): Promise<Resolved> {
@@ -167,6 +176,26 @@ export async function resolveMedia(
   }
 
   const runId = source.runId!;
+  if (source.preview) {
+    const video = await deps.timelinePreviews
+      .latestVideo(runId, source.stageKey!)
+      .catch(() => null);
+    if (!video) {
+      return {
+        ok: false,
+        error: `There is no finished draft render of ${source.stageKey} on run ${runHandle(runId)}: call preview_timeline first.`,
+      };
+    }
+    return refuse({
+      blobId: video.blobId,
+      kind: 'video',
+      mime: 'video/mp4',
+      label: `the draft render of ${source.stageKey} (revision ${video.draftRevision}) on run ${runHandle(runId)}`,
+      durationSec: null,
+      width: null,
+      height: null,
+    });
+  }
   if (!source.stageKey) {
     const run = await deps.runControl.get(runId).catch(() => null);
     if (!run) return { ok: false, error: `There is no run "${runId}".` };

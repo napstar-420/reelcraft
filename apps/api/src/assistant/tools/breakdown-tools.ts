@@ -147,7 +147,7 @@ const saveBreakdown: AssistantTool<z.infer<typeof SaveBreakdownInput>> = {
   name: 'save_breakdown',
   kind: 'read',
   description:
-    'Show the user your breakdown of a video as a card they can check before you rebuild it (it plays the video and jumps to each shot): title, summary, format, sections, every shot (startSec, endSec, visual, onScreenText, camera, transition, and make: generate_image | generate_video | motion_graphic | library_asset | reference_frame | text_only | other), narration (script, voice, wordsPerMinute), captions, music, soundEffects, textStyle and pacing. Use the shot times from analyze_video. Saving changes nothing in the app.',
+    "Show the user your breakdown of a video as a card to check before you rebuild it: title, summary, format, sections, every shot (startSec, endSec, visual, onScreenText, camera, transition, and make: generate_image | generate_video | motion_graphic | library_asset | reference_frame | text_only | other), narration (script, voice, wordsPerMinute), captions, music, soundEffects, textStyle and pacing. Use analyze_video's shot times. Changes nothing in the app.",
   input: SaveBreakdownInput,
   jsonSchema: () =>
     obj(
@@ -218,7 +218,7 @@ const CompareInput = z.object({
 const compareMedia: AssistantTool<z.infer<typeof CompareInput>> = {
   name: 'compare_media',
   kind: 'read',
-  description: `Compare two videos side by side, e.g. a reference the user gave (a) and what a run made from it (b): for each, length, size, aspect, number of shots and average shot length, and loudness; plus one contact sheet of each with frames at the same relative moments (frames: 2-8, default 6), so you can judge how close the rebuild is.${UNTRUSTED_TAIL}`,
+  description: `Compare two videos, e.g. a reference (a) and a run's rebuild of it (b): length, size, aspect, shot count and average length, loudness, and a contact sheet of each at the same relative moments (frames 2-8, default 6).${UNTRUSTED_TAIL}`,
   input: CompareInput,
   jsonSchema: () =>
     obj(

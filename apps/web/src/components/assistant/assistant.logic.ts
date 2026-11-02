@@ -58,6 +58,8 @@ export function invalidationsFor(item: AssistantItemDto): Array<readonly unknown
   if (item.type === 'change') {
     const change = payloadOf<ChangePayload>(item);
     if (change.kind === 'note') return [['assistant-notes']];
+    // an open timeline editor follows the live timeline event instead
+    if (change.kind === 'timeline') return [['run', change.runId]];
     if (change.kind === 'trash' || change.kind === 'archive') {
       return [['channels'], ['blueprints'], ['channel'], ['blueprint'], ['trash']];
     }
@@ -305,6 +307,16 @@ export function describeToolCall(call: ToolCallPayload, state: string | null): s
         return 'Finished the goal';
       case 'compare_runs':
         return 'Compared two runs';
+      case 'get_timeline':
+        return 'Read the timeline';
+      case 'edit_timeline':
+        return str(args.summary)
+          ? `Edited the timeline: ${str(args.summary)}`
+          : 'Edited the timeline';
+      case 'preview_timeline':
+        return 'Rendered a draft of the timeline';
+      case 'submit_timeline':
+        return 'Sent the timeline on';
       case 'remember':
         return 'Saved a note';
       case 'forget':

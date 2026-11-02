@@ -40,10 +40,21 @@ const sessionKey = (sessionId: string | undefined) => ['assistant-session', sess
  * shell, so the chat follows the user from page to page and keeps streaming when the dock is
  * closed. The assistant writes changes on the server; open pages refresh from live updates.
  */
+/** What an open page does around each message: adds what it alone knows to the context (the
+ * timeline editor's selection and playhead), and saves pending edits first, so the assistant reads
+ * the latest. */
+export type TurnHooks = {
+  context?: () => Partial<AssistantPageContext>;
+  beforeSend?: () => Promise<void>;
+};
+
 export function useAssistant({
   contextRef,
   editorDraftRef,
+  turnHooksRef,
 }: {
+  /** The open page's hooks around a message, if it has any. */
+  turnHooksRef?: MutableRefObject<TurnHooks | null>;
   /** Where the user is right now: sent with every message. */
   contextRef: MutableRefObject<AssistantPageContext>;
   /** The open blueprint editor's draft, which may hold edits not yet autosaved. */
@@ -236,7 +247,11 @@ export function useAssistant({
     }) => {
       if (!model) throw new Error('No assistant model is available.');
       const sessionId = activeSessionId ?? (await createSession.mutateAsync()).id;
-      const context = contextRef.current;
+      const hooks = turnHooksRef?.current;
+      await hooks?.beforeSend?.().catch(() => undefined);
+      const base = contextRef.current;
+      // the page's own detail only while the message still points at it (the chip wasn't removed)
+      const context = base.runId && hooks?.context ? { ...base, ...hooks.context() } : base;
       const editor = editorDraftRef.current;
       return api.startAssistantTurn(sessionId, {
         ...(input.text ? { text: input.text } : {}),

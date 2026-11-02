@@ -4,6 +4,7 @@ import {
   appendResource,
   clampFades,
   describeSubmitError,
+  incomingDraftAction,
   moveTo,
   snapSec,
   snapTargets,
@@ -147,5 +148,19 @@ describe('drag and trim maths', () => {
   it('keeps fades within the clip', () => {
     expect(clampFades(2, 1.5, 1)).toEqual({ fadeInSec: 1.5, fadeOutSec: 0.5 });
     expect(clampFades(2, 0, 0)).toEqual({});
+  });
+});
+
+describe('incomingDraftAction', () => {
+  it('ignores what it has, takes in a newer draft, and asks when it has edits of its own', () => {
+    expect(incomingDraftAction({ incomingRevision: 3, savedRevision: 3, unsavedEdits: true })).toBe(
+      'ignore',
+    );
+    expect(
+      incomingDraftAction({ incomingRevision: 4, savedRevision: 3, unsavedEdits: false }),
+    ).toBe('adopt');
+    expect(incomingDraftAction({ incomingRevision: 4, savedRevision: 3, unsavedEdits: true })).toBe(
+      'ask',
+    );
   });
 });

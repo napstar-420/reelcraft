@@ -5,6 +5,8 @@ import type { AssistantStreamEvent, NotificationDto } from '@reelcraft/shared';
 export type LiveEvent =
   | { type: 'run'; runId: string }
   | { type: 'stage'; runId: string; stageKey: string }
+  /** A timeline editor draft was saved by someone other than the open editor (the assistant). */
+  | { type: 'timeline'; runId: string; stageKey: string; draftRevision: number }
   /** A blueprint's details, working draft or versions changed (e.g. the assistant edited it). */
   | { type: 'blueprint'; blueprintId: string }
   /** A notification row was committed for this user. */

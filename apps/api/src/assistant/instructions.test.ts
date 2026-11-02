@@ -61,6 +61,7 @@ describe('assistant instructions', () => {
       'Goals: improving a blueprint on your own',
       'What you remember',
       'Recreating a video',
+      'Editing a video',
       'Links and the browser',
       'Channels and blueprints',
       'Versions',

@@ -20,6 +20,8 @@ export const AssistantPage = z.enum([
   'channels',
   'channel',
   'settings',
+  /** The timeline editor of a run stage. */
+  'timeline',
   'other',
 ]);
 export type AssistantPage = z.infer<typeof AssistantPage>;
@@ -30,6 +32,12 @@ export const AssistantPageContext = z.object({
   blueprintId: z.string().min(1).max(64).optional(),
   runId: z.string().min(1).max(64).optional(),
   stageKey: z.string().min(1).max(120).optional(),
+  /** Timeline editor: the items selected, as get_timeline addresses them, and the playhead. */
+  selection: z
+    .array(z.object({ trackId: z.string().min(1).max(80), index: z.number().int().min(0) }))
+    .max(20)
+    .optional(),
+  playheadSec: z.number().finite().min(0).optional(),
 });
 export type AssistantPageContext = z.infer<typeof AssistantPageContext>;
 
@@ -129,8 +137,26 @@ export const ArchiveChangePayload = z.object({
 });
 export type ArchiveChangePayload = z.infer<typeof ArchiveChangePayload>;
 
+/** An edit the assistant made to a timeline editor draft (Undo puts `before` back while the draft is
+ * still at `draftRevision`). */
+export const TimelineChangePayload = z.object({
+  kind: z.literal('timeline'),
+  runId: z.string(),
+  stageKey: z.string(),
+  stageLabel: z.string(),
+  summary: z.string(),
+  /** One line per op, in order. */
+  changes: z.array(z.string()),
+  /** The timeline before the edit. */
+  before: z.unknown(),
+  /** The draft's revision after the edit. */
+  draftRevision: z.number().int(),
+});
+export type TimelineChangePayload = z.infer<typeof TimelineChangePayload>;
+
 export const ChangePayload = z.discriminatedUnion('kind', [
   DraftChangePayload,
+  TimelineChangePayload,
   MetadataChangePayload,
   NoteChangePayload,
   TrashChangePayload,

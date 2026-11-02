@@ -1,11 +1,12 @@
-import { Eye } from 'lucide-react';
+import { Clapperboard, Eye } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import type { RunDetailDto, StageExecutionDto } from '@reelcraft/shared';
 import { Button } from '@/components/ui/button';
-import { canAnswerWaits } from '@/lib/run-action-policy';
+import { canAnswerWaits, canEditVideo } from '@/lib/run-action-policy';
 import { isApprovalStillOpen } from '@/pages/approval-review.logic';
 
-/** What a person can do for a stage that waits on them: review its output, give it input, or open its editor. */
+/** What a person can do for a stage that waits on them: review its output, give it input, or open
+ * its editor; and, for a finished Compose Timeline stage, edit its video. */
 export function StageAnswerButtons({
   run,
   stage,
@@ -39,6 +40,13 @@ export function StageAnswerButtons({
       {stage.interaction === 'timeline_editor' && stage.state === 'awaiting_input' ? (
         <Button size="sm" asChild>
           <Link to={`/runs/${run.id}/stages/${stage.stageKey}/edit`}>Open editor</Link>
+        </Button>
+      ) : null}
+      {canEditVideo(run.state, stage) ? (
+        <Button size="sm" variant="outline" asChild>
+          <Link to={`/runs/${run.id}/stages/${encodeURIComponent(stage.stageKey)}/edit`}>
+            <Clapperboard /> Edit video
+          </Link>
         </Button>
       ) : null}
     </>

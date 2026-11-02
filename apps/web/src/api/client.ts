@@ -77,6 +77,7 @@ import type {
   SaveTimelineDraftDto,
   TimelineCheckResponseDto,
   TimelineEditorSessionDto,
+  TimelineOutputPreviewDto,
   TimelinePreviewResponseDto,
   CheckDef,
   JsonSchema,
@@ -580,11 +581,21 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ timeline }),
     }),
-  submitTimelineDraft: (runId: string, stageKey: string, draftRevision: number) =>
-    request(`/runs/${runId}/stages/${stageKey}/timeline-editor/submit`, {
-      method: 'POST',
-      body: JSON.stringify({ draftRevision }),
-    }),
+  /** A waiting edit: submits it. A finished video's timeline: without `previewToken`, returns what
+   * saving it re-makes and costs; with it, saves and re-renders. */
+  submitTimelineDraft: (
+    runId: string,
+    stageKey: string,
+    draftRevision: number,
+    previewToken?: string,
+  ) =>
+    request<TimelineOutputPreviewDto | Record<string, unknown>>(
+      `/runs/${runId}/stages/${stageKey}/timeline-editor/submit`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ draftRevision, ...(previewToken && { previewToken }) }),
+      },
+    ),
   createRun: (dto: CreateRunDto) =>
     request<RunDetailDto>('/runs', { method: 'POST', body: JSON.stringify(dto) }),
   requestRunInputUpload: (runId: string, inputKey: string, ext: string) =>
