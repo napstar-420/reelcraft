@@ -129,12 +129,24 @@ export class BlueprintService {
     if (existing) return existing.id;
 
     const id = ulid();
-    await this.db.insert(blueprint).values({
-      id,
-      channelId,
-      name,
-      description: dto?.description,
-      tags: dto?.tags,
+    await this.db.transaction(async (tx) => {
+      // shared lock: a channel can't move to the trash between this check and the insert
+      const [owner] = await tx
+        .select({ deletedAt: channel.deletedAt })
+        .from(channel)
+        .where(eq(channel.id, channelId))
+        .for('share');
+      if (!owner) throw new NotFoundException(`Channel ${channelId} not found`);
+      if (owner.deletedAt) {
+        throw new ConflictException('This channel is in the trash: restore it to add blueprints.');
+      }
+      await tx.insert(blueprint).values({
+        id,
+        channelId,
+        name,
+        description: dto?.description,
+        tags: dto?.tags,
+      });
     });
     this.logger.log({ blueprintId: id, channelId }, 'blueprint created');
     return id;
@@ -246,11 +258,19 @@ export class BlueprintService {
       throw new ConflictException('Its channel is in the trash: restore the channel first.');
     }
     let name = current.name;
-    const taken = await this.assertNameFree(current.channelId, name, id).then(
-      () => false,
-      () => true,
-    );
-    if (taken) name = `${current.name} (restored)`.slice(0, 120);
+    const isFree = (candidate: string) =>
+      this.assertNameFree(current.channelId, candidate, id).then(
+        () => true,
+        () => false,
+      );
+    if (!(await isFree(name))) {
+      // "Name (restored)", then "Name (restored 2)"…, the suffix kept whole within 120 characters
+      for (let n = 1; ; n++) {
+        const suffix = n === 1 ? ' (restored)' : ` (restored ${n})`;
+        name = `${current.name.slice(0, 120 - suffix.length)}${suffix}`;
+        if (await isFree(name)) break;
+      }
+    }
     await this.db.update(blueprint).set({ deletedAt: null, name }).where(eq(blueprint.id, id));
     this.logger.log({ blueprintId: id }, 'blueprint restored from the trash');
     return this.getBlueprint(id);
@@ -272,7 +292,9 @@ export class BlueprintService {
       .orderBy(desc(blueprint.deletedAt));
   }
 
-  async delete(id: string): Promise<void> {
+  /** Deletes a blueprint for good. `onlyTrashedBefore` is for the purge job: the blueprint is
+   * locked and, if it was restored (or trashed again) since it was picked, it is left alone. */
+  async delete(id: string, opts: { onlyTrashedBefore?: string } = {}): Promise<boolean> {
     await this.getBlueprint(id, { includeTrashed: true });
     const versionIds = (
       await this.db
@@ -292,7 +314,15 @@ export class BlueprintService {
         `This blueprint has ${open} run(s) still in progress; cancel them or wait for them to finish before deleting it.`,
       );
     }
-    await this.db.transaction(async (tx) => {
+    const deleted = await this.db.transaction(async (tx) => {
+      if (opts.onlyTrashedBefore !== undefined) {
+        const [locked] = await tx
+          .select({ deletedAt: blueprint.deletedAt })
+          .from(blueprint)
+          .where(eq(blueprint.id, id))
+          .for('update');
+        if (!locked?.deletedAt || locked.deletedAt >= opts.onlyTrashedBefore) return false;
+      }
       await deleteRunsCascade(
         tx,
         runRows.map((row) => row.id),
@@ -319,8 +349,14 @@ export class BlueprintService {
       await tx.delete(packageImport).where(eq(packageImport.blueprintId, id));
       await tx.delete(blueprintVersion).where(eq(blueprintVersion.blueprintId, id));
       await tx.delete(blueprint).where(eq(blueprint.id, id));
+      return true;
     });
+    if (!deleted) {
+      this.logger.log({ blueprintId: id }, 'blueprint left alone: it left the trash meanwhile');
+      return false;
+    }
     this.logger.log({ blueprintId: id, runCount: runRows.length }, 'blueprint deleted');
+    return true;
   }
 
   /** A blueprint in the trash (or in a channel in the trash) is not found unless
@@ -386,18 +422,28 @@ export class BlueprintService {
 
     const id = ulid();
     const write = async (w: Tx) => {
+      // Locked, so a concurrent save either finishes first (and this one is refused) or waits for
+      // this one, and a blueprint can't be trashed between this check and the write.
+      const [row] = await w
+        .select({
+          currentVersionId: blueprint.currentVersionId,
+          workingDraft: blueprint.workingDraft,
+          deletedAt: blueprint.deletedAt,
+          channelId: blueprint.channelId,
+        })
+        .from(blueprint)
+        .where(eq(blueprint.id, blueprintId))
+        .for('update');
+      if (!row) throw new NotFoundException(`Blueprint ${blueprintId} not found`);
+      const [owner] = await w
+        .select({ deletedAt: channel.deletedAt })
+        .from(channel)
+        .where(eq(channel.id, row.channelId))
+        .for('share');
+      if (row.deletedAt || owner?.deletedAt) {
+        throw new NotFoundException(`Blueprint ${blueprintId} not found`);
+      }
       if (!draft && (expectedCurrent !== undefined || expectedWorkingDraft !== undefined)) {
-        // Locked, so a concurrent save either finishes first (and this one is refused)
-        // or waits for this one.
-        const [row] = await w
-          .select({
-            currentVersionId: blueprint.currentVersionId,
-            workingDraft: blueprint.workingDraft,
-          })
-          .from(blueprint)
-          .where(eq(blueprint.id, blueprintId))
-          .for('update');
-        if (!row) throw new NotFoundException(`Blueprint ${blueprintId} not found`);
         if (
           (expectedCurrent !== undefined && row.currentVersionId !== expectedCurrent) ||
           (expectedWorkingDraft !== undefined &&
@@ -550,6 +596,9 @@ export class BlueprintService {
       .where(
         and(
           eq(blueprint.id, id),
+          // not while the blueprint, or its channel, is in the trash
+          isNull(blueprint.deletedAt),
+          sql`(select c.deleted_at from channel c where c.id = blueprint.channel_id) is null`,
           sql`${blueprint.currentVersionId} is not distinct from ${baseVersionId}`,
           expectedWorkingDraft === undefined
             ? undefined

@@ -81,15 +81,21 @@ export class TrashService implements OnModuleInit, OnModuleDestroy {
       .where(and(isNotNull(channel.deletedAt), lt(channel.deletedAt, cutoff)));
     let blueprints = 0;
     let channels = 0;
+    // Each is locked and re-checked against the cutoff as it is deleted: one restored since the
+    // list above was read is left alone.
     for (const { id } of oldBlueprints) {
-      await this.blueprints.delete(id).then(
-        () => (blueprints += 1),
+      await this.blueprints.delete(id, { onlyTrashedBefore: cutoff }).then(
+        (deleted) => {
+          if (deleted) blueprints += 1;
+        },
         (error: unknown) => this.logger.warn({ err: error, blueprintId: id }, 'not purged'),
       );
     }
     for (const { id } of oldChannels) {
-      await this.channels.delete(id).then(
-        () => (channels += 1),
+      await this.channels.delete(id, { onlyTrashedBefore: cutoff }).then(
+        (deleted) => {
+          if (deleted) channels += 1;
+        },
         (error: unknown) => this.logger.warn({ err: error, channelId: id }, 'not purged'),
       );
     }

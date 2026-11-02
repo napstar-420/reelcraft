@@ -197,7 +197,9 @@ export class ChannelService {
     }
   }
 
-  async delete(id: string): Promise<void> {
+  /** Deletes a channel for good. `onlyTrashedBefore` is for the purge job: the channel is locked
+   * and, if it was restored (or trashed again) since it was picked, it is left alone. */
+  async delete(id: string, opts: { onlyTrashedBefore?: string } = {}): Promise<boolean> {
     await this.get(id, { includeTrashed: true });
 
     const openRuns = await this.db
@@ -216,6 +218,14 @@ export class ChannelService {
 
     const startedAt = Date.now();
     const counts = await this.db.transaction(async (tx) => {
+      if (opts.onlyTrashedBefore !== undefined) {
+        const [locked] = await tx
+          .select({ deletedAt: channel.deletedAt })
+          .from(channel)
+          .where(eq(channel.id, id))
+          .for('update');
+        if (!locked?.deletedAt || locked.deletedAt >= opts.onlyTrashedBefore) return null;
+      }
       const runIds = (await tx.select({ id: run.id }).from(run).where(eq(run.channelId, id))).map(
         (r) => r.id,
       );
@@ -297,9 +307,14 @@ export class ChannelService {
         assetCount: assetBlobIds.length,
       };
     });
+    if (!counts) {
+      this.logger.log({ channelId: id }, 'channel left alone: it left the trash meanwhile');
+      return false;
+    }
     this.logger.log(
       { channelId: id, ...counts, durationMs: Date.now() - startedAt },
       'channel deleted',
     );
+    return true;
   }
 }
