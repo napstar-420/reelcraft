@@ -26,6 +26,8 @@ type DurableStatus = {
   reason?: string;
   createdAt?: string;
   startedAt?: string;
+  /** Set by a browser job's runner while it waits for the shared browser session. */
+  waitingForLock?: boolean;
 };
 
 type ToolResultManifest = {
@@ -350,6 +352,18 @@ export abstract class CliJobProviderAdapter implements ProviderAdapter {
     const ids = { providerId: this.id, jobId: handle.externalId };
     this.logger.debug({ ...ids, state: status.state }, 'provider job polled');
     if (status.state === 'queued') {
+      if (status.waitingForLock && status.pid) {
+        // Queued behind another browser job: the runner times itself out, so only a dead one fails.
+        if (this.isAlive(status.pid)) return { done: false, phase: 'queued' };
+        this.logger.warn({ ...ids, pid: status.pid }, 'cli runner lost while waiting for lock');
+        return {
+          done: true,
+          outcome: 'failed',
+          reason: `${this.label} runner was lost while waiting for the browser session`,
+          retryable: true,
+          failureClass: 'infrastructure',
+        };
+      }
       const queuedAt = status.createdAt ? Date.parse(status.createdAt) : Number.NaN;
       if (Number.isFinite(queuedAt) && Date.now() - queuedAt > 30_000) {
         this.logger.warn(ids, 'cli runner never started');

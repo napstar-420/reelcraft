@@ -148,6 +148,7 @@ async function main(): Promise<void> {
 async function acquireBrowserLock(manifest: CliRunnerManifest): Promise<() => Promise<void>> {
   const lockPath = join(dirname(dirname(manifest.jobDir)), 'browseros-neo.lock');
   const deadline = Date.now() + manifest.timeoutMs;
+  let announcedWait = false;
   while (Date.now() < deadline) {
     try {
       const handle = await open(lockPath, 'wx', 0o600);
@@ -164,6 +165,21 @@ async function acquireBrowserLock(manifest: CliRunnerManifest): Promise<() => Pr
           await unlink(lockPath).catch(() => undefined);
           continue;
         }
+      }
+      // Tell the adapter this runner is alive and queued behind another job, so its "never started"
+      // check does not fail a job that is only waiting its turn.
+      if (!announcedWait) {
+        announcedWait = true;
+        const statusPath = join(manifest.jobDir, 'status.json');
+        const queued = JSON.parse(await readFile(statusPath, 'utf8').catch(() => '{}')) as {
+          createdAt?: string;
+        };
+        await atomicJson(statusPath, {
+          state: 'queued',
+          createdAt: queued.createdAt ?? new Date().toISOString(),
+          pid: process.pid,
+          waitingForLock: true,
+        });
       }
       await new Promise((resolve) => setTimeout(resolve, 250));
     }
