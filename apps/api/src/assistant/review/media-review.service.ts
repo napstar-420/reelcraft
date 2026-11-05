@@ -97,30 +97,20 @@ function run(cmd: string, args: string[], timeoutMs = 120_000): Promise<{ stderr
 
 /**
  * One scaled frame at `sec`. A time past the last frame's start (the clamped end of a video)
- * yields no frame (and an error) in newer ffmpeg, so that case takes the last frame by seeking from the end.
+ * yields no frame (and an error) in newer ffmpeg, so that case keeps the last frame of the final second.
  */
 async function extractFrame(file: string, sec: number, out: string): Promise<void> {
-  const grab = (seek: string[]) =>
-    run('ffmpeg', [
-      '-v',
-      'error',
-      '-y',
-      ...seek,
-      '-i',
-      file,
-      '-frames:v',
-      '1',
-      '-vf',
-      `scale=${FRAME_WIDTH}:-2`,
-      out,
-    ]);
+  const grab = (args: string[]) =>
+    run('ffmpeg', ['-v', 'error', '-y', ...args, '-vf', `scale=${FRAME_WIDTH}:-2`, out]);
   try {
-    await grab(['-ss', String(sec)]);
+    await grab(['-ss', String(sec), '-i', file, '-frames:v', '1']);
     if (await stat(out).catch(() => undefined)) return;
   } catch {
-    // fall through to the seek from the end
+    // fall through to the last frame
   }
-  await grab(['-sseof', '-0.1']);
+  // The final second is decoded and each frame overwrites `out`, so the last frame wins whatever
+  // the frame rate is.
+  await grab(['-sseof', '-1', '-i', file, '-update', '1']);
 }
 
 /**

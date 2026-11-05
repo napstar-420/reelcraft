@@ -54,18 +54,18 @@ describe.skipIf(!hasFfmpeg)('MediaReviewService (real ffmpeg)', () => {
   });
   afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
-  function service(transcribeBuffer = vi.fn()) {
+  function service(transcribeBuffer = vi.fn(), file = video) {
     const row = {
       id: 'b1',
       objectKey: 'k',
       mime: 'video/mp4',
-      bytes: statSync(video).size,
+      bytes: statSync(file).size,
       deletedAt: null,
     };
     const db = {
       select: () => ({ from: () => ({ where: () => ({ limit: async () => [row] }) }) }),
     };
-    const storage = { getStream: async () => createReadStream(video) };
+    const storage = { getStream: async () => createReadStream(file) };
     const audio = { transcriber: vi.fn(), transcribeBuffer };
     return new MediaReviewService(db as never, storage as never, audio as never);
   }
@@ -77,6 +77,24 @@ describe.skipIf(!hasFfmpeg)('MediaReviewService (real ffmpeg)', () => {
     expect(Buffer.from(sheet!.base64, 'base64').subarray(0, 2)).toEqual(Buffer.from([0xff, 0xd8]));
     const at = await service().contactSheet('b1', { at: [3, 1, 99] });
     expect(at!.times).toEqual([1, 3, 3.95]);
+  });
+
+  it('still returns a frame for a time after the last frame of a low frame rate clip', async () => {
+    const slow = join(dir, 'slow.mp4');
+    execFileSync('ffmpeg', [
+      '-v',
+      'error',
+      '-y',
+      '-f',
+      'lavfi',
+      '-i',
+      'testsrc=size=320x180:rate=5:duration=4',
+      '-pix_fmt',
+      'yuv420p',
+      slow,
+    ]);
+    const sheet = await service(vi.fn(), slow).contactSheet('b1', { at: [3.95] });
+    expect(Buffer.from(sheet!.base64, 'base64').subarray(0, 2)).toEqual(Buffer.from([0xff, 0xd8]));
   });
 
   it("listens to a video's soundtrack: transcript lines, loudness and the silence at the end", async () => {
