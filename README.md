@@ -88,6 +88,12 @@ docker run -d --name reelcraft --restart unless-stopped \
 Then open <http://localhost:8080>. The image contains the app, Postgres, MinIO file storage and Inngest.
 Your data lives in the `reelcraft-data` volume.
 
+- **Keep it on this computer.** `-p 8080:8080` publishes the port on every network interface. Because
+  Reelcraft has no login, use `-p 127.0.0.1:8080:8080` unless you mean to reach it from another device
+  on a network you trust.
+- **Linux with Docker Engine** (not Docker Desktop): add `--add-host=host.docker.internal:host-gateway`
+  so Reelcraft can reach BrowserOS Neo and VoiceStudio on your computer.
+
 **Try it free first.** Create a channel, add a blueprint and start a run. The default is the fake
 provider, so it costs nothing and needs no API keys. Add real providers later in **Settings**.
 
