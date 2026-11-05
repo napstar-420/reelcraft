@@ -82,17 +82,19 @@ No developer tools and no source checkout. You need Docker.
 
 ```bash
 docker run -d --name reelcraft --restart unless-stopped \
-  -p 8080:8080 -v reelcraft-data:/data zohaibkhan97/reelcraft
+  -p 127.0.0.1:8080:8080 -v reelcraft-data:/data zohaibkhan97/reelcraft
 ```
 
 Then open <http://localhost:8080>. The image contains the app, Postgres, MinIO file storage and Inngest.
 Your data lives in the `reelcraft-data` volume.
 
-- **Keep it on this computer.** `-p 8080:8080` publishes the port on every network interface. Because
-  Reelcraft has no login, use `-p 127.0.0.1:8080:8080` unless you mean to reach it from another device
-  on a network you trust.
+- **Keep it on this computer.** `127.0.0.1:` in the command above publishes the port only on your own
+  computer. Because Reelcraft has no login, drop it (`-p 8080:8080`) only to reach Reelcraft from another
+  device on a network you trust.
 - **Linux with Docker Engine** (not Docker Desktop): add `--add-host=host.docker.internal:host-gateway`
-  so Reelcraft can reach BrowserOS Neo and VoiceStudio on your computer.
+  so the container can resolve your computer's address. A service on your computer must also listen on
+  an address the container can reach, not only `127.0.0.1`. VoiceStudio, for example, needs
+  `OMNIVOICE_BIND_HOST=0.0.0.0` and an API key; see its [guide](https://napstar-420.github.io/reelcraft/docs/voice-studio).
 
 **Try it free first.** Create a channel, add a blueprint and start a run. The default is the fake
 provider, so it costs nothing and needs no API keys. Add real providers later in **Settings**.
