@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { createWriteStream } from 'node:fs';
-import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pipeline } from 'node:stream/promises';
@@ -96,6 +96,34 @@ function run(cmd: string, args: string[], timeoutMs = 120_000): Promise<{ stderr
 }
 
 /**
+ * One scaled frame at `sec`. A time past the last frame's start (the clamped end of a video)
+ * yields no frame (and an error) in newer ffmpeg, so that case takes the last frame by seeking from the end.
+ */
+async function extractFrame(file: string, sec: number, out: string): Promise<void> {
+  const grab = (seek: string[]) =>
+    run('ffmpeg', [
+      '-v',
+      'error',
+      '-y',
+      ...seek,
+      '-i',
+      file,
+      '-frames:v',
+      '1',
+      '-vf',
+      `scale=${FRAME_WIDTH}:-2`,
+      out,
+    ]);
+  try {
+    await grab(['-ss', String(sec)]);
+    if (await stat(out).catch(() => undefined)) return;
+  } catch {
+    // fall through to the seek from the end
+  }
+  await grab(['-sseof', '-0.1']);
+}
+
+/**
  * What the assistant needs to judge media it can't play: a contact sheet of a video's frames at
  * the times it asks for, and for sound a transcript with times plus loudness and silences. Files
  * are copied to a temporary folder for ffmpeg and removed after.
@@ -122,20 +150,7 @@ export class MediaReviewService {
         : evenTimes(durationSec ?? 0, Math.min(Math.max(options.count ?? 6, 1), 12));
       const dir = join(file, '..');
       for (const [i, t] of times.entries()) {
-        await run('ffmpeg', [
-          '-v',
-          'error',
-          '-y',
-          '-ss',
-          String(t),
-          '-i',
-          file,
-          '-frames:v',
-          '1',
-          '-vf',
-          `scale=${FRAME_WIDTH}:-2`,
-          join(dir, `f${String(i).padStart(2, '0')}.jpg`),
-        ]);
+        await extractFrame(file, t, join(dir, `f${String(i).padStart(2, '0')}.jpg`));
       }
       const { columns, rows } = gridFor(times.length);
       const out = join(dir, 'sheet.jpg');
@@ -316,20 +331,11 @@ export class MediaReviewService {
       const sheetDir = join(dir, `sheet-${start}`);
       await mkdir(sheetDir, { recursive: true });
       for (const [i, shot] of group.entries()) {
-        await run('ffmpeg', [
-          '-v',
-          'error',
-          '-y',
-          '-ss',
-          String(shot.keyframeSec),
-          '-i',
+        await extractFrame(
           file,
-          '-frames:v',
-          '1',
-          '-vf',
-          `scale=${FRAME_WIDTH}:-2`,
+          shot.keyframeSec,
           join(sheetDir, `f${String(i).padStart(2, '0')}.jpg`),
-        ]);
+        );
       }
       const { columns, rows } = gridFor(group.length);
       const out = join(sheetDir, 'sheet.jpg');
