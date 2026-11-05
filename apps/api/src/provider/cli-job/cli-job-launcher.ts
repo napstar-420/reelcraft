@@ -64,9 +64,15 @@ export class CliJobLauncher {
   private async recordLaunchFailure(jobDir: string, reason: string): Promise<void> {
     const statusPath = join(jobDir, 'status.json');
     try {
-      const current = JSON.parse(await readFile(statusPath, 'utf8')) as { state?: string };
+      const current = JSON.parse(await readFile(statusPath, 'utf8')) as {
+        state?: string;
+        waitingForLock?: boolean;
+      };
       // The runner already reported its own outcome — don't clobber it.
       if (current.state && current.state !== 'queued') return;
+      // Killed while waiting for the browser lock: leave it queued so the adapter sees the dead
+      // pid and reports a retryable infrastructure failure.
+      if (current.waitingForLock) return;
     } catch (error) {
       this.logger.warn({ jobDir, err: error }, 'cli job status unreadable before launch failure');
     }
