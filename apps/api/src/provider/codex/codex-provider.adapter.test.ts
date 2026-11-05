@@ -432,6 +432,28 @@ describe('CodexProviderAdapter', () => {
     );
   });
 
+  it('keeps a job queued while its live runner waits for the browser lock', async () => {
+    const { adapter, launcher } = await fixture();
+    const handle = await adapter.submit(
+      { modelId: 'gpt-example', params: { reasoningEffort: 'low' }, output: { kind: 'text' } },
+      'lock-wait-key',
+    );
+    const jobDir = (launcher.launch.mock.calls[0]?.[0] as { jobDir: string }).jobDir;
+    const waiting = (pid: number) =>
+      JSON.stringify({
+        state: 'queued',
+        createdAt: new Date(0).toISOString(),
+        pid,
+        waitingForLock: true,
+      });
+    await writeFile(join(jobDir, 'status.json'), waiting(process.pid));
+    await expect(adapter.poll(handle)).resolves.toEqual({ done: false, phase: 'queued' });
+    await writeFile(join(jobDir, 'status.json'), waiting(999_999_999));
+    await expect(adapter.poll(handle)).resolves.toEqual(
+      expect.objectContaining({ done: true, outcome: 'failed', failureClass: 'infrastructure' }),
+    );
+  });
+
   it('surfaces provider process failures and malformed structured output', async () => {
     const { adapter, launcher } = await fixture();
     const failed = await adapter.submit(
