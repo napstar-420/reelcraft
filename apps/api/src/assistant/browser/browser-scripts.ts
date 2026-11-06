@@ -45,6 +45,7 @@ const READ_PAGE = `(() => {
 
 const SCREENSHOT = `const shot = await cdp('Page.captureScreenshot', { format: 'jpeg', quality: 60 });`;
 
+/** Opens a Neo page and returns its id after the body is ready; closes it if readiness fails. */
 export function openPageScript(url: string): string {
   return `const page = await browser.open(${JSON.stringify(url)});
 try {
@@ -186,6 +187,7 @@ export function mediaScript(id: number): string {
   );
 }
 
+/** Closes a tracked Neo page, tolerating a tab that was already closed. */
 export function closePageScript(id: number): string {
   return `try { await browser.page(${pageId(id)}).close(); } catch {}\nreturn true;`;
 }

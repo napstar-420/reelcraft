@@ -20,6 +20,8 @@ import {
 import { useAssistantUi } from './assistant-context';
 import { ActivityDialog } from './activity-dialog';
 
+/** Lists and searches chats, opens new conversations and exposes activity and deletion actions.
+ * Calls onNavigate after opening a chat so mobile hosts can close their navigation drawer. */
 export function AssistantChatSidebar({ onNavigate }: { onNavigate?: () => void }) {
   const { assistant, openAssistant } = useAssistantUi();
   const [search, setSearch] = useState('');

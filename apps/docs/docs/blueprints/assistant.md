@@ -96,6 +96,11 @@ input. A run it starts appears in the chat with its live status. For run inputs 
 (images, audio, video), it uses files you attached, files from the channel's **Library**, or what
 another run made.
 
+The assistant can continue a paused, failed or cancelled run using the same execution plan as the
+run page, keeping finished work and showing the estimated cost before approval in **Manual** mode.
+If an interrupted provider request may still be running, it asks you to accept the possible
+additional charges before restarting that work.
+
 **The Library, characters and voices.** From a file you attached, or a picture or sound a run made,
 it can save an asset to a channel's **Library**, create a character (or add pictures to one, or
 choose its main picture), and make a [VoiceStudio](../voice-studio.md) voice from a clear recording.
@@ -148,11 +153,6 @@ signed in to your accounts, so the assistant never signs in, buys, posts or chan
 you ask it to. In **Manual** mode it asks before every click or keystroke. It won't open pages on
 your own computer or local network, such as your router. The tabs it opens close when it finishes
 answering.
-
-The assistant can continue a paused, failed or cancelled run using the same execution plan as the
-run page, keeping finished work and showing the estimated cost before approval in **Manual** mode.
-If an interrupted provider request may still be running, it asks you to accept the possible
-additional charges before restarting that work.
 
 **Goals.** Ask for a result rather than one change, such as "keep going until the voice-over is
 under 30 seconds, at most 3 tries or $5", and the assistant works toward it on its own: it runs the

@@ -307,7 +307,7 @@ const runStages: AssistantTool<z.infer<typeof RunStagesInput>> = {
   name: 'run_stages',
   kind: 'action',
   description:
-    'Run stages of an existing run again, keeping the finished work the change does not affect: scope "only" (this stage), "up_to" (the stages it needs, then it) or "from_here" (it and everything after). version: "saved" (default: your fix, once saved), "draft" (your unsaved fix), "run" (exactly as the run had it) or a label. action: "continue" keeps finished items of interrupted work; "rerun" regenerates existing work (the default; unstarted stages run normally). Wider scopes rebuild prerequisites and apply changes in that scope. It previews consequences and cost before confirmation. Refused while executing. Never set allowUncertainRestart unless the user explicitly accepted the additional-charge risk.',
+    'Run stages of an existing run again, keeping the finished work the change does not affect: scope "only" (this stage), "up_to" (the stages it needs, then it) or "from_here" (it and everything after). version: "saved" (default: your fix, once saved), "draft" (your unsaved fix), "run" (exactly as the run had it) or a label. action: "continue" keeps finished items of interrupted work; "rerun" regenerates existing work (the default; unstarted stages run normally). Wider scopes rebuild prerequisites and apply changes in that scope. It previews consequences and cost before confirmation. Refused while executing. Set allowUncertainRestart=true to request the mandatory approval card for the additional-charge risk; the flag does not grant acceptance.',
   input: RunStagesInput,
   jsonSchema: () =>
     obj(
@@ -326,6 +326,8 @@ const runStages: AssistantTool<z.infer<typeof RunStagesInput>> = {
       },
       ['runId', 'stageKey', 'scope'],
     ),
+  /** Previews the requested stage scope and version, then confirms its revision token after
+   * budget and approval checks. Uncertain provider attempts require separate risk acceptance. */
   async handler(ctx, deps, input) {
     const ended = turnEnded(ctx);
     if (ended) return ended;
@@ -520,10 +522,12 @@ const resumeRun: AssistantTool<z.infer<typeof ResumeRunInput>> = {
   name: 'resume_run',
   kind: 'action',
   description:
-    'Continue a paused, failed or cancelled run using its pinned definition, keeping finished work. Previews the execution plan, consequences and estimated cost before confirming. To apply blueprint fixes use run_stages. If provider cancellation is uncertain, stop and ask the user to accept the additional-charge risk before setting allowUncertainRestart=true; never infer acceptance from Auto mode.',
+    'Continue a paused, failed or cancelled run using its pinned definition, keeping finished work. Previews the execution plan, consequences and estimated cost before confirming. To apply blueprint fixes use run_stages. If provider cancellation is uncertain, set allowUncertainRestart=true to request the mandatory risk approval card; neither the flag nor Auto mode grants acceptance.',
   input: ResumeRunInput,
   jsonSchema: () =>
     obj({ runId: RUN_ID, allowUncertainRestart: UNCERTAIN_RESTART_SCHEMA }, ['runId']),
+  /** Continues the pinned run definition while retaining finished work. Confirms the preview
+   * only after budget checks and explicit approval of any uncertain provider restarts. */
   async handler(ctx, deps, input) {
     const ended = turnEnded(ctx);
     if (ended) return ended;
