@@ -97,7 +97,8 @@ input. A run it starts appears in the chat with its live status. For run inputs 
 another run made.
 
 The assistant can continue a paused, failed or cancelled run using the same execution plan as the
-run page, keeping finished work and showing the estimated cost before approval in **Manual** mode.
+run page, keeping finished work. In **Manual** mode it explains the remaining run budget before
+approval; the actual continuation cost is unknown.
 If an interrupted provider request may still be running, it asks you to accept the possible
 additional charges before restarting that work.
 

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { exampleScript } from '../guide';
+import { GoalService } from '../goals/goal.service';
 import { runTool } from './registry';
 import { newTurnContext, type ApprovalRequest, type ToolDeps } from './types';
 
@@ -47,6 +48,9 @@ function deps(over: Partial<Record<keyof ToolDeps, unknown>> = {}): ToolDeps {
       get: vi.fn(async () => ({
         runId: 'r1',
         blueprintId: 'bp1',
+        dryRun: false,
+        budgetCapUsd: 2,
+        spentUsd: 0.5,
         stages: [
           { key: 'script', label: 'Write the script', state: 'passed' },
           { key: 'voice', label: 'Voice-over', state: 'failed' },
@@ -340,7 +344,7 @@ describe('run_stages and retry_stage', () => {
       scope: 'descendants',
     });
     expect(asked[0]).toMatchObject({
-      costUsd: 0.25,
+      costUsd: null,
       details: expect.arrayContaining([expect.stringContaining('voice, render')]),
     });
     expect(d.stagePlans.confirm).toHaveBeenCalledWith(
@@ -498,7 +502,7 @@ describe('resume_run execution plans', () => {
     });
     expect(asked[0]).toMatchObject({
       tool: 'resume_run',
-      costUsd: 0.25,
+      costUsd: null,
       details: expect.arrayContaining(['Runs: voice, render', 'Keeps: script']),
     });
     expect(d.stagePlans.confirm).toHaveBeenCalledWith('r1', {
@@ -511,7 +515,96 @@ describe('resume_run execution plans', () => {
     expect(d.runControl.resume).not.toHaveBeenCalled();
     expect(d.goals.recordAttempt).toHaveBeenCalledWith('chat', 'bp1', 'r1');
     expect(d.watches.watch).toHaveBeenCalledWith('chat', 'r1');
-    expect(out).toMatchObject({ ok: true, result: { status: 'resumed', estimatedUsd: 0.25 } });
+    expect(out).toMatchObject({
+      ok: true,
+      result: { status: 'resumed', estimatedUsd: null, maximumAdditionalUsd: 1.5 },
+    });
+  });
+
+  it.each(['resume_run', 'run_stages'])(
+    '%s blocks cancelled work with an unstarted paid stage when the remaining run cap exceeds the goal',
+    async (tool) => {
+      const d = deps();
+      const insight = (await d.runs.get('r1'))!;
+      vi.mocked(d.runs.get).mockResolvedValue({
+        ...insight,
+        state: 'CANCELLED',
+        spentUsd: 0,
+        budgetCapUsd: 2,
+        stages: [
+          {
+            ...insight.stages[1]!,
+            state: 'not started',
+            attempts: 0,
+            costUsd: { output: 0, qc: 0, check: 0, total: 0 },
+          },
+        ],
+      });
+      vi.mocked(d.stagePlans.preview).mockImplementation(async (runId, request) => ({
+        ...(await deps().stagePlans.preview(runId, request)),
+        estimatedRerunUsd: 0,
+      }));
+      // Keep the real goal calculation: the original $0 preview would bypass this spending limit.
+      const goals = Object.create(GoalService.prototype) as GoalService;
+      vi.spyOn(goals, 'active').mockResolvedValue({
+        id: 'goal',
+        blueprintId: 'bp1',
+        goal: 'Make a reel',
+        attempts: 0,
+        maxRuns: 3,
+        spentUsd: 0,
+        maxSpendUsd: 1,
+      });
+      vi.mocked(d.goals.refusal).mockImplementation(goals.refusal.bind(goals));
+      const { ctx, asked } = manual();
+      const out = await runTool(
+        tool,
+        {
+          runId: 'r1',
+          stageKey: 'voice',
+          scope: 'only',
+          action: 'continue',
+          version: 'run',
+        },
+        ctx,
+        d,
+      );
+      expect(out).toMatchObject({
+        ok: false,
+        error: expect.stringContaining('could spend up to $2.00'),
+      });
+      expect(d.goals.refusal).toHaveBeenCalledWith('chat', 'bp1', 2);
+      expect(asked).toHaveLength(0);
+      expect(d.stagePlans.confirm).not.toHaveBeenCalled();
+      expect(d.goals.recordAttempt).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    { dryRun: false, budgetCapUsd: 2, spentUsd: 0.5, bound: 1.5, costUsd: null },
+    { dryRun: false, budgetCapUsd: 0, spentUsd: 0.5, bound: Infinity, costUsd: null },
+    { dryRun: true, budgetCapUsd: 0, spentUsd: 0, bound: 0, costUsd: 0 },
+  ])('uses a safe spending bound and honest approval cost for %j', async (run) => {
+    const d = deps();
+    vi.mocked(d.runs.get).mockResolvedValue({ ...(await d.runs.get('r1'))!, ...run });
+    const { ctx, asked } = manual();
+    const out = await runTool('resume_run', { runId: 'r1' }, ctx, d);
+    expect(out.ok).toBe(true);
+    expect(d.goals.refusal).toHaveBeenCalledWith('chat', 'bp1', run.bound);
+    expect(asked[0]).toMatchObject({ costUsd: run.costUsd });
+    expect(asked[0]!.details).toContain(
+      run.dryRun
+        ? 'Free test run: no provider charges.'
+        : Number.isFinite(run.bound)
+          ? 'Continuation cost is unknown. The remaining run budget allows up to $1.50 in additional charges, including outstanding requests.'
+          : 'Continuation cost is unknown. This real run has no spending limit.',
+    );
+    expect(out).toMatchObject({
+      result: {
+        estimatedUsd: run.costUsd,
+        maximumAdditionalUsd: Number.isFinite(run.bound) ? run.bound : null,
+      },
+    });
   });
 
   it('leaves the run alone when approval is denied', async () => {

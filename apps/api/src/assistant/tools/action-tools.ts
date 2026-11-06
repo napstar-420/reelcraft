@@ -7,6 +7,7 @@ import type { AssistantTool, ToolDeps, ToolOutcome, TurnContext } from './types'
 import { autoWatch } from './watch-tools';
 import { MediaSource, mediaSourceJson, resolveMedia, type MediaKind } from './media-source';
 import { objectKey } from '../../storage/object-key';
+import type { RunBrief } from '../../run/run-insight.service';
 
 const RUN_ID = str('A run id (from list_runs, a result or the context).', { minLength: 1 });
 const STAGE_KEY = str('A stage key of that run (from get_run).', { minLength: 1 });
@@ -35,6 +36,28 @@ function executionPlanDetails(plan: StageRunPlanDto): string[] {
         ]
       : []),
   ];
+}
+
+/** Historical stage costs cannot price unstarted work. Use the ledger-enforced remaining run
+ * budget as the goal's upper bound, including outstanding reservations that may still settle.
+ * A zero cap means unlimited spend; only dry runs have a known zero continuation cost. */
+function executionPlanCost(run: Pick<RunBrief, 'dryRun' | 'budgetCapUsd' | 'spentUsd'>) {
+  const maximumUsd = run.dryRun
+    ? 0
+    : run.budgetCapUsd > 0
+      ? Math.max(0, run.budgetCapUsd - run.spentUsd)
+      : Number.POSITIVE_INFINITY;
+  return {
+    maximumUsd,
+    costUsd: run.dryRun ? 0 : null,
+    details: [
+      run.dryRun
+        ? 'Free test run: no provider charges.'
+        : Number.isFinite(maximumUsd)
+          ? `Continuation cost is unknown. The remaining run budget allows up to ${usd(maximumUsd)} in additional charges, including outstanding requests.`
+          : 'Continuation cost is unknown. This real run has no spending limit.',
+    ],
+  };
 }
 
 const UNCERTAIN_RESTART_SCHEMA = {
@@ -307,7 +330,7 @@ const runStages: AssistantTool<z.infer<typeof RunStagesInput>> = {
   name: 'run_stages',
   kind: 'action',
   description:
-    'Run stages of an existing run again, keeping the finished work the change does not affect: scope "only" (this stage), "up_to" (the stages it needs, then it) or "from_here" (it and everything after). version: "saved" (default: your fix, once saved), "draft" (your unsaved fix), "run" (exactly as the run had it) or a label. action: "continue" keeps finished items of interrupted work; "rerun" regenerates existing work (the default; unstarted stages run normally). Wider scopes rebuild prerequisites and apply changes in that scope. It previews consequences and cost before confirmation. Refused while executing. Set allowUncertainRestart=true to request the mandatory approval card for the additional-charge risk; the flag does not grant acceptance.',
+    'Run stages of an existing run again, keeping the finished work the change does not affect: scope "only" (this stage), "up_to" (the stages it needs, then it) or "from_here" (it and everything after). version: "saved" (default: your fix, once saved), "draft" (your unsaved fix), "run" (exactly as the run had it) or a label. action: "continue" keeps finished items of interrupted work; "rerun" regenerates existing work (the default; unstarted stages run normally). Wider scopes rebuild prerequisites and apply changes in that scope. It previews consequences and the remaining run budget before confirmation; historical stage costs are not a continuation estimate. Refused while executing. Set allowUncertainRestart=true to request the mandatory approval card for the additional-charge risk; the flag does not grant acceptance.',
   input: RunStagesInput,
   jsonSchema: () =>
     obj(
@@ -364,19 +387,16 @@ const runStages: AssistantTool<z.infer<typeof RunStagesInput>> = {
       }),
     });
     if (plan.blockedReason) return { ok: false, error: plan.blockedReason };
-    const overGoal = await deps.goals.refusal(
-      ctx.sessionId,
-      insight.blueprintId,
-      plan.estimatedRerunUsd,
-    );
+    const cost = executionPlanCost(insight);
+    const overGoal = await deps.goals.refusal(ctx.sessionId, insight.blueprintId, cost.maximumUsd);
     if (overGoal) return { ok: false, error: overGoal };
     const refused = await confirmChange(ctx, {
       tool: 'run_stages',
       kind: 'action',
       title: `Run ${stage.label} again in run ${handle(input.runId)} (${versionLabel})`,
-      details: executionPlanDetails(plan),
+      details: [...executionPlanDetails(plan), ...cost.details],
       ...(plan.uncertainAttemptIds?.length && { uncertainAttemptIds: plan.uncertainAttemptIds }),
-      costUsd: plan.estimatedRerunUsd,
+      costUsd: cost.costUsd,
     });
     if (refused) return refused;
     await deps.stagePlans.confirm(input.runId, {
@@ -391,7 +411,8 @@ const runStages: AssistantTool<z.infer<typeof RunStagesInput>> = {
         status: 'started',
         watching,
         runs: plan.runStageKeys,
-        estimatedUsd: plan.estimatedRerunUsd,
+        estimatedUsd: cost.costUsd,
+        maximumAdditionalUsd: Number.isFinite(cost.maximumUsd) ? cost.maximumUsd : null,
       }),
     };
   },
@@ -522,7 +543,7 @@ const resumeRun: AssistantTool<z.infer<typeof ResumeRunInput>> = {
   name: 'resume_run',
   kind: 'action',
   description:
-    'Continue a paused, failed or cancelled run using its pinned definition, keeping finished work. Previews the execution plan, consequences and estimated cost before confirming. To apply blueprint fixes use run_stages. If provider cancellation is uncertain, set allowUncertainRestart=true to request the mandatory risk approval card; neither the flag nor Auto mode grants acceptance.',
+    'Continue a paused, failed or cancelled run using its pinned definition, keeping finished work. Previews the execution plan, consequences and remaining run budget before confirming; actual continuation cost is unknown. To apply blueprint fixes use run_stages. If provider cancellation is uncertain, set allowUncertainRestart=true to request the mandatory risk approval card; neither the flag nor Auto mode grants acceptance.',
   input: ResumeRunInput,
   jsonSchema: () =>
     obj({ runId: RUN_ID, allowUncertainRestart: UNCERTAIN_RESTART_SCHEMA }, ['runId']),
@@ -544,19 +565,16 @@ const resumeRun: AssistantTool<z.infer<typeof ResumeRunInput>> = {
     if (plan.blockedReason) return { ok: false, error: plan.blockedReason };
     const insight = await deps.runs.get(input.runId);
     if (!insight) return { ok: false, error: `There is no run "${input.runId}".` };
-    const overGoal = await deps.goals.refusal(
-      ctx.sessionId,
-      insight.blueprintId,
-      plan.estimatedRerunUsd,
-    );
+    const cost = executionPlanCost(insight);
+    const overGoal = await deps.goals.refusal(ctx.sessionId, insight.blueprintId, cost.maximumUsd);
     if (overGoal) return { ok: false, error: overGoal };
     const refused = await confirmChange(ctx, {
       tool: 'resume_run',
       kind: 'action',
       title: `Continue run ${handle(input.runId)}`,
-      details: executionPlanDetails(plan),
+      details: [...executionPlanDetails(plan), ...cost.details],
       ...(plan.uncertainAttemptIds?.length && { uncertainAttemptIds: plan.uncertainAttemptIds }),
-      costUsd: plan.estimatedRerunUsd,
+      costUsd: cost.costUsd,
     });
     if (refused) return refused;
     await deps.stagePlans.confirm(input.runId, {
@@ -570,7 +588,8 @@ const resumeRun: AssistantTool<z.infer<typeof ResumeRunInput>> = {
       result: runResult(input.runId, {
         status: 'resumed',
         runs: plan.runStageKeys,
-        estimatedUsd: plan.estimatedRerunUsd,
+        estimatedUsd: cost.costUsd,
+        maximumAdditionalUsd: Number.isFinite(cost.maximumUsd) ? cost.maximumUsd : null,
         watching,
       }),
     };
