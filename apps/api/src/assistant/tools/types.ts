@@ -57,6 +57,8 @@ export interface ApprovalRequest {
   costUsd?: number | null;
   /** A blueprint change, shown as a diff. */
   change?: ChangePayload;
+  /** Server-derived attempts that require explicit approval even in Auto mode. */
+  uncertainAttemptIds?: string[];
 }
 
 export type ApprovalDecision =

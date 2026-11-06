@@ -1233,8 +1233,8 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
 
   // ---- approvals (Manual mode) ---------------------------------------------------------
 
-  /** A tool's request to change something. Auto says yes at once. Manual puts a card in the chat
-   * and waits (the turn's clock stops meanwhile) for the user, a timeout or the turn's end. */
+  /** Auto accepts ordinary requests. Uncertain restarts always need a separate approval card.
+   * The turn's clock stops while waiting for the user, a timeout or the turn's end. */
   private async confirm(
     sessionId: string,
     turnId: string,
@@ -1243,8 +1243,11 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
     timer: TurnTimer,
     signal: AbortSignal,
   ): Promise<ApprovalDecision> {
-    if (ctx.mode === 'auto') return { answer: 'yes' };
-    if (ctx.preApproved && request.kind !== 'destroy') return { answer: 'yes' };
+    const needsExplicitApproval = !!request.uncertainAttemptIds?.length;
+    if (!needsExplicitApproval && ctx.mode === 'auto') return { answer: 'yes' };
+    if (!needsExplicitApproval && ctx.preApproved && request.kind !== 'destroy') {
+      return { answer: 'yes' };
+    }
     if (signal.aborted) return { answer: 'expired' };
     const payload: ApprovalPayload = {
       tool: request.tool,
@@ -1253,6 +1256,7 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
       details: request.details ?? [],
       costUsd: request.costUsd ?? null,
       ...(request.change && { change: request.change }),
+      ...(needsExplicitApproval && { uncertainAttemptIds: request.uncertainAttemptIds }),
     };
     const item = await this.createItem(sessionId, turnId, 'approval', 'pending', payload);
     // the turn ended while the card was being written: its abort listener would never fire
@@ -1309,6 +1313,11 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
       throw new ConflictException('This request is no longer waiting for an answer.');
     }
     const payload = row.payload as ApprovalPayload;
+    if (payload.uncertainAttemptIds?.length && dto.answer !== 'yes' && dto.answer !== 'no') {
+      throw new BadRequestException(
+        'Restarting uncertain provider requests requires a separate Yes or No decision.',
+      );
+    }
     const item = await this.updateItem(itemId, {
       state: dto.answer === 'no' ? 'denied' : 'approved',
       payload: {

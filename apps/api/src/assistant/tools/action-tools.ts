@@ -40,7 +40,7 @@ function executionPlanDetails(plan: StageRunPlanDto): string[] {
 const UNCERTAIN_RESTART_SCHEMA = {
   type: 'boolean',
   description:
-    'Only true after the user explicitly accepts that interrupted provider requests may still be running and restarting them may incur additional charges. Omit by default.',
+    'Set true to request an explicit approval card for restarting interrupted provider requests that may still be running and incur additional charges. This flag does not grant approval. Omit by default.',
 };
 
 /** Which blueprint version a run or a stage run uses: the latest save, an exact label, or the
@@ -373,6 +373,7 @@ const runStages: AssistantTool<z.infer<typeof RunStagesInput>> = {
       kind: 'action',
       title: `Run ${stage.label} again in run ${handle(input.runId)} (${versionLabel})`,
       details: executionPlanDetails(plan),
+      ...(plan.uncertainAttemptIds?.length && { uncertainAttemptIds: plan.uncertainAttemptIds }),
       costUsd: plan.estimatedRerunUsd,
     });
     if (refused) return refused;
@@ -550,6 +551,7 @@ const resumeRun: AssistantTool<z.infer<typeof ResumeRunInput>> = {
       kind: 'action',
       title: `Continue run ${handle(input.runId)}`,
       details: executionPlanDetails(plan),
+      ...(plan.uncertainAttemptIds?.length && { uncertainAttemptIds: plan.uncertainAttemptIds }),
       costUsd: plan.estimatedRerunUsd,
     });
     if (refused) return refused;

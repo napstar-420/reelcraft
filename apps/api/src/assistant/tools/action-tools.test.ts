@@ -451,6 +451,40 @@ describe('run_stages and retry_stage', () => {
   });
 });
 
+describe('uncertain execution plan approvals', () => {
+  it.each(['run_stages', 'resume_run'])(
+    '%s passes server uncertainty to the approval boundary',
+    async (tool) => {
+      const d = deps();
+      vi.mocked(d.stagePlans.preview).mockImplementation(async (runId, request) => ({
+        ...(await deps().stagePlans.preview(runId, request)),
+        uncertainAttemptIds: ['interrupted-attempt'],
+      }));
+      const confirm = vi.fn(async (_request: ApprovalRequest) => ({ answer: 'no' as const }));
+      const ctx = Object.assign(newTurnContext({ mode: 'auto', confirm }), { preApproved: true });
+      const result = await runTool(
+        tool,
+        {
+          runId: 'r1',
+          stageKey: 'voice',
+          scope: 'only',
+          allowUncertainRestart: true,
+        },
+        ctx,
+        d,
+      );
+      expect(confirm).toHaveBeenCalledWith(
+        expect.objectContaining({
+          uncertainAttemptIds: ['interrupted-attempt'],
+        }),
+      );
+      expect(result.ok).toBe(false);
+      expect(d.stagePlans.confirm).not.toHaveBeenCalled();
+      expect(d.goals.recordAttempt).not.toHaveBeenCalled();
+    },
+  );
+});
+
 describe('resume_run execution plans', () => {
   it('continues cancelled work through a reviewed plan instead of the rejecting legacy resume API', async () => {
     const d = deps();
@@ -503,7 +537,7 @@ describe('resume_run execution plans', () => {
     expect(d.stagePlans.confirm).not.toHaveBeenCalled();
   });
 
-  it('includes the accepted cancellation risk in the token-bound request and approval', async () => {
+  it('includes the cancellation risk in the token-bound request and approval', async () => {
     const d = deps();
     const preview = d.stagePlans.preview;
     vi.mocked(preview).mockImplementation(async (runId, request) => ({

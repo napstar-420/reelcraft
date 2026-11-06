@@ -212,6 +212,7 @@ export function ApprovalCard({
   assistant: AssistantController;
 }) {
   const approval = payloadOf<ApprovalPayload>(item);
+  const needsExplicitApproval = !!approval.uncertainAttemptIds?.length;
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [feedback, setFeedback] = useState('');
   const pending = item.state === 'pending';
@@ -254,18 +255,20 @@ export function ApprovalCard({
               disabled={assistant.deciding}
               onClick={() => assistant.decideApproval(item, 'yes')}
             >
-              Yes
+              {needsExplicitApproval ? 'Accept risk and restart' : 'Yes'}
             </Button>
-            <Button
-              size="xs"
-              variant="outline"
-              disabled={assistant.deciding}
-              title="Say yes, and let it carry on without asking in this chat"
-              onClick={() => assistant.decideApproval(item, 'yes_auto')}
-            >
-              Yes, and switch to Auto
-            </Button>
-            {approval.kind !== 'destroy' && (
+            {!needsExplicitApproval && (
+              <Button
+                size="xs"
+                variant="outline"
+                disabled={assistant.deciding}
+                title="Say yes, and let it carry on without asking in this chat"
+                onClick={() => assistant.decideApproval(item, 'yes_auto')}
+              >
+                Yes, and switch to Auto
+              </Button>
+            )}
+            {!needsExplicitApproval && approval.kind !== 'destroy' && (
               <Button
                 size="xs"
                 variant="outline"
