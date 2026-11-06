@@ -3,7 +3,7 @@ title: Run page
 description: Follow a run as it happens, and see its budget, its stages and the finished video.
 ---
 
-Open a run from the [Runs list](./runs-list.md), from **Home**, from a channel's **Runs** tab, or
+Open a run from the [Runs list](./runs-list.md), from an assistant chat, from a channel's **Runs** tab, or
 right after you start it. The page updates by itself while the run is going.
 
 The page has the header across the top, every stage on the left, the selected stage in the middle,
