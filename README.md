@@ -94,7 +94,7 @@ Your data lives in the `reelcraft-data` volume.
 - **Linux with Docker Engine** (not Docker Desktop): add `--add-host=host.docker.internal:host-gateway`
   so the container can resolve your computer's address. A service on your computer must also listen on
   an address the container can reach, not only `127.0.0.1`. VoiceStudio, for example, needs
-  `OMNIVOICE_BIND_HOST=0.0.0.0` and an API key; see its [guide](https://napstar-420.github.io/reelcraft/docs/voice-studio).
+  `OMNIVOICE_BIND_HOST=0.0.0.0` and `OMNIVOICE_API_KEY`, and you enter the same key in Reelcraft's VoiceStudio settings; see its [guide](https://napstar-420.github.io/reelcraft/docs/voice-studio).
 
 **Try it free first.** Create a channel, add a blueprint and start a run. The default is the fake
 provider, so it costs nothing and needs no API keys. Add real providers later in **Settings**.
