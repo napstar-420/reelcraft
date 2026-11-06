@@ -1,4 +1,5 @@
 import type { Modality, OutputDef } from '@reelcraft/shared';
+import { browserSkillInstructions } from '../../common/browseros-neo-skill';
 
 /** `params.count`: how many images an image request asks for (1 when unset). */
 export function requestedImageCount(params: Record<string, unknown> | undefined): number {
@@ -75,6 +76,7 @@ export function buildJobPrompt(input: {
     '<user_prompt>',
     input.renderedPrompt ?? '',
     '</user_prompt>',
+    ...(input.modality === 'browser' ? [browserSkillInstructions('stage')] : []),
     '<output_requirements>',
     ...(modalityInstruction ? [modalityInstruction] : []),
     ...(browserContext ? [browserContext] : []),

@@ -147,6 +147,11 @@ you ask it to. In **Manual** mode it asks before every click or keystroke. It wo
 your own computer or local network, such as your router. The tabs it opens close when it finishes
 answering.
 
+The assistant can continue a paused, failed or cancelled run using the same execution plan as the
+run page, keeping finished work and showing the estimated cost before approval in **Manual** mode.
+If an interrupted provider request may still be running, it asks you to accept the possible
+additional charges before restarting that work.
+
 **Goals.** Ask for a result rather than one change, such as "keep going until the voice-over is
 under 30 seconds, at most 3 tries or $5", and the assistant works toward it on its own: it runs the
 blueprint, reviews what the run made, fixes the blueprint and runs it again. Each run or re-run

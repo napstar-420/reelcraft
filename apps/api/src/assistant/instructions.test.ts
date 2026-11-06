@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { answersToText, buildInstructions, contextNote } from './instructions';
 import { GUIDE_TOPICS } from './guide';
 import { ASSISTANT_TOOLS } from './tools/registry';
+import { BROWSEROS_NEO_SKILL } from '../common/browseros-neo-skill';
 
 const text = buildInstructions({ appVersion: '0.5.0', date: '2026-10-06' });
 
@@ -14,8 +15,11 @@ describe('assistant instructions', () => {
   });
 
   it('only name tools that exist, and name every tool the flow depends on', () => {
+    // The bundled skill includes native SDK tool names; the execution binding maps them to
+    // Reelcraft's tools. Check the assistant's own instructions outside that reference block.
+    const instructions = text.replace(/<browseros_neo_skill>[\s\S]*?<\/browseros_neo_skill>/g, '');
     const mentioned = new Set(
-      text.match(
+      instructions.match(
         /\b(?:get|list|read|validate|propose|edit|update|ask|present|create|archive|delete|save|restore|start|run|retry|pause|resume|cancel|raise|set|approve|reject|provide|view|listen|watch|unwatch|search|make|import|browser|analyze|compare|finish)_[a-z_]+\b/g,
       ),
     );
@@ -32,6 +36,13 @@ describe('assistant instructions', () => {
     ]) {
       expect(mentioned.has(required)).toBe(true);
     }
+  });
+
+  it('always includes the bundled Neo skill bound to the assistant browser tools', () => {
+    expect(text).toContain(BROWSEROS_NEO_SKILL);
+    expect(text).toContain('Execution binding for the Reelcraft assistant');
+    expect(text).toContain("Follow Reelcraft's current Manual/Auto/Plan mode");
+    expect(text).not.toContain('You have no shell, files or browser.');
   });
 
   it('make quality the default, not something the user has to ask for', () => {

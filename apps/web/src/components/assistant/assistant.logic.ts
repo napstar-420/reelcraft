@@ -372,7 +372,7 @@ export function describeToolCall(call: ToolCallPayload, state: string | null): s
     }
   })();
   if (state === 'running') return `${text}…`;
-  return state === 'failed' || call.ok === false ? `${text} (refused)` : text;
+  return state === 'failed' || call.ok === false ? `${text} (failed)` : text;
 }
 
 export function questionOf(item: AssistantItemDto): QuestionPayload {

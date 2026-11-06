@@ -22,6 +22,10 @@ Neo is optional. Skip this page if you don't use ChatGPT, Codex or Claude with R
 
 Neo has to keep running while Reelcraft uses it.
 
+The assistant and browser automation stages always receive Reelcraft's bundled BrowserOS Neo
+skill, including guidance for reading pages, waiting for results and handling errors. You do not
+need to install the skill separately for Codex or Claude to use it inside Reelcraft.
+
 ## Set the address in Reelcraft
 
 Reelcraft runs inside Docker, so for Reelcraft, "your computer" is called

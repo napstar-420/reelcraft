@@ -335,7 +335,7 @@ describe('run_stages and retry_stage', () => {
     expect(d.stagePlans.preview).toHaveBeenCalledWith('r1', {
       blueprintVersionId: 'v2',
       stageKey: 'script',
-      mode: 'reuse',
+      mode: 'rebuild',
       action: 'rerun',
       scope: 'descendants',
     });
@@ -357,9 +357,51 @@ describe('run_stages and retry_stage', () => {
     );
     expect(d.stagePlans.preview).toHaveBeenLastCalledWith(
       'r1',
-      expect.objectContaining({ blueprintVersionId: 'v1', action: 'run', scope: 'stage' }),
+      expect.objectContaining({ blueprintVersionId: 'v1', action: 'rerun', scope: 'stage' }),
     );
   });
+
+  it('can continue interrupted stage items without regenerating finished items', async () => {
+    const d = deps();
+    const out = await runTool(
+      'run_stages',
+      { runId: 'r1', stageKey: 'voice', scope: 'only', version: 'run', action: 'continue' },
+      newTurnContext(),
+      d,
+    );
+    expect(out.ok).toBe(true);
+    expect(d.stagePlans.preview).toHaveBeenCalledWith('r1', {
+      blueprintVersionId: 'v1',
+      stageKey: 'voice',
+      mode: 'reuse',
+      action: 'continue',
+      scope: 'stage',
+    });
+  });
+
+  it.each(['pending', 'skipped', 'not started'])(
+    'runs an unstarted stage (%s) with rebuilt prerequisites when requested',
+    async (state) => {
+      const d = deps();
+      vi.mocked(d.runs.get).mockResolvedValue({
+        blueprintId: 'bp1',
+        stages: [{ key: 'voice', label: 'Voice-over', state }],
+      } as never);
+      await runTool(
+        'run_stages',
+        { runId: 'r1', stageKey: 'voice', scope: 'up_to', version: 'run' },
+        newTurnContext(),
+        d,
+      );
+      expect(d.stagePlans.preview).toHaveBeenCalledWith('r1', {
+        blueprintVersionId: 'v1',
+        stageKey: 'voice',
+        mode: 'rebuild',
+        action: 'run',
+        scope: 'through',
+      });
+    },
+  );
 
   it('reports a blocked plan without confirming', async () => {
     const d = deps();
@@ -406,6 +448,103 @@ describe('run_stages and retry_stage', () => {
       ok: false,
     });
     expect(d.retries.confirmStageRetry).not.toHaveBeenCalled();
+  });
+});
+
+describe('resume_run execution plans', () => {
+  it('continues cancelled work through a reviewed plan instead of the rejecting legacy resume API', async () => {
+    const d = deps();
+    const { ctx, asked } = manual();
+    const out = await runTool('resume_run', { runId: 'r1' }, ctx, d);
+    expect(d.stagePlans.preview).toHaveBeenCalledWith('r1', {
+      blueprintVersionId: 'v1',
+      mode: 'reuse',
+      action: 'continue',
+      scope: 'descendants',
+    });
+    expect(asked[0]).toMatchObject({
+      tool: 'resume_run',
+      costUsd: 0.25,
+      details: expect.arrayContaining(['Runs: voice, render', 'Keeps: script']),
+    });
+    expect(d.stagePlans.confirm).toHaveBeenCalledWith('r1', {
+      blueprintVersionId: 'v1',
+      mode: 'reuse',
+      action: 'continue',
+      scope: 'descendants',
+      previewToken: 'pt',
+    });
+    expect(d.runControl.resume).not.toHaveBeenCalled();
+    expect(d.goals.recordAttempt).toHaveBeenCalledWith('chat', 'bp1', 'r1');
+    expect(d.watches.watch).toHaveBeenCalledWith('chat', 'r1');
+    expect(out).toMatchObject({ ok: true, result: { status: 'resumed', estimatedUsd: 0.25 } });
+  });
+
+  it('leaves the run alone when approval is denied', async () => {
+    const d = deps();
+    const ctx = newTurnContext({ mode: 'manual', confirm: async () => ({ answer: 'no' }) });
+    expect(await runTool('resume_run', { runId: 'r1' }, ctx, d)).toMatchObject({ ok: false });
+    expect(d.stagePlans.confirm).not.toHaveBeenCalled();
+    expect(d.goals.recordAttempt).not.toHaveBeenCalled();
+    expect(d.watches.watch).not.toHaveBeenCalled();
+  });
+
+  it('does not bypass uncertain cancellation in Auto mode', async () => {
+    const d = deps();
+    const error =
+      'Provider cancellation could not be confirmed. Confirm this risk before continuing.';
+    vi.mocked(d.stagePlans.preview).mockResolvedValue({ blockedReason: error } as never);
+    const out = await runTool('resume_run', { runId: 'r1' }, newTurnContext({ mode: 'auto' }), d);
+    expect(out).toMatchObject({ ok: false, error });
+    expect(d.stagePlans.preview).toHaveBeenCalledWith(
+      'r1',
+      expect.not.objectContaining({ allowUncertainRestart: true }),
+    );
+    expect(d.stagePlans.confirm).not.toHaveBeenCalled();
+  });
+
+  it('includes the accepted cancellation risk in the token-bound request and approval', async () => {
+    const d = deps();
+    const preview = d.stagePlans.preview;
+    vi.mocked(preview).mockImplementation(async (runId, request) => ({
+      ...(await deps().stagePlans.preview(runId, request)),
+      uncertainAttemptIds: ['interrupted-attempt'],
+      retainedItemCount: 3,
+    }));
+    const { ctx, asked } = manual();
+    await runTool('resume_run', { runId: 'r1', allowUncertainRestart: true }, ctx, d);
+    expect(d.stagePlans.confirm).toHaveBeenCalledWith(
+      'r1',
+      expect.objectContaining({ previewToken: 'pt', allowUncertainRestart: true }),
+    );
+    expect(asked[0]!.details).toContain('Keeps 3 finished items.');
+    expect(asked[0]!.details).toContain(
+      'Provider cancellation was not confirmed; restarting these requests may incur additional charges.',
+    );
+  });
+
+  it('honors goal limits before asking or confirming', async () => {
+    const d = deps();
+    vi.mocked(d.goals.refusal).mockResolvedValue('The goal budget is exhausted.');
+    const { ctx, asked } = manual();
+    expect(await runTool('resume_run', { runId: 'r1' }, ctx, d)).toMatchObject({
+      ok: false,
+      error: 'The goal budget is exhausted.',
+    });
+    expect(asked).toHaveLength(0);
+    expect(d.stagePlans.confirm).not.toHaveBeenCalled();
+  });
+
+  it('reports a stale preview without falling back to legacy resume or claiming success', async () => {
+    const d = deps();
+    vi.mocked(d.stagePlans.confirm).mockRejectedValue(new Error('The execution plan changed.'));
+    expect(await runTool('resume_run', { runId: 'r1' }, newTurnContext(), d)).toMatchObject({
+      ok: false,
+      error: 'The execution plan changed.',
+    });
+    expect(d.runControl.resume).not.toHaveBeenCalled();
+    expect(d.goals.recordAttempt).not.toHaveBeenCalled();
+    expect(d.watches.watch).not.toHaveBeenCalled();
   });
 });
 

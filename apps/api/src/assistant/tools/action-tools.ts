@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { CreateBlueprintVersionDto } from '@reelcraft/shared';
+import type { CreateBlueprintVersionDto, StageRunPlanDto } from '@reelcraft/shared';
 import { currentDraft } from './current-draft';
 import { confirmChange, turnEnded } from './gate';
 import { freeObject, obj, str } from './json-schemas';
@@ -19,6 +19,29 @@ const runResult = (runId: string, extra: Record<string, unknown> = {}) => ({
   page: `/runs/${runId}`,
   ...extra,
 });
+
+/** Show the same execution consequences as the run page before confirming its revision token. */
+function executionPlanDetails(plan: StageRunPlanDto): string[] {
+  return [
+    `Runs: ${plan.runStageKeys.join(', ') || 'nothing'}`,
+    ...(plan.invalidatedStageKeys.length
+      ? [`Re-makes what depends on it: ${plan.invalidatedStageKeys.join(', ')}`]
+      : []),
+    ...(plan.reusedStageKeys.length ? [`Keeps: ${plan.reusedStageKeys.join(', ')}`] : []),
+    ...(plan.retainedItemCount ? [`Keeps ${plan.retainedItemCount} finished items.`] : []),
+    ...(plan.uncertainAttemptIds?.length
+      ? [
+          'Provider cancellation was not confirmed; restarting these requests may incur additional charges.',
+        ]
+      : []),
+  ];
+}
+
+const UNCERTAIN_RESTART_SCHEMA = {
+  type: 'boolean',
+  description:
+    'Only true after the user explicitly accepts that interrupted provider requests may still be running and restarting them may incur additional charges. Omit by default.',
+};
 
 /** Which blueprint version a run or a stage run uses: the latest save, an exact label, or the
  * current draft (snapshotted as a hidden version, like the editor's test runs). */
@@ -276,13 +299,15 @@ const RunStagesInput = z.object({
   stageKey: z.string().min(1),
   scope: z.enum(['only', 'up_to', 'from_here']),
   version: VersionChoice.optional(),
+  action: z.enum(['continue', 'rerun']).optional(),
+  allowUncertainRestart: z.boolean().optional(),
 });
 
 const runStages: AssistantTool<z.infer<typeof RunStagesInput>> = {
   name: 'run_stages',
   kind: 'action',
   description:
-    'Run stages of an existing run again, keeping the finished work the change does not affect: scope "only" (this stage), "up_to" (the stages it needs, then it) or "from_here" (it and everything after). version: "saved" (default: your fix, once saved), "draft" (your unsaved fix), "run" (exactly as the run had it) or a label. Use this after fixing a blueprint, to re-make what the fix changes. It says what it will re-make and the estimated cost first. Refused while the run is executing (pause it first).',
+    'Run stages of an existing run again, keeping the finished work the change does not affect: scope "only" (this stage), "up_to" (the stages it needs, then it) or "from_here" (it and everything after). version: "saved" (default: your fix, once saved), "draft" (your unsaved fix), "run" (exactly as the run had it) or a label. action: "continue" keeps finished items of interrupted work; "rerun" regenerates existing work (the default; unstarted stages run normally). Wider scopes rebuild prerequisites and apply changes in that scope. It previews consequences and cost before confirmation. Refused while executing. Never set allowUncertainRestart unless the user explicitly accepted the additional-charge risk.',
   input: RunStagesInput,
   jsonSchema: () =>
     obj(
@@ -294,6 +319,10 @@ const runStages: AssistantTool<z.infer<typeof RunStagesInput>> = {
           minLength: 1,
           maxLength: 20,
         }),
+        action: str('continue interrupted work or rerun existing work', {
+          enum: ['continue', 'rerun'],
+        }),
+        allowUncertainRestart: UNCERTAIN_RESTART_SCHEMA,
       },
       ['runId', 'stageKey', 'scope'],
     ),
@@ -323,9 +352,14 @@ const runStages: AssistantTool<z.infer<typeof RunStagesInput>> = {
     const plan = await deps.stagePlans.preview(input.runId, {
       blueprintVersionId: versionId,
       stageKey: input.stageKey,
-      mode: 'reuse',
-      action: stage.state === 'passed' ? 'rerun' : 'run',
+      mode: input.scope === 'only' ? 'reuse' : 'rebuild',
+      action:
+        input.action ??
+        (['pending', 'skipped', 'not started'].includes(stage.state) ? 'run' : 'rerun'),
       scope: input.scope === 'only' ? 'stage' : input.scope === 'up_to' ? 'through' : 'descendants',
+      ...(input.allowUncertainRestart !== undefined && {
+        allowUncertainRestart: input.allowUncertainRestart,
+      }),
     });
     if (plan.blockedReason) return { ok: false, error: plan.blockedReason };
     const overGoal = await deps.goals.refusal(
@@ -338,13 +372,7 @@ const runStages: AssistantTool<z.infer<typeof RunStagesInput>> = {
       tool: 'run_stages',
       kind: 'action',
       title: `Run ${stage.label} again in run ${handle(input.runId)} (${versionLabel})`,
-      details: [
-        `Runs: ${plan.runStageKeys.join(', ') || 'nothing'}`,
-        ...(plan.invalidatedStageKeys.length
-          ? [`Re-makes what depends on it: ${plan.invalidatedStageKeys.join(', ')}`]
-          : []),
-        ...(plan.reusedStageKeys.length ? [`Keeps: ${plan.reusedStageKeys.join(', ')}`] : []),
-      ],
+      details: executionPlanDetails(plan),
       costUsd: plan.estimatedRerunUsd,
     });
     if (refused) return refused;
@@ -486,13 +514,62 @@ const pauseRun = simpleRunAction(
   (deps, id) => deps.runControl.pause(id),
   'pausing',
 );
-const resumeRun = simpleRunAction(
-  'resume_run',
-  'Continue a paused or failed run from where it stopped (a failed stage tries again as it was; to change it first, fix the blueprint and use run_stages).',
-  (id) => `Continue run ${handle(id)}`,
-  (deps, id) => deps.runControl.resume(id),
-  'resumed',
-);
+const ResumeRunInput = RunIdInput.extend({ allowUncertainRestart: z.boolean().optional() });
+const resumeRun: AssistantTool<z.infer<typeof ResumeRunInput>> = {
+  name: 'resume_run',
+  kind: 'action',
+  description:
+    'Continue a paused, failed or cancelled run using its pinned definition, keeping finished work. Previews the execution plan, consequences and estimated cost before confirming. To apply blueprint fixes use run_stages. If provider cancellation is uncertain, stop and ask the user to accept the additional-charge risk before setting allowUncertainRestart=true; never infer acceptance from Auto mode.',
+  input: ResumeRunInput,
+  jsonSchema: () =>
+    obj({ runId: RUN_ID, allowUncertainRestart: UNCERTAIN_RESTART_SCHEMA }, ['runId']),
+  async handler(ctx, deps, input) {
+    const ended = turnEnded(ctx);
+    if (ended) return ended;
+    const current = await deps.runControl.get(input.runId);
+    const plan = await deps.stagePlans.preview(input.runId, {
+      blueprintVersionId: current.blueprintVersionId,
+      mode: 'reuse',
+      action: 'continue',
+      scope: 'descendants',
+      ...(input.allowUncertainRestart !== undefined && {
+        allowUncertainRestart: input.allowUncertainRestart,
+      }),
+    });
+    if (plan.blockedReason) return { ok: false, error: plan.blockedReason };
+    const insight = await deps.runs.get(input.runId);
+    if (!insight) return { ok: false, error: `There is no run "${input.runId}".` };
+    const overGoal = await deps.goals.refusal(
+      ctx.sessionId,
+      insight.blueprintId,
+      plan.estimatedRerunUsd,
+    );
+    if (overGoal) return { ok: false, error: overGoal };
+    const refused = await confirmChange(ctx, {
+      tool: 'resume_run',
+      kind: 'action',
+      title: `Continue run ${handle(input.runId)}`,
+      details: executionPlanDetails(plan),
+      costUsd: plan.estimatedRerunUsd,
+    });
+    if (refused) return refused;
+    await deps.stagePlans.confirm(input.runId, {
+      ...plan.request,
+      previewToken: plan.previewToken,
+    });
+    await deps.goals.recordAttempt(ctx.sessionId, insight.blueprintId, input.runId);
+    const watching = await autoWatch(ctx, deps, input.runId);
+    return {
+      ok: true,
+      result: runResult(input.runId, {
+        status: 'resumed',
+        runs: plan.runStageKeys,
+        estimatedUsd: plan.estimatedRerunUsd,
+        watching,
+      }),
+    };
+  },
+};
 const cancelRun = simpleRunAction(
   'cancel_run',
   'Stop a run. Finished work is kept and the run can be continued later with run_stages.',

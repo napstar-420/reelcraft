@@ -41,11 +41,10 @@ describe('browser scripts', () => {
 
   it('really drives a page through a fake Neo browser', async () => {
     const calls: Array<[string, unknown]> = [];
-    const browser = {
-      pages: { getInfo: async () => ({ targetId: 't1' }) },
-      cdp: async (method: string, params: Record<string, unknown>) => {
+    const handle = {
+      cdp: async (method: string, paramsJson: string) => {
+        const params = JSON.parse(paramsJson) as Record<string, unknown>;
         calls.push([method, params]);
-        if (method === 'Target.attachToTarget') return { sessionId: 's1' };
         if (method === 'Page.captureScreenshot') return { data: 'SHOT' };
         if (method === 'Runtime.evaluate') {
           return {
@@ -66,15 +65,55 @@ describe('browser scripts', () => {
         return {};
       },
     };
-    const run = new Function('browser', `return (async () => {\n${lookScript(3, 'down')}\n})();`);
+    const browser = {
+      page: (id: number) => {
+        expect(id).toBe(3);
+        return handle;
+      },
+      cdp: () => {
+        throw new Error('target_scope_unsupported: browser-level CDP');
+      },
+    };
+    const run = new Function('browser', `return (async () => {\n${lookScript(3)}\n})();`);
     const view = await run(browser);
     expect(view).toMatchObject({ title: 'T', screenshot: 'SHOT' });
-    expect(calls.map((c) => c[0])).toEqual([
-      'Target.attachToTarget',
-      'Runtime.evaluate',
-      'Runtime.evaluate',
-      'Page.captureScreenshot',
-      'Target.detachFromTarget',
-    ]);
+    expect(calls.map((c) => c[0])).toEqual(['Runtime.evaluate', 'Page.captureScreenshot']);
+  });
+
+  it('opens, waits for and closes pages through the scoped SDK', async () => {
+    const calls: unknown[] = [];
+    const page = {
+      id: 7,
+      waitForSelector: async (...args: unknown[]) => {
+        calls.push(args);
+        return { matched: true };
+      },
+      close: async () => calls.push('closed'),
+    };
+    const browser = {
+      open: async (url: string) => {
+        calls.push(url);
+        return page;
+      },
+      page: (id: number) => {
+        expect(id).toBe(7);
+        return page;
+      },
+    };
+    const execute = (script: string) =>
+      new Function('browser', `return (async () => {\n${script}\n})();`)(browser);
+    expect(await execute(openPageScript('https://example.com'))).toBe(7);
+    expect(await execute(closePageScript(7))).toBe(true);
+    expect(calls).toEqual(['https://example.com', ['body', { timeout: 15000 }], 'closed']);
+  });
+
+  it('preserves page evaluation errors instead of treating them as successful reads', async () => {
+    const browser = {
+      page: () => ({
+        cdp: async () => ({ exceptionDetails: { text: 'page evaluation failed' } }),
+      }),
+    };
+    const run = new Function('browser', `return (async () => {\n${mediaScript(3)}\n})();`);
+    await expect(run(browser)).rejects.toThrow('page evaluation failed');
   });
 });
