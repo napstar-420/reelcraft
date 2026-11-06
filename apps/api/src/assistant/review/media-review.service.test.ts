@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { createReadStream } from 'node:fs';
-import { mkdtempSync, rmSync, statSync } from 'node:fs';
+import { mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -54,18 +54,18 @@ describe.skipIf(!hasFfmpeg)('MediaReviewService (real ffmpeg)', () => {
   });
   afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
-  function service(transcribeBuffer = vi.fn()) {
+  function service(transcribeBuffer = vi.fn(), file = video) {
     const row = {
       id: 'b1',
       objectKey: 'k',
       mime: 'video/mp4',
-      bytes: statSync(video).size,
+      bytes: statSync(file).size,
       deletedAt: null,
     };
     const db = {
       select: () => ({ from: () => ({ where: () => ({ limit: async () => [row] }) }) }),
     };
-    const storage = { getStream: async () => createReadStream(video) };
+    const storage = { getStream: async () => createReadStream(file) };
     const audio = { transcriber: vi.fn(), transcribeBuffer };
     return new MediaReviewService(db as never, storage as never, audio as never);
   }
@@ -77,6 +77,38 @@ describe.skipIf(!hasFfmpeg)('MediaReviewService (real ffmpeg)', () => {
     expect(Buffer.from(sheet!.base64, 'base64').subarray(0, 2)).toEqual(Buffer.from([0xff, 0xd8]));
     const at = await service().contactSheet('b1', { at: [3, 1, 99] });
     expect(at!.times).toEqual([1, 3, 3.95]);
+  });
+
+  it('still returns a frame for a time after the last frame of a low frame rate clip', async () => {
+    const slow = join(dir, 'slow.mp4');
+    // 3.8 s of black, then one white frame: the last frame starts at 3.8 s, before the 3.95 s asked for.
+    execFileSync('ffmpeg', [
+      '-v',
+      'error',
+      '-y',
+      '-f',
+      'lavfi',
+      '-i',
+      'color=c=black:size=320x180:rate=5:duration=3.8',
+      '-f',
+      'lavfi',
+      '-i',
+      'color=c=white:size=320x180:rate=5:duration=0.2',
+      '-filter_complex',
+      'concat=n=2:v=1:a=0',
+      '-pix_fmt',
+      'yuv420p',
+      slow,
+    ]);
+    const sheet = await service(vi.fn(), slow).contactSheet('b1', { at: [3.95] });
+    const jpg = join(dir, 'slow-sheet.jpg');
+    writeFileSync(jpg, Buffer.from(sheet!.base64, 'base64'));
+    const pixel = execFileSync(
+      'ffmpeg',
+      ['-v', 'error', '-i', jpg, '-vf', 'scale=1:1,format=gray', '-f', 'rawvideo', '-'],
+      { encoding: 'buffer' },
+    );
+    expect(pixel[0]).toBeGreaterThan(150);
   });
 
   it("listens to a video's soundtrack: transcript lines, loudness and the silence at the end", async () => {
