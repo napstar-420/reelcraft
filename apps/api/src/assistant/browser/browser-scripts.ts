@@ -47,7 +47,13 @@ const SCREENSHOT = `const shot = await cdp('Page.captureScreenshot', { format: '
 
 export function openPageScript(url: string): string {
   return `const page = await browser.open(${JSON.stringify(url)});
-await page.waitForSelector('body', { timeout: 15000 });
+try {
+  const ready = await page.waitForSelector('body', { timeout: 15000 });
+  if (!ready.matched) throw new Error('Timed out waiting for the page body.');
+} catch (error) {
+  try { await page.close(); } catch {}
+  throw error;
+}
 return page.id;`;
 }
 

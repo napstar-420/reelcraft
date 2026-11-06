@@ -116,4 +116,47 @@ describe('browser scripts', () => {
     const run = new Function('browser', `return (async () => {\n${mediaScript(3)}\n})();`);
     await expect(run(browser)).rejects.toThrow('page evaluation failed');
   });
+
+  it.each([false, true])(
+    'closes a failed page and preserves the wait error (cleanup fails: %s)',
+    async (cleanupFails) => {
+      const error = new Error('Navigation interrupted');
+      let closed = false;
+      const page = {
+        id: 7,
+        waitForSelector: async () => {
+          throw error;
+        },
+        close: async () => {
+          closed = true;
+          if (cleanupFails) throw new Error('Page already gone');
+        },
+      };
+      const run = new Function(
+        'browser',
+        `return (async () => {\n${openPageScript('https://example.com')}\n})();`,
+      );
+      await expect(run({ open: async () => page })).rejects.toBe(error);
+      expect(closed).toBe(true);
+    },
+  );
+
+  it('closes the page when the selector wait reports an unmatched timeout', async () => {
+    let closed = false;
+    const page = {
+      id: 7,
+      waitForSelector: async () => ({ matched: false }),
+      close: async () => {
+        closed = true;
+      },
+    };
+    const run = new Function(
+      'browser',
+      `return (async () => {\n${openPageScript('https://example.com')}\n})();`,
+    );
+    await expect(run({ open: async () => page })).rejects.toThrow(
+      'Timed out waiting for the page body.',
+    );
+    expect(closed).toBe(true);
+  });
 });
