@@ -14,7 +14,9 @@ says so and links to **Settings**.
 
 ## Open it
 
-- On **Home**, the chat is the top of the page.
+- On **Home**, the assistant fills the page. Start with the message box in the center, or pick a
+  conversation from the chat sidebar on the left. Use **New chat** to start fresh and **Search chats**
+  to find an earlier conversation. On smaller screens, **Open chats** opens the sidebar.
 - On every other page, it is the column on the right. **Cmd J** (Ctrl J on Windows and Linux), or the
   **Assistant** button in the rail on the left, shows and hides it. When it's hidden, an
   **Assistant** button waits in the bottom right corner.
