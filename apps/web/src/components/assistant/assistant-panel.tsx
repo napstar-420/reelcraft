@@ -9,6 +9,7 @@ import {
   MessageSquarePlus,
   Paperclip,
   Square,
+  Sparkles,
   Trash2,
   X,
 } from 'lucide-react';
@@ -97,6 +98,7 @@ export function AssistantPanel({ variant = 'dock' }: { variant?: 'dock' | 'page'
   };
 
   const empty = items.length === 0;
+  const welcome = variant === 'page' && empty && !assistant.loading;
   const blocked = !!unavailableReason || !assistant.model;
   const examples = EXAMPLES[contextLabel && includeContext ? 'subject' : 'none'];
 
@@ -107,7 +109,12 @@ export function AssistantPanel({ variant = 'dock' }: { variant?: 'dock' | 'page'
         variant === 'page' && 'mx-auto w-full max-w-3xl',
       )}
     >
-      <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-b px-3 py-2">
+      <div
+        className={cn(
+          'flex shrink-0 flex-wrap items-center gap-1.5 px-3 py-2',
+          variant === 'dock' && 'border-b',
+        )}
+      >
         {assistant.providers.length > 1 && (
           <Select
             value={assistant.provider?.id ?? ''}
@@ -174,59 +181,63 @@ export function AssistantPanel({ variant = 'dock' }: { variant?: 'dock' | 'page'
           </Select>
         )}
         <span className="flex-1" />
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-sm"
-          aria-label="New chat"
-          title="New chat"
-          onClick={assistant.newChat}
-        >
-          <MessageSquarePlus />
-        </Button>
+        {variant === 'dock' && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            aria-label="New chat"
+            title="New chat"
+            onClick={assistant.newChat}
+          >
+            <MessageSquarePlus />
+          </Button>
+        )}
         <UsagePopover usage={assistant.usage} />
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              aria-label="Chat history"
-              title="Chat history"
-            >
-              <History />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-64">
-            <DropdownMenuItem onSelect={() => setActivityOpen(true)}>
-              <Activity /> Activity in all chats
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            {session && (
-              <DropdownMenuItem
-                variant="destructive"
-                onSelect={() => assistant.deleteChat(session.id)}
+        {variant === 'dock' && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Chat history"
+                title="Chat history"
               >
-                <Trash2 /> Delete this chat
+                <History />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-64">
+              <DropdownMenuItem onSelect={() => setActivityOpen(true)}>
+                <Activity /> Activity in all chats
               </DropdownMenuItem>
-            )}
-            {assistant.sessions.length > 0 ? (
-              <>
-                {session ? <DropdownMenuSeparator /> : null}
-                <DropdownMenuLabel>Earlier chats</DropdownMenuLabel>
-                {assistant.sessions.map((s) => (
-                  <DropdownMenuItem key={s.id} onSelect={() => assistant.selectSession(s.id)}>
-                    <span className="truncate">{s.title ?? 'New chat'}</span>
-                  </DropdownMenuItem>
-                ))}
-              </>
-            ) : (
-              <DropdownMenuLabel className="font-normal text-muted-foreground">
-                No earlier chats
-              </DropdownMenuLabel>
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
+              <DropdownMenuSeparator />
+              {session && (
+                <DropdownMenuItem
+                  variant="destructive"
+                  onSelect={() => assistant.deleteChat(session.id)}
+                >
+                  <Trash2 /> Delete this chat
+                </DropdownMenuItem>
+              )}
+              {assistant.sessions.length > 0 ? (
+                <>
+                  {session ? <DropdownMenuSeparator /> : null}
+                  <DropdownMenuLabel>Earlier chats</DropdownMenuLabel>
+                  {assistant.sessions.map((s) => (
+                    <DropdownMenuItem key={s.id} onSelect={() => assistant.selectSession(s.id)}>
+                      <span className="truncate">{s.title ?? 'New chat'}</span>
+                    </DropdownMenuItem>
+                  ))}
+                </>
+              ) : (
+                <DropdownMenuLabel className="font-normal text-muted-foreground">
+                  No earlier chats
+                </DropdownMenuLabel>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
       </div>
 
       {session?.stale && (
@@ -243,7 +254,12 @@ export function AssistantPanel({ variant = 'dock' }: { variant?: 'dock' | 'page'
 
       <div
         ref={scroller}
-        className="min-h-0 flex-1 overflow-y-auto px-3.5 py-4"
+        className={cn(
+          'min-h-0 flex-1 overflow-y-auto px-3.5 py-4',
+          welcome && 'flex flex-col justify-end pb-7',
+          variant === 'page' && !empty && 'pt-6',
+        )}
+        aria-busy={assistant.loading}
         onScroll={(e) => {
           const el = e.currentTarget;
           stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
@@ -268,7 +284,22 @@ export function AssistantPanel({ variant = 'dock' }: { variant?: 'dock' | 'page'
             </p>
           </div>
         )}
-        {empty && !assistant.loading ? (
+        {welcome ? (
+          <div className="text-center">
+            <span
+              aria-hidden
+              className="mb-5 inline-flex size-11 items-center justify-center rounded-2xl bg-acc-soft text-acc"
+            >
+              <Sparkles className="size-5" />
+            </span>
+            <h1 className="text-[clamp(1.75rem,3vw,2.5rem)] leading-tight font-medium tracking-[-0.035em] text-balance">
+              What would you like to make?
+            </h1>
+            <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
+              Bring an idea. Create, refine and explore it together.
+            </p>
+          </div>
+        ) : empty && !assistant.loading ? (
           <div className="flex flex-col gap-3 text-[13px] leading-relaxed">
             <p className="text-muted-foreground">
               Ask about anything in Reelcraft, or say what to make or change: channels, blueprints,
@@ -299,6 +330,13 @@ export function AssistantPanel({ variant = 'dock' }: { variant?: 'dock' | 'page'
               ))}
             </div>
           </div>
+        ) : assistant.loading ? (
+          <p
+            role="status"
+            className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground"
+          >
+            <Loader2 className="size-4 animate-spin" /> Loading conversation…
+          </p>
         ) : (
           <AssistantMessages items={items} assistant={assistant} />
         )}
@@ -334,10 +372,18 @@ export function AssistantPanel({ variant = 'dock' }: { variant?: 'dock' | 'page'
         </div>
       )}
 
-      <div className="shrink-0 border-t p-3">
+      <div
+        className={cn(
+          'shrink-0 p-3',
+          variant === 'dock' && 'border-t',
+          variant === 'page' && 'pb-5',
+        )}
+      >
         <div
           className={cn(
             'rounded-[14px] border border-line-strong bg-background p-2.5 focus-within:border-faint',
+            variant === 'page' &&
+              'rounded-[22px] bg-card p-4 shadow-sm transition-[border-color,box-shadow] focus-within:shadow-md',
             dragging && 'border-acc bg-acc-soft',
           )}
           onDragOver={(e) => {
@@ -401,7 +447,10 @@ export function AssistantPanel({ variant = 'dock' }: { variant?: 'dock' | 'page'
                   : 'Ask anything, or say what to make or change'
             }
             aria-label="Message the assistant"
-            className="max-h-40 min-h-12 resize-none border-0 bg-transparent p-0 text-[13px] shadow-none focus-visible:ring-0"
+            className={cn(
+              'max-h-40 min-h-12 resize-none border-0 bg-transparent p-0 text-[13px] shadow-none focus-visible:ring-0',
+              variant === 'page' && 'min-h-16 text-[15px] md:text-[15px]',
+            )}
             rows={2}
             disabled={blocked}
           />
@@ -479,7 +528,11 @@ export function AssistantPanel({ variant = 'dock' }: { variant?: 'dock' | 'page'
             )}
           </div>
         </div>
+        {variant === 'page' && (
+          <p className="mt-3 text-center text-[11px] text-faint">{MODE_HELP[assistant.mode]}</p>
+        )}
       </div>
+      {welcome && <div aria-hidden className="min-h-6 flex-1" />}
       <ActivityDialog
         open={activityOpen}
         onOpenChange={setActivityOpen}

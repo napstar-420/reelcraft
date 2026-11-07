@@ -181,6 +181,8 @@ export const ApprovalPayload = z.object({
   costUsd: z.number().nullable(),
   /** A blueprint change, shown as a diff. */
   change: ChangePayload.optional(),
+  /** Interrupted provider attempts whose restart needs a separate, explicit decision. */
+  uncertainAttemptIds: z.array(z.string()).optional(),
   answer: ApprovalAnswer.optional(),
   feedback: z.string().optional(),
 });

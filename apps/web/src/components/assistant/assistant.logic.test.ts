@@ -188,7 +188,7 @@ describe('toRows', () => {
 });
 
 describe('describeToolCall', () => {
-  it('describes calls in plain language and marks refused ones', () => {
+  it('describes calls in plain language and marks failed ones', () => {
     expect(
       describeToolCall({ tool: 'get_capability', args: { key: 'audio.speech' } }, 'completed'),
     ).toBe('Looked up audio.speech');
@@ -196,7 +196,7 @@ describe('describeToolCall', () => {
       'Read the guide: limits',
     );
     expect(describeToolCall({ tool: 'propose_draft', args: {}, ok: false }, 'failed')).toBe(
-      'Wrote a new draft (refused)',
+      'Wrote a new draft (failed)',
     );
     expect(describeToolCall({ tool: 'list_models', args: {} }, 'running')).toBe(
       'Listed the models…',

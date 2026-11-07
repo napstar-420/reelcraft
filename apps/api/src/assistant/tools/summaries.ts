@@ -41,7 +41,7 @@ export const TOOL_SUMMARIES: Record<string, string> = {
   run_stages: 'Re-make stages of a run after a fix, keeping the rest.',
   retry_stage: 'Try a failed stage again as it was.',
   pause_run: 'Pause a running run.',
-  resume_run: 'Continue a paused or failed run.',
+  resume_run: 'Preview and continue a paused, failed or cancelled run, keeping finished work.',
   cancel_run: 'Stop a run.',
   raise_budget: "Raise a run's or a stage's budget.",
   set_concurrency: 'Set how many stages of a run work at once.',

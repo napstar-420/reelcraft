@@ -6,6 +6,7 @@ export type ShellLayout = {
 };
 
 const WORKBENCH = [
+  /^\/$/,
   /^\/(channels\/[^/]+\/build|blueprints\/[^/]+\/build)\/?$/,
   /^\/runs\/[^/]+/,
   /^\/channels(\/[^/]+)?\/?$/,

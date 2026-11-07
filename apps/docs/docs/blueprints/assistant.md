@@ -14,7 +14,9 @@ says so and links to **Settings**.
 
 ## Open it
 
-- On **Home**, the chat is the top of the page.
+- On **Home**, the assistant fills the page. Start with the message box in the center, or pick a
+  conversation from the chat sidebar on the left. Use **New chat** to start fresh and **Search chats**
+  to find an earlier conversation. On smaller screens, **Open chats** opens the sidebar.
 - On every other page, it is the column on the right. **Cmd J** (Ctrl J on Windows and Linux), or the
   **Assistant** button in the rail on the left, shows and hides it. When it's hidden, an
   **Assistant** button waits in the bottom right corner.
@@ -93,6 +95,12 @@ run, raise its budget, approve or reject a stage waiting for review, and fill in
 input. A run it starts appears in the chat with its live status. For run inputs that are files
 (images, audio, video), it uses files you attached, files from the channel's **Library**, or what
 another run made.
+
+The assistant can continue a paused, failed or cancelled run using the same execution plan as the
+run page, keeping finished work. In **Manual** mode it explains the remaining run budget before
+approval; the actual continuation cost is unknown.
+If an interrupted provider request may still be running, it asks you to accept the possible
+additional charges before restarting that work.
 
 **The Library, characters and voices.** From a file you attached, or a picture or sound a run made,
 it can save an asset to a channel's **Library**, create a character (or add pictures to one, or

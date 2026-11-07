@@ -1,8 +1,7 @@
 /**
  * The assistant's browser, as Neo `run` bodies (async JS against Neo's `browser` SDK, 30 s cap).
  * The model never sends code: each builder fills a fixed script with values injected through
- * JSON.stringify. Page reads go through CDP `Runtime.evaluate` (no size cap on the value, unlike
- * `browser.evaluate`), and the screenshot through CDP `Page.captureScreenshot`.
+ * JSON.stringify. CDP calls go through a page handle so Neo enforces its profile/window scope.
  */
 
 export const PAGE_TEXT_CHARS = 8_000;
@@ -13,21 +12,16 @@ function pageId(id: number): number {
   return id;
 }
 
-/** Attaches to the page's target, runs `body` with `cdp(method, params)`, then detaches. */
+/** Runs `body` through Neo's page-scoped CDP bridge. Browser-level Target attachment is refused. */
 function withCdp(id: number, body: string): string {
-  return `const info = await browser.pages.getInfo(${pageId(id)});
-const { sessionId } = await browser.cdp('Target.attachToTarget', { targetId: info.targetId, flatten: true });
-const cdp = (method, params) => browser.cdp(method, params || {}, sessionId);
+  return `const handle = browser.page(${pageId(id)});
+const cdp = (method, params) => handle.cdp(method, JSON.stringify(params || {}));
 const run = async (expression) => {
   const res = await cdp('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
   if (res && res.exceptionDetails) throw new Error(res.exceptionDetails.text || 'page script failed');
   return res && res.result ? res.result.value : undefined;
 };
-try {
-${body}
-} finally {
-  await browser.cdp('Target.detachFromTarget', { sessionId }).catch(() => {});
-}`;
+${body}`;
 }
 
 /** Page-side: the readable text, links and media of the page (bounded). */
@@ -51,11 +45,17 @@ const READ_PAGE = `(() => {
 
 const SCREENSHOT = `const shot = await cdp('Page.captureScreenshot', { format: 'jpeg', quality: 60 });`;
 
+/** Opens a Neo page and returns its id after the body is ready; closes it if readiness fails. */
 export function openPageScript(url: string): string {
-  return `const id = await browser.pages.newPage(${JSON.stringify(url)});
-try { await browser.wait(id, { for: 'selector', value: 'body', timeout: 15000 }); } catch {}
-await new Promise((r) => setTimeout(r, 1200));
-return id;`;
+  return `const page = await browser.open(${JSON.stringify(url)});
+try {
+  const ready = await page.waitForSelector('body', { timeout: 15000 });
+  if (!ready.matched) throw new Error('Timed out waiting for the page body.');
+} catch (error) {
+  try { await page.close(); } catch {}
+  throw error;
+}
+return page.id;`;
 }
 
 export type Scroll = 'down' | 'up' | 'top' | 'bottom' | number;
@@ -187,6 +187,7 @@ export function mediaScript(id: number): string {
   );
 }
 
+/** Closes a tracked Neo page, tolerating a tab that was already closed. */
 export function closePageScript(id: number): string {
-  return `try { await browser.pages.close(${pageId(id)}); } catch {}\nreturn true;`;
+  return `try { await browser.page(${pageId(id)}).close(); } catch {}\nreturn true;`;
 }

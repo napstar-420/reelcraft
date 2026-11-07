@@ -1,4 +1,5 @@
 import type { Modality, OutputDef } from '@reelcraft/shared';
+import { browserSkillInstructions } from '../../common/browseros-neo-skill';
 
 /** `params.count`: how many images an image request asks for (1 when unset). */
 export function requestedImageCount(params: Record<string, unknown> | undefined): number {
@@ -6,6 +7,8 @@ export function requestedImageCount(params: Record<string, unknown> | undefined)
   return typeof count === 'number' && Number.isInteger(count) && count > 1 ? count : 1;
 }
 
+/** Builds the CLI job prompt with modality-specific guidance and the required output contract.
+ * Browser jobs include the bundled Neo skill; media and code jobs include their workspace rules. */
 export function buildJobPrompt(input: {
   modality: Modality;
   params?: Record<string, unknown>;
@@ -75,6 +78,7 @@ export function buildJobPrompt(input: {
     '<user_prompt>',
     input.renderedPrompt ?? '',
     '</user_prompt>',
+    ...(input.modality === 'browser' ? [browserSkillInstructions('stage')] : []),
     '<output_requirements>',
     ...(modalityInstruction ? [modalityInstruction] : []),
     ...(browserContext ? [browserContext] : []),

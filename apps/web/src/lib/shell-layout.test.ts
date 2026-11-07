@@ -4,6 +4,7 @@ import { shellLayoutForPath } from './shell-layout';
 describe('shellLayoutForPath', () => {
   it('gives editors, run pages, channels and settings the full-height workbench', () => {
     for (const path of [
+      '/',
       '/blueprints/abc/build',
       '/channels/c1/build',
       '/runs/r1',
@@ -17,7 +18,7 @@ describe('shellLayoutForPath', () => {
   });
 
   it('lets list pages scroll as a page', () => {
-    for (const path of ['/', '/blueprints', '/runs', '/editor'])
+    for (const path of ['/blueprints', '/runs', '/editor'])
       expect(shellLayoutForPath(path).frame).toBe('page');
   });
 
