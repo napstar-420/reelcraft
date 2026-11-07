@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.15.1](https://github.com/napstar-420/reelcraft/compare/v0.15.0...v0.15.1) (2026-11-07)
+
+
+### Bug Fixes
+
+* **api:** keep browser jobs queued while they wait for the shared browser lock ([#227](https://github.com/napstar-420/reelcraft/issues/227)) ([c6fa26c](https://github.com/napstar-420/reelcraft/commit/c6fa26cae14a2176c831afa1a8774b4b069cbff1))
+* **api:** take the last frame when a contact-sheet time is past the final frame ([#228](https://github.com/napstar-420/reelcraft/issues/228)) ([35330c5](https://github.com/napstar-420/reelcraft/commit/35330c59507f3a1c5a99a0b3f8bf86205aab407c))
+* **assistant:** restore Neo browsing and run continuation ([#231](https://github.com/napstar-420/reelcraft/issues/231)) ([102c2c9](https://github.com/napstar-420/reelcraft/commit/102c2c9341c2e2b9c03172b6babd5d8249548b40))
+
 ## [0.15.0](https://github.com/napstar-420/reelcraft/compare/v0.14.0...v0.15.0) (2026-11-02)
 
 
