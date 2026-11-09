@@ -228,7 +228,8 @@ engine (in **Auto** mode it goes ahead). An **Engine repair** card in the chat t
 
 The assistant then wakes up and retries the stage. The card ends as **Fixed and applied**, as
 **Fixed, not applied** when your checkout has its own changes in the same files (merge the pull request
-or apply the branch yourself), or as **Not fixed** with the reason. Sometimes the agent finds that the
+or apply the branch yourself), or as **Not fixed** with the reason (what the agent changed is kept
+in `.workspace/repairs/<id>/job/failed.patch`). Sometimes the agent finds that the
 cause is not in Reelcraft after all, and then the assistant fixes the blueprint instead.
 
 Only one repair runs at a time, and a stage gets at most two (a repair whose agent crashed before

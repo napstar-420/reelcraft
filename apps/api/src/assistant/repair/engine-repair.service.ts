@@ -17,6 +17,7 @@ import { AssistantSettingsService } from '../watch/assistant-settings.service';
 import { AssistantWatchService } from '../watch/assistant-watch.service';
 import { sourceCheckout } from './source-checkout';
 import { applyPatch, cleanGitEnv } from './apply-patch';
+import { startupEnv } from '../../common/load-dotenv';
 import {
   checkReport,
   REPAIR_COMMANDS,
@@ -31,8 +32,15 @@ const execFileP = promisify(execFile);
 const exec = (
   command: string,
   args: string[],
-  options: { cwd?: string; timeout?: number; maxBuffer?: number } = {},
-) => execFileP(command, args, { ...options, encoding: 'utf8', env: cleanGitEnv() });
+  options: { cwd?: string; timeout?: number; maxBuffer?: number; env?: NodeJS.ProcessEnv } = {},
+) => execFileP(command, args, { encoding: 'utf8', env: cleanGitEnv(), ...options });
+
+/** The environment the pre-commit hook runs in: the one the API started with, as when the user
+ * commits from a terminal. Not `process.env`: by now it holds `.env` and every config default,
+ * which the unit suites don't expect (a string `PREVIEW_TOKEN_TTL_SEC` breaks the token tests). */
+export function hookEnv(env: NodeJS.ProcessEnv = startupEnv): NodeJS.ProcessEnv {
+  return cleanGitEnv(env);
+}
 
 /** At most this many repairs for one stage of one run: then the assistant reports to the user. */
 export const MAX_REPAIRS_PER_STAGE = 2;
@@ -262,6 +270,7 @@ export class EngineRepairService implements OnModuleInit {
       const message = error instanceof Error ? error.message : String(error);
       this.logger.warn({ repairId: id, phase: repair.payload.phase, err: error }, 'repair failed');
       await this.update(repair, { error: tail(message, 6_000) }, 'failed').catch(() => undefined);
+      await this.keepFailedChange(repair);
       await this.removeWorktree(repair);
       await this.report(id);
     }
@@ -398,6 +407,7 @@ export class EngineRepairService implements OnModuleInit {
       try {
         await exec('git', ['commit', '-F', messagePath], {
           cwd: dir,
+          env: hookEnv(),
           timeout: 30 * 60_000,
           maxBuffer: 64 * 1024 * 1024,
         });
@@ -557,6 +567,23 @@ export class EngineRepairService implements OnModuleInit {
   /** The agent's job folder: the repair's job folder, or a folder of its own for each retry. */
   private fixJobDir(id: string, retry: number): string {
     return retry ? join(this.jobDir(id), `retry-${retry}`) : this.jobDir(id);
+  }
+
+  /** Saves what the agent changed in a repair that failed to `job/failed.patch`, so the work isn't
+   * lost with the worktree (`git apply` it to pick it up). */
+  private async keepFailedChange(repair: Repair): Promise<void> {
+    const dir = this.worktree(repair.id);
+    await exec('git', ['add', '-A'], { cwd: dir })
+      .then(() =>
+        exec('git', ['diff', '--binary', '--cached', repair.payload.baseSha], {
+          cwd: dir,
+          maxBuffer: 64 * 1024 * 1024,
+        }),
+      )
+      .then(({ stdout }) =>
+        stdout ? writeFile(join(this.jobDir(repair.id), 'failed.patch'), stdout) : undefined,
+      )
+      .catch(() => undefined);
   }
 
   /** The branch stays (it holds the pull request); the job folder keeps the agent's logs. */

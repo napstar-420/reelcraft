@@ -39,7 +39,10 @@ assistant to fix those bugs, test the fix, retry the stage, and leave a pull req
   lint, the typechecks and the unit suites must pass. The agent is told to run the same checks (the
   whole unit suites, not only its own tests) before it answers. When the hook still fails, its report
   (the failing tests and type errors first, colour codes removed) goes back to the agent once, with its
-  change still in the worktree; a second failure fails the repair with that report.
+  change still in the worktree; a second failure fails the repair with that report, and the change is
+  kept as `job/failed.patch`. The hook runs in the environment the API started with: by then
+  `process.env` also holds `.env` and every config default (ConfigModule writes them as strings),
+  which the unit suites don't expect.
 - **Pull request first, live apply last.** The branch is pushed and a pull request opened with the
   user's own `git` and `gh`. A failure there is recorded, not fatal. Then the diff is `git apply`'d to
   the running checkout, uncommitted. `packages/shared` goes first and is rebuilt before the rest

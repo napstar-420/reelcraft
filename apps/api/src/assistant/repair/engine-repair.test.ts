@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { RepairPayload } from '@reelcraft/shared';
 import { runTool } from '../tools/registry';
 import { newTurnContext, type ToolDeps } from '../tools/types';
-import { EngineRepairService, wakeText } from './engine-repair.service';
+import { EngineRepairService, hookEnv, wakeText } from './engine-repair.service';
 import { buildClaudeArgs } from '../../provider/claude/claude-command';
 import { checkReport, REPAIR_COMMANDS, repairPrompt } from './repair-prompt';
 import { AssistantWatchService } from '../watch/assistant-watch.service';
@@ -201,5 +201,19 @@ describe('repair check retries', () => {
     expect(prompts).toEqual([undefined, 1]);
     expect(repair.state).toBe('failed');
     expect(repair.payload.error).toMatch(/after 1 retry[\s\S]*FAIL {2}b\.test\.ts/);
+  });
+});
+
+describe('repair hook environment', () => {
+  it('is the environment the API started with, without git repository variables', () => {
+    process.env.PREVIEW_TOKEN_TTL_SEC_PROBE = '600'; // as ConfigModule writes defaults later
+    try {
+      const env = hookEnv();
+      expect(env).not.toHaveProperty('PREVIEW_TOKEN_TTL_SEC_PROBE');
+      expect(env.PATH).toBe(process.env.PATH);
+      expect(hookEnv({ GIT_DIR: '/x', HOME: '/h' })).toEqual({ HOME: '/h' });
+    } finally {
+      delete process.env.PREVIEW_TOKEN_TTL_SEC_PROBE;
+    }
   });
 });
