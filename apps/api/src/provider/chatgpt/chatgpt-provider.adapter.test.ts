@@ -696,13 +696,15 @@ describe('ChatgptProviderAdapter image download', () => {
 });
 
 describe('readParkedImageCdpScript', () => {
-  it('reads one slice over a raw CDP Runtime.evaluate and always detaches', () => {
+  it('reads one slice through page-scoped CDP without target attachment', () => {
     const script = readParkedImageCdpScript(7, 10, 20);
-    expect(script).toContain("browser.cdp('Runtime.evaluate'");
+    expect(script).toContain("page.cdp('Runtime.evaluate'");
+    expect(script).toContain('browser.page(7)');
     expect(script).toContain('returnByValue');
     expect(script).toContain('.slice(10, 20)');
     expect(script).toContain('__reelcraft_image');
-    expect(script).toContain('Target.detachFromTarget');
+    expect(script).not.toContain('Target.attachToTarget');
+    expect(script).not.toContain('Target.detachFromTarget');
     expect(script).toContain(CDP_READ_UNSUPPORTED);
   });
 

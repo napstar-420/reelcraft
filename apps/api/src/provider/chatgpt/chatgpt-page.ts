@@ -5,7 +5,7 @@ import type { ReferenceFile } from '../reference-files';
  * is a one-file fix. Selectors and flows were verified live on 2026-09-29
  * (see docs/chatgpt-provider.md). Each builder returns the body of one Neo
  * `run` call (async JS against Neo's `browser` SDK, 30s cap); page-side code
- * goes through `browser.evaluate`, and every value is injected with
+ * goes through `page.evaluateInPage`, and every value is injected with
  * JSON.stringify — never spliced into code as raw text.
  */
 
@@ -90,7 +90,7 @@ for (let i = ${from}; i < ${to}; i += ${EVALUATE_CHUNK}) starts.push(i);
 const parts = [];
 for (let b = 0; b < starts.length; b += ${PARALLEL_CHUNKS}) {
   parts.push(...(await Promise.all(starts.slice(b, b + ${PARALLEL_CHUNKS}).map((i) =>
-    browser.evaluate(${page}, { code: 'return document.getElementById("${nodeId}").textContent.slice(' + i + ', ' + Math.min(i + ${EVALUATE_CHUNK}, ${to}) + ');' })))));
+    browser.page(${page}).evaluateInPage('return document.getElementById("${nodeId}").textContent.slice(' + i + ', ' + Math.min(i + ${EVALUATE_CHUNK}, ${to}) + ');')))));
 }
 if (parts.some((p) => typeof p.value !== 'string')) throw new Error('BrowserOS evaluate lost a result chunk');
 const text = parts.map((p) => p.value).join('');`;
@@ -110,11 +110,11 @@ const __json = JSON.stringify(__value === undefined ? null : __value);
 if (__json.length <= ${EVALUATE_CHUNK}) return { inline: __json };
 ${parkCode(OUT_NODE, '__json')}
 return { length: __json.length };`;
-  return `const head = await browser.evaluate(${page}, { code: ${JSON.stringify(code)} });
+  return `const head = await browser.page(${page}).evaluateInPage(${JSON.stringify(code)});
 if (!head.value) throw new Error('BrowserOS evaluate returned no value');
 if (head.value.inline !== undefined) return JSON.parse(head.value.inline);
 ${readParkedCode(page, OUT_NODE, '0', 'head.value.length')}
-await browser.evaluate(${page}, { code: 'document.getElementById("${OUT_NODE}")?.remove(); return true;' });
+await browser.page(${page}).evaluateInPage('document.getElementById("${OUT_NODE}")?.remove(); return true;');
 return JSON.parse(text);`;
 }
 
@@ -175,29 +175,24 @@ export function enableWebSearchScript(id: number): string {
   const page = pageId(id);
   return `const page = ${page};
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const ev = async (code) => (await browser.evaluate(page, { code })).value;
+const handle = browser.page(page);
+const ev = async (code) => (await handle.evaluateInPage(code)).value;
 const pill = () => ev(${JSON.stringify(
     `return [...document.querySelectorAll(${JSON.stringify(S.composer)} + ' span')].some((e) => e.textContent.trim() === ${JSON.stringify(WEB_SEARCH_LABEL)});`,
   )});
 const center = (find) => ev('const el = ' + find + '; if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 };');
 const until = async (fn, ms) => { const end = Date.now() + ms; while (Date.now() < end) { const v = await fn(); if (v) return v; await sleep(250); } return null; };
 if (await pill()) return true;
-const info = await browser.pages.getInfo(page);
-const { sessionId } = await browser.cdp('Target.attachToTarget', { targetId: info.targetId, flatten: true });
-const click = async (p) => { for (const type of ['mouseMoved', 'mousePressed', 'mouseReleased']) await browser.cdp('Input.dispatchMouseEvent', { type, x: p.x, y: p.y, button: 'left', clickCount: 1 }, sessionId); };
-try {
-  const plus = await until(() => center(${JSON.stringify(`document.querySelector(${JSON.stringify(S.addButton)})`)}), 5000);
-  if (!plus) return false;
-  await click(plus);
-  const row = await until(() => center(${JSON.stringify(
+const click = async (p) => { for (const type of ['mouseMoved', 'mousePressed', 'mouseReleased']) await handle.cdp('Input.dispatchMouseEvent', JSON.stringify({ type, x: p.x, y: p.y, button: 'left', clickCount: 1 })); };
+const plus = await until(() => center(${JSON.stringify(`document.querySelector(${JSON.stringify(S.addButton)})`)}), 5000);
+if (!plus) return false;
+await click(plus);
+const row = await until(() => center(${JSON.stringify(
     `[...document.querySelectorAll('span')].find((e) => e.textContent.trim() === ${JSON.stringify(WEB_SEARCH_LABEL)} && !e.closest('[role=textbox]'))`,
   )}), 5000);
-  if (!row) return false;
-  await click(row);
-  return !!(await until(pill, 5000));
-} finally {
-  await browser.cdp('Target.detachFromTarget', { sessionId }).catch(() => {});
-}`;
+if (!row) return false;
+await click(row);
+return !!(await until(pill, 5000));`;
 }
 
 /** Base64 characters per upload `run`: Neo rejects request bodies over 4 MB. */
@@ -264,7 +259,7 @@ export function openAttachmentMenuScript(id: number): string {
   const page = pageId(id);
   return `const page = browser.page(${page});
 const input = 'input[type="file"]:not([capture])[multiple][accept*="image"]';
-const open = (await page.evaluate(() => document.querySelector('button[aria-label="Add files and more"]')?.getAttribute('aria-expanded') === 'true')).value;
+const open = (await page.evaluateInPage(() => document.querySelector('button[aria-label="Add files and more"]')?.getAttribute('aria-expanded') === 'true')).value;
 if (!open) {
   const snapshot = await page.snapshot({ mode: 'interactive' });
   const add = snapshot.refs.find((ref) => ref.name === 'Add files and more');
@@ -423,7 +418,7 @@ export const CDP_READ_UNSUPPORTED = 'CDP_READ_UNSUPPORTED';
 
 /**
  * Reads `[from, to)` of the parked image over one raw CDP `Runtime.evaluate`
- * (the same attach `enableWebSearchScript` uses), which returns the whole
+ * through Neo's page-scoped bridge, which returns the whole
  * slice in one response instead of Neo's ~6 KB-per-`evaluate` limit.
  */
 export function readParkedImageCdpScript(id: number, from: number, to: number): string {
@@ -437,16 +432,11 @@ export function readParkedImageCdpScript(id: number, from: number, to: number): 
     throw new Error(`Invalid parked image range ${from}-${to}`);
   }
   const expression = `document.getElementById(${JSON.stringify(IMAGE_NODE)}).textContent.slice(${from}, ${to})`;
-  return `const info = await browser.pages.getInfo(${pageId(id)});
-const { sessionId } = await browser.cdp('Target.attachToTarget', { targetId: info.targetId, flatten: true });
-try {
-  const res = await browser.cdp('Runtime.evaluate', { expression: ${JSON.stringify(expression)}, returnByValue: true }, sessionId);
-  const value = res && res.result && res.result.value;
-  if (typeof value !== 'string') throw new Error(${JSON.stringify(CDP_READ_UNSUPPORTED)});
-  return value;
-} finally {
-  await browser.cdp('Target.detachFromTarget', { sessionId }).catch(() => {});
-}`;
+  return `const page = browser.page(${pageId(id)});
+const res = await page.cdp('Runtime.evaluate', ${JSON.stringify(JSON.stringify({ expression, returnByValue: true }))});
+const value = res && res.result && res.result.value;
+if (typeof value !== 'string') throw new Error(${JSON.stringify(CDP_READ_UNSUPPORTED)});
+return value;`;
 }
 
 export type ArchiveResult = { archived: boolean; reason?: string };

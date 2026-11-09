@@ -25,7 +25,7 @@ export function listGoogleAccountsScript(): string {
   return `const id = await browser.pages.newPage('https://accounts.google.com/SignOutOptions');
 try {
   try { await browser.wait(id, { for: 'selector', value: 'body', timeout: 15000 }); } catch {}
-  const result = await browser.evaluate(id, { code: ${JSON.stringify(fetchCode)} });
+  const result = await browser.page(id).evaluateInPage(${JSON.stringify(fetchCode)});
   return result.value;
 } finally {
   try { await browser.pages.close(id); } catch {}

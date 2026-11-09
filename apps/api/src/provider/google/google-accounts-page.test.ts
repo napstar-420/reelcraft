@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { listGoogleAccountsScript, parseGoogleAccounts } from './google-accounts-page';
 
 // Captured from BrowserOS Neo on 2026-10-04 (identifiers replaced).
@@ -31,6 +31,26 @@ describe('parseGoogleAccounts', () => {
 });
 
 describe('listGoogleAccountsScript', () => {
+  it('evaluates through the page handle and closes the tab on success or failure', async () => {
+    const evaluateInPage = vi.fn().mockResolvedValue({ value: LIVE, changed: false });
+    const close = vi.fn();
+    const browser = {
+      pages: { newPage: vi.fn(async () => 7), close },
+      wait: vi.fn(),
+      page: vi.fn(() => ({ evaluateInPage })),
+    };
+    const run = () =>
+      new Function('browser', `return (async () => { ${listGoogleAccountsScript()} })();`)(browser);
+    await expect(run()).resolves.toBe(LIVE);
+    expect(browser.page).toHaveBeenCalledWith(7);
+    expect(evaluateInPage).toHaveBeenCalledWith(expect.stringContaining("method: 'POST'"));
+    expect(close).toHaveBeenCalledWith(7);
+    close.mockClear();
+    evaluateInPage.mockRejectedValueOnce(new Error('read failed'));
+    await expect(run()).rejects.toThrow('read failed');
+    expect(close).toHaveBeenCalledWith(7);
+  });
+
   it('opens an accounts.google.com page, posts ListAccounts, and always closes the tab', () => {
     const script = listGoogleAccountsScript();
     expect(script).toContain('https://accounts.google.com/');
