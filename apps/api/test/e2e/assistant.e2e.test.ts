@@ -732,7 +732,11 @@ describe('assistant (e2e)', () => {
     const settings = await call<{ defaultMode: string; maxWakesPerRun: number }>(
       '/assistant/settings',
     );
-    expect(settings.body).toEqual({ defaultMode: 'manual', maxWakesPerRun: 5 });
+    expect(settings.body).toMatchObject({
+      defaultMode: 'manual',
+      maxWakesPerRun: 5,
+      engineRepair: false,
+    });
     expect(
       (
         await call('/assistant/settings', {
@@ -740,7 +744,7 @@ describe('assistant (e2e)', () => {
           body: { maxWakesPerRun: 1 },
         })
       ).body,
-    ).toEqual({ defaultMode: 'manual', maxWakesPerRun: 1 });
+    ).toMatchObject({ defaultMode: 'manual', maxWakesPerRun: 1, engineRepair: false });
 
     const sid = await newSession('auto');
     const version = await http.app

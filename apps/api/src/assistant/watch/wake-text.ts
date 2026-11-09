@@ -19,7 +19,7 @@ export const FINAL_KINDS: ReadonlySet<NotificationKind> = new Set<NotificationKi
 
 const NEXT: Record<string, string> = {
   failed:
-    "Find out why (get_run, get_stage, get_attempt), fix the cause in the blueprint, then re-make what the fix changes (run_stages), or retry_stage when it was not the blueprint's fault. If you already tried twice, stop and tell the user what you found.",
+    "Find out why (get_run, get_stage, get_attempt), fix the cause in the blueprint, then re-make what the fix changes (run_stages), or retry_stage when it was not the blueprint's fault. When the cause is a bug in Reelcraft's own code, repair_engine (if Engine repair is on; otherwise tell the user what you found). If you already tried twice, stop and tell the user what you found.",
   awaiting_approval:
     'Look at what it made (get_stage, view_media, listen). Approve it if it meets the brief, or reject it with a specific note; when it is a matter of taste, ask the user.',
   awaiting_input:

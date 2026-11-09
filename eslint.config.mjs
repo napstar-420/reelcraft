@@ -14,6 +14,8 @@ export default tseslint.config(
       'apps/docs/**',
       // The Qwen3-TTS service is Python; its virtualenv holds third-party JS.
       'services/**',
+      // Run data, including engine repairs' git worktrees.
+      '**/.workspace/**',
     ],
   },
   ...tseslint.configs.recommended,

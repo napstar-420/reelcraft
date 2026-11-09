@@ -10,6 +10,7 @@ import type {
   PlanPayload,
   BreakdownPayload,
   GoalPayload,
+  RepairPayload,
   ValidationIssue,
 } from '@reelcraft/shared';
 import type { ToolImage } from '../agent/assistant-agent.interface';
@@ -43,6 +44,7 @@ import type { VoiceStudioAdapter } from '../../provider/voicestudio/voicestudio.
 import type { SchemaValidatorService } from '../../json-schema/schema-validator.service';
 import type { TimelineEditorService } from '../../run/timeline-editor.service';
 import type { TimelinePreviewService } from '../../run/timeline-preview.service';
+import type { EngineRepairService } from '../repair/engine-repair.service';
 
 /** What a tool wants to do, shown to the user on an approval card in Manual mode. */
 export interface ApprovalRequest {
@@ -179,6 +181,8 @@ export interface ToolDeps {
   memory: Pick<InvalidationService, 'listMemory'>;
   review: Pick<MediaReviewService, 'contactSheet' | 'transcriber' | 'listen' | 'analyze' | 'facts'>;
   watches: Pick<AssistantWatchService, 'watch' | 'unwatch'>;
+  /** Fixes Reelcraft itself when a stage failed because of the engine (repair_engine). */
+  repairs: Pick<EngineRepairService, 'refusal' | 'plan'>;
   /** Files the user attached to chats. */
   attachments: Pick<AttachmentService, 'file' | 'get'>;
   /** Reelcraft's user guide (search_docs). */
@@ -202,7 +206,8 @@ export type ToolItem =
   | { type: 'question'; payload: AskUserInput }
   | { type: 'plan'; payload: Omit<PlanPayload, 'decision' | 'feedback'> }
   | { type: 'breakdown'; payload: BreakdownPayload }
-  | { type: 'goal'; payload: GoalPayload };
+  | { type: 'goal'; payload: GoalPayload }
+  | { type: 'repair'; payload: RepairPayload };
 
 export type ToolOutcome =
   | { ok: true; result: unknown; item?: ToolItem; images?: ToolImage[] }

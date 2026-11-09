@@ -62,6 +62,7 @@ function depsFor(saved: Draft | null = null): ToolDeps {
     capabilities,
     channels: { get: vi.fn(async () => ({ id: 'ch1', defaults: {} })) } as never,
     blueprintChanged: vi.fn(),
+    repairs: {} as never,
   } as unknown as ToolDeps;
 }
 

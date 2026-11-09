@@ -126,7 +126,12 @@ export function buildCodexArgs(input: {
 export const codexDialect: CliDialect = {
   label: 'Codex',
   command: 'codex',
-  args: (manifest) => buildCodexArgs({ ...manifest, profile: manifest.profile ?? 'reelcraft' }),
+  args: (manifest) =>
+    buildCodexArgs({
+      ...manifest,
+      jobDir: manifest.cwd ?? manifest.jobDir,
+      profile: manifest.profile ?? 'reelcraft',
+    }),
   sessionId: (event) =>
     event.type === 'thread.started' && typeof event.thread_id === 'string'
       ? event.thread_id
