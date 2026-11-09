@@ -3,13 +3,33 @@ import { promisify } from 'node:util';
 
 const execFileP = promisify(execFile);
 
+/** The variables that tie git to one repository: `git rev-parse --local-env-vars` (git 2.56). */
+const REPOSITORY_VARS: ReadonlySet<string> = new Set([
+  'GIT_ALTERNATE_OBJECT_DIRECTORIES',
+  'GIT_CONFIG',
+  'GIT_CONFIG_PARAMETERS',
+  'GIT_CONFIG_COUNT',
+  'GIT_OBJECT_DIRECTORY',
+  'GIT_DIR',
+  'GIT_WORK_TREE',
+  'GIT_IMPLICIT_WORK_TREE',
+  'GIT_GRAFT_FILE',
+  'GIT_INDEX_FILE',
+  'GIT_NO_REPLACE_OBJECTS',
+  'GIT_REPLACE_REF_BASE',
+  'GIT_PREFIX',
+  'GIT_SHALLOW_FILE',
+  'GIT_COMMON_DIR',
+]);
+
 /**
- * The environment without git's repository variables (GIT_DIR, GIT_INDEX_FILE, GIT_WORK_TREE…).
- * Repair commands name their folder with `cwd`; an inherited GIT_DIR (set when running inside a
- * git hook) would point them at another repository instead.
+ * The environment without git's repository variables. Repair commands name their folder with
+ * `cwd`; an inherited GIT_DIR (set when running inside a git hook) would point them at another
+ * repository instead. The rest (GIT_SSH_COMMAND, GIT_ASKPASS, GIT_AUTHOR_*…) stays, so pushing
+ * and committing work as they do for the user.
  */
 export function cleanGitEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
-  return Object.fromEntries(Object.entries(env).filter(([key]) => !key.startsWith('GIT_')));
+  return Object.fromEntries(Object.entries(env).filter(([key]) => !REPOSITORY_VARS.has(key)));
 }
 
 const exec = (command: string, args: string[], options: { cwd: string }) =>
@@ -57,10 +77,13 @@ export async function applyPatch(input: {
     await git(['apply', patchPath]);
     return true;
   }
-  const undoShared = () =>
-    git(['apply', '--reverse', SHARED, patchPath]).catch((error: unknown) =>
+  // reverses the shared part, then rebuilds so the shared build matches the sources again
+  const undoShared = async () => {
+    await git(['apply', '--reverse', SHARED, patchPath]).catch((error: unknown) =>
       input.onUndoFailed?.(error),
     );
+    await buildShared().catch((error: unknown) => input.onUndoFailed?.(error));
+  };
   // a restart between the steps left the shared part applied
   const sharedIn = await ok(['apply', '--check', '--reverse', SHARED, patchPath]);
   if (!(await ok(['apply', '--check', ...(sharedIn ? [REST] : []), patchPath]))) {

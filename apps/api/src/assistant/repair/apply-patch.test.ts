@@ -36,9 +36,16 @@ function checkout() {
 
 describe('cleanGitEnv', () => {
   it("drops git's repository variables and keeps the rest", () => {
-    expect(cleanGitEnv({ GIT_DIR: '/x', GIT_INDEX_FILE: '/i', PATH: '/bin' })).toEqual({
-      PATH: '/bin',
-    });
+    expect(
+      cleanGitEnv({
+        GIT_DIR: '/x',
+        GIT_INDEX_FILE: '/i',
+        GIT_WORK_TREE: '/w',
+        GIT_SSH_COMMAND: 'ssh -i k',
+        GIT_AUTHOR_NAME: 'me',
+        PATH: '/bin',
+      }),
+    ).toEqual({ GIT_SSH_COMMAND: 'ssh -i k', GIT_AUTHOR_NAME: 'me', PATH: '/bin' });
   });
 });
 
@@ -57,12 +64,16 @@ describe('applyPatch', () => {
 
   it('reverses the shared part when the build fails, keeping local changes', async () => {
     const c = checkout();
+    const builtFrom: string[] = [];
     const buildShared = vi.fn(async () => {
-      throw new Error('tsc failed');
+      builtFrom.push(c.read(SHARED));
+      if (builtFrom.length === 1) throw new Error('tsc failed');
     });
     await expect(applyPatch({ ...c, shared: true, buildShared })).rejects.toThrow(
       'none of it was left there',
     );
+    // rebuilt from the reversed sources, so the build matches them again
+    expect(builtFrom).toEqual(['a fixed\n', 'a\n']);
     expect(c.read(SHARED)).toBe('a\n');
     expect(c.read(API)).toBe('b\n');
     expect(c.read('local.ts')).toBe('mine, edited\n');
@@ -83,9 +94,24 @@ describe('applyPatch', () => {
   it('applies nothing when the checkout has its own changes there', async () => {
     const c = checkout();
     writeFileSync(join(c.root, API), 'b, edited here\n');
-    expect(await applyPatch({ ...c, shared: true, buildShared: vi.fn() })).toBe(false);
+    const buildShared = vi.fn(async () => undefined);
+    expect(await applyPatch({ ...c, shared: true, buildShared })).toBe(false);
+    expect(buildShared).not.toHaveBeenCalled();
     expect(c.read(SHARED)).toBe('a\n');
     expect(c.read(API)).toBe('b, edited here\n');
+  });
+
+  it('reverses and rebuilds a shared part a restart left, when the rest no longer applies', async () => {
+    const c = checkout();
+    execFileSync('git', ['apply', '--include=packages/shared/*', c.patchPath], {
+      cwd: c.root,
+      env: cleanGitEnv(),
+    });
+    writeFileSync(join(c.root, API), 'b, edited here\n');
+    const buildShared = vi.fn(async () => undefined);
+    expect(await applyPatch({ ...c, shared: true, buildShared })).toBe(false);
+    expect(c.read(SHARED)).toBe('a\n');
+    expect(buildShared).toHaveBeenCalledOnce();
   });
 
   it('is done when applied before, rebuilding shared', async () => {
