@@ -19,7 +19,8 @@ assistant to fix those bugs, test the fix, retry the stage, and leave a pull req
   the failure (`get_stage`, `get_attempt`). Manual mode asks first. It is refused unless
   **Settings › Assistant › Engine repair** is on and Reelcraft runs from a git checkout. When
   `NODE_ENV` is `production` or there is no checkout (the image), the switch is disabled and says why.
-  Only one repair runs at a time, and a stage gets at most two.
+  Only one repair runs at a time, and a stage gets at most two. A repair that failed before the agent
+  reported (it crashed or never started) doesn't count toward the two.
 - **A repair is a chat item.** The `repair` item's `state` (`working | applied | pr_only | failed`)
   and payload `phase` (`preparing → fixing → verifying → publishing → applying`) carry it, so
   `EngineRepairService` picks a repair up again after the restarts it causes. There is no new table:
@@ -28,7 +29,9 @@ assistant to fix those bugs, test the fix, retry the stage, and leave a pull req
 - **The coding agent is the chat's own (Codex or Claude) in a git worktree.** It runs as a detached
   CLI job through the existing runner (ADR-0016) in `code` modality. The new `cwd` manifest field makes
   the worktree (`WORKSPACE_ROOT/repairs/<id>/repo`) its working folder. Claude gets file tools and
-  `Bash` for `pnpm` and read-only `git` only. Codex works in its profile's sandbox, rooted at the
+  `Bash` for `pnpm` and read-only `git` only. The launcher starts the runner through a go-between that
+  exits at once, so the runner is outside the API's process tree: `nest start --watch` kills that whole
+  tree on every reload, detached children included. Codex works in its profile's sandbox, rooted at the
   worktree. The agent never commits, pushes or switches branches. It answers with a strict JSON report
   (`engineBug`, `summary`, `commitMessage`, `testFiles`). `engineBug: false` ends the repair with what
   it found, and the assistant fixes the blueprint instead.

@@ -148,6 +148,10 @@ export class EngineRepairService implements OnModuleInit {
           eq(assistantItem.type, 'repair'),
           sql`${assistantItem.payload}->>'runId' = ${runId}`,
           sql`${assistantItem.payload}->>'stageKey' = ${stageKey}`,
+          // a repair that failed before the agent reported (it crashed, never started, or lost a
+          // restart) tried nothing, so it doesn't use up the stage's repairs
+          // ponytail: crashes are bounded only by the run's wake budget (maxWakesPerRun)
+          sql`(${assistantItem.state} <> 'failed' or ${assistantItem.payload}->>'summary' is not null)`,
         ),
       );
     if (Number(count?.n ?? 0) >= MAX_REPAIRS_PER_STAGE) {

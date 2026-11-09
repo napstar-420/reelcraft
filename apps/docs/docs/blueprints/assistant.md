@@ -231,7 +231,8 @@ The assistant then wakes up and retries the stage. The card ends as **Fixed and 
 or apply the branch yourself), or as **Not fixed** with the reason. Sometimes the agent finds that the
 cause is not in Reelcraft after all, and then the assistant fixes the blueprint instead.
 
-Only one repair runs at a time, and a stage gets at most two. The fix lands in your checkout before you
+Only one repair runs at a time, and a stage gets at most two (a repair whose agent crashed before
+it finished doesn't count). The fix lands in your checkout before you
 review it: the pull request is where you decide whether it goes into Reelcraft for good. Pushing and
 opening the pull request use your own `git` and `gh` sign-in.
 
