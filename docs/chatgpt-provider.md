@@ -70,6 +70,9 @@ response as `pastedPrompt`.
 - Web search is turned on from the composer's "+" menu, which ignores synthetic clicks, so two
   trusted mouse clicks are sent over CDP (they work in a background tab). The old `hints=search`
   URL hint was dropped by ChatGPT. The "Web search" pill then sits inside the composer text.
+- Page scripts use `browser.page(id).evaluateInPage(code)`; the removed `browser.evaluate` API
+  fails with `not a function`. Raw CDP reads and trusted clicks use
+  `page.cdp(method, JSON.stringify(params))`, without browser-level target attachment.
 - Neo returns `evaluate` results over ~6 KB as files, so large results (long replies) are read
   back in small chunks. See `inPage` in `chatgpt-page.ts`.
 - Generated images (~2.7M base64 characters each) are read back with a raw CDP `Runtime.evaluate`

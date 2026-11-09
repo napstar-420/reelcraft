@@ -13,7 +13,7 @@ describe('codex device page scripts', () => {
   it('injects the code as data, not code', () => {
     const script = enterDeviceCodeScript(3, "ABCD-1234'); alert(1); ('");
     expect(script).not.toContain("alert(1); ('\n");
-    expect(script).toContain('browser.evaluate(3');
+    expect(script).toContain('browser.page(3).evaluateInPage(');
     expect(() => enterDeviceCodeScript(-1, 'ABCD-1234')).toThrow();
   });
 });
