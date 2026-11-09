@@ -176,7 +176,15 @@ describe('Neo page evaluation scripts', () => {
 
 /** Execute the generated Neo code, including its page-world boundary and chunked result reads. */
 function replyFixture(
-  turns: Array<{ text: string; copy?: boolean; complete?: boolean; copied?: string }>,
+  turns: Array<{
+    text: string;
+    copy?: boolean;
+    complete?: boolean;
+    copied?: string;
+    contentOnTurn?: boolean;
+    codeCopy?: boolean;
+    duplicateCopy?: boolean;
+  }>,
   options: { clipboard?: 'missing' | 'readonly'; generating?: boolean } = {},
 ) {
   const clipboard = { write: vi.fn(), writeText: vi.fn() };
@@ -190,18 +198,26 @@ function replyFixture(
           click: vi.fn(() => {
             if (copied !== undefined) clipboard.writeText(copied);
           }),
-          closest: () => roots[i],
+          closest: (selector: string) =>
+            selector === 'pre' ? (turns[i]!.codeCopy ? {} : null) : roots[i],
           compareDocumentPosition: (other: unknown) =>
             buttons.indexOf(other as never) > i ? 4 : 2,
         },
   );
-  const roots = turns.map((_, i) => ({
-    querySelector: () => contents[i],
+  const roots = turns.map((turn, i) => ({
+    innerText: turn.contentOnTurn ? turn.text : undefined,
+    matches: (selector: string) =>
+      !!turn.contentOnTurn && selector.includes('data-message-author-role'),
+    querySelector: (selector: string) =>
+      turn.contentOnTurn || !selector.includes('data-message-author-role') ? null : contents[i],
     compareDocumentPosition: (other: unknown) => (roots.indexOf(other as never) > i ? 4 : 2),
   }));
   const main = {
     querySelectorAll: (selector: string) => {
-      if (selector === 'button[aria-label="Copy"]') return buttons.filter(Boolean);
+      if (selector === 'button[aria-label="Copy"]')
+        return buttons.flatMap((button, i) =>
+          button ? (turns[i]!.duplicateCopy ? [button, { ...button }] : [button]) : [],
+        );
       if (selector === '[data-talvt-turn-state="complete"]')
         return roots.filter((_, i) => turns[i]!.complete !== false);
       return [];
@@ -312,5 +328,44 @@ describe('ChatGPT completed reply collection', () => {
     const json = JSON.stringify({ text: 'London\n'.repeat(1500) });
     const { run } = replyFixture([{ text: json }], { clipboard: 'missing' });
     expect(await run(copyLastReplyScript(65))).toBe(json);
+  });
+
+  it.each([true, false])(
+    'collects long structured content when the completed turn is the assistant node (Copy=%s)',
+    async (copy) => {
+      const json = JSON.stringify({
+        scenes: Array.from({ length: 80 }, () => 'London雪🌍\n'.repeat(100)),
+      });
+      const { run } = replyFixture(
+        [{ text: 'Earlier answer' }, { text: json, contentOnTurn: true, copy }],
+        { clipboard: 'missing' },
+      );
+      expect(await run(pageStateScript(65))).toMatchObject({ replyCount: 2 });
+      expect(await run(copyLastReplyScript(65, 1))).toBe(json);
+    },
+  );
+
+  it('does not count a code-block Copy control as a completed response', async () => {
+    const { run } = replyFixture([
+      { text: 'Earlier answer' },
+      { text: '{"partial":', codeCopy: true, complete: false },
+    ]);
+    expect(await run(pageStateScript(65))).toMatchObject({ replyCount: 1 });
+    expect(await run(copyLastReplyScript(65, 1))).toBeNull();
+  });
+
+  it('reads the complete assistant response instead of copying only a code block', async () => {
+    const { run, buttons } = replyFixture([
+      { text: 'Full answer with code and explanation', codeCopy: true, copied: 'code only' },
+    ]);
+    expect(await run(pageStateScript(65))).toMatchObject({ replyCount: 1 });
+    expect(await run(copyLastReplyScript(65))).toBe('Full answer with code and explanation');
+    expect(buttons[0]?.click).not.toHaveBeenCalled();
+  });
+
+  it('counts one completed turn even if it has duplicate Copy controls', async () => {
+    const { run } = replyFixture([{ text: 'Earlier answer', duplicateCopy: true }]);
+    expect(await run(pageStateScript(65))).toMatchObject({ replyCount: 1 });
+    expect(await run(copyLastReplyScript(65, 1))).toBeNull();
   });
 });

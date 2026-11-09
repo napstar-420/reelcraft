@@ -45,13 +45,16 @@ const completedReplies = () => {
   const main = document.querySelector('main');
   if (!main) return [];
   const contentSelector = '[data-markdown-text-style="assistant-message"], [data-message-author-role="assistant"]';
-  const replies = [...main.querySelectorAll(S.copy)].map((button) => {
+  // A completion marker can live on the assistant element itself; querySelector only checks descendants.
+  const assistantContent = (turn) => turn?.matches(contentSelector) ? turn : turn?.querySelector(contentSelector);
+  // Code blocks have their own Copy controls, even while the answer is still streaming.
+  const replies = [...main.querySelectorAll(S.copy)].filter((button) => !button.closest('pre')).map((button) => {
     const turn = button.closest('[data-talvt-turn-state], article');
-    return { button, content: turn?.querySelector(contentSelector), turn };
-  });
+    return { button, content: assistantContent(turn), turn };
+  }).filter((reply, i, all) => !reply.turn || all.findIndex((other) => other.turn === reply.turn) === i);
   for (const turn of main.querySelectorAll('[data-talvt-turn-state="complete"]')) {
     if (replies.some((reply) => reply.turn === turn)) continue;
-    const content = turn.querySelector(contentSelector);
+    const content = assistantContent(turn);
     if (content) replies.push({ button: null, content, turn });
   }
   return replies.sort((a, b) => ((a.turn || a.button).compareDocumentPosition(b.turn || b.button) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
