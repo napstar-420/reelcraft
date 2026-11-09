@@ -8,6 +8,8 @@ export interface AssistantPrefs {
   sessionId?: string | null;
   /** Whether the dock is open. */
   dockOpen?: boolean;
+  /** The dock's width in pixels, set by dragging its left edge. */
+  dockWidth?: number;
 }
 
 const KEY = 'reelcraft.assistant';
