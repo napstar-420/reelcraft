@@ -31,6 +31,7 @@ export const MAX_REPAIRS_PER_STAGE = 2;
 const AGENTS: ReadonlySet<string> = new Set<CliKind>(['codex', 'claude']);
 const JOB_TIMEOUT_MS = 60 * 60_000;
 const POLL_MS = 5_000;
+const QUEUED_LIMIT_MS = 2 * 60_000;
 /** How long an applied fix waits for the API to reload before telling the chat anyway (a fix to
  * the web app or the render worker doesn't restart the API). */
 // ponytail: fixed wait for nest --watch; signal the reload explicitly if 60s proves wrong
@@ -101,7 +102,7 @@ export class EngineRepairService implements OnModuleInit {
     for (const row of rows) {
       const repair = this.toRepair(row);
       if (repair.state === 'working') this.begin(repair.id);
-      else void this.report(repair.id);
+      else this.reportLater(repair.id, 0);
     }
   }
 
@@ -185,7 +186,18 @@ export class EngineRepairService implements OnModuleInit {
   begin(id: string): void {
     if (this.driving.has(id)) return;
     this.driving.add(id);
-    void this.drive(id).finally(() => this.driving.delete(id));
+    void this.drive(id)
+      .catch((error: unknown) => this.logger.error({ repairId: id, err: error }, 'repair crashed'))
+      .finally(() => this.driving.delete(id));
+  }
+
+  /** Reports a repair's outcome after `ms`, without letting a failure escape. */
+  private reportLater(id: string, ms: number): void {
+    setTimeout(() => {
+      this.report(id).catch((error: unknown) =>
+        this.logger.error({ repairId: id, err: error }, 'repair outcome not reported'),
+      );
+    }, ms).unref();
   }
 
   private async drive(id: string): Promise<void> {
@@ -221,7 +233,7 @@ export class EngineRepairService implements OnModuleInit {
         const applied = await this.applyLive(repair);
         repair = await this.update(repair, {}, applied ? 'applied' : 'pr_only');
         await this.removeWorktree(repair);
-        if (applied) setTimeout(() => void this.report(id), RELOAD_WAIT_MS).unref();
+        if (applied) this.reportLater(id, RELOAD_WAIT_MS);
         else await this.report(id);
       }
     } catch (error) {
@@ -302,6 +314,8 @@ export class EngineRepairService implements OnModuleInit {
         state?: string;
         pid?: number;
         reason?: string;
+        createdAt?: string;
+        startedAt?: string;
       };
       if (status.state === 'succeeded') break;
       if (status.state === 'failed' || status.state === 'cancelled') {
@@ -309,6 +323,15 @@ export class EngineRepairService implements OnModuleInit {
       }
       if (status.state === 'running' && status.pid && !alive(status.pid)) {
         throw new Error('The coding agent stopped without finishing.');
+      }
+      // The runner marks itself running at once and times itself out, so a job still queued or
+      // running past these marks has no runner left to finish it.
+      const since = (at: string | undefined) => (at ? Date.now() - Date.parse(at) : 0);
+      if (status.state === 'queued' && since(status.createdAt) > QUEUED_LIMIT_MS) {
+        throw new Error('The coding agent never started.');
+      }
+      if (status.state === 'running' && since(status.startedAt) > JOB_TIMEOUT_MS + 5 * 60_000) {
+        throw new Error('The coding agent ran past its time limit.');
       }
       await new Promise((r) => setTimeout(r, POLL_MS));
     }
