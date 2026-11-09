@@ -220,7 +220,8 @@ engine (in **Auto** mode it goes ahead). An **Engine repair** card in the chat t
 2. **Fixing the code**: the agent the chat runs on (Codex or Claude) finds the root cause, fixes it and
    adds a test.
 3. **Running the checks**: Reelcraft commits the fix, so the pre-commit checks (lint, typechecks and the
-   unit tests) run. The repair stops here if they fail.
+   unit tests) run. If they fail, the agent gets their report and fixes its change once (the card says
+   **Fixing what the checks found**); the repair stops if they fail again.
 4. **Opening a pull request**: the branch is pushed and a pull request opened with `gh`. If that
    fails, the card says **No pull request** and the repair carries on.
 5. **Applying the fix**: the change is applied to your checkout, uncommitted, and the API reloads.

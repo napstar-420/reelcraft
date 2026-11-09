@@ -39,7 +39,10 @@ export function RepairCard({ item }: { item: AssistantItemDto }) {
       {state === 'working' ? (
         <p className="flex items-center gap-1.5 text-[13px] font-medium" aria-live="polite">
           <Loader2 className="size-3.5 animate-spin motion-reduce:animate-none" />
-          {PHASE[repair.phase]}…
+          {repair.phase === 'fixing' && repair.checkRetries
+            ? 'Fixing what the checks found'
+            : PHASE[repair.phase]}
+          …
           <span className="font-normal text-muted-foreground">
             {repair.agent} · {repair.model}
           </span>

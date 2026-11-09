@@ -18,6 +18,7 @@ import { AssistantWatchService } from '../watch/assistant-watch.service';
 import { sourceCheckout } from './source-checkout';
 import { applyPatch, cleanGitEnv } from './apply-patch';
 import {
+  checkReport,
   REPAIR_COMMANDS,
   REPAIR_RESULT_SCHEMA,
   repairPrompt,
@@ -35,6 +36,8 @@ const exec = (
 
 /** At most this many repairs for one stage of one run: then the assistant reports to the user. */
 export const MAX_REPAIRS_PER_STAGE = 2;
+/** How many times a fix that fails the pre-commit checks goes back to the agent with their report. */
+export const MAX_CHECK_RETRIES = 1;
 const AGENTS: ReadonlySet<string> = new Set<CliKind>(['codex', 'claude']);
 const JOB_TIMEOUT_MS = 60 * 60_000;
 const POLL_MS = 5_000;
@@ -220,23 +223,25 @@ export class EngineRepairService implements OnModuleInit {
         await this.prepare(repair);
         repair = await this.update(repair, { phase: 'fixing' });
       }
-      if (repair.payload.phase === 'fixing') {
-        const result = await this.fix(repair);
-        if (!result.engineBug) {
+      // fixing and verifying repeat when the checks fail and the agent has a retry left
+      while (repair.payload.phase === 'fixing' || repair.payload.phase === 'verifying') {
+        if (repair.payload.phase === 'fixing') repair = await this.fixPhase(repair);
+        const checked = await this.commit(repair);
+        repair = checked.repair;
+        if (checked.failure === undefined) {
+          repair = await this.update(repair, { phase: 'publishing' });
+          break;
+        }
+        const retries = repair.payload.checkRetries ?? 0;
+        if (retries >= MAX_CHECK_RETRIES) {
           throw new Error(
-            `The coding agent found this is not an engine bug, and changed nothing: ${result.summary}`,
+            `The fix did not pass the pre-commit checks${retries ? ` (after ${retries} retry with their report)` : ''}:\n${checkReport(checked.failure, 4_000)}`,
           );
         }
-        repair = await this.update(repair, {
-          phase: 'verifying',
-          summary: result.summary,
-          commitMessage: result.commitMessage,
-          testFiles: result.testFiles,
-        });
-      }
-      if (repair.payload.phase === 'verifying') {
-        repair = await this.commit(repair);
-        repair = await this.update(repair, { phase: 'publishing' });
+        const retryDir = this.fixJobDir(repair.id, retries + 1);
+        await mkdir(retryDir, { recursive: true, mode: 0o700 });
+        await writeFile(join(retryDir, 'check-failure.txt'), checkReport(checked.failure, 20_000));
+        repair = await this.update(repair, { phase: 'fixing', checkRetries: retries + 1 });
       }
       if (repair.payload.phase === 'publishing') {
         repair = await this.update(repair, { phase: 'applying', ...(await this.publish(repair)) });
@@ -256,6 +261,22 @@ export class EngineRepairService implements OnModuleInit {
       await this.removeWorktree(repair);
       await this.report(id);
     }
+  }
+
+  /** Runs the agent (again, on a retry) and records its report. */
+  private async fixPhase(repair: Repair): Promise<Repair> {
+    const result = await this.fix(repair);
+    if (!result.engineBug) {
+      throw new Error(
+        `The coding agent found this is not an engine bug, and changed nothing: ${result.summary}`,
+      );
+    }
+    return this.update(repair, {
+      phase: 'verifying',
+      summary: result.summary,
+      commitMessage: result.commitMessage,
+      testFiles: result.testFiles,
+    });
   }
 
   // ---- phases ----------------------------------------------------------------------------
@@ -285,7 +306,7 @@ export class EngineRepairService implements OnModuleInit {
 
   /** Runs the coding agent as a detached job (it outlives an API restart) and waits for it. */
   private async fix(repair: Repair): Promise<RepairResult> {
-    const jobDir = this.jobDir(repair.id);
+    const jobDir = this.fixJobDir(repair.id, repair.payload.checkRetries ?? 0);
     const resultPath = join(jobDir, 'result.json');
     const statusPath = join(jobDir, 'status.json');
     const launched = await access(statusPath).then(
@@ -312,6 +333,9 @@ export class EngineRepairService implements OnModuleInit {
         prompt: repairPrompt({
           repair: repair.payload,
           stage: lookup?.found ? lookup.stage : null,
+          checkFailure: repair.payload.checkRetries
+            ? await readFile(join(jobDir, 'check-failure.txt'), 'utf8').catch(() => undefined)
+            : undefined,
         }),
         ...(repair.payload.agent === 'codex' && {
           profile: this.config.codexProfile,
@@ -355,8 +379,9 @@ export class EngineRepairService implements OnModuleInit {
     return parsed.data;
   }
 
-  /** Commits the agent's change; the pre-commit hook is the check (lint, typechecks, unit tests). */
-  private async commit(repair: Repair): Promise<Repair> {
+  /** Commits the agent's change; the pre-commit hook is the check (lint, typechecks, unit tests).
+   * `failure` is the hook's output when it rejected the commit (the change stays staged). */
+  private async commit(repair: Repair): Promise<{ repair: Repair; failure?: string }> {
     const dir = this.worktree(repair.id);
     const head = (await exec('git', ['rev-parse', 'HEAD'], { cwd: dir })).stdout.trim();
     if (head === repair.payload.baseSha) {
@@ -373,12 +398,15 @@ export class EngineRepairService implements OnModuleInit {
           maxBuffer: 64 * 1024 * 1024,
         });
       } catch (error) {
-        throw new Error(
-          `The fix did not pass the pre-commit checks:\n${tail(commandOutput(error), 4_000)}`,
-        );
+        return { repair, failure: commandOutput(error) };
       }
     }
-    return this.update(repair, await this.describeDiff(dir, [repair.payload.baseSha, 'HEAD']));
+    return {
+      repair: await this.update(
+        repair,
+        await this.describeDiff(dir, [repair.payload.baseSha, 'HEAD']),
+      ),
+    };
   }
 
   private async describeDiff(
@@ -520,6 +548,11 @@ export class EngineRepairService implements OnModuleInit {
 
   private jobDir(id: string): string {
     return join(this.repairsRoot(), id, 'job');
+  }
+
+  /** The agent's job folder: the repair's job folder, or a folder of its own for each retry. */
+  private fixJobDir(id: string, retry: number): string {
+    return retry ? join(this.jobDir(id), `retry-${retry}`) : this.jobDir(id);
   }
 
   /** The branch stays (it holds the pull request); the job folder keeps the agent's logs. */

@@ -33,8 +33,10 @@ assistant to fix those bugs, test the fix, retry the stage, and leave a pull req
   (`engineBug`, `summary`, `commitMessage`, `testFiles`). `engineBug: false` ends the repair with what
   it found, and the assistant fixes the blueprint instead.
 - **The pre-commit hook is the check.** Reelcraft commits the change itself, without `--no-verify`, so
-  lint, the typechecks and the unit suites must pass. A failing hook fails the repair, with the hook's
-  output.
+  lint, the typechecks and the unit suites must pass. The agent is told to run the same checks (the
+  whole unit suites, not only its own tests) before it answers. When the hook still fails, its report
+  (the failing tests and type errors first, colour codes removed) goes back to the agent once, with its
+  change still in the worktree; a second failure fails the repair with that report.
 - **Pull request first, live apply last.** The branch is pushed and a pull request opened with the
   user's own `git` and `gh`. A failure there is recorded, not fatal. Then the diff is `git apply`'d to
   the running checkout, uncommitted. `packages/shared` goes first and is rebuilt before the rest
@@ -66,6 +68,6 @@ assistant to fix those bugs, test the fix, retry the stage, and leave a pull req
   checkouts and an opt-in switch.
 - Fixes reach the running checkout before review. The pull request decides whether they reach `main`.
 - Each apply reloads the API: chat turns running then are marked interrupted, and Inngest runs carry on.
-- A repair that fails the hook is not retried with the hook's output; the assistant reports it.
+- A fix that fails the hook gets one retry with the hook's report, which can double a repair's time.
   Feeding the output back to the same agent thread is the next step if this proves common.
 - The 60 s wait for a reload is a guess for `nest --watch`.

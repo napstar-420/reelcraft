@@ -1,10 +1,13 @@
+import { mkdtemp, readFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import type { RepairPayload } from '@reelcraft/shared';
 import { runTool } from '../tools/registry';
 import { newTurnContext, type ToolDeps } from '../tools/types';
-import { wakeText } from './engine-repair.service';
+import { EngineRepairService, wakeText } from './engine-repair.service';
 import { buildClaudeArgs } from '../../provider/claude/claude-command';
-import { REPAIR_COMMANDS } from './repair-prompt';
+import { checkReport, REPAIR_COMMANDS, repairPrompt } from './repair-prompt';
 import { AssistantWatchService } from '../watch/assistant-watch.service';
 
 const payload: RepairPayload = {
@@ -113,5 +116,90 @@ describe('repair wake delivery', () => {
     await watches.idle();
     expect(woken).toHaveBeenCalledTimes(1);
     expect(woken).toHaveBeenCalledWith('chat', 'repair applied');
+  });
+});
+
+describe('repair check report', () => {
+  const hook = [
+    '\u001b[31m FAIL \u001b[39m src/provider/codex/codex-device-page.test.ts > enters the code',
+    'x'.repeat(5_000),
+    '\u001b[2m Test Files \u001b[22m 4 failed | 187 passed (191)',
+    ' ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL @reelcraft/api test',
+    'husky - pre-commit script failed (code 1)',
+  ].join('\n');
+
+  it('drops colour codes and puts what failed first, then the end of the output', () => {
+    const report = checkReport(hook, 1_000);
+    expect(report).not.toContain('\u001b[');
+    expect(report.split('\n').slice(0, 3)).toEqual([
+      'FAIL  src/provider/codex/codex-device-page.test.ts > enters the code',
+      'Test Files  4 failed | 187 passed (191)',
+      'ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL @reelcraft/api test',
+    ]);
+    expect(report.trimEnd().endsWith('husky - pre-commit script failed (code 1)')).toBe(true);
+    expect(report.length).toBeLessThan(1_100);
+  });
+
+  it('hands a retry the report and tells the agent to run the whole suites', () => {
+    const first = repairPrompt({ repair: payload, stage: null });
+    expect(first).toContain('pnpm test (not only the tests you touched');
+    expect(first).not.toContain('<check_output>');
+    const retry = repairPrompt({ repair: payload, stage: null, checkFailure: 'FAIL  a.test.ts' });
+    expect(retry).toContain('<check_output>\nFAIL  a.test.ts\n</check_output>');
+    expect(retry).toContain('git diff HEAD');
+  });
+});
+
+describe('repair check retries', () => {
+  /** A service whose phases are stubbed: the checks fail with each of `failures` in turn. */
+  async function drive(failures: string[]) {
+    const workspaceRoot = await mkdtemp(join(tmpdir(), 'repair-'));
+    const service = new EngineRepairService(
+      ...([{}, {}, {}, {}, {}, { workspaceRoot }] as unknown as ConstructorParameters<
+        typeof EngineRepairService
+      >),
+    );
+    type Stub = { payload: RepairPayload; state: string };
+    let repair: Stub = { payload: { ...payload, phase: 'fixing' }, state: 'working' };
+    const prompts: (number | undefined)[] = [];
+    Object.assign(service, {
+      load: async () => ({ id: 'r1', sessionId: 's', ...repair }),
+      earlierRepair: async () => null,
+      update: async (r: Stub, patch: Partial<RepairPayload>, state?: string) => {
+        repair = { payload: { ...r.payload, ...patch }, state: state ?? r.state };
+        return { id: 'r1', sessionId: 's', ...repair };
+      },
+      fixPhase: async (r: Stub) => {
+        prompts.push(r.payload.checkRetries);
+        return { ...r, payload: { ...r.payload, phase: 'verifying' } };
+      },
+      commit: async (r: Stub) => ({ repair: r, failure: failures.shift() }),
+      publish: async () => ({ prUrl: 'https://github.com/o/r/pull/1' }),
+      applyLive: async () => false,
+      removeWorktree: async () => undefined,
+      report: async () => undefined,
+    });
+    await (service as unknown as { drive(id: string): Promise<void> }).drive('r1');
+    return { repair, prompts, workspaceRoot };
+  }
+
+  it('hands the failed checks back to the agent once, then carries on', async () => {
+    const { repair, prompts, workspaceRoot } = await drive([
+      '\u001b[31m FAIL \u001b[39m a.test.ts',
+    ]);
+    expect(prompts).toEqual([undefined, 1]);
+    expect(repair.state).toBe('pr_only');
+    const report = await readFile(
+      join(workspaceRoot, 'repairs/r1/job/retry-1/check-failure.txt'),
+      'utf8',
+    );
+    expect(report.startsWith('FAIL  a.test.ts')).toBe(true);
+  });
+
+  it('fails with the report when the retry fails the checks too', async () => {
+    const { repair, prompts } = await drive(['FAIL  a.test.ts', 'FAIL  b.test.ts']);
+    expect(prompts).toEqual([undefined, 1]);
+    expect(repair.state).toBe('failed');
+    expect(repair.payload.error).toMatch(/after 1 retry[\s\S]*FAIL {2}b\.test\.ts/);
   });
 });

@@ -369,6 +369,8 @@ export const RepairPayload = z.object({
   diff: z.string().optional(),
   changedFiles: z.array(z.string()).optional(),
   testFiles: z.array(z.string()).optional(),
+  /** How many times the agent was handed the failed pre-commit checks to fix its change. */
+  checkRetries: z.number().int().optional(),
   prUrl: z.string().optional(),
   /** Why the pull request could not be opened (the fix is still applied). */
   prError: z.string().optional(),
