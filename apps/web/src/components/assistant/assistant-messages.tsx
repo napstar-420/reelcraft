@@ -12,6 +12,7 @@ import { QuestionCard } from './question-card';
 import { MessageAttachments } from './attachment-chips';
 import { BreakdownCard } from './breakdown-card';
 import { GoalCard } from './goal-card';
+import { RepairCard } from './repair-card';
 import { describeToolCall, payloadOf, toRows, wakeHeadline, type ChatRow } from './assistant.logic';
 
 const MARKDOWN: Components = {
@@ -100,6 +101,8 @@ function Row({ row, assistant }: { row: ChatRow; assistant: AssistantController 
       return <BreakdownCard item={row.item} />;
     case 'goal':
       return <GoalCard item={row.item} />;
+    case 'repair':
+      return <RepairCard item={row.item} />;
     case 'reset': {
       const reset = payloadOf<{ reason: 'long' | 'updated'; summary: string }>(row.item);
       return (

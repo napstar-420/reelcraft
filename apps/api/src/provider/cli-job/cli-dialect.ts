@@ -10,6 +10,8 @@ export interface CliRunnerManifest {
   modelId: string;
   reasoningEffort: string;
   jobDir: string;
+  /** The folder the CLI works in, when not the job's own (an engine repair's git worktree). */
+  cwd?: string;
   resultPath: string;
   outputSchemaPath?: string;
   modality: Modality;

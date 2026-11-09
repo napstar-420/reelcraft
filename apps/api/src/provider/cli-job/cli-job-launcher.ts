@@ -8,57 +8,93 @@ export interface CliLaunchInput {
   manifestPath: string;
 }
 
+/** Runs as `node -e`: starts the runner detached, its stderr to a file, prints its pid, exits. */
+const LAUNCH_SCRIPT = `
+const { spawn } = require('node:child_process');
+const { openSync } = require('node:fs');
+const [runner, manifest, log] = process.argv.slice(1);
+const child = spawn(process.execPath, [runner, manifest], {
+  detached: true,
+  stdio: ['ignore', 'ignore', openSync(log, 'a')],
+});
+child.unref();
+process.stdout.write(String(child.pid));
+`;
+const START_WATCH_MS = 250;
+/** 30 seconds: the runner marks itself running at once, or waits for the browser lock queued. */
+const START_WATCH_POLLS = 120;
+
+function alive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'EPERM';
+  }
+}
+
 export class CliJobLauncher {
   private readonly logger = new Logger(CliJobLauncher.name);
 
+  /** The compiled runner (a test points it at a stand-in). */
+  runnerPath = join(__dirname, 'cli-job-runner.js');
+
   async launch(input: CliLaunchInput): Promise<number> {
+    const stderrPath = join(input.jobDir, 'runner-stderr.log');
+    // A go-between that starts the runner and exits at once, so the runner has no parent in the
+    // API's process tree: `nest start --watch` kills that whole tree on every reload (tree-kill),
+    // detached or not, which would end a job meant to outlive an API restart.
     const child = spawn(
       process.execPath,
-      [join(__dirname, 'cli-job-runner.js'), input.manifestPath],
-      {
-        cwd: input.jobDir,
-        detached: true,
-        stdio: ['ignore', 'ignore', 'pipe'],
-        env: process.env,
-      },
+      ['-e', LAUNCH_SCRIPT, this.runnerPath, input.manifestPath, stderrPath],
+      { cwd: input.jobDir, stdio: ['ignore', 'pipe', 'pipe'], env: process.env },
     );
+    let stdout = '';
     let stderr = '';
-    child.stderr.on('data', (chunk) => {
-      stderr = (stderr + String(chunk)).slice(-4096);
+    child.stdout.on('data', (chunk) => (stdout += String(chunk)));
+    child.stderr.on('data', (chunk) => (stderr = (stderr + String(chunk)).slice(-4096)));
+    const code = await new Promise<number | null>((resolve) => {
+      child.once('error', (error) => {
+        stderr = error.message;
+        resolve(null);
+      });
+      // 'close' (not 'exit'): the pid on stdout is flushed by then
+      child.once('close', resolve);
     });
-    // The runner writes its own "failed" status once it reaches `main()`
-    // (cli-job-runner.ts's top-level catch). If node itself fails before
-    // that — missing/stale dist file, module load error — status.json is
-    // left at "queued" forever and the only symptom is the adapter's blind
-    // 30s poll timeout ("CLI runner never started"). Surface it here
-    // immediately instead, using whatever the process did print.
-    child.once('error', (error) => {
-      this.logger.error({ jobDir: input.jobDir, err: error }, 'cli runner spawn failed');
-      void this.recordLaunchFailure(input.jobDir, `CLI runner failed to spawn: ${error.message}`);
-    });
-    // 'close' (not 'exit') — 'exit' can fire before the stdio pipes finish
-    // flushing their last data, which would race the `stderr` accumulation
-    // above and misreport "no output" for a process that did print one.
-    child.once('close', (code, signal) => {
-      if (code === 0 && !signal) {
-        this.logger.debug({ jobDir: input.jobDir, pid: child.pid }, 'cli runner exited');
-        return;
-      }
-      this.logger.error(
-        { jobDir: input.jobDir, pid: child.pid, exitCode: code, signal },
-        'cli runner exited abnormally',
+    const pid = Number(stdout.trim());
+    if (code !== 0 || !pid) {
+      const reason = `CLI runner failed to spawn: ${stderr.trim() || `exit code ${code ?? 'null'}`}`;
+      this.logger.error({ jobDir: input.jobDir, reason }, 'cli runner spawn failed');
+      await this.recordLaunchFailure(input.jobDir, reason);
+      throw new Error(reason);
+    }
+    this.logger.log({ jobDir: input.jobDir, pid }, 'cli runner started');
+    void this.watchStart(input.jobDir, pid, stderrPath);
+    return pid;
+  }
+
+  /**
+   * The runner writes its own "failed" status once it reaches `main()` (cli-job-runner.ts's
+   * top-level catch). If node itself fails before that (a missing or stale dist file, a module
+   * load error), status.json would stay "queued" until the adapter's blind poll timeout. Watch
+   * the runner until it reports, and record that early exit with what it printed.
+   */
+  private async watchStart(jobDir: string, pid: number, stderrPath: string): Promise<void> {
+    for (let i = 0; i < START_WATCH_POLLS; i++) {
+      await new Promise((resolve) => setTimeout(resolve, START_WATCH_MS).unref());
+      const status = await readFile(join(jobDir, 'status.json'), 'utf8')
+        .then((text) => JSON.parse(text) as { state?: string })
+        .catch(() => null);
+      if (status?.state && status.state !== 'queued') return;
+      if (alive(pid)) continue;
+      const printed = await readFile(stderrPath, 'utf8').catch(() => '');
+      this.logger.error({ jobDir, pid }, 'cli runner exited before starting');
+      await this.recordLaunchFailure(
+        jobDir,
+        `CLI runner exited before starting: ${printed.trim().slice(-4096) || 'no output'}`,
       );
-      void this.recordLaunchFailure(
-        input.jobDir,
-        `CLI runner exited before starting (code ${code ?? 'null'}, signal ${signal ?? 'null'}): ${
-          stderr.trim() || 'no output'
-        }`,
-      );
-    });
-    child.unref();
-    if (!child.pid) throw new Error('CLI runner did not start');
-    this.logger.log({ jobDir: input.jobDir, pid: child.pid }, 'cli runner started');
-    return child.pid;
+      return;
+    }
   }
 
   private async recordLaunchFailure(jobDir: string, reason: string): Promise<void> {

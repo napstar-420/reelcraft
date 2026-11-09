@@ -215,6 +215,8 @@ export const AssistantItemType = z.enum([
   'goal',
   /** The chat continued in a fresh session from a summary (it got long, or Reelcraft changed). */
   'context_reset',
+  /** An engine repair: a coding agent fixing Reelcraft itself for a failed stage (repair_engine). */
+  'repair',
   /** Chats from before the assistant could write: kept for display only. */
   'proposal',
 ]);
@@ -337,6 +339,46 @@ export const GoalPayload = z.object({
   maxSpendUsd: z.number(),
 });
 export type GoalPayload = z.infer<typeof GoalPayload>;
+
+/** Where an engine repair is: `working` while the coding agent fixes and the hook verifies it,
+ * `applied` once the fix is in the running checkout, `pr_only` when it could not be applied there
+ * (the checkout has its own changes in those files), `failed` with `error`. Kept in the item's
+ * `state`; `phase` says what a working repair is doing. */
+export const RepairState = z.enum(['working', 'applied', 'pr_only', 'failed']);
+export type RepairState = z.infer<typeof RepairState>;
+
+export const RepairPhase = z.enum(['preparing', 'fixing', 'verifying', 'applying', 'publishing']);
+export type RepairPhase = z.infer<typeof RepairPhase>;
+
+export const RepairPayload = z.object({
+  runId: z.string(),
+  stageKey: z.string(),
+  /** What the assistant found: why it thinks the engine is at fault. */
+  diagnosis: z.string(),
+  /** codex | claude: the coding agent, the same one the chat runs on. */
+  agent: z.string(),
+  model: z.string(),
+  phase: RepairPhase,
+  branch: z.string(),
+  /** The commit the fix was made on. */
+  baseSha: z.string(),
+  /** What the coding agent says it found and changed. */
+  summary: z.string().optional(),
+  commitMessage: z.string().optional(),
+  /** The fix, as a unified diff (cut for display). */
+  diff: z.string().optional(),
+  changedFiles: z.array(z.string()).optional(),
+  testFiles: z.array(z.string()).optional(),
+  /** How many times the agent was handed the failed pre-commit checks to fix its change. */
+  checkRetries: z.number().int().optional(),
+  prUrl: z.string().optional(),
+  /** Why the pull request could not be opened (the fix is still applied). */
+  prError: z.string().optional(),
+  error: z.string().optional(),
+  /** When the chat was told the outcome. */
+  reportedAt: z.string().optional(),
+});
+export type RepairPayload = z.infer<typeof RepairPayload>;
 
 /** Where a long or outdated chat moved to a fresh session, with the summary it started from. */
 export const ContextResetPayload = z.object({
@@ -531,10 +573,18 @@ export const AssistantSettingsDto = z.object({
   defaultMode: AssistantMode,
   /** How many times one watched run may wake the assistant before it stops watching. */
   maxWakesPerRun: z.number().int().min(1).max(20),
+  /** The assistant may start a coding agent that fixes Reelcraft itself when a stage fails
+   * because of the engine (repair_engine). Off by default. */
+  engineRepair: z.boolean(),
+  /** Why engine repair can't run on this install (it needs Reelcraft running from a git
+   * checkout), or null. Read only. */
+  engineRepairUnavailable: z.string().nullable(),
 });
 export type AssistantSettingsDto = z.infer<typeof AssistantSettingsDto>;
 
-export const UpdateAssistantSettingsDto = AssistantSettingsDto.partial();
+export const UpdateAssistantSettingsDto = AssistantSettingsDto.omit({
+  engineRepairUnavailable: true,
+}).partial();
 export type UpdateAssistantSettingsDto = z.infer<typeof UpdateAssistantSettingsDto>;
 
 // ---- memory ------------------------------------------------------------------------------

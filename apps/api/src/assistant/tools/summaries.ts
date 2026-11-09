@@ -40,6 +40,8 @@ export const TOOL_SUMMARIES: Record<string, string> = {
   start_run: 'Start a run of a blueprint (a free test run or a real one).',
   run_stages: 'Re-make stages of a run after a fix, keeping the rest.',
   retry_stage: 'Try a failed stage again as it was.',
+  repair_engine:
+    "Have a coding agent fix Reelcraft's own code when a stage failed because of an engine bug.",
   pause_run: 'Pause a running run.',
   resume_run: 'Preview and continue a paused, failed or cancelled run, keeping finished work.',
   cancel_run: 'Stop a run.',

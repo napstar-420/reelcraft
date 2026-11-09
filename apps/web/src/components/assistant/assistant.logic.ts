@@ -127,6 +127,7 @@ export type ChatRow =
   | { kind: 'plan'; item: AssistantItemDto }
   | { kind: 'breakdown'; item: AssistantItemDto }
   | { kind: 'goal'; item: AssistantItemDto }
+  | { kind: 'repair'; item: AssistantItemDto }
   | { kind: 'reset'; item: AssistantItemDto }
   | { kind: 'legacy'; item: AssistantItemDto }
   /** A run the assistant started or set going again: shown with its live state. */
@@ -178,6 +179,7 @@ export function toRows(items: AssistantItemDto[]): ChatRow[] {
       case 'plan':
       case 'breakdown':
       case 'goal':
+      case 'repair':
         rows.push({ kind: item.type, item });
         break;
       case 'context_reset':

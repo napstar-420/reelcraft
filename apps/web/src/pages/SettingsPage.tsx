@@ -8,6 +8,7 @@ import type { SettingsDto } from '@reelcraft/shared';
 import { api } from '@/api/client';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Input } from '@/components/ui/input';
+import { Switch } from '@/components/ui/switch';
 import { AssistantNotes } from '@/components/assistant/assistant-notes';
 import { MODES } from '@/components/assistant/assistant.logic';
 import { ASSISTANT_SETTINGS_KEY } from '@/hooks/useAssistant';
@@ -205,7 +206,7 @@ function AssistantDefaults() {
     onError: (error) => toast.error(apiErrorMessage(error, 'Could not save.')),
   });
   if (!settings.data) return <Skeleton className="h-48 w-full" />;
-  const { defaultMode, maxWakesPerRun } = settings.data;
+  const { defaultMode, maxWakesPerRun, engineRepair, engineRepairUnavailable } = settings.data;
   return (
     <section className="overflow-hidden rounded-[14px] border bg-card">
       <div className="px-[18px] pt-4 pb-3">
@@ -259,6 +260,21 @@ function AssistantDefaults() {
               save.mutate({ maxWakesPerRun: value });
             }
           }}
+        />
+      </div>
+      <div className="flex flex-wrap items-center gap-3.5 border-t px-[18px] py-3.5">
+        <label htmlFor="engine-repair" className="min-w-60 flex-1">
+          <span className="block text-sm">Engine repair</span>
+          <span className="block text-xs text-muted-foreground">
+            {engineRepairUnavailable ??
+              'When a stage fails because of a bug in Reelcraft itself, the assistant can have Codex or Claude fix the code with a test. Once the checks pass, it opens a pull request, applies the fix to this checkout and retries the stage.'}
+          </span>
+        </label>
+        <Switch
+          id="engine-repair"
+          checked={engineRepair}
+          disabled={save.isPending || engineRepairUnavailable !== null}
+          onCheckedChange={(checked) => save.mutate({ engineRepair: checked })}
         />
       </div>
     </section>

@@ -29,3 +29,8 @@ export function loadRootEnv(startDir: string = __dirname): void {
   const root = findRepoRoot(startDir);
   if (root) config({ path: path.join(root, '.env') });
 }
+
+/** The environment the process started with, before `.env` and ConfigModule (which writes every
+ * config default into `process.env`) added to it. main.ts imports this module first. A command
+ * that should run as it would from the user's shell, such as the pre-commit hook, uses it. */
+export const startupEnv: Readonly<NodeJS.ProcessEnv> = { ...process.env };

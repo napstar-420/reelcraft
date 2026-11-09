@@ -72,6 +72,7 @@ import { MediaPreviewService } from '../artifact/media-preview.service';
 import { ConfigResolverService } from '../run-config/config-resolver.service';
 import { engineDefaults } from '../run-config/engine-defaults';
 import { LiveEvents } from '../live/live-events';
+import { EngineRepairService } from './repair/engine-repair.service';
 import {
   APPROVAL_WAIT_MS,
   ASSISTANT_AGENTS,
@@ -188,6 +189,7 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
     private readonly presence: LivePresence,
     private readonly timelines: TimelineEditorService,
     timelinePreviews: TimelinePreviewService,
+    private readonly repairs: EngineRepairService,
   ) {
     this.toolDeps = {
       blueprints,
@@ -210,6 +212,7 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
       memory,
       review,
       watches,
+      repairs,
       userGuide,
       attachments,
       files,
@@ -752,7 +755,9 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
             ? 'applied'
             : outcome.item.type === 'breakdown' || outcome.item.type === 'goal'
               ? 'saved'
-              : 'pending';
+              : outcome.item.type === 'repair'
+                ? 'working'
+                : 'pending';
         const created = await this.createItem(
           session.id,
           turnId,
@@ -761,6 +766,7 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
           outcome.item.payload,
         );
         extra = { [`${outcome.item.type}Id`]: created.id };
+        if (outcome.item.type === 'repair') this.repairs.begin(created.id);
         if (outcome.item.type === 'question' || outcome.item.type === 'plan') {
           this.notifyIfAway(
             session.id,

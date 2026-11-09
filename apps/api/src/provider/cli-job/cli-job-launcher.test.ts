@@ -39,3 +39,31 @@ describe('CliJobLauncher launch failures', () => {
     expect(JSON.parse(await readFile(statusPath, 'utf8'))).toEqual(initial);
   });
 });
+
+describe('CliJobLauncher process tree', () => {
+  it('starts the runner outside the API process tree, so a watch reload cannot kill it', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'cli-launcher-'));
+    const runner = join(dir, 'runner.js');
+    const parentPath = join(dir, 'parent.txt');
+    await writeFile(
+      runner,
+      `require('node:fs').writeFileSync(${JSON.stringify(parentPath)}, String(process.ppid)); setTimeout(() => {}, 60_000);`,
+    );
+    await writeFile(join(dir, 'status.json'), JSON.stringify({ state: 'running' }));
+    const launcher = Object.assign(new CliJobLauncher(), { runnerPath: runner });
+    const pid = await launcher.launch({ jobDir: dir, manifestPath: 'm.json' });
+    try {
+      let parent = '';
+      for (let i = 0; i < 100 && !parent; i++) {
+        parent = await readFile(parentPath, 'utf8').catch(() => '');
+        if (!parent) await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      expect(Number(parent)).toBeGreaterThan(0);
+      expect(Number(parent)).not.toBe(process.pid);
+      expect(() => process.kill(pid, 0)).not.toThrow();
+    } finally {
+      process.kill(pid, 'SIGKILL');
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});

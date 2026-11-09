@@ -50,7 +50,7 @@ async function main(): Promise<void> {
     startedAt: new Date().toISOString(),
   });
   const child = spawn(dialect.command, await dialect.args(manifest), {
-    cwd: manifest.jobDir,
+    cwd: manifest.cwd ?? manifest.jobDir,
     stdio: ['pipe', 'pipe', 'pipe'],
     env: process.env,
   });

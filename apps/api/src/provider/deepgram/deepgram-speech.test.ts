@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   DEEPGRAM_FAMILIES,
   applyPronunciations,
@@ -23,6 +23,15 @@ function audio(body: string) {
   } as unknown as Response;
 }
 
+// Unit tests never reach the real service: a test that needs fetch stubs its own.
+beforeEach(() =>
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (url: unknown) => {
+      throw new Error(`unit test tried to reach the network: ${String(url)}`);
+    }),
+  ),
+);
 afterEach(() => vi.unstubAllGlobals());
 
 describe('Deepgram voices', () => {

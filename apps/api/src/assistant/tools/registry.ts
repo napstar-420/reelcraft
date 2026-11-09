@@ -7,6 +7,7 @@ import { ACTION_TOOLS } from './action-tools';
 import { askUser } from './ask-user';
 import { MANAGE_TOOLS } from './manage-tools';
 import { REVIEW_TOOLS } from './review-tools';
+import { REPAIR_TOOLS } from './repair-tools';
 import { WATCH_TOOLS } from './watch-tools';
 import { presentPlan } from './present-plan';
 import { BLUEPRINT_TOOLS } from './blueprint-tools';
@@ -100,6 +101,7 @@ export const ASSISTANT_TOOLS: ReadonlyArray<AssistantTool<never>> = [
   ...MANAGE_TOOLS,
   ...LIBRARY_TOOLS,
   ...ACTION_TOOLS,
+  ...REPAIR_TOOLS,
   ...WATCH_TOOLS,
   ...DOCS_TOOLS,
   ...WEB_TOOLS,

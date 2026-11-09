@@ -206,6 +206,37 @@ needs your OK**, and the **Assistant** button shows a dot. When no Reelcraft pag
 [notification](../runs/notifications.md) instead, and, if you turn it on, one when it has finished
 dealing with a run update. Selecting the notification opens the chat.
 
+## Engine repair
+
+Reelcraft is young, and sometimes a stage fails because of a bug in Reelcraft itself, not your
+blueprint. When you run Reelcraft from source (`pnpm dev` in a clone of the repository), the assistant
+can fix those bugs for you. Turn on **Engine repair** in **Settings › Assistant**. On the Docker image
+the switch is off and explains why: the image has no source code to fix.
+
+When a watched run fails and the assistant finds the cause in Reelcraft's code, it asks to repair the
+engine (in **Auto** mode it goes ahead). An **Engine repair** card in the chat then shows each step:
+
+1. **Copying the source**: a separate git worktree of your checkout, on a new `fix/repair-…` branch.
+2. **Fixing the code**: the agent the chat runs on (Codex or Claude) finds the root cause, fixes it and
+   adds a test.
+3. **Running the checks**: Reelcraft commits the fix, so the pre-commit checks (lint, typechecks and the
+   unit tests) run. If they fail, the agent gets their report and fixes its change once (the card says
+   **Fixing what the checks found**); the repair stops if they fail again.
+4. **Opening a pull request**: the branch is pushed and a pull request opened with `gh`. If that
+   fails, the card says **No pull request** and the repair carries on.
+5. **Applying the fix**: the change is applied to your checkout, uncommitted, and the API reloads.
+
+The assistant then wakes up and retries the stage. The card ends as **Fixed and applied**, as
+**Fixed, not applied** when your checkout has its own changes in the same files (merge the pull request
+or apply the branch yourself), or as **Not fixed** with the reason (what the agent changed is kept
+in `.workspace/repairs/<id>/job/failed.patch`). Sometimes the agent finds that the
+cause is not in Reelcraft after all, and then the assistant fixes the blueprint instead.
+
+Only one repair runs at a time, and a stage gets at most two (a repair whose agent crashed before
+it finished doesn't count). The fix lands in your checkout before you
+review it: the pull request is where you decide whether it goes into Reelcraft for good. Pushing and
+opening the pull request use your own `git` and `gh` sign-in.
+
 ## Questions
 
 When your request leaves a choice to you, the assistant asks. A question card lists the options, and

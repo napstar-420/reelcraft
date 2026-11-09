@@ -112,6 +112,19 @@ export class AssistantWatchService implements OnModuleInit, OnModuleDestroy {
     }));
   }
 
+  /** Wakes a chat with a message that isn't about a run notification (an engine repair's outcome).
+   * Queued like run wakes, so it waits for the boot recovery. `claim` runs when the wake's turn
+   * comes, right before the chat is woken: it records the wake durably and returns the message,
+   * or null when it was delivered already. */
+  wakeSession(sessionId: string, claim: () => Promise<string | null>): void {
+    this.enqueue(async () => {
+      const text = await claim();
+      if (text === null) return;
+      this.logger.log({ sessionId }, 'assistant woken');
+      await this.wakeHandler?.(sessionId, text);
+    });
+  }
+
   /** Removes a chat's watches (the chat is being deleted). */
   async forgetSession(tx: Pick<Db, 'delete'>, sessionId: string): Promise<void> {
     await tx.delete(assistantWatch).where(eq(assistantWatch.sessionId, sessionId));
