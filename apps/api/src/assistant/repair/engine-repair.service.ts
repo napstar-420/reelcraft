@@ -16,6 +16,7 @@ import { RunInsightService } from '../../run/run-insight.service';
 import { AssistantSettingsService } from '../watch/assistant-settings.service';
 import { AssistantWatchService } from '../watch/assistant-watch.service';
 import { sourceCheckout } from './source-checkout';
+import { applyPatch, cleanGitEnv } from './apply-patch';
 import {
   REPAIR_COMMANDS,
   REPAIR_RESULT_SCHEMA,
@@ -24,7 +25,13 @@ import {
   type RepairResult,
 } from './repair-prompt';
 
-const exec = promisify(execFile);
+const execFileP = promisify(execFile);
+/** Every repair command names its folder; git's inherited repository variables must not redirect it. */
+const exec = (
+  command: string,
+  args: string[],
+  options: { cwd?: string; timeout?: number; maxBuffer?: number } = {},
+) => execFileP(command, args, { ...options, encoding: 'utf8', env: cleanGitEnv() });
 
 /** At most this many repairs for one stage of one run: then the assistant reports to the user. */
 export const MAX_REPAIRS_PER_STAGE = 2;
@@ -422,7 +429,9 @@ export class EngineRepairService implements OnModuleInit {
   /**
    * Applies the fix to the running checkout, uncommitted. False when it doesn't apply cleanly (the
    * checkout has its own changes there). `packages/shared` goes first and is rebuilt before the
-   * rest lands, so the API reloads against the new shared build.
+   * rest lands, so the API reloads against the new shared build. It lands as a unit: if the build
+   * or the rest fails, the shared part is reversed (only its own hunks, so the checkout's other
+   * changes stay), and a restart between the steps carries on from the shared part.
    */
   private async applyLive(repair: Repair): Promise<boolean> {
     const root = await this.root();
@@ -432,28 +441,18 @@ export class EngineRepairService implements OnModuleInit {
       maxBuffer: 64 * 1024 * 1024,
     }).catch(() => null);
     if (diff) await writeFile(patchPath, diff.stdout);
-    const git = (args: string[]) => exec('git', args, { cwd: root });
-    const ok = (args: string[]) =>
-      git(args).then(
-        () => true,
-        () => false,
-      );
-    if (await ok(['apply', '--check', '--reverse', patchPath])) return true; // applied before a restart
-    if (!(await ok(['apply', '--check', patchPath]))) return false;
-    const shared = (repair.payload.changedFiles ?? []).some((f) =>
-      f.startsWith('packages/shared/'),
-    );
-    if (shared) {
-      await git(['apply', '--include=packages/shared/*', patchPath]);
-      await exec('pnpm', ['--filter', '@reelcraft/shared', 'build'], {
-        cwd: root,
-        timeout: 10 * 60_000,
-      });
-      await git(['apply', '--exclude=packages/shared/*', patchPath]);
-    } else {
-      await git(['apply', patchPath]);
-    }
-    return true;
+    return applyPatch({
+      root,
+      patchPath,
+      shared: (repair.payload.changedFiles ?? []).some((f) => f.startsWith('packages/shared/')),
+      buildShared: () =>
+        exec('pnpm', ['--filter', '@reelcraft/shared', 'build'], {
+          cwd: root,
+          timeout: 10 * 60_000,
+        }).then(() => undefined),
+      onUndoFailed: (error) =>
+        this.logger.error({ repairId: repair.id, err: error }, 'shared part not reversed'),
+    });
   }
 
   /** Tells the chat how the repair ended, once. */
