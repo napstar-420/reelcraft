@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SpeechSetting } from '@reelcraft/shared';
 import { ElevenLabsAdapter } from './elevenlabs.adapter';
 import {
@@ -11,7 +11,10 @@ import {
   toVoiceInfo,
 } from './elevenlabs-speech';
 
-const keys = (key: string | undefined = 'xi-key') => ({ get: vi.fn().mockResolvedValue(key) });
+/** A key provider holding `key`; `keys(null)` holds none (`keys(null)` would get the default). */
+const keys = (key: string | null = 'xi-key') => ({
+  get: vi.fn().mockResolvedValue(key ?? undefined),
+});
 
 function audio(body: string, type = 'audio/mpeg') {
   return {
@@ -50,6 +53,15 @@ function speechFetch(...responses: Response[]) {
 const speechCalls = (fetch: ReturnType<typeof speechFetch>) =>
   fetch.mock.calls.filter(([url]) => !String(url).endsWith('/v1/models'));
 
+// Unit tests never reach the real service: a test that needs fetch stubs its own.
+beforeEach(() =>
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (url: unknown) => {
+      throw new Error(`unit test tried to reach the network: ${String(url)}`);
+    }),
+  ),
+);
 afterEach(() => vi.unstubAllGlobals());
 
 describe('ElevenLabs model settings', () => {
@@ -218,7 +230,7 @@ describe('ElevenLabsAdapter', () => {
   });
 
   it('lists the known models when there is no key, and the live ones with a key', async () => {
-    const offline = new ElevenLabsAdapter(keys(undefined) as never);
+    const offline = new ElevenLabsAdapter(keys(null) as never);
     const known = (await offline.listModels()).map((m) => m.modelId);
     expect(known.slice(0, 3)).toEqual(['eleven_v4', 'eleven_v4_turbo', 'eleven_v3']);
 
@@ -247,7 +259,7 @@ describe('ElevenLabsAdapter', () => {
   });
 
   it('estimates by characters at the model price, or the stage price', async () => {
-    const adapter = new ElevenLabsAdapter(keys(undefined) as never);
+    const adapter = new ElevenLabsAdapter(keys(null) as never);
     const flash = await adapter.estimate(request('a'.repeat(1000), {}, 'eleven_flash_v2_5'));
     expect(flash.expectedUsd).toBeCloseTo(0.05);
     const own = await adapter.estimate(request('a'.repeat(1000), { pricePerCharacterUsd: 0.0002 }));
