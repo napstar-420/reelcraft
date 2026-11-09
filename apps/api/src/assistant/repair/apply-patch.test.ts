@@ -44,9 +44,21 @@ describe('cleanGitEnv', () => {
         GIT_WORK_TREE: '/w',
         GIT_SSH_COMMAND: 'ssh -i k',
         GIT_AUTHOR_NAME: 'me',
+        GIT_CONFIG_COUNT: '1',
+        GIT_CONFIG_KEY_0: 'user.email',
+        GIT_CONFIG_VALUE_0: 'me@example.com',
+        GIT_CONFIG_PARAMETERS: "'core.sshcommand'='ssh -i k'",
         PATH: '/bin',
       }),
-    ).toEqual({ GIT_SSH_COMMAND: 'ssh -i k', GIT_AUTHOR_NAME: 'me', PATH: '/bin' });
+    ).toEqual({
+      GIT_SSH_COMMAND: 'ssh -i k',
+      GIT_AUTHOR_NAME: 'me',
+      GIT_CONFIG_COUNT: '1',
+      GIT_CONFIG_KEY_0: 'user.email',
+      GIT_CONFIG_VALUE_0: 'me@example.com',
+      GIT_CONFIG_PARAMETERS: "'core.sshcommand'='ssh -i k'",
+      PATH: '/bin',
+    });
   });
 });
 

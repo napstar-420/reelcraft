@@ -4,12 +4,12 @@ import { promisify } from 'node:util';
 
 const execFileP = promisify(execFile);
 
-/** The variables that tie git to one repository: `git rev-parse --local-env-vars` (git 2.56). */
+/** The variables that tie git to one repository: `git rev-parse --local-env-vars` (git 2.56),
+ * less the config overrides (GIT_CONFIG_PARAMETERS, GIT_CONFIG_COUNT with its KEY_n/VALUE_n),
+ * which carry settings such as identity and sign-in and point at no repository. */
 const REPOSITORY_VARS: ReadonlySet<string> = new Set([
   'GIT_ALTERNATE_OBJECT_DIRECTORIES',
   'GIT_CONFIG',
-  'GIT_CONFIG_PARAMETERS',
-  'GIT_CONFIG_COUNT',
   'GIT_OBJECT_DIRECTORY',
   'GIT_DIR',
   'GIT_WORK_TREE',
