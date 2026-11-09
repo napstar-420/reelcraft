@@ -497,6 +497,17 @@ describe('ChatgptProviderAdapter.fetch', () => {
     expect(closed()).toBe(0);
   });
 
+  it('keeps an unreadable text reply for another fetch without submitting a new prompt', async () => {
+    const { adapter, scripts, closed } = fixture([null, '{"title":"recovered"}']);
+    const handle = job({ outputKind: 'data' });
+    await expect(adapter.fetch(handle)).rejects.toThrow('Could not copy the ChatGPT reply');
+    expect(closed()).toBe(0);
+    expect((await adapter.fetch(handle)).output).toEqual({ title: 'recovered' });
+    expect(scripts).toHaveLength(3); // Two reads of the same tab, then close.
+    expect(closed()).toBe(1);
+    expect(scripts.every((script) => !script.includes('browser.pages.newPage'))).toBe(true);
+  });
+
   it('parses JSON replies for data output, tolerating code fences', async () => {
     const { adapter } = fixture(['```json\n{"title":"x"}\n```']);
     const result = await adapter.fetch(job({ outputKind: 'data' }));
