@@ -31,7 +31,8 @@ function checkout() {
   git('checkout', '-q', '.');
   writeFileSync(join(root, 'local.ts'), 'mine, edited\n');
   const read = (file: string) => readFileSync(join(root, file), 'utf8');
-  return { root, patchPath, read };
+  const sharedMarkerPath = `${patchPath}.shared-applied`;
+  return { root, patchPath, sharedMarkerPath, read };
 }
 
 describe('cleanGitEnv', () => {
@@ -81,6 +82,7 @@ describe('applyPatch', () => {
 
   it('carries on after a restart left only the shared part applied', async () => {
     const c = checkout();
+    writeFileSync(c.sharedMarkerPath, '');
     execFileSync('git', ['apply', '--include=packages/shared/*', c.patchPath], {
       cwd: c.root,
       env: cleanGitEnv(),
@@ -103,6 +105,7 @@ describe('applyPatch', () => {
 
   it('reverses and rebuilds a shared part a restart left, when the rest no longer applies', async () => {
     const c = checkout();
+    writeFileSync(c.sharedMarkerPath, '');
     execFileSync('git', ['apply', '--include=packages/shared/*', c.patchPath], {
       cwd: c.root,
       env: cleanGitEnv(),
@@ -112,6 +115,26 @@ describe('applyPatch', () => {
     expect(await applyPatch({ ...c, shared: true, buildShared })).toBe(false);
     expect(c.read(SHARED)).toBe('a\n');
     expect(buildShared).toHaveBeenCalledOnce();
+  });
+
+  it('never reverses shared edits the checkout already had', async () => {
+    const c = checkout();
+    writeFileSync(join(c.root, SHARED), 'a fixed\n'); // the same change, made by hand
+    writeFileSync(join(c.root, API), 'b, edited here\n');
+    expect(
+      await applyPatch({ ...c, shared: true, buildShared: vi.fn(async () => undefined) }),
+    ).toBe(false);
+    expect(c.read(SHARED)).toBe('a fixed\n');
+    expect(c.read(API)).toBe('b, edited here\n');
+  });
+
+  it('adds only the rest when the checkout already had the shared edits', async () => {
+    const c = checkout();
+    writeFileSync(join(c.root, SHARED), 'a fixed\n');
+    expect(
+      await applyPatch({ ...c, shared: true, buildShared: vi.fn(async () => undefined) }),
+    ).toBe(true);
+    expect(c.read(API)).toBe('b fixed\n');
   });
 
   it('is done when applied before, rebuilding shared', async () => {

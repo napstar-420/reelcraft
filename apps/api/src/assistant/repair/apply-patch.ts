@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process';
+import { access, rm, writeFile } from 'node:fs/promises';
 import { promisify } from 'node:util';
 
 const execFileP = promisify(execFile);
@@ -51,12 +52,14 @@ function output(error: unknown): string {
  * first and is built before the rest lands, so the API reloads against the new shared build. It
  * lands as a unit: if the build or the rest fails, the shared part is reversed (only its own
  * hunks, so the checkout's other changes stay); a restart between the steps carries on from the
- * shared part.
+ * shared part. `sharedMarkerPath` records that this repair applied the shared part, so shared
+ * edits the checkout already had (the same change, made another way) are never reversed.
  */
 export async function applyPatch(input: {
   root: string;
   patchPath: string;
   shared: boolean;
+  sharedMarkerPath: string;
   buildShared: () => Promise<void>;
   onUndoFailed?: (error: unknown) => void;
 }): Promise<boolean> {
@@ -77,20 +80,36 @@ export async function applyPatch(input: {
     await git(['apply', patchPath]);
     return true;
   }
-  // reverses the shared part, then rebuilds so the shared build matches the sources again
+  const marker = input.sharedMarkerPath;
+  // reverses the shared part this repair applied, then rebuilds so the build matches the sources
   const undoShared = async () => {
     await git(['apply', '--reverse', SHARED, patchPath]).catch((error: unknown) =>
       input.onUndoFailed?.(error),
     );
+    await rm(marker, { force: true });
     await buildShared().catch((error: unknown) => input.onUndoFailed?.(error));
   };
-  // a restart between the steps left the shared part applied
   const sharedIn = await ok(['apply', '--check', '--reverse', SHARED, patchPath]);
+  const owned = await access(marker).then(
+    () => true,
+    () => false,
+  );
+  if (sharedIn && !owned) {
+    // the checkout already has these shared changes: only the rest is the repair's to add
+    if (!(await ok(['apply', '--check', REST, patchPath]))) return false;
+    await buildShared();
+    await git(['apply', REST, patchPath]);
+    return true;
+  }
+  // sharedIn here means a restart between the steps left this repair's shared part applied
   if (!(await ok(['apply', '--check', ...(sharedIn ? [REST] : []), patchPath]))) {
     if (sharedIn) await undoShared();
     return false;
   }
-  if (!sharedIn) await git(['apply', SHARED, patchPath]);
+  if (!sharedIn) {
+    await writeFile(marker, ''); // before applying: a crash in between leaves nothing to reverse
+    await git(['apply', SHARED, patchPath]);
+  }
   try {
     await buildShared();
     await git(['apply', REST, patchPath]);

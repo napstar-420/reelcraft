@@ -210,6 +210,12 @@ export class EngineRepairService implements OnModuleInit {
   private async drive(id: string): Promise<void> {
     let repair = await this.load(id);
     try {
+      const earlier = await this.earlierRepair(id);
+      if (earlier) {
+        throw new Error(
+          `Another engine repair started first (stage ${earlier.stageKey} of run ${earlier.runId}). Only one runs at a time: try again once it is done.`,
+        );
+      }
       if (repair.payload.phase === 'preparing') {
         await this.prepare(repair);
         repair = await this.update(repair, { phase: 'fixing' });
@@ -445,6 +451,7 @@ export class EngineRepairService implements OnModuleInit {
       root,
       patchPath,
       shared: (repair.payload.changedFiles ?? []).some((f) => f.startsWith('packages/shared/')),
+      sharedMarkerPath: join(this.jobDir(repair.id), 'shared-applied'),
       buildShared: () =>
         exec('pnpm', ['--filter', '@reelcraft/shared', 'build'], {
           cwd: root,
@@ -456,20 +463,43 @@ export class EngineRepairService implements OnModuleInit {
   }
 
   /** Tells the chat how the repair ended, once. */
+  /** Tells the chat how the repair ended, once. It counts as reported only when its wake is
+   * delivered (the watch queue waits for the boot recovery), so a restart before then reports it
+   * again on the next boot. */
   private async report(id: string): Promise<void> {
-    const reportedAt = new Date().toISOString();
+    const { sessionId } = await this.load(id);
+    this.watches.wakeSession(sessionId, async () => {
+      const reportedAt = new Date().toISOString();
+      const [row] = await this.db
+        .update(assistantItem)
+        .set({
+          payload: sql`${assistantItem.payload} || ${JSON.stringify({ reportedAt })}::jsonb`,
+          updatedAt: sql`now()`,
+        })
+        .where(and(eq(assistantItem.id, id), sql`${assistantItem.payload}->>'reportedAt' is null`))
+        .returning();
+      if (!row) return null;
+      this.publishItem(row);
+      return wakeText(this.toRepair(row));
+    });
+  }
+
+  /** Another repair still working that was asked for first. `refusal` lets one through at a time,
+   * but two chats can pass it together; the earlier item (ulids sort by time) goes ahead. */
+  // ponytail: ordering by ulid, not a lock; a unique partial index if repairs ever run in parallel
+  private async earlierRepair(id: string): Promise<RepairPayload | null> {
     const [row] = await this.db
-      .update(assistantItem)
-      .set({
-        payload: sql`${assistantItem.payload} || ${JSON.stringify({ reportedAt })}::jsonb`,
-        updatedAt: sql`now()`,
-      })
-      .where(and(eq(assistantItem.id, id), sql`${assistantItem.payload}->>'reportedAt' is null`))
-      .returning();
-    if (!row) return;
-    const repair = this.toRepair(row);
-    this.publishItem(row);
-    this.watches.wakeSession(repair.sessionId, wakeText(repair));
+      .select({ payload: assistantItem.payload })
+      .from(assistantItem)
+      .where(
+        and(
+          eq(assistantItem.type, 'repair'),
+          eq(assistantItem.state, 'working'),
+          sql`${assistantItem.id} < ${id}`,
+        ),
+      )
+      .limit(1);
+    return row ? (row.payload as RepairPayload) : null;
   }
 
   // ---- helpers ---------------------------------------------------------------------------

@@ -5,6 +5,7 @@ import { newTurnContext, type ToolDeps } from '../tools/types';
 import { wakeText } from './engine-repair.service';
 import { buildClaudeArgs } from '../../provider/claude/claude-command';
 import { REPAIR_COMMANDS } from './repair-prompt';
+import { AssistantWatchService } from '../watch/assistant-watch.service';
 
 const payload: RepairPayload = {
   runId: '01JRUN0000000000000000ABCD',
@@ -94,5 +95,23 @@ describe('repair agent tools', () => {
     expect(allowed).toContain('Bash(pnpm *)');
     expect(allowed).toContain('Bash(git diff *)');
     expect(allowed).not.toMatch(/Bash\(git \*\)|git push|git commit/);
+  });
+});
+
+describe('repair wake delivery', () => {
+  it('wakes the chat only when the claim returns a message, after boot recovery', async () => {
+    const watches = new AssistantWatchService({} as never, {} as never, {} as never);
+    const woken = vi.fn(async () => undefined);
+    watches.setWakeHandler(woken);
+    const claim = vi.fn(async () => 'repair applied');
+    watches.wakeSession('chat', async () => null); // reported already
+    watches.wakeSession('chat', claim);
+    await Promise.resolve();
+    expect(claim).not.toHaveBeenCalled(); // waits for the boot recovery
+    watches.start();
+    await watches.idle();
+    await watches.idle();
+    expect(woken).toHaveBeenCalledTimes(1);
+    expect(woken).toHaveBeenCalledWith('chat', 'repair applied');
   });
 });
