@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { FlaskConical, Loader2, Pencil, Plus, Search, SlidersHorizontal } from 'lucide-react';
+import { FlaskConical, Loader2, Plus, Search, SlidersHorizontal } from 'lucide-react';
 import { cn } from 'cn';
 import type { RunDetailDto, StageDef, ValidationIssue } from '@reelcraft/shared';
 import { Button } from '@/components/ui/button';
@@ -131,8 +131,8 @@ export function StageOutline({
                 <span className="w-5 shrink-0 text-right font-mono text-[11px] text-faint">
                   {index + 1}
                 </span>
-                {/* An edited stage is marked by its label colour and a pencil, not a badge,
-                    so the draft run's status mark for the stage stays visible beside it. */}
+                {/* An edited stage is marked by its label colour and a short "E", not a
+                    badge, so the draft run's status mark for the stage stays visible beside it. */}
                 <span
                   className={cn('flex min-w-0 flex-1 items-center gap-1', edited && 'text-wait')}
                   title={edited ? 'Edited since the last saved version' : undefined}
@@ -140,7 +140,9 @@ export function StageOutline({
                   <span className="truncate">{name}</span>
                   {edited ? (
                     <>
-                      <Pencil aria-hidden className="size-3 shrink-0" />
+                      <span aria-hidden className="shrink-0 text-[11px] font-semibold">
+                        E
+                      </span>
                       <span className="sr-only"> (edited)</span>
                     </>
                   ) : null}

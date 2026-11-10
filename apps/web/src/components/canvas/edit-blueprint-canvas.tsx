@@ -704,6 +704,15 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
         })),
       }
     : undefined;
+  /** The outline's run: an edited stage shows how it last ran, since its label colour already
+   * marks the edit; every other stage reads as the decorated run does, so a saved edit still
+   * shows its old pass as stale. */
+  const outlineRun = decoratedRun && {
+    ...decoratedRun,
+    stageExecutions: decoratedRun.stageExecutions.map((e, i) =>
+      editedKeys.has(e.stageKey) ? { ...e, state: canvasRun.run!.stageExecutions[i]!.state } : e,
+    ),
+  };
 
   async function addStage(capabilityKey: string, index: number, branchFrom?: string) {
     const capability = capabilities.data?.find((c) => c.key === capabilityKey);
@@ -906,7 +915,7 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
             focus={focus}
             issuesByStage={issuesByStage}
             editedKeys={editedKeys}
-            run={readOnly ? undefined : decoratedRun}
+            run={readOnly ? undefined : outlineRun}
             readOnly={readOnly}
             onFocus={(next) => {
               if (next.kind === 'stage') selectStage(next.key);
