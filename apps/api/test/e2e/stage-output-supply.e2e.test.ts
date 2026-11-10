@@ -472,50 +472,88 @@ describe('Supply a stage output (e2e)', () => {
     ).rejects.toBeInstanceOf(UnprocessableEntityException);
   });
 
-  it('frees the files of a candidate that fails after they were stored', async () => {
-    const image = StageDef.parse({
-      key: 'a',
-      label: 'a',
-      capability: 'image.generate',
+  const mediaStage = (key: string, kind: 'media.image' | 'media.video', extra = {}) =>
+    StageDef.parse({
+      key,
+      label: key,
+      capability: kind === 'media.image' ? 'image.generate' : 'video.generate',
       config: {},
       slots: {},
       context: {},
-      output: { kind: 'media.image' },
+      output: { kind },
       checks: [],
       retryLimit: 0,
-      model: { provider: 'fake', modelId: 'fake-image-1', params: {} },
+      model: {
+        provider: 'fake',
+        modelId: kind === 'media.image' ? 'fake-image-1' : 'fake-video-1',
+        params: {},
+      },
+      ...extra,
     });
-    // A video must carry sound by default, and the stored image has none: the output contract
-    // refuses it only after the file was stored.
-    const video = StageDef.parse({
-      ...image,
-      key: 'b',
-      label: 'b',
-      capability: 'video.generate',
-      output: { kind: 'media.video' },
-      model: { provider: 'fake', modelId: 'fake-video-1', params: {} },
-      dependsOn: [],
-      // Never run: only its output contract is exercised.
-      disabled: true,
-    });
-    const { runId, version } = await fixture([image, video]);
+
+  it('refuses a file of the wrong kind before storing it, and frees files stored before a later failure', async () => {
+    // `a` makes a picture; `b` is never run, only its output contract is exercised.
+    const { runId, version } = await fixture([
+      mediaStage('a', 'media.image', { dependsOn: [] }),
+      mediaStage('b', 'media.video', { dependsOn: [], disabled: true }),
+    ]);
     await drive(runId, ['a']);
-    const source = await activeOf(runId, 'a');
-    const before = await database.db.select().from(blob).where(eq(blob.runId, runId));
-    await expect(
+    const picture = await activeOf(runId, 'a');
+    const blobs = () => database.db.select().from(blob).where(eq(blob.runId, runId));
+    const before = await blobs();
+    const supplyB = () =>
       supply.createCandidate(
         runId,
         'b',
-        { blueprintVersionId: version.id, files: [{ artifactId: source!.id }] },
+        { blueprintVersionId: version.id, files: [{ artifactId: picture!.id }] },
         { by: 'user' },
-      ),
-    ).rejects.toBeInstanceOf(UnprocessableEntityException);
-    const added = (await database.db.select().from(blob).where(eq(blob.runId, runId))).filter(
-      (row) => !before.some((old) => old.id === row.id),
-    );
+      );
+
+    // A PNG is not a video, even though its probe has a video stream: nothing is stored.
+    await expect(supplyB()).rejects.toThrow('not a video');
+    expect(await blobs()).toHaveLength(before.length);
+
+    // A file that claims to be a video but has no length is refused after it was copied: the copy
+    // is up for collection.
+    await database.db.update(blob).set({ mime: 'video/mp4' }).where(eq(blob.id, picture!.blobId!));
+    await expect(supplyB()).rejects.toBeInstanceOf(UnprocessableEntityException);
+    const added = (await blobs()).filter((row) => !before.some((old) => old.id === row.id));
     expect(added).toHaveLength(1);
     expect(added[0]).toMatchObject({ gcEligible: true });
     expect(added[0]?.gcEligibleAt).not.toBeNull();
+  });
+
+  it('only uses a candidate made for the stage as the run has it', async () => {
+    const { runId, version, blueprintId } = await fixture([text('draft')]);
+    await drive(runId, ['draft']);
+    const { artifactId } = await supply.createCandidate(
+      runId,
+      'draft',
+      { blueprintVersionId: version.id, value: 'text for a text stage' },
+      { by: 'user' },
+    );
+    // The same blueprint, but `draft` now makes data: the candidate was never checked against it.
+    const other = await app.app.get(BlueprintService).createVersion(
+      blueprintId,
+      definition([
+        text('draft', {
+          output: { kind: 'data', schema: { type: 'object' } },
+          model: { provider: 'fake', modelId: 'fake-text-1', params: { fakeOutput: {} } },
+        }),
+      ]),
+      { draft: true },
+    );
+    const request = (versionId: string) => ({
+      blueprintVersionId: versionId,
+      action: 'rerun' as const,
+      mode: 'supply' as const,
+      scope: 'stage' as const,
+      stageKey: 'draft',
+      artifactId,
+      skipValidation: true,
+    });
+    expect((await plans.preview(runId, request(other.id))).blockedReason).not.toBeNull();
+    expect((await plans.preview(runId, request(version.id))).blockedReason).toBeNull();
   });
 
   it('stales a supplied output when an upstream stage is re-run', async () => {

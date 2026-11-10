@@ -2056,6 +2056,22 @@ export class StageRunnerService {
       .limit(1);
     const requestedValidation =
       row?.actor === 'user' && row.outcome === 'user_edit' && row.phase === 'created';
+    // A queued re-check judges an output that was still current when it was asked for. If
+    // something since made that output stale (a rejection that invalidated a dependent item),
+    // judging it would bring the old output back: drop the request, so the slot generates again.
+    // A supplied output is stale until it is used, so it keeps going.
+    if (
+      row &&
+      requestedValidation &&
+      row.artifactStale !== false &&
+      (row.resolvedInputs as { recheck?: unknown } | null)?.recheck
+    ) {
+      await this.db
+        .update(stageAttempt)
+        .set({ outcome: 'cancelled', phase: 'settled' })
+        .where(eq(stageAttempt.id, row.id));
+      return undefined;
+    }
     if (
       !row ||
       (!requestedValidation && (row.outcome !== 'qc_error' || row.phase !== 'settled')) ||

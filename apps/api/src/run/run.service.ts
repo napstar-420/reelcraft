@@ -1662,7 +1662,10 @@ export class RunService {
       id: row.id,
       kind: row.kind,
       madeWith: (row.repro as { model?: ArtifactViewDto['madeWith'] } | null)?.model ?? null,
-      origin: (row.repro as { supplied?: ArtifactViewDto['origin'] } | null)?.supplied ?? null,
+      origin: (() => {
+        const supplied = (row.repro as { supplied?: ArtifactViewDto['origin'] } | null)?.supplied;
+        return supplied ? { by: supplied.by, validation: supplied.validation } : null;
+      })(),
       ...(clips && { clips }),
       ...(images && { images }),
       ...(candidates && { candidates }),

@@ -372,6 +372,28 @@ describe('Re-check output (e2e)', () => {
     );
   });
 
+  it('does not bring an output back when it went stale while its re-check was queued', async () => {
+    const { runId, version } = await fixture([text('draft')]);
+    await drive(runId, ['draft']);
+    const [old] = await activeArtifacts(runId);
+    await recheck(runId, version.id, 'draft');
+    // A rejection (or any invalidation) staled the output before the re-check ran.
+    await database.db.update(artifact).set({ stale: true }).where(eq(artifact.id, old!.id));
+    await drive(runId, ['draft']);
+    const [current] = await activeArtifacts(runId);
+    expect(current?.id).not.toBe(old!.id);
+    const attempts = await database.db
+      .select()
+      .from(stageAttempt)
+      .where(eq(stageAttempt.stageExecutionId, (await execution(runId, 'draft')).id))
+      .orderBy(stageAttempt.attemptNo);
+    expect(attempts.map((a) => [a.actor, a.outcome])).toEqual([
+      ['engine', 'success'],
+      ['user', 'cancelled'],
+      ['engine', 'success'],
+    ]);
+  });
+
   it('puts a stage and an item back to passed when a queued re-check is cancelled', async () => {
     const shots = StageDef.parse({
       ...text('shots', { dependsOn: ['list'], checks: [pass] }),

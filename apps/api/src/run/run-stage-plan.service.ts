@@ -206,6 +206,14 @@ export class RunStagePlanService {
       else if (target.iterate && request.itemIndex === undefined)
         blockedReason = 'Choose which item to supply an output for.';
       else if (
+        candidate &&
+        (candidate.repro as { supplied?: { contract?: string } } | null)?.supplied?.contract !==
+          definitionKey(target.output)
+      )
+        // Checked against the stage as the run will run it, even when its checks are skipped.
+        blockedReason =
+          'The output was made for a different version of this stage. Supply it again.';
+      else if (
         !candidate ||
         candidate.runId !== runId ||
         candidate.producerStageKey !== request.stageKey ||
@@ -636,7 +644,13 @@ export class RunStagePlanService {
     await tx
       .update(artifact)
       .set({
-        repro: { supplied: { by: by ?? 'user', validation: skipValidation ? 'skip' : 'run' } },
+        repro: {
+          supplied: {
+            ...(candidate.repro as { supplied?: object } | null)?.supplied,
+            by: by ?? 'user',
+            validation: skipValidation ? 'skip' : 'run',
+          },
+        },
       })
       .where(eq(artifact.id, candidate.id));
     // Now in use: its files are no longer up for collection.
@@ -899,9 +913,16 @@ export class RunStagePlanService {
         // Only a changed graph needs a draft snapshot; an unchanged one keeps the run on its
         // own version, so a production run stays pinned to the saved version it started from.
         // Re-run stages that took the draft's defaults (a new default model, say) carry them too.
+        // A new default `maxItems` changes what every iterating stage generates, so it is only
+        // recorded on the run once every iterating stage runs again; otherwise the run keeps its
+        // old defaults and the stages that didn't run still read as out of date.
+        const maxItemsChanged =
+          definitionKey((built.source.defaults as ConfigLayer).iterate?.maxItems) !==
+          definitionKey((built.requested.defaults as ConfigLayer).iterate?.maxItems);
         const defaultsApplied =
           built.changedKeys.size > 0 &&
-          definitionKey(built.source.defaults) !== definitionKey(built.requested.defaults);
+          definitionKey(built.source.defaults) !== definitionKey(built.requested.defaults) &&
+          !(maxItemsChanged && built.graph.some((s) => s.iterate && !built.execute.has(s.key)));
         const graphChanged =
           defaultsApplied ||
           definitionKey(built.graph) !==

@@ -9,6 +9,7 @@ import {
 import { and, desc, eq, inArray, isNull } from 'drizzle-orm';
 import {
   CreateBlueprintVersionDto,
+  definitionKey,
   StageDef,
   Timeline,
   type CreateStageOutputCandidateDto,
@@ -153,7 +154,9 @@ export class StageOutputSupplyService {
       }),
       reproLevel: 'none',
       // Read at confirm, when the person has chosen whether to skip checks.
-      repro: { supplied: { by: options.by, validation: 'run' } },
+      repro: {
+        supplied: { by: options.by, validation: 'run', contract: definitionKey(stage.output) },
+      },
       costUsd: 0,
       userAuthored: true,
     });
@@ -250,6 +253,18 @@ export class StageOutputSupplyService {
     const wantKind = single ? output.kind : itemKind;
     if (!(FILE_KINDS as readonly string[]).includes(wantKind))
       throw new UnprocessableEntityException('This stage output cannot be supplied from files.');
+    // Each file must be what the output asks for: a picture is not a video, even though its
+    // probe has a video stream.
+    const mimePrefix = {
+      'media.image': 'image/',
+      'media.video': 'video/',
+      'media.audio': 'audio/',
+    }[wantKind as 'media.image' | 'media.video' | 'media.audio'];
+    for (const file of sources)
+      if (mimePrefix && !file.mime.startsWith(mimePrefix))
+        throw new UnprocessableEntityException(
+          `${file.filename} is not ${wantKind === 'media.audio' ? 'a sound' : wantKind === 'media.video' ? 'a video' : 'a picture'}.`,
+        );
     const stored = [];
     for (const [index, file] of sources.entries()) {
       try {
@@ -268,6 +283,8 @@ export class StageOutputSupplyService {
           });
         });
         persistedBlobIds.push(persisted.blobId);
+        if (wantKind === 'media.video' && !(persisted.probe.durationSec > 0))
+          throw new Error(`${file.filename} has no length, so it is not a video.`);
         stored.push({ ...persisted, index, file });
       } catch (error) {
         throw new UnprocessableEntityException(
