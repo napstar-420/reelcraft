@@ -7,6 +7,8 @@ import {
   inPage,
   openAttachmentMenuScript,
   pageStateScript,
+  PASTE_CHUNK,
+  sendPromptScript,
   readParkedImageCdpScript,
   readParkedImageScript,
   signInStateScript,
@@ -176,32 +178,48 @@ describe('Neo page evaluation scripts', () => {
 
 /** Execute the generated Neo code, including its page-world boundary and chunked result reads. */
 function replyFixture(
-  turns: Array<{ text: string; copy?: boolean; complete?: boolean; copied?: string }>,
-  options: { clipboard?: 'missing' | 'readonly'; generating?: boolean } = {},
+  turns: Array<{
+    text: string;
+    copy?: boolean;
+    complete?: boolean;
+    contentOnTurn?: boolean;
+    codeCopy?: boolean;
+    duplicateCopy?: boolean;
+  }>,
+  options: {
+    generating?: boolean;
+    conversation?: unknown;
+    conversationStatus?: number;
+    path?: string;
+    pageUrl?: string;
+  } = {},
 ) {
-  const clipboard = { write: vi.fn(), writeText: vi.fn() };
-  if (options.clipboard === 'readonly') Object.freeze(clipboard);
   const contents = turns.map(({ text }) => ({ innerText: text }));
-  const buttons = turns.map(({ copy, copied }, i) =>
+  const buttons = turns.map(({ copy }, i) =>
     copy === false
       ? null
       : {
-          // With no copied value, model a handler in a separate JS world: it never calls our shim.
-          click: vi.fn(() => {
-            if (copied !== undefined) clipboard.writeText(copied);
-          }),
-          closest: () => roots[i],
+          click: vi.fn(),
+          closest: (selector: string) =>
+            selector === 'pre' ? (turns[i]!.codeCopy ? {} : null) : roots[i],
           compareDocumentPosition: (other: unknown) =>
             buttons.indexOf(other as never) > i ? 4 : 2,
         },
   );
-  const roots = turns.map((_, i) => ({
-    querySelector: () => contents[i],
+  const roots = turns.map((turn, i) => ({
+    innerText: turn.contentOnTurn ? turn.text : undefined,
+    matches: (selector: string) =>
+      !!turn.contentOnTurn && selector.includes('data-message-author-role'),
+    querySelector: (selector: string) =>
+      turn.contentOnTurn || !selector.includes('data-message-author-role') ? null : contents[i],
     compareDocumentPosition: (other: unknown) => (roots.indexOf(other as never) > i ? 4 : 2),
   }));
   const main = {
     querySelectorAll: (selector: string) => {
-      if (selector === 'button[aria-label="Copy"]') return buttons.filter(Boolean);
+      if (selector === 'button[aria-label="Copy"]')
+        return buttons.flatMap((button, i) =>
+          button ? (turns[i]!.duplicateCopy ? [button, { ...button }] : [button]) : [],
+        );
       if (selector === '[data-talvt-turn-state="complete"]')
         return roots.filter((_, i) => turns[i]!.complete !== false);
       return [];
@@ -230,13 +248,29 @@ function replyFixture(
     },
   };
   let now = 0;
+  const defaultPath = '/c/6af2c758-e5d0-83ee-9f50-6d557684e923';
+  const fetches: Array<{ url: string; auth: string | undefined }> = [];
+  const fetch = vi.fn(async (url: string, init?: { headers?: Record<string, string> }) => {
+    if (!url.startsWith('/backend-api/conversation/'))
+      return { ok: true, json: async () => ({ user: {}, accessToken: 'token' }) };
+    fetches.push({ url, auth: init?.headers?.authorization });
+    return {
+      ok: options.conversation !== undefined && (options.conversationStatus ?? 200) === 200,
+      json: async () => options.conversation,
+    };
+  });
   const globals = {
     document,
-    navigator: { clipboard: options.clipboard === 'missing' ? undefined : clipboard },
+    location: {
+      pathname: options.path ?? defaultPath,
+      href: options.pageUrl ?? `https://chatgpt.com${options.path ?? defaultPath}`,
+    },
     Node: { DOCUMENT_POSITION_FOLLOWING: 4 },
     Date: { now: () => (now += 500) },
     setTimeout: (callback: () => void) => callback(),
-    fetch: async () => ({ ok: true, json: async () => ({ user: {}, accessToken: 'token' }) }),
+    fetch,
+    URL,
+    AbortSignal,
   };
   const execute = (code: string, context: object) =>
     runInNewContext(`(async () => { ${code}\n })()`, context) as Promise<unknown>;
@@ -248,29 +282,166 @@ function replyFixture(
         }),
       },
     });
-  return { run, clipboard, buttons };
+  return { run, buttons, fetches, fetch };
 }
 
+const conversationUrl = 'https://chatgpt.com/c/11111111-1111-4111-8111-111111111111';
+const userMessage = (text: string) => ({
+  author: { role: 'user' },
+  content: { content_type: 'text', parts: [text] },
+});
+const finalMessage = (text: string, over: Record<string, unknown> = {}) => ({
+  author: { role: 'assistant' },
+  recipient: 'all',
+  channel: 'final',
+  status: 'finished_successfully',
+  end_turn: true,
+  content: { content_type: 'text', parts: [text] },
+  ...over,
+});
+function conversation(messages: unknown[]) {
+  return {
+    current_node: String(messages.length - 1),
+    mapping: Object.fromEntries(
+      messages.map((message, index) => [
+        String(index),
+        { parent: index ? String(index - 1) : null, message },
+      ]),
+    ),
+  };
+}
+
+describe('ChatGPT saved final reply collection', () => {
+  // Attempt 4: final text was complete JSON, but model_dil_v2 rendered null and
+  // fallbackMarkdown was empty. The temporary chat could be read via this GET
+  // even after reopening its UI failed. No prompt or script content is retained.
+  it('recovers a finished answer with a blank UI render through the job conversation URL', async () => {
+    const text = JSON.stringify({ status: 'ok', result: 'London\n'.repeat(3000) });
+    const saved = conversation([
+      userMessage('Write the documentary'),
+      finalMessage('', { end_turn: false, content: { content_type: 'thoughts' } }),
+      finalMessage('', { end_turn: false, channel: null, recipient: 'web.run' }),
+      { author: { role: 'tool' }, content: { content_type: 'execution_output' } },
+      finalMessage('', { end_turn: false, content: { content_type: 'reasoning_recap' } }),
+      finalMessage(text, {
+        metadata: { model_dil_v2: { code: 'DIL.render(() => null)', fallbackMarkdown: '' } },
+      }),
+    ]);
+    const f = replyFixture([{ text: '' }], { conversation: saved });
+    expect(
+      await f.run(pageStateScript(120, 'Write the documentary', conversationUrl)),
+    ).toMatchObject({
+      replyDone: true,
+      replyCount: 1,
+      replyAfterLastUser: true,
+      lastUserPromptMatches: true,
+      generating: false,
+    });
+    expect(await f.run(copyLastReplyScript(120, 0, conversationUrl))).toBe(text);
+    expect(f.fetch).toHaveBeenCalledWith(
+      '/backend-api/conversation/11111111-1111-4111-8111-111111111111',
+      expect.objectContaining({
+        credentials: 'include',
+        headers: { authorization: 'Bearer token' },
+      }),
+    );
+  });
+
+  it('uses the resolved page URL when submission captured a local-chatgpt placeholder', async () => {
+    const f = replyFixture([{ text: '' }], {
+      pageUrl: conversationUrl,
+      conversation: conversation([userMessage('prompt'), finalMessage('Recovered')]),
+    });
+    expect(
+      await f.run(copyLastReplyScript(120, 0, 'https://chatgpt.com/c/local-chatgpt%3A123')),
+    ).toBe('Recovered');
+  });
+
+  it.each([
+    { end_turn: false },
+    { status: 'in_progress' },
+    { status: 'finished_partial' },
+    { status: 'error' },
+    { channel: 'analysis' },
+    { recipient: 'container.exec' },
+    { content: { content_type: 'thoughts', parts: ['Reasoning'] } },
+    { content: { content_type: 'text', parts: [''] } },
+    { content: { content_type: 'text', parts: [{ text: 'Not plain text' }] } },
+  ])('does not accept a non-final, failed, partial or empty message: %j', async (over) => {
+    const f = replyFixture([{ text: '' }], {
+      conversation: conversation([userMessage('prompt'), finalMessage('Unusable', over)]),
+    });
+    expect(await f.run(pageStateScript(120, undefined, conversationUrl))).toMatchObject({
+      replyDone: false,
+      replyCount: 0,
+    });
+    expect(await f.run(copyLastReplyScript(120, undefined, conversationUrl))).toBeNull();
+  });
+
+  it('waits through long reasoning without a Stop button and ignores old/alternate replies', async () => {
+    const saved = conversation([
+      userMessage('first'),
+      finalMessage('old answer'),
+      userMessage('revision'),
+      finalMessage('thinking', {
+        end_turn: false,
+        channel: null,
+        content: { content_type: 'thoughts' },
+      }),
+    ]);
+    Object.assign(saved.mapping, {
+      unused: { parent: '2', message: finalMessage('wrong branch') },
+    });
+    const f = replyFixture([{ text: 'old answer' }], { conversation: saved });
+    expect(await f.run(pageStateScript(120, 'revision', conversationUrl))).toMatchObject({
+      generating: true,
+      replyDone: false,
+      replyCount: 1,
+      replyAfterLastUser: false,
+      lastUserPromptMatches: true,
+    });
+    expect(await f.run(copyLastReplyScript(120, 1, conversationUrl))).toBeNull();
+    expect(await f.run(copyLastReplyScript(120, undefined, conversationUrl))).toBeNull();
+  });
+
+  it('collects only the revised final on the active branch with a stable turn count', async () => {
+    const f = replyFixture([{ text: '' }], {
+      conversation: conversation([
+        userMessage('first'),
+        finalMessage('old answer'),
+        userMessage('revision'),
+        finalMessage('{"revision":2}'),
+      ]),
+    });
+    expect(await f.run(pageStateScript(120, undefined, conversationUrl))).toMatchObject({
+      replyCount: 2,
+    });
+    expect(await f.run(copyLastReplyScript(120, 1, conversationUrl))).toBe('{"revision":2}');
+    expect(await f.run(copyLastReplyScript(120, 2, conversationUrl))).toBeNull();
+  });
+
+  it('falls back to readable DOM content on an unavailable endpoint, but never a blank completion', async () => {
+    const readable = replyFixture([{ text: 'Completed' }], { conversationStatus: 403 });
+    expect(await readable.run(copyLastReplyScript(120, 0, conversationUrl))).toBe('Completed');
+    const blank = replyFixture([{ text: '' }], { conversationStatus: 404 });
+    expect(await blank.run(pageStateScript(120, undefined, conversationUrl))).toMatchObject({
+      replyDone: false,
+    });
+    expect(await blank.run(copyLastReplyScript(120, 0, conversationUrl))).toBeNull();
+  });
+});
+
 describe('ChatGPT completed reply collection', () => {
-  it('recovers a completed structured reply when Copy does not reach the clipboard shim', async () => {
+  it('falls back to the rendered reply when the conversation API cannot answer', async () => {
     const json = '{\n  "status": "ok",\n  "result": {"title": "Victorian London"}\n}';
-    const { run, clipboard } = replyFixture([{ text: json }]);
+    const { run } = replyFixture([{ text: json }]);
     const reply = await run(copyLastReplyScript(65));
     expect(reply).toBe(json);
     expect(JSON.parse(reply as string)).toEqual({
       status: 'ok',
       result: { title: 'Victorian London' },
     });
-    expect(clipboard.writeText).not.toHaveBeenCalled();
   });
-
-  it.each(['missing', 'readonly'] as const)(
-    'recovers when the clipboard is %s',
-    async (clipboard) => {
-      const { run } = replyFixture([{ text: 'Completed response' }], { clipboard });
-      expect(await run(copyLastReplyScript(65))).toBe('Completed response');
-    },
-  );
 
   it('polls and collects a completed reply without a Copy control', async () => {
     const { run } = replyFixture([{ text: '{"result":42}', copy: false }]);
@@ -278,12 +449,54 @@ describe('ChatGPT completed reply collection', () => {
     expect(await run(copyLastReplyScript(65))).toBe('{"result":42}');
   });
 
-  it('prefers copied markdown and restores both original clipboard methods', async () => {
-    const { run, clipboard } = replyFixture([{ text: 'Title', copied: '**Title**' }]);
-    const { write, writeText } = clipboard;
-    expect(await run(copyLastReplyScript(65))).toBe('**Title**');
-    expect(clipboard.write).toBe(write);
-    expect(clipboard.writeText).toBe(writeText);
+  it("reads the current turn's markdown from the conversation API", async () => {
+    const msg = (role: string, parts: unknown, extra: object = {}) => ({
+      author: { role },
+      recipient: 'all',
+      status: 'finished_successfully',
+      end_turn: true,
+      content: { content_type: 'text', parts },
+      ...extra,
+    });
+    const saved = {
+      current_node: 'recap',
+      mapping: {
+        old: { parent: null, message: msg('assistant', ['Earlier answer']) },
+        user: { parent: 'old', message: msg('user', ['Prompt']) },
+        search: { parent: 'user', message: msg('assistant', [''], { recipient: 'web.run' }) },
+        answer: { parent: 'search', message: msg('assistant', ['# **Title**']) },
+        recap: {
+          parent: 'answer',
+          message: {
+            author: { role: 'assistant' },
+            recipient: 'all',
+            content: { content_type: 'reasoning_recap' },
+          },
+        },
+      },
+    };
+    const { run, fetches } = replyFixture([{ text: 'Title' }], { conversation: saved });
+    expect(await run(copyLastReplyScript(65))).toBe('# **Title**');
+    expect(fetches).toEqual([
+      {
+        url: '/backend-api/conversation/6af2c758-e5d0-83ee-9f50-6d557684e923',
+        auth: 'Bearer token',
+      },
+    ]);
+  });
+
+  it('never reads an earlier turn from the API and never queries a placeholder chat', async () => {
+    const pending = conversation([finalMessage('Earlier'), userMessage('Prompt')]);
+    // The saved conversation says the current turn has no answer yet: nothing is collected,
+    // and the earlier turn's text is never substituted.
+    const waiting = replyFixture([{ text: 'Rendered' }], { conversation: pending });
+    expect(await waiting.run(copyLastReplyScript(65))).toBeNull();
+    const local = replyFixture([{ text: 'Rendered' }], {
+      conversation: pending,
+      path: '/c/local-chatgpt%3Aabc',
+    });
+    expect(await local.run(copyLastReplyScript(65))).toBe('Rendered');
+    expect(local.fetches).toEqual([]);
   });
 
   it('never substitutes the previous turn while waiting for a revision', async () => {
@@ -310,7 +523,135 @@ describe('ChatGPT completed reply collection', () => {
 
   it('reads a long JSON reply through Neo result chunks without truncation', async () => {
     const json = JSON.stringify({ text: 'London\n'.repeat(1500) });
-    const { run } = replyFixture([{ text: json }], { clipboard: 'missing' });
+    const { run } = replyFixture([{ text: json }]);
     expect(await run(copyLastReplyScript(65))).toBe(json);
+  });
+
+  it.each([true, false])(
+    'collects long structured content when the completed turn is the assistant node (Copy=%s)',
+    async (copy) => {
+      const json = JSON.stringify({
+        scenes: Array.from({ length: 80 }, () => 'London雪🌍\n'.repeat(100)),
+      });
+      const { run } = replyFixture([
+        { text: 'Earlier answer' },
+        { text: json, contentOnTurn: true, copy },
+      ]);
+      expect(await run(pageStateScript(65))).toMatchObject({ replyCount: 2 });
+      expect(await run(copyLastReplyScript(65, 1))).toBe(json);
+    },
+  );
+
+  it('does not count a code-block Copy control as a completed response', async () => {
+    const { run } = replyFixture([
+      { text: 'Earlier answer' },
+      { text: '{"partial":', codeCopy: true, complete: false },
+    ]);
+    expect(await run(pageStateScript(65))).toMatchObject({ replyCount: 1 });
+    expect(await run(copyLastReplyScript(65, 1))).toBeNull();
+  });
+
+  it('reads the complete assistant response instead of copying only a code block', async () => {
+    const { run, buttons } = replyFixture([
+      { text: 'Full answer with code and explanation', codeCopy: true },
+    ]);
+    expect(await run(pageStateScript(65))).toMatchObject({ replyCount: 1 });
+    expect(await run(copyLastReplyScript(65))).toBe('Full answer with code and explanation');
+    expect(buttons[0]?.click).not.toHaveBeenCalled();
+  });
+
+  it('counts one completed turn even if it has duplicate Copy controls', async () => {
+    const { run } = replyFixture([{ text: 'Earlier answer', duplicateCopy: true }]);
+    expect(await run(pageStateScript(65))).toMatchObject({ replyCount: 1 });
+    expect(await run(copyLastReplyScript(65, 1))).toBeNull();
+  });
+});
+
+describe('ChatGPT prompt sending', () => {
+  it('pastes the prompt as plain text in line-aligned chunks that rebuild it exactly', async () => {
+    const prompt =
+      Array.from(
+        { length: 900 },
+        (_, i) => `Line ${i}: <tag> "quoted" \\ ${'x'.repeat(i % 40)}`,
+      ).join('\n') +
+      '\n' +
+      'y'.repeat(PASTE_CHUNK + 10);
+    const pasted: string[] = [];
+    let text = '';
+    let sent = false;
+    const composer = {
+      focus: () => undefined,
+      get innerText() {
+        return text;
+      },
+      dispatchEvent: (event: {
+        type: string;
+        clipboardData: { getData: (t: string) => string };
+      }) => {
+        const chunk = event.clipboardData.getData('text/plain');
+        pasted.push(chunk);
+        text += chunk;
+        return true;
+      },
+    };
+    const location = { pathname: '/', href: 'https://chatgpt.com/' };
+    const send = {
+      disabled: false,
+      click: () => {
+        sent = true;
+        location.pathname = '/c/abc';
+      },
+    };
+    class DataTransfer {
+      data: Record<string, string> = {};
+      setData(t: string, v: string) {
+        this.data[t] = v;
+      }
+      getData(t: string) {
+        return this.data[t] ?? '';
+      }
+    }
+    class ClipboardEvent {
+      type: string;
+      clipboardData: DataTransfer;
+      constructor(type: string, init: { clipboardData: DataTransfer }) {
+        this.type = type;
+        this.clipboardData = init.clipboardData;
+      }
+    }
+    const document = {
+      querySelector: (sel: string) =>
+        sel === '[aria-label="Ask ChatGPT"]'
+          ? composer
+          : sel === 'button[aria-label="Send"]'
+            ? send
+            : null,
+      execCommand: () => {
+        throw new Error('insertText must not be used');
+      },
+    };
+    const globals = {
+      document,
+      location,
+      DataTransfer,
+      ClipboardEvent,
+      Date: { now: () => 0 },
+      setTimeout: (cb: () => void) => cb(),
+    };
+    const execute = (code: string, context: object) =>
+      runInNewContext(`(async () => { ${code}\n })()`, context) as Promise<unknown>;
+    const result = await execute(sendPromptScript(65, prompt), {
+      browser: {
+        page: () => ({
+          evaluateInPage: async (code: string) => ({ value: await execute(code, globals) }),
+        }),
+      },
+    });
+    expect(result).toEqual({ url: 'https://chatgpt.com/' });
+    expect(sent).toBe(true);
+    expect(pasted.join('')).toBe(prompt);
+    expect(pasted.length).toBeGreaterThan(1);
+    expect(pasted.every((chunk) => chunk.length <= PASTE_CHUNK)).toBe(true);
+    expect(pasted.slice(0, -2).every((chunk) => chunk.endsWith('\n'))).toBe(true);
   });
 });

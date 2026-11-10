@@ -24,11 +24,19 @@ quality-control call that cannot reach the judge waits 30 s, then 2 min, between
 | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `submit` | Open a tab: a **temporary chat** for text; a **regular chat** for images, because image generation is unavailable in temporary chats. Check sign-in, set effort, attach references, type, send.                                                                                                                                                                                                                                                                                       |
 | `poll`   | Read the tab: Stop button means running; the reply's Copy button or an explicit completed turn with assistant content means text is done; a loaded `Generated image` means an image is done. A reply with several images shows one large image plus a strip of thumbnails; each thumbnail already holds its own full-size image, so `poll` and `fetch` read them all from the strip (no clicking) and `poll` gives a reply with fewer images than asked for 30 s before accepting it. |
-| `fetch`  | Text: capture what ChatGPT's own Copy button writes (markdown), falling back to the completed assistant content's rendered text if Copy or clipboard capture is unavailable. Strip web-search citation tokens and parse JSON for `data`/`timeline`. Image: download every generated image, then archive the chat. Close the tab, but only once the result is in hand: a failed read leaves the tab open for the retry.                                                                |
+| `fetch`  | Text: read the finished reply's markdown from the saved conversation (see below), falling back to the completed assistant content's rendered text. Strip web-search citation tokens, unwrap the reply format's `<escape>` blocks, and parse JSON for `data`/`timeline`. Image: download every generated image, then archive the chat. Close the tab, but only once the result is in hand: a failed read leaves the tab open for the retry.                                            |
 | `cancel` | Click Stop, archive the chat (images), and close the tab.                                                                                                                                                                                                                                                                                                                                                                                                                             |
 
 Costs settle at `$0`. The job handle holds only the Neo page id, and Neo tabs outlive API
 restarts, so a restart mid-job keeps polling the same tab.
+
+For text replies, polling and collection first read the saved conversation through the signed-in
+tab (ChatGPT's Copy button no longer yields markdown). They follow only its current branch and
+accept nonempty, successfully finished assistant text with an ended turn, excluding reasoning
+and tool calls. This also recovers answers whose
+ChatGPT UI renderer returns nothing even though the saved final text is complete. The job's
+conversation URL keeps this read scoped correctly if the UI has redirected. When that read is
+unavailable, the Copy/rendered-text path above is used; a blank completed turn is never success.
 
 ### Prompt assembly
 
@@ -94,7 +102,7 @@ For a live text and single-image continuation check against the signed-in Neo se
 
 With `pnpm dev` running and Neo signed in:
 
-1. Text stage, Instant, no search: the output matches ChatGPT's copied reply, and no new chat
+1. Text stage, Instant, no search: the output matches ChatGPT's reply, markdown intact, and no new chat
    appears in history.
 2. Text stage, High, web search on: the reply cites current information, with no
    `:chatgpt-content-reference` tokens.
