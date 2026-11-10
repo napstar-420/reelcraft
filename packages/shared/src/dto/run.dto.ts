@@ -251,6 +251,11 @@ export type StageAttemptDto = z.infer<typeof StageAttemptDto>;
 
 export const ArtifactViewDto = z.object({
   id: z.string(),
+  /** The model that generated it, when one did. Changing a stage's model keeps its output. */
+  madeWith: z
+    .object({ provider: z.string(), modelId: z.string(), version: z.string().optional() })
+    .nullable()
+    .optional(),
   kind: z.enum([
     'data',
     'text',

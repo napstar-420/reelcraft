@@ -7,6 +7,7 @@ import { and, asc, desc, eq, inArray, isNotNull, isNull, lte, ne, or, sql } from
 import type {
   CreateRunDto,
   ContinueRunDto,
+  ArtifactViewDto,
   ConfigLayer,
   ReferenceImage,
   RoleDef,
@@ -1658,6 +1659,7 @@ export class RunService {
     return {
       id: row.id,
       kind: row.kind,
+      madeWith: (row.repro as { model?: ArtifactViewDto['madeWith'] } | null)?.model ?? null,
       ...(clips && { clips }),
       ...(images && { images }),
       ...(candidates && { candidates }),

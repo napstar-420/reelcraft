@@ -14,6 +14,9 @@ opens beside the canvas. On the run page, select a stage in the pipeline to open
 
 - **Output** shows the accepted artifact, linked to its producing attempt. Iteration items appear in a
   searchable, numerically ordered navigator, including unfinished items. Progress is separate from attempts.
+  Above a generated output, **Made with** names the model that made it. On the canvas, if you've since
+  changed the stage's model, it says **Made with a different model**: changing the model keeps the
+  output, so run the stage again when you want one from the new model.
 - **Attempts** shows candidates, duration, cost, check results, QC/review feedback, and expandable raw logs.
   Rejected and historical candidates are identified separately from the current accepted output.
 - **Inputs & dependencies** (on the canvas) shows recorded inputs, source artifact/memory versions, and the

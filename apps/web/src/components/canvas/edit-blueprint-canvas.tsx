@@ -1096,6 +1096,11 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
                         open
                         actions={canvasRun.run.availableActions?.busy ? undefined : runActions}
                         freshness={runActions.staleStageKeys.has(selectedKey) ? 'stale' : undefined}
+                        currentModel={
+                          shown.graph.find((s) => s.key === selectedKey)?.model ??
+                          shown.defaults.model ??
+                          undefined
+                        }
                         stageRunning={canvasRun.run.availableActions?.busy}
                         initialTab={runActions.attemptsSheetKey ? 'Attempts' : 'Output'}
                         onOpenChange={(open) => {

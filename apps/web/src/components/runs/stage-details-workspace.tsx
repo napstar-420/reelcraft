@@ -10,7 +10,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
-import { STALE_WARNING, itemEmptyText, itemMark } from './stage-drawer.logic';
+import { STALE_WARNING, itemEmptyText, itemMark, madeWithText } from './stage-drawer.logic';
 import { StageExecutionControls } from './execution-controls';
 import { ArtifactPreview } from './artifact-preview';
 import { MotionCodeEditor } from './motion-code-editor';
@@ -31,6 +31,8 @@ export type StageDetailsProps = {
   actions?: RunExecutionActions | undefined;
   stageRunning?: boolean | undefined;
   freshness?: 'stale' | 'validation' | undefined;
+  /** The stage's model in the definition being edited, to say when an output was made with another. */
+  currentModel?: { provider?: string | undefined; modelId?: string | undefined } | undefined;
   embedded?: boolean;
   onToggleExpanded?: (() => void) | undefined;
   initialTab?: DetailTab;
@@ -44,6 +46,7 @@ export function StageDetailsWorkspace({
   actions,
   stageRunning,
   freshness,
+  currentModel,
   embedded = false,
   onToggleExpanded,
   initialTab = 'Output',
@@ -284,6 +287,11 @@ export function StageDetailsWorkspace({
                       {STALE_WARNING}
                     </p>
                   ) : null}
+                  {madeWithText(artifact.madeWith, currentModel) && (
+                    <p className="mb-2 text-xs text-muted-foreground">
+                      {madeWithText(artifact.madeWith, currentModel)}
+                    </p>
+                  )}
                   <ArtifactPreview artifact={artifact} />
                   {stageKey &&
                   !showingOld &&

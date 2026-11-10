@@ -536,6 +536,8 @@ describe('unified resumable execution', () => {
         ),
       );
     expect(output?.data).toEqual({ text: { text: 'second' } });
+    const view = await runs.stageOutput(created.id, 'a');
+    expect(view.items[0]?.artifact.madeWith).toEqual({ provider: 'fake', modelId: 'fake-text-1' });
   });
   it('applies a reconnected downstream stage on Continue, and blocks a stage-only run that would not apply it', async () => {
     const { created, version } = await fixture([stage('a'), stage('b', ['a']), stage('c', ['b'])]);

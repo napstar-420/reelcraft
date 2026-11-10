@@ -1400,7 +1400,17 @@ export class StageRunnerService {
         schemaHash: this.schemaValidator.hashOf(stage.output.schema),
       }),
       reproLevel: result.repro.level,
-      repro: result.repro,
+      // Which model made it, so a later model change can keep the output and still say so.
+      repro: effective.model
+        ? {
+            ...result.repro,
+            model: {
+              provider: effective.model.provider,
+              modelId: effective.model.modelId,
+              ...(effective.model.version && { version: effective.model.version }),
+            },
+          }
+        : result.repro,
       costUsd: result.costUsd,
     });
     if (persistedClips.length) {
