@@ -568,90 +568,97 @@ describe('ChatGPT completed reply collection', () => {
 });
 
 describe('ChatGPT prompt sending', () => {
-  it('pastes the prompt as plain text in line-aligned chunks that rebuild it exactly', async () => {
-    const prompt =
-      Array.from(
-        { length: 900 },
-        (_, i) => `Line ${i}: <tag> "quoted" \\ ${'x'.repeat(i % 40)}`,
-      ).join('\n') +
-      '\n' +
-      'y'.repeat(PASTE_CHUNK + 10);
-    const pasted: string[] = [];
-    let text = '';
-    let sent = false;
-    const composer = {
-      focus: () => undefined,
-      get innerText() {
-        return text;
-      },
-      dispatchEvent: (event: {
+  const longPrompt =
+    Array.from(
+      { length: 900 },
+      (_, i) => `Line ${i}: <tag> "quoted" \\ ${'x'.repeat(i % 40)}`,
+    ).join('\n') +
+    '\n' +
+    'y'.repeat(PASTE_CHUNK + 10);
+  it.each([
+    ['many lines', longPrompt],
+    // A line end exactly one past the limit must not stretch a chunk to PASTE_CHUNK + 1.
+    ['a line end just past the limit', 'a'.repeat(PASTE_CHUNK) + '\n' + 'b'.repeat(50)],
+  ])(
+    'pastes the prompt as plain text in line-aligned chunks that rebuild it exactly: %s',
+    async (_name, prompt) => {
+      const pasted: string[] = [];
+      let text = '';
+      let sent = false;
+      const composer = {
+        focus: () => undefined,
+        get innerText() {
+          return text;
+        },
+        dispatchEvent: (event: {
+          type: string;
+          clipboardData: { getData: (t: string) => string };
+        }) => {
+          const chunk = event.clipboardData.getData('text/plain');
+          pasted.push(chunk);
+          text += chunk;
+          return true;
+        },
+      };
+      const location = { pathname: '/', href: 'https://chatgpt.com/' };
+      const send = {
+        disabled: false,
+        click: () => {
+          sent = true;
+          location.pathname = '/c/abc';
+        },
+      };
+      class DataTransfer {
+        data: Record<string, string> = {};
+        setData(t: string, v: string) {
+          this.data[t] = v;
+        }
+        getData(t: string) {
+          return this.data[t] ?? '';
+        }
+      }
+      class ClipboardEvent {
         type: string;
-        clipboardData: { getData: (t: string) => string };
-      }) => {
-        const chunk = event.clipboardData.getData('text/plain');
-        pasted.push(chunk);
-        text += chunk;
-        return true;
-      },
-    };
-    const location = { pathname: '/', href: 'https://chatgpt.com/' };
-    const send = {
-      disabled: false,
-      click: () => {
-        sent = true;
-        location.pathname = '/c/abc';
-      },
-    };
-    class DataTransfer {
-      data: Record<string, string> = {};
-      setData(t: string, v: string) {
-        this.data[t] = v;
+        clipboardData: DataTransfer;
+        constructor(type: string, init: { clipboardData: DataTransfer }) {
+          this.type = type;
+          this.clipboardData = init.clipboardData;
+        }
       }
-      getData(t: string) {
-        return this.data[t] ?? '';
-      }
-    }
-    class ClipboardEvent {
-      type: string;
-      clipboardData: DataTransfer;
-      constructor(type: string, init: { clipboardData: DataTransfer }) {
-        this.type = type;
-        this.clipboardData = init.clipboardData;
-      }
-    }
-    const document = {
-      querySelector: (sel: string) =>
-        sel === '[aria-label="Ask ChatGPT"]'
-          ? composer
-          : sel === 'button[aria-label="Send"]'
-            ? send
-            : null,
-      execCommand: () => {
-        throw new Error('insertText must not be used');
-      },
-    };
-    const globals = {
-      document,
-      location,
-      DataTransfer,
-      ClipboardEvent,
-      Date: { now: () => 0 },
-      setTimeout: (cb: () => void) => cb(),
-    };
-    const execute = (code: string, context: object) =>
-      runInNewContext(`(async () => { ${code}\n })()`, context) as Promise<unknown>;
-    const result = await execute(sendPromptScript(65, prompt), {
-      browser: {
-        page: () => ({
-          evaluateInPage: async (code: string) => ({ value: await execute(code, globals) }),
-        }),
-      },
-    });
-    expect(result).toEqual({ url: 'https://chatgpt.com/' });
-    expect(sent).toBe(true);
-    expect(pasted.join('')).toBe(prompt);
-    expect(pasted.length).toBeGreaterThan(1);
-    expect(pasted.every((chunk) => chunk.length <= PASTE_CHUNK)).toBe(true);
-    expect(pasted.slice(0, -2).every((chunk) => chunk.endsWith('\n'))).toBe(true);
-  });
+      const document = {
+        querySelector: (sel: string) =>
+          sel === '[aria-label="Ask ChatGPT"]'
+            ? composer
+            : sel === 'button[aria-label="Send"]'
+              ? send
+              : null,
+        execCommand: () => {
+          throw new Error('insertText must not be used');
+        },
+      };
+      const globals = {
+        document,
+        location,
+        DataTransfer,
+        ClipboardEvent,
+        Date: { now: () => 0 },
+        setTimeout: (cb: () => void) => cb(),
+      };
+      const execute = (code: string, context: object) =>
+        runInNewContext(`(async () => { ${code}\n })()`, context) as Promise<unknown>;
+      const result = await execute(sendPromptScript(65, prompt), {
+        browser: {
+          page: () => ({
+            evaluateInPage: async (code: string) => ({ value: await execute(code, globals) }),
+          }),
+        },
+      });
+      expect(result).toEqual({ url: 'https://chatgpt.com/' });
+      expect(sent).toBe(true);
+      expect(pasted.join('')).toBe(prompt);
+      expect(pasted.length).toBeGreaterThan(1);
+      expect(pasted.every((chunk) => chunk.length <= PASTE_CHUNK)).toBe(true);
+      expect(pasted.slice(0, -2).every((chunk) => chunk.endsWith('\n'))).toBe(true);
+    },
+  );
 });

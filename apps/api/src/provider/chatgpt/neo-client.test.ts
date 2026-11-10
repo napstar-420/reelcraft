@@ -49,6 +49,24 @@ describe('NeoClient', () => {
     expect(callTool).toHaveBeenCalledTimes(4);
   });
 
+  it('does not drop a fresh connection when concurrent calls fail on the old one', async () => {
+    const connect = vi.spyOn(Client.prototype, 'connect').mockResolvedValue(undefined);
+    connect.mockClear();
+    const close = vi.spyOn(Client.prototype, 'close').mockResolvedValue(undefined);
+    close.mockClear();
+    const gone = { content: [], structuredContent: { ok: false, error: 'group_out_of_scope: AB' } };
+    vi.spyOn(Client.prototype, 'callTool')
+      .mockResolvedValueOnce(gone)
+      .mockResolvedValueOnce(gone)
+      .mockResolvedValue(ok);
+
+    const neo = new NeoClient(config);
+    await expect(Promise.all([neo.run('a'), neo.run('b')])).resolves.toEqual([7, 7]);
+    // One reconnect serves both retries; the second failure must not close it again.
+    expect(connect).toHaveBeenCalledTimes(2);
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
   it('does not replay other failures', async () => {
     vi.spyOn(Client.prototype, 'connect').mockResolvedValue(undefined);
     const callTool = vi

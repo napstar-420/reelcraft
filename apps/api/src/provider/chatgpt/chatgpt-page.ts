@@ -367,7 +367,7 @@ const pastedFile = () => !!document.querySelector('button[aria-label="Remove pas
 const type = () => {
   box().focus();
   for (let rest = args.prompt; rest.length > 0; ) {
-    let cut = rest.length <= args.chunk ? rest.length : rest.lastIndexOf('\\n', args.chunk) + 1;
+    let cut = rest.length <= args.chunk ? rest.length : rest.lastIndexOf('\\n', args.chunk - 1) + 1;
     if (cut <= 0) cut = args.chunk;
     const dt = new DataTransfer();
     dt.setData('text/plain', rest.slice(0, cut));

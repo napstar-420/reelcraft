@@ -38,7 +38,13 @@ export class NeoClient {
   /** Runs an async JS body against Neo's `browser` SDK (30s hard cap per call). */
   async run<T>(code: string, retried = false): Promise<T> {
     // Neo keeps only 25 KB inline by default and writes the rest to a file on its own machine.
-    const result = await this.call('run', { code, timeout: 30_000, maxChars: NEO_MAX_CHARS });
+    const used: { client?: Promise<Client> } = {};
+    const result = await this.call(
+      'run',
+      { code, timeout: 30_000, maxChars: NEO_MAX_CHARS },
+      false,
+      used,
+    );
     const structured = result.structuredContent;
     if (!structured) throw new Error(`BrowserOS Neo run returned no result: ${text(result)}`);
     if (structured.ok === false || result.isError) {
@@ -47,7 +53,8 @@ export class NeoClient {
       // pages in that session. The session holds no tabs and the refused call opened
       // nothing, so a fresh session (with a fresh group) can safely replay it.
       if (!retried && error.startsWith('group_out_of_scope')) {
-        this.dropClient();
+        // Only the connection that served this call: a concurrent call may already have replaced it.
+        this.dropClient(used.client);
         return this.run(code, true);
       }
       throw new Error(`BrowserOS Neo script failed: ${error}`);
@@ -62,9 +69,12 @@ export class NeoClient {
     name: string,
     args: Record<string, unknown>,
     retried = false,
+    used?: { client?: Promise<Client> },
   ): Promise<ToolResult> {
     try {
-      const client = await this.connect(await this.settings.browserOsUrl());
+      const connecting = this.connect(await this.settings.browserOsUrl());
+      if (used) used.client = connecting;
+      const client = await connecting;
       return (await client.callTool({
         name,
         arguments: { agentName: AGENT_NAME, ...args },
@@ -101,8 +111,10 @@ export class NeoClient {
     }
   }
 
-  private dropClient(): void {
+  /** Closes the cached connection; with `only`, just when it is still that one. */
+  private dropClient(only?: Promise<Client>): void {
     const old = this.client;
+    if (only && old !== only) return;
     this.client = undefined;
     void old?.then((client) => client.close()).catch(() => undefined);
   }
