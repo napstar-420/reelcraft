@@ -685,8 +685,8 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
         : 'as the first stage';
   const selectedExecution = canvasRun.run?.stageExecutions.find((e) => e.stageKey === selectedKey);
   /** The test run as the canvas shows it: a passed stage whose output an edit made out of date
-   * reads as stale, and stage actions a fresh run is needed for are withdrawn. The outline and
-   * the graph both show this one. */
+   * reads as stale, and stage actions a fresh run is needed for are withdrawn. The graph shows
+   * this one; the outline shows the real run state. */
   const decoratedRun = canvasRun.run
     ? {
         ...canvasRun.run,
@@ -906,7 +906,9 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
             focus={focus}
             issuesByStage={issuesByStage}
             editedKeys={editedKeys}
-            run={readOnly ? undefined : decoratedRun}
+            // The real test-run state, not the decorated one: an edit is already marked by the
+            // label colour, so the mark shows how the stage last ran instead of "stale".
+            run={readOnly ? undefined : canvasRun.run}
             readOnly={readOnly}
             onFocus={(next) => {
               if (next.kind === 'stage') selectStage(next.key);
