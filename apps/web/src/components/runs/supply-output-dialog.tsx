@@ -132,6 +132,8 @@ export function SupplyOutputDialog({
       className="font-mono text-xs"
       placeholder={kind?.type === 'timeline' ? '{"tracks": [ … ]}' : '{"key": "value"}'}
       aria-label="Output as JSON"
+      aria-invalid={error ? true : undefined}
+      aria-describedby={error ? 'supply-output-error' : undefined}
     />
   );
 
@@ -265,7 +267,7 @@ export function SupplyOutputDialog({
           {error ? (
             <Alert variant="destructive">
               <AlertTitle>Can&apos;t use this output</AlertTitle>
-              <AlertDescription>{error}</AlertDescription>
+              <AlertDescription id="supply-output-error">{error}</AlertDescription>
             </Alert>
           ) : null}
 
