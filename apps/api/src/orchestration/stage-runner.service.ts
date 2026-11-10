@@ -60,6 +60,8 @@ import { ArtifactAttachmentService } from '../artifact/artifact-attachment.servi
 import { StageEventService, type StageEventLevel } from './stage-event.service';
 import { ProviderContinuationUnavailableError } from '../provider/provider-adapter.interface';
 import { feedbackForAttempt, revisionPrompt } from './revision-feedback';
+import { audioPolicyViolation } from './audio-policy';
+import type { Probe } from '@reelcraft/shared';
 
 export class ExecutionRetiredError extends Error {}
 
@@ -69,6 +71,10 @@ export interface StageAttemptContext {
   /** A re-check of the stage's (or item's) current output, which stays active: a pass only
    * records the verdict, and nothing is finalized, written to memory or swapped. */
   inPlace?: boolean;
+  /** Who supplied the output this attempt judges, instead of the stage generating it. */
+  suppliedBy?: 'user' | 'assistant';
+  /** A supplied output whose checks and quality review the person chose to skip. */
+  skipValidation?: boolean;
   executionEpoch?: number | undefined;
   runId: string;
   stageExecutionId: string;
@@ -1532,6 +1538,19 @@ export class StageRunnerService {
         (item) =>
           !checkResults.some((result) => !result.pass && result.name.startsWith(`${item.label}: `)),
       );
+    } else if (ctx.skipValidation) {
+      // The person chose to use this output as it is: no checks, no quality review. The output
+      // contract was already validated when it was supplied. Its reads are still recorded.
+      checkResults = [];
+      await this.db
+        .update(stageAttempt)
+        .set({
+          resolvedInputs: {
+            ...bindings.provenance,
+            supplied: { by: ctx.suppliedBy ?? 'user', skipValidation: true },
+          },
+        })
+        .where(eq(stageAttempt.id, ctx.stageAttemptId));
     } else {
       const resolvedRefs: Array<Record<string, RefEnvelope>> = [];
       const checkProvenance: ResolvedBindings['provenance'] = {};
@@ -1554,13 +1573,25 @@ export class StageRunnerService {
           resolvedRefs.push({});
         }
       }
+      // A re-check keeps what the output was made from (the reads copied when it was requested),
+      // so upstream work re-run since can't be claimed as its input; only check reads are added.
+      const [existing] = ctx.inPlace
+        ? await this.db
+            .select({ resolvedInputs: stageAttempt.resolvedInputs })
+            .from(stageAttempt)
+            .where(eq(stageAttempt.id, ctx.stageAttemptId))
+            .limit(1)
+        : [];
       await this.db
         .update(stageAttempt)
         .set({
           resolvedInputs: {
-            ...bindings.provenance,
+            ...(ctx.inPlace
+              ? ((existing?.resolvedInputs as Record<string, unknown> | undefined) ?? {})
+              : bindings.provenance),
             ...checkProvenance,
             ...(ctx.inPlace && { recheck: { inPlace: true } }),
+            ...(ctx.suppliedBy && { supplied: { by: ctx.suppliedBy } }),
           },
         })
         .where(eq(stageAttempt.id, ctx.stageAttemptId));
@@ -1611,29 +1642,16 @@ export class StageRunnerService {
           })),
         );
       }
-      // Video is audio-bearing by default. A stage must explicitly request
-      // `forbidden` or `optional` to accept a silent provider result. A rendered
-      // motion graphic or Blender scene never has sound, so it may be silent unless
-      // asked otherwise.
-      if (stage.output.kind === 'media.video' && persistedMedia) {
-        const audioPolicy =
-          stage.output.constraints?.audio ??
-          (stage.capability === 'motion.render' || stage.capability === 'scene.render'
-            ? 'optional'
-            : 'required');
-        const hasAudio = persistedMedia.probe.streams.some((stream) => stream.type === 'audio');
-        if (
-          (audioPolicy === 'required' && !hasAudio) ||
-          (audioPolicy === 'forbidden' && hasAudio)
-        ) {
-          checkResults.push({
-            name: 'audio_constraint',
-            kind: 'builtin',
-            pass: false,
-            fault: 'artifact',
-            message: `video audio is ${hasAudio ? 'present' : 'absent'} but output requires ${audioPolicy}`,
-          });
-        }
+      const audioProblem =
+        persistedMedia && audioPolicyViolation(stage, persistedMedia.probe as Probe);
+      if (audioProblem) {
+        checkResults.push({
+          name: 'audio_constraint',
+          kind: 'builtin',
+          pass: false,
+          fault: 'artifact',
+          message: audioProblem,
+        });
       }
 
       // With candidates, a failing one is only dropped; the checks fail the
@@ -1665,7 +1683,7 @@ export class StageRunnerService {
     }
 
     let picked = false;
-    if (stage.qc && effective.qc) {
+    if (stage.qc && effective.qc && !ctx.skipValidation) {
       // §10.4 — "qc.capUsd is spent and an artifact cannot be judged...
       // does not spend past the cap": a cumulative-spend check against
       // confirmed qc-category ledger entries, not a reservation — see the
@@ -1871,9 +1889,11 @@ export class StageRunnerService {
       // A stage reviewed as a whole lets each item pass; `finishIteratingStage`
       // asks for the one review once every item has. Validation of a stored output
       // was already reviewed, or goes to review when it fails.
+      // A person's own supplied output needs no review either; the assistant's still does.
       if (
         stage.approval &&
-        !ctx.validationOnly &&
+        !ctx.inPlace &&
+        ctx.suppliedBy !== 'user' &&
         !(ctx.stageItemId && approvalModeOf(stage) === 'stage')
       ) {
         await this.openApprovalGate(tx, stage, ctx, checkResults);
@@ -2019,6 +2039,7 @@ export class StageRunnerService {
         runId: stageExecution.runId,
         stageKey: stageExecution.stageKey,
         artifactStale: artifact.stale,
+        resolvedInputs: stageAttempt.resolvedInputs,
       })
       .from(stageAttempt)
       .innerJoin(stageExecution, eq(stageExecution.id, stageAttempt.stageExecutionId))
@@ -2051,9 +2072,16 @@ export class StageRunnerService {
         .limit(1);
       itemIndex = item?.itemIndex;
     }
+    const supplied = (
+      row.resolvedInputs as {
+        supplied?: { by?: 'user' | 'assistant'; skipValidation?: boolean };
+      } | null
+    )?.supplied;
     return {
       validationOnly: row.actor === 'user',
       ...(row.actor === 'user' && row.artifactStale === false && { inPlace: true }),
+      ...(supplied?.by && { suppliedBy: supplied.by }),
+      ...(supplied?.skipValidation && { skipValidation: true }),
       executionEpoch: executionEpoch ?? row.executionEpoch,
       runId: row.runId,
       stageExecutionId,
@@ -2779,7 +2807,8 @@ export class StageRunnerService {
         .limit(1);
       if (
         newest?.outcome === 'success' &&
-        (newest.resolvedInputs as { recheck?: unknown } | null)?.recheck
+        ((newest.resolvedInputs as { recheck?: unknown } | null)?.recheck ||
+          (newest.resolvedInputs as { supplied?: { by?: string } } | null)?.supplied?.by === 'user')
       )
         awaitApproval = false;
     }

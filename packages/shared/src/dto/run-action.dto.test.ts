@@ -6,6 +6,7 @@ import {
   ManualArtifactEditDto,
   PatchRunOverridesDto,
 } from './run-action.dto';
+import { CreateStageOutputCandidateDto } from './run.dto';
 
 describe('run action DTOs', () => {
   it('distinguishes approval from rejection and carries the rejection preview token', () => {
@@ -79,5 +80,25 @@ describe('run action DTOs', () => {
     expect(HumanInputSubmissionDto.parse({ value: 'Use the documentary theme' })).toEqual({
       value: 'Use the documentary theme',
     });
+  });
+});
+
+describe('CreateStageOutputCandidateDto', () => {
+  it('takes exactly one of a value or files, and only Library assets or outputs as files', () => {
+    const base = { blueprintVersionId: 'v1' };
+    expect(CreateStageOutputCandidateDto.safeParse({ ...base, value: 'hi' }).success).toBe(true);
+    expect(CreateStageOutputCandidateDto.safeParse({ ...base, value: null }).success).toBe(true);
+    expect(
+      CreateStageOutputCandidateDto.safeParse({ ...base, files: [{ assetId: 'a' }] }).success,
+    ).toBe(true);
+    expect(CreateStageOutputCandidateDto.safeParse(base).success).toBe(false);
+    expect(
+      CreateStageOutputCandidateDto.safeParse({ ...base, value: 'x', files: [{ assetId: 'a' }] })
+        .success,
+    ).toBe(false);
+    // A chat attachment's blobId is the assistant's alone, never accepted over HTTP.
+    expect(
+      CreateStageOutputCandidateDto.safeParse({ ...base, files: [{ blobId: 'b' }] }).success,
+    ).toBe(false);
   });
 });

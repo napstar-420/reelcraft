@@ -183,6 +183,38 @@ export class RunStagePlanService {
     }
     if (request.mode === 'validate' && edited && !edited.qc && edited.checks.length === 0)
       blockedReason = 'This stage has no checks or quality criteria to run.';
+    // Supplying: the candidate becomes the stage's (or item's) output, and what follows goes stale.
+    let candidate: typeof artifact.$inferSelect | undefined;
+    if (request.mode === 'supply') {
+      [candidate] = request.artifactId
+        ? await this.db.select().from(artifact).where(eq(artifact.id, request.artifactId)).limit(1)
+        : [];
+      const used = candidate
+        ? await this.db
+            .select({ id: stageAttempt.id })
+            .from(stageAttempt)
+            .where(eq(stageAttempt.artifactId, candidate.id))
+            .limit(1)
+        : [];
+      if (!target || !edited || !request.stageKey || request.scope !== 'stage')
+        blockedReason = 'Choose one stage to supply an output for.';
+      else if (request.action !== 'rerun')
+        blockedReason = 'Supplying an output replaces the stage’s output.';
+      else if (freshness.changedStageKeys.includes(request.stageKey))
+        blockedReason =
+          'This stage changed since its output was made. Re-run it to apply the change, or undo it first.';
+      else if (target.iterate && request.itemIndex === undefined)
+        blockedReason = 'Choose which item to supply an output for.';
+      else if (
+        !candidate ||
+        candidate.runId !== runId ||
+        candidate.producerStageKey !== request.stageKey ||
+        (candidate.itemIndex ?? undefined) !== request.itemIndex ||
+        !candidate.stale ||
+        used.length
+      )
+        blockedReason = 'The output to use is no longer available. Supply it again.';
+    }
     const graphForScope = request.mode !== 'rebuild' ? before.graph : draft.graph;
     const deps = stageDependencies(graphForScope);
     // Outputs an earlier change made out of date: items of a done stage (one item re-run upstream),
@@ -421,6 +453,8 @@ export class RunStagePlanService {
       executionEpoch: current.executionEpoch,
       assetBindings,
       recheckArtifactIds: recheckTargets.map((t) => t.artifactId),
+      suppliedArtifactId: request.mode === 'supply' ? request.artifactId : undefined,
+      skipValidation: request.mode === 'supply' ? !!request.skipValidation : undefined,
     });
     const preview = await this.invalidation.preview({
       runId,
@@ -489,13 +523,17 @@ export class RunStagePlanService {
         request.mode === 'validate'
           ? (await this.lastQcSpend(runId, edited?.qc ? request.stageKey : undefined)) *
             recheckTargets.length
-          : request.itemIndex !== undefined
-            ? preview.costs
-                .filter((c) => execute.has(c.stageKey))
-                .reduce((sum, c) => sum + c.estimatedRerunUsd, 0)
-            : current.stageExecutions
-                .filter((e) => execute.has(e.stageKey))
-                .reduce((sum, e) => sum + toUsd(e.costUsd), 0),
+          : request.mode === 'supply'
+            ? request.skipValidation
+              ? 0
+              : await this.lastQcSpend(runId, edited?.qc ? request.stageKey : undefined)
+            : request.itemIndex !== undefined
+              ? preview.costs
+                  .filter((c) => execute.has(c.stageKey))
+                  .reduce((sum, c) => sum + c.estimatedRerunUsd, 0)
+              : current.stageExecutions
+                  .filter((e) => execute.has(e.stageKey))
+                  .reduce((sum, e) => sum + toUsd(e.costUsd), 0),
       blockedReason,
     };
     return {
@@ -513,6 +551,7 @@ export class RunStagePlanService {
       configFingerprint,
       assetBindings,
       recheckTargets,
+      candidate,
     };
   }
 
@@ -533,6 +572,110 @@ export class RunStagePlanService {
       .orderBy(desc(ledgerEntry.createdAt))
       .limit(1);
     return last ? toUsd(last.amountUsd) : 0;
+  }
+
+  /** Supplying: a created user attempt points at the candidate, which the engine then judges
+   * (checks and quality review, unless skipped) and finalizes like any generated output, so
+   * memory writes, approval and review-on-failure work the same way. */
+  private async requestSupply(
+    tx: Tx,
+    built: Awaited<ReturnType<RunStagePlanService['build']>>,
+    request: StageRunPlanRequestDto,
+    executionEpoch: number,
+  ) {
+    const candidate = built.candidate!;
+    const execution = built.current.stageExecutions.find((e) => e.stageKey === request.stageKey)!;
+    // Re-checked under the lock, so one candidate can't be used twice.
+    const [fresh] = await tx
+      .select({ stale: artifact.stale })
+      .from(artifact)
+      .where(eq(artifact.id, candidate.id))
+      .for('update');
+    const [used] = await tx
+      .select({ id: stageAttempt.id })
+      .from(stageAttempt)
+      .where(eq(stageAttempt.artifactId, candidate.id))
+      .limit(1);
+    if (!fresh?.stale || used)
+      throw new ConflictException('The output to use is no longer available. Supply it again.');
+    const [item] =
+      request.itemIndex !== undefined
+        ? await tx
+            .select({ id: stageItem.id })
+            .from(stageItem)
+            .where(
+              and(
+                eq(stageItem.stageExecutionId, execution.id),
+                eq(stageItem.itemIndex, request.itemIndex),
+              ),
+            )
+        : [];
+    const by = (candidate.repro as { supplied?: { by?: 'user' | 'assistant' } } | null)?.supplied
+      ?.by;
+    const skipValidation = !!request.skipValidation;
+    const slot = and(
+      eq(stageAttempt.stageExecutionId, execution.id),
+      item ? eq(stageAttempt.stageItemId, item.id) : isNull(stageAttempt.stageItemId),
+    );
+    const [latest] = await tx
+      .select({ max: sql<number>`coalesce(max(${stageAttempt.attemptNo}), 0)::int` })
+      .from(stageAttempt)
+      .where(slot);
+    await tx.insert(stageAttempt).values({
+      id: ulid(),
+      stageExecutionId: execution.id,
+      stageItemId: item?.id ?? null,
+      attemptNo: (latest?.max ?? 0) + 1,
+      actor: 'user',
+      outcome: 'user_edit',
+      phase: 'created',
+      executionEpoch,
+      artifactId: candidate.id,
+      resolvedInputs: { supplied: { by: by ?? 'user', skipValidation } },
+    });
+    await tx
+      .update(artifact)
+      .set({
+        repro: { supplied: { by: by ?? 'user', validation: skipValidation ? 'skip' : 'run' } },
+      })
+      .where(eq(artifact.id, candidate.id));
+    // Now in use: its files are no longer up for collection.
+    const blobIds = [
+      candidate.blobId,
+      ...((
+        (
+          candidate.data as {
+            clips?: Array<{ blobId: string }>;
+            images?: Array<{ blobId: string }>;
+          } | null
+        )?.clips ?? []
+      ).map((c) => c.blobId) as string[]),
+      ...(((candidate.data as { images?: Array<{ blobId: string }> } | null)?.images ?? []).map(
+        (c) => c.blobId,
+      ) as string[]),
+    ].filter((id): id is string => !!id);
+    if (blobIds.length)
+      await tx
+        .update(blob)
+        .set({ gcEligible: false, gcEligibleAt: null })
+        .where(inArray(blob.id, blobIds));
+    await tx.insert(stageEvent).values({
+      id: ulid(),
+      runId: built.current.id,
+      stageExecutionId: execution.id,
+      level: 'info',
+      type: 'stage.output_supplied',
+      message: skipValidation
+        ? 'Output supplied; checks and quality review skipped'
+        : 'Output supplied',
+      data: {
+        artifactId: candidate.id,
+        by: by ?? 'user',
+        skipValidation,
+        ...(request.itemIndex !== undefined && { itemIndex: request.itemIndex }),
+      },
+      createdAt: new Date().toISOString(),
+    });
   }
 
   /** A re-check asks the engine to judge each stored output again: a created user attempt that
@@ -773,7 +916,15 @@ export class RunStagePlanService {
             draft: true,
             createdAt: new Date().toISOString(),
           });
-        if (request.mode === 'validate')
+        if (request.mode === 'supply') {
+          await this.invalidation.apply(tx, {
+            runId,
+            closure: built.preview.closure,
+            targetStageKey: request.stageKey!,
+            gcBlobs: false,
+          });
+          await this.requestSupply(tx, built, request, locked.executionEpoch + 1);
+        } else if (request.mode === 'validate')
           await this.requestRecheck(
             tx,
             built.current.stageExecutions.find((e) => e.stageKey === request.stageKey)!.id,
@@ -879,11 +1030,13 @@ export class RunStagePlanService {
             level: 'info',
             type: 'stage.execution_plan',
             message:
-              request.mode === 'validate'
-                ? 'Re-checking the stored output'
-                : request.mode === 'reuse'
-                  ? 'Explicitly using existing upstream outputs'
-                  : 'Applying draft changes and rebuilding affected work',
+              request.mode === 'supply'
+                ? 'Using the supplied output'
+                : request.mode === 'validate'
+                  ? 'Re-checking the stored output'
+                  : request.mode === 'reuse'
+                    ? 'Explicitly using existing upstream outputs'
+                    : 'Applying draft changes and rebuilding affected work',
             data: {
               ...built.plan,
               sourceVersionId: built.source.id,
