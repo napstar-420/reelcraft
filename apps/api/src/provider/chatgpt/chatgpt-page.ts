@@ -2,7 +2,7 @@ import type { ReferenceFile } from '../reference-files';
 
 /**
  * Everything that knows chatgpt.com's DOM lives here, so a ChatGPT UI change
- * is a one-file fix. Selectors and flows were verified live on 2026-09-29
+ * is a one-file fix. Selectors and flows were verified live on 2026-11-10
  * (see docs/chatgpt-provider.md). Each builder returns the body of one Neo
  * `run` call (async JS against Neo's `browser` SDK, 30s cap); page-side code
  * goes through `page.evaluateInPage`, and every value is injected with
@@ -45,16 +45,19 @@ const completedReplies = () => {
   const main = document.querySelector('main');
   if (!main) return [];
   const contentSelector = '[data-markdown-text-style="assistant-message"], [data-message-author-role="assistant"]';
-  const replies = [...main.querySelectorAll(S.copy)].map((button) => {
+  // A completion marker can live on the assistant element itself; querySelector only checks descendants.
+  const assistantContent = (turn) => turn?.matches(contentSelector) ? turn : turn?.querySelector(contentSelector);
+  // Code blocks have their own Copy controls, even while the answer is still streaming.
+  const replies = [...main.querySelectorAll(S.copy)].filter((button) => !button.closest('pre')).map((button) => {
     const turn = button.closest('[data-talvt-turn-state], article');
-    return { button, content: turn?.querySelector(contentSelector), turn };
-  });
+    return { button, content: assistantContent(turn), turn };
+  }).filter((reply, i, all) => !reply.turn || all.findIndex((other) => other.turn === reply.turn) === i);
   for (const turn of main.querySelectorAll('[data-talvt-turn-state="complete"]')) {
     if (replies.some((reply) => reply.turn === turn)) continue;
-    const content = turn.querySelector(contentSelector);
+    const content = assistantContent(turn);
     if (content) replies.push({ button: null, content, turn });
   }
-  return replies.sort((a, b) => ((a.turn || a.button).compareDocumentPosition(b.turn || b.button) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
+  return replies.filter((reply) => reply.content?.innerText?.trim()).sort((a, b) => ((a.turn || a.button).compareDocumentPosition(b.turn || b.button) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
 };
 // Every loaded generated image of the chat, in order. A reply with several images shows one large
 // image (the selected one) plus a strip of thumbnails, and each thumbnail already holds its own
@@ -68,6 +71,55 @@ const generatedImages = () => {
   const singles = [...main.querySelectorAll(S.generatedImage)].filter((i) => ok(i) && !groupedSrcs.has(i.src));
   const all = [...grouped, ...singles].sort((a, b) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
   return [...new Map(all.map((i) => [i.src, i])).values()];
+};`;
+
+const SAVED_REPLIES = `// Some completed answers have model_dil_v2 render code that returns null and empty
+// fallbackMarkdown, despite nonempty content.parts. Copy and rendered text both lose
+// those answers. Read only finished final text on the conversation's current branch.
+const savedReplies = async () => {
+  try {
+    // Send can return a local-chatgpt placeholder before the real URL appears.
+    const urls = [args.conversationUrl, location.href].filter(Boolean).map((value) => new URL(value));
+    const match = urls.map((url) => url.origin === 'https://chatgpt.com' &&
+      url.pathname.match(/^\\/c\\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i)).find(Boolean);
+    if (!match) return null;
+    const session = await fetch('/api/auth/session', { credentials: 'include', signal: AbortSignal.timeout(5000) });
+    if (!session.ok) return null;
+    const auth = await session.json();
+    if (!auth?.accessToken) return null;
+    const response = await fetch('/backend-api/conversation/' + match[1], {
+      credentials: 'include', headers: { authorization: 'Bearer ' + auth.accessToken }, signal: AbortSignal.timeout(5000),
+    });
+    if (!response.ok) return null;
+    const conversation = await response.json();
+    const mapping = conversation?.mapping;
+    if (!mapping || !mapping[conversation.current_node]) return null;
+    const branch = [], seen = new Set();
+    for (let id = conversation.current_node; id; id = mapping[id].parent) {
+      if (seen.has(id) || !mapping[id]) return null;
+      seen.add(id);
+      if (mapping[id].message) branch.unshift(mapping[id].message);
+    }
+    const replies = [];
+    let lastUser, answered = false;
+    for (const message of branch) {
+      if (message.author?.role === 'user') { lastUser = message; answered = false; continue; }
+      if (!lastUser || message.author?.role !== 'assistant' || message.recipient !== 'all' ||
+          (message.channel != null && message.channel !== 'final') ||
+          message.status !== 'finished_successfully' || message.end_turn !== true ||
+          message.content?.content_type !== 'text') continue;
+      const parts = message.content.parts;
+      if (!Array.isArray(parts) || !parts.every((part) => typeof part === 'string')) continue;
+      const text = parts.join('').trim();
+      if (!text) continue;
+      replies.push({ text, user: lastUser });
+      answered = true;
+    }
+    if (!lastUser) return null;
+    return { replies: replies.map((reply) => ({ ...reply, afterLastUser: reply.user === lastUser })),
+      lastUserPrompt: lastUser.content?.parts?.filter((part) => typeof part === 'string').join('').trim(),
+      pending: !answered && branch[branch.length - 1].end_turn !== true };
+  } catch { return null; }
 };`;
 
 function pageId(id: number): number {
@@ -137,6 +189,11 @@ return JSON.parse(text);`;
 export function openChatScript(url: string): string {
   return `const id = await browser.pages.newPage(${JSON.stringify(url)});
 try { await browser.wait(id, { for: 'selector', value: ${JSON.stringify(S.composer)}, timeout: 20000 }); } catch {}
+// A new chat restores the last unsent draft into the composer; the prompt must not be appended to it.
+// Cleared here, before the web search pill joins the composer.
+try { await browser.page(id).evaluateInPage(${JSON.stringify(
+    `const box = document.querySelector(${JSON.stringify(S.composer)}); if (box && box.innerText.trim()) { box.focus(); document.execCommand('selectAll'); document.execCommand('delete'); } return true;`,
+  )}); } catch {}
 return id;`;
 }
 
@@ -164,8 +221,12 @@ export function setEffortScript(id: number, effort: ChatgptEffort): string {
     id,
     `const btn = await waitFor(() => document.querySelector(S.modelButton), 8000);
 if (!btn) return { error: 'ChatGPT effort picker not found' };
-btn.click();
-const row = await waitFor(() => document.querySelector(S.effortRow), 4000);
+// A click that lands before the page hydrates opens nothing, so click again while the menu is shut.
+let row = null;
+for (let i = 0; i < 4 && !row; i++) {
+  if (btn.getAttribute('aria-expanded') !== 'true') btn.click();
+  row = await waitFor(() => document.querySelector(S.effortRow), 2500);
+}
 if (!row) return { error: 'ChatGPT effort slider not found' };
 const press = (key) => { const thumb = row.querySelector('[role=slider]'); (thumb || row).focus(); for (const el of [thumb, row]) if (el) el.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true })); };
 for (let i = 0; i < 2; i++) { press('ArrowLeft'); await sleep(250); }
@@ -287,28 +348,49 @@ if (!ready.matched) throw new Error('ChatGPT image attachment input did not appe
 return true;`;
 }
 
-/** `insertText` keeps newlines and literal markup; a synthetic paste is ignored by the composer. */
+/** Characters per synthetic paste: ChatGPT turns a large plain-text paste into a file attachment. */
+export const PASTE_CHUNK = 2_000;
+
+/**
+ * The prompt goes in as plain-text pastes of up to `PASTE_CHUNK` characters, cut
+ * at line ends; ChatGPT stores it exactly as given. `insertText` re-renders the
+ * composer once per line (an 800-line prompt froze the tab for over a minute,
+ * past Neo's 30 s cap), and an HTML paste is stored as escaped markdown.
+ */
 export function sendPromptScript(id: number, prompt: string, webSearch = false): string {
   return inPage(
     id,
     `const box = () => document.querySelector(S.composer);
 // With web search on, the composer already holds its "Web search" pill.
 const typed = () => !!box() && box().innerText.replace(args.webSearch ? /^\s*Web search/ : '', '').trim().length > 0;
-const type = () => { box().focus(); document.execCommand('insertText', false, args.prompt); };
+const pastedFile = () => !!document.querySelector('button[aria-label="Remove pasted text attachment"]');
+const type = () => {
+  box().focus();
+  for (let rest = args.prompt; rest.length > 0; ) {
+    let cut = rest.length <= args.chunk ? rest.length : rest.lastIndexOf('\\n', args.chunk - 1) + 1;
+    if (cut <= 0) cut = args.chunk;
+    const dt = new DataTransfer();
+    dt.setData('text/plain', rest.slice(0, cut));
+    box().dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+    rest = rest.slice(cut);
+  }
+};
 if (!box()) return { error: 'ChatGPT composer not found' };
 type();
+if (pastedFile()) return { error: 'ChatGPT turned the prompt into a file attachment' };
 if (!typed()) return { error: 'Could not type the prompt into ChatGPT' };
 // Send stays disabled while reference uploads finish, and finishing an
 // upload can reset the composer — so re-check the text right before sending.
-const send = await waitFor(() => { const b = document.querySelector(S.send); return b && !b.disabled ? b : null; }, 30000);
+// Every wait here must fit, together, inside Neo's 30 s cap on one run.
+const send = await waitFor(() => { const b = document.querySelector(S.send); return b && !b.disabled ? b : null; }, 15000);
 if (!send) return { error: 'ChatGPT send button stayed disabled' };
 await sleep(500);
 if (!typed()) { type(); await sleep(300); }
 if (!typed()) return { error: 'ChatGPT cleared the prompt before sending' };
 document.querySelector(S.send).click();
-await waitFor(() => location.pathname.startsWith('/c/'), 15000);
+await waitFor(() => location.pathname.startsWith('/c/'), 10000);
 return { url: location.href };`,
-    { prompt, webSearch },
+    { prompt, webSearch, chunk: PASTE_CHUNK },
   );
 }
 
@@ -329,7 +411,11 @@ export type PageState = {
   tail: string;
 };
 
-export function pageStateScript(id: number, comparePrompt?: string): string {
+export function pageStateScript(
+  id: number,
+  comparePrompt?: string,
+  conversationUrl?: string,
+): string {
   return inPage(
     id,
     `let signedIn = true;
@@ -349,55 +435,49 @@ const afterUserText = (() => {
 // A normal completed turn also has a Retry action; only the current turn's error text is a failure.
 const phrase = afterUserText.match(/message delivery timed out|something went wrong|network error|error generating/i);
 const errorSignal = phrase ? 'text: ' + phrase[0] : undefined;
-const replies = completedReplies();
+${SAVED_REPLIES}
+const saved = await savedReplies();
+const replies = saved?.replies ?? completedReplies();
 const afterUser = (node) => !!lastUser && !!(lastUser.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING);
 const images = generatedImages();
 return {
   signedIn,
   composer: !!document.querySelector(S.composer),
-  generating: !!document.querySelector(S.stop),
-  replyDone: replies.length > 0,
+  generating: !!document.querySelector(S.stop) || saved?.pending === true,
+  replyDone: saved ? replies.some((reply) => reply.afterLastUser) : replies.length > 0,
   replyCount: replies.length,
   images: images.length,
-  lastUserPromptMatches: args.comparePrompt === undefined ? undefined : lastUser?.innerText?.trim() === args.comparePrompt,
-  replyAfterLastUser: replies.some((reply) => afterUser(reply.button || reply.content)),
+  lastUserPromptMatches: args.comparePrompt === undefined ? undefined : (saved?.lastUserPrompt ?? lastUser?.innerText?.trim()) === args.comparePrompt,
+  replyAfterLastUser: replies.some((reply) => reply.afterLastUser ?? afterUser(reply.button || reply.content)),
   imageAfterLastUser: images.some(afterUser),
   imagesLoading: /(loading|creating|generating) image/i.test(afterUserText),
   errorShown: !!errorSignal,
   errorSignal,
   tail: afterUserText.slice(-400),
 };`,
-    { comparePrompt },
+    { comparePrompt, conversationUrl },
   );
 }
 
-/** Prefer copied markdown, but recover a completed turn even when clipboard capture is unavailable. */
-export function copyLastReplyScript(id: number, index?: number): string {
+/**
+ * The saved conversation's finished final text is read first (ChatGPT's Copy button no
+ * longer yields markdown, and some answers render as nothing in the page); the rendered
+ * text is the fallback when the saved conversation is unavailable.
+ */
+export function copyLastReplyScript(id: number, index?: number, conversationUrl?: string): string {
   return inPage(
     id,
     `if (document.querySelector(S.stop)) return null;
-const replies = completedReplies();
+${SAVED_REPLIES}
+const saved = await savedReplies();
+if (saved?.pending) return null;
+const replies = saved?.replies ?? completedReplies();
 const reply = args.index === undefined || replies.length > args.index ? replies.pop() : null;
 if (!reply) return null;
-let copied = null;
-const cb = navigator.clipboard;
-const write = cb?.write, writeText = cb?.writeText;
-try {
-  if (cb && reply.button) {
-    cb.write = async (items) => { for (const item of items) if (item.types.includes('text/plain')) copied = await (await item.getType('text/plain')).text(); };
-    cb.writeText = async (t) => { copied = t; };
-    reply.button.click();
-    await waitFor(() => copied !== null, 3000);
-  }
-} catch {
-  // Clipboard APIs can be missing/read-only, or the app's handler can run in another JS world.
-} finally {
-  if (cb) { try { cb.write = write; cb.writeText = writeText; } catch {} }
-}
-if (typeof copied === 'string' && copied.trim()) return copied;
+if (saved) return reply.afterLastUser ? reply.text : null;
 // Scope the fallback to the assistant content, never the whole turn (which may include the prompt).
 return reply.content?.innerText?.trim() || null;`,
-    { index },
+    { index, conversationUrl },
   );
 }
 
@@ -500,9 +580,15 @@ export function stopGeneratingScript(id: number): string {
   return inPage(id, `const b = document.querySelector(S.stop); if (b) b.click(); return !!b;`);
 }
 
-/** Web-search replies carry citation tokens that only render inside ChatGPT. */
-export function stripCitations(text: string): string {
+/**
+ * Removes markup that only renders inside ChatGPT: web-search citation tokens,
+ * and the `<escape>` wrapper its reply format puts around literal text (such as
+ * a JSON reply), which is kept as written.
+ */
+export function cleanReply(text: string): string {
   return text
     .replace(/ ?:(?:chatgpt-content-reference|contentReference)(?:\[[^\]]*\])?\{[^}]*\}/g, '')
+    .replace(/ ?<Cite\b[^>]*\/>/g, '')
+    .replace(/<escape>([\s\S]*?)<\/escape>/g, '$1')
     .trim();
 }

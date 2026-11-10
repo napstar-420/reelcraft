@@ -38,7 +38,7 @@ import {
   stageUploadChunkScript,
   stopGeneratingScript,
   UPLOAD_CHUNK,
-  stripCitations,
+  cleanReply,
   enableWebSearchScript,
   type ArchiveResult,
   type ChatgptEffort,
@@ -302,7 +302,9 @@ export class ChatgptProviderAdapter implements ProviderAdapter {
     }
     let state: PageState;
     try {
-      state = await this.neo.run<PageState>(pageStateScript(job.pageId, revisionPrompt));
+      state = await this.neo.run<PageState>(
+        pageStateScript(job.pageId, revisionPrompt, job.conversationUrl),
+      );
     } catch {
       throw new ProviderContinuationUnavailableError('ChatGPT continuation tab is unavailable');
     }
@@ -375,7 +377,9 @@ export class ChatgptProviderAdapter implements ProviderAdapter {
     }
     let state: PageState;
     try {
-      state = await this.neo.run<PageState>(pageStateScript(job.pageId));
+      state = await this.neo.run<PageState>(
+        pageStateScript(job.pageId, undefined, job.conversationUrl),
+      );
     } catch (error) {
       this.logger.warn({ err: error, pageId: job.pageId }, 'chatgpt tab unreadable');
       const message = (error as Error).message;
@@ -430,7 +434,7 @@ export class ChatgptProviderAdapter implements ProviderAdapter {
     // Surface what ChatGPT said (e.g. an image refusal) instead of a generic reason.
     const reply =
       current.replyDone && status.failureClass !== 'user_action'
-        ? await this.copyReply(job.pageId, job.turnCursor?.replyCount).catch(() => undefined)
+        ? await this.copyReply(job).catch(() => undefined)
         : undefined;
     if (!job.retained) await this.closeJob(job.pageId, job.modality);
     return reply ? { ...status, reason: `${status.reason}: ${reply.slice(0, 500)}` } : status;
@@ -502,7 +506,7 @@ export class ChatgptProviderAdapter implements ProviderAdapter {
         rawResponse,
       };
     }
-    const reply = await this.copyReply(job.pageId, job.turnCursor?.replyCount);
+    const reply = await this.copyReply(job);
     if (reply === undefined) throw new Error('Could not copy the ChatGPT reply');
     const output =
       job.outputKind === 'data' || job.outputKind === 'timeline' ? parseJsonReply(reply) : reply;
@@ -521,9 +525,11 @@ export class ChatgptProviderAdapter implements ProviderAdapter {
     return { confirmed: true, billed: false };
   }
 
-  private async copyReply(pageId: number, index?: number): Promise<string | undefined> {
-    const copied = await this.neo.run<string | null>(copyLastReplyScript(pageId, index));
-    return copied === null ? undefined : stripCitations(copied);
+  private async copyReply(job: ChatgptJobPayload): Promise<string | undefined> {
+    const copied = await this.neo.run<string | null>(
+      copyLastReplyScript(job.pageId, job.turnCursor?.replyCount, job.conversationUrl),
+    );
+    return copied === null ? undefined : cleanReply(copied);
   }
 
   /** Files go to the page in `UPLOAD_CHUNK` slices (Neo caps a request at

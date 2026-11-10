@@ -17,7 +17,7 @@ import {
   parkImageScript,
   readParkedImageCdpScript,
   signInStateScript,
-  stripCitations,
+  cleanReply,
   type PageState,
 } from './chatgpt-page';
 
@@ -762,8 +762,18 @@ describe('ChatgptProviderAdapter readiness and cancel', () => {
 });
 
 describe('reply helpers', () => {
+  it('unwraps literal text from the reply format, keeping it as written', () => {
+    expect(cleanReply('<escape>{\n  "a": "<b> & \\n"\n}</escape>')).toBe(
+      '{\n  "a": "<b> & \\n"\n}',
+    );
+    expect(cleanReply('Intro <escape>x</escape> and <escape>y</escape>')).toBe('Intro x and y');
+  });
+
   it('strips both citation token formats', () => {
-    expect(stripCitations('A. :contentReference[oaicite:0]{index=0} B.')).toBe('A. B.');
+    expect(cleanReply('A. :contentReference[oaicite:0]{index=0} B.')).toBe('A. B.');
+    expect(cleanReply('A **14,288,867** people. <Cite ref="turn862097search2"/>')).toBe(
+      'A **14,288,867** people.',
+    );
   });
 
   it('names the bad reply when JSON parsing fails', () => {
@@ -942,7 +952,7 @@ describe('ChatgptProviderAdapter reference uploads and the turn lock', () => {
           order.push('effort');
           return { value: 0 };
         }
-        if (code.includes('document.execCommand')) {
+        if (code.includes('ClipboardEvent')) {
           order.push('send');
           return { url: 'https://chatgpt.com/c/x' };
         }

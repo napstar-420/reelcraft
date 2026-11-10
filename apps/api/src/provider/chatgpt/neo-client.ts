@@ -10,10 +10,12 @@ import { PROVIDER_UNAVAILABLE_PREFIX } from '../provider-unavailable';
 import { browserOsFetch, browserOsHostHeaders } from './browseros-host';
 
 const AGENT_NAME = 'reelcraft';
+/** Neo's largest inline `run` result, in UTF-8 bytes. */
+const NEO_MAX_CHARS = 2_000_000;
 
 type ToolResult = {
   content?: Array<{ type: string; text?: string }>;
-  structuredContent?: { ok?: boolean; value?: unknown; error?: unknown };
+  structuredContent?: { ok?: boolean; value?: unknown; error?: unknown; writtenToFile?: boolean };
   isError?: boolean;
 };
 
@@ -34,12 +36,31 @@ export class NeoClient {
   ) {}
 
   /** Runs an async JS body against Neo's `browser` SDK (30s hard cap per call). */
-  async run<T>(code: string): Promise<T> {
-    const result = await this.call('run', { code, timeout: 30_000 });
+  async run<T>(code: string, retried = false): Promise<T> {
+    // Neo keeps only 25 KB inline by default and writes the rest to a file on its own machine.
+    const used: { client?: Promise<Client> } = {};
+    const result = await this.call(
+      'run',
+      { code, timeout: 30_000, maxChars: NEO_MAX_CHARS },
+      false,
+      used,
+    );
     const structured = result.structuredContent;
     if (!structured) throw new Error(`BrowserOS Neo run returned no result: ${text(result)}`);
     if (structured.ok === false || result.isError) {
-      throw new Error(`BrowserOS Neo script failed: ${String(structured.error ?? text(result))}`);
+      const error = String(structured.error ?? text(result));
+      // Closing a session's last tab deletes its tab group, and Neo then refuses to open
+      // pages in that session. The session holds no tabs and the refused call opened
+      // nothing, so a fresh session (with a fresh group) can safely replay it.
+      if (!retried && error.startsWith('group_out_of_scope')) {
+        // Only the connection that served this call: a concurrent call may already have replaced it.
+        this.dropClient(used.client);
+        return this.run(code, true);
+      }
+      throw new Error(`BrowserOS Neo script failed: ${error}`);
+    }
+    if (structured.writtenToFile) {
+      throw new Error(`BrowserOS Neo result exceeded ${NEO_MAX_CHARS} bytes and was not returned`);
     }
     return structured.value as T;
   }
@@ -48,9 +69,12 @@ export class NeoClient {
     name: string,
     args: Record<string, unknown>,
     retried = false,
+    used?: { client?: Promise<Client> },
   ): Promise<ToolResult> {
     try {
-      const client = await this.connect(await this.settings.browserOsUrl());
+      const connecting = this.connect(await this.settings.browserOsUrl());
+      if (used) used.client = connecting;
+      const client = await connecting;
       return (await client.callTool({
         name,
         arguments: { agentName: AGENT_NAME, ...args },
@@ -87,13 +111,17 @@ export class NeoClient {
     }
   }
 
+  /** Closes the cached connection; with `only`, just when it is still that one. */
+  private dropClient(only?: Promise<Client>): void {
+    const old = this.client;
+    if (only && old !== only) return;
+    this.client = undefined;
+    void old?.then((client) => client.close()).catch(() => undefined);
+  }
+
   private connect(url: string): Promise<Client> {
     // The address changed in Settings: drop the old connection.
-    if (this.client && this.clientUrl !== url) {
-      const old = this.client;
-      this.client = undefined;
-      void old.then((client) => client.close()).catch(() => undefined);
-    }
+    if (this.client && this.clientUrl !== url) this.dropClient();
     if (!this.client) {
       this.clientUrl = url;
       this.client = open(url).catch((error: unknown) => {

@@ -573,6 +573,10 @@ describe('Supply a stage output (e2e)', () => {
     expect(plan.invalidatedStageKeys).toEqual(['final']);
     await plans.confirm(runId, { ...request, previewToken: plan.previewToken });
     await drive(runId, ['draft']);
-    expect(await states(runId)).toEqual(['passed', 'stale']);
+    // The executions come back in no fixed order once a stage has been re-run.
+    const byStage = Object.fromEntries(
+      (await runs.get(runId)).stageExecutions.map((e) => [e.stageKey, e.state]),
+    );
+    expect(byStage).toEqual({ draft: 'passed', final: 'stale' });
   });
 });
