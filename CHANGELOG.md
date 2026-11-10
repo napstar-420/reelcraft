@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.16.0](https://github.com/napstar-420/reelcraft/compare/v0.15.0...v0.16.0) (2026-11-10)
+
+
+### Features
+
+* **assistant:** repair engine bugs with a coding agent ([#233](https://github.com/napstar-420/reelcraft/issues/233)) ([068e8ef](https://github.com/napstar-420/reelcraft/commit/068e8efa2250a5c77088d6772fa82078dc6c0b0a))
+* keep outputs through non-generation edits, re-check any time, supply an output ([#240](https://github.com/napstar-420/reelcraft/issues/240)) ([c04aba0](https://github.com/napstar-420/reelcraft/commit/c04aba015a79f1292dcd3b8e4881e019992efa97))
+
+
+### Bug Fixes
+
+* **api:** keep browser jobs queued while they wait for the shared browser lock ([#227](https://github.com/napstar-420/reelcraft/issues/227)) ([c6fa26c](https://github.com/napstar-420/reelcraft/commit/c6fa26cae14a2176c831afa1a8774b4b069cbff1))
+* **api:** read ChatGPT replies from the saved conversation and harden prompt entry ([#241](https://github.com/napstar-420/reelcraft/issues/241)) ([8a9301f](https://github.com/napstar-420/reelcraft/commit/8a9301fc6573cc0b8de82686e31be2d66b1bb113))
+* **api:** recover ChatGPT replies when clipboard capture fails ([#235](https://github.com/napstar-420/reelcraft/issues/235)) ([f7c2f64](https://github.com/napstar-420/reelcraft/commit/f7c2f64e7b478ed6c7db1aeb35409b9adc41bfd0))
+* **api:** take the last frame when a contact-sheet time is past the final frame ([#228](https://github.com/napstar-420/reelcraft/issues/228)) ([35330c5](https://github.com/napstar-420/reelcraft/commit/35330c59507f3a1c5a99a0b3f8bf86205aab407c))
+* **api:** use supported BrowserOS Neo page APIs ([#234](https://github.com/napstar-420/reelcraft/issues/234)) ([9e0aae2](https://github.com/napstar-420/reelcraft/commit/9e0aae24eeffad7ea976afe04039b44cc4dcc5e0))
+* **assistant:** restore Neo browsing and run continuation ([#231](https://github.com/napstar-420/reelcraft/issues/231)) ([102c2c9](https://github.com/napstar-420/reelcraft/commit/102c2c9341c2e2b9c03172b6babd5d8249548b40))
+* **web:** mark edited stages by label colour instead of a badge ([#237](https://github.com/napstar-420/reelcraft/issues/237)) ([e997871](https://github.com/napstar-420/reelcraft/commit/e9978716bd52199e971c9a34e2ad820f35b760ef))
+* **web:** show the real test-run state for edited stages in the outline ([#239](https://github.com/napstar-420/reelcraft/issues/239)) ([5924671](https://github.com/napstar-420/reelcraft/commit/5924671d1cad29136501073158a83642ae5c1b68))
+
 ## [0.15.0](https://github.com/napstar-420/reelcraft/compare/v0.14.0...v0.15.0) (2026-11-02)
 
 
