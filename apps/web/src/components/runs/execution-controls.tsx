@@ -212,6 +212,7 @@ export function RunExecutionToolbar({
 
 /** What the confirmation is for: carrying on, redoing finished work, or running what was asked. */
 function planTitle(plan: StageRunPlanDto | null): string {
+  if (plan?.request.mode === 'supply') return 'Use this output?';
   if (plan?.request.mode === 'validate') return 'Re-check this output?';
   if (plan?.request.action === 'continue') return 'Continue the run?';
   if (plan?.request.action === 'rerun') return 'Re-run finished work?';
@@ -242,7 +243,20 @@ export function ExecutionPlanDialog({ actions }: { actions: RunExecutionActions 
           </AlertDialogHeader>
           {plan && !plan.blockedReason && (
             <div className="flex flex-col gap-2 text-sm">
-              {!!running.length && (
+              {plan.request.mode === 'supply' ? (
+                <>
+                  <p>
+                    Replaces the output of {names(running)} with the one you gave.{' '}
+                    {plan.request.skipValidation
+                      ? 'Its checks and quality review are skipped: nothing judges it.'
+                      : 'Its checks and quality review run on it first; if it fails, the run waits for your review.'}
+                  </p>
+                  {plan.request.itemIndex !== undefined && (
+                    <p>Later items that read the previous item are generated again.</p>
+                  )}
+                </>
+              ) : null}
+              {!!running.length && plan.request.mode !== 'supply' && (
                 <p>
                   Runs {running.length} {running.length === 1 ? 'stage' : 'stages'}:{' '}
                   {names(running)}
@@ -319,7 +333,12 @@ export function ExecutionPlanDialog({ actions }: { actions: RunExecutionActions 
                 <p>Enabled or disabled: {names(plan.availabilityChangedStageKeys)}</p>
               )}
               {!!plan.retainedItemCount && <p>Keeps {plan.retainedItemCount} finished items.</p>}
-              {plan.request.mode === 'validate' ? (
+              {plan.request.mode === 'supply' ? (
+                <p className="text-muted-foreground">
+                  Stages after it become out of date, and are not run. A rejection that sends work
+                  back to this stage generates it again over this output.
+                </p>
+              ) : plan.request.mode === 'validate' ? (
                 <p className="text-muted-foreground">
                   Runs its checks and quality review on the stored output again. Nothing is
                   regenerated and later stages keep their outputs. If it fails, it waits for your
@@ -354,7 +373,11 @@ export function ExecutionPlanDialog({ actions }: { actions: RunExecutionActions 
                   actions.confirmExecution.mutate(plan);
                 }}
               >
-                {plan.request.mode === 'validate' ? 'Re-check' : 'Run'}
+                {plan.request.mode === 'supply'
+                  ? 'Use output'
+                  : plan.request.mode === 'validate'
+                    ? 'Re-check'
+                    : 'Run'}
               </AlertDialogAction>
             )}
           </AlertDialogFooter>

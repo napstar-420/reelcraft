@@ -446,7 +446,7 @@ Never copy the reference's words, characters, logos or footage into a new video 
 
   execution: {
     title: 'Execution controls, continuation and stale outputs',
-    body: `The canvas and run page use the same selected run, backend eligibility, controls and confirmations. You can do them too, and each shows you its plan and cost first: \`run_stages\` (scope only = Run stage, up_to = Run through stage, from_here = Rebuild descendants), \`recheck_output\` (Re-check output / Re-check item), \`retry_stage\`, \`pause_run\`, \`resume_run\`, \`cancel_run\`, \`set_concurrency\`.
+    body: `The canvas and run page use the same selected run, backend eligibility, controls and confirmations. You can do them too, and each shows you its plan and cost first: \`run_stages\` (scope only = Run stage, up_to = Run through stage, from_here = Rebuild descendants), \`recheck_output\` (Re-check output / Re-check item), \`supply_output\` (Replace output), \`retry_stage\`, \`pause_run\`, \`resume_run\`, \`cancel_run\`, \`set_concurrency\`.
 
 - **Run stage** runs only the selected stage when prerequisites and inputs are ready. Never suggest that it will automatically run prerequisites. **Run through stage** explicitly includes required unfinished prerequisites; **Rebuild descendants** explicitly expands downstream.
 - **Continue stage** preserves compatible passed items and saved approval/input candidates, executing only unfinished work in the same run. Six passed items out of fourteen means eight unfinished items, including non-contiguous progress. Continue uses persisted item identity and dependencies against the pinned snapshot, not a numeric starting offset or equal item count.

@@ -96,6 +96,8 @@ function deps(over: Partial<Record<keyof ToolDeps, unknown>> = {}): ToolDeps {
       })),
       confirm: vi.fn(async () => ({})),
     },
+    outputSupply: { createCandidate: vi.fn(async () => ({ artifactId: 'cand1' })) },
+    attachments: { file: vi.fn(async () => ({ blobId: 'blob-chat' })) },
     blueprintChanged: vi.fn(),
     repairs: {} as never,
     watches: { watch: vi.fn(async () => []), unwatch: vi.fn(async () => []) },
@@ -373,6 +375,81 @@ describe('recheck_output', () => {
     );
     expect(out).toEqual({ ok: false, error: 'Re-check needs a stage that has finished.' });
     expect(d.stagePlans.confirm).not.toHaveBeenCalled();
+  });
+});
+
+describe('supply_output', () => {
+  const input = { runId: 'r1', stageKey: 'script', value: 'My script' };
+  it('creates the candidate as the assistant, previews the supply plan and confirms it', async () => {
+    const d = deps();
+    const { ctx, asked } = manual();
+    const out = await runTool('supply_output', input, ctx, d);
+    expect(d.outputSupply.createCandidate).toHaveBeenCalledWith(
+      'r1',
+      'script',
+      { blueprintVersionId: 'v1', value: 'My script' },
+      { by: 'assistant' },
+    );
+    expect(d.stagePlans.preview).toHaveBeenCalledWith('r1', {
+      blueprintVersionId: 'v1',
+      stageKey: 'script',
+      mode: 'supply',
+      action: 'rerun',
+      scope: 'stage',
+      artifactId: 'cand1',
+    });
+    expect(asked[0]).toMatchObject({ title: expect.stringContaining('Write the script') });
+    expect(asked[0]!.skipsChecks).toBeUndefined();
+    expect(out).toMatchObject({ ok: true, result: { status: 'supplied', checksSkipped: false } });
+  });
+
+  it('asks for its own approval when it skips checks, which Auto mode cannot give', async () => {
+    const d = deps();
+    const { ctx, asked } = manual();
+    await runTool('supply_output', { ...input, skipChecks: true }, ctx, d);
+    expect(asked[0]).toMatchObject({ skipsChecks: true });
+    expect(d.stagePlans.preview).toHaveBeenCalledWith(
+      'r1',
+      expect.objectContaining({ skipValidation: true }),
+    );
+  });
+
+  it('uses chat attachments by their stored file, and tells the model why an output is refused', async () => {
+    const d = deps();
+    await runTool(
+      'supply_output',
+      { runId: 'r1', stageKey: 'script', files: [{ attachmentId: 'att1' }, { assetId: 'a1' }] },
+      manual().ctx,
+      d,
+    );
+    expect(d.outputSupply.createCandidate).toHaveBeenCalledWith(
+      'r1',
+      'script',
+      { blueprintVersionId: 'v1' },
+      { by: 'assistant', files: [{ blobId: 'blob-chat' }, { assetId: 'a1' }] },
+    );
+    const refusing = deps({
+      outputSupply: {
+        createCandidate: vi.fn(async () => {
+          throw Object.assign(new Error('x'), {
+            getResponse: () => ({ code: 'schema_invalid', message: 'n must be a number' }),
+          });
+        }),
+      },
+    });
+    const out = await runTool('supply_output', input, manual().ctx, refusing);
+    expect(out).toEqual({ ok: false, error: "That output can't be used: n must be a number" });
+    expect(refusing.stagePlans.confirm).not.toHaveBeenCalled();
+  });
+
+  it('needs exactly one of value or files', async () => {
+    const out = await runTool(
+      'supply_output',
+      { runId: 'r1', stageKey: 'script' },
+      manual().ctx,
+      deps(),
+    );
+    expect(out).toMatchObject({ ok: false });
   });
 });
 

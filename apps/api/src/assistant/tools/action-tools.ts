@@ -499,6 +499,166 @@ const recheckOutput: AssistantTool<z.infer<typeof RecheckInput>> = {
   },
 };
 
+// ---- supply_output -----------------------------------------------------------------------
+
+const SupplyFile = z.union([
+  z.object({ assetId: z.string().min(1) }).strict(),
+  z.object({ artifactId: z.string().min(1) }).strict(),
+  z.object({ attachmentId: z.string().min(1) }).strict(),
+]);
+const SupplyInput = z
+  .object({
+    runId: z.string().min(1),
+    stageKey: z.string().min(1),
+    itemIndex: z.number().int().min(0).optional(),
+    version: z.string().min(1).max(20).optional(),
+    value: z.unknown().optional(),
+    files: z.array(SupplyFile).min(1).max(50).optional(),
+    skipChecks: z.boolean().optional(),
+  })
+  .refine((v) => (v.value !== undefined) !== (v.files !== undefined), {
+    message: 'Give exactly one of value or files.',
+  });
+
+const supplyOutput: AssistantTool<z.infer<typeof SupplyInput>> = {
+  name: 'supply_output',
+  kind: 'action',
+  description:
+    "Use an output you or the user provide as a stage's output instead of running the stage. value: the text, JSON data or timeline (kind of the stage's output); files: picture/video/sound/subtitle files as {assetId} (Library), {artifactId} (another output) or {attachmentId} (a chat file), in order. Its output contract is always validated. By default the stage's checks and quality review run on it (a failure waits for review); skipChecks=true skips them and needs the user's own explicit approval card that Auto mode cannot grant. Stages after it become out of date and are not run (use run_stages for that). For an iterating stage give itemIndex (0-based). Refused while executing.",
+  input: SupplyInput,
+  jsonSchema: () =>
+    obj(
+      {
+        runId: RUN_ID,
+        stageKey: STAGE_KEY,
+        itemIndex: {
+          type: 'integer',
+          minimum: 0,
+          description: 'The item, for an iterating stage.',
+        },
+        version: str('"run" (default), "draft", "saved" or a version label', {
+          minLength: 1,
+          maxLength: 20,
+        }),
+        value: {
+          anyOf: [{ type: 'string' }, { type: 'object' }, { type: 'array' }],
+          description: 'The text (a string), data or timeline to use. Not with files.',
+        },
+        files: {
+          type: 'array',
+          description: 'Files to use, in order. Not with value.',
+          items: obj(
+            {
+              assetId: { type: 'string' },
+              artifactId: { type: 'string' },
+              attachmentId: { type: 'string' },
+            },
+            [],
+            'Exactly one of assetId, artifactId or attachmentId.',
+          ),
+        },
+        skipChecks: {
+          type: 'boolean',
+          description: "Skip its checks and quality review. Needs the user's own approval.",
+        },
+      },
+      ['runId', 'stageKey'],
+    ),
+  async handler(ctx, deps, input) {
+    const ended = turnEnded(ctx);
+    if (ended) return ended;
+    const insight = await deps.runs.get(input.runId);
+    if (!insight) return { ok: false, error: `There is no run "${input.runId}".` };
+    const stage = insight.stages.find((s) => s.key === input.stageKey);
+    if (!stage)
+      return {
+        ok: false,
+        error: `Run ${handle(input.runId)} has no stage "${input.stageKey}". Stages: ${insight.stages.map((s) => s.key).join(', ')}.`,
+      };
+    let versionId = (await deps.runControl.get(input.runId)).blueprintVersionId;
+    if (input.version && input.version !== 'run') {
+      const v = await resolveVersion(ctx, deps, insight.blueprintId, input.version);
+      if (!v.ok) return { ok: false, error: v.error };
+      versionId = v.id;
+    }
+    let files;
+    if (input.files) {
+      files = [];
+      for (const file of input.files) {
+        if ('attachmentId' in file) {
+          const found = await deps.attachments.file(file.attachmentId).catch(() => null);
+          if (!found) return { ok: false, error: `There is no attachment "${file.attachmentId}".` };
+          files.push({ blobId: found.blobId });
+        } else files.push(file);
+      }
+    }
+    let candidate: { artifactId: string };
+    try {
+      candidate = await deps.outputSupply.createCandidate(
+        input.runId,
+        input.stageKey,
+        {
+          blueprintVersionId: versionId,
+          ...(input.itemIndex !== undefined && { itemIndex: input.itemIndex }),
+          ...(input.value !== undefined && { value: input.value }),
+        },
+        { by: 'assistant', ...(files && { files }) },
+      );
+    } catch (error) {
+      // The output contract failed: the model gets the reason to fix it.
+      const body = (error as { getResponse?: () => unknown }).getResponse?.();
+      const reason =
+        typeof body === 'string'
+          ? body
+          : ((body as { message?: string })?.message ??
+            (body ? JSON.stringify(body).slice(0, 600) : (error as Error).message));
+      return { ok: false, error: `That output can't be used: ${reason}` };
+    }
+    const plan = await deps.stagePlans.preview(input.runId, {
+      blueprintVersionId: versionId,
+      stageKey: input.stageKey,
+      mode: 'supply',
+      action: 'rerun',
+      scope: 'stage',
+      artifactId: candidate.artifactId,
+      ...(input.skipChecks && { skipValidation: true }),
+      ...(input.itemIndex !== undefined && { itemIndex: input.itemIndex }),
+    });
+    if (plan.blockedReason) return { ok: false, error: plan.blockedReason };
+    const refused = await confirmChange(ctx, {
+      tool: 'supply_output',
+      kind: 'action',
+      title: `Use this as ${stage.label}${input.itemIndex !== undefined ? `, item ${input.itemIndex + 1}` : ''} in run ${handle(input.runId)}`,
+      details: [
+        input.skipChecks
+          ? 'Skips its checks and quality review: nothing judges this output.'
+          : 'Its checks and quality review run on it; if it fails, the run waits for review.',
+        ...(plan.invalidatedStageKeys.length
+          ? [`Makes out of date, without running: ${plan.invalidatedStageKeys.join(', ')}`]
+          : []),
+        "Replaces the stage's current output.",
+      ],
+      costUsd: plan.estimatedRerunUsd,
+      ...(input.skipChecks && { skipsChecks: true }),
+    });
+    if (refused) return refused;
+    await deps.stagePlans.confirm(input.runId, {
+      ...plan.request,
+      previewToken: plan.previewToken,
+    });
+    const watching = await autoWatch(ctx, deps, input.runId);
+    return {
+      ok: true,
+      result: runResult(input.runId, {
+        status: 'supplied',
+        watching,
+        checksSkipped: !!input.skipChecks,
+        outOfDate: plan.invalidatedStageKeys,
+      }),
+    };
+  },
+};
+
 // ---- retry_stage -------------------------------------------------------------------------
 
 const RetryInput = z.object({
@@ -886,6 +1046,7 @@ export const ACTION_TOOLS: AssistantTool<never>[] = [
   startRun,
   runStages,
   recheckOutput,
+  supplyOutput,
   retryStage,
   pauseRun,
   resumeRun,

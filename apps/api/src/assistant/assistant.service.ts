@@ -49,6 +49,7 @@ import { RunService } from '../run/run.service';
 import { RunCancellationService } from '../run/run-cancellation.service';
 import { RunActionService } from '../run/run-action.service';
 import { HumanActionService } from '../run/human-action.service';
+import { StageOutputSupplyService } from '../run/stage-output-supply.service';
 import { RunStagePlanService } from '../run/run-stage-plan.service';
 import { InvalidationService } from '../run/invalidation.service';
 import { MediaReviewService } from './review/media-review.service';
@@ -172,6 +173,7 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
     retries: RunActionService,
     humanActions: HumanActionService,
     stagePlans: RunStagePlanService,
+    outputSupply: StageOutputSupplyService,
     memory: InvalidationService,
     review: MediaReviewService,
     private readonly watches: AssistantWatchService,
@@ -208,6 +210,7 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
       retries,
       humanActions,
       stagePlans,
+      outputSupply,
       attempts: runControl,
       memory,
       review,
@@ -936,6 +939,7 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
             'start_run',
             'run_stages',
             'recheck_output',
+            'supply_output',
             'retry_stage',
             'resume_run',
           ]),
@@ -1250,7 +1254,7 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
     timer: TurnTimer,
     signal: AbortSignal,
   ): Promise<ApprovalDecision> {
-    const needsExplicitApproval = !!request.uncertainAttemptIds?.length;
+    const needsExplicitApproval = !!request.uncertainAttemptIds?.length || !!request.skipsChecks;
     if (!needsExplicitApproval && ctx.mode === 'auto') return { answer: 'yes' };
     if (!needsExplicitApproval && ctx.preApproved && request.kind !== 'destroy') {
       return { answer: 'yes' };
@@ -1263,7 +1267,10 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
       details: request.details ?? [],
       costUsd: request.costUsd ?? null,
       ...(request.change && { change: request.change }),
-      ...(needsExplicitApproval && { uncertainAttemptIds: request.uncertainAttemptIds }),
+      ...(request.uncertainAttemptIds?.length && {
+        uncertainAttemptIds: request.uncertainAttemptIds,
+      }),
+      ...(request.skipsChecks && { skipsChecks: true }),
     };
     const item = await this.createItem(sessionId, turnId, 'approval', 'pending', payload);
     // the turn ended while the card was being written: its abort listener would never fire
@@ -1320,9 +1327,15 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
       throw new ConflictException('This request is no longer waiting for an answer.');
     }
     const payload = row.payload as ApprovalPayload;
-    if (payload.uncertainAttemptIds?.length && dto.answer !== 'yes' && dto.answer !== 'no') {
+    if (
+      (payload.uncertainAttemptIds?.length || payload.skipsChecks) &&
+      dto.answer !== 'yes' &&
+      dto.answer !== 'no'
+    ) {
       throw new BadRequestException(
-        'Restarting uncertain provider requests requires a separate Yes or No decision.',
+        payload.skipsChecks
+          ? 'Skipping checks requires a separate Yes or No decision.'
+          : 'Restarting uncertain provider requests requires a separate Yes or No decision.',
       );
     }
     const item = await this.updateItem(itemId, {

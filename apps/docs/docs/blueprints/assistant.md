@@ -90,7 +90,8 @@ editor shows the change straight away. If you were in the middle of an edit, the
 instead: **Load its version** or **Keep mine**.
 
 **Runs.** It can start a **Free test run** or a real run, re-make stages of a run after fixing them
-(only that stage, up to it, or from it to the end), re-check a stage's output without regenerating it,
+(only that stage, up to it, or from it to the end), re-check a stage's output without regenerating it, use an output you give it (text, data, a timeline or
+Library/attached files) instead of running a stage,
 retry a failed stage, pause, continue and stop a
 run, raise its budget, approve or reject a stage waiting for review, and fill in a stage waiting for
 input. A run it starts appears in the chat with its live status. For run inputs that are files
@@ -102,6 +103,10 @@ run page, keeping finished work. In **Manual** mode it explains the remaining ru
 approval; the actual continuation cost is unknown.
 If an interrupted provider request may still be running, it asks you to accept the possible
 additional charges before restarting that work.
+
+When the assistant uses an output it supplies, it asks you first like any other change. If it wants
+to skip that stage's checks and quality review, it asks with its own card, **Skip checks and use it**,
+which Auto mode and **Yes to everything this turn** can't answer for you.
 
 **The Library, characters and voices.** From a file you attached, or a picture or sound a run made,
 it can save an asset to a channel's **Library**, create a character (or add pictures to one, or

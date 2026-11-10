@@ -68,6 +68,7 @@ import type {
   StageRunPlanDto,
   StageRunPlanRequestDto,
   ConfirmStageRunPlanDto,
+  CreateStageOutputCandidateDto,
   RunMemoryDto,
   CapabilityDto,
   FlowAccountsDto,
@@ -621,6 +622,15 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(dto),
     }),
+  createStageOutputCandidate: (
+    runId: string,
+    stageKey: string,
+    dto: CreateStageOutputCandidateDto,
+  ) =>
+    request<{ artifactId: string }>(
+      `/runs/${runId}/stages/${encodeURIComponent(stageKey)}/output-candidates`,
+      { method: 'POST', body: JSON.stringify(dto) },
+    ),
   confirmStageRun: (id: string, dto: ConfirmStageRunPlanDto) =>
     request<{ accepted: boolean; runId: string }>(`/runs/${id}/execution-plan/confirm`, {
       method: 'POST',

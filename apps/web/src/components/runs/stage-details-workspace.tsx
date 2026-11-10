@@ -12,6 +12,8 @@ import {
 } from '@/components/ui/sheet';
 import { STALE_WARNING, itemEmptyText, itemMark, madeWithText } from './stage-drawer.logic';
 import { StageExecutionControls } from './execution-controls';
+import { SupplyOutputDialog } from './supply-output-dialog';
+import { supplyInputKind } from './supply-output-dialog.logic';
 import { ArtifactPreview } from './artifact-preview';
 import { MotionCodeEditor } from './motion-code-editor';
 import { motionSourceOf } from './motion-code-editor.logic';
@@ -57,6 +59,7 @@ export function StageDetailsWorkspace({
   const [selectedAttempt, setSelectedAttempt] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [showDebug, setShowDebug] = useState(false);
+  const [replacing, setReplacing] = useState(false);
   useEffect(() => {
     setTab(initialTab);
     setItemIndex(null);
@@ -121,6 +124,16 @@ export function StageDetailsWorkspace({
   const lines = stageLogLines(logs.data ?? [], activeAttempt?.id ?? null, showDebug);
   const artifact = tab === 'Attempts' ? detail.data?.artifact : (itemOutput?.artifact ?? oldOutput);
   const showingOld = tab !== 'Attempts' && !itemOutput && !!oldOutput;
+  const definition = run.data?.definition?.graph.find((s) => s.key === stageKey);
+  const canReplace =
+    !!actions &&
+    !stageRunning &&
+    !run.data?.availableActions?.busy &&
+    freshness !== 'stale' &&
+    !!stage?.output &&
+    !!supplyInputKind(stage.output) &&
+    !!(stage.availableActions?.rerun || stage.availableActions?.run) &&
+    (!stage.isIterating || activeItem !== null);
   const Description = embedded ? 'p' : SheetDescription;
   const contents = (
     <>
@@ -259,6 +272,21 @@ export function StageDetailsWorkspace({
                     label={formatStatusLabel(activeAttempt.outcome)}
                   />
                 )}
+                {artifact?.origin && (
+                  <>
+                    <StatusBadge
+                      tone="neutral"
+                      label={
+                        artifact.origin.by === 'assistant'
+                          ? 'Supplied by the assistant'
+                          : 'Supplied by you'
+                      }
+                    />
+                    {artifact.origin.validation === 'skip' && (
+                      <StatusBadge tone="warning" label="Checks skipped" />
+                    )}
+                  </>
+                )}
                 <span className="flex-1" />
                 {actions &&
                   !stageRunning &&
@@ -280,6 +308,16 @@ export function StageDetailsWorkspace({
                       Re-run item
                     </Button>
                   )}
+                {canReplace && (
+                  <Button
+                    size="xs"
+                    variant="outline"
+                    disabled={actions.supplyOutput.isPending}
+                    onClick={() => setReplacing(true)}
+                  >
+                    {stage?.isIterating ? 'Replace item output' : 'Replace output'}
+                  </Button>
+                )}
                 {actions &&
                   !stageRunning &&
                   !run.data?.availableActions?.busy &&
@@ -452,12 +490,39 @@ export function StageDetailsWorkspace({
       </div>
     </>
   );
+  const dialog =
+    actions && run.data && stageKey ? (
+      <SupplyOutputDialog
+        channelId={run.data.channelId}
+        stageLabel={stageLabel ?? stage?.label ?? stageKey}
+        itemLabel={stage?.isIterating && activeItem !== null ? `item ${activeItem + 1}` : undefined}
+        output={stage?.output}
+        hasChecks={!!definition && (definition.checks.length > 0 || !!definition.qc)}
+        open={replacing}
+        pending={actions.supplyOutput.isPending}
+        onOpenChange={setReplacing}
+        onSubmit={(input) =>
+          actions.supplyOutput.mutate(
+            {
+              stageKey,
+              ...(stage?.isIterating && activeItem !== null && { itemIndex: activeItem }),
+              ...input,
+            },
+            { onSuccess: () => setReplacing(false) },
+          )
+        }
+      />
+    ) : null;
   return embedded ? (
-    <section className="flex h-full min-h-0 flex-col">{contents}</section>
+    <section className="flex h-full min-h-0 flex-col">
+      {contents}
+      {dialog}
+    </section>
   ) : (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent className={expanded ? 'w-full sm:max-w-[90vw]' : 'w-full sm:max-w-3xl'}>
         {contents}
+        {dialog}
       </SheetContent>
     </Sheet>
   );

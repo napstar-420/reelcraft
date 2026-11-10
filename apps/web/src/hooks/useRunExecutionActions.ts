@@ -161,6 +161,39 @@ export function useRunExecutionActions({
     },
     onError: fail,
   });
+  /** Replace output: stores the output as a candidate, then shows the plan that would make it the
+   * stage's (or item's) output. Confirming it is the usual plan confirmation. */
+  const supplyOutput = useMutation({
+    mutationFn: async (input: {
+      stageKey: string;
+      itemIndex?: number;
+      value?: unknown;
+      files?: Array<{ assetId: string }>;
+      skipValidation?: boolean;
+    }) => {
+      if (!run) throw new Error('Select a run first.');
+      const blueprintVersionId = prepareRunnableVersion
+        ? await prepareRunnableVersion()
+        : run.blueprintVersionId;
+      const { artifactId } = await api.createStageOutputCandidate(run.id, input.stageKey, {
+        blueprintVersionId,
+        ...(input.itemIndex !== undefined && { itemIndex: input.itemIndex }),
+        ...(input.files ? { files: input.files } : { value: input.value }),
+      });
+      return api.previewStageRun(run.id, {
+        blueprintVersionId,
+        stageKey: input.stageKey,
+        mode: 'supply',
+        action: 'rerun',
+        scope: 'stage',
+        artifactId,
+        ...(input.skipValidation && { skipValidation: true }),
+        ...(input.itemIndex !== undefined && { itemIndex: input.itemIndex }),
+      });
+    },
+    onSuccess: (preview) => setExecutionPlan(preview),
+    onError: fail,
+  });
   const cancel = useMutation({
     mutationFn: () => api.cancelRun(run!.id),
     onSuccess: async () => {
@@ -206,6 +239,7 @@ export function useRunExecutionActions({
   });
   return {
     runStage,
+    supplyOutput,
     executionPlan,
     setExecutionPlan,
     confirmExecution,

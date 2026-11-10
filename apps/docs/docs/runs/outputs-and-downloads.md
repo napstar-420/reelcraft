@@ -17,6 +17,9 @@ opens beside the canvas. On the run page, select a stage in the pipeline to open
   Above a generated output, **Made with** names the model that made it. On the canvas, if you've since
   changed the stage's model, it says **Made with a different model**: changing the model keeps the
   output, so run the stage again when you want one from the new model.
+  An output you or the assistant supplied shows **Supplied by you** or **Supplied by the assistant**
+  instead, plus **Checks skipped** if its checks and quality review were skipped; see
+  [Replace a stage's output](./canvas-runs.md#replace-a-stages-output).
 - **Attempts** shows candidates, duration, cost, check results, QC/review feedback, and expandable raw logs.
   Rejected and historical candidates are identified separately from the current accepted output.
 - **Inputs & dependencies** (on the canvas) shows recorded inputs, source artifact/memory versions, and the

@@ -80,6 +80,38 @@ These edits don't make a stage stale, because they don't change what it generate
 Changing a stage's checks or quality criteria doesn't make it stale either; the stage shows
 **Validation outdated** instead; use **Re-check output** to judge its output against the new checks.
 
+## Replace a stage's output
+
+Instead of running a stage, you can give it the output yourself. Open the stage's output (**View
+output**) and select **Replace output**, or **Replace item output** for one item of an iterating stage.
+The dialog depends on what the stage makes:
+
+- **Text**: type it.
+- **Data**: fill in the form made from the stage's output schema, or switch to **Raw JSON**.
+- **Timeline**: paste the timeline as JSON. Every clip, caption and font must point at something that
+  exists in the run.
+- **Image, Video, Audio, Model and their lists**: pick files from the channel's **Library**, in order, or
+  select **Upload to Library** first.
+
+Select **Continue**. Reelcraft checks the output against what the stage declares first (a schema
+violation or a timeline that points at missing files is refused, with the reason), then asks **Use this
+output?**. Select **Use output**.
+
+- By default the stage's checks and quality review run on your output. If it fails, the run waits for
+  your review: **Approve** keeps it, **Reject** makes the stage generate it again with your note.
+- Tick **Skip checks and quality review** to use it as it is. The checkbox only appears when the stage
+  has checks or quality review. Skipping never skips the output-contract check above. The output shows
+  **Checks skipped**.
+- Your own output isn't sent to the stage's approval review; one the assistant supplies still is.
+- Stages after it become out of date and are **not** run; **Continue** or **Run from this stage to the
+  end** regenerates them. If a later review sends work back to this stage, the stage generates over your
+  output.
+- For one item, later items that read the previous item are made out of date as well.
+- The output shows **Supplied by you** (or **Supplied by the assistant**). If an earlier stage changes
+  later, your output goes out of date like any other.
+
+Subtitle files can't be replaced from this dialog; ask the assistant.
+
 ## Confirmations
 
 Most buttons start straight away. You're asked to confirm only when the action would replace work that

@@ -36,6 +36,31 @@ function harness() {
 const cleanup: Array<() => void> = [];
 afterEach(() => cleanup.splice(0).forEach((stop) => stop()));
 
+describe('skip-checks approval boundary', () => {
+  it('waits for its own Yes in Auto mode and refuses blanket answers', async () => {
+    const h = harness();
+    cleanup.push(() => {
+      h.controller.abort();
+      h.timer.stop();
+    });
+    const decision = h.service['confirm'](
+      'session',
+      'turn',
+      Object.assign(newTurnContext(), { mode: 'auto' as const }),
+      { tool: 'supply_output', kind: 'action', title: 'Use this output', skipsChecks: true },
+      h.timer,
+      h.controller.signal,
+    );
+    await vi.waitFor(() => expect(h.createItem).toHaveBeenCalled());
+    expect(h.createItem.mock.calls[0]![4]).toMatchObject({ skipsChecks: true });
+    await expect(
+      h.service.decideApproval('session', 'approval', { answer: 'yes_turn' }),
+    ).rejects.toThrow('Skipping checks requires a separate Yes or No decision');
+    await h.service.decideApproval('session', 'approval', { answer: 'yes' });
+    await expect(decision).resolves.toEqual({ answer: 'yes' });
+  });
+});
+
 describe('uncertain restart approval boundary', () => {
   it.each([{ mode: 'auto' as const }, { mode: 'manual' as const, preApproved: true }])(
     'waits for a separate decision with %j',
