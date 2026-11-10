@@ -54,6 +54,20 @@ describe('authoritative execution eligibility', () => {
     );
     expect(actions.stages.final).toMatchObject({ run: true, blockedReason: null });
   });
+  it('offers Re-check only for a passed stage with checks or quality review', () => {
+    const checked = graph.map((stage) =>
+      stage.key === 'source'
+        ? { ...stage, checks: [{ type: 'script' as const, name: 'c', code: 'return true;' }] }
+        : stage,
+    );
+    expect(executionEligibility(checked, rows, {}, 'IDLE').stages.source?.recheck).toBe(true);
+    expect(executionEligibility(graph, rows, {}, 'IDLE').stages.source?.recheck).toBe(false);
+    expect(executionEligibility(checked, rows, {}, 'RUNNING').stages.source?.recheck).toBe(false);
+    const failed = rows.map((row) =>
+      row.stageKey === 'source' ? { ...row, state: 'failed' } : row,
+    );
+    expect(executionEligibility(checked, failed, {}, 'IDLE').stages.source?.recheck).toBe(false);
+  });
   it('keeps saved waits and queued admission from being regenerated', () => {
     expect(executionEligibility(graph, rows, {}, 'IDLE', true).run.busy).toBe(true);
     expect(

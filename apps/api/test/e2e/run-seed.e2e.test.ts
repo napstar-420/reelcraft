@@ -404,55 +404,20 @@ describe('seeded runs — run a stage without re-running upstream (e2e)', () => 
         ).toBeUndefined();
         expect(submit).not.toHaveBeenCalled();
         const after = await f.runs.get(f.created.id);
-        expect(after.state).toBe(pass ? 'IDLE' : 'FAILED');
+        // A re-check keeps the output in place; a failing one waits for review.
+        expect(after.state).toBe(pass ? 'IDLE' : 'PAUSED_APPROVAL');
         expect(
           (await testDb.db.select().from(artifact).where(eq(artifact.id, oldArtifactId)))[0],
-        ).toEqual({ ...oldArtifact, stale: true });
-        if (pass) {
-          const outputId = after.stageExecutions.find(
-            (e) => e.stageKey === 'scenes',
-          )!.outputArtifactId!;
-          expect(outputId).not.toBe(oldArtifactId);
-          const [validated] = await testDb.db
-            .select()
-            .from(artifact)
-            .where(eq(artifact.id, outputId));
-          expect(validated?.data).toEqual(oldArtifact!.data);
-          expect(validated?.blobId).toEqual(oldArtifact!.blobId);
-        }
+        ).toEqual(oldArtifact);
+        expect(after.stageExecutions.find((e) => e.stageKey === 'scenes')).toMatchObject({
+          outputArtifactId: oldArtifactId,
+          state: pass ? 'passed' : 'awaiting_approval',
+        });
         if (!pass) {
-          const repaired = await f.blueprints.createVersion(
-            f.blueprintId,
-            {
-              ...f.dto,
-              graph: f.dto.graph.map((s) =>
-                s.key === 'scenes'
-                  ? {
-                      ...s,
-                      checks: [
-                        {
-                          type: 'script' as const,
-                          name: 'Revalidation',
-                          code: 'return {pass:true};',
-                        },
-                      ],
-                    }
-                  : s,
-              ),
-            },
-            { draft: true },
-          );
-          const retryRequest = { ...request, blueprintVersionId: repaired.id };
-          const retry = await f.plans.preview(f.created.id, retryRequest);
-          expect(retry.blockedReason).toBeNull();
-          await f.plans.confirm(f.created.id, {
-            ...retryRequest,
-            previewToken: retry.previewToken,
-          });
+          await testApp.app.get(HumanActionService).approve(f.created.id, 'scenes');
           expect(
-            (await driveRun(f.created.id, ready.stageExecutions, ['scenes'])).error,
-          ).toBeUndefined();
-          expect((await f.runs.get(f.created.id)).state).toBe('IDLE');
+            (await f.runs.get(f.created.id)).stageExecutions.find((e) => e.stageKey === 'scenes'),
+          ).toMatchObject({ outputArtifactId: oldArtifactId, state: 'passed' });
           expect(submit).not.toHaveBeenCalled();
         }
       } finally {

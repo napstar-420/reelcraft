@@ -64,6 +64,9 @@ export const StageAvailableActions = z.object({
   rerun: z.boolean(),
   runThrough: z.boolean().optional(),
   rebuildDescendants: z.boolean().optional(),
+  /** Its stored output (or items) can be checked again without regenerating: it passed and
+   * has checks or quality review. */
+  recheck: z.boolean().optional(),
   blockedReason: z.string().nullable(),
   completedItems: z.number(),
   totalItems: z.number().nullable(),

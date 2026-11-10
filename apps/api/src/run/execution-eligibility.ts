@@ -95,6 +95,11 @@ export function executionEligibility(
       run: ready && !started,
       continue: ready && started && unfinished,
       rerun: ready && started,
+      recheck:
+        ready &&
+        execution?.state === 'passed' &&
+        (stage.checks.length > 0 || !!stage.qc) &&
+        (!execution.isIterating || completed > 0),
       blockedReason,
       completedItems: completed,
       totalItems: execution?.itemCount ?? null,

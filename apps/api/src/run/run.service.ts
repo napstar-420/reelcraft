@@ -1405,7 +1405,7 @@ export class RunService {
           eq(artifact.runId, runId),
           eq(artifact.producerStageKey, stageKey),
           artifactWhere,
-          eq(artifact.stale, true),
+          // A failed re-check reviews the current (active) output.
         ),
       )
       .limit(1);

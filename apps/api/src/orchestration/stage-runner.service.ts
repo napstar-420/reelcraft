@@ -66,6 +66,9 @@ export class ExecutionRetiredError extends Error {}
 export interface StageAttemptContext {
   /** Explicit revalidation must never fall through to provider generation. */
   validationOnly?: boolean;
+  /** A re-check of the stage's (or item's) current output, which stays active: a pass only
+   * records the verdict, and nothing is finalized, written to memory or swapped. */
+  inPlace?: boolean;
   executionEpoch?: number | undefined;
   runId: string;
   stageExecutionId: string;
@@ -1553,7 +1556,13 @@ export class StageRunnerService {
       }
       await this.db
         .update(stageAttempt)
-        .set({ resolvedInputs: { ...bindings.provenance, ...checkProvenance } })
+        .set({
+          resolvedInputs: {
+            ...bindings.provenance,
+            ...checkProvenance,
+            ...(ctx.inPlace && { recheck: { inPlace: true } }),
+          },
+        })
         .where(eq(stageAttempt.id, ctx.stageAttemptId));
 
       // Several candidates: each is checked on its own, and only the ones that
@@ -1840,9 +1849,33 @@ export class StageRunnerService {
         return { outcome: 'run_not_running' as const };
       }
 
+      // A passing re-check keeps the current output as it is: no finalize, no memory writes.
+      if (ctx.inPlace) {
+        await tx
+          .update(stageAttempt)
+          .set({ outcome: 'success', checkResults })
+          .where(eq(stageAttempt.id, ctx.stageAttemptId));
+        if (ctx.stageItemId)
+          await tx
+            .update(stageItem)
+            .set({ state: 'passed' })
+            .where(eq(stageItem.id, ctx.stageItemId));
+        else
+          await tx
+            .update(stageExecution)
+            .set({ state: 'passed', endedAt: new Date().toISOString() })
+            .where(eq(stageExecution.id, ctx.stageExecutionId));
+        return { outcome: 'success' as const, artifactId };
+      }
+
       // A stage reviewed as a whole lets each item pass; `finishIteratingStage`
-      // asks for the one review once every item has.
-      if (stage.approval && !(ctx.stageItemId && approvalModeOf(stage) === 'stage')) {
+      // asks for the one review once every item has. Validation of a stored output
+      // was already reviewed, or goes to review when it fails.
+      if (
+        stage.approval &&
+        !ctx.validationOnly &&
+        !(ctx.stageItemId && approvalModeOf(stage) === 'stage')
+      ) {
         await this.openApprovalGate(tx, stage, ctx, checkResults);
         return { outcome: 'approval_required' as const, artifactId };
       }
@@ -1985,9 +2018,11 @@ export class StageRunnerService {
         stageItemId: stageAttempt.stageItemId,
         runId: stageExecution.runId,
         stageKey: stageExecution.stageKey,
+        artifactStale: artifact.stale,
       })
       .from(stageAttempt)
       .innerJoin(stageExecution, eq(stageExecution.id, stageAttempt.stageExecutionId))
+      .leftJoin(artifact, eq(artifact.id, stageAttempt.artifactId))
       .where(
         and(
           eq(stageAttempt.stageExecutionId, stageExecutionId),
@@ -2018,6 +2053,7 @@ export class StageRunnerService {
     }
     return {
       validationOnly: row.actor === 'user',
+      ...(row.actor === 'user' && row.artifactStale === false && { inPlace: true }),
       executionEpoch: executionEpoch ?? row.executionEpoch,
       runId: row.runId,
       stageExecutionId,
@@ -2084,7 +2120,9 @@ export class StageRunnerService {
       }),
     );
     const mediaBlob = stored.blobId ? await keyOf(stored.blobId) : undefined;
-    const candidates = stored.kind === 'media.image' ? storedCandidates(stored.data) : [];
+    // A re-check judges the output as it is: it must never swap in another candidate.
+    const candidates =
+      stored.kind === 'media.image' && !ctx.inPlace ? storedCandidates(stored.data) : [];
     const pick: PickItem[] = await Promise.all(
       candidates.map(async (item) => {
         const file = await keyOf(item.blobId);
@@ -2731,6 +2769,20 @@ export class StageRunnerService {
     }
     // A stage reviewed as a whole waits for one approval of all its items,
     // which are already accepted one by one; Approve then marks it passed.
+    // A round that only re-checked stored items generated nothing new to review.
+    if (awaitApproval) {
+      const [newest] = await this.db
+        .select({ resolvedInputs: stageAttempt.resolvedInputs, outcome: stageAttempt.outcome })
+        .from(stageAttempt)
+        .where(eq(stageAttempt.stageExecutionId, stageExecutionId))
+        .orderBy(desc(stageAttempt.createdAt), desc(stageAttempt.id))
+        .limit(1);
+      if (
+        newest?.outcome === 'success' &&
+        (newest.resolvedInputs as { recheck?: unknown } | null)?.recheck
+      )
+        awaitApproval = false;
+    }
     await this.db.transaction(async (tx) => {
       const [updated] = await tx
         .update(stageExecution)
