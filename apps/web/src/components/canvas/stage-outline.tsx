@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { FlaskConical, Loader2, Plus, Search, SlidersHorizontal } from 'lucide-react';
+import { FlaskConical, Loader2, Pencil, Plus, Search, SlidersHorizontal } from 'lucide-react';
 import { cn } from 'cn';
 import type { RunDetailDto, StageDef, ValidationIssue } from '@reelcraft/shared';
 import { Button } from '@/components/ui/button';
@@ -109,6 +109,7 @@ export function StageOutline({
             (i) => i.severity === 'error',
           );
           const selected = focus?.kind === 'stage' && focus.key === stage.key;
+          const edited = editedKeys.has(stage.key);
           return (
             <div key={stage.key}>
               {header ? (
@@ -130,14 +131,23 @@ export function StageOutline({
                 <span className="w-5 shrink-0 text-right font-mono text-[11px] text-faint">
                   {index + 1}
                 </span>
-                <span className="min-w-0 flex-1 truncate">{name}</span>
+                {/* An edited stage is marked by its label colour and a pencil, not a badge,
+                    so the draft run's status mark for the stage stays visible beside it. */}
+                <span
+                  className={cn('flex min-w-0 flex-1 items-center gap-1', edited && 'text-wait')}
+                  title={edited ? 'Edited since the last saved version' : undefined}
+                >
+                  <span className="truncate">{name}</span>
+                  {edited ? (
+                    <>
+                      <Pencil aria-hidden className="size-3 shrink-0" />
+                      <span className="sr-only"> (edited)</span>
+                    </>
+                  ) : null}
+                </span>
                 {problems.length ? (
                   <span className="inline-flex h-[18px] items-center rounded-full bg-bad-soft px-1.5 text-[11px] font-medium text-bad">
                     {problems.length} problem{problems.length === 1 ? '' : 's'}
-                  </span>
-                ) : editedKeys.has(stage.key) ? (
-                  <span className="inline-flex h-[18px] items-center rounded-full bg-wait-soft px-1.5 text-[11px] font-medium text-wait">
-                    edited
                   </span>
                 ) : (
                   <StageMark state={states.get(stage.key)} />
