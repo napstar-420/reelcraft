@@ -7,6 +7,7 @@ import { BlueprintService } from '../../src/blueprint/blueprint.service';
 import { RunService } from '../../src/run/run.service';
 import { RunStagePlanService } from '../../src/run/run-stage-plan.service';
 import { HumanActionService } from '../../src/run/human-action.service';
+import { RunCancellationService } from '../../src/run/run-cancellation.service';
 import { StageRunnerService } from '../../src/orchestration/stage-runner.service';
 import {
   artifact,
@@ -369,6 +370,45 @@ describe('Re-check output (e2e)', () => {
     expect(itemsAfter.map((i) => [i.state, i.outputArtifactId])).toEqual(
       itemsBefore.map((i) => ['passed', i.outputArtifactId]),
     );
+  });
+
+  it('puts a stage and an item back to passed when a queued re-check is cancelled', async () => {
+    const shots = StageDef.parse({
+      ...text('shots', { dependsOn: ['list'], checks: [pass] }),
+      iterate: { over: { from: 'stage', stageKey: 'list' }, itemAlias: 'shot', itemRetryLimit: 0 },
+      slots: { shot: { from: 'item' } },
+    });
+    const list = text('list', {
+      output: { kind: 'data', schema: { type: 'array', items: { type: 'string' } } },
+      model: { provider: 'fake', modelId: 'fake-text-1', params: { fakeOutput: ['a', 'b'] } },
+    });
+    const { runId, version } = await fixture([list, text('draft', { dependsOn: [] }), shots]);
+    await drive(runId, ['list', 'draft', 'shots'], 2);
+    expect((await runs.get(runId)).state).toBe('COMPLETED');
+    const cancellation = app.app.get(RunCancellationService);
+    const outputs = async () => (await activeArtifacts(runId)).map((a) => a.id).sort();
+    const before = await outputs();
+
+    for (const [stageKey, item] of [
+      ['draft', undefined],
+      ['shots', 1],
+    ] as const) {
+      await recheck(runId, version.id, stageKey, item);
+      expect((await execution(runId, stageKey)).state).toBe('pending');
+      // The wakeup has started the run: cancelling now settles the queued re-check.
+      await database.db.update(run).set({ state: 'RUNNING' }).where(eq(run.id, runId));
+      await cancellation.cancel(runId);
+      const restored = await execution(runId, stageKey);
+      expect(restored.state).toBe('passed');
+      const rows = await database.db
+        .select()
+        .from(stageItem)
+        .where(eq(stageItem.stageExecutionId, restored.id));
+      expect(rows.every((i) => i.state === 'passed')).toBe(true);
+      expect(await outputs()).toEqual(before);
+      // Continue has nothing to redo: the output was never replaced.
+      await database.db.update(run).set({ state: 'COMPLETED' }).where(eq(run.id, runId));
+    }
   });
 
   it('blocks a re-check once the stage itself changed, or before it has passed', async () => {

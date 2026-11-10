@@ -1,12 +1,19 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
-import { and, eq, inArray, notInArray, lt, sql, or, isNull } from 'drizzle-orm';
+import { and, desc, eq, inArray, ne, notInArray, lt, sql, or, isNull } from 'drizzle-orm';
 import { StageDef, type JobHandle } from '@reelcraft/shared';
 import { LedgerService } from '../budget/ledger.service';
 import { CapabilityRegistry } from '../capability/capability.registry';
 import { DRIZZLE, type Db } from '../db/drizzle.provider';
 import { LiveEvents } from '../live/live-events';
 import { NotificationService } from '../notification/notification.service';
-import { blueprintVersion, run, stageAttempt, stageExecution, stageItem } from '../db/schema/index';
+import {
+  artifact,
+  blueprintVersion,
+  run,
+  stageAttempt,
+  stageExecution,
+  stageItem,
+} from '../db/schema/index';
 import { HumanWaitService } from './human-wait.service';
 import { RunMutationService } from './run-mutation.service';
 import { RunWakeupDispatcher } from './run-wakeup-dispatcher.service';
@@ -245,6 +252,75 @@ export class RunCancellationService {
         })
         .where(
           and(eq(stageAttempt.id, attempt.id), lt(stageAttempt.executionEpoch, cancelledEpoch)),
+        );
+    }
+    await this.restoreCancelledRechecks(runId, cancelledEpoch);
+  }
+
+  /** A re-check judges an output that stays current, so cancelling it must not leave the stage
+   * (or item) waiting to run: Continue would regenerate work that had passed. Puts the slot back
+   * to passed when its newest attempt is a cancelled in-place re-check of the active output.
+   * Other pending work and open waits are left as they are. */
+  private async restoreCancelledRechecks(runId: string, cancelledEpoch: number): Promise<void> {
+    if (!this.db) return;
+    const rows = await this.db
+      .select({
+        id: stageAttempt.id,
+        executionId: stageAttempt.stageExecutionId,
+        itemId: stageAttempt.stageItemId,
+        attemptNo: stageAttempt.attemptNo,
+        resolvedInputs: stageAttempt.resolvedInputs,
+        artifactStale: artifact.stale,
+      })
+      .from(stageAttempt)
+      .innerJoin(stageExecution, eq(stageAttempt.stageExecutionId, stageExecution.id))
+      .leftJoin(artifact, eq(artifact.id, stageAttempt.artifactId))
+      .where(
+        and(
+          eq(stageExecution.runId, runId),
+          lt(stageAttempt.executionEpoch, cancelledEpoch),
+          eq(stageAttempt.actor, 'user'),
+          eq(stageAttempt.outcome, 'cancelled'),
+        ),
+      );
+    const executions = new Set<string>();
+    for (const row of rows) {
+      if (!(row.resolvedInputs as { recheck?: unknown } | null)?.recheck) continue;
+      if (row.artifactStale !== false) continue;
+      const slot = and(
+        eq(stageAttempt.stageExecutionId, row.executionId),
+        row.itemId ? eq(stageAttempt.stageItemId, row.itemId) : isNull(stageAttempt.stageItemId),
+      );
+      const [newest] = await this.db
+        .select({ id: stageAttempt.id })
+        .from(stageAttempt)
+        .where(slot)
+        .orderBy(desc(stageAttempt.attemptNo))
+        .limit(1);
+      if (newest?.id !== row.id) continue;
+      if (row.itemId) {
+        await this.db
+          .update(stageItem)
+          .set({ state: 'passed' })
+          .where(and(eq(stageItem.id, row.itemId), eq(stageItem.state, 'pending')));
+      }
+      executions.add(row.executionId);
+    }
+    for (const executionId of executions) {
+      const [unfinished] = await this.db
+        .select({ id: stageItem.id })
+        .from(stageItem)
+        .where(and(eq(stageItem.stageExecutionId, executionId), ne(stageItem.state, 'passed')))
+        .limit(1);
+      if (unfinished) continue;
+      await this.db
+        .update(stageExecution)
+        .set({ state: 'passed' })
+        .where(
+          and(
+            eq(stageExecution.id, executionId),
+            inArray(stageExecution.state, ['pending', 'cancelled']),
+          ),
         );
     }
   }

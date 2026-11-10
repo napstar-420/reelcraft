@@ -123,7 +123,10 @@ export function SupplyOutputDialog({
   const rawEditor = (
     <Textarea
       value={raw}
-      onChange={(event) => setRaw(event.target.value)}
+      onChange={(event) => {
+        setRaw(event.target.value);
+        setError(null);
+      }}
       disabled={pending}
       rows={10}
       className="font-mono text-xs"
@@ -189,6 +192,13 @@ export function SupplyOutputDialog({
               >
                 {assets.isPending ? (
                   <Loader2 className="animate-spin" />
+                ) : assets.isError ? (
+                  <p role="alert" className="text-sm text-destructive">
+                    The Library could not be loaded.{' '}
+                    <Button size="xs" variant="outline" onClick={() => void assets.refetch()}>
+                      Retry
+                    </Button>
+                  </p>
                 ) : choices.length === 0 ? (
                   <p className="text-sm text-muted-foreground">
                     Nothing of this kind in the Library yet.

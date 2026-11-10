@@ -358,6 +358,24 @@ describe('recheck_output', () => {
     expect(out).toMatchObject({ ok: true, result: { status: 'rechecking' } });
   });
 
+  it('counts toward the goal and is refused past its limits', async () => {
+    const d = deps();
+    await runTool('recheck_output', { runId: 'r1', stageKey: 'script' }, manual().ctx, d);
+    expect(d.goals.refusal).toHaveBeenCalledWith(expect.anything(), 'bp1', 1.5);
+    expect(d.goals.recordAttempt).toHaveBeenCalledWith(expect.anything(), 'bp1', 'r1');
+
+    const over = deps();
+    vi.mocked(over.goals.refusal).mockResolvedValue('The goal budget is exhausted.');
+    const out = await runTool(
+      'recheck_output',
+      { runId: 'r1', stageKey: 'script' },
+      manual().ctx,
+      over,
+    );
+    expect(out).toEqual({ ok: false, error: 'The goal budget is exhausted.' });
+    expect(over.stagePlans.confirm).not.toHaveBeenCalled();
+  });
+
   it('says why a re-check is refused', async () => {
     const d = deps({
       stagePlans: {
@@ -440,6 +458,22 @@ describe('supply_output', () => {
     const out = await runTool('supply_output', input, manual().ctx, refusing);
     expect(out).toEqual({ ok: false, error: "That output can't be used: n must be a number" });
     expect(refusing.stagePlans.confirm).not.toHaveBeenCalled();
+  });
+
+  it('counts toward the goal and is refused past its limits', async () => {
+    const d = deps();
+    await runTool('supply_output', input, manual().ctx, d);
+    expect(d.goals.refusal).toHaveBeenCalledWith(expect.anything(), 'bp1', 1.5);
+    expect(d.goals.recordAttempt).toHaveBeenCalledWith(expect.anything(), 'bp1', 'r1');
+    const skipping = deps();
+    await runTool('supply_output', { ...input, skipChecks: true }, manual().ctx, skipping);
+    expect(skipping.goals.refusal).toHaveBeenCalledWith(expect.anything(), 'bp1', 0);
+
+    const over = deps();
+    vi.mocked(over.goals.refusal).mockResolvedValue('The goal budget is exhausted.');
+    const out = await runTool('supply_output', input, manual().ctx, over);
+    expect(out).toEqual({ ok: false, error: 'The goal budget is exhausted.' });
+    expect(over.stagePlans.confirm).not.toHaveBeenCalled();
   });
 
   it('needs exactly one of value or files', async () => {

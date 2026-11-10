@@ -472,6 +472,11 @@ const recheckOutput: AssistantTool<z.infer<typeof RecheckInput>> = {
       ...(input.itemIndex !== undefined && { itemIndex: input.itemIndex }),
     });
     if (plan.blockedReason) return { ok: false, error: plan.blockedReason };
+    // Quality review spends money, and its price is not known ahead: bound it by what the run can
+    // still spend, like any run, and count it as an attempt toward the goal.
+    const cost = executionPlanCost(insight);
+    const overGoal = await deps.goals.refusal(ctx.sessionId, insight.blueprintId, cost.maximumUsd);
+    if (overGoal) return { ok: false, error: overGoal };
     const refused = await confirmChange(ctx, {
       tool: 'recheck_output',
       kind: 'action',
@@ -479,6 +484,7 @@ const recheckOutput: AssistantTool<z.infer<typeof RecheckInput>> = {
       details: [
         'Runs its checks and quality review on the stored output again; nothing is regenerated.',
         'If it fails, the run waits for review.',
+        ...cost.details,
       ],
       costUsd: plan.estimatedRerunUsd,
     });
@@ -487,6 +493,7 @@ const recheckOutput: AssistantTool<z.infer<typeof RecheckInput>> = {
       ...plan.request,
       previewToken: plan.previewToken,
     });
+    await deps.goals.recordAttempt(ctx.sessionId, insight.blueprintId, input.runId);
     const watching = await autoWatch(ctx, deps, input.runId);
     return {
       ok: true,
@@ -625,6 +632,14 @@ const supplyOutput: AssistantTool<z.infer<typeof SupplyInput>> = {
       ...(input.itemIndex !== undefined && { itemIndex: input.itemIndex }),
     });
     if (plan.blockedReason) return { ok: false, error: plan.blockedReason };
+    // Unless its checks are skipped, quality review may run on it and spend money.
+    const cost = executionPlanCost(insight);
+    const overGoal = await deps.goals.refusal(
+      ctx.sessionId,
+      insight.blueprintId,
+      input.skipChecks ? 0 : cost.maximumUsd,
+    );
+    if (overGoal) return { ok: false, error: overGoal };
     const refused = await confirmChange(ctx, {
       tool: 'supply_output',
       kind: 'action',
@@ -637,6 +652,7 @@ const supplyOutput: AssistantTool<z.infer<typeof SupplyInput>> = {
           ? [`Makes out of date, without running: ${plan.invalidatedStageKeys.join(', ')}`]
           : []),
         "Replaces the stage's current output.",
+        ...(input.skipChecks ? [] : cost.details),
       ],
       costUsd: plan.estimatedRerunUsd,
       ...(input.skipChecks && { skipsChecks: true }),
@@ -646,6 +662,7 @@ const supplyOutput: AssistantTool<z.infer<typeof SupplyInput>> = {
       ...plan.request,
       previewToken: plan.previewToken,
     });
+    await deps.goals.recordAttempt(ctx.sessionId, insight.blueprintId, input.runId);
     const watching = await autoWatch(ctx, deps, input.runId);
     return {
       ok: true,

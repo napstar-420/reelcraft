@@ -112,7 +112,33 @@ export class StageOutputSupplyService {
       throw new UnprocessableEntityException('This stage has no items.');
     }
 
-    const built = await this.build(runRow, stage, dto, options);
+    // Files stored before a later failure (a second file that can't be read, audio that breaks the
+    // output's policy) are unused: mark them for collection so they don't wait for the run's delete.
+    const freeIfFailed: string[] = [];
+    try {
+      return await this.store(runRow, stage, dto, options, itemIndex, freeIfFailed);
+    } catch (error) {
+      if (freeIfFailed.length)
+        await this.db
+          .update(blob)
+          .set({ gcEligible: true, gcEligibleAt: new Date().toISOString() })
+          .where(inArray(blob.id, freeIfFailed))
+          .catch(() => undefined);
+      throw error;
+    }
+  }
+
+  private async store(
+    runRow: OwnedRun,
+    stage: StageDef,
+    dto: CreateStageOutputCandidateDto,
+    options: SupplyOptions,
+    itemIndex: number | undefined,
+    freeIfFailed: string[],
+  ): Promise<{ artifactId: string }> {
+    const runId = runRow.id;
+    const stageKey = stage.key;
+    const built = await this.build(runRow, stage, dto, options, freeIfFailed);
     const iterationValue = await this.iterationValueOf(runId, stageKey, itemIndex);
     const artifactId = await this.artifacts.recordAttemptArtifact({
       runId,
@@ -147,6 +173,7 @@ export class StageOutputSupplyService {
     stage: StageDef,
     dto: CreateStageOutputCandidateDto,
     options: SupplyOptions,
+    persistedBlobIds: string[],
   ): Promise<{
     data?: unknown;
     blobId?: string;
@@ -210,6 +237,7 @@ export class StageOutputSupplyService {
         runId: runRow.id,
         source: { kind: 'file.subtitles', format, text },
       });
+      persistedBlobIds.push(persisted.blobId);
       return {
         blobId: persisted.blobId,
         data: { format },
@@ -239,6 +267,7 @@ export class StageOutputSupplyService {
             },
           });
         });
+        persistedBlobIds.push(persisted.blobId);
         stored.push({ ...persisted, index, file });
       } catch (error) {
         throw new UnprocessableEntityException(

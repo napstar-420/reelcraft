@@ -472,6 +472,52 @@ describe('Supply a stage output (e2e)', () => {
     ).rejects.toBeInstanceOf(UnprocessableEntityException);
   });
 
+  it('frees the files of a candidate that fails after they were stored', async () => {
+    const image = StageDef.parse({
+      key: 'a',
+      label: 'a',
+      capability: 'image.generate',
+      config: {},
+      slots: {},
+      context: {},
+      output: { kind: 'media.image' },
+      checks: [],
+      retryLimit: 0,
+      model: { provider: 'fake', modelId: 'fake-image-1', params: {} },
+    });
+    // A video must carry sound by default, and the stored image has none: the output contract
+    // refuses it only after the file was stored.
+    const video = StageDef.parse({
+      ...image,
+      key: 'b',
+      label: 'b',
+      capability: 'video.generate',
+      output: { kind: 'media.video' },
+      model: { provider: 'fake', modelId: 'fake-video-1', params: {} },
+      dependsOn: [],
+      // Never run: only its output contract is exercised.
+      disabled: true,
+    });
+    const { runId, version } = await fixture([image, video]);
+    await drive(runId, ['a']);
+    const source = await activeOf(runId, 'a');
+    const before = await database.db.select().from(blob).where(eq(blob.runId, runId));
+    await expect(
+      supply.createCandidate(
+        runId,
+        'b',
+        { blueprintVersionId: version.id, files: [{ artifactId: source!.id }] },
+        { by: 'user' },
+      ),
+    ).rejects.toBeInstanceOf(UnprocessableEntityException);
+    const added = (await database.db.select().from(blob).where(eq(blob.runId, runId))).filter(
+      (row) => !before.some((old) => old.id === row.id),
+    );
+    expect(added).toHaveLength(1);
+    expect(added[0]).toMatchObject({ gcEligible: true });
+    expect(added[0]?.gcEligibleAt).not.toBeNull();
+  });
+
   it('stales a supplied output when an upstream stage is re-run', async () => {
     const { runId, version } = await fixture([text('draft'), text('final', reads)]);
     await drive(runId, ['draft', 'final']);

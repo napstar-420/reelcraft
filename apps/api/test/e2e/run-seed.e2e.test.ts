@@ -1021,6 +1021,55 @@ describe('seeded runs — run a stage without re-running upstream (e2e)', () => 
     expect(refetchedRun1?.spentUsd).toBe(run1Row?.spentUsd); // untouched by run2
   });
 
+  it('seeds from a run after an input label or required edit, but not after its type changes', async () => {
+    const runs = testApp.app.get(RunService);
+    const blueprints = testApp.app.get(BlueprintService);
+    const channel = await makeChannel('Seed Input Label');
+    const blueprintId = await blueprints.ensureBlueprint(channel.id, 'Seed Input Label Blueprint');
+    const input = (extra: Record<string, unknown> = {}) => ({
+      key: 'topic',
+      label: 'Topic',
+      required: true,
+      accepts: { kind: 'text' as const },
+      ...extra,
+    });
+    const define = (inputs: unknown[]) =>
+      blueprints.createVersion(blueprintId, {
+        graph: [topicsStage()],
+        inputs: inputs as never,
+        roles: [],
+        defaults: {},
+        budget: { runCapUsd: 10 },
+      });
+    const v1 = await define([input()]);
+    const run1 = await runs.create({
+      channelId: channel.id,
+      blueprintVersionId: v1.id,
+      inputs: { topic: 'otters' },
+      roleBindings: {},
+      rerunStageKeys: [],
+      budgetCapUsd: 10,
+    });
+    expect((await driveRun(run1.id, run1.stageExecutions)).result).toEqual({ state: 'COMPLETED' });
+    const seeded = (versionId: string) =>
+      runs.create({
+        channelId: channel.id,
+        blueprintVersionId: versionId,
+        seedFromRunId: run1.id,
+        inputs: { topic: 'otters' },
+        roleBindings: {},
+        rerunStageKeys: [],
+        budgetCapUsd: 10,
+      });
+    const relabelled = await define([input({ label: 'Subject', required: false })]);
+    const kept = await seeded(relabelled.id);
+    expect(kept.stageExecutions.find((e) => e.stageKey === 'topics')?.state).toBe('passed');
+    const retyped = await define([
+      input({ accepts: { kind: 'data', schema: { type: 'string' } } }),
+    ]);
+    await expect(seeded(retyped.id)).rejects.toThrow('changed shape');
+  });
+
   it('keeps an edited finished stage as it is when asked to, and re-runs it otherwise', async () => {
     const runs = testApp.app.get(RunService);
     const blueprints = testApp.app.get(BlueprintService);

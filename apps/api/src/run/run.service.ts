@@ -191,7 +191,9 @@ export class RunService {
       const newInputByKey = new Map(inputDefs.map((d) => [d.key, d]));
       for (const def of sourceInputDefs) {
         const newDef = newInputByKey.get(def.key);
-        if (!newDef || canonicalJson(def) !== canonicalJson(newDef)) {
+        // A label or `required` only changes how the input is asked for, not what it holds.
+        const shape = (d: InputDef) => ({ ...d, label: undefined, required: undefined });
+        if (!newDef || canonicalJson(shape(def)) !== canonicalJson(shape(newDef))) {
           throw new ConflictException(
             `Input "${def.key}" changed shape since the seed run — cannot reuse it`,
           );
