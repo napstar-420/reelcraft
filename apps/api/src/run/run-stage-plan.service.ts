@@ -12,6 +12,8 @@ import {
   stageDependencies,
   stageFreshness,
   definitionKey,
+  blueprintGeneration,
+  generationStage,
   type StageRunPlanRequestDto,
   type ConfirmStageRunPlanDto,
   type StageRunPlanDto,
@@ -125,33 +127,20 @@ export class RunStagePlanService {
     )
       blockedReason =
         'Stages were added or removed. Start a new run for the changed graph; existing outputs remain available.';
-    if (
-      ['inputs', 'roles', 'defaults'].some(
-        (key) =>
-          definitionKey(before[key as 'inputs' | 'roles' | 'defaults']) !==
-          definitionKey(draft[key as 'inputs' | 'roles' | 'defaults']),
-      )
-    )
+    if (definitionKey(blueprintGeneration(before)) !== definitionKey(blueprintGeneration(draft)))
       blockedReason =
-        'Blueprint inputs, roles, or defaults changed. Start a new run to apply those changes.';
+        'Blueprint inputs, roles, or format changed. Start a new run to apply those changes.';
+    // Other defaults (models, retries, budget) only change how stages run: a re-run applies them.
+    const defaultsChanged = definitionKey(before.defaults) !== definitionKey(draft.defaults);
     if (request.mode === 'reuse' && !request.stageKey && !request.action)
       blockedReason = 'Choose a single stage to use existing upstream outputs.';
     if (request.mode === 'reuse' && request.scope === 'descendants' && request.stageKey)
       blockedReason = 'Rebuilding descendants requires applying the draft changes.';
     // A changed consumer contract cannot be assumed compatible with old upstream outputs.
     const contract = (stage: StageDef) => ({
-      ...stage,
-      label: undefined,
-      group: undefined,
-      disabled: undefined,
+      ...generationStage(stage),
       instructions: undefined,
-      qc: undefined,
-      checks: undefined,
-      checkMaxAttempts: undefined,
       config: undefined,
-      model: undefined,
-      budget: undefined,
-      retryLimit: undefined,
     });
     if (
       request.mode === 'reuse' &&
@@ -320,8 +309,9 @@ export class RunStagePlanService {
             (key === request.stageKey &&
               request.action !== 'continue' &&
               request.itemIndex === undefined)) &&
-          definitionKey(before.graph.find((s) => s.key === key)) !==
-            definitionKey(draft.graph.find((s) => s.key === key)),
+          (defaultsChanged ||
+            definitionKey(before.graph.find((s) => s.key === key)) !==
+              definitionKey(draft.graph.find((s) => s.key === key))),
       ),
     );
     const availabilityChangedStageKeys = draft.graph
@@ -364,7 +354,7 @@ export class RunStagePlanService {
       graph,
       engine: engineDefaults(this.engine),
       channelDefaults: channelRow.defaults as ConfigLayer,
-      blueprintDefaults: source.defaults as ConfigLayer,
+      blueprintDefaults: requested.defaults as ConfigLayer,
     });
     if (current.dryRun) config = this.runs.applyDryRunOverride(graph, config);
     const pinnedAssets = current.assetBindings as Record<string, { blobId: string; kind: string }>;
@@ -678,15 +668,21 @@ export class RunStagePlanService {
           throw new ConflictException('The run changed. Review a new preview.');
         // Only a changed graph needs a draft snapshot; an unchanged one keeps the run on its
         // own version, so a production run stays pinned to the saved version it started from.
+        // Re-run stages that took the draft's defaults (a new default model, say) carry them too.
+        const defaultsApplied =
+          built.changedKeys.size > 0 &&
+          definitionKey(built.source.defaults) !== definitionKey(built.requested.defaults);
         const graphChanged =
+          defaultsApplied ||
           definitionKey(built.graph) !==
-          definitionKey(CreateBlueprintVersionDto.parse(built.source).graph);
+            definitionKey(CreateBlueprintVersionDto.parse(built.source).graph);
         const snapshotId = graphChanged ? ulid() : built.source.id;
         if (graphChanged)
           await tx.insert(blueprintVersion).values({
             ...built.source,
             id: snapshotId,
             graph: built.graph,
+            defaults: defaultsApplied ? built.requested.defaults : built.source.defaults,
             draft: true,
             createdAt: new Date().toISOString(),
           });

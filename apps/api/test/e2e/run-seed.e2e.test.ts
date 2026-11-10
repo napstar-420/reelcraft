@@ -1086,7 +1086,7 @@ describe('seeded runs — run a stage without re-running upstream (e2e)', () => 
     const v2 = await blueprints.createVersion(blueprintId, {
       ...base,
       graph: [
-        { ...topicsStage(), label: 'Topics (edited)', retryLimit: 1 },
+        { ...topicsStage(), instructions: { template: 'Topics (edited)' } },
         coverStage(),
         scriptStage(),
       ],

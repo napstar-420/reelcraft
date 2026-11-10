@@ -66,7 +66,7 @@ describe('reusableStageKeys', () => {
 
   it('keeps an edited finished stage, and the ones after it, when the person chose to', () => {
     const p = baseParams({
-      newGraph: [stage('topics'), stage('selector', { label: 'Selector v2' })],
+      newGraph: [stage('topics'), stage('selector', { instructions: { template: 'v2' } })],
     });
     expect(reusableStageKeys({ ...p, keepStageKeys: ['selector'] })).toEqual({
       keys: ['topics', 'selector'],
@@ -86,7 +86,7 @@ describe('reusableStageKeys', () => {
 
   it('cuts the prefix where a middle stage was edited', () => {
     const p = baseParams({
-      newGraph: [stage('topics'), stage('selector', { label: 'Selector v2' })],
+      newGraph: [stage('topics'), stage('selector', { instructions: { template: 'v2' } })],
     });
     expect(reusableStageKeys(p)).toEqual({
       keys: ['topics'],
@@ -110,9 +110,22 @@ describe('reusableStageKeys', () => {
     });
   });
 
-  it('cuts where resolved config plus overrides differ', () => {
+  it('reuses a stage whose model, retries or label changed', () => {
     const p = baseParams({
-      newResolvedConfig: { selector: { model: { provider: 'openrouter', modelId: 'x' } } },
+      newGraph: [
+        stage('topics', { label: 'Topics v2', retryLimit: 2, approval: { mode: 'stage' } }),
+        stage('selector', { model: { provider: 'openrouter', modelId: 'y' } }),
+      ],
+      newResolvedConfig: {
+        selector: { model: { provider: 'openrouter', modelId: 'x' }, retryLimit: 3 },
+      },
+    });
+    expect(reusableStageKeys(p)).toEqual({ keys: ['topics', 'selector'] });
+  });
+
+  it('cuts where the resolved format differs', () => {
+    const p = baseParams({
+      newResolvedConfig: { selector: { format: { aspectRatio: '9:16' } } },
     });
     expect(reusableStageKeys(p)).toEqual({
       keys: ['topics'],
@@ -258,7 +271,11 @@ describe('reusableStageKeys', () => {
 
   it('ignores stages outside `relevant`, so a changed sibling does not cut the prefix', () => {
     const sourceGraph = [stage('a'), stage('b'), stage('c', { dependsOn: ['a'] })];
-    const newGraph = [stage('a'), stage('b', { label: 'B v2' }), stage('c', { dependsOn: ['a'] })];
+    const newGraph = [
+      stage('a'),
+      stage('b', { instructions: { template: 'B v2' } }),
+      stage('c', { dependsOn: ['a'] }),
+    ];
     const p = baseParams({
       sourceGraph,
       newGraph,
@@ -343,7 +360,7 @@ describe('reusableStageKeys', () => {
       ],
       newGraph: [
         stage('topics'),
-        stage('selector', { iterate: { ...iterate, itemRetryLimit: 2 } }),
+        stage('selector', { iterate: { ...iterate, itemRetryLimit: 0, maxItems: 2 } }),
       ],
     });
     expect(reusableStageKeys(p).stop).toEqual({

@@ -5,7 +5,7 @@ import type {
   StageExecutionState,
 } from '@reelcraft/shared';
 import { runningNow } from '@/pages/runs-page.logic';
-import { definitionKey } from './stage-freshness';
+import { blueprintGeneration, definitionKey } from './stage-freshness';
 
 type RunLike = Pick<RunDetailDto, 'state' | 'availableActions'> & {
   stageExecutions: Array<{
@@ -99,11 +99,7 @@ export function requiresNewRun(
   const keys = (graph: StageDef[]) => graph.map((s) => s.key);
   if (definitionKey(keys(source.graph).sort()) !== definitionKey(keys(draft.graph).sort()))
     return 'Stages were added or removed since this run started.';
-  if (
-    (['inputs', 'roles', 'defaults'] as const).some(
-      (key) => definitionKey(source[key]) !== definitionKey(draft[key]),
-    )
-  )
-    return 'Blueprint inputs, roles or defaults changed since this run started.';
+  if (definitionKey(blueprintGeneration(source)) !== definitionKey(blueprintGeneration(draft)))
+    return 'Blueprint inputs, roles or format changed since this run started.';
   return null;
 }

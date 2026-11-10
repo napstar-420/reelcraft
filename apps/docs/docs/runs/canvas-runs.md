@@ -29,14 +29,17 @@ The **⋯** menu next to it holds:
 - **Start over (new test run)**: the same as **Test run**, while a run is still open.
 - **Concurrent branches**: how many stages may run at once (default **2**).
 
-If you added or removed stages, or changed the blueprint's inputs, roles or defaults, the open test run
-can't take those changes. **Continue** then starts a new test run that keeps every finished stage that is
+If you added or removed stages, or changed the blueprint's inputs, roles or format, the open test run
+can't take those changes. Other defaults, such as the default model, retries or budget, don't need a new
+run: a stage you run again uses them. **Continue** then starts a new test run that keeps every finished stage that is
 still valid and runs the rest, so you don't redo work. A note beside the button says so. Reconnecting
 stages is fine: **Continue** gives them their new connections when they run again.
 
 ## When finished stages are out of date
 
-If you edit a stage that already finished, it and the stages after it are marked **Stale**. Pressing
+If you edit what a stage that already finished generates, it and the stages after it are marked
+**Stale**. Settings that only change how a stage runs keep its output (see [Stale stages](#stale-stages)).
+Pressing
 **Continue** then asks:
 
 - **Regenerate stale stages:** runs them again, which can cost money again.
@@ -62,8 +65,19 @@ stay visible.
 
 When you edit a stage that already passed, it and the stages after it are marked **Stale**. Their
 outputs stay in history. **Continue**, **Run up to this stage** and **Run from this stage to the end**
-redo stale stages automatically. **Run this stage only** leaves them alone. Renaming a stage doesn't
-make it stale.
+redo stale stages automatically. **Run this stage only** leaves them alone.
+
+These edits don't make a stage stale, because they don't change what it generated:
+
+- its label or phase, or turning it on or off (including its condition);
+- its model, including the model's settings, and the blueprint's default models and preferred providers.
+  The output shows which model made it (see [Outputs and downloads](./outputs-and-downloads.md));
+- retries, budget, approval, how many items run at once, and item retries;
+- how many failed attempts checks or quality review allow, and what happens when they run out;
+- an input's or role's label, or whether it's required.
+
+Changing a stage's checks or quality criteria doesn't make it stale either; the stage shows
+**Validation outdated** instead.
 
 ## Confirmations
 
