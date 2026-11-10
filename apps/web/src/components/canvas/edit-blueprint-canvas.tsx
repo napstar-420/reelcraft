@@ -685,8 +685,8 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
         : 'as the first stage';
   const selectedExecution = canvasRun.run?.stageExecutions.find((e) => e.stageKey === selectedKey);
   /** The test run as the canvas shows it: a passed stage whose output an edit made out of date
-   * reads as stale, and stage actions a fresh run is needed for are withdrawn. The graph shows
-   * this one; the outline shows the real run state. */
+   * reads as stale, and stage actions a fresh run is needed for are withdrawn. The outline and
+   * the graph both show this one. */
   const decoratedRun = canvasRun.run
     ? {
         ...canvasRun.run,
@@ -704,6 +704,15 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
         })),
       }
     : undefined;
+  /** The outline's run: an edited stage shows how it last ran, since its label colour already
+   * marks the edit; every other stage reads as the decorated run does, so a saved edit still
+   * shows its old pass as stale. */
+  const outlineRun = decoratedRun && {
+    ...decoratedRun,
+    stageExecutions: decoratedRun.stageExecutions.map((e, i) =>
+      editedKeys.has(e.stageKey) ? { ...e, state: canvasRun.run!.stageExecutions[i]!.state } : e,
+    ),
+  };
 
   async function addStage(capabilityKey: string, index: number, branchFrom?: string) {
     const capability = capabilities.data?.find((c) => c.key === capabilityKey);
@@ -906,9 +915,7 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
             focus={focus}
             issuesByStage={issuesByStage}
             editedKeys={editedKeys}
-            // The real test-run state, not the decorated one: an edit is already marked by the
-            // label colour, so the mark shows how the stage last ran instead of "stale".
-            run={readOnly ? undefined : canvasRun.run}
+            run={readOnly ? undefined : outlineRun}
             readOnly={readOnly}
             onFocus={(next) => {
               if (next.kind === 'stage') selectStage(next.key);
