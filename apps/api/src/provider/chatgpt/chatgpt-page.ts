@@ -54,7 +54,7 @@ const completedReplies = () => {
     const content = turn.querySelector(contentSelector);
     if (content) replies.push({ button: null, content, turn });
   }
-  return replies.sort((a, b) => ((a.turn || a.button).compareDocumentPosition(b.turn || b.button) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
+  return replies.filter((reply) => reply.content?.innerText?.trim()).sort((a, b) => ((a.turn || a.button).compareDocumentPosition(b.turn || b.button) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
 };
 // Every loaded generated image of the chat, in order. A reply with several images shows one large
 // image (the selected one) plus a strip of thumbnails, and each thumbnail already holds its own
@@ -68,6 +68,55 @@ const generatedImages = () => {
   const singles = [...main.querySelectorAll(S.generatedImage)].filter((i) => ok(i) && !groupedSrcs.has(i.src));
   const all = [...grouped, ...singles].sort((a, b) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
   return [...new Map(all.map((i) => [i.src, i])).values()];
+};`;
+
+const SAVED_REPLIES = `// Some completed answers have model_dil_v2 render code that returns null and empty
+// fallbackMarkdown, despite nonempty content.parts. Copy and rendered text both lose
+// those answers. Read only finished final text on the conversation's current branch.
+const savedReplies = async () => {
+  try {
+    // Send can return a local-chatgpt placeholder before the real URL appears.
+    const urls = [args.conversationUrl, location.href].filter(Boolean).map((value) => new URL(value));
+    const match = urls.map((url) => url.origin === 'https://chatgpt.com' &&
+      url.pathname.match(/^\\/c\\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i)).find(Boolean);
+    if (!match) return null;
+    const session = await fetch('/api/auth/session', { credentials: 'include', signal: AbortSignal.timeout(5000) });
+    if (!session.ok) return null;
+    const auth = await session.json();
+    if (!auth?.accessToken) return null;
+    const response = await fetch('/backend-api/conversation/' + match[1], {
+      credentials: 'include', headers: { authorization: 'Bearer ' + auth.accessToken }, signal: AbortSignal.timeout(5000),
+    });
+    if (!response.ok) return null;
+    const conversation = await response.json();
+    const mapping = conversation?.mapping;
+    if (!mapping || !mapping[conversation.current_node]) return null;
+    const branch = [], seen = new Set();
+    for (let id = conversation.current_node; id; id = mapping[id].parent) {
+      if (seen.has(id) || !mapping[id]) return null;
+      seen.add(id);
+      if (mapping[id].message) branch.unshift(mapping[id].message);
+    }
+    const replies = [];
+    let lastUser, answered = false;
+    for (const message of branch) {
+      if (message.author?.role === 'user') { lastUser = message; answered = false; continue; }
+      if (!lastUser || message.author?.role !== 'assistant' || message.recipient !== 'all' ||
+          (message.channel != null && message.channel !== 'final') ||
+          message.status !== 'finished_successfully' || message.end_turn !== true ||
+          message.content?.content_type !== 'text') continue;
+      const parts = message.content.parts;
+      if (!Array.isArray(parts) || !parts.every((part) => typeof part === 'string')) continue;
+      const text = parts.join('').trim();
+      if (!text) continue;
+      replies.push({ text, user: lastUser });
+      answered = true;
+    }
+    if (!lastUser) return null;
+    return { replies: replies.map((reply) => ({ ...reply, afterLastUser: reply.user === lastUser })),
+      lastUserPrompt: lastUser.content?.parts?.filter((part) => typeof part === 'string').join('').trim(),
+      pending: !answered && branch[branch.length - 1].end_turn !== true };
+  } catch { return null; }
 };`;
 
 function pageId(id: number): number {
@@ -329,7 +378,11 @@ export type PageState = {
   tail: string;
 };
 
-export function pageStateScript(id: number, comparePrompt?: string): string {
+export function pageStateScript(
+  id: number,
+  comparePrompt?: string,
+  conversationUrl?: string,
+): string {
   return inPage(
     id,
     `let signedIn = true;
@@ -349,36 +402,42 @@ const afterUserText = (() => {
 // A normal completed turn also has a Retry action; only the current turn's error text is a failure.
 const phrase = afterUserText.match(/message delivery timed out|something went wrong|network error|error generating/i);
 const errorSignal = phrase ? 'text: ' + phrase[0] : undefined;
-const replies = completedReplies();
+${SAVED_REPLIES}
+const saved = await savedReplies();
+const replies = saved?.replies ?? completedReplies();
 const afterUser = (node) => !!lastUser && !!(lastUser.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING);
 const images = generatedImages();
 return {
   signedIn,
   composer: !!document.querySelector(S.composer),
-  generating: !!document.querySelector(S.stop),
-  replyDone: replies.length > 0,
+  generating: !!document.querySelector(S.stop) || saved?.pending === true,
+  replyDone: saved ? replies.some((reply) => reply.afterLastUser) : replies.length > 0,
   replyCount: replies.length,
   images: images.length,
-  lastUserPromptMatches: args.comparePrompt === undefined ? undefined : lastUser?.innerText?.trim() === args.comparePrompt,
-  replyAfterLastUser: replies.some((reply) => afterUser(reply.button || reply.content)),
+  lastUserPromptMatches: args.comparePrompt === undefined ? undefined : (saved?.lastUserPrompt ?? lastUser?.innerText?.trim()) === args.comparePrompt,
+  replyAfterLastUser: replies.some((reply) => reply.afterLastUser ?? afterUser(reply.button || reply.content)),
   imageAfterLastUser: images.some(afterUser),
   imagesLoading: /(loading|creating|generating) image/i.test(afterUserText),
   errorShown: !!errorSignal,
   errorSignal,
   tail: afterUserText.slice(-400),
 };`,
-    { comparePrompt },
+    { comparePrompt, conversationUrl },
   );
 }
 
-/** Prefer copied markdown, but recover a completed turn even when clipboard capture is unavailable. */
-export function copyLastReplyScript(id: number, index?: number): string {
+/** Read saved final text, with Copy/rendered content as the fallback when it is unavailable. */
+export function copyLastReplyScript(id: number, index?: number, conversationUrl?: string): string {
   return inPage(
     id,
     `if (document.querySelector(S.stop)) return null;
-const replies = completedReplies();
+${SAVED_REPLIES}
+const saved = await savedReplies();
+if (saved?.pending) return null;
+const replies = saved?.replies ?? completedReplies();
 const reply = args.index === undefined || replies.length > args.index ? replies.pop() : null;
 if (!reply) return null;
+if (saved) return reply.afterLastUser ? reply.text : null;
 let copied = null;
 const cb = navigator.clipboard;
 const write = cb?.write, writeText = cb?.writeText;
@@ -397,7 +456,7 @@ try {
 if (typeof copied === 'string' && copied.trim()) return copied;
 // Scope the fallback to the assistant content, never the whole turn (which may include the prompt).
 return reply.content?.innerText?.trim() || null;`,
-    { index },
+    { index, conversationUrl },
   );
 }
 

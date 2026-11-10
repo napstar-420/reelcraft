@@ -30,6 +30,13 @@ quality-control call that cannot reach the judge waits 30 s, then 2 min, between
 Costs settle at `$0`. The job handle holds only the Neo page id, and Neo tabs outlive API
 restarts, so a restart mid-job keeps polling the same tab.
 
+For text replies, polling and collection first read the saved conversation through the signed-in
+tab. They follow only its current branch and accept nonempty, successfully finished assistant
+text with an ended turn, excluding reasoning and tool calls. This also recovers answers whose
+ChatGPT UI renderer returns nothing even though the saved final text is complete. The job's
+conversation URL keeps this read scoped correctly if the UI has redirected. When that read is
+unavailable, the Copy/rendered-text path above is used; a blank completed turn is never success.
+
 ### Prompt assembly
 
 The ChatGPT UI has one text box, so `buildChatgptPrompt` folds everything into the pasted
