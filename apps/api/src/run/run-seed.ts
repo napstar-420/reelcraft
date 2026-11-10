@@ -2,6 +2,7 @@ import { and, eq, inArray } from 'drizzle-orm';
 import {
   LIBRARY_KINDS,
   ancestorsOf,
+  generationStage,
   memoryWritersBefore,
   stageDependencies,
   stageRefLeaves,
@@ -62,19 +63,20 @@ export interface ReusableStageKeysParams {
   relevant?: Set<string>;
 }
 
-/** `iterate.concurrency` and `dependsOn` only change when and how fast a
- * stage runs, not what it produces, so a change to either must not break
- * reuse. */
+/** Only what a stage generates decides reuse: its model, retries, approval,
+ * concurrency, checks and `dependsOn` change how or when it runs, not its output. */
 function comparableStage(stage: StageDef): unknown {
-  const rest: StageDef = { ...stage };
-  delete rest.dependsOn;
-  delete rest.disabled;
-  delete rest.group;
-  if (!rest.iterate || !('concurrency' in rest.iterate)) return rest;
-  const iterate: Record<string, unknown> = { ...rest.iterate };
-  delete iterate.concurrency;
-  return { ...rest, iterate };
+  return { ...generationStage(stage), dependsOn: undefined };
 }
+
+/** The settings that change what a stage generates; the rest (models, retries,
+ * budget, polling) only change how it runs. */
+function generationLayer(layer: ConfigLayer): unknown {
+  return { format: layer.format, maxItems: layer.iterate?.maxItems };
+}
+
+const generationRoles = (roles: RoleDef[]) =>
+  roles.map((role) => ({ ...role, label: undefined, required: undefined }));
 
 function sourceStopReason(e: SourceExecutionSummary): SeedStopReason {
   if (e.state === 'awaiting_approval' || e.itemAwaitingApproval) return 'awaiting_approval';
@@ -111,7 +113,10 @@ export function reusableStageKeys(p: ReusableStageKeysParams): {
   stop?: SeedStop;
 } {
   const first = p.newGraph[0];
-  if (first && canonicalJson(p.sourceRoles) !== canonicalJson(p.newRoles)) {
+  if (
+    first &&
+    canonicalJson(generationRoles(p.sourceRoles)) !== canonicalJson(generationRoles(p.newRoles))
+  ) {
     return { keys: [], stop: { stageKey: first.key, reason: 'roles_changed' } };
   }
 
@@ -184,7 +189,8 @@ export function reusableStageKeys(p: ReusableStageKeysParams): {
     );
     if (
       !kept &&
-      canonicalJson(sourceLayer) !== canonicalJson(p.newResolvedConfig[newStage.key] ?? {})
+      canonicalJson(generationLayer(sourceLayer)) !==
+        canonicalJson(generationLayer(p.newResolvedConfig[newStage.key] ?? {}))
     ) {
       stopAt('config_changed');
       continue;

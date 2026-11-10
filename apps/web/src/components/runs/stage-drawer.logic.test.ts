@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { StageDef } from '@reelcraft/shared';
-import { failureReason, itemEmptyText, itemMark, stageReads } from './stage-drawer.logic';
+import {
+  failureReason,
+  itemEmptyText,
+  itemMark,
+  madeWithText,
+  stageReads,
+} from './stage-drawer.logic';
 
 const def = (key: string, extra: Partial<StageDef> = {}): StageDef => ({
   key,
@@ -65,5 +71,19 @@ describe('itemMark and itemEmptyText', () => {
   it('says why a stale item has no output, and keeps the plain message for a missing one', () => {
     expect(itemEmptyText(12, true)).toContain('Item 13 is out of date');
     expect(itemEmptyText(12, false)).toBe('Item 13 has no output yet.');
+  });
+});
+
+describe('madeWithText', () => {
+  const madeWith = { provider: 'openai', modelId: 'gpt-image-1' };
+  it('names the model, and says when the stage now uses another one', () => {
+    expect(madeWithText(null)).toBeNull();
+    expect(madeWithText(madeWith)).toBe('Made with openai/gpt-image-1');
+    expect(madeWithText(madeWith, { provider: 'openai', modelId: 'gpt-image-1' })).toBe(
+      'Made with openai/gpt-image-1',
+    );
+    expect(madeWithText(madeWith, { modelId: 'gpt-image-2' })).toBe(
+      'Made with a different model: openai/gpt-image-1',
+    );
   });
 });

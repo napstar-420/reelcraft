@@ -404,55 +404,20 @@ describe('seeded runs — run a stage without re-running upstream (e2e)', () => 
         ).toBeUndefined();
         expect(submit).not.toHaveBeenCalled();
         const after = await f.runs.get(f.created.id);
-        expect(after.state).toBe(pass ? 'IDLE' : 'FAILED');
+        // A re-check keeps the output in place; a failing one waits for review.
+        expect(after.state).toBe(pass ? 'IDLE' : 'PAUSED_APPROVAL');
         expect(
           (await testDb.db.select().from(artifact).where(eq(artifact.id, oldArtifactId)))[0],
-        ).toEqual({ ...oldArtifact, stale: true });
-        if (pass) {
-          const outputId = after.stageExecutions.find(
-            (e) => e.stageKey === 'scenes',
-          )!.outputArtifactId!;
-          expect(outputId).not.toBe(oldArtifactId);
-          const [validated] = await testDb.db
-            .select()
-            .from(artifact)
-            .where(eq(artifact.id, outputId));
-          expect(validated?.data).toEqual(oldArtifact!.data);
-          expect(validated?.blobId).toEqual(oldArtifact!.blobId);
-        }
+        ).toEqual(oldArtifact);
+        expect(after.stageExecutions.find((e) => e.stageKey === 'scenes')).toMatchObject({
+          outputArtifactId: oldArtifactId,
+          state: pass ? 'passed' : 'awaiting_approval',
+        });
         if (!pass) {
-          const repaired = await f.blueprints.createVersion(
-            f.blueprintId,
-            {
-              ...f.dto,
-              graph: f.dto.graph.map((s) =>
-                s.key === 'scenes'
-                  ? {
-                      ...s,
-                      checks: [
-                        {
-                          type: 'script' as const,
-                          name: 'Revalidation',
-                          code: 'return {pass:true};',
-                        },
-                      ],
-                    }
-                  : s,
-              ),
-            },
-            { draft: true },
-          );
-          const retryRequest = { ...request, blueprintVersionId: repaired.id };
-          const retry = await f.plans.preview(f.created.id, retryRequest);
-          expect(retry.blockedReason).toBeNull();
-          await f.plans.confirm(f.created.id, {
-            ...retryRequest,
-            previewToken: retry.previewToken,
-          });
+          await testApp.app.get(HumanActionService).approve(f.created.id, 'scenes');
           expect(
-            (await driveRun(f.created.id, ready.stageExecutions, ['scenes'])).error,
-          ).toBeUndefined();
-          expect((await f.runs.get(f.created.id)).state).toBe('IDLE');
+            (await f.runs.get(f.created.id)).stageExecutions.find((e) => e.stageKey === 'scenes'),
+          ).toMatchObject({ outputArtifactId: oldArtifactId, state: 'passed' });
           expect(submit).not.toHaveBeenCalled();
         }
       } finally {
@@ -1056,6 +1021,55 @@ describe('seeded runs — run a stage without re-running upstream (e2e)', () => 
     expect(refetchedRun1?.spentUsd).toBe(run1Row?.spentUsd); // untouched by run2
   });
 
+  it('seeds from a run after an input label or required edit, but not after its type changes', async () => {
+    const runs = testApp.app.get(RunService);
+    const blueprints = testApp.app.get(BlueprintService);
+    const channel = await makeChannel('Seed Input Label');
+    const blueprintId = await blueprints.ensureBlueprint(channel.id, 'Seed Input Label Blueprint');
+    const input = (extra: Record<string, unknown> = {}) => ({
+      key: 'topic',
+      label: 'Topic',
+      required: true,
+      accepts: { kind: 'text' as const },
+      ...extra,
+    });
+    const define = (inputs: unknown[]) =>
+      blueprints.createVersion(blueprintId, {
+        graph: [topicsStage()],
+        inputs: inputs as never,
+        roles: [],
+        defaults: {},
+        budget: { runCapUsd: 10 },
+      });
+    const v1 = await define([input()]);
+    const run1 = await runs.create({
+      channelId: channel.id,
+      blueprintVersionId: v1.id,
+      inputs: { topic: 'otters' },
+      roleBindings: {},
+      rerunStageKeys: [],
+      budgetCapUsd: 10,
+    });
+    expect((await driveRun(run1.id, run1.stageExecutions)).result).toEqual({ state: 'COMPLETED' });
+    const seeded = (versionId: string) =>
+      runs.create({
+        channelId: channel.id,
+        blueprintVersionId: versionId,
+        seedFromRunId: run1.id,
+        inputs: { topic: 'otters' },
+        roleBindings: {},
+        rerunStageKeys: [],
+        budgetCapUsd: 10,
+      });
+    const relabelled = await define([input({ label: 'Subject', required: false })]);
+    const kept = await seeded(relabelled.id);
+    expect(kept.stageExecutions.find((e) => e.stageKey === 'topics')?.state).toBe('passed');
+    const retyped = await define([
+      input({ accepts: { kind: 'data', schema: { type: 'string' } } }),
+    ]);
+    await expect(seeded(retyped.id)).rejects.toThrow('changed shape');
+  });
+
   it('keeps an edited finished stage as it is when asked to, and re-runs it otherwise', async () => {
     const runs = testApp.app.get(RunService);
     const blueprints = testApp.app.get(BlueprintService);
@@ -1086,7 +1100,7 @@ describe('seeded runs — run a stage without re-running upstream (e2e)', () => 
     const v2 = await blueprints.createVersion(blueprintId, {
       ...base,
       graph: [
-        { ...topicsStage(), label: 'Topics (edited)', retryLimit: 1 },
+        { ...topicsStage(), instructions: { template: 'Topics (edited)' } },
         coverStage(),
         scriptStage(),
       ],

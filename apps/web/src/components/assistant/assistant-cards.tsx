@@ -212,7 +212,7 @@ export function ApprovalCard({
   assistant: AssistantController;
 }) {
   const approval = payloadOf<ApprovalPayload>(item);
-  const needsExplicitApproval = !!approval.uncertainAttemptIds?.length;
+  const needsExplicitApproval = !!approval.uncertainAttemptIds?.length || !!approval.skipsChecks;
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [feedback, setFeedback] = useState('');
   const pending = item.state === 'pending';
@@ -255,7 +255,11 @@ export function ApprovalCard({
               disabled={assistant.deciding}
               onClick={() => assistant.decideApproval(item, 'yes')}
             >
-              {needsExplicitApproval ? 'Accept risk and restart' : 'Yes'}
+              {approval.skipsChecks
+                ? 'Skip checks and use it'
+                : needsExplicitApproval
+                  ? 'Accept risk and restart'
+                  : 'Yes'}
             </Button>
             {!needsExplicitApproval && (
               <Button

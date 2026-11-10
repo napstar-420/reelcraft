@@ -139,6 +139,6 @@ describe('requiresNewRun', () => {
     ).toBeNull();
     expect(
       requiresNewRun(source, { ...source, inputs: [{ ...stage, key: 'x' } as never] }),
-    ).toContain('inputs, roles or defaults');
+    ).toContain('inputs, roles or format');
   });
 });

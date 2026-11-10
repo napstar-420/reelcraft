@@ -474,6 +474,71 @@ describe('unified resumable execution', () => {
     expect((await list(true)).items.map((r) => r.id)).toEqual([test.id]);
     expect((await list(false)).items.map((r) => r.id)).toEqual([created.id]);
   });
+  it('keeps outputs after a default-model edit and re-runs a stage with the new model', async () => {
+    const model = (text: string) => ({
+      provider: 'fake',
+      modelId: 'fake-text-1',
+      params: { fakeOutput: { text } },
+    });
+    const bare = (key: string, dependsOn: string[] = []) => ({
+      ...stage(key, dependsOn),
+      model: undefined,
+    });
+    const channel = await app.app
+      .get(ChannelService)
+      .create('local', { name: `Model ${Math.random()}`, theme: {}, defaults: {} });
+    const blueprints = app.app.get(BlueprintService);
+    const blueprintId = await blueprints.ensureBlueprint(channel.id, 'Model');
+    const definition = (text: string) => ({
+      graph: [bare('a'), bare('b', ['a'])],
+      inputs: [],
+      roles: [],
+      defaults: { model: model(text) },
+      budget: { runCapUsd: 100 },
+    });
+    const version = await blueprints.createVersion(blueprintId, definition('first'));
+    const created = await runs.create({
+      channelId: channel.id,
+      blueprintVersionId: version.id,
+      inputs: {},
+      roleBindings: {},
+      budgetCapUsd: 100,
+      rerunStageKeys: [],
+    });
+    await database.db.update(run).set({ state: 'IDLE' }).where(eq(run.id, created.id));
+    await execute(created.id);
+    await drive(created.id, ['a', 'b']);
+    const draft = await blueprints.createVersion(blueprintId, definition('second'), {
+      draft: true,
+    });
+    const request = {
+      blueprintVersionId: draft.id,
+      mode: 'rebuild' as const,
+      scope: 'stage' as const,
+      stageKey: 'a',
+      action: 'rerun' as const,
+    };
+    const plan = await plans.preview(created.id, request);
+    expect(plan.blockedReason).toBeNull();
+    expect(plan.staleStageKeys).toEqual([]);
+    await plans.confirm(created.id, { ...request, previewToken: plan.previewToken });
+    await drive(created.id, ['a']);
+    const after = await runs.get(created.id);
+    expect(after.blueprintVersionId).not.toBe(version.id);
+    const [output] = await database.db
+      .select()
+      .from(artifact)
+      .where(
+        and(
+          eq(artifact.runId, created.id),
+          eq(artifact.producerStageKey, 'a'),
+          eq(artifact.stale, false),
+        ),
+      );
+    expect(output?.data).toEqual({ text: { text: 'second' } });
+    const view = await runs.stageOutput(created.id, 'a');
+    expect(view.items[0]?.artifact.madeWith).toEqual({ provider: 'fake', modelId: 'fake-text-1' });
+  });
   it('applies a reconnected downstream stage on Continue, and blocks a stage-only run that would not apply it', async () => {
     const { created, version } = await fixture([stage('a'), stage('b', ['a']), stage('c', ['b'])]);
     await database.db.update(run).set({ state: 'IDLE' }).where(eq(run.id, created.id));

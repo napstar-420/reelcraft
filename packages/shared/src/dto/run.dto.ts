@@ -64,6 +64,9 @@ export const StageAvailableActions = z.object({
   rerun: z.boolean(),
   runThrough: z.boolean().optional(),
   rebuildDescendants: z.boolean().optional(),
+  /** Its stored output (or items) can be checked again without regenerating: it passed and
+   * has checks or quality review. */
+  recheck: z.boolean().optional(),
   blockedReason: z.string().nullable(),
   completedItems: z.number(),
   totalItems: z.number().nullable(),
@@ -119,8 +122,12 @@ export type ContinueRunDto = z.infer<typeof ContinueRunDto>;
 export const StageRunPlanRequestDto = z.object({
   blueprintVersionId: z.string().min(1),
   stageKey: z.string().min(1).optional(),
-  mode: z.enum(['reuse', 'rebuild', 'validate']),
+  mode: z.enum(['reuse', 'rebuild', 'validate', 'supply']),
   action: z.enum(['run', 'continue', 'rerun']).optional(),
+  /** `supply` only: the candidate output (from `POST /runs/:id/stages/:key/output-candidates`) to use. */
+  artifactId: z.string().min(1).optional(),
+  /** `supply` only: don't run the stage's checks and quality review on the supplied output. */
+  skipValidation: z.boolean().optional(),
   itemIndex: z.number().int().nonnegative().optional(),
   allowUncertainRestart: z.boolean().optional(),
   /** Continue only: redo outputs an earlier change made out of date (the default), or keep them. */
@@ -251,6 +258,16 @@ export type StageAttemptDto = z.infer<typeof StageAttemptDto>;
 
 export const ArtifactViewDto = z.object({
   id: z.string(),
+  /** The model that generated it, when one did. Changing a stage's model keeps its output. */
+  madeWith: z
+    .object({ provider: z.string(), modelId: z.string(), version: z.string().optional() })
+    .nullable()
+    .optional(),
+  /** Set when a person or the assistant supplied this output instead of the stage generating it. */
+  origin: z
+    .object({ by: z.enum(['user', 'assistant']), validation: z.enum(['run', 'skip']) })
+    .nullable()
+    .optional(),
   kind: z.enum([
     'data',
     'text',
@@ -312,6 +329,38 @@ export const ArtifactViewDto = z.object({
     .optional(),
 });
 export type ArtifactViewDto = z.infer<typeof ArtifactViewDto>;
+
+/** Where a stage's output came from, when a person or the assistant supplied it. */
+export const OutputOriginDto = z.object({
+  by: z.enum(['user', 'assistant']),
+  /** Whether its checks and quality review ran on it, or were skipped. */
+  validation: z.enum(['run', 'skip']),
+});
+export type OutputOriginDto = z.infer<typeof OutputOriginDto>;
+
+/** Backs `POST /runs/:id/stages/:key/output-candidates`: an output to use instead of running
+ * the stage. Exactly one of `value` (text, data or a timeline) or `files` (media or subtitles:
+ * Library assets or other runs' outputs, in order). */
+export const CreateStageOutputCandidateDto = z
+  .object({
+    blueprintVersionId: z.string().min(1),
+    itemIndex: z.number().int().nonnegative().optional(),
+    value: z.unknown().optional(),
+    files: z
+      .array(
+        z.union([
+          z.object({ assetId: z.string().min(1) }).strict(),
+          z.object({ artifactId: z.string().min(1) }).strict(),
+        ]),
+      )
+      .min(1)
+      .max(50)
+      .optional(),
+  })
+  .refine((v) => (v.value !== undefined) !== (v.files !== undefined), {
+    message: 'Give exactly one of value or files',
+  });
+export type CreateStageOutputCandidateDto = z.infer<typeof CreateStageOutputCandidateDto>;
 
 export const ApprovalCandidateDto = z.object({
   stageKey: z.string(),

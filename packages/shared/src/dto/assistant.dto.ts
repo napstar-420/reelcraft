@@ -183,6 +183,8 @@ export const ApprovalPayload = z.object({
   change: ChangePayload.optional(),
   /** Interrupted provider attempts whose restart needs a separate, explicit decision. */
   uncertainAttemptIds: z.array(z.string()).optional(),
+  /** Skips checks and quality review on a supplied output: needs a separate, explicit decision. */
+  skipsChecks: z.boolean().optional(),
   answer: ApprovalAnswer.optional(),
   feedback: z.string().optional(),
 });

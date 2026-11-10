@@ -27,6 +27,7 @@ import {
   HumanInputSubmissionDto,
   PatchRunOverridesDto,
   ManualArtifactEditDto,
+  CreateStageOutputCandidateDto,
   PutRunInputDto,
   CheckTimelineDraftDto,
   SaveTimelineDraftDto,
@@ -44,6 +45,7 @@ import { InvalidationService } from './invalidation.service';
 import { HumanActionService } from './human-action.service';
 import { RunCancellationService } from './run-cancellation.service';
 import { ArtifactEditService } from './artifact-edit.service';
+import { StageOutputSupplyService } from './stage-output-supply.service';
 import { TimelineEditorService } from './timeline-editor.service';
 import { TimelinePreviewService } from './timeline-preview.service';
 import { MotionEditorService } from './motion-editor.service';
@@ -59,6 +61,7 @@ export class RunController {
     private readonly humanActions: HumanActionService,
     private readonly cancellation: RunCancellationService,
     private readonly artifactEdits: ArtifactEditService,
+    private readonly outputSupply: StageOutputSupplyService,
     private readonly timelineEditor: TimelineEditorService,
     private readonly timelinePreview: TimelinePreviewService,
     private readonly motionEditor: MotionEditorService,
@@ -377,6 +380,18 @@ export class RunController {
     @Body(new ZodValidationPipe(PatchRunOverridesDto)) dto: PatchRunOverridesDto,
   ) {
     return this.actions.patchOverrides(id, dto.overrides, dto.previewToken);
+  }
+
+  /** An output to use instead of running the stage. Validates the output contract and stores it
+   * as a candidate; a `supply` stage-run plan then makes it the stage's output. */
+  @Post(':id/stages/:key/output-candidates')
+  createOutputCandidate(
+    @Param('id') id: string,
+    @Param('key') key: string,
+    @Body(new ZodValidationPipe(CreateStageOutputCandidateDto))
+    dto: CreateStageOutputCandidateDto,
+  ) {
+    return this.outputSupply.createCandidate(id, key, dto, { by: 'user' });
   }
 
   @Post(':id/stages/:key/artifact')

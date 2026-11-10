@@ -39,6 +39,8 @@ export const TOOL_SUMMARIES: Record<string, string> = {
   get_run_memory: "What a run's stages saved to memory for later stages.",
   start_run: 'Start a run of a blueprint (a free test run or a real one).',
   run_stages: 'Re-make stages of a run after a fix, keeping the rest.',
+  supply_output: "Use a given output as a stage's output instead of running it.",
+  recheck_output: "Run a stage's checks and quality review again on its stored output.",
   retry_stage: 'Try a failed stage again as it was.',
   repair_engine:
     "Have a coding agent fix Reelcraft's own code when a stage failed because of an engine bug.",

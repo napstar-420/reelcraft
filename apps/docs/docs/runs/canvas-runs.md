@@ -29,14 +29,17 @@ The **⋯** menu next to it holds:
 - **Start over (new test run)**: the same as **Test run**, while a run is still open.
 - **Concurrent branches**: how many stages may run at once (default **2**).
 
-If you added or removed stages, or changed the blueprint's inputs, roles or defaults, the open test run
-can't take those changes. **Continue** then starts a new test run that keeps every finished stage that is
+If you added or removed stages, or changed the blueprint's inputs, roles or format, the open test run
+can't take those changes. Other defaults, such as the default model, retries or budget, don't need a new
+run: a stage you run again uses them. **Continue** then starts a new test run that keeps every finished stage that is
 still valid and runs the rest, so you don't redo work. A note beside the button says so. Reconnecting
 stages is fine: **Continue** gives them their new connections when they run again.
 
 ## When finished stages are out of date
 
-If you edit a stage that already finished, it and the stages after it are marked **Stale**. Pressing
+If you edit what a stage that already finished generates, it and the stages after it are marked
+**Stale**. Settings that only change how a stage runs keep its output (see [Stale stages](#stale-stages)).
+Pressing
 **Continue** then asks:
 
 - **Regenerate stale stages:** runs them again, which can cost money again.
@@ -52,8 +55,9 @@ Select a stage in the outline, on the graph or in **Test runs** to see its butto
 - In its **⋯** menu:
   - **Run up to this stage**: runs any unfinished or stale stages before it, then this one, then stops.
   - **Run from this stage to the end**: runs this stage and everything after it.
-  - **Re-check output**: shown only when you changed just the stage's checks or quality criteria. It
-    checks the existing output again without generating it.
+  - **Re-check output**: runs the stage's checks and quality review again on its existing output,
+    without generating it. Shown once the stage has passed, if it has checks or quality review and its
+    output isn't stale. See [Re-check an output](./retries.md#re-check-an-output).
 
 Stage buttons are hidden while the run is running, pausing or stopping. Progress, outputs and attempts
 stay visible.
@@ -62,8 +66,51 @@ stay visible.
 
 When you edit a stage that already passed, it and the stages after it are marked **Stale**. Their
 outputs stay in history. **Continue**, **Run up to this stage** and **Run from this stage to the end**
-redo stale stages automatically. **Run this stage only** leaves them alone. Renaming a stage doesn't
-make it stale.
+redo stale stages automatically. **Run this stage only** leaves them alone.
+
+These edits don't make a stage stale, because they don't change what it generated:
+
+- its label or phase, or turning it on or off (including its condition);
+- its model, including the model's settings, and the blueprint's default models and preferred providers.
+  The output shows which model made it (see [Outputs and downloads](./outputs-and-downloads.md));
+- retries, budget, approval, how many items run at once, and item retries;
+- how many failed attempts checks or quality review allow, and what happens when they run out;
+- an input's or role's label, or whether it's required.
+
+Changing a stage's checks or quality criteria doesn't make it stale either; the stage shows
+**Validation outdated** instead; use **Re-check output** to judge its output against the new checks.
+
+## Replace a stage's output
+
+Instead of running a stage, you can give it the output yourself. Open the stage's output (**View
+output**) and select **Replace output**, or **Replace item output** for one item of an iterating stage.
+The dialog depends on what the stage makes:
+
+- **Text**: type it.
+- **Data**: fill in the form made from the stage's output schema, or switch to **Raw JSON**.
+- **Timeline**: paste the timeline as JSON. Every clip, caption and font must point at something that
+  exists in the run.
+- **Image, Video, Audio, Model and their lists**: pick files from the channel's **Library**, in order, or
+  select **Upload to Library** first.
+
+Select **Continue**. Reelcraft checks the output against what the stage declares first (a schema
+violation or a timeline that points at missing files is refused, with the reason), then asks **Use this
+output?**. Select **Use output**.
+
+- By default the stage's checks and quality review run on your output. If it fails, the run waits for
+  your review: **Approve** keeps it, **Reject** makes the stage generate it again with your note.
+- Tick **Skip checks and quality review** to use it as it is. The checkbox only appears when the stage
+  has checks or quality review. Skipping never skips the output-contract check above. The output shows
+  **Checks skipped**.
+- Your own output isn't sent to the stage's approval review; one the assistant supplies still is.
+- Stages after it become out of date and are **not** run; **Continue** or **Run from this stage to the
+  end** regenerates them. If a later review sends work back to this stage, the stage generates over your
+  output.
+- For one item, later items that read the previous item are made out of date as well.
+- The output shows **Supplied by you** (or **Supplied by the assistant**). If an earlier stage changes
+  later, your output goes out of date like any other.
+
+Subtitle files can't be replaced from this dialog; ask the assistant.
 
 ## Confirmations
 

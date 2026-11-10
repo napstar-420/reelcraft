@@ -46,20 +46,27 @@ describe.each(['run page', 'canvas Run tab', 'canvas card'])('%s action matrix',
     invoke();
     expect(requests).toEqual([request]);
   });
-  it('offers Re-check output only when allowed', () => {
-    const labels = (allowRecheck: boolean) =>
+  it('offers Re-check output when the stage can be re-checked and its output is not stale', () => {
+    const requests: unknown[] = [];
+    const tree = (recheck: boolean, stale = false) =>
       elements(
         StageExecutionControls({
-          available: ready,
+          available: { ...ready, recheck },
           busy: false,
           pending: false,
           compact,
-          allowRecheck,
-          onAction: () => {},
+          stale,
+          onAction: (sent: StageActionRequest) => requests.push(sent),
         }),
-      ).map((element) => element.props.children);
+      );
+    const labels = (recheck: boolean, stale = false) =>
+      tree(recheck, stale).map((element) => element.props.children);
     expect(labels(true)).toContain('Re-check output');
     expect(labels(false)).not.toContain('Re-check output');
+    expect(labels(true, true)).not.toContain('Re-check output');
+    const item = tree(true).find((element) => element.props.children === 'Re-check output')!;
+    (item.props.onSelect as () => void)();
+    expect(requests).toEqual([{ scope: 'stage', recheck: true }]);
   });
   it('shows separate item progress and hides execution buttons while busy', () => {
     const html = renderToStaticMarkup(

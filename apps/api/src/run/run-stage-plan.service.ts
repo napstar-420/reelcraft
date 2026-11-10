@@ -12,6 +12,8 @@ import {
   stageDependencies,
   stageFreshness,
   definitionKey,
+  blueprintGeneration,
+  generationStage,
   type StageRunPlanRequestDto,
   type ConfirmStageRunPlanDto,
   type StageRunPlanDto,
@@ -28,6 +30,7 @@ import {
   blob,
   stageAttempt,
   stageItem,
+  ledgerEntry,
 } from '../db/schema/index';
 import { mergeLayer } from '../run-config/layer-merge';
 import { toUsd } from '../common/money';
@@ -43,6 +46,8 @@ import { ConfigResolverService } from '../run-config/config-resolver.service';
 import { EngineConfig } from '../config/engine-config';
 import { engineDefaults } from '../run-config/engine-defaults';
 import { channel } from '../db/schema/index';
+
+type RecheckTarget = { itemId: string | null; itemIndex?: number; artifactId: string };
 
 /** One server-owned plan backs preview and confirm; a token binds the choice and run revision. */
 @Injectable()
@@ -84,21 +89,31 @@ export class RunStagePlanService {
     const target = before.graph.find((s) => s.key === request.stageKey);
     const edited = draft.graph.find((s) => s.key === request.stageKey);
     const targetExecution = current.stageExecutions.find((e) => e.stageKey === request.stageKey);
-    const [storedCandidate] =
-      request.mode === 'validate' && targetExecution
-        ? await this.db
-            .select({ artifactId: stageAttempt.artifactId })
-            .from(stageAttempt)
-            .where(
-              and(
-                eq(stageAttempt.stageExecutionId, targetExecution.id),
-                isNotNull(stageAttempt.artifactId),
-              ),
-            )
-            .orderBy(desc(stageAttempt.attemptNo))
-            .limit(1)
-        : [];
-    const validationArtifactId = targetExecution?.outputArtifactId ?? storedCandidate?.artifactId;
+    // What a re-check judges in place: the stage's current output, or each passed item's.
+    const recheckTargets: RecheckTarget[] = [];
+    let unfinishedItems = false;
+    if (request.mode === 'validate' && targetExecution?.state === 'passed') {
+      if (target?.iterate) {
+        const items = await this.db
+          .select()
+          .from(stageItem)
+          .where(eq(stageItem.stageExecutionId, targetExecution.id));
+        for (const item of items) {
+          if (targetExecution.itemCount !== null && item.itemIndex >= targetExecution.itemCount)
+            continue;
+          if (request.itemIndex !== undefined && item.itemIndex !== request.itemIndex) continue;
+          if (item.state !== 'passed' || !item.outputArtifactId) unfinishedItems = true;
+          else
+            recheckTargets.push({
+              itemId: item.id,
+              itemIndex: item.itemIndex,
+              artifactId: item.outputArtifactId,
+            });
+        }
+      } else if (targetExecution.outputArtifactId) {
+        recheckTargets.push({ itemId: null, artifactId: targetExecution.outputArtifactId });
+      }
+    }
 
     let blockedReason: string | null = null;
     if (current.availableActions?.busy || current.state === 'CREATED')
@@ -125,33 +140,20 @@ export class RunStagePlanService {
     )
       blockedReason =
         'Stages were added or removed. Start a new run for the changed graph; existing outputs remain available.';
-    if (
-      ['inputs', 'roles', 'defaults'].some(
-        (key) =>
-          definitionKey(before[key as 'inputs' | 'roles' | 'defaults']) !==
-          definitionKey(draft[key as 'inputs' | 'roles' | 'defaults']),
-      )
-    )
+    if (definitionKey(blueprintGeneration(before)) !== definitionKey(blueprintGeneration(draft)))
       blockedReason =
-        'Blueprint inputs, roles, or defaults changed. Start a new run to apply those changes.';
+        'Blueprint inputs, roles, or format changed. Start a new run to apply those changes.';
+    // Other defaults (models, retries, budget) only change how stages run: a re-run applies them.
+    const defaultsChanged = definitionKey(before.defaults) !== definitionKey(draft.defaults);
     if (request.mode === 'reuse' && !request.stageKey && !request.action)
       blockedReason = 'Choose a single stage to use existing upstream outputs.';
     if (request.mode === 'reuse' && request.scope === 'descendants' && request.stageKey)
       blockedReason = 'Rebuilding descendants requires applying the draft changes.';
     // A changed consumer contract cannot be assumed compatible with old upstream outputs.
     const contract = (stage: StageDef) => ({
-      ...stage,
-      label: undefined,
-      group: undefined,
-      disabled: undefined,
+      ...generationStage(stage),
       instructions: undefined,
-      qc: undefined,
-      checks: undefined,
-      checkMaxAttempts: undefined,
       config: undefined,
-      model: undefined,
-      budget: undefined,
-      retryLimit: undefined,
     });
     if (
       request.mode === 'reuse' &&
@@ -163,20 +165,64 @@ export class RunStagePlanService {
       blockedReason =
         'The selected stage’s bindings, dependencies, iteration, or output contract changed. Rebuild its dependencies to apply this safely.';
 
-    if (
-      request.mode === 'validate' &&
-      (!target ||
-        !edited ||
-        !request.stageKey ||
-        !validationArtifactId ||
-        target.iterate ||
-        freshness.changedStageKeys.includes(request.stageKey) ||
-        request.scope !== 'stage')
-    )
-      blockedReason =
-        'Validation without regeneration requires a stored output from a non-iterating stage with only check/QC edits.';
+    if (request.mode === 'validate') {
+      // A re-check judges the output as it is: nothing upstream or downstream changes.
+      if (!target || !edited || !request.stageKey || request.scope !== 'stage')
+        blockedReason = 'Choose one stage to re-check.';
+      else if (freshness.changedStageKeys.includes(request.stageKey))
+        blockedReason =
+          'This stage changed since its output was made. Re-run it to apply the change.';
+      else if (targetExecution?.state !== 'passed')
+        blockedReason = 'Re-check needs a stage that has finished.';
+      else if (unfinishedItems)
+        blockedReason =
+          request.itemIndex === undefined
+            ? 'Some items are unfinished or out of date. Continue the run before re-checking the stage.'
+            : 'This item is unfinished or out of date. Re-run it instead.';
+      else if (!recheckTargets.length) blockedReason = 'There is no stored output to re-check.';
+    }
     if (request.mode === 'validate' && edited && !edited.qc && edited.checks.length === 0)
       blockedReason = 'This stage has no checks or quality criteria to run.';
+    // Supplying: the candidate becomes the stage's (or item's) output, and what follows goes stale.
+    let candidate: typeof artifact.$inferSelect | undefined;
+    if (request.mode === 'supply') {
+      [candidate] = request.artifactId
+        ? await this.db.select().from(artifact).where(eq(artifact.id, request.artifactId)).limit(1)
+        : [];
+      const used = candidate
+        ? await this.db
+            .select({ id: stageAttempt.id })
+            .from(stageAttempt)
+            .where(eq(stageAttempt.artifactId, candidate.id))
+            .limit(1)
+        : [];
+      if (!target || !edited || !request.stageKey || request.scope !== 'stage')
+        blockedReason = 'Choose one stage to supply an output for.';
+      else if (request.action !== 'rerun')
+        blockedReason = 'Supplying an output replaces the stage’s output.';
+      else if (freshness.changedStageKeys.includes(request.stageKey))
+        blockedReason =
+          'This stage changed since its output was made. Re-run it to apply the change, or undo it first.';
+      else if (target.iterate && request.itemIndex === undefined)
+        blockedReason = 'Choose which item to supply an output for.';
+      else if (
+        candidate &&
+        (candidate.repro as { supplied?: { contract?: string } } | null)?.supplied?.contract !==
+          definitionKey(target.output)
+      )
+        // Checked against the stage as the run will run it, even when its checks are skipped.
+        blockedReason =
+          'The output was made for a different version of this stage. Supply it again.';
+      else if (
+        !candidate ||
+        candidate.runId !== runId ||
+        candidate.producerStageKey !== request.stageKey ||
+        (candidate.itemIndex ?? undefined) !== request.itemIndex ||
+        !candidate.stale ||
+        used.length
+      )
+        blockedReason = 'The output to use is no longer available. Supply it again.';
+    }
     const graphForScope = request.mode !== 'rebuild' ? before.graph : draft.graph;
     const deps = stageDependencies(graphForScope);
     // Outputs an earlier change made out of date: items of a done stage (one item re-run upstream),
@@ -320,8 +366,9 @@ export class RunStagePlanService {
             (key === request.stageKey &&
               request.action !== 'continue' &&
               request.itemIndex === undefined)) &&
-          definitionKey(before.graph.find((s) => s.key === key)) !==
-            definitionKey(draft.graph.find((s) => s.key === key)),
+          (defaultsChanged ||
+            definitionKey(before.graph.find((s) => s.key === key)) !==
+              definitionKey(draft.graph.find((s) => s.key === key))),
       ),
     );
     const availabilityChangedStageKeys = draft.graph
@@ -364,7 +411,7 @@ export class RunStagePlanService {
       graph,
       engine: engineDefaults(this.engine),
       channelDefaults: channelRow.defaults as ConfigLayer,
-      blueprintDefaults: source.defaults as ConfigLayer,
+      blueprintDefaults: requested.defaults as ConfigLayer,
     });
     if (current.dryRun) config = this.runs.applyDryRunOverride(graph, config);
     const pinnedAssets = current.assetBindings as Record<string, { blobId: string; kind: string }>;
@@ -413,14 +460,18 @@ export class RunStagePlanService {
       concurrentBranches: current.concurrentBranches,
       executionEpoch: current.executionEpoch,
       assetBindings,
-      validationArtifactId: request.mode === 'validate' ? validationArtifactId : undefined,
+      recheckArtifactIds: recheckTargets.map((t) => t.artifactId),
+      suppliedArtifactId: request.mode === 'supply' ? request.artifactId : undefined,
+      skipValidation: request.mode === 'supply' ? !!request.skipValidation : undefined,
     });
     const preview = await this.invalidation.preview({
       runId,
       seed:
-        request.itemIndex !== undefined && request.stageKey
-          ? { items: [{ stageKey: request.stageKey, itemIndex: request.itemIndex }] }
-          : { stageKeys: [...roots], forcedStageKeys: [...affected] },
+        request.mode === 'validate'
+          ? { stageKeys: [] }
+          : request.itemIndex !== undefined && request.stageKey
+            ? { items: [{ stageKey: request.stageKey, itemIndex: request.itemIndex }] }
+            : { stageKeys: [...roots], forcedStageKeys: [...affected] },
     });
     const uncertain = current.stageExecutions.length
       ? await this.db
@@ -477,13 +528,20 @@ export class RunStagePlanService {
         (key) => passed.has(key) && !execute.has(key),
       ),
       estimatedRerunUsd:
-        request.itemIndex !== undefined
-          ? preview.costs
-              .filter((c) => execute.has(c.stageKey))
-              .reduce((sum, c) => sum + c.estimatedRerunUsd, 0)
-          : current.stageExecutions
-              .filter((e) => execute.has(e.stageKey))
-              .reduce((sum, e) => sum + toUsd(e.costUsd), 0),
+        request.mode === 'validate'
+          ? (await this.lastQcSpend(runId, edited?.qc ? request.stageKey : undefined)) *
+            recheckTargets.length
+          : request.mode === 'supply'
+            ? request.skipValidation
+              ? 0
+              : await this.lastQcSpend(runId, edited?.qc ? request.stageKey : undefined)
+            : request.itemIndex !== undefined
+              ? preview.costs
+                  .filter((c) => execute.has(c.stageKey))
+                  .reduce((sum, c) => sum + c.estimatedRerunUsd, 0)
+              : current.stageExecutions
+                  .filter((e) => execute.has(e.stageKey))
+                  .reduce((sum, e) => sum + toUsd(e.costUsd), 0),
       blockedReason,
     };
     return {
@@ -500,8 +558,184 @@ export class RunStagePlanService {
       config,
       configFingerprint,
       assetBindings,
-      validationArtifactId,
+      recheckTargets,
+      candidate,
     };
+  }
+
+  /** What judging one output cost last time: the stage's newest QC charge, or nothing without QC. */
+  private async lastQcSpend(runId: string, stageKey: string | undefined): Promise<number> {
+    if (!stageKey) return 0;
+    const [last] = await this.db
+      .select({ amountUsd: ledgerEntry.amountUsd })
+      .from(ledgerEntry)
+      .where(
+        and(
+          eq(ledgerEntry.runId, runId),
+          eq(ledgerEntry.stageKey, stageKey),
+          eq(ledgerEntry.category, 'qc'),
+          eq(ledgerEntry.kind, 'actual'),
+        ),
+      )
+      .orderBy(desc(ledgerEntry.createdAt))
+      .limit(1);
+    return last ? toUsd(last.amountUsd) : 0;
+  }
+
+  /** Supplying: a created user attempt points at the candidate, which the engine then judges
+   * (checks and quality review, unless skipped) and finalizes like any generated output, so
+   * memory writes, approval and review-on-failure work the same way. */
+  private async requestSupply(
+    tx: Tx,
+    built: Awaited<ReturnType<RunStagePlanService['build']>>,
+    request: StageRunPlanRequestDto,
+    executionEpoch: number,
+  ) {
+    const candidate = built.candidate!;
+    const execution = built.current.stageExecutions.find((e) => e.stageKey === request.stageKey)!;
+    // Re-checked under the lock, so one candidate can't be used twice.
+    const [fresh] = await tx
+      .select({ stale: artifact.stale })
+      .from(artifact)
+      .where(eq(artifact.id, candidate.id))
+      .for('update');
+    const [used] = await tx
+      .select({ id: stageAttempt.id })
+      .from(stageAttempt)
+      .where(eq(stageAttempt.artifactId, candidate.id))
+      .limit(1);
+    if (!fresh?.stale || used)
+      throw new ConflictException('The output to use is no longer available. Supply it again.');
+    const [item] =
+      request.itemIndex !== undefined
+        ? await tx
+            .select({ id: stageItem.id })
+            .from(stageItem)
+            .where(
+              and(
+                eq(stageItem.stageExecutionId, execution.id),
+                eq(stageItem.itemIndex, request.itemIndex),
+              ),
+            )
+        : [];
+    const by = (candidate.repro as { supplied?: { by?: 'user' | 'assistant' } } | null)?.supplied
+      ?.by;
+    const skipValidation = !!request.skipValidation;
+    const slot = and(
+      eq(stageAttempt.stageExecutionId, execution.id),
+      item ? eq(stageAttempt.stageItemId, item.id) : isNull(stageAttempt.stageItemId),
+    );
+    const [latest] = await tx
+      .select({ max: sql<number>`coalesce(max(${stageAttempt.attemptNo}), 0)::int` })
+      .from(stageAttempt)
+      .where(slot);
+    await tx.insert(stageAttempt).values({
+      id: ulid(),
+      stageExecutionId: execution.id,
+      stageItemId: item?.id ?? null,
+      attemptNo: (latest?.max ?? 0) + 1,
+      actor: 'user',
+      outcome: 'user_edit',
+      phase: 'created',
+      executionEpoch,
+      artifactId: candidate.id,
+      resolvedInputs: { supplied: { by: by ?? 'user', skipValidation } },
+    });
+    await tx
+      .update(artifact)
+      .set({
+        repro: {
+          supplied: {
+            ...(candidate.repro as { supplied?: object } | null)?.supplied,
+            by: by ?? 'user',
+            validation: skipValidation ? 'skip' : 'run',
+          },
+        },
+      })
+      .where(eq(artifact.id, candidate.id));
+    // Now in use: its files are no longer up for collection.
+    const blobIds = [
+      candidate.blobId,
+      ...((
+        (
+          candidate.data as {
+            clips?: Array<{ blobId: string }>;
+            images?: Array<{ blobId: string }>;
+          } | null
+        )?.clips ?? []
+      ).map((c) => c.blobId) as string[]),
+      ...(((candidate.data as { images?: Array<{ blobId: string }> } | null)?.images ?? []).map(
+        (c) => c.blobId,
+      ) as string[]),
+    ].filter((id): id is string => !!id);
+    if (blobIds.length)
+      await tx
+        .update(blob)
+        .set({ gcEligible: false, gcEligibleAt: null })
+        .where(inArray(blob.id, blobIds));
+    await tx.insert(stageEvent).values({
+      id: ulid(),
+      runId: built.current.id,
+      stageExecutionId: execution.id,
+      level: 'info',
+      type: 'stage.output_supplied',
+      message: skipValidation
+        ? 'Output supplied; checks and quality review skipped'
+        : 'Output supplied',
+      data: {
+        artifactId: candidate.id,
+        by: by ?? 'user',
+        skipValidation,
+        ...(request.itemIndex !== undefined && { itemIndex: request.itemIndex }),
+      },
+      createdAt: new Date().toISOString(),
+    });
+  }
+
+  /** A re-check asks the engine to judge each stored output again: a created user attempt that
+   * points at the current output, which stays active, so nothing downstream changes. */
+  private async requestRecheck(
+    tx: Tx,
+    stageExecutionId: string,
+    targets: RecheckTarget[],
+    executionEpoch: number,
+  ) {
+    for (const target of targets) {
+      const slot = and(
+        eq(stageAttempt.stageExecutionId, stageExecutionId),
+        target.itemId
+          ? eq(stageAttempt.stageItemId, target.itemId)
+          : isNull(stageAttempt.stageItemId),
+      );
+      // Keep the producing attempt's reads, so invalidation still sees what the output used.
+      const [producer] = await tx
+        .select({ resolvedInputs: stageAttempt.resolvedInputs })
+        .from(stageAttempt)
+        .where(and(slot, eq(stageAttempt.artifactId, target.artifactId)))
+        .orderBy(desc(stageAttempt.attemptNo))
+        .limit(1);
+      const [latest] = await tx
+        .select({ max: sql<number>`coalesce(max(${stageAttempt.attemptNo}), 0)::int` })
+        .from(stageAttempt)
+        .where(slot);
+      await tx.insert(stageAttempt).values({
+        id: ulid(),
+        stageExecutionId,
+        stageItemId: target.itemId,
+        attemptNo: (latest?.max ?? 0) + 1,
+        actor: 'user',
+        outcome: 'user_edit',
+        phase: 'created',
+        executionEpoch,
+        artifactId: target.artifactId,
+        resolvedInputs: {
+          ...((producer?.resolvedInputs as Record<string, unknown> | undefined) ?? {}),
+          recheck: { inPlace: true },
+        },
+      });
+      if (target.itemId)
+        await tx.update(stageItem).set({ state: 'pending' }).where(eq(stageItem.id, target.itemId));
+    }
   }
 
   /** "Use outdated": each kept output is recorded again as the stage's (or item's) current one, so
@@ -678,97 +912,53 @@ export class RunStagePlanService {
           throw new ConflictException('The run changed. Review a new preview.');
         // Only a changed graph needs a draft snapshot; an unchanged one keeps the run on its
         // own version, so a production run stays pinned to the saved version it started from.
+        // Re-run stages that took the draft's defaults (a new default model, say) carry them too.
+        // A new default `maxItems` changes what every iterating stage generates, so it is only
+        // recorded on the run once every iterating stage runs again; otherwise the run keeps its
+        // old defaults and the stages that didn't run still read as out of date.
+        const maxItemsChanged =
+          definitionKey((built.source.defaults as ConfigLayer).iterate?.maxItems) !==
+          definitionKey((built.requested.defaults as ConfigLayer).iterate?.maxItems);
+        const defaultsApplied =
+          built.changedKeys.size > 0 &&
+          definitionKey(built.source.defaults) !== definitionKey(built.requested.defaults) &&
+          !(maxItemsChanged && built.graph.some((s) => s.iterate && !built.execute.has(s.key)));
         const graphChanged =
+          defaultsApplied ||
           definitionKey(built.graph) !==
-          definitionKey(CreateBlueprintVersionDto.parse(built.source).graph);
+            definitionKey(CreateBlueprintVersionDto.parse(built.source).graph);
         const snapshotId = graphChanged ? ulid() : built.source.id;
         if (graphChanged)
           await tx.insert(blueprintVersion).values({
             ...built.source,
             id: snapshotId,
             graph: built.graph,
+            defaults: defaultsApplied ? built.requested.defaults : built.source.defaults,
             draft: true,
             createdAt: new Date().toISOString(),
           });
-        await this.invalidation.apply(tx, {
-          runId,
-          closure: built.preview.closure,
-          targetStageKey: request.stageKey ?? built.plan.runStageKeys[0]!,
-          gcBlobs: false,
-        });
-        if (request.mode === 'validate') {
-          const execution = built.current.stageExecutions.find(
-            (e) => e.stageKey === request.stageKey,
-          )!;
-          const [previous] = await tx
-            .select()
-            .from(stageAttempt)
-            .where(
-              and(
-                eq(stageAttempt.stageExecutionId, execution.id),
-                eq(stageAttempt.artifactId, built.validationArtifactId!),
-              ),
-            )
-            .orderBy(desc(stageAttempt.attemptNo))
-            .limit(1);
-          const [latest] = await tx
-            .select({ attemptNo: stageAttempt.attemptNo })
-            .from(stageAttempt)
-            .where(eq(stageAttempt.stageExecutionId, execution.id))
-            .orderBy(desc(stageAttempt.attemptNo))
-            .limit(1);
-          if (!previous)
-            throw new ConflictException(
-              'The completed output has no validation provenance. Rebuild this stage.',
-            );
-          const [stored] = await tx
-            .select()
-            .from(artifact)
-            .where(eq(artifact.id, built.validationArtifactId!));
-          if (!stored)
-            throw new ConflictException('The output no longer exists. Review a new plan.');
-          const validationOutputId = ulid();
-          // Revalidation may select different media; retain the original immutable artifact.
-          await tx.insert(artifact).values({
-            ...stored,
-            id: validationOutputId,
-            stale: true,
-            generation: stored.generation + 1,
-            costUsd: '0',
-            createdAt: new Date().toISOString(),
+        if (request.mode === 'supply') {
+          await this.invalidation.apply(tx, {
+            runId,
+            closure: built.preview.closure,
+            targetStageKey: request.stageKey!,
+            gcBlobs: false,
           });
-          const attachments = await tx
-            .select()
-            .from(artifactAttachment)
-            .where(eq(artifactAttachment.artifactId, stored.id));
-          if (attachments.length)
-            await tx.insert(artifactAttachment).values(
-              attachments.map((attachment) => ({
-                ...attachment,
-                id: ulid(),
-                artifactId: validationOutputId,
-              })),
-            );
-
-          // A created user attempt with a stored artifact requests validation, never generation.
-          await tx.insert(stageAttempt).values({
-            ...previous,
-            artifactId: validationOutputId,
-            id: ulid(),
-            invocationKey: null,
-            attemptNo: (latest?.attemptNo ?? 0) + 1,
-            actor: 'user',
-            outcome: 'user_edit',
-            phase: 'created',
-            executionEpoch: locked.executionEpoch + 1,
-            costUsd: '0',
-            checkResults: null,
-            qcVerdict: null,
-            jobHandle: null,
-            idempotencyKey: null,
-            createdAt: new Date().toISOString(),
+          await this.requestSupply(tx, built, request, locked.executionEpoch + 1);
+        } else if (request.mode === 'validate')
+          await this.requestRecheck(
+            tx,
+            built.current.stageExecutions.find((e) => e.stageKey === request.stageKey)!.id,
+            built.recheckTargets,
+            locked.executionEpoch + 1,
+          );
+        else
+          await this.invalidation.apply(tx, {
+            runId,
+            closure: built.preview.closure,
+            targetStageKey: request.stageKey ?? built.plan.runStageKeys[0]!,
+            gcBlobs: false,
           });
-        }
 
         await this.keepOutdated(
           tx,
@@ -861,9 +1051,13 @@ export class RunStagePlanService {
             level: 'info',
             type: 'stage.execution_plan',
             message:
-              request.mode === 'reuse'
-                ? 'Explicitly using existing upstream outputs'
-                : 'Applying draft changes and rebuilding affected work',
+              request.mode === 'supply'
+                ? 'Using the supplied output'
+                : request.mode === 'validate'
+                  ? 'Re-checking the stored output'
+                  : request.mode === 'reuse'
+                    ? 'Explicitly using existing upstream outputs'
+                    : 'Applying draft changes and rebuilding affected work',
             data: {
               ...built.plan,
               sourceVersionId: built.source.id,

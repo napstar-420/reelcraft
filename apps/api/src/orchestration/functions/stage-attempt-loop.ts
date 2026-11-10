@@ -267,12 +267,16 @@ export async function runStageAttemptLoop(
       return { outcome: 'failed' as const, reason: 'qc_budget_exhausted' };
     }
 
+    // A stored output that fails its checks goes to review instead of failing the stage:
+    // Approve keeps it, Reject regenerates it with the critique.
     if (attemptCtx.validationOnly) {
-      const reason = `Existing output did not pass updated validation (${fetched.outcome}); regeneration requires a new execution plan.`;
-      await step.run(`fail-validation-${stageKey}`, () =>
-        runner.failStageExecution(stageExecutionId, reason, stageItemId, params.executionEpoch),
+      await release();
+      const handedOff = await step.run(`validation-handoff-${stageKey}-${iteration}`, () =>
+        runner.handOffForReview(stage, attemptCtx),
       );
-      return { outcome: 'failed' as const, reason };
+      return handedOff.outcome === 'approval_required'
+        ? { outcome: 'approval_required' as const, artifactId: handedOff.artifactId }
+        : { outcome: 'run_not_running' as const };
     }
 
     // check_failed | qc_failed — not a stage failure: loop to a fresh

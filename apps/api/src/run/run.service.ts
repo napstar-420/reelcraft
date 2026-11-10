@@ -7,6 +7,7 @@ import { and, asc, desc, eq, inArray, isNotNull, isNull, lte, ne, or, sql } from
 import type {
   CreateRunDto,
   ContinueRunDto,
+  ArtifactViewDto,
   ConfigLayer,
   ReferenceImage,
   RoleDef,
@@ -190,7 +191,9 @@ export class RunService {
       const newInputByKey = new Map(inputDefs.map((d) => [d.key, d]));
       for (const def of sourceInputDefs) {
         const newDef = newInputByKey.get(def.key);
-        if (!newDef || canonicalJson(def) !== canonicalJson(newDef)) {
+        // A label or `required` only changes how the input is asked for, not what it holds.
+        const shape = (d: InputDef) => ({ ...d, label: undefined, required: undefined });
+        if (!newDef || canonicalJson(shape(def)) !== canonicalJson(shape(newDef))) {
           throw new ConflictException(
             `Input "${def.key}" changed shape since the seed run — cannot reuse it`,
           );
@@ -1404,7 +1407,7 @@ export class RunService {
           eq(artifact.runId, runId),
           eq(artifact.producerStageKey, stageKey),
           artifactWhere,
-          eq(artifact.stale, true),
+          // A failed re-check reviews the current (active) output.
         ),
       )
       .limit(1);
@@ -1658,6 +1661,11 @@ export class RunService {
     return {
       id: row.id,
       kind: row.kind,
+      madeWith: (row.repro as { model?: ArtifactViewDto['madeWith'] } | null)?.model ?? null,
+      origin: (() => {
+        const supplied = (row.repro as { supplied?: ArtifactViewDto['origin'] } | null)?.supplied;
+        return supplied ? { by: supplied.by, validation: supplied.validation } : null;
+      })(),
       ...(clips && { clips }),
       ...(images && { images }),
       ...(candidates && { candidates }),

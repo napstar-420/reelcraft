@@ -34,6 +34,7 @@ import type { MediaReviewService } from '../review/media-review.service';
 import type { AssistantWatchService } from '../watch/assistant-watch.service';
 import type { UserGuideService } from '../user-guide/user-guide.service';
 import type { AttachmentService } from '../attachments/attachment.service';
+import type { StageOutputSupplyService } from '../../run/stage-output-supply.service';
 import type { FileCopyService } from '../files/file-copy.service';
 import type { LinkImportService } from '../files/link-import.service';
 import type { BrowserService } from '../browser/browser.service';
@@ -61,6 +62,9 @@ export interface ApprovalRequest {
   change?: ChangePayload;
   /** Server-derived attempts that require explicit approval even in Auto mode. */
   uncertainAttemptIds?: string[];
+  /** The action skips checks and quality review on an output: needs its own decision, which
+   * Auto mode and "yes to everything this turn" cannot give. */
+  skipsChecks?: boolean;
 }
 
 export type ApprovalDecision =
@@ -177,6 +181,7 @@ export interface ToolDeps {
   retries: Pick<RunActionService, 'previewStageRetry' | 'confirmStageRetry'>;
   humanActions: Pick<HumanActionService, 'approve' | 'reject' | 'submitInput'>;
   stagePlans: Pick<RunStagePlanService, 'preview' | 'confirm'>;
+  outputSupply: Pick<StageOutputSupplyService, 'createCandidate'>;
   attempts: Pick<RunService, 'listStageAttempts' | 'stageAttemptDetail' | 'listStageEvents'>;
   memory: Pick<InvalidationService, 'listMemory'>;
   review: Pick<MediaReviewService, 'contactSheet' | 'transcriber' | 'listen' | 'analyze' | 'facts'>;

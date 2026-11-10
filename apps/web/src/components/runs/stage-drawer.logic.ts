@@ -1,4 +1,4 @@
-import type { StageDef } from '@reelcraft/shared';
+import type { ArtifactViewDto, StageDef } from '@reelcraft/shared';
 import { memoryBaseKey, memoryWritersBefore, producerOf, stageRefLeaves } from '@/lib/stage-deps';
 
 export type StageRead = {
@@ -48,4 +48,19 @@ export function itemEmptyText(itemIndex: number, stale: boolean): string {
   return stale
     ? `Item ${itemIndex + 1} is out of date: an earlier stage changed. Re-run it to refresh.`
     : `Item ${itemIndex + 1} has no output yet.`;
+}
+
+/** "Made with …" for an output, or "Made with a different model" once the stage's current
+ * model differs (changing the model keeps the output). Null when no model made it. */
+export function madeWithText(
+  madeWith: ArtifactViewDto['madeWith'],
+  current?: { provider?: string | undefined; modelId?: string | undefined },
+): string | null {
+  if (!madeWith) return null;
+  const name = `${madeWith.provider}/${madeWith.modelId}`;
+  const differs =
+    !!current?.modelId &&
+    (current.modelId !== madeWith.modelId ||
+      (!!current.provider && current.provider !== madeWith.provider));
+  return differs ? `Made with a different model: ${name}` : `Made with ${name}`;
 }

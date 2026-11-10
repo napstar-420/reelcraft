@@ -147,25 +147,27 @@ export class HumanActionService {
       .from(artifact)
       .where(eq(artifact.id, pending.artifactId))
       .limit(1);
-    if (!candidate || !candidate.stale) throw new ConflictException('Approval candidate is stale');
+    if (!candidate) throw new ConflictException('Approval candidate is stale');
     await this.waits.requireOpen(tx, execution.id, 'approval');
 
-    await this.artifacts.finalize(
-      {
-        runId,
-        stageExecutionId: execution.id,
-        producerStageKey: stageKey,
-        newArtifactId: candidate.id,
-        applyWrites: this.memory.buildWriteCallback(stage, {
+    // A re-checked output that failed is already the current one: Approve just keeps it.
+    if (candidate.stale)
+      await this.artifacts.finalize(
+        {
           runId,
-          stageKey,
-          kind: candidate.kind as never,
-          data: candidate.data,
-          artifactId: candidate.id,
-        }),
-      },
-      tx,
-    );
+          stageExecutionId: execution.id,
+          producerStageKey: stageKey,
+          newArtifactId: candidate.id,
+          applyWrites: this.memory.buildWriteCallback(stage, {
+            runId,
+            stageKey,
+            kind: candidate.kind as never,
+            data: candidate.data,
+            artifactId: candidate.id,
+          }),
+        },
+        tx,
+      );
     await tx
       .update(stageAttempt)
       .set({ outcome: 'success', phase: 'settled' })
@@ -252,29 +254,33 @@ export class HumanActionService {
       .from(artifact)
       .where(eq(artifact.id, pending.artifactId))
       .limit(1);
-    if (!candidate || !candidate.stale) throw new ConflictException('Approval candidate is stale');
+    if (!candidate) throw new ConflictException('Approval candidate is stale');
     await this.waits.requireOpen(tx, stageExecutionId, 'approval', item.id);
 
-    await this.artifacts.finalize(
-      {
-        runId,
-        stageExecutionId,
-        producerStageKey: stageKey,
-        itemIndex: item.itemIndex,
-        stageItemId: item.id,
-        newArtifactId: candidate.id,
-        costUsd: toUsd(pending.costUsd),
-        applyWrites: this.memory.buildWriteCallback(stage, {
+    // A re-checked item that failed is already the current output: Approve just keeps it.
+    if (!candidate.stale)
+      await tx.update(stageItem).set({ state: 'passed' }).where(eq(stageItem.id, item.id));
+    else
+      await this.artifacts.finalize(
+        {
           runId,
-          stageKey,
+          stageExecutionId,
+          producerStageKey: stageKey,
           itemIndex: item.itemIndex,
-          kind: candidate.kind as never,
-          data: candidate.data,
-          artifactId: candidate.id,
-        }),
-      },
-      tx,
-    );
+          stageItemId: item.id,
+          newArtifactId: candidate.id,
+          costUsd: toUsd(pending.costUsd),
+          applyWrites: this.memory.buildWriteCallback(stage, {
+            runId,
+            stageKey,
+            itemIndex: item.itemIndex,
+            kind: candidate.kind as never,
+            data: candidate.data,
+            artifactId: candidate.id,
+          }),
+        },
+        tx,
+      );
     await tx
       .update(stageAttempt)
       .set({ outcome: 'success', phase: 'settled' })

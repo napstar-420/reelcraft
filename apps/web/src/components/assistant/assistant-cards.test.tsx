@@ -47,3 +47,37 @@ describe('uncertain restart approval card', () => {
     }
   });
 });
+
+describe('skip checks approval card', () => {
+  it('offers only its own explicit Yes', () => {
+    const payload: ApprovalPayload = {
+      tool: 'supply_output',
+      kind: 'action',
+      title: 'Use this output',
+      details: [],
+      costUsd: null,
+      skipsChecks: true,
+    };
+    const html = renderToStaticMarkup(
+      <ApprovalCard
+        item={
+          {
+            id: 'a',
+            sessionId: 's',
+            turnId: 't',
+            seq: 1,
+            type: 'approval',
+            state: 'pending',
+            payload,
+            createdAt: '',
+            updatedAt: '',
+          } as AssistantItemDto
+        }
+        assistant={{ deciding: false } as AssistantController}
+      />,
+    );
+    expect(html).toContain('Skip checks and use it');
+    expect(html).not.toContain('Yes, and switch to Auto');
+    expect(html).not.toContain('Yes to everything this turn');
+  });
+});

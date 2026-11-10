@@ -22,6 +22,7 @@ import { RunActionService } from './run-action.service';
 import { HumanActionService } from './human-action.service';
 import { RunCancellationService } from './run-cancellation.service';
 import { ArtifactEditService } from './artifact-edit.service';
+import { StageOutputSupplyService } from './stage-output-supply.service';
 import { HumanReminderService } from './human-reminder.service';
 import { TimelineEditorService } from './timeline-editor.service';
 import { TimelinePreviewService } from './timeline-preview.service';
@@ -42,6 +43,7 @@ const runControlProviders = [
   HumanActionService,
   RunCancellationService,
   ArtifactEditService,
+  StageOutputSupplyService,
   HumanReminderService,
   TimelineEditorService,
   TimelinePreviewService,

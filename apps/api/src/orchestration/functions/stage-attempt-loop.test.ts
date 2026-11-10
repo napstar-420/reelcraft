@@ -741,4 +741,31 @@ describe('runStageAttemptLoop Retry QC', () => {
     await expect(run(runner)).resolves.toEqual({ outcome: 'passed', artifactId: 'a2' });
     expect(regenerated).toBe(1);
   });
+  it.each(['check_failed', 'qc_failed'])(
+    'sends a re-checked output that %s to review instead of failing or regenerating',
+    async (outcome) => {
+      const recheck = { ...held, validationOnly: true, inPlace: true };
+      const runner = {
+        findHeldQcAttempt: vi.fn().mockResolvedValue(recheck),
+        retryHeldQc: vi.fn().mockResolvedValue({
+          outcome,
+          checkResults: [],
+          qcVerdict: { score: 10, critique: 'Off topic.' },
+        }),
+        handOffForReview: vi
+          .fn()
+          .mockResolvedValue({ outcome: 'approval_required', artifactId: 'a1' }),
+        releaseContinuation: vi.fn(),
+        failStageExecution: vi.fn(),
+        beginAttempt: vi.fn(),
+      };
+      await expect(run(runner)).resolves.toEqual({
+        outcome: 'approval_required',
+        artifactId: 'a1',
+      });
+      expect(runner.handOffForReview).toHaveBeenCalledWith(expect.anything(), recheck);
+      expect(runner.failStageExecution).not.toHaveBeenCalled();
+      expect(runner.beginAttempt).not.toHaveBeenCalled();
+    },
+  );
 });

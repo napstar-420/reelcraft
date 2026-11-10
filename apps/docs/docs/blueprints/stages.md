@@ -18,7 +18,9 @@ Hover over the **ⓘ** next to any setting for a short explanation.
 - **Key**: the stage's id, such as `stage-3`. It's set when the stage is added and can't be
   changed. Runs, logs and other stages refer to the stage by its key.
 - **Label**: the name shown on the canvas and in runs. Change it to something meaningful, such as
-  "Write script". It doesn't affect what the stage does.
+  "Write script". It doesn't affect what the stage does, and changing it never makes a stage stale.
+  Neither does changing its model, retries, budget, approval or how many failed attempts it allows:
+  see [Stale stages](../runs/canvas-runs.md#stale-stages).
 - **Phase**: optional. The run page groups stages that share a phase name, such as **Voice**, into
   one box. Leave it empty and the stage gets a box of its own. It doesn't affect what the stage does,
   and changing it never makes a stage stale.
