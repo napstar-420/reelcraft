@@ -38,21 +38,23 @@ export type StageActionRequest = {
 };
 
 /** A stage's run buttons: Run this stage only, plus Run up to this stage, Run from this
- * stage to the end and (test runs, checks-only edits) Re-check output. */
+ * stage to the end and Re-check output (a passed stage with checks or quality review, unless
+ * an edit made its output stale). */
 export function StageExecutionControls({
   available,
   busy,
   pending,
   onAction,
   compact = false,
-  allowRecheck = false,
+  stale = false,
 }: {
   available: StageAvailableActions | undefined;
   busy: boolean;
   pending: boolean;
   onAction: (request: StageActionRequest) => void;
   compact?: boolean;
-  allowRecheck?: boolean;
+  /** An edit changed what this stage generates, so its output can't be re-checked. */
+  stale?: boolean;
 }) {
   if (!available) return null;
   const progress =
@@ -65,6 +67,7 @@ export function StageExecutionControls({
   const size = compact ? 'xs' : 'sm';
   const runOnly = available.run || available.continue || available.rerun;
   const scoped = available.runThrough ?? true;
+  const recheck = !!available.recheck && !stale;
   return (
     <div className="flex flex-wrap items-center gap-1">
       {progress}
@@ -81,7 +84,7 @@ export function StageExecutionControls({
       {available.blockedReason && (
         <span className="text-xs text-muted-foreground">{available.blockedReason}</span>
       )}
-      {(scoped || (allowRecheck && available.rerun)) && (
+      {(scoped || recheck) && (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button size={size} variant="ghost" aria-label="More stage actions" disabled={pending}>
@@ -99,7 +102,7 @@ export function StageExecutionControls({
                 Run from this stage to the end
               </DropdownMenuItem>
             )}
-            {allowRecheck && available.rerun && (
+            {recheck && (
               <DropdownMenuItem onSelect={() => onAction({ scope: 'stage', recheck: true })}>
                 Re-check output
               </DropdownMenuItem>
@@ -209,6 +212,7 @@ export function RunExecutionToolbar({
 
 /** What the confirmation is for: carrying on, redoing finished work, or running what was asked. */
 function planTitle(plan: StageRunPlanDto | null): string {
+  if (plan?.request.mode === 'validate') return 'Re-check this output?';
   if (plan?.request.action === 'continue') return 'Continue the run?';
   if (plan?.request.action === 'rerun') return 'Re-run finished work?';
   return 'Run these stages?';
@@ -315,9 +319,17 @@ export function ExecutionPlanDialog({ actions }: { actions: RunExecutionActions 
                 <p>Enabled or disabled: {names(plan.availabilityChangedStageKeys)}</p>
               )}
               {!!plan.retainedItemCount && <p>Keeps {plan.retainedItemCount} finished items.</p>}
-              <p className="text-muted-foreground">
-                Last time these cost ${plan.estimatedRerunUsd.toFixed(2)}.
-              </p>
+              {plan.request.mode === 'validate' ? (
+                <p className="text-muted-foreground">
+                  Runs its checks and quality review on the stored output again. Nothing is
+                  regenerated and later stages keep their outputs. If it fails, it waits for your
+                  review. Quality review last cost ${plan.estimatedRerunUsd.toFixed(2)}.
+                </p>
+              ) : (
+                <p className="text-muted-foreground">
+                  Last time these cost ${plan.estimatedRerunUsd.toFixed(2)}.
+                </p>
+              )}
             </div>
           )}
           {plan && !!plan.uncertainAttemptIds?.length && !plan.request.allowUncertainRestart && (
@@ -342,7 +354,7 @@ export function ExecutionPlanDialog({ actions }: { actions: RunExecutionActions 
                   actions.confirmExecution.mutate(plan);
                 }}
               >
-                Run
+                {plan.request.mode === 'validate' ? 'Re-check' : 'Run'}
               </AlertDialogAction>
             )}
           </AlertDialogFooter>

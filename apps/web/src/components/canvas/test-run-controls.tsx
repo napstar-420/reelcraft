@@ -25,6 +25,7 @@ export function withoutStageActions(
     rerun: false,
     runThrough: false,
     rebuildDescendants: false,
+    recheck: false,
     blockedReason: `${reason} Use Continue to start a new run that keeps your finished stages.`,
   };
 }

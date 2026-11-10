@@ -418,6 +418,87 @@ const runStages: AssistantTool<z.infer<typeof RunStagesInput>> = {
   },
 };
 
+// ---- recheck_output ----------------------------------------------------------------------
+
+const RecheckInput = z.object({
+  runId: z.string().min(1),
+  stageKey: z.string().min(1),
+  itemIndex: z.number().int().min(0).optional(),
+  version: z.string().min(1).max(20).optional(),
+});
+
+const recheckOutput: AssistantTool<z.infer<typeof RecheckInput>> = {
+  name: 'recheck_output',
+  kind: 'action',
+  description:
+    'Run a finished stage\'s checks and quality review again on its stored output (or one item\'s, with itemIndex), without regenerating anything. The output stays current and later stages keep theirs. If it fails, the run waits for review: Approve keeps it, Reject regenerates it with the critique. version: "run" (default: the checks the run has), "draft" or "saved" (to apply edited checks or quality criteria). Refused while executing, or when an edit changed what the stage generates (use run_stages then).',
+  input: RecheckInput,
+  jsonSchema: () =>
+    obj(
+      {
+        runId: RUN_ID,
+        stageKey: STAGE_KEY,
+        itemIndex: { type: 'integer', minimum: 0, description: 'Only this item (0-based).' },
+        version: str('"run" (default), "draft", "saved" or a version label', {
+          minLength: 1,
+          maxLength: 20,
+        }),
+      },
+      ['runId', 'stageKey'],
+    ),
+  async handler(ctx, deps, input) {
+    const ended = turnEnded(ctx);
+    if (ended) return ended;
+    const insight = await deps.runs.get(input.runId);
+    if (!insight) return { ok: false, error: `There is no run "${input.runId}".` };
+    const stage = insight.stages.find((s) => s.key === input.stageKey);
+    if (!stage)
+      return {
+        ok: false,
+        error: `Run ${handle(input.runId)} has no stage "${input.stageKey}". Stages: ${insight.stages.map((s) => s.key).join(', ')}.`,
+      };
+    let versionId = (await deps.runControl.get(input.runId)).blueprintVersionId;
+    if (input.version && input.version !== 'run') {
+      const v = await resolveVersion(ctx, deps, insight.blueprintId, input.version);
+      if (!v.ok) return { ok: false, error: v.error };
+      versionId = v.id;
+    }
+    const plan = await deps.stagePlans.preview(input.runId, {
+      blueprintVersionId: versionId,
+      stageKey: input.stageKey,
+      mode: 'validate',
+      action: 'rerun',
+      scope: 'stage',
+      ...(input.itemIndex !== undefined && { itemIndex: input.itemIndex }),
+    });
+    if (plan.blockedReason) return { ok: false, error: plan.blockedReason };
+    const refused = await confirmChange(ctx, {
+      tool: 'recheck_output',
+      kind: 'action',
+      title: `Re-check ${stage.label}${input.itemIndex !== undefined ? `, item ${input.itemIndex + 1}` : ''} in run ${handle(input.runId)}`,
+      details: [
+        'Runs its checks and quality review on the stored output again; nothing is regenerated.',
+        'If it fails, the run waits for review.',
+      ],
+      costUsd: plan.estimatedRerunUsd,
+    });
+    if (refused) return refused;
+    await deps.stagePlans.confirm(input.runId, {
+      ...plan.request,
+      previewToken: plan.previewToken,
+    });
+    const watching = await autoWatch(ctx, deps, input.runId);
+    return {
+      ok: true,
+      result: runResult(input.runId, {
+        status: 'rechecking',
+        watching,
+        estimatedUsd: plan.estimatedRerunUsd,
+      }),
+    };
+  },
+};
+
 // ---- retry_stage -------------------------------------------------------------------------
 
 const RetryInput = z.object({
@@ -804,6 +885,7 @@ const provideInput: AssistantTool<z.infer<typeof InputInput>> = {
 export const ACTION_TOOLS: AssistantTool<never>[] = [
   startRun,
   runStages,
+  recheckOutput,
   retryStage,
   pauseRun,
   resumeRun,

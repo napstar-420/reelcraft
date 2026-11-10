@@ -193,6 +193,7 @@ describe('tool registry', () => {
         'pause_run',
         'provide_input',
         'raise_budget',
+        'recheck_output',
         'reject_stage',
         'repair_engine',
         'restore_version',
@@ -546,6 +547,7 @@ describe('JSON Schemas stay in sync with the Zod inputs (drift guard)', () => {
     },
     run_stages: { runId: 'r1', stageKey: 'script', scope: 'from_here', version: 'saved' },
     retry_stage: { runId: 'r1', stageKey: 'images', itemIndex: 0, onlyFailedItems: true },
+    recheck_output: { runId: 'r1', stageKey: 'images', itemIndex: 0, version: 'draft' },
     repair_engine: {
       runId: 'r1',
       stageKey: 'images',

@@ -138,6 +138,7 @@ export type ChatRow =
 const RUN_TOOLS: Record<string, string> = {
   start_run: 'Started',
   run_stages: 'Running stages again in',
+  recheck_output: 'Re-checking an output in',
   retry_stage: 'Retrying a stage in',
   resume_run: 'Continued',
 };
@@ -353,6 +354,8 @@ export function describeToolCall(call: ToolCallPayload, state: string | null): s
         return `Ran ${stage ?? 'stages'} again`;
       case 'retry_stage':
         return `Retried ${stage ?? 'a stage'}`;
+      case 'recheck_output':
+        return `Re-checked ${stage ?? 'an output'}`;
       case 'pause_run':
         return 'Paused a run';
       case 'resume_run':

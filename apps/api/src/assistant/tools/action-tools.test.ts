@@ -327,6 +327,55 @@ describe('start_run', () => {
   });
 });
 
+describe('recheck_output', () => {
+  it("previews a re-check of the stored output on the run's own version, then confirms it", async () => {
+    const d = deps();
+    const { ctx, asked } = manual();
+    const out = await runTool(
+      'recheck_output',
+      { runId: 'r1', stageKey: 'script', itemIndex: 2 },
+      ctx,
+      d,
+    );
+    expect(d.stagePlans.preview).toHaveBeenCalledWith('r1', {
+      blueprintVersionId: 'v1',
+      stageKey: 'script',
+      mode: 'validate',
+      action: 'rerun',
+      scope: 'stage',
+      itemIndex: 2,
+    });
+    expect(asked[0]).toMatchObject({
+      title: 'Re-check Write the script, item 3 in run #r1',
+      costUsd: 0.25,
+    });
+    expect(d.stagePlans.confirm).toHaveBeenCalledWith(
+      'r1',
+      expect.objectContaining({ previewToken: 'pt', mode: 'validate' }),
+    );
+    expect(out).toMatchObject({ ok: true, result: { status: 'rechecking' } });
+  });
+
+  it('says why a re-check is refused', async () => {
+    const d = deps({
+      stagePlans: {
+        preview: vi.fn(async () => ({
+          blockedReason: 'Re-check needs a stage that has finished.',
+        })),
+        confirm: vi.fn(),
+      },
+    });
+    const out = await runTool(
+      'recheck_output',
+      { runId: 'r1', stageKey: 'voice' },
+      manual().ctx,
+      d,
+    );
+    expect(out).toEqual({ ok: false, error: 'Re-check needs a stage that has finished.' });
+    expect(d.stagePlans.confirm).not.toHaveBeenCalled();
+  });
+});
+
 describe('run_stages and retry_stage', () => {
   it('previews the plan with the chosen version, shows its cost, then confirms with the token', async () => {
     const d = deps();

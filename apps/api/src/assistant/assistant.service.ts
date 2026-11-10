@@ -935,6 +935,7 @@ export class AssistantService implements OnModuleInit, OnModuleDestroy {
           inArray(sql<string>`${assistantItem.payload}->>'tool'`, [
             'start_run',
             'run_stages',
+            'recheck_output',
             'retry_stage',
             'resume_run',
           ]),

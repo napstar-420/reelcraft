@@ -90,7 +90,8 @@ editor shows the change straight away. If you were in the middle of an edit, the
 instead: **Load its version** or **Keep mine**.
 
 **Runs.** It can start a **Free test run** or a real run, re-make stages of a run after fixing them
-(only that stage, up to it, or from it to the end), retry a failed stage, pause, continue and stop a
+(only that stage, up to it, or from it to the end), re-check a stage's output without regenerating it,
+retry a failed stage, pause, continue and stop a
 run, raise its budget, approve or reject a stage waiting for review, and fill in a stage waiting for
 input. A run it starts appears in the chat with its live status. For run inputs that are files
 (images, audio, video), it uses files you attached, files from the channel's **Library**, or what

@@ -294,7 +294,7 @@ export function RunTab({
                       }
                       busy={run.availableActions?.busy ?? true}
                       pending={actions.runStage.isPending}
-                      allowRecheck={actions.validationStageKeys.has(stage.key)}
+                      stale={actions.staleStageKeys.has(stage.key)}
                       compact
                       onAction={(request) =>
                         actions.runStage.mutate({ stageKey: stage.key, ...request })

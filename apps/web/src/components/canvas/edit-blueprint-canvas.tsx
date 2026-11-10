@@ -697,6 +697,8 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
               runActions.validationStageKeys.has(e.stageKey)) && {
               state: 'stale' as const,
             }),
+          ...(runActions.staleStageKeys.has(e.stageKey) &&
+            e.availableActions && { availableActions: { ...e.availableActions, recheck: false } }),
           ...(runActions.newRunReason &&
             e.availableActions && {
               availableActions: withoutStageActions(e.availableActions, runActions.newRunReason),
@@ -1077,6 +1079,7 @@ export function EditBlueprintCanvas({ blueprintId }: { blueprintId: string }) {
                       <StageExecutionControls
                         compact
                         available={selectedExecution.availableActions}
+                        stale={runActions.staleStageKeys.has(selectedKey)}
                         busy={canvasRun.run?.availableActions?.busy ?? true}
                         pending={runActions.runStage.isPending}
                         onAction={(request) =>

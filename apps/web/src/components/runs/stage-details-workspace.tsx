@@ -146,13 +146,14 @@ export function StageDetailsWorkspace({
           {freshness === 'stale'
             ? 'Stale output · original artifacts and history are preserved.'
             : freshness === 'validation'
-              ? 'Checks or QC changed · validation is outdated.'
+              ? 'Checks or quality review changed · use Re-check output to judge the output again.'
               : 'Trace inputs, attempts, and artifacts for this stage.'}
         </Description>
         {actions && (
           <StageExecutionControls
             compact
             available={stage?.availableActions}
+            stale={freshness === 'stale'}
             busy={run.data?.availableActions?.busy ?? true}
             pending={actions.runStage.isPending}
             onAction={(request) => actions.runStage.mutate({ stageKey: stageKey!, ...request })}
@@ -277,6 +278,28 @@ export function StageDetailsWorkspace({
                       }
                     >
                       Re-run item
+                    </Button>
+                  )}
+                {actions &&
+                  !stageRunning &&
+                  !run.data?.availableActions?.busy &&
+                  stage?.availableActions?.recheck &&
+                  freshness !== 'stale' &&
+                  activeItem !== null &&
+                  itemOutput && (
+                    <Button
+                      size="xs"
+                      variant="outline"
+                      disabled={actions.runStage.isPending}
+                      onClick={() =>
+                        actions.runStage.mutate({
+                          stageKey: stageKey!,
+                          recheck: true,
+                          itemIndex: activeItem,
+                        })
+                      }
+                    >
+                      Re-check item
                     </Button>
                   )}
               </div>

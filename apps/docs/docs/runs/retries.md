@@ -13,7 +13,8 @@ always use their saved version; test runs use what's on the canvas.
 | **Run up to this stage**           | Unfinished or stale stages before it, then the stage itself        | Everything after it is left alone                         |
 | **Run from this stage to the end** | The stage and every stage after it, plus unfinished ones before it | Independent branches stay as they are                     |
 | **Re-run item**                    | One item of an iterating stage                                     | Other items stay; stages that used the item become stale  |
-| **Re-check output** (test runs)    | The checks and quality criteria on the stored output               | Nothing is generated again                                |
+| **Re-check output**                | The checks and quality review on the stored output                 | The output and every later stage, as they are             |
+| **Re-check item**                  | The checks and quality review on one item's stored output          | The item and every later stage, as they are               |
 
 **Run up to this stage**, **Run from this stage to the end** and **Re-check output** are in the stage's
 **⋯** menu.
@@ -39,8 +40,22 @@ request may have been charged already. The confirmation lists the stages that ru
 become stale without running, and what they cost last time. New work may cost more. If the run changed
 while the confirmation was open, you're asked again.
 
-**Re-check output** applies check or quality-criteria edits to a stored, non-iterating output without
-generating it again. Quality checks may cost money.
+## Re-check an output
+
+**Re-check output** runs a stage's checks and quality review again on the output it already has,
+without generating anything. It's in the stage's **⋯** menu whenever the stage has passed and has checks
+or quality review, on the canvas and on the run page. For an iterating stage it re-checks every item; to
+re-check just one, open **View output**, find the item and select **Re-check item**. The confirmation is
+titled **Re-check this output?**; select **Re-check**.
+
+- The output stays the stage's current one, and stages after it keep theirs.
+- Use it after editing only a stage's checks or quality criteria, or to judge an output again. If you
+  changed what the stage generates (its prompt, inputs or output), it's stale and needs **Run this stage
+  only** instead.
+- If the output passes, nothing else changes. If it fails, the run waits for your review: **Approve**
+  keeps the output as it is; **Reject** regenerates it with your note as feedback, and later stages that
+  used it become stale.
+- Quality review costs money each time it runs.
 
 ## Automatic retries
 

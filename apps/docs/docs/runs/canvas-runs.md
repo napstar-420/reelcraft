@@ -55,8 +55,9 @@ Select a stage in the outline, on the graph or in **Test runs** to see its butto
 - In its **⋯** menu:
   - **Run up to this stage**: runs any unfinished or stale stages before it, then this one, then stops.
   - **Run from this stage to the end**: runs this stage and everything after it.
-  - **Re-check output**: shown only when you changed just the stage's checks or quality criteria. It
-    checks the existing output again without generating it.
+  - **Re-check output**: runs the stage's checks and quality review again on its existing output,
+    without generating it. Shown once the stage has passed, if it has checks or quality review and its
+    output isn't stale. See [Re-check an output](./retries.md#re-check-an-output).
 
 Stage buttons are hidden while the run is running, pausing or stopping. Progress, outputs and attempts
 stay visible.
@@ -77,7 +78,7 @@ These edits don't make a stage stale, because they don't change what it generate
 - an input's or role's label, or whether it's required.
 
 Changing a stage's checks or quality criteria doesn't make it stale either; the stage shows
-**Validation outdated** instead.
+**Validation outdated** instead; use **Re-check output** to judge its output against the new checks.
 
 ## Confirmations
 
